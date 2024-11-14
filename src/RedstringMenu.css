@@ -1,0 +1,81 @@
+.menu-container {
+    position: absolute;
+    top: 100%; /* Remove the negative offset, align exactly with bottom of header */
+    left: 0;
+    width: 150px;
+    background-color: #260000;
+    border-bottom-right-radius: 25px;
+    box-shadow: 2px 2px 10px rgba(0,0,0,0.2);
+    z-index: 1000;
+    padding: 10px 0;
+    transform-origin: top;
+}
+.menu-items {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.menu-item {
+    background: none;
+    border: none;
+    color: white;
+    padding: 10px 10px;
+    text-align: left;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    margin: 0 10px 0 10px; /* Reduced left margin, kept right margin larger */
+    display: flex;
+    justify-content: space-between;
+    align-items: center; /* Keep this as center for vertical alignment */
+    outline: none;
+    border-radius: 13px;
+}
+  
+.menu-item:focus {
+    outline: none; /* Prevent focus outline */
+}
+
+.menu-item:hover {
+    background-color: #F00000;
+}
+
+.menu-item-chevron {
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.menu-item:hover .menu-item-chevron {
+    opacity: 1;
+}
+
+.menu-container.entering {
+    animation: slideDown 150ms ease-out forwards;
+}
+
+.menu-container.exiting {
+    animation: slideUp 150ms ease-out forwards;
+}
+
+@keyframes slideDown {
+from {
+    transform: translateY(-10px);
+    opacity: 0;
+}
+to {
+    transform: translateY(0);
+    opacity: 1;
+}
+}
+
+@keyframes slideUp {
+from {
+    transform: translateY(0);
+    opacity: 1;
+}
+to {
+    transform: translateY(-10px);
+    opacity: 0;
+}
+}
