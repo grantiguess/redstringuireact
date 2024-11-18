@@ -70,6 +70,13 @@ const NodeCanvas = () => {
     name: '',
   });
 
+  // Tracks animation frame for canvas
+  const panAnimationFrame = useRef(null);
+
+  // States for smooth panning
+  const [lastPanUpdate, setLastPanUpdate] = useState(0);
+  const lastMousePos = useRef({ x: 0, y: 0 });
+
 
   // In handleClosePrompt:
   const handleClosePrompt = () => {
@@ -154,6 +161,18 @@ const NodeCanvas = () => {
   useEffect(() => {
     if (debugMode) {
       setDebugData({
+        'Pan Motion': {
+          panOffsetX: panOffset.x.toFixed(2),
+          panOffsetY: panOffset.y.toFixed(2),
+          mouseX: mousePos.x.toFixed(2),
+          mouseY: mousePos.y.toFixed(2),
+          isPanning: isPanning,
+          deltaFromStart: isPanning ? {
+            dx: (mousePos.x - panStart.x).toFixed(2),
+            dy: (mousePos.y - panStart.y).toFixed(2)
+          } : null,
+          currentPanStart: panStart,
+        },
         'Interaction State': {
           lastInteractionType,
           canShowPlusSign,
@@ -200,7 +219,11 @@ const NodeCanvas = () => {
     selectionRect,
     selectedNodes,
     plusSign,
-    debugMode
+    debugMode,
+    mousePos,
+    panOffset,
+    panStart,
+    nodes
   ]);
 
   useEffect(() => {
@@ -235,7 +258,7 @@ const NodeCanvas = () => {
   // Handler for mouse wheel events to zoom in/out
   const handleWheel = (e) => {
     if (isPaused) return;
-    e.preventDefault(); // Prevent default scrolling and zooming
+    //e.preventDefault(); // Prevent default scrolling and zooming
 
     // Normalize deltaY for different delta modes
     let deltaY = e.deltaY;
@@ -382,6 +405,40 @@ const NodeCanvas = () => {
     requestAnimationFrame(animate);
   };
 
+  const startSmoothPanning = () => {
+    if (panAnimationFrame.current) return;
+    
+    const animate = () => {
+      if (isPanning && isMouseDown.current && lastMousePos.current) {
+        const currentTime = performance.now();
+        const deltaTime = currentTime - lastPanUpdate;
+        
+        if (deltaTime >= 16) { // Cap at roughly 60fps
+          const dx = lastMousePos.current.x - panStart.x;
+          const dy = lastMousePos.current.y - panStart.y;
+          
+          let newPanOffsetX = panOffset.x + dx;
+          let newPanOffsetY = panOffset.y + dy;
+          
+          const maxPanOffsetX = 0;
+          const maxPanOffsetY = 0;
+          const minPanOffsetX = viewportSize.width - canvasSize.width * zoomLevel;
+          const minPanOffsetY = viewportSize.height - canvasSize.height * zoomLevel;
+          
+          newPanOffsetX = Math.min(Math.max(newPanOffsetX, minPanOffsetX), maxPanOffsetX);
+          newPanOffsetY = Math.min(Math.max(newPanOffsetY, minPanOffsetY), maxPanOffsetY);
+          
+          setPanOffset({ x: newPanOffsetX, y: newPanOffsetY });
+          setPanStart({ x: lastMousePos.current.x, y: lastMousePos.current.y });
+          setLastPanUpdate(currentTime);
+        }
+      }
+      panAnimationFrame.current = requestAnimationFrame(animate);
+    };
+    
+    panAnimationFrame.current = requestAnimationFrame(animate);
+  };
+
   // Handler for mouse move events on the canvas
   const handleMouseMove = (e) => {
     if (isPaused) return;
@@ -453,7 +510,6 @@ const NodeCanvas = () => {
             setLongPressingNode(null);
           }
         } else if (!draggingNode && !drawingConnectionFrom && !isPanning && !startedOnNode.current) {
-          // Only start panning if we didn't start the drag on a node
           setIsPanning(true);
           setPanStart({ x: e.clientX, y: e.clientY });
         }
@@ -473,15 +529,13 @@ const NodeCanvas = () => {
         )
       );
     } 
-    // Handle connection drawing - only update if we have valid state
+    // Handle connection drawing
     else if (drawingConnectionFrom) {
-      // Guard against null or invalid state
       if (!drawingConnectionFrom?.originalNodeX) return;
-
+  
       const boundedEndpoint = clampCoordinates(currentX, currentY);
       
       setDrawingConnectionFrom(prev => {
-        // Ensure we still have valid state
         if (!prev?.originalNodeX) return null;
         
         return {
@@ -493,24 +547,23 @@ const NodeCanvas = () => {
         };
       });
     }
-    // Handle panning
+    // Handle panning with requestAnimationFrame
     else if (isPanning) {
-      // Use requestAnimationFrame for smooth updates
       requestAnimationFrame(() => {
         const dx = e.clientX - panStart.x;
         const dy = e.clientY - panStart.y;
         
         let newPanOffsetX = panOffset.x + dx;
         let newPanOffsetY = panOffset.y + dy;
-
+    
         const maxPanOffsetX = 0;
         const maxPanOffsetY = 0;
         const minPanOffsetX = viewportSize.width - canvasSize.width * zoomLevel;
         const minPanOffsetY = viewportSize.height - canvasSize.height * zoomLevel;
-
+    
         newPanOffsetX = Math.min(Math.max(newPanOffsetX, minPanOffsetX), maxPanOffsetX);
         newPanOffsetY = Math.min(Math.max(newPanOffsetY, minPanOffsetY), maxPanOffsetY);
-
+    
         setPanOffset({ x: newPanOffsetX, y: newPanOffsetY });
         setPanStart({ x: e.clientX, y: e.clientY });
       });
@@ -660,15 +713,27 @@ const NodeCanvas = () => {
   const handleMouseUpCanvas = () => {
     if (isPaused) return;
   
-    // If we were drawing a connection or dragging, we shouldn't show plus sign on next click
+    if (panAnimationFrame.current) {
+      cancelAnimationFrame(panAnimationFrame.current);
+      panAnimationFrame.current = null;
+    }
+    
     if (drawingConnectionFrom || draggingNode || isPanning) {
       setCanShowPlusSign(false);
       setLastInteractionType('interaction_ended');
     } else {
-      // Reset the ability to show plus sign if we had a clean mouse up
       setCanShowPlusSign(true);
       setLastInteractionType('clean_mouse_up');
     }
+
+    // Clean up animation frame on unmount
+    // useEffect(() => {
+    //   return () => {
+    //     if (panAnimationFrame.current) {
+    //       cancelAnimationFrame(panAnimationFrame.current);
+    //     }
+    //   };
+    // }, []);
   
     setIsPanning(false);
     setDraggingNode(null);
