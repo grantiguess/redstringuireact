@@ -20,6 +20,9 @@ import {
 
 import Panel from './Panel';
 
+// Check if user's on a Mac and then store it
+const isMac = navigator.platform.toUpperCase().includes('MAC');
+
 /**
  * PlusSign component
  */
@@ -35,7 +38,7 @@ const PlusSign = ({
     width: 0,
     height: 0,
     cornerRadius: 40,
-    color: '#fefefe',
+    color: '#DEDADA',
     lineOpacity: 1,
     textOpacity: 0,
   });
@@ -78,7 +81,7 @@ const PlusSign = ({
     let endWidth = PLUS_SIGN_SIZE;
     let endHeight = PLUS_SIGN_SIZE;
     let endCorner = 40;
-    let endColor = '#fefefe';
+    let endColor = '#DEDADA';
     let endLineOp = 1;
     let endTextOp = 0;
 
@@ -87,7 +90,7 @@ const PlusSign = ({
       endWidth = PLUS_SIGN_SIZE;
       endHeight = PLUS_SIGN_SIZE;
       endCorner = 40;
-      endColor = '#fefefe';
+      endColor = '#DEDADA';
       endLineOp = 1;
       endTextOp = 0;
     } else if (mode === 'disappear') {
@@ -95,7 +98,7 @@ const PlusSign = ({
       endWidth = 0;
       endHeight = 0;
       endCorner = 40;
-      endColor = '#fefefe';
+      endColor = '#DEDADA';
       endLineOp = 1;
       endTextOp = 0;
     } else if (mode === 'morph') {
@@ -120,7 +123,7 @@ const PlusSign = ({
         cornerRadius: lerp(startCorner, endCorner, easeT),
         color: (mode === 'morph')
           ? (easeT < 0.5 ? startColor : endColor)
-          : '#fefefe',
+          : '#DEDADA',
         lineOpacity: (mode === 'morph')
           ? lerp(startLineOp, endLineOp, Math.min(easeT * 3, 1))
           : lerp(startLineOp, endLineOp, easeT),
@@ -240,11 +243,15 @@ const NodeCanvas = () => {
     },
   ]);
 
+  // Constants for selecting nodes
   const [selectedNodes, setSelectedNodes] = useState(new Set());
+  const wasSelectionBox = useRef(false);
+
   const [draggingNode, setDraggingNode] = useState(null);
   const [longPressingNode, setLongPressingNode] = useState(null);
   const [drawingConnectionFrom, setDrawingConnectionFrom] = useState(null);
   const [connections, setConnections] = useState([]);
+  const wasDrawingConnection = useRef(false);
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -275,6 +282,7 @@ const NodeCanvas = () => {
 
   const containerRef = useRef(null);
   const isMouseDown = useRef(false);
+  const ignoreCanvasClick = useRef(false);
   const mouseDownPosition = useRef({ x: 0, y: 0 });
   const mouseMoved = useRef(false);
   const startedOnNode = useRef(false);
@@ -289,10 +297,10 @@ const NodeCanvas = () => {
 
   // The panel expanded/collapsed
   const [panelExpanded, setPanelExpanded] = useState(false);
+  const panelRef = useRef(null);
 
   const canvasWorker = useCanvasWorker();
 
-  // Utility
   const lerp = (a, b, t) => a + (b - a) * t;
   const clampCoordinates = (x, y) => {
     const boundedX = Math.min(Math.max(x, 0), canvasSize.width);
@@ -312,21 +320,24 @@ const NodeCanvas = () => {
     );
   };
 
-  // On double-click => open panel node tab => skip selection
-  // We'll ensure if detail === 2, we skip single-click logic
-  // so the node is not selected if the user double-clicks quickly.
+  // When a node is double-clicked, open the panel and focus its tab.
+  const openNodeTab = (nodeId, nodeName) => {
+    setPanelExpanded(true);
+    if (panelRef.current && panelRef.current.openNodeTab) {
+      panelRef.current.openNodeTab(nodeId, nodeName);
+    }
+  };
+
   const handleNodeMouseDown = (node, e) => {
     e.stopPropagation();
     if (isPaused) return;
 
     if (e.detail === 2) {
       e.preventDefault();
-      // Expand panel, open/focus this node's tab
       openNodeTab(node.id, node.name);
       return;
     }
 
-    // Single-click => proceed with selection logic
     isMouseDown.current = true;
     mouseDownPosition.current = { x: e.clientX, y: e.clientY };
     mouseMoved.current = false;
@@ -373,19 +384,12 @@ const NodeCanvas = () => {
 
   const handleOpenNodeTab = (nodeId, nodeName) => {
     setPanelExpanded(true);
-    // The Panel has a function openNodeTab internally
-    // We'll pass nodeId, nodeName there
-    // That logic is handled in the Panel's openNodeTab
+    // Logic handled via panelRef in openNodeTab.
   };
 
   const handleSaveNodeData = (nodeId, newData) => {
-    setNodes((prev) =>
-      prev.map((n) => {
-        if (n.id === nodeId) {
-          return { ...n, ...newData };
-        }
-        return n;
-      })
+    setNodes(prev =>
+      prev.map(n => (n.id === nodeId ? { ...n, ...newData } : n))
     );
   };
 
@@ -422,13 +426,15 @@ const NodeCanvas = () => {
 
   const handleMouseMove = async (e) => {
     if (isPaused) return;
-
+  
     const rect = containerRef.current.getBoundingClientRect();
     const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
     const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
     const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
-
-    if (selectionStart && isMouseDown.current && e.ctrlKey) {
+  
+    // If a selection was started (via ctrl/cmd on mouse down) and the mouse is still down,
+    // update the selection rectangle regardless of whether the key remains held.
+    if (selectionStart && isMouseDown.current) {
       e.preventDefault();
       try {
         const selectionRes = await canvasWorker.calculateSelection({
@@ -437,7 +443,7 @@ const NodeCanvas = () => {
           currentY
         });
         setSelectionRect(selectionRes);
-
+  
         const newSelectedIds = nodes
           .filter(nd => {
             return !(
@@ -448,33 +454,33 @@ const NodeCanvas = () => {
             );
           })
           .map(nd => nd.id);
-
+  
         setSelectedNodes(prev => new Set([...prev, ...newSelectedIds]));
       } catch (error) {
         console.error('Selection calc failed:', error);
       }
       return;
     }
-
+  
     if (isMouseDown.current) {
       const dx = e.clientX - mouseDownPosition.current.x;
       const dy = e.clientY - mouseDownPosition.current.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-
+  
       if (dist > MOVEMENT_THRESHOLD) {
         mouseMoved.current = true;
-
+  
         if (longPressingNode && !draggingNode) {
           const inside = isInsideNode(longPressingNode, e.clientX, e.clientY);
           if (!inside) {
             clearTimeout(longPressTimeout.current);
             mouseInsideNode.current = false;
-
+  
             const startPt = {
               x: longPressingNode.x + NODE_WIDTH / 2,
               y: longPressingNode.y + NODE_HEIGHT / 2
             };
-
+  
             setDrawingConnectionFrom({
               node: longPressingNode,
               startX: startPt.x,
@@ -493,7 +499,7 @@ const NodeCanvas = () => {
         }
       }
     }
-
+  
     if (draggingNode) {
       try {
         const newPositions = await canvasWorker.calculateNodePositions({
@@ -531,15 +537,15 @@ const NodeCanvas = () => {
     } else if (isPanning) {
       requestAnimationFrame(() => {
         if (!panStart?.x || !panStart?.y) return;
-
+  
         const dx = (e.clientX - panStart.x) * SCROLL_SENSITIVITY;
         const dy = (e.clientY - panStart.y) * SCROLL_SENSITIVITY;
-
+  
         const maxX = 0;
         const maxY = 0;
         const minX = viewportSize.width - canvasSize.width * zoomLevel;
         const minY = viewportSize.height - canvasSize.height * zoomLevel;
-
+  
         setPanOffset(prev => {
           const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
           const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
@@ -550,13 +556,37 @@ const NodeCanvas = () => {
         });
       });
     }
+  };   
+
+
+  const handleMouseDown = (e) => {
+    if (isPaused) return;
+    isMouseDown.current = true;
+    mouseDownPosition.current = { x: e.clientX, y: e.clientY };
+    startedOnNode.current = false;
+    mouseMoved.current = false;
+    setLastInteractionType('mouse_down');
+  
+    if ((isMac && e.metaKey) || (!isMac && e.ctrlKey)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = containerRef.current.getBoundingClientRect();
+      const startX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
+      const startY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
+      setSelectionStart({ x: startX, y: startY });
+      setSelectionRect({ x: startX, y: startY, width: 0, height: 0 });
+      return;
+    }
+  
+    setPanStart({ x: e.clientX, y: e.clientY });
+    setIsPanning(true);
   };
 
   const handleMouseUp = (e) => {
     if (isPaused) return;
     clearTimeout(longPressTimeout.current);
     mouseInsideNode.current = false;
-
+  
     if (drawingConnectionFrom) {
       const targetNode = nodes.find(n => isInsideNode(n, e.clientX, e.clientY));
       if (targetNode && targetNode.id !== drawingConnectionFrom.node.id) {
@@ -573,8 +603,9 @@ const NodeCanvas = () => {
         }
       }
       setDrawingConnectionFrom(null);
+      wasDrawingConnection.current = true;
     }
-
+  
     if (longPressingNode) {
       const dx = e.clientX - mouseDownPosition.current.x;
       const dy = e.clientY - mouseDownPosition.current.y;
@@ -594,39 +625,47 @@ const NodeCanvas = () => {
       animateNodeLerp(longPressingNode.id, 1);
       setLongPressingNode(null);
     }
-
+  
+    // If a selection was started, finalize it using the final mouse-up coordinates,
+    // update selected nodes, and ensure the selection rectangle is cleared.
+    if (selectionStart) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
+      const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
+      const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
+      canvasWorker.calculateSelection({ selectionStart, currentX, currentY })
+        .then(selectionRes => {
+          const finalSelectedIds = nodes
+            .filter(nd => {
+              return !(
+                selectionRes.x > nd.x + NODE_WIDTH ||
+                selectionRes.x + selectionRes.width < nd.x ||
+                selectionRes.y > nd.y + NODE_HEIGHT ||
+                selectionRes.y + selectionRes.height < nd.y
+              );
+            })
+            .map(nd => nd.id);
+          // Merge the final selection with any already-selected nodes
+          setSelectedNodes(prev => new Set([...prev, ...finalSelectedIds]));
+        })
+        .catch(error => console.error("Final selection calc failed:", error));
+      ignoreCanvasClick.current = true;
+      setSelectionStart(null);
+      setSelectionRect(null);
+    }
+  
     setDraggingNode(null);
     setIsPanning(false);
     isMouseDown.current = false;
     mouseMoved.current = false;
   };
+  
+  
 
-  const handleMouseDown = (e) => {
-    if (isPaused) return;
-    isMouseDown.current = true;
-    mouseDownPosition.current = { x: e.clientX, y: e.clientY };
-    startedOnNode.current = false;
-    mouseMoved.current = false;
-    setLastInteractionType('mouse_down');
-
-    if (e.ctrlKey) {
-      e.preventDefault();
-      e.stopPropagation();
-      const rect = containerRef.current.getBoundingClientRect();
-      const startX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
-      const startY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
-      setSelectionStart({ x: startX, y: startY });
-      setSelectionRect({ x: startX, y: startY, width: 0, height: 0 });
-      return;
-    }
-
-    setPanStart({ x: e.clientX, y: e.clientY });
-    setIsPanning(true);
-  };
 
   const handleMouseUpCanvas = (e) => {
     if (isPaused) return;
-
+  
     if (isPanning) {
       const dx = e.clientX - mouseDownPosition.current.x;
       const dy = e.clientY - mouseDownPosition.current.y;
@@ -644,31 +683,48 @@ const NodeCanvas = () => {
         y: Math.min(Math.max(prev.y, minY), maxY),
       }));
     }
-
+  
+    // Clear selection state on canvas mouse up
+    if (selectionStart) {
+      setSelectionStart(null);
+      setSelectionRect(null);
+    }
+  
     setIsPanning(false);
     setDraggingNode(null);
     setDrawingConnectionFrom(null);
     isMouseDown.current = false;
-  };
+  };  
 
   const handleCanvasClick = (e) => {
+    if (wasDrawingConnection.current) {
+      wasDrawingConnection.current = false;
+      return;
+    }
+  
     if (e.target.closest('g[data-plus-sign="true"]')) return;
     if (e.target.tagName !== 'svg') return;
     if (isPaused || draggingNode || drawingConnectionFrom || mouseMoved.current || recentlyPanned || nodeNamePrompt.visible) {
       setLastInteractionType('blocked_click');
       return;
     }
-
-    if (selectedNodes.size > 0 && !e.ctrlKey) {
-      setSelectedNodes(new Set());
-      setLastInteractionType('nodes_deselected');
+  
+    // If the click came after a selection box drag, ignore it so nodes remain selected.
+    if (ignoreCanvasClick.current) {
+      ignoreCanvasClick.current = false;
       return;
     }
-
+  
+    // If any node is selected, clear the selection instead of spawning the plus sign.
+    if (selectedNodes.size > 0) {
+      setSelectedNodes(new Set());
+      return;
+    }
+  
     const rect = containerRef.current.getBoundingClientRect();
     const mouseX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
     const mouseY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
-
+  
     if (!plusSign) {
       setPlusSign({
         x: mouseX,
@@ -684,7 +740,7 @@ const NodeCanvas = () => {
       setPlusSign(ps => ps && { ...ps, mode: 'disappear' });
       setLastInteractionType('plus_sign_hidden');
     }
-  };
+  };  
 
   const handlePlusSignClick = () => {
     if (!plusSign) return;
@@ -747,7 +803,7 @@ const NodeCanvas = () => {
             top: HEADER_HEIGHT + 25,
             left: '50%',
             transform: 'translateX(-50%)',
-            backgroundColor: 'white',
+            backgroundColor: '#bdb5b5',
             padding: '20px',
             borderRadius: '10px',
             boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
@@ -792,7 +848,7 @@ const NodeCanvas = () => {
               style={{
                 padding: '10px 20px',
                 backgroundColor: 'maroon',
-                color: 'white',
+                color: '#bdb5b5',
                 border: 'none',
                 borderRadius: '5px',
                 cursor: 'pointer',
@@ -810,12 +866,6 @@ const NodeCanvas = () => {
     setPanelExpanded(prev => !prev);
   };
 
-  const openNodeTab = (nodeId, nodeName) => {
-    // Expand the panel
-    setPanelExpanded(true);
-    // The Panel has openNodeTab internally, so we just pass it down
-  };
-
   return (
     <div
       className="app-container"
@@ -831,10 +881,10 @@ const NodeCanvas = () => {
       {renderCustomPrompt()}
 
       <Panel
+        ref={panelRef}
         isExpanded={panelExpanded}
         onToggleExpand={handleTogglePanel}
         nodes={nodes}
-        onOpenNodeTab={openNodeTab}
         onSaveNodeData={handleSaveNodeData}
       />
 
@@ -860,7 +910,7 @@ const NodeCanvas = () => {
           style={{
             transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
             transformOrigin: '0 0',
-            backgroundColor: 'white',
+            backgroundColor: '#bdb5b5',
           }}
           onMouseUp={handleMouseUp}
         >
@@ -895,15 +945,11 @@ const NodeCanvas = () => {
             {nodes.map((node) => (
               <g
                 key={node.id}
-                className={`node ${
-                  selectedNodes.has(node.id) ? 'selected' : ''
-                } ${draggingNode?.id === node.id ? 'dragging' : ''}`}
+                className={`node ${selectedNodes.has(node.id) ? 'selected' : ''} ${draggingNode?.id === node.id ? 'dragging' : ''}`}
                 onMouseDown={(e) => handleNodeMouseDown(node, e)}
                 style={{
                   transform: `scale(${node.scale})`,
-                  transformOrigin: `${node.x + NODE_WIDTH / 2}px ${
-                    node.y + NODE_HEIGHT / 2
-                  }px`,
+                  transformOrigin: `${node.x + NODE_WIDTH / 2}px ${node.y + NODE_HEIGHT / 2}px`,
                   cursor: 'pointer',
                 }}
               >
@@ -936,7 +982,7 @@ const NodeCanvas = () => {
                       fontSize: '16px',
                       fontWeight: 'bold',
                       fontFamily: 'Helvetica',
-                      color: 'white',
+                      color: '#bdb5b5',
                       textAlign: 'center',
                       overflow: 'hidden',
                     }}

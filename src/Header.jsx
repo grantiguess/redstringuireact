@@ -74,7 +74,7 @@ const Header = () => {
           style={{
             height: `${HEADER_HEIGHT}px`,
             backgroundColor: '#260000',
-            color: 'white',
+            color: '#bdb5b5',
             display: 'flex',
             alignItems: 'center',
             flexShrink: 0,
@@ -106,7 +106,7 @@ const Header = () => {
       style={{
         height: `${HEADER_HEIGHT}px`,
         backgroundColor: '#260000',
-        color: 'white',
+        color: '#bdb5b5',
         display: 'flex',
         alignItems: 'center',
         flexShrink: 0,
@@ -142,7 +142,7 @@ const Header = () => {
         left: '50%',
         top: '50%',
         transform: 'translate(-50%, -50%)',
-        color: 'white',
+        color: '#bdb5b5',
         fontSize: '18px',
         fontFamily: 'Helvetica',
         userSelect: 'none',
