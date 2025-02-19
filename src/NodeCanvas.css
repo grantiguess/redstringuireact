@@ -1,18 +1,18 @@
 .canvas-container {
-    width: 100vw;
-    height: 100vh;
-    background-color: #2e2e2e; /* Dark grey background */
-    overflow: hidden;
-    position: relative;
+  width: 100vw;
+  height: 100vh;
+  background-color: #2e2e2e; /* Dark grey background behind the white canvas */
+  overflow: hidden;
+  position: relative;
 }
-  
+
 .canvas {
-  background-color: white; /* White canvas */
+  background-color: white;
 }
 
 .node {
   cursor: pointer;
-  transition: transform 0.05s ease, filter 0.1s ease; /* Faster transition */
+  transition: transform 0.05s ease, filter 0.1s ease;
 }
 
 .node.selected rect {
@@ -21,42 +21,4 @@
 
 .node.dragging rect {
   filter: drop-shadow(0px 5px 10px rgba(0, 0, 0, 0.3));
-}
-
-.debug-overlay::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.debug-overlay::-webkit-scrollbar-track {
-  background: rgba(0,0,0,0.3);
-  border-radius: 4px;
-}
-
-.debug-overlay::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.3);
-  border-radius: 4px;
-}
-
-.debug-overlay::-webkit-scrollbar-thumb:hover {
-  background: rgba(255,255,255,0.5);
-}
-
-.debug-overlay pre::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.debug-overlay pre::-webkit-scrollbar-track {
-  background: rgba(0,0,0,0.2);
-  border-radius: 3px;
-}
-
-.debug-overlay pre::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.2);
-  border-radius: 3px;
-}
-
-.debug-overlay pre::-webkit-scrollbar-thumb:hover {
-  background: rgba(255,255,255,0.4);
 }
