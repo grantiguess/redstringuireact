@@ -331,34 +331,68 @@ const NodeCanvas = () => {
   const handleNodeMouseDown = (node, e) => {
     e.stopPropagation();
     if (isPaused) return;
-
+  
     if (e.detail === 2) {
       e.preventDefault();
       openNodeTab(node.id, node.name);
       return;
     }
-
+  
     isMouseDown.current = true;
     mouseDownPosition.current = { x: e.clientX, y: e.clientY };
     mouseMoved.current = false;
     mouseInsideNode.current = true;
     startedOnNode.current = true;
-
+  
     clearTimeout(longPressTimeout.current);
     longPressTimeout.current = setTimeout(() => {
       if (mouseInsideNode.current && !mouseMoved.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setDraggingNode({
-          ...node,
-          offsetX: (e.clientX - rect.left - panOffset.x) / zoomLevel - node.x,
-          offsetY: (e.clientY - rect.top - panOffset.y) / zoomLevel - node.y,
-        });
-        animateNodeLerp(node.id, 1.1);
+        const canvasRect = containerRef.current.getBoundingClientRect();
+        // Compute adjusted coordinates in canvas space
+        const adjustedX = (e.clientX - canvasRect.left - panOffset.x) / zoomLevel;
+        const adjustedY = (e.clientY - canvasRect.top - panOffset.y) / zoomLevel;
+        // Calculate the offset from the node's top-left to the adjusted mouse position
+        const offset = {
+          x: adjustedX - node.x,
+          y: adjustedY - node.y,
+        };
+  
+        // Multi-drag mode: if the node is already selected, move all selected nodes.
+        if (selectedNodes.has(node.id)) {
+          const initialPositions = {};
+          nodes.forEach(n => {
+            if (selectedNodes.has(n.id)) {
+              initialPositions[n.id] = { x: n.x, y: n.y };
+            }
+          });
+          setDraggingNode({
+            initialMouse: { x: e.clientX, y: e.clientY },
+            offset,
+            initialPositions,
+            primaryId: node.id,
+          });
+          // Animate "lift" for all selected nodes.
+          selectedNodes.forEach(id => {
+            animateNodeLerp(id, 1.1);
+          });
+        } else {
+          // Single-drag mode: move only the pressed node.
+          setDraggingNode({
+            initialMouse: { x: e.clientX, y: e.clientY },
+            nodeId: node.id,
+            initialPos: { x: node.x, y: node.y },
+            offset, // include offset for accurate tracking
+          });
+          animateNodeLerp(node.id, 1.1);
+        }
       }
     }, LONG_PRESS_DURATION);
-
+  
     setLongPressingNode(node);
   };
+  
+  
+  
 
   const animateNodeLerp = (nodeId, targetScale) => {
     const animate = () => {
@@ -432,15 +466,14 @@ const NodeCanvas = () => {
     const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
     const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
   
-    // If a selection was started (via ctrl/cmd on mouse down) and the mouse is still down,
-    // update the selection rectangle regardless of whether the key remains held.
+    // --- Selection Box Logic ---
     if (selectionStart && isMouseDown.current) {
       e.preventDefault();
       try {
         const selectionRes = await canvasWorker.calculateSelection({
           selectionStart,
           currentX,
-          currentY
+          currentY,
         });
         setSelectionRect(selectionRes);
   
@@ -454,7 +487,6 @@ const NodeCanvas = () => {
             );
           })
           .map(nd => nd.id);
-  
         setSelectedNodes(prev => new Set([...prev, ...newSelectedIds]));
       } catch (error) {
         console.error('Selection calc failed:', error);
@@ -462,6 +494,7 @@ const NodeCanvas = () => {
       return;
     }
   
+    // --- Mouse Down & Movement Threshold ---
     if (isMouseDown.current) {
       const dx = e.clientX - mouseDownPosition.current.x;
       const dy = e.clientY - mouseDownPosition.current.y;
@@ -478,7 +511,7 @@ const NodeCanvas = () => {
   
             const startPt = {
               x: longPressingNode.x + NODE_WIDTH / 2,
-              y: longPressingNode.y + NODE_HEIGHT / 2
+              y: longPressingNode.y + NODE_HEIGHT / 2,
             };
   
             setDrawingConnectionFrom({
@@ -488,7 +521,7 @@ const NodeCanvas = () => {
               currentX,
               currentY,
               originalNodeX: longPressingNode.x,
-              originalNodeY: longPressingNode.y
+              originalNodeY: longPressingNode.y,
             });
             animateNodeLerp(longPressingNode.id, 1);
             setLongPressingNode(null);
@@ -500,28 +533,57 @@ const NodeCanvas = () => {
       }
     }
   
+    // --- Dragging Logic ---
     if (draggingNode) {
-      try {
-        const newPositions = await canvasWorker.calculateNodePositions({
-          nodes,
-          draggingNode: {
-            ...draggingNode,
-            width: NODE_WIDTH,
-            height: NODE_HEIGHT
-          },
-          mouseX: e.clientX,
-          mouseY: e.clientY,
-          panOffset,
-          zoomLevel,
-          canvasSize,
-          viewportSize,
-          headerHeight: HEADER_HEIGHT
-        });
-        setNodes(newPositions);
-      } catch (error) {
-        console.error('Node pos calc failed:', error);
+      // Multi-drag mode: if draggingNode was set with multi-drag properties.
+      if (
+        draggingNode.initialPositions &&
+        draggingNode.offset &&
+        draggingNode.primaryId
+      ) {
+        // Compute current adjusted mouse position in canvas coordinates.
+        const currentAdjustedX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
+        const currentAdjustedY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
+        // Calculate the new top-left for the primary node so it tracks the mouse exactly.
+        const newPrimaryX = currentAdjustedX - draggingNode.offset.x;
+        const newPrimaryY = currentAdjustedY - draggingNode.offset.y;
+        // Determine the delta from the primary node's original position.
+        const primaryInitial = draggingNode.initialPositions[draggingNode.primaryId];
+        const deltaX = newPrimaryX - primaryInitial.x;
+        const deltaY = newPrimaryY - primaryInitial.y;
+        // Update every selected node based on its initial position plus the delta.
+        setNodes(prev =>
+          prev.map(n => {
+            if (draggingNode.initialPositions[n.id] !== undefined) {
+              const initPos = draggingNode.initialPositions[n.id];
+              const newX = initPos.x + deltaX;
+              const newY = initPos.y + deltaY;
+              const clamped = clampCoordinates(newX, newY);
+              return { ...n, x: clamped.x, y: clamped.y };
+            }
+            return n;
+          })
+        );
       }
-    } else if (drawingConnectionFrom) {
+      // Single-drag mode: use the stored offset and current canvas-adjusted mouse coordinates.
+      else if (draggingNode.nodeId) {
+        const currentAdjustedX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
+        const currentAdjustedY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
+        const newX = currentAdjustedX - draggingNode.offset.x;
+        const newY = currentAdjustedY - draggingNode.offset.y;
+        setNodes(prev =>
+          prev.map(n => {
+            if (n.id === draggingNode.nodeId) {
+              const clamped = clampCoordinates(newX, newY);
+              return { ...n, x: clamped.x, y: clamped.y };
+            }
+            return n;
+          })
+        );
+      }
+    }
+    // --- Connection Drawing ---
+    else if (drawingConnectionFrom) {
       if (!drawingConnectionFrom.originalNodeX) return;
       const bounded = clampCoordinates(currentX, currentY);
       setDrawingConnectionFrom(prev => {
@@ -531,21 +593,20 @@ const NodeCanvas = () => {
           currentX: bounded.x,
           currentY: bounded.y,
           startX: prev.originalNodeX + NODE_WIDTH / 2,
-          startY: prev.originalNodeY + NODE_HEIGHT / 2
+          startY: prev.originalNodeY + NODE_HEIGHT / 2,
         };
       });
-    } else if (isPanning) {
+    }
+    // --- Panning ---
+    else if (isPanning) {
       requestAnimationFrame(() => {
         if (!panStart?.x || !panStart?.y) return;
-  
         const dx = (e.clientX - panStart.x) * SCROLL_SENSITIVITY;
         const dy = (e.clientY - panStart.y) * SCROLL_SENSITIVITY;
-  
         const maxX = 0;
         const maxY = 0;
         const minX = viewportSize.width - canvasSize.width * zoomLevel;
         const minY = viewportSize.height - canvasSize.height * zoomLevel;
-  
         setPanOffset(prev => {
           const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
           const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
@@ -556,7 +617,10 @@ const NodeCanvas = () => {
         });
       });
     }
-  };   
+  };  
+  
+  
+  
 
 
   const handleMouseDown = (e) => {
@@ -653,11 +717,17 @@ const NodeCanvas = () => {
       setSelectionStart(null);
       setSelectionRect(null);
     }
-  
-    setDraggingNode(null);
+
     setIsPanning(false);
     isMouseDown.current = false;
     mouseMoved.current = false;
+    if (draggingNode) {
+      // Animate drop for each node in the drag.
+      Object.keys(draggingNode.initialPositions).forEach(id => {
+        animateNodeLerp(parseInt(id, 10), 1);
+      });
+      setDraggingNode(null);
+    }
   };
   
   
