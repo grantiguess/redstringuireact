@@ -1,3 +1,9 @@
+html, body {
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: auto;
+}
+
 .canvas-container {
   width: 100vw;
   height: 100vh;
