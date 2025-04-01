@@ -2,7 +2,7 @@
     position: absolute;
     top: 100%; /* Remove the negative offset, align exactly with bottom of header */
     left: 0;
-    width: 150px;
+    width: 100px;
     background-color: #260000;
     border-bottom-right-radius: 25px;
     box-shadow: 2px 2px 10px rgba(0,0,0,0.2);
@@ -17,18 +17,20 @@
 }
 
 .menu-item {
+    width: calc(100% - 20px);
+    margin: 0 auto;
+    box-sizing: border-box;
     background: none;
     border: none;
-    color: '#BDB6B5';
-    padding: 10px 10px;
+    color: #BDB6B5;
+    padding: 8px 12px;
     text-align: left;
     font-size: 14px;
     cursor: pointer;
     transition: background-color 0.2s;
-    margin: 0 10px 0 10px; /* Reduced left margin, kept right margin larger */
     display: flex;
     justify-content: space-between;
-    align-items: center; /* Keep this as center for vertical alignment */
+    align-items: center;
     outline: none;
     border-radius: 13px;
 }
@@ -78,4 +80,40 @@ to {
     transform: translateY(-10px);
     opacity: 0;
 }
+}
+
+.submenu-container {
+    position: absolute;
+    top: 0;
+    left: 100%;
+    background-color: #260000;
+    border-radius: 15px;
+    border-top-left-radius: 0;
+    box-shadow: 2px 2px 10px rgba(0,0,0,0.2);
+    padding: 10px;
+    z-index: 1100;
+    width: 150px;
+}
+
+.submenu-item {
+    background: none;
+    border: none;
+    color: #BDB6B5;
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    margin: 4px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    outline: none;
+    border-radius: 15px;
+    width: calc(100% - 20px);
+    margin: 4px auto;
+}
+
+.submenu-item:hover {
+    background-color: #F00000;
 }

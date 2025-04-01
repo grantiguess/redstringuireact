@@ -1,38 +1,141 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRef } from 'react';
 import './DebugOverlay.css';
 import { HEADER_HEIGHT } from './constants';
 
-const DebugOverlay = ({ debugData }) => {
+const DebugOverlay = ({ debugData, hideOverlay }) => {
+  const [position, setPosition] = useState({ x: window.innerWidth - 400, y: HEADER_HEIGHT });
+  const [dragging, setDragging] = useState(false);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [size, setSize] = useState({ width: 400, height: window.innerHeight - HEADER_HEIGHT - 100 });
+  const timerRef = useRef(null);
+  
+  const handleMouseEnter = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+  
+  const handleMouseLeave = () => {
+    timerRef.current = setTimeout(() => {
+      hideOverlay();
+    }, 1000);
+  };
+  const [resizing, setResizing] = useState(false);
+  const [resizeInitial, setResizeInitial] = useState(null);
+
+  const handleMouseDown = (e) => {
+    setDragging(true);
+    setOffset({ x: e.clientX - position.x, y: e.clientY - position.y });
+  };
+
+  const handleMouseMove = (e) => {
+    if (dragging) {
+      window.requestAnimationFrame(() => {
+        setPosition({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setDragging(false);
+  };
+
+  const handleResizeMouseDown = (e) => {
+    e.stopPropagation();
+    setResizing(true);
+    setResizeInitial({
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      width: size.width,
+      height: size.height
+    });
+  };
+
+  const handleResizeMouseMove = (e) => {
+    if (resizing && resizeInitial) {
+      const newWidth = resizeInitial.width + (e.clientX - resizeInitial.mouseX);
+      const newHeight = resizeInitial.height + (e.clientY - resizeInitial.mouseY);
+      setSize({
+        width: Math.max(newWidth, 200),
+        height: Math.max(newHeight, 100)
+      });
+    }
+  };
+
+  const handleResizeMouseUp = () => {
+    setResizing(false);
+    setResizeInitial(null);
+  };
+
+  useEffect(() => {
+    if (dragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    } else {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragging, offset, position]);
+
+  useEffect(() => {
+    if (resizing) {
+      window.addEventListener('mousemove', handleResizeMouseMove);
+      window.addEventListener('mouseup', handleResizeMouseUp);
+    } else {
+      window.removeEventListener('mousemove', handleResizeMouseMove);
+      window.removeEventListener('mouseup', handleResizeMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleResizeMouseMove);
+      window.removeEventListener('mouseup', handleResizeMouseUp);
+    };
+  }, [resizing, resizeInitial, size]);
+
   return (
     <div 
       className="debug-overlay"
+      onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}
       style={{
         position: 'fixed',
-        top: `${HEADER_HEIGHT}px`,
-        right: '0',
-        width: '400px',
-        maxHeight: `calc(100vh - ${HEADER_HEIGHT}px)`,
+        top: position.y,
+        left: position.x,
+        width: `${size.width}px`,
+        height: `${size.height}px`,
         backgroundColor: 'rgba(0, 0, 0, 0.8)',
         color: 'white',
-        padding: '10px',
+        padding: '20px',
         fontFamily: 'monospace',
         fontSize: '12px',
-        overflowY: 'scroll',
+        overflow: 'auto',
         zIndex: 9999,
+        borderRadius: '10px'
       }}
-      onClick={e => e.stopPropagation()}
-      onMouseDown={e => e.stopPropagation()}
-      onMouseMove={e => e.stopPropagation()}
-      onMouseUp={e => e.stopPropagation()}
-      onWheel={e => e.stopPropagation()}
     >
+      <div 
+        className="drag-handle"
+        style={{
+          width: '60px',
+          height: '6px',
+          backgroundColor: 'white',
+          borderRadius: '3px',
+          margin: '8px auto',
+          cursor: 'grab'
+        }}
+        onMouseDown={handleMouseDown}
+      />
       <div style={{ 
         position: 'sticky', 
         top: 0, 
         backgroundColor: 'rgba(0, 0, 0, 0.9)', 
         padding: '5px',
         marginBottom: '10px',
-        borderBottom: '1px solid rgba(255,255,255,0.2)',
+        borderBottom: '1px solid rgba(255,255,255,0.2)'
       }}>
         <strong>Debug Mode</strong>
       </div>
@@ -53,6 +156,25 @@ const DebugOverlay = ({ debugData }) => {
           </pre>
         </div>
       ))}
+      <div style={{ marginTop: '10px', borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '10px' }}>
+        <strong>Full Debug Data:</strong>
+        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+          {JSON.stringify(debugData, null, 2)}
+        </pre>
+      </div>
+      <div
+        className="resize-handle"
+        style={{
+          position: 'absolute',
+          bottom: '0',
+          right: '0',
+          width: '20px',
+          height: '20px',
+          cursor: 'se-resize',
+          background: 'transparent'
+        }}
+        onMouseDown={handleResizeMouseDown}
+      />
     </div>
   );
 };

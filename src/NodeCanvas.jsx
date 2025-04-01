@@ -19,15 +19,16 @@ import {
 } from './constants';
 
 import Panel from './Panel';
+import RedstringMenu from './RedstringMenu';
 
 // Check if user's on a Mac
 const isMac = navigator.platform.toUpperCase().includes('MAC');
 
 // Sensitivity constants
 const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1;       // for mouse wheel zooming
-const PAN_DRAG_SENSITIVITY = SCROLL_SENSITIVITY; // for panning (mouse-drag or trackpad)
-const KEYBOARD_PAN_SPEED = 10;                // for keyboard panning
-const KEYBOARD_ZOOM_SPEED = 10;               // for keyboard zooming
+const PAN_DRAG_SENSITIVITY = 1.25; // for panning (mouse-drag or trackpad)
+const KEYBOARD_PAN_SPEED = 0.115;                // for keyboard panning
+const KEYBOARD_ZOOM_SPEED = 0.15;               // for keyboard zooming
 
 /**
  * PlusSign component
@@ -254,7 +255,16 @@ const NodeCanvas = () => {
   );
 
   const [debugMode, setDebugMode] = useState(false);
-  const [debugData, setDebugData] = useState({});
+  const [debugData, setDebugData] = useState({
+    info: 'Debug overlay active shawty',
+    inputDevice: 'Unknown',
+    gesture: 'none',
+    deltaX: '0',
+    deltaY: '0',
+    panOffsetX: '0',
+    panOffsetY: '0',
+    zoomLevel: '1.00',
+  });
   const [isPaused, setIsPaused] = useState(false);
   const [lastInteractionType, setLastInteractionType] = useState(null);
 
@@ -392,38 +402,117 @@ const NodeCanvas = () => {
   const eventCountStartRef = useRef(0);
 
   const handleWheel = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
+  e.preventDefault();
+  e.stopPropagation();
+  const rect = containerRef.current.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+  // Always set some debug data on every wheel event
+  setDebugData((prev) => ({
+    ...prev,
+    info: 'Wheel event triggered',
+    rawDeltaX: e.deltaX.toFixed(2),
+    rawDeltaY: e.deltaY.toFixed(2),
+    deviceDetectionState:
+      typeof isTouchPadRef.current === 'undefined'
+        ? 'detecting...'
+        : isTouchPadRef.current
+        ? 'trackpad'
+        : 'mouse',
+  }));
+  
     // Determine device type if not yet defined
-    if (typeof isTouchPadRef.current === "undefined") {
+    if (typeof isTouchPadRef.current === 'undefined') {
       if (eventCountRef.current === 0) {
         eventCountStartRef.current = Date.now();
       }
       eventCountRef.current++;
       if (Date.now() - eventCountStartRef.current > 50) {
         isTouchPadRef.current = eventCountRef.current > 5;
+        setDebugData((prev) => ({
+          ...prev,
+          inputDevice: isTouchPadRef.current ? 'Trackpad' : 'Mouse',
+        }));
+        console.log('Input device detected:', isTouchPadRef.current ? 'Trackpad' : 'Mouse');
       }
     }
-
+  
     if (isTouchPadRef.current) {
-      // For trackpad, update pan continuously based on delta values
-      const dx = e.deltaX * PAN_DRAG_SENSITIVITY;
-      const dy = e.deltaY * PAN_DRAG_SENSITIVITY;
-      const maxX = 0;
-      const maxY = 0;
-      const minX = viewportSize.width - canvasSize.width * zoomLevel;
-      const minY = viewportSize.height - canvasSize.height * zoomLevel;
-      setPanOffset(prev => {
-        const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
-        const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
-        return { x: newX, y: newY };
-      });
+      // Naive approach: guess pinch zoom vs. two-finger pan using abs(deltaY) vs abs(deltaX)
+      const absDeltaX = Math.abs(e.deltaX);
+      const absDeltaY = Math.abs(e.deltaY);
+      const isPinchZoom = absDeltaY > absDeltaX;
+  
+      if (isPinchZoom) {
+        // Attempt pinch zoom
+        let deltaY = e.deltaY;
+        if (e.deltaMode === 1) {
+          deltaY *= 33;
+        } else if (e.deltaMode === 2) {
+          deltaY *= window.innerHeight;
+        }
+        deltaY = deltaY * MOUSE_WHEEL_ZOOM_SENSITIVITY;
+  
+        try {
+          const result = await canvasWorker.calculateZoom({
+            deltaY,
+            currentZoom: zoomLevel,
+            mousePos: { x: mouseX, y: mouseY },
+            panOffset,
+            viewportSize,
+            canvasSize,
+            MIN_ZOOM,
+            MAX_ZOOM,
+          });
+          setPanOffset(result.panOffset);
+          setZoomLevel(result.zoomLevel);
+          console.log('Trackpad pinch zooming (delta-based guess):', {
+            deltaY,
+            zoomLevel: result.zoomLevel,
+          });
+        } catch (error) {
+          console.error('Pinch zoom calculation failed:', error);
+        }
+  
+        setDebugData((prev) => ({
+          ...prev,
+          inputDevice: 'Trackpad',
+          gesture: 'pinch',
+          deltaX: e.deltaX.toFixed(2),
+          deltaY: e.deltaY.toFixed(2),
+          panOffsetX: panOffset.x.toFixed(2),
+          panOffsetY: panOffset.y.toFixed(2),
+          zoomLevel: zoomLevel.toFixed(2),
+        }));
+      } else {
+        // Two-finger pan
+        const dx = e.deltaX * PAN_DRAG_SENSITIVITY;
+        const dy = e.deltaY * PAN_DRAG_SENSITIVITY;
+        const maxX = 0;
+        const maxY = 0;
+        const minX = viewportSize.width - canvasSize.width * zoomLevel;
+        const minY = viewportSize.height - canvasSize.height * zoomLevel;
+  
+        setPanOffset((prev) => {
+          const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
+          const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
+          return { x: newX, y: newY };
+        });
+        console.log('Trackpad two-finger pan (delta-based guess):', { dx, dy });
+  
+        setDebugData((prev) => ({
+          ...prev,
+          inputDevice: 'Trackpad',
+          gesture: 'two-finger pan',
+          deltaX: e.deltaX.toFixed(2),
+          deltaY: e.deltaY.toFixed(2),
+          panOffsetX: panOffset.x.toFixed(2),
+          panOffsetY: panOffset.y.toFixed(2),
+          zoomLevel: zoomLevel.toFixed(2),
+        }));
+      }
     } else {
-      // Treat as mouse wheel event => zoom.
+      // Treat as mouse wheel event => zoom
       let deltaY = e.deltaY;
       if (e.deltaMode === 1) {
         deltaY *= 33;
@@ -431,6 +520,7 @@ const NodeCanvas = () => {
         deltaY *= window.innerHeight;
       }
       deltaY = deltaY * MOUSE_WHEEL_ZOOM_SENSITIVITY;
+  
       try {
         const result = await canvasWorker.calculateZoom({
           deltaY,
@@ -440,13 +530,25 @@ const NodeCanvas = () => {
           viewportSize,
           canvasSize,
           MIN_ZOOM,
-          MAX_ZOOM
+          MAX_ZOOM,
         });
         setPanOffset(result.panOffset);
         setZoomLevel(result.zoomLevel);
+        console.log('Zooming with mouse:', { deltaY, zoomLevel: result.zoomLevel });
       } catch (error) {
         console.error('Zoom calculation failed:', error);
       }
+  
+        setDebugData((prev) => ({
+          ...prev,
+          inputDevice: 'Mouse',
+          gesture: 'mouse-wheel',
+          deltaX: e.deltaX.toFixed(2),
+          deltaY: e.deltaY.toFixed(2),
+          panOffsetX: panOffset.x.toFixed(2),
+          panOffsetY: panOffset.y.toFixed(2),
+          zoomLevel: zoomLevel.toFixed(2),
+        }));
     }
   };
 
@@ -458,6 +560,7 @@ const NodeCanvas = () => {
       return () => container.removeEventListener('wheel', preventDefaultWheel);
     }
   }, []);
+
 
   // --- Mouse Drag Panning (unchanged) ---
   const handleMouseMove = async (e) => {
@@ -887,6 +990,10 @@ const NodeCanvas = () => {
 
   const handleTogglePanel = () => { setPanelExpanded(prev => !prev); };
 
+  const handleHoverView = () => {
+    setDebugMode(true);
+  };
+
   return (
     <div
       className="app-container"
@@ -894,6 +1001,13 @@ const NodeCanvas = () => {
     >
       <Header />
       {renderCustomPrompt()}
+
+      <RedstringMenu
+        isOpen={panelExpanded}
+        onHoverView={handleHoverView}
+        debugMode={debugMode}
+        setDebugMode={setDebugMode}
+      />
 
       <Panel
         ref={panelRef}
@@ -1009,10 +1123,10 @@ const NodeCanvas = () => {
             />
           )}
         </svg>
-        {debugMode && <DebugOverlay debugData={debugData} />}
       </div>
+      {debugMode && <DebugOverlay debugData={debugData} hideOverlay={() => setDebugMode(false)} />}
     </div>
   );
-};
+}
 
 export default NodeCanvas;
