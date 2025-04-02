@@ -1,27 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { useRef } from 'react';
 import './DebugOverlay.css';
 import { HEADER_HEIGHT } from './constants';
+import { X } from 'lucide-react';
 
 const DebugOverlay = ({ debugData, hideOverlay }) => {
   const [position, setPosition] = useState({ x: window.innerWidth - 400, y: HEADER_HEIGHT });
   const [dragging, setDragging] = useState(false);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [size, setSize] = useState({ width: 400, height: window.innerHeight - HEADER_HEIGHT - 100 });
-  const timerRef = useRef(null);
-  
-  const handleMouseEnter = () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  };
-  
-  const handleMouseLeave = () => {
-    timerRef.current = setTimeout(() => {
-      hideOverlay();
-    }, 1000);
-  };
   const [resizing, setResizing] = useState(false);
   const [resizeInitial, setResizeInitial] = useState(null);
 
@@ -100,7 +86,6 @@ const DebugOverlay = ({ debugData, hideOverlay }) => {
   return (
     <div 
       className="debug-overlay"
-      onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}
       style={{
         position: 'fixed',
         top: position.y,
@@ -133,11 +118,27 @@ const DebugOverlay = ({ debugData, hideOverlay }) => {
         position: 'sticky', 
         top: 0, 
         backgroundColor: 'rgba(0, 0, 0, 0.9)', 
-        padding: '5px',
+        padding: '5px 10px',
         marginBottom: '10px',
-        borderBottom: '1px solid rgba(255,255,255,0.2)'
+        borderBottom: '1px solid rgba(255,255,255,0.2)',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
       }}>
         <strong>Debug Mode</strong>
+        <button 
+          onClick={hideOverlay} 
+          style={{ 
+            background: 'none', 
+            border: 'none', 
+            color: 'white', 
+            cursor: 'pointer',
+            padding: 0
+          }}
+          aria-label="Close debug overlay"
+        >
+          <X size={16} />
+        </button>
       </div>
 
       {Object.entries(debugData).map(([key, value]) => (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { HEADER_HEIGHT } from './constants';
 import RedstringMenu from './RedstringMenu';
 
@@ -11,12 +11,17 @@ import logo5 from './assets/redstring_button/header_logo_5.svg';
 import logo6 from './assets/redstring_button/header_logo_6.svg';
 import logo7 from './assets/redstring_button/header_logo_7.svg';
 
-const Header = () => {
+const Header = ({ onEditingStateChange }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [currentLogoIndex, setCurrentLogoIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
   const [imagesLoaded, setImagesLoaded] = useState(false);
-  
+
+  // Add state for editable title
+  const [headerText, setHeaderText] = useState('Untitled');
+  const [isEditing, setIsEditing] = useState(false);
+  const inputRef = useRef(null); // Ref to focus the input
+
   const logos = [logo1, logo2, logo3, logo4, logo5, logo6, logo7];
 
   // Preload images
@@ -42,6 +47,14 @@ const Header = () => {
     preloadImages();
   }, []);
 
+  // Focus input when editing starts
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select(); // Select text for easy replacement
+    }
+  }, [isEditing]);
+
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   const animateFrames = async (opening) => {
@@ -65,6 +78,39 @@ const Header = () => {
     const opening = !isMenuOpen;
     setIsMenuOpen(opening); 
     await animateFrames(opening);
+  };
+
+  const handleTitleDoubleClick = () => {
+    setIsEditing(true);
+    onEditingStateChange?.(true);
+  };
+
+  const handleTitleChange = (event) => {
+    setHeaderText(event.target.value);
+  };
+
+  const handleTitleBlur = () => {
+    setIsEditing(false);
+    onEditingStateChange?.(false);
+    if (!headerText.trim()) {
+      setHeaderText('Untitled');
+    }
+  };
+
+  const handleTitleKeyDown = (event) => {
+    if (event.key === 'Enter') {
+      setIsEditing(false);
+      onEditingStateChange?.(false);
+      if (!headerText.trim()) {
+        setHeaderText('Untitled');
+      }
+      event.target.blur();
+    }
+    if (event.key === 'Escape') {
+      setIsEditing(false);
+      onEditingStateChange?.(false);
+      event.target.blur();
+    }
   };
 
   // Don't render until images are loaded
@@ -136,7 +182,7 @@ const Header = () => {
         <RedstringMenu isOpen={isMenuOpen} />
       </div>
 
-      {/* Title container */}
+      {/* Title container - adjust padding */}
       <div style={{
         position: 'absolute',
         left: '50%',
@@ -145,10 +191,37 @@ const Header = () => {
         color: '#bdb5b5',
         fontSize: '18px',
         fontFamily: 'Helvetica',
-        userSelect: 'none',
-        pointerEvents: 'none' // Prevent it from interfering with other elements
+        userSelect: isEditing ? 'auto' : 'none',
+        textAlign: 'center',
+        padding: '0 5px' // Reduce horizontal padding
       }}>
-        Untitled
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={headerText}
+            onChange={handleTitleChange}
+            onBlur={handleTitleBlur}
+            onKeyDown={handleTitleKeyDown}
+            size={Math.max(headerText.length, 10) + 4}
+            style={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: '1px solid #bdb5b5',
+              color: '#bdb5b5',
+              padding: '2px 5px', // Reduce horizontal padding
+              fontSize: '18px',
+              fontFamily: 'Helvetica',
+              textAlign: 'center',
+              maxWidth: 'calc(100vw - 200px)',
+              boxSizing: 'border-box'
+            }}
+            autoFocus
+          />
+        ) : (
+          <span onDoubleClick={handleTitleDoubleClick} style={{ cursor: 'pointer', padding: '2px 5px' }}> { /* Reduce horizontal padding */ }
+            {headerText}
+          </span>
+        )}
       </div>
     </header>
   );

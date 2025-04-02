@@ -8,6 +8,9 @@ console.log('Worker initialized');
 // Send ready message to main thread
 self.postMessage({ type: 'READY' });
 
+// Define a scaling factor for zoom sensitivity within the worker
+const ZOOM_SENSITIVITY_SCALE = 0.005;
+
 // Calculation functions
 const calculatePanOffset = (data) => {
   try {
@@ -107,22 +110,24 @@ const calculateZoom = (data) => {
       MAX_ZOOM
     } = data;
 
-    let zoomFactor;
-    if (deltaY < 0) {
-      zoomFactor = 1.1;
-    } else if (deltaY > 0) {
-      zoomFactor = 1 / 1.1;
-    } else {
-      return { zoomLevel: currentZoom, panOffset };
+    // Calculate zoomFactor based on deltaY magnitude and sensitivity scale
+    // Avoid zoomFactor of exactly 1 if deltaY is 0 to prevent unnecessary calculations
+    const zoomFactor = deltaY !== 0 ? Math.pow(2, -deltaY * ZOOM_SENSITIVITY_SCALE) : 1;
+
+    if (zoomFactor === 1) {
+        // If zoomFactor is 1 (e.g., deltaY was 0), no change needed
+        return { zoomLevel: currentZoom, panOffset };
     }
 
     let newZoomLevel = currentZoom * zoomFactor;
     newZoomLevel = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoomLevel));
-    
-    zoomFactor = newZoomLevel / currentZoom;
 
-    const panOffsetDeltaX = (mousePos.x - panOffset.x) * (1 - zoomFactor);
-    const panOffsetDeltaY = (mousePos.y - panOffset.y) * (1 - zoomFactor);
+    // Calculate the actual zoom factor applied after clamping
+    const actualZoomFactor = newZoomLevel / currentZoom;
+
+    // Pan offset calculation to zoom towards the mouse pointer
+    const panOffsetDeltaX = (mousePos.x - panOffset.x) * (1 - actualZoomFactor);
+    const panOffsetDeltaY = (mousePos.y - panOffset.y) * (1 - actualZoomFactor);
 
     let newPanOffsetX = panOffset.x + panOffsetDeltaX;
     let newPanOffsetY = panOffset.y + panOffsetDeltaY;

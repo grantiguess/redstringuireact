@@ -21,11 +21,12 @@ import {
 import Panel from './Panel';
 import RedstringMenu from './RedstringMenu';
 
-// Check if user's on a Mac
-const isMac = navigator.platform.toUpperCase().includes('MAC');
+// Check if user's on a Mac using userAgent as platform is deprecated
+const isMac = /Mac/i.test(navigator.userAgent);
 
 // Sensitivity constants
-const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1;       // for mouse wheel zooming
+const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1;        // Sensitivity for standard mouse wheel zooming
+const TRACKPAD_ZOOM_SENSITIVITY = 5;       // Sensitivity for trackpad pinch-zooming (macOS)
 const PAN_DRAG_SENSITIVITY = 1.25; // for panning (mouse-drag or trackpad)
 const KEYBOARD_PAN_SPEED = 0.115;                // for keyboard panning
 const KEYBOARD_ZOOM_SPEED = 0.15;               // for keyboard zooming
@@ -284,6 +285,14 @@ const NodeCanvas = () => {
   const panelRef = useRef(null);
 
   const canvasWorker = useCanvasWorker();
+  const isKeyboardZooming = useRef(false);
+  const [isHeaderEditing, setIsHeaderEditing] = useState(false);
+
+  // --- Add useEffect for debugging debugMode state ---
+  useEffect(() => {
+    console.log('NodeCanvas debugMode state changed:', debugMode);
+  }, [debugMode]);
+  // -------------------------------------------------
 
   // --- Utility Functions ---
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -392,70 +401,39 @@ const NodeCanvas = () => {
     );
   };
 
-  // --- Revised Wheel Handler Using Event Counting ---
-  // We count wheel events over 50ms to decide if the input is from a trackpad.
-  const scrollingRef = useRef(false);
-  const oldTimeRef = useRef(0);
-  const newTimeRef = useRef(0);
-  const isTouchPadRef = useRef(undefined);
-  const eventCountRef = useRef(0);
-  const eventCountStartRef = useRef(0);
-
   const handleWheel = async (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  const rect = containerRef.current.getBoundingClientRect();
-  const mouseX = e.clientX - rect.left;
-  const mouseY = e.clientY - rect.top;
-  // Always set some debug data on every wheel event
-  setDebugData((prev) => ({
-    ...prev,
-    info: 'Wheel event triggered',
-    rawDeltaX: e.deltaX.toFixed(2),
-    rawDeltaY: e.deltaY.toFixed(2),
-    deviceDetectionState:
-      typeof isTouchPadRef.current === 'undefined'
-        ? 'detecting...'
-        : isTouchPadRef.current
-        ? 'trackpad'
-        : 'mouse',
-  }));
-  
-    // Determine device type if not yet defined
-    if (typeof isTouchPadRef.current === 'undefined') {
-      if (eventCountRef.current === 0) {
-        eventCountStartRef.current = Date.now();
-      }
-      eventCountRef.current++;
-      if (Date.now() - eventCountStartRef.current > 50) {
-        isTouchPadRef.current = eventCountRef.current > 5;
-        setDebugData((prev) => ({
-          ...prev,
-          inputDevice: isTouchPadRef.current ? 'Trackpad' : 'Mouse',
-        }));
-        console.log('Input device detected:', isTouchPadRef.current ? 'Trackpad' : 'Mouse');
-      }
+    e.stopPropagation();
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    // Normalize deltaY based on deltaMode for consistent zoom speed
+    let deltaY = e.deltaY;
+    if (e.deltaMode === 1) { // Line scrolling
+      deltaY *= 33; // Approximate pixels per line
+    } else if (e.deltaMode === 2) { // Page scrolling
+      deltaY *= window.innerHeight;
     }
-  
-    if (isTouchPadRef.current) {
-      // Naive approach: guess pinch zoom vs. two-finger pan using abs(deltaY) vs abs(deltaX)
-      const absDeltaX = Math.abs(e.deltaX);
-      const absDeltaY = Math.abs(e.deltaY);
-      const isPinchZoom = absDeltaY > absDeltaX;
-  
-      if (isPinchZoom) {
-        // Attempt pinch zoom
-        let deltaY = e.deltaY;
-        if (e.deltaMode === 1) {
-          deltaY *= 33;
-        } else if (e.deltaMode === 2) {
-          deltaY *= window.innerHeight;
-        }
-        deltaY = deltaY * MOUSE_WHEEL_ZOOM_SENSITIVITY;
-  
+
+    // Update basic debug info first
+    setDebugData((prev) => ({
+      ...prev,
+      info: 'Wheel event',
+      rawDeltaX: e.deltaX.toFixed(2),
+      rawDeltaY: e.deltaY.toFixed(2),
+      ctrlKey: e.ctrlKey.toString(),
+      isMac: isMac.toString(),
+    }));
+
+    if (isMac) {
+      // --- macOS Trackpad Handling ---
+      if (e.ctrlKey) {
+        // Pinch-to-Zoom (ctrlKey is true during pinch)
+        const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
+        console.log(`Passing zoomDelta (Trackpad): ${zoomDelta}`);
         try {
           const result = await canvasWorker.calculateZoom({
-            deltaY,
+            deltaY: zoomDelta, // Pass natural delta for pinch: positive=pinch_in->zoom_out, negative=pinch_out->zoom_in
             currentZoom: zoomLevel,
             mousePos: { x: mouseX, y: mouseY },
             panOffset,
@@ -466,64 +444,55 @@ const NodeCanvas = () => {
           });
           setPanOffset(result.panOffset);
           setZoomLevel(result.zoomLevel);
-          console.log('Trackpad pinch zooming (delta-based guess):', {
-            deltaY,
-            zoomLevel: result.zoomLevel,
-          });
+          setDebugData((prev) => ({
+            ...prev,
+            inputDevice: 'Trackpad (Mac)',
+            gesture: 'pinch-zoom',
+            zooming: true,
+            panning: false,
+            sensitivity: TRACKPAD_ZOOM_SENSITIVITY,
+            zoomLevel: result.zoomLevel.toFixed(2),
+            panOffsetX: result.panOffset.x.toFixed(2),
+            panOffsetY: result.panOffset.y.toFixed(2),
+          }));
         } catch (error) {
-          console.error('Pinch zoom calculation failed:', error);
+          console.error('Mac pinch zoom calculation failed:', error);
+          setDebugData((prev) => ({ ...prev, info: 'Mac pinch zoom error', error: error.message }));
         }
-  
-        setDebugData((prev) => ({
-          ...prev,
-          inputDevice: 'Trackpad',
-          gesture: 'pinch',
-          deltaX: e.deltaX.toFixed(2),
-          deltaY: e.deltaY.toFixed(2),
-          panOffsetX: panOffset.x.toFixed(2),
-          panOffsetY: panOffset.y.toFixed(2),
-          zoomLevel: zoomLevel.toFixed(2),
-        }));
       } else {
-        // Two-finger pan
-        const dx = e.deltaX * PAN_DRAG_SENSITIVITY;
-        const dy = e.deltaY * PAN_DRAG_SENSITIVITY;
+        // Two-Finger Scroll (Pan)
+        const dx = -e.deltaX * PAN_DRAG_SENSITIVITY;
+        const dy = -e.deltaY * PAN_DRAG_SENSITIVITY;
         const maxX = 0;
         const maxY = 0;
         const minX = viewportSize.width - canvasSize.width * zoomLevel;
         const minY = viewportSize.height - canvasSize.height * zoomLevel;
-  
+
         setPanOffset((prev) => {
           const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
           const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
+          setDebugData((prevData) => ({
+            ...prevData,
+            inputDevice: 'Trackpad (Mac)',
+            gesture: 'two-finger pan',
+            zooming: false,
+            panning: true,
+            deltaX: e.deltaX.toFixed(2),
+            deltaY: e.deltaY.toFixed(2),
+            panOffsetX: newX.toFixed(2),
+            panOffsetY: newY.toFixed(2),
+            zoomLevel: zoomLevel.toFixed(2),
+          }));
           return { x: newX, y: newY };
         });
-        console.log('Trackpad two-finger pan (delta-based guess):', { dx, dy });
-  
-        setDebugData((prev) => ({
-          ...prev,
-          inputDevice: 'Trackpad',
-          gesture: 'two-finger pan',
-          deltaX: e.deltaX.toFixed(2),
-          deltaY: e.deltaY.toFixed(2),
-          panOffsetX: panOffset.x.toFixed(2),
-          panOffsetY: panOffset.y.toFixed(2),
-          zoomLevel: zoomLevel.toFixed(2),
-        }));
       }
     } else {
-      // Treat as mouse wheel event => zoom
-      let deltaY = e.deltaY;
-      if (e.deltaMode === 1) {
-        deltaY *= 33;
-      } else if (e.deltaMode === 2) {
-        deltaY *= window.innerHeight;
-      }
-      deltaY = deltaY * MOUSE_WHEEL_ZOOM_SENSITIVITY;
-  
+      // --- Non-macOS (Assume Mouse Wheel or Standard Trackpad Zoom) ---
+      const zoomDelta = deltaY * MOUSE_WHEEL_ZOOM_SENSITIVITY;
+      console.log(`Passing zoomDelta (Mouse): ${zoomDelta}`);
       try {
         const result = await canvasWorker.calculateZoom({
-          deltaY,
+          deltaY: -zoomDelta, // Keep inverted delta for typical wheel zoom feel
           currentZoom: zoomLevel,
           mousePos: { x: mouseX, y: mouseY },
           panOffset,
@@ -534,21 +503,22 @@ const NodeCanvas = () => {
         });
         setPanOffset(result.panOffset);
         setZoomLevel(result.zoomLevel);
-        console.log('Zooming with mouse:', { deltaY, zoomLevel: result.zoomLevel });
-      } catch (error) {
-        console.error('Zoom calculation failed:', error);
-      }
-  
         setDebugData((prev) => ({
           ...prev,
-          inputDevice: 'Mouse',
-          gesture: 'mouse-wheel',
-          deltaX: e.deltaX.toFixed(2),
-          deltaY: e.deltaY.toFixed(2),
-          panOffsetX: panOffset.x.toFixed(2),
-          panOffsetY: panOffset.y.toFixed(2),
-          zoomLevel: zoomLevel.toFixed(2),
+          inputDevice: 'Mouse or Trackpad (Non-Mac)',
+          gesture: 'wheel-zoom',
+          zooming: true,
+          panning: false,
+          sensitivity: MOUSE_WHEEL_ZOOM_SENSITIVITY,
+          deltaY: deltaY.toFixed(2),
+          zoomLevel: result.zoomLevel.toFixed(2),
+          panOffsetX: result.panOffset.x.toFixed(2),
+          panOffsetY: result.panOffset.y.toFixed(2),
         }));
+      } catch (error) {
+        console.error('Zoom calculation failed:', error);
+        setDebugData((prev) => ({ ...prev, info: 'Non-Mac zoom error', error: error.message }));
+      }
     }
   };
 
@@ -560,7 +530,6 @@ const NodeCanvas = () => {
       return () => container.removeEventListener('wheel', preventDefaultWheel);
     }
   }, []);
-
 
   // --- Mouse Drag Panning (unchanged) ---
   const handleMouseMove = async (e) => {
@@ -899,48 +868,87 @@ const NodeCanvas = () => {
   useEffect(() => {
     let animationFrameId;
     const keyboardLoop = async () => {
-      let dx = 0, dy = 0;
-      if (keysPressed.current['ArrowLeft'] || keysPressed.current['a'] || keysPressed.current['A']) { dx += KEYBOARD_PAN_SPEED; }
-      if (keysPressed.current['ArrowRight'] || keysPressed.current['d'] || keysPressed.current['D']) { dx -= KEYBOARD_PAN_SPEED; }
-      if (keysPressed.current['ArrowUp'] || keysPressed.current['w'] || keysPressed.current['W']) { dy += KEYBOARD_PAN_SPEED; }
-      if (keysPressed.current['ArrowDown'] || keysPressed.current['s'] || keysPressed.current['S']) { dy -= KEYBOARD_PAN_SPEED; }
-      if (dx !== 0 || dy !== 0) {
-        setPanOffset(prev => {
-          const maxX = 0, maxY = 0;
-          const minX = viewportSize.width - canvasSize.width * zoomLevel;
-          const minY = viewportSize.height - canvasSize.height * zoomLevel;
-          const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
-          const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
-          return { x: newX, y: newY };
-        });
+      if (nodeNamePrompt.visible || isHeaderEditing) {
+        animationFrameId = requestAnimationFrame(keyboardLoop);
+        return;
       }
+
+      // 1. Calculate desired pan delta
+      let panDx = 0, panDy = 0;
+      if (keysPressed.current['ArrowLeft'] || keysPressed.current['a'] || keysPressed.current['A']) { panDx += KEYBOARD_PAN_SPEED; }
+      if (keysPressed.current['ArrowRight'] || keysPressed.current['d'] || keysPressed.current['D']) { panDx -= KEYBOARD_PAN_SPEED; }
+      if (keysPressed.current['ArrowUp'] || keysPressed.current['w'] || keysPressed.current['W']) { panDy += KEYBOARD_PAN_SPEED; }
+      if (keysPressed.current['ArrowDown'] || keysPressed.current['s'] || keysPressed.current['S']) { panDy -= KEYBOARD_PAN_SPEED; }
+
+      // 2. Calculate desired zoom delta
       let zoomDelta = 0;
       if (keysPressed.current[' ']) { zoomDelta = KEYBOARD_ZOOM_SPEED; }
       if (keysPressed.current['Shift']) { zoomDelta = -KEYBOARD_ZOOM_SPEED; }
-      if (zoomDelta !== 0) {
-        const mousePos = { x: viewportSize.width / 2, y: viewportSize.height / 2 };
+
+      // 3. Perform Zoom Calculation (if needed)
+      let zoomResult = null;
+      if (zoomDelta !== 0 && !isKeyboardZooming.current) {
+        isKeyboardZooming.current = true;
         try {
-          const result = await canvasWorker.calculateZoom({
-            deltaY: zoomDelta,
+          const mousePos = { x: viewportSize.width / 2, y: viewportSize.height / 2 };
+          zoomResult = await canvasWorker.calculateZoom({
+            deltaY: -zoomDelta, // Negated for keyboard
             currentZoom: zoomLevel,
             mousePos,
             panOffset,
-            viewportSize,
-            canvasSize,
-            MIN_ZOOM,
-            MAX_ZOOM
+            viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM
           });
-          setPanOffset(result.panOffset);
-          setZoomLevel(result.zoomLevel);
         } catch (error) {
           console.error('Keyboard zoom calculation failed:', error);
+        } finally {
+          isKeyboardZooming.current = false;
         }
       }
+
+      // 4. Apply Updates Functionally if needed
+      if (zoomResult || panDx !== 0 || panDy !== 0) {
+        // Update Zoom Level Functionally
+        if (zoomResult) {
+            setZoomLevel(zoomResult.zoomLevel); // Can set directly as it depends only on worker result
+        }
+
+        // Update Pan Offset Functionally
+        setPanOffset(prevPan => {
+          // Determine the target zoom level for clamping
+          const targetZoomLevel = zoomResult ? zoomResult.zoomLevel : zoomLevel;
+
+          // Start with the pan offset from zoom result (includes centering) or previous pan state
+          const basePan = zoomResult ? zoomResult.panOffset : prevPan;
+
+          // Apply keyboard pan delta to the base pan
+          let finalX = basePan.x + panDx;
+          let finalY = basePan.y + panDy;
+
+          // Clamp using the target zoom level
+          const maxX = 0, maxY = 0;
+          const minX = viewportSize.width - canvasSize.width * targetZoomLevel;
+          const minY = viewportSize.height - canvasSize.height * targetZoomLevel;
+          finalX = Math.min(Math.max(finalX, minX), maxX);
+          finalY = Math.min(Math.max(finalY, minY), maxY);
+
+          // Return the new state only if it has actually changed
+          if (finalX !== prevPan.x || finalY !== prevPan.y) {
+            return { x: finalX, y: finalY };
+          }
+
+          // Otherwise, return the previous state to prevent unnecessary re-renders
+          return prevPan;
+        });
+      }
+
+      // Continue the loop
       animationFrameId = requestAnimationFrame(keyboardLoop);
     };
+
     keyboardLoop();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [viewportSize, canvasSize, zoomLevel, panOffset, canvasWorker]);
+    // Dependencies: add isHeaderEditing
+  }, [viewportSize, canvasSize, zoomLevel, panOffset, canvasWorker, nodeNamePrompt.visible, isHeaderEditing]);
 
   const renderCustomPrompt = () => {
     if (!nodeNamePrompt.visible) return null;
@@ -994,12 +1002,17 @@ const NodeCanvas = () => {
     setDebugMode(true);
   };
 
+  // Callback for Header component
+  const handleHeaderEditingChange = (isEditing) => {
+    setIsHeaderEditing(isEditing);
+  };
+
   return (
     <div
       className="app-container"
       style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', position: 'relative' }}
     >
-      <Header />
+      <Header onEditingStateChange={handleHeaderEditingChange} />
       {renderCustomPrompt()}
 
       <RedstringMenu
