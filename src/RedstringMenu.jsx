@@ -35,6 +35,7 @@ const RedstringMenu = ({ isOpen, onHoverView, debugMode, setDebugMode }) => {
                       <div 
                         key={index} 
                         onMouseEnter={() => setIsSubmenuOpen(true)}
+                        onClick={() => onHoverView(item)}
                         onMouseLeave={() => setIsSubmenuOpen(false)}
                         style={{ position: 'relative', width: '100%' }}
                       >
@@ -46,6 +47,7 @@ const RedstringMenu = ({ isOpen, onHoverView, debugMode, setDebugMode }) => {
                             <div className="submenu-container">
                                 <button
                                   className="submenu-item"
+                                  onMouseEnter={() => onHoverView('Debug Overlay')}
                                   onClick={() => setDebugMode(!debugMode)}
                                 >
                                   {debugMode ? 'Hide Debug Overlay' : 'Show Debug Overlay'}
@@ -58,6 +60,7 @@ const RedstringMenu = ({ isOpen, onHoverView, debugMode, setDebugMode }) => {
                   return (
                       <button
                           key={index}
+                          onMouseEnter={() => onHoverView(item)}
                           className="menu-item"
                       >
                           <span>{item}</span>
