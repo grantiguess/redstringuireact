@@ -14,7 +14,7 @@ import './Panel.css'
  * - The circle around X has a fade‑in transition on hover.
  */
 const Panel = forwardRef(
-  ({ isExpanded, onToggleExpand, nodes, onOpenNodeTab, onSaveNodeData }, ref) => {
+  ({ isExpanded, onToggleExpand, nodes, onOpenNodeTab, onSaveNodeData, onFocusChange }, ref) => {
     const [tabs, setTabs] = useState([{ type: 'home', isActive: true }]);
     const [closingOverlay, setClosingOverlay] = useState(false);
 
@@ -219,8 +219,11 @@ const Panel = forwardRef(
                   className="panel-title-input"
                   value={tempTitle}
                   onChange={(e) => setTempTitle(e.target.value)}
-                  onBlur={commitTitleChange}
-                  onFocus={(e) => e.target.select()}
+                  onFocus={() => onFocusChange?.(true)}
+                  onBlur={() => {
+                    commitTitleChange();
+                    onFocusChange?.(false);
+                  }}
                   onKeyDown={(e) => {
                     // Prevent global key handling for these keys while editing
                     if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
@@ -230,6 +233,7 @@ const Panel = forwardRef(
                       commitTitleChange();
                     } else if (e.key === 'Escape') {
                       setEditingTitle(false);
+                      onFocusChange?.(false);
                     }
                   }}
                   autoFocus
@@ -278,6 +282,8 @@ const Panel = forwardRef(
                 fontFamily: 'Helvetica',
               }}
               value={nodeData.bio || ''}
+              onFocus={() => onFocusChange?.(true)}
+              onBlur={() => onFocusChange?.(false)}
               onChange={(e) => handleBioChange(nodeId, e.target.value)}
               onKeyDown={(e) => {
                 if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {

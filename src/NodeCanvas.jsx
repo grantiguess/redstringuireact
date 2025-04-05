@@ -288,6 +288,7 @@ const NodeCanvas = () => {
   const canvasWorker = useCanvasWorker();
   const isKeyboardZooming = useRef(false);
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
+  const [isPanelInputFocused, setIsPanelInputFocused] = useState(false);
 
   // --- Add useEffect for debugging debugMode state ---
   useEffect(() => {
@@ -869,7 +870,7 @@ const NodeCanvas = () => {
   useEffect(() => {
     let animationFrameId;
     const keyboardLoop = async () => {
-      if (nodeNamePrompt.visible || isHeaderEditing) {
+      if (nodeNamePrompt.visible || isHeaderEditing || isPanelInputFocused) {
         animationFrameId = requestAnimationFrame(keyboardLoop);
         return;
       }
@@ -948,8 +949,8 @@ const NodeCanvas = () => {
 
     keyboardLoop();
     return () => cancelAnimationFrame(animationFrameId);
-    // Dependencies: add isHeaderEditing
-  }, [viewportSize, canvasSize, zoomLevel, panOffset, canvasWorker, nodeNamePrompt.visible, isHeaderEditing]);
+    // Dependencies: add isHeaderEditing and isPanelInputFocused
+  }, [viewportSize, canvasSize, zoomLevel, panOffset, canvasWorker, nodeNamePrompt.visible, isHeaderEditing, isPanelInputFocused]);
 
   const renderCustomPrompt = () => {
     if (!nodeNamePrompt.visible) return null;
@@ -1008,6 +1009,11 @@ const NodeCanvas = () => {
     setIsHeaderEditing(isEditing);
   };
 
+  // Callback for Panel component
+  const handlePanelFocusChange = (isFocused) => {
+    setIsPanelInputFocused(isFocused);
+  };
+
   return (
     <div
       className="app-container"
@@ -1029,6 +1035,7 @@ const NodeCanvas = () => {
         onToggleExpand={handleTogglePanel}
         nodes={nodes}
         onSaveNodeData={handleSaveNodeData}
+        onFocusChange={handlePanelFocusChange}
       />
 
       <div
