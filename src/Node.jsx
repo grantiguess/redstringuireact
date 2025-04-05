@@ -1,6 +1,5 @@
 import React from 'react';
 import { NODE_WIDTH, NODE_HEIGHT } from './constants';
-import './Node.css';
 
 const Node = ({ node, isSelected, isDragging, onMouseDown }) => {
   return (
