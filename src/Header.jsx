@@ -190,7 +190,6 @@ const Header = ({ onEditingStateChange }) => {
         transform: 'translate(-50%, -50%)',
         color: '#bdb5b5',
         fontSize: '18px',
-        fontFamily: 'Helvetica',
         userSelect: isEditing ? 'auto' : 'none',
         textAlign: 'center',
         padding: '0 5px' // Reduce horizontal padding
@@ -208,9 +207,9 @@ const Header = ({ onEditingStateChange }) => {
               background: 'rgba(255, 255, 255, 0.1)',
               border: '1px solid #bdb5b5',
               color: '#bdb5b5',
-              padding: '2px 5px', // Reduce horizontal padding
+              padding: '2px 5px',
               fontSize: '18px',
-              fontFamily: 'Helvetica',
+              fontFamily: 'inherit',
               textAlign: 'center',
               maxWidth: 'calc(100vw - 200px)',
               boxSizing: 'border-box'

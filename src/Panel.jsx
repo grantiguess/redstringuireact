@@ -1,4 +1,4 @@
-import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
 import { HEADER_HEIGHT } from './constants';
 import { ArrowLeftFromLine, Home, ImagePlus, XCircle } from 'lucide-react';
 import './Panel.css'
@@ -18,9 +18,9 @@ const Panel = forwardRef(
     const [tabs, setTabs] = useState([{ type: 'home', isActive: true }]);
     const [closingOverlay, setClosingOverlay] = useState(false);
 
-    // New state for editing the title of the active node tab
     const [editingTitle, setEditingTitle] = useState(false);
     const [tempTitle, setTempTitle] = useState('');
+    const titleInputRef = useRef(null);
 
     useEffect(() => {
       if (!isExpanded) {
@@ -31,6 +31,13 @@ const Panel = forwardRef(
         return () => clearTimeout(timer);
       }
     }, [isExpanded]);
+
+    useEffect(() => {
+      if (editingTitle && titleInputRef.current) {
+        titleInputRef.current.focus();
+        titleInputRef.current.select();
+      }
+    }, [editingTitle]);
 
     // Exposed so NodeCanvas can open tabs
     const openNodeTab = (nodeId, nodeName) => {
@@ -156,7 +163,6 @@ const Panel = forwardRef(
                 style={{
                   backgroundColor: 'maroon',
                   color: '#bdb5b5',
-                  fontFamily: 'Helvetica',
                   fontSize: '0.8rem',
                   borderRadius: '6px',
                   height: '40px',
@@ -215,6 +221,7 @@ const Panel = forwardRef(
               {/* Editable title: double‑click to enable editing */}
               {editingTitle ? (
                 <input
+                  ref={titleInputRef}
                   type="text"
                   className="panel-title-input"
                   value={tempTitle}
@@ -236,6 +243,7 @@ const Panel = forwardRef(
                       onFocusChange?.(false);
                     }
                   }}
+                  style={{ fontFamily: 'inherit' }}
                   autoFocus
                 />
               ) : (
@@ -243,7 +251,6 @@ const Panel = forwardRef(
                   style={{
                     margin: 0,
                     color: '#260000',
-                    fontFamily: 'Helvetica',
                     cursor: 'pointer',
                   }}
                   onDoubleClick={() => {
@@ -279,7 +286,7 @@ const Panel = forwardRef(
                 backgroundColor: '#bdb5b5',
                 fontSize: '14px',
                 lineHeight: '1.4',
-                fontFamily: 'Helvetica',
+                fontFamily: 'inherit',
               }}
               value={nodeData.bio || ''}
               onFocus={() => onFocusChange?.(true)}
@@ -409,26 +416,33 @@ const Panel = forwardRef(
                     borderBottomRightRadius: 0,
                     color: '#260000',
                     fontWeight: 'bold',
-                    userSelect: 'none',
                     fontSize: '0.9rem',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
                     padding: '0px 8px',
                     marginRight: '6px',
                     height: '100%',
                     cursor: 'pointer',
+                    maxWidth: '150px'
                   }}
                   onClick={() => activateTab(index)}
                 >
-                  {tab.title}
+                  <span style={{
+                    whiteSpace: 'normal',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    marginRight: '8px',
+                  }}>
+                    {tab.title}
+                  </span>
                   <div
                     style={{
-                      marginLeft: '6px',
+                      marginLeft: 'auto',
                       borderRadius: '50%',
                       width: '18px',
                       height: '18px',
                       display: 'flex',
+                      flexShrink: 0,
                       alignItems: 'center',
                       justifyContent: 'center',
                       transition: 'background-color 0.2s ease, opacity 0.2s ease',

@@ -13,7 +13,7 @@
 
 /* Add class for background rect transition */
 .node-background {
-  transition: height 0.3s ease, width 0.3s ease; /* Transition both height and width */
+  transition: height 0.3s ease, width 0.3s ease; /* Transition both */
 }
 
 /* Add transition for image opacity */
@@ -24,3 +24,10 @@
 
 /* Style when image should be visible (implicitly set via style={{ opacity: 1 }} in JSX) */
 /* We rely on the inline style to trigger the transition */
+
+/* Style for the inner text span to enable smooth transition */
+.node-name-text {
+  display: inline-block;
+  width: 100%; /* Needed for ellipsis */
+  text-align: center; /* Ensure centered text */
+}

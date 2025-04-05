@@ -6,7 +6,6 @@ import DebugOverlay from './DebugOverlay.jsx';
 import { useCanvasWorker } from './useCanvasWorker.js';
 import Node from './Node.jsx';
 
-
 import {
   NODE_WIDTH,
   NODE_HEIGHT,
@@ -17,7 +16,14 @@ import {
   MOVEMENT_THRESHOLD,
   SCROLL_SENSITIVITY,
   PLUS_SIGN_SIZE,
-  PLUS_SIGN_ANIMATION_DURATION
+  PLUS_SIGN_ANIMATION_DURATION,
+  NODE_PADDING,
+  NODE_CORNER_RADIUS,
+  NAME_AREA_FACTOR,
+  EXPANDED_NODE_WIDTH,
+  AVERAGE_CHAR_WIDTH,
+  WRAPPED_NODE_HEIGHT,
+  LINE_HEIGHT_ESTIMATE
 } from './constants';
 
 import Panel from './Panel';
@@ -1014,6 +1020,69 @@ const NodeCanvas = () => {
     setIsPanelInputFocused(isFocused);
   };
 
+  // Helper function to calculate node dimensions
+  const getNodeDimensions = (node) => {
+    const hasImage = Boolean(node.image?.src);
+    const hasValidImageDimensions = hasImage && node.image.naturalWidth > 0;
+
+    let calculatedTextWidth = 0;
+    let estimatedLines = 1; // Default to 1 line
+
+    // Estimate width needed for the text itself
+    if (node.name) {
+      const textWidthEstimate = node.name.length * AVERAGE_CHAR_WIDTH;
+      calculatedTextWidth = textWidthEstimate + (NODE_PADDING * 2);
+    }
+
+    // Determine currentWidth
+    const currentWidth = hasImage
+      ? EXPANDED_NODE_WIDTH
+      : Math.max(NODE_WIDTH, Math.min(calculatedTextWidth, EXPANDED_NODE_WIDTH));
+
+    // Calculate image height if needed
+    let calculatedImageHeight = 0;
+    if (hasImage && hasValidImageDimensions) {
+      const imageWidth = currentWidth - 2 * NODE_PADDING;
+      const aspectRatio = node.image.naturalHeight / node.image.naturalWidth;
+      calculatedImageHeight = imageWidth * aspectRatio;
+    }
+
+    // Estimate lines needed (always)
+    if (node.name) {
+      const availableTextWidth = currentWidth - NODE_PADDING * 2;
+      const textWidthEstimate = node.name.length * AVERAGE_CHAR_WIDTH;
+      if (textWidthEstimate > availableTextWidth * 1.5) {
+          estimatedLines = 3;
+      } else if (textWidthEstimate > availableTextWidth * 0.8) {
+          estimatedLines = 2;
+      }
+    }
+
+    // Calculate height needed for text area
+    const requiredTextHeight = estimatedLines * LINE_HEIGHT_ESTIMATE;
+    let textAreaHeight = requiredTextHeight + (NODE_PADDING * 2); // Text + T/B padding
+    textAreaHeight = Math.max(textAreaHeight, NODE_HEIGHT); // Ensure min height
+
+    // Determine total currentHeight based image presence
+    let currentHeight;
+    if (hasImage) {
+      // Dynamic Text Area Height + Image Height + Historical Padding Below Image
+      currentHeight = textAreaHeight + calculatedImageHeight + (NODE_PADDING * 1.5);
+    } else {
+      // For text-only, total height is just the text area height (with T/B padding)
+      currentHeight = textAreaHeight;
+    }
+
+    // Return dimensions, including textAreaHeight
+    return {
+        currentWidth,
+        currentHeight,
+        textAreaHeight, // Add this
+        imageWidth: hasImage ? currentWidth - 2 * NODE_PADDING : 0,
+        calculatedImageHeight: hasImage ? calculatedImageHeight : 0
+    };
+  };
+
   return (
     <div
       className="app-container"
@@ -1060,13 +1129,19 @@ const NodeCanvas = () => {
               const sNode = nodes.find(n => n.id === conn.startId);
               const eNode = nodes.find(n => n.id === conn.endId);
               if (!sNode || !eNode) return null;
+
+              // Get dynamic dimensions for start and end nodes
+              const sNodeDims = getNodeDimensions(sNode);
+              const eNodeDims = getNodeDimensions(eNode);
+
               return (
                 <line
                   key={idx}
-                  x1={sNode.x + NODE_WIDTH / 2}
-                  y1={sNode.y + NODE_HEIGHT / 2}
-                  x2={eNode.x + NODE_WIDTH / 2}
-                  y2={eNode.y + NODE_HEIGHT / 2}
+                  // Calculate center based on dynamic dimensions
+                  x1={sNode.x + sNodeDims.currentWidth / 2}
+                  y1={sNode.y + sNodeDims.currentHeight / 2}
+                  x2={eNode.x + eNodeDims.currentWidth / 2}
+                  y2={eNode.y + eNodeDims.currentHeight / 2}
                   stroke="black"
                   strokeWidth="5"
                 />
@@ -1082,15 +1157,26 @@ const NodeCanvas = () => {
                 strokeWidth="5"
               />
             )}
-            {nodes.map((node) => (
-              <Node
-                key={node.id}
-                node={node}
-                isSelected={selectedNodes.has(node.id)}
-                isDragging={draggingNode?.id === node.id}
-                onMouseDown={(e) => handleNodeMouseDown(node, e)}
-              />
-            ))}
+            {nodes.map((node) => {
+              // Calculate dimensions here
+              const dimensions = getNodeDimensions(node);
+              return (
+                <Node
+                  key={node.id}
+                  node={node}
+                  // Pass calculated dimensions as props
+                  currentWidth={dimensions.currentWidth}
+                  currentHeight={dimensions.currentHeight}
+                  textAreaHeight={dimensions.textAreaHeight}
+                  imageWidth={dimensions.imageWidth}
+                  imageHeight={dimensions.calculatedImageHeight}
+                  // Other props
+                  isSelected={selectedNodes.has(node.id)}
+                  isDragging={draggingNode?.id === node.id}
+                  onMouseDown={(e) => handleNodeMouseDown(node, e)}
+                />
+              );
+            })}
           </g>
           {selectionRect && (
             <rect

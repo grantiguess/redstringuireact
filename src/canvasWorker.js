@@ -116,12 +116,12 @@ const calculateZoom = (data) => {
 
     if (zoomFactor === 1) {
         // If zoomFactor is 1 (e.g., deltaY was 0), no change needed
-        return { zoomLevel: currentZoom, panOffset };
+      return { zoomLevel: currentZoom, panOffset };
     }
 
     let newZoomLevel = currentZoom * zoomFactor;
     newZoomLevel = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoomLevel));
-
+    
     // Calculate the actual zoom factor applied after clamping
     const actualZoomFactor = newZoomLevel / currentZoom;
 
