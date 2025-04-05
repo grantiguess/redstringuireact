@@ -93,11 +93,31 @@ const Panel = forwardRef(
         const reader = new FileReader();
         reader.onload = (evt) => {
           const src = evt.target?.result;
-          if (src) {
-            onSaveNodeData(nodeId, {
-              image: { src, width: 200, height: 200 },
-            });
+          if (typeof src === 'string') {
+            // Create an Image object to get dimensions
+            const img = new Image();
+            img.onload = () => {
+              // Save src and original dimensions
+              onSaveNodeData(nodeId, {
+                image: {
+                  src,
+                  naturalWidth: img.naturalWidth,
+                  naturalHeight: img.naturalHeight,
+                },
+              });
+            };
+            img.onerror = () => {
+              console.error('Image failed to load for dimension reading');
+              // Optionally save just the src as a fallback?
+              // onSaveNodeData(nodeId, { image: { src } });
+            };
+            img.src = src;
+          } else {
+            console.error('FileReader did not return a string src');
           }
+        };
+        reader.onerror = () => {
+          console.error('FileReader failed to read the file');
         };
         reader.readAsDataURL(file);
       };

@@ -10,3 +10,17 @@
 .node.dragging rect {
     filter: drop-shadow(0px 15px 10px rgba(0, 0, 0, 1));
 }
+
+/* Add class for background rect transition */
+.node-background {
+  transition: height 0.3s ease, width 0.3s ease; /* Transition both height and width */
+}
+
+/* Add transition for image opacity */
+.node-image {
+  opacity: 0;
+  transition: opacity 0.5s ease-in-out; /* Adjust duration/timing as needed */
+}
+
+/* Style when image should be visible (implicitly set via style={{ opacity: 1 }} in JSX) */
+/* We rely on the inline style to trigger the transition */
