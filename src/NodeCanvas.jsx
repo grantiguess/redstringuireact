@@ -310,15 +310,81 @@ const NodeCanvas = () => {
     return { x: boundedX, y: boundedY };
   };
 
+  const getNodeDimensions = (node) => {
+    const hasImage = Boolean(node.image?.src);
+    const hasValidImageDimensions = hasImage && node.image.naturalWidth > 0;
+
+    let calculatedTextWidth = 0;
+    let estimatedLines = 1; // Default to 1 line
+
+    // Estimate width needed for the text itself
+    if (node.name) {
+      const textWidthEstimate = node.name.length * AVERAGE_CHAR_WIDTH;
+      calculatedTextWidth = textWidthEstimate + (NODE_PADDING * 2);
+    }
+
+    // Determine currentWidth
+    const currentWidth = hasImage
+      ? EXPANDED_NODE_WIDTH
+      : Math.max(NODE_WIDTH, Math.min(calculatedTextWidth, EXPANDED_NODE_WIDTH));
+
+    // Calculate image height if needed
+    let calculatedImageHeight = 0;
+    if (hasImage && hasValidImageDimensions) {
+      const imageWidth = currentWidth - 2 * NODE_PADDING;
+      const aspectRatio = node.image.naturalHeight / node.image.naturalWidth;
+      calculatedImageHeight = imageWidth * aspectRatio;
+    }
+
+    // Estimate lines needed (always)
+    if (node.name) {
+      const availableTextWidth = currentWidth - NODE_PADDING * 2;
+      const textWidthEstimate = node.name.length * AVERAGE_CHAR_WIDTH;
+      if (textWidthEstimate > availableTextWidth * 1.5) {
+          estimatedLines = 3;
+      } else if (textWidthEstimate > availableTextWidth * 0.8) {
+          estimatedLines = 2;
+      }
+    }
+
+    // Calculate height needed for text area
+    const requiredTextHeight = estimatedLines * LINE_HEIGHT_ESTIMATE;
+    let textAreaHeight = requiredTextHeight + (NODE_PADDING * 2); // Text + T/B padding
+    textAreaHeight = Math.max(textAreaHeight, NODE_HEIGHT); // Ensure min height
+
+    // Determine total currentHeight based image presence
+    let currentHeight;
+    if (hasImage) {
+      // Dynamic Text Area Height + Image Height + Reduced Padding Below Image
+      currentHeight = textAreaHeight + calculatedImageHeight + NODE_PADDING;
+    } else {
+      // For text-only, total height is just the text area height (with T/B padding)
+      currentHeight = textAreaHeight;
+    }
+
+    // Return dimensions, including textAreaHeight
+    return {
+        currentWidth,
+        currentHeight,
+        textAreaHeight, // Add this
+        imageWidth: hasImage ? currentWidth - 2 * NODE_PADDING : 0,
+        calculatedImageHeight: hasImage ? calculatedImageHeight : 0
+    };
+  };
+
   const isInsideNode = (node, clientX, clientY) => {
     const rect = containerRef.current.getBoundingClientRect();
     const scaledX = (clientX - rect.left - panOffset.x) / zoomLevel;
     const scaledY = (clientY - rect.top - panOffset.y) / zoomLevel;
+
+    // Get current dimensions for the node
+    const { currentWidth, currentHeight } = getNodeDimensions(node);
+
     return (
       scaledX >= node.x &&
-      scaledX <= node.x + NODE_WIDTH &&
+      scaledX <= node.x + currentWidth && // Use currentWidth
       scaledY >= node.y &&
-      scaledY <= node.y + NODE_HEIGHT
+      scaledY <= node.y + currentHeight // Use currentHeight
     );
   };
 
@@ -587,13 +653,21 @@ const NodeCanvas = () => {
           if (!inside) {
             clearTimeout(longPressTimeout.current);
             mouseInsideNode.current = false;
-            const startPt = { x: longPressingNode.x + NODE_WIDTH / 2, y: longPressingNode.y + NODE_HEIGHT / 2 };
+
+            // Get current dimensions for start point calculation
+            const startNodeDims = getNodeDimensions(longPressingNode);
+            const startPt = {
+              x: longPressingNode.x + startNodeDims.currentWidth / 2,
+              y: longPressingNode.y + startNodeDims.currentHeight / 2
+            };
+
             setDrawingConnectionFrom({
               node: longPressingNode,
-              startX: startPt.x,
-              startY: startPt.y,
+              startX: startPt.x, // Use calculated center X
+              startY: startPt.y, // Use calculated center Y
               currentX,
               currentY,
+              // Keep original node coords if needed elsewhere, otherwise remove
               originalNodeX: longPressingNode.x,
               originalNodeY: longPressingNode.y,
             });
@@ -1018,69 +1092,6 @@ const NodeCanvas = () => {
   // Callback for Panel component
   const handlePanelFocusChange = (isFocused) => {
     setIsPanelInputFocused(isFocused);
-  };
-
-  // Helper function to calculate node dimensions
-  const getNodeDimensions = (node) => {
-    const hasImage = Boolean(node.image?.src);
-    const hasValidImageDimensions = hasImage && node.image.naturalWidth > 0;
-
-    let calculatedTextWidth = 0;
-    let estimatedLines = 1; // Default to 1 line
-
-    // Estimate width needed for the text itself
-    if (node.name) {
-      const textWidthEstimate = node.name.length * AVERAGE_CHAR_WIDTH;
-      calculatedTextWidth = textWidthEstimate + (NODE_PADDING * 2);
-    }
-
-    // Determine currentWidth
-    const currentWidth = hasImage
-      ? EXPANDED_NODE_WIDTH
-      : Math.max(NODE_WIDTH, Math.min(calculatedTextWidth, EXPANDED_NODE_WIDTH));
-
-    // Calculate image height if needed
-    let calculatedImageHeight = 0;
-    if (hasImage && hasValidImageDimensions) {
-      const imageWidth = currentWidth - 2 * NODE_PADDING;
-      const aspectRatio = node.image.naturalHeight / node.image.naturalWidth;
-      calculatedImageHeight = imageWidth * aspectRatio;
-    }
-
-    // Estimate lines needed (always)
-    if (node.name) {
-      const availableTextWidth = currentWidth - NODE_PADDING * 2;
-      const textWidthEstimate = node.name.length * AVERAGE_CHAR_WIDTH;
-      if (textWidthEstimate > availableTextWidth * 1.5) {
-          estimatedLines = 3;
-      } else if (textWidthEstimate > availableTextWidth * 0.8) {
-          estimatedLines = 2;
-      }
-    }
-
-    // Calculate height needed for text area
-    const requiredTextHeight = estimatedLines * LINE_HEIGHT_ESTIMATE;
-    let textAreaHeight = requiredTextHeight + (NODE_PADDING * 2); // Text + T/B padding
-    textAreaHeight = Math.max(textAreaHeight, NODE_HEIGHT); // Ensure min height
-
-    // Determine total currentHeight based image presence
-    let currentHeight;
-    if (hasImage) {
-      // Dynamic Text Area Height + Image Height + Historical Padding Below Image
-      currentHeight = textAreaHeight + calculatedImageHeight + (NODE_PADDING * 1.5);
-    } else {
-      // For text-only, total height is just the text area height (with T/B padding)
-      currentHeight = textAreaHeight;
-    }
-
-    // Return dimensions, including textAreaHeight
-    return {
-        currentWidth,
-        currentHeight,
-        textAreaHeight, // Add this
-        imageWidth: hasImage ? currentWidth - 2 * NODE_PADDING : 0,
-        calculatedImageHeight: hasImage ? calculatedImageHeight : 0
-    };
   };
 
   return (
