@@ -4,6 +4,8 @@ import { X } from 'lucide-react';
 import Header from './Header.jsx';
 import DebugOverlay from './DebugOverlay.jsx';
 import { useCanvasWorker } from './useCanvasWorker.js';
+import Node from './Node.jsx';
+
 
 import {
   NODE_WIDTH,
@@ -20,7 +22,6 @@ import {
 
 import Panel from './Panel';
 import RedstringMenu from './RedstringMenu';
-
 // Check if user's on a Mac using userAgent as platform is deprecated
 const isMac = /Mac/i.test(navigator.userAgent);
 
@@ -1075,45 +1076,13 @@ const NodeCanvas = () => {
               />
             )}
             {nodes.map((node) => (
-              <g
+              <Node
                 key={node.id}
-                className={`node ${selectedNodes.has(node.id) ? 'selected' : ''} ${draggingNode?.id === node.id ? 'dragging' : ''}`}
+                node={node}
+                isSelected={selectedNodes.has(node.id)}
+                isDragging={draggingNode?.id === node.id}
                 onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                style={{ transform: `scale(${node.scale})`, transformOrigin: `${node.x + NODE_WIDTH / 2}px ${node.y + NODE_HEIGHT / 2}px`, cursor: 'pointer' }}
-              >
-                <rect
-                  x={node.x}
-                  y={node.y}
-                  rx={40}
-                  ry={40}
-                  width={NODE_WIDTH}
-                  height={NODE_HEIGHT}
-                  fill="maroon"
-                  stroke={selectedNodes.has(node.id) ? 'black' : 'none'}
-                  strokeWidth={4}
-                />
-                <foreignObject x={node.x} y={node.y} width={NODE_WIDTH} height={NODE_HEIGHT}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '100%',
-                      height: '100%',
-                      pointerEvents: 'none',
-                      userSelect: 'none',
-                      fontSize: '16px',
-                      fontWeight: 'bold',
-                      fontFamily: 'Helvetica',
-                      color: '#bdb5b5',
-                      textAlign: 'center',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {node.name}
-                  </div>
-                </foreignObject>
-              </g>
+              />
             ))}
           </g>
           {selectionRect && (
