@@ -1,0 +1,30 @@
+/* Style for the editable title input */
+.panel-title-input {
+    color: #260000;                /* Text color (same as title text) */
+    background-color: #bdb5b5;  
+    padding: 8px 12px;              /* Sufficient padding around the text */
+    border: 3px solid #260000;      /* A 3px border in the title text color */
+    border-radius: 8px;             /* Rounded corners */
+    font-size: 18px;
+    font-weight: bold;
+    font-family: Helvetica, sans-serif;
+    outline: none;                /* Remove default focus outline */
+  }
+  
+  /* Optional focus styling */
+  .panel-title-input:focus {
+    border-color: #260000;
+  }
+  
+  /* Adjust the bio textarea spacing if needed */
+  .panel-bio-textarea {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: Helvetica, sans-serif;
+  }
+  
+  .panel-tab {
+    line-height: 1.1;
+  }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { HEADER_HEIGHT } from './constants';
 import { ArrowLeftFromLine, Home, ImagePlus, XCircle } from 'lucide-react';
+import './Panel.css'
 
 /**
  * Panel
@@ -8,7 +9,7 @@ import { ArrowLeftFromLine, Home, ImagePlus, XCircle } from 'lucide-react';
  * - Home tab at index 0 (locked).
  * - Node tabs afterwards.
  * - Double-click logic is handled in NodeCanvas, which calls openNodeTab(nodeId, nodeName).
- * - "onSaveNodeData" merges bio/image into the NodeCanvas state.
+ * - "onSaveNodeData" merges bio/image (and now name) into the NodeCanvas state.
  * - Image is scaled horizontally with "objectFit: contain."
  * - The circle around X has a fade‑in transition on hover.
  */
@@ -16,6 +17,10 @@ const Panel = forwardRef(
   ({ isExpanded, onToggleExpand, nodes, onOpenNodeTab, onSaveNodeData }, ref) => {
     const [tabs, setTabs] = useState([{ type: 'home', isActive: true }]);
     const [closingOverlay, setClosingOverlay] = useState(false);
+
+    // New state for editing the title of the active node tab
+    const [editingTitle, setEditingTitle] = useState(false);
+    const [tempTitle, setTempTitle] = useState('');
 
     useEffect(() => {
       if (!isExpanded) {
@@ -113,7 +118,7 @@ const Panel = forwardRef(
         </div>
       );
     } else if (activeTab.type === 'home') {
-      // 2-col grid of nodes
+      // 2‑col grid of nodes
       tabContent = (
         <div style={{ padding: '10px' }}>
           <div
@@ -158,6 +163,25 @@ const Panel = forwardRef(
           <div style={{ padding: '10px', color: '#aaa' }}>Node not found...</div>
         );
       } else {
+        // Function to commit the title change (on blur or Enter key)
+        const commitTitleChange = () => {
+          const newName = tempTitle.trim();
+          if (newName && newName !== nodeData.name) {
+            // Update the node data
+            onSaveNodeData(nodeId, { name: newName });
+            // Update the tab's title in state
+            setTabs((prev) =>
+              prev.map((tab) => {
+                if (tab.type === 'node' && tab.nodeId === nodeId) {
+                  return { ...tab, title: newName };
+                }
+                return tab;
+              })
+            );
+          }
+          setEditingTitle(false);
+        };
+
         tabContent = (
           <div style={{ padding: '10px' }}>
             <div
@@ -168,15 +192,45 @@ const Panel = forwardRef(
                 marginBottom: '8px',
               }}
             >
-              <h3
-                style={{
-                  margin: 0,
-                  color: '#260000',
-                  fontFamily: 'Helvetica',
-                }}
-              >
-                {nodeData.name}
-              </h3>
+              {/* Editable title: double‑click to enable editing */}
+              {editingTitle ? (
+                <input
+                  type="text"
+                  className="panel-title-input"
+                  value={tempTitle}
+                  onChange={(e) => setTempTitle(e.target.value)}
+                  onBlur={commitTitleChange}
+                  onFocus={(e) => e.target.select()}
+                  onKeyDown={(e) => {
+                    // Prevent global key handling for these keys while editing
+                    if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
+                      e.stopPropagation();
+                    }
+                    if (e.key === 'Enter') {
+                      commitTitleChange();
+                    } else if (e.key === 'Escape') {
+                      setEditingTitle(false);
+                    }
+                  }}
+                  autoFocus
+                />
+              ) : (
+                <h3
+                  style={{
+                    margin: 0,
+                    color: '#260000',
+                    fontFamily: 'Helvetica',
+                    cursor: 'pointer',
+                  }}
+                  onDoubleClick={() => {
+                    setEditingTitle(true);
+                    setTempTitle(nodeData.name);
+                  }}
+                >
+                  {nodeData.name}
+                </h3>
+              )}
+
               <ImagePlus
                 size={24}
                 color="#260000"
@@ -187,6 +241,7 @@ const Panel = forwardRef(
 
             <textarea
               placeholder="Add a bio..."
+              className="panel-bio-textarea"
               style={{
                 width: '100%',
                 maxWidth: '100%',
@@ -204,6 +259,11 @@ const Panel = forwardRef(
               }}
               value={nodeData.bio || ''}
               onChange={(e) => handleBioChange(nodeId, e.target.value)}
+              onKeyDown={(e) => {
+                if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
+                  e.stopPropagation();
+                }
+              }}
             />
 
             {nodeData.image?.src && (
@@ -309,11 +369,12 @@ const Panel = forwardRef(
                   </div>
                 );
               }
-              // Node tab
+              // Node tab header
               const bg = isActive ? '#bdb5b5' : '#979090';
               return (
                 <div
                   key={index}
+                  className="panel-tab"
                   style={{
                     backgroundColor: bg,
                     borderTopLeftRadius: '10px',
@@ -327,8 +388,8 @@ const Panel = forwardRef(
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: '0 8px',
-                    marginRight: '4px',
+                    padding: '0px 8px',
+                    marginRight: '6px',
                     height: '100%',
                     cursor: 'pointer',
                   }}
