@@ -717,7 +717,7 @@ const NodeCanvas = () => {
             const startNodeDims = getNodeDimensions(longPressingNode);
             const startPt = {
               x: longPressingNode.x + startNodeDims.currentWidth / 2,
-              y: longPressingNode.y + startNodeDims.textAreaHeight / 2
+              y: longPressingNode.y + startNodeDims.currentHeight / 2
             };
 
             setDrawingConnectionFrom({
@@ -776,16 +776,13 @@ const NodeCanvas = () => {
         );
       }
     } else if (drawingConnectionFrom) {
-      if (!drawingConnectionFrom.originalNodeX) return;
       const bounded = clampCoordinates(currentX, currentY);
       setDrawingConnectionFrom(prev => {
-        if (!prev?.originalNodeX) return null;
+        if (!prev) return null;
         return {
           ...prev,
           currentX: bounded.x,
           currentY: bounded.y,
-          startX: prev.originalNodeX + NODE_WIDTH / 2,
-          startY: prev.originalNodeY + NODE_HEIGHT / 2,
         };
       });
     } else if (isPanning) {
