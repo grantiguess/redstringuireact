@@ -717,16 +717,15 @@ const NodeCanvas = () => {
             const startNodeDims = getNodeDimensions(longPressingNode);
             const startPt = {
               x: longPressingNode.x + startNodeDims.currentWidth / 2,
-              y: longPressingNode.y + startNodeDims.currentHeight / 2
+              y: longPressingNode.y + startNodeDims.textAreaHeight / 2
             };
 
             setDrawingConnectionFrom({
               node: longPressingNode,
-              startX: startPt.x, // Use calculated center X
-              startY: startPt.y, // Use calculated center Y
+              startX: startPt.x,
+              startY: startPt.y,
               currentX,
               currentY,
-              // Keep original node coords if needed elsewhere, otherwise remove
               originalNodeX: longPressingNode.x,
               originalNodeY: longPressingNode.y,
             });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
-import { HEADER_HEIGHT } from './constants';
+import { HEADER_HEIGHT, NODE_CORNER_RADIUS } from './constants';
 import { ArrowLeftFromLine, Home, ImagePlus, XCircle } from 'lucide-react';
 import './Panel.css'
 
@@ -35,6 +35,7 @@ const Panel = forwardRef(
     const [editingProjectTitle, setEditingProjectTitle] = useState(false);
     const [tempProjectTitle, setTempProjectTitle] = useState('');
     const projectTitleInputRef = useRef(null);
+    const tabBarRef = useRef(null);
 
     useEffect(() => {
       if (!isExpanded) {
@@ -197,6 +198,45 @@ const Panel = forwardRef(
       setEditingProjectTitle(false);
     };
 
+    // --- Tab Bar Scroll Handler ---
+    const handleTabBarWheel = (e) => {
+      if (tabBarRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        let scrollAmount = 0;
+        // Prioritize axis with larger absolute delta
+        if (Math.abs(e.deltaY) >= Math.abs(e.deltaX)) {
+          scrollAmount = e.deltaY;
+        } else {
+          scrollAmount = e.deltaX;
+        }
+
+        const sensitivity = 0.5; 
+        const scrollChange = scrollAmount * sensitivity;
+
+        tabBarRef.current.scrollLeft += scrollChange;
+      } else {
+        console.log('[Tab Wheel] Ref does NOT exist'); // Log if ref is missing
+      }
+    };
+
+    // --- Effect to manually add non-passive wheel listener ---
+    useEffect(() => {
+      const tabBarNode = tabBarRef.current;
+      if (tabBarNode) {
+        console.log('[Tab Wheel Effect] Adding non-passive wheel listener');
+        // Add listener with passive: false to allow preventDefault
+        tabBarNode.addEventListener('wheel', handleTabBarWheel, { passive: false });
+
+        // Cleanup function
+        return () => {
+          console.log('[Tab Wheel Effect] Removing wheel listener');
+          tabBarNode.removeEventListener('wheel', handleTabBarWheel, { passive: false });
+        };
+      }
+    }, []); // Run only once on mount
+
     const activeTab = tabs.find((t) => t.isActive);
 
     let tabContent = null;
@@ -313,7 +353,7 @@ const Panel = forwardRef(
                 key={node.id}
                 style={{
                   backgroundColor: 'maroon',
-                  borderRadius: '6px',
+                  borderRadius: NODE_CORNER_RADIUS,
                   height: '40px',
                   display: 'flex',
                   alignItems: 'center',
@@ -489,6 +529,7 @@ const Panel = forwardRef(
                     width: '100%',
                     height: 'auto',
                     objectFit: 'contain',
+                    borderRadius: '6px'
                   }}
                 />
               </div>
@@ -524,125 +565,153 @@ const Panel = forwardRef(
             top: HEADER_HEIGHT + 20,
             right: 20,
             width: isExpanded ? 320 : 40,
-            height: isExpanded ? 'auto' : 40,
-            maxHeight: 'calc(100vh - 80px)',
+            height: 'auto',
+            maxHeight: isExpanded ? 'calc(100vh - 80px)' : '40px',
             backgroundColor: '#bdb5b5',
             borderRadius: '10px',
             boxShadow: '0 2px 5px rgba(0, 0, 0, 0.2)',
             zIndex: 9999,
             overflow: 'hidden',
-            transition: 'width 0.2s ease, height 0.2s ease',
+            transition: 'width 0.2s ease, max-height 0.2s ease',
             display: 'flex',
             flexDirection: 'column',
           }}
         >
-          <div
-            style={{
-              position: 'relative',
+          {/* Main Header Row Container */}
+          <div style={{
               height: 40,
               backgroundColor: '#716C6C',
               display: 'flex',
               alignItems: 'stretch',
-              paddingLeft: '8px',
+              position: 'relative',
             }}
           >
-            {tabs.map((tab, index) => {
-              const isActive = tab.isActive;
-              if (tab.type === 'home') {
-                const bg = isActive ? '#bdb5b5' : '#979090';
-                return (
-                  <div
-                    key="home"
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: '10px 10px 0 0',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      backgroundColor: bg,
-                      marginRight: '6px',
-                      flexShrink: 0
-                    }}
-                    onClick={() => {
-                      setTabs((prev) =>
-                        prev.map((t, i) => ({ ...t, isActive: i === 0 }))
-                      );
-                    }}
-                  >
-                    <Home size={20} color="#260000" />
-                  </div>
-                );
-              }
-              // Node tab header
-              const bg = isActive ? '#bdb5b5' : '#979090';
-              return (
-                <div
-                  key={index}
-                  className="panel-tab"
-                  style={{
-                    backgroundColor: bg,
-                    borderTopLeftRadius: '10px',
-                    borderTopRightRadius: '10px',
-                    borderBottomLeftRadius: 0,
-                    borderBottomRightRadius: 0,
-                    color: '#260000',
-                    fontWeight: 'bold',
-                    fontSize: '0.9rem',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    padding: '0px 8px',
-                    marginRight: '6px',
-                    height: '100%',
-                    cursor: 'pointer',
-                    maxWidth: '150px'
-                  }}
-                  onClick={() => activateTab(index)}
-                >
-                  <span style={{
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    marginRight: '8px',
-                  }}>
-                    {tab.title}
-                  </span>
-                  <div
-                    style={{
-                      marginLeft: 'auto',
-                      borderRadius: '50%',
-                      width: '18px',
-                      height: '18px',
-                      display: 'flex',
-                      flexShrink: 0,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      transition: 'background-color 0.2s ease, opacity 0.2s ease',
-                      opacity: 1,
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeTab(index);
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = '#ccc';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                  >
-                    <XCircle size={16} color="#260000" />
-                  </div>
-                </div>
-              );
-            })}
+             {/* 1. Home Button (Fixed Left - RENDER ONLY IF EXPANDED) */}
+             {isExpanded && (() => {
+               const isActive = tabs[0]?.isActive;
+               const bg = isActive ? '#bdb5b5' : '#979090';
+               return (
+                 <div
+                   key="home"
+                   style={{
+                     width: 40,
+                     height: 40,
+                     borderTopLeftRadius: '10px', // Only top-left
+                     borderTopRightRadius: 0,
+                     borderBottomLeftRadius: 0,
+                     borderBottomRightRadius: 0,
+                     display: 'flex',
+                     alignItems: 'center',
+                     justifyContent: 'center',
+                     cursor: 'pointer',
+                     backgroundColor: bg,
+                     flexShrink: 0,
+                     zIndex: 2
+                   }}
+                   onClick={() => activateTab(0)}
+                 >
+                   <Home size={20} color="#260000" />
+                 </div>
+               );
+             })()}
 
+            {/* 2. Scrollable Tab Area (RENDER ONLY IF EXPANDED) */}
+            {isExpanded && (
+              <div
+                style={{
+                  flexGrow: 1,
+                  overflow: 'hidden',
+                  position: 'relative',
+                  height: '100%'
+                }}
+              >
+                {/* Inner div that actually scrolls */}
+                <div
+                  ref={tabBarRef}
+                  className="hide-scrollbar"
+                  style={{
+                    height: '100%', // Fill the scroll area container
+                    display: 'flex',
+                    alignItems: 'stretch',
+                    paddingLeft: '8px', // ADD left padding for separation
+                    overflowX: 'auto', // Still needs to scroll horizontally
+                    overflowY: 'hidden',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {/* Map ONLY node tabs (index > 0) */}
+                  {tabs.slice(1).map((tab, index) => {
+                    const originalIndex = index + 1; // Get original index in full tabs array
+                    const isActive = tab.isActive;
+                    const bg = isActive ? '#bdb5b5' : '#979090';
+                    return (
+                      <div
+                        key={originalIndex}
+                        className="panel-tab"
+                        style={{
+                          backgroundColor: bg,
+                          borderTopLeftRadius: '10px',
+                          borderTopRightRadius: '10px',
+                          borderBottomLeftRadius: 0,
+                          borderBottomRightRadius: 0,
+                          color: '#260000',
+                          fontWeight: 'bold',
+                          fontSize: '0.9rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          padding: '0px 8px',
+                          marginRight: '6px',
+                          height: '100%',
+                          cursor: 'pointer',
+                          maxWidth: '150px'
+                        }}
+                        onClick={() => activateTab(originalIndex)}
+                      >
+                        <span style={{
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          marginRight: '8px',
+                          userSelect: 'none'
+                        }}>
+                          {tab.title}
+                        </span>
+                        <div
+                          style={{
+                            marginLeft: 'auto',
+                            borderRadius: '50%',
+                            width: '18px',
+                            height: '18px',
+                            display: 'flex',
+                            flexShrink: 0,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'background-color 0.2s ease, opacity 0.2s ease',
+                            opacity: 1,
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            closeTab(originalIndex);
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#ccc';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }}
+                        >
+                          <XCircle size={16} color="#260000" />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 3. Close/Open Panel Button (Fixed Right - ALWAYS RENDER) */}
             <div
               style={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
                 width: 40,
                 height: 40,
                 backgroundColor: isExpanded ? '#979090' : '#260000',
@@ -651,9 +720,13 @@ const Panel = forwardRef(
                 justifyContent: 'center',
                 cursor: 'pointer',
                 userSelect: 'none',
-                borderTopRightRadius: '10px',
+                borderTopLeftRadius: 0, // Match home button shape (mirrored)
+                borderTopRightRadius: '10px', 
+                borderBottomLeftRadius: 0,
                 borderBottomRightRadius: isExpanded ? 0 : '10px',
                 transition: 'background-color 0.2s ease',
+                flexShrink: 0, // Prevent shrinking
+                zIndex: 2 // Ensure above scroll area
               }}
               onClick={onToggleExpand}
             >
@@ -669,11 +742,16 @@ const Panel = forwardRef(
             </div>
           </div>
 
-          {isExpanded && (
-            <div style={{ flex: 1, overflow: 'auto' }}>
-              {tabContent}
-            </div>
-          )}
+          {/* Conditionally Render Content */}
+          <div style={{ 
+            flex: 1, 
+            overflow: 'auto',
+            opacity: isExpanded ? 1 : 0,
+            pointerEvents: isExpanded ? 'auto' : 'none',
+            transition: 'opacity 0.15s ease' // Adjust fade transition to 0.15s
+          }}>
+            {tabContent}
+          </div>
         </div>
       </div>
     );
