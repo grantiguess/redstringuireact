@@ -1,7 +1,234 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
+import { useDrag, useDrop, useDragLayer } from 'react-dnd';
+import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS } from './constants';
 import { ArrowLeftFromLine, Home, ImagePlus, XCircle } from 'lucide-react';
 import './Panel.css'
+
+// Define Item Type for react-dnd
+const ItemTypes = {
+  TAB: 'tab',
+};
+
+// --- Custom Drag Layer --- A component to render the preview
+const CustomDragLayer = ({ tabBarRef }) => {
+  const { itemType, isDragging, item, initialOffset, currentOffset } = useDragLayer(
+    (monitor) => ({
+      item: monitor.getItem(),
+      itemType: monitor.getItemType(),
+      initialOffset: monitor.getInitialSourceClientOffset(),
+      currentOffset: monitor.getSourceClientOffset(),
+      isDragging: monitor.isDragging(),
+    })
+  );
+
+  if (!isDragging || itemType !== ItemTypes.TAB || !initialOffset || !currentOffset) {
+    return null;
+  }
+
+  // Get the tab data from the item
+  const { tab } = item; // Assuming tab data is passed in item
+
+  // Style for the layer element
+  const layerStyles = {
+    position: 'fixed',
+    pointerEvents: 'none',
+    zIndex: 1, // Lower z-index to be below buttons (which are zIndex: 2)
+    left: 0,
+    top: 0,
+    width: '100%',
+    height: '100%',
+  };
+
+  // Function to calculate clamped transform
+  const getItemStyles = (initialOffset, currentOffset, tabBarRef) => {
+    if (!initialOffset || !currentOffset) {
+      return { display: 'none' };
+    }
+
+    let clampedX = currentOffset.x;
+    const tabBarBounds = tabBarRef.current?.getBoundingClientRect();
+
+    if (tabBarBounds) {
+      // Clamp the x position within the tab bar bounds
+      clampedX = Math.max(
+        tabBarBounds.left,
+        Math.min(currentOffset.x, tabBarBounds.right - 150) // Adjust right bound by approx tab width
+      );
+    }
+
+    // Use clamped X for horizontal, initial Y for vertical
+    const transform = `translate(${clampedX}px, ${initialOffset.y}px)`;
+    return {
+      transform,
+      WebkitTransform: transform,
+    };
+  }
+
+  // Style the preview element itself (similar to the original tab)
+  const previewStyles = {
+    backgroundColor: '#bdb5b5', // Active tab color for preview
+    borderTopLeftRadius: '10px',
+    borderTopRightRadius: '10px',
+    color: '#260000',
+    fontWeight: 'bold',
+    fontSize: '0.9rem',
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '0px 8px',
+    height: '40px', // Match tab height
+    maxWidth: '150px',
+    // boxShadow: '0 4px 8px rgba(0,0,0,0.3)', // Removed shadow
+    opacity: 0.9, // Slightly transparent
+  };
+
+  return (
+    <div style={layerStyles}>
+      <div style={{ ...previewStyles, ...getItemStyles(initialOffset, currentOffset, tabBarRef) }}>
+         {/* Simplified content for preview */}
+        <span style={{
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          marginRight: '8px',
+          userSelect: 'none'
+        }}>
+          {item.title} {/* Use title from item */} 
+        </span>
+        {/* No close button in preview */}
+      </div>
+    </div>
+  );
+};
+// --- End Custom Drag Layer ---
+
+
+// Draggable Tab Component
+const DraggableTab = ({ tab, index, moveTab, activateTab, closeTab }) => {
+  const ref = useRef(null);
+
+  const [, drop] = useDrop({
+    accept: ItemTypes.TAB,
+    hover(item, monitor) {
+      if (!ref.current) {
+        return;
+      }
+      const dragIndex = item.index;
+      const hoverIndex = index;
+
+      if (dragIndex === hoverIndex) {
+        return;
+      }
+
+      const hoverBoundingRect = ref.current?.getBoundingClientRect();
+      const hoverMiddleX = (hoverBoundingRect.right - hoverBoundingRect.left) / 2;
+      const clientOffset = monitor.getClientOffset();
+      const hoverClientX = clientOffset.x - hoverBoundingRect.left;
+
+      if (dragIndex < hoverIndex && hoverClientX < hoverMiddleX) {
+        return;
+      }
+      if (dragIndex > hoverIndex && hoverClientX > hoverMiddleX) {
+        return;
+      }
+
+      moveTab(dragIndex, hoverIndex);
+      item.index = hoverIndex;
+    },
+  });
+
+  const [{ isDragging }, drag, preview] = useDrag({
+    type: ItemTypes.TAB,
+    item: () => {
+      // Include tab title in the item for the drag layer
+      return { id: tab.nodeId, index, title: tab.title, tab: tab }; // Pass full tab data
+    },
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+  });
+
+  // Hide default browser preview
+  useEffect(() => {
+    preview(getEmptyImage(), { captureDraggingState: true });
+  }, [preview]);
+
+  // Style the original tab when dragging
+  const opacity = isDragging ? 0.4 : 1; // Make original tab faded, not invisible
+  const cursor = isDragging ? 'grabbing' : 'grab'; // Change cursor based on state
+
+  const isActive = tab.isActive;
+  const bg = isActive ? '#bdb5b5' : '#979090';
+
+  drag(drop(ref));
+
+  const originalIndex = index + 1;
+
+  return (
+    <div
+      ref={ref}
+      className="panel-tab"
+      style={{
+        opacity,
+        backgroundColor: bg,
+        borderTopLeftRadius: '10px',
+        borderTopRightRadius: '10px',
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
+        color: '#260000',
+        fontWeight: 'bold',
+        fontSize: '0.9rem',
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '0px 8px',
+        marginRight: '6px',
+        height: '100%',
+        cursor: cursor, // Updated cursor
+        maxWidth: '150px',
+        transition: 'opacity 0.1s ease' // Smooth fade out
+      }}
+      onClick={() => activateTab(originalIndex)}
+    >
+       {/* Content remains same, but invisible when dragging */}
+      <span style={{
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        marginRight: '8px',
+        userSelect: 'none'
+      }}>
+        {tab.title}
+      </span>
+      <div
+        style={{
+          marginLeft: 'auto',
+          borderRadius: '50%',
+          width: '18px',
+          height: '18px',
+          display: 'flex',
+          flexShrink: 0,
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'background-color 0.2s ease, opacity 0.2s ease',
+          opacity: 1,
+          cursor: 'pointer'
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          closeTab(originalIndex);
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = '#ccc';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = 'transparent';
+        }}
+      >
+        <XCircle size={16} color="#260000" />
+      </div>
+    </div>
+  );
+};
 
 /**
  * Panel
@@ -144,6 +371,22 @@ const Panel = forwardRef(
         prev.map((t, i) => ({ ...t, isActive: i === index }))
       );
     };
+
+    // --- Function to handle moving tabs ---
+    const moveTab = (dragIndex, hoverIndex) => {
+      setTabs((prevTabs) => {
+        const nodeTabs = prevTabs.slice(1); // Get only the draggable node tabs
+        const draggedTab = nodeTabs[dragIndex];
+
+        const updatedNodeTabs = [...nodeTabs];
+        updatedNodeTabs.splice(dragIndex, 1); // Remove dragged tab
+        updatedNodeTabs.splice(hoverIndex, 0, draggedTab); // Insert at hover position
+
+        // Reconstruct the full tabs array with Home tab first
+        return [prevTabs[0], ...updatedNodeTabs];
+      });
+    };
+    // -------------------------------------
 
     const handleAddImage = (nodeId) => {
       const input = document.createElement('input');
@@ -435,7 +678,6 @@ const Panel = forwardRef(
                     onFocusChange?.(false);
                   }}
                   onKeyDown={(e) => {
-                    // Prevent global key handling for these keys while editing
                     if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
                       e.stopPropagation();
                     }
@@ -456,6 +698,7 @@ const Panel = forwardRef(
                     color: '#260000',
                     cursor: 'pointer',
                     overflow: 'hidden',
+                    userSelect: 'none' // Make non-editable text non-selectable
                   }}
                   onDoubleClick={() => {
                     setEditingTitle(true);
@@ -499,6 +742,7 @@ const Panel = forwardRef(
                 fontSize: '14px',
                 lineHeight: '1.4',
                 fontFamily: 'inherit',
+                userSelect: 'text' // Allow text selection only when focused
               }}
               value={nodeData.bio || ''}
               onFocus={() => onFocusChange?.(true)}
@@ -541,6 +785,9 @@ const Panel = forwardRef(
 
     return (
       <div>
+        {/* Render the custom drag layer */}
+        <CustomDragLayer tabBarRef={tabBarRef} />
+
         {closingOverlay && (
           <div
             style={{
@@ -640,71 +887,16 @@ const Panel = forwardRef(
                   }}
                 >
                   {/* Map ONLY node tabs (index > 0) */}
-                  {tabs.slice(1).map((tab, index) => {
-                    const originalIndex = index + 1; // Get original index in full tabs array
-                    const isActive = tab.isActive;
-                    const bg = isActive ? '#bdb5b5' : '#979090';
-                    return (
-                      <div
-                        key={originalIndex}
-                        className="panel-tab"
-                        style={{
-                          backgroundColor: bg,
-                          borderTopLeftRadius: '10px',
-                          borderTopRightRadius: '10px',
-                          borderBottomLeftRadius: 0,
-                          borderBottomRightRadius: 0,
-                          color: '#260000',
-                          fontWeight: 'bold',
-                          fontSize: '0.9rem',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          padding: '0px 8px',
-                          marginRight: '6px',
-                          height: '100%',
-                          cursor: 'pointer',
-                          maxWidth: '150px'
-                        }}
-                        onClick={() => activateTab(originalIndex)}
-                      >
-                        <span style={{
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          marginRight: '8px',
-                          userSelect: 'none'
-                        }}>
-                          {tab.title}
-                        </span>
-                        <div
-                          style={{
-                            marginLeft: 'auto',
-                            borderRadius: '50%',
-                            width: '18px',
-                            height: '18px',
-                            display: 'flex',
-                            flexShrink: 0,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'background-color 0.2s ease, opacity 0.2s ease',
-                            opacity: 1,
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            closeTab(originalIndex);
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = '#ccc';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'transparent';
-                          }}
-                        >
-                          <XCircle size={16} color="#260000" />
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {tabs.slice(1).map((tab, index) => (
+                      <DraggableTab
+                        key={tab.nodeId} // Use nodeId as key
+                        tab={tab}
+                        index={index} // Pass relative index
+                        moveTab={moveTab}
+                        activateTab={activateTab}
+                        closeTab={closeTab}
+                      />
+                  ))}
                 </div>
               </div>
             )}
@@ -748,7 +940,7 @@ const Panel = forwardRef(
             overflow: 'auto',
             opacity: isExpanded ? 1 : 0,
             pointerEvents: isExpanded ? 'auto' : 'none',
-            transition: 'opacity 0.15s ease' // Adjust fade transition to 0.15s
+            transition: 'opacity 0.15s ease'
           }}>
             {tabContent}
           </div>

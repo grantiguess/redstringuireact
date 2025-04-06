@@ -371,14 +371,22 @@ const NodeCanvas = () => {
     const hasImage = Boolean(node.image?.src);
     const hasValidImageDimensions = hasImage && node.image.naturalWidth > 0;
 
-    let calculatedTextWidth = 0;
-    let estimatedLines = 1; // Default to 1 line
+    // Create temporary span to measure text width
+    const tempSpan = document.createElement('span');
+    tempSpan.style.fontSize = '20px';
+    tempSpan.style.fontWeight = 'bold';
+    tempSpan.style.visibility = 'hidden';
+    tempSpan.style.position = 'absolute';
+    tempSpan.style.whiteSpace = 'nowrap';
+    tempSpan.textContent = node.name;
+    document.body.appendChild(tempSpan);
+    
+    // Get the actual text width
+    const textWidth = tempSpan.offsetWidth;
+    document.body.removeChild(tempSpan);
 
-    // Estimate width needed for the text itself
-    if (node.name) {
-      const textWidthEstimate = node.name.length * AVERAGE_CHAR_WIDTH;
-      calculatedTextWidth = textWidthEstimate + (NODE_PADDING * 2);
-    }
+    // Calculate width needed for the text itself
+    const calculatedTextWidth = textWidth + (NODE_PADDING * 2);
 
     // Determine currentWidth
     const currentWidth = hasImage
@@ -393,41 +401,34 @@ const NodeCanvas = () => {
       calculatedImageHeight = imageWidth * aspectRatio;
     }
 
-    // Estimate lines needed (always)
-    if (node.name) {
-      const availableTextWidth = currentWidth - NODE_PADDING * 2;
-      const textWidthEstimate = node.name.length * AVERAGE_CHAR_WIDTH;
-      // Wrap only if estimated width exceeds available width
-      if (textWidthEstimate > availableTextWidth * 2) {
-          estimatedLines = 3; // Needs > 2 lines
-      } else if (textWidthEstimate > availableTextWidth) {
-          estimatedLines = 2; // Needs > 1 line
-      }
-      // else estimatedLines remains 1
+    // Estimate lines needed based on text width vs available width
+    let estimatedLines = 1;
+    const availableTextWidth = currentWidth - NODE_PADDING * 2;
+    if (textWidth > availableTextWidth * 2) {
+      estimatedLines = 3; // Needs > 2 lines
+    } else if (textWidth > availableTextWidth) {
+      estimatedLines = 2; // Needs > 1 line
     }
 
     // Calculate height needed for text area
     const requiredTextHeight = estimatedLines * LINE_HEIGHT_ESTIMATE;
-    let textAreaHeight = requiredTextHeight + (NODE_PADDING * 2); // Text + T/B padding
-    textAreaHeight = Math.max(textAreaHeight, NODE_HEIGHT); // Ensure min height
+    let textAreaHeight = requiredTextHeight + (NODE_PADDING * 2);
+    textAreaHeight = Math.max(textAreaHeight, NODE_HEIGHT);
 
-    // Determine total currentHeight based image presence
+    // Determine total currentHeight based on image presence
     let currentHeight;
     if (hasImage) {
-      // Dynamic Text Area Height + Image Height + Reduced Padding Below Image
       currentHeight = textAreaHeight + calculatedImageHeight + NODE_PADDING;
     } else {
-      // For text-only, total height is just the text area height (with T/B padding)
       currentHeight = textAreaHeight;
     }
 
-    // Return dimensions, including textAreaHeight
     return {
-        currentWidth,
-        currentHeight,
-        textAreaHeight, // Add this
-        imageWidth: hasImage ? currentWidth - 2 * NODE_PADDING : 0,
-        calculatedImageHeight: hasImage ? calculatedImageHeight : 0
+      currentWidth,
+      currentHeight,
+      textAreaHeight,
+      imageWidth: hasImage ? currentWidth - 2 * NODE_PADDING : 0,
+      calculatedImageHeight: hasImage ? calculatedImageHeight : 0
     };
   };
 

@@ -83,20 +83,25 @@ const Node = ({
             boxSizing: 'border-box',
             pointerEvents: 'none',
             userSelect: 'none',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            wordWrap: 'break-word',
+            minWidth: 0
           }}
         >
-          {/* Inner span - Allow wrapping */}
           <span
             className="node-name-text"
             style={{
               fontSize: '20px',
               fontWeight: 'bold',
               color: '#bdb5b5',
-              whiteSpace: 'normal',
+              whiteSpace: 'pre-wrap',
               maxWidth: '100%',
               textAlign: 'center',
-              wordBreak: 'break-word'
+              wordBreak: 'keep-all',
+              overflowWrap: 'normal',
+              minWidth: 0,
+              display: 'inline-block',
+              width: '100%'
             }}
           >
             {node.name}
