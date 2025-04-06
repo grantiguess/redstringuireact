@@ -14,13 +14,27 @@ import './Panel.css'
  * - The circle around X has a fade‑in transition on hover.
  */
 const Panel = forwardRef(
-  ({ isExpanded, onToggleExpand, nodes, onOpenNodeTab, onSaveNodeData, onFocusChange }, ref) => {
+  ({
+    isExpanded,
+    onToggleExpand,
+    nodes,
+    onOpenNodeTab,
+    onSaveNodeData,
+    onFocusChange,
+    projectTitle,
+    projectBio,
+    onProjectTitleChange,
+    onProjectBioChange
+  }, ref) => {
     const [tabs, setTabs] = useState([{ type: 'home', isActive: true }]);
     const [closingOverlay, setClosingOverlay] = useState(false);
 
     const [editingTitle, setEditingTitle] = useState(false);
     const [tempTitle, setTempTitle] = useState('');
     const titleInputRef = useRef(null);
+    const [editingProjectTitle, setEditingProjectTitle] = useState(false);
+    const [tempProjectTitle, setTempProjectTitle] = useState('');
+    const projectTitleInputRef = useRef(null);
 
     useEffect(() => {
       if (!isExpanded) {
@@ -38,6 +52,13 @@ const Panel = forwardRef(
         titleInputRef.current.select();
       }
     }, [editingTitle]);
+
+    useEffect(() => {
+      if (editingProjectTitle && projectTitleInputRef.current) {
+        projectTitleInputRef.current.focus();
+        projectTitleInputRef.current.select();
+      }
+    }, [editingProjectTitle]);
 
     // Exposed so NodeCanvas can open tabs
     const openNodeTab = (nodeId, nodeName) => {
@@ -69,6 +90,39 @@ const Panel = forwardRef(
 
     useImperativeHandle(ref, () => ({
       openNodeTab,
+      // Expose function to close tabs based on a Set of node IDs
+      closeTabsByIds: (idsToDelete) => {
+        setTabs(prevTabs => {
+          let activeTabWasDeleted = false;
+          const currentActiveIndex = prevTabs.findIndex(t => t.isActive);
+
+          // Filter out tabs whose nodeId is in the Set
+          const remainingTabs = prevTabs.filter(tab => {
+            if (tab.type === 'node' && idsToDelete.has(tab.nodeId)) {
+              if (tab.isActive) {
+                activeTabWasDeleted = true;
+              }
+              return false; // Filter out this tab
+            }
+            return true; // Keep this tab
+          });
+
+          // If the active tab was deleted, or no node tabs remain,
+          // activate the home tab if it exists.
+          if ((activeTabWasDeleted || remainingTabs.length <= 1) && remainingTabs[0]?.type === 'home') {
+              remainingTabs[0].isActive = true;
+               // Ensure other tabs (if any somehow remained active) are inactive
+              for(let i = 1; i < remainingTabs.length; i++) {
+                   remainingTabs[i].isActive = false;
+               }
+          } else if (remainingTabs.length > 0 && !remainingTabs.some(t => t.isActive)) {
+              // Fallback: if no tab is active after deletion, activate home
+              remainingTabs[0].isActive = true;
+          }
+
+          return remainingTabs;
+        });
+      }
     }));
 
     const closeTab = (index) => {
@@ -105,9 +159,11 @@ const Panel = forwardRef(
             const img = new Image();
             img.onload = () => {
               // Save src and original dimensions
+              const placeholderThumbnailSrc = src; // TODO: Generate/get real thumbnail URL
               onSaveNodeData(nodeId, {
                 image: {
-                  src,
+                  src, // Original source
+                  thumbnailSrc: placeholderThumbnailSrc, // Thumbnail source
                   naturalWidth: img.naturalWidth,
                   naturalHeight: img.naturalHeight,
                 },
@@ -135,6 +191,12 @@ const Panel = forwardRef(
       onSaveNodeData(nodeId, { bio: newBio });
     };
 
+    const commitProjectTitleChange = () => {
+      const newName = tempProjectTitle.trim();
+      onProjectTitleChange(newName);
+      setEditingProjectTitle(false);
+    };
+
     const activeTab = tabs.find((t) => t.isActive);
 
     let tabContent = null;
@@ -145,16 +207,105 @@ const Panel = forwardRef(
         </div>
       );
     } else if (activeTab.type === 'home') {
-      // 2‑col grid of nodes
       tabContent = (
         <div style={{ padding: '10px' }}>
+          <div style={{ marginBottom: '8px' }}>
+            {editingProjectTitle ? (
+              <input
+                ref={projectTitleInputRef}
+                type="text"
+                className="panel-title-input"
+                value={tempProjectTitle}
+                onChange={(e) => setTempProjectTitle(e.target.value)}
+                onFocus={() => onFocusChange?.(true)}
+                onBlur={() => {
+                  commitProjectTitleChange();
+                  onFocusChange?.(false);
+                }}
+                onKeyDown={(e) => {
+                  if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
+                    e.stopPropagation();
+                  }
+                  if (e.key === 'Enter') {
+                    commitProjectTitleChange();
+                  } else if (e.key === 'Escape') {
+                    setEditingProjectTitle(false);
+                    onFocusChange?.(false);
+                  }
+                }}
+                style={{ fontFamily: 'inherit', fontSize: '1.1rem', fontWeight: 'bold', color: '#260000' }}
+                autoFocus
+              />
+            ) : (
+              <h2
+                style={{
+                  margin: 0,
+                  color: '#260000',
+                  cursor: 'pointer',
+                  fontSize: '1.1rem',
+                  fontWeight: 'bold',
+                }}
+                onDoubleClick={() => {
+                  setEditingProjectTitle(true);
+                  setTempProjectTitle(projectTitle);
+                }}
+              >
+                {projectTitle}
+              </h2>
+            )}
+          </div>
+
+          <textarea
+            placeholder="Add a bio..."
+            className="panel-bio-textarea"
+            style={{
+              width: '100%',
+              maxWidth: '100%',
+              boxSizing: 'border-box',
+              resize: 'vertical',
+              minHeight: '60px',
+              color: '#260000',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              padding: '0.5rem',
+              backgroundColor: '#bdb5b5',
+              fontSize: '14px',
+              lineHeight: '1.4',
+              fontFamily: 'inherit',
+            }}
+            value={projectBio || ''}
+            onFocus={() => onFocusChange?.(true)}
+            onBlur={() => onFocusChange?.(false)}
+            onChange={(e) => onProjectBioChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
+                e.stopPropagation();
+              }
+            }}
+          />
+
+          {/* Divider Line */}
+          <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
+
+          {/* 3. "Components" Header (no border) */}
+          <h3 style={{
+             marginTop: 0,
+             marginBottom: '10px',
+             color: '#555',
+             fontSize: '0.9rem',
+             userSelect: 'none' // Prevent selection
+             /* Remove borderBottom */
+           }}>
+            Components
+          </h3>
+
           <div
             style={{
               display: 'grid',
               gridTemplateColumns: '1fr 1fr',
               gap: '8px',
               maxHeight: '300px',
-              overflow: 'auto',
+              overflowY: 'auto',
             }}
           >
             {nodes.map((node) => (
@@ -162,20 +313,32 @@ const Panel = forwardRef(
                 key={node.id}
                 style={{
                   backgroundColor: 'maroon',
-                  color: '#bdb5b5',
-                  fontSize: '0.8rem',
                   borderRadius: '6px',
                   height: '40px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
+                  padding: '0 5px',
+                  overflow: 'hidden'
                 }}
-                onClick={() => {
-                  openNodeTab(node.id, node.name);
-                }}
+                title={node.name}
+                onClick={() => openNodeTab(node.id, node.name)}
               >
-                {node.name}
+                <span style={{
+                  color: '#bdb5b5',
+                  fontSize: '0.8rem',
+                  width: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  textAlign: 'center',
+                  padding: '0 10px',
+                  boxSizing: 'border-box',
+                  userSelect: 'none'
+                }}>
+                  {node.name}
+                </span>
               </div>
             ))}
           </div>
@@ -252,20 +415,29 @@ const Panel = forwardRef(
                     margin: 0,
                     color: '#260000',
                     cursor: 'pointer',
+                    overflow: 'hidden',
                   }}
                   onDoubleClick={() => {
                     setEditingTitle(true);
                     setTempTitle(nodeData.name);
                   }}
                 >
-                  {nodeData.name}
+                  <span style={{
+                     display: 'inline-block',
+                     maxWidth: '210px',
+                     whiteSpace: 'normal',
+                     overflowWrap: 'break-word',
+                     verticalAlign: 'bottom'
+                  }}>
+                     {nodeData.name}
+                  </span>
                 </h3>
               )}
 
               <ImagePlus
                 size={24}
                 color="#260000"
-                style={{ cursor: 'pointer' }}
+                style={{ cursor: 'pointer', flexShrink: 0 }}
                 onClick={() => handleAddImage(nodeId)}
               />
             </div>
@@ -391,6 +563,7 @@ const Panel = forwardRef(
                       cursor: 'pointer',
                       backgroundColor: bg,
                       marginRight: '6px',
+                      flexShrink: 0
                     }}
                     onClick={() => {
                       setTabs((prev) =>
@@ -428,7 +601,7 @@ const Panel = forwardRef(
                   onClick={() => activateTab(index)}
                 >
                   <span style={{
-                    whiteSpace: 'normal',
+                    whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     marginRight: '8px',

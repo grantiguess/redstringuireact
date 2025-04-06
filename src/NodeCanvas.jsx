@@ -253,8 +253,8 @@ const NodeCanvas = () => {
     height: window.innerHeight - HEADER_HEIGHT,
   });
   const [canvasSize, setCanvasSize] = useState({
-    width: window.innerWidth * 2,
-    height: (window.innerHeight - HEADER_HEIGHT) * 2,
+    width: window.innerWidth * 4,
+    height: (window.innerHeight - HEADER_HEIGHT) * 4,
   });
   const [zoomLevel, setZoomLevel] = useState(1);
   const MIN_ZOOM = Math.max(
@@ -295,12 +295,69 @@ const NodeCanvas = () => {
   const isKeyboardZooming = useRef(false);
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
   const [isPanelInputFocused, setIsPanelInputFocused] = useState(false);
+  const resizeTimeoutRef = useRef(null); // Ref for debounce timeout
+
+  const [projectTitle, setProjectTitle] = useState('Untitled');
+  const [projectBio, setProjectBio] = useState('');
 
   // --- Add useEffect for debugging debugMode state ---
   useEffect(() => {
     console.log('NodeCanvas debugMode state changed:', debugMode);
   }, [debugMode]);
   // -------------------------------------------------
+
+  // --- Handle Window Resize ---
+  useEffect(() => {
+    const handleResize = () => {
+      // Clear previous timeout if it exists
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+
+      // Set a new timeout to debounce the resize
+      resizeTimeoutRef.current = setTimeout(() => {
+        console.log('[Window Resize] Debounced resize triggered.');
+        const newWindowWidth = window.innerWidth;
+        const newWindowHeight = window.innerHeight;
+
+        // Calculate potential new canvas size based on current window size
+        const potentialWidth = newWindowWidth * 4;
+        const potentialHeight = (newWindowHeight - HEADER_HEIGHT) * 4;
+
+        // Update canvas size, only growing
+        setCanvasSize(currentSize => {
+          const newWidth = Math.max(currentSize.width, potentialWidth);
+          const newHeight = Math.max(currentSize.height, potentialHeight);
+
+          // Only log if size actually changes
+          if (newWidth > currentSize.width || newHeight > currentSize.height) {
+            console.log(`[Window Resize] Canvas size increasing to ${newWidth}x${newHeight}`);
+          }
+
+          return {
+            width: newWidth,
+            height: newHeight,
+          };
+        });
+
+        // Also update viewport size state
+        setViewportSize({ width: newWindowWidth, height: newWindowHeight - HEADER_HEIGHT });
+
+      }, 250); // Debounce time in ms
+    };
+
+    console.log('[Window Resize] Adding resize listener');
+    window.addEventListener('resize', handleResize);
+
+    // Cleanup: remove listener and clear timeout on unmount
+    return () => {
+      console.log('[Window Resize] Removing resize listener');
+      window.removeEventListener('resize', handleResize);
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+    };
+  }, []); // Empty dependency array ensures this runs only on mount and unmount
 
   // --- Utility Functions ---
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -340,11 +397,13 @@ const NodeCanvas = () => {
     if (node.name) {
       const availableTextWidth = currentWidth - NODE_PADDING * 2;
       const textWidthEstimate = node.name.length * AVERAGE_CHAR_WIDTH;
-      if (textWidthEstimate > availableTextWidth * 1.5) {
-          estimatedLines = 3;
-      } else if (textWidthEstimate > availableTextWidth * 0.8) {
-          estimatedLines = 2;
+      // Wrap only if estimated width exceeds available width
+      if (textWidthEstimate > availableTextWidth * 2) {
+          estimatedLines = 3; // Needs > 2 lines
+      } else if (textWidthEstimate > availableTextWidth) {
+          estimatedLines = 2; // Needs > 1 line
       }
+      // else estimatedLines remains 1
     }
 
     // Calculate height needed for text area
@@ -1091,7 +1150,74 @@ const NodeCanvas = () => {
 
   // Callback for Panel component
   const handlePanelFocusChange = (isFocused) => {
+    console.log(`[Panel Focus Change] Setting isPanelInputFocused to: ${isFocused}`);
     setIsPanelInputFocused(isFocused);
+  };
+
+  // --- Log Panel Focus State ---
+  useEffect(() => {
+    console.log(`[Panel Focus State] isPanelInputFocused is now: ${isPanelInputFocused}`);
+  }, [isPanelInputFocused]);
+
+  // --- Delete Node Logic ---
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      console.log(`[Delete KeyDown] Key pressed: ${e.key}`);
+
+      // Check if any input field is focused or prompt is visible
+      const isInputActive = isHeaderEditing || isPanelInputFocused || nodeNamePrompt.visible;
+      console.log(`[Delete KeyDown] Is Input Active? ${isInputActive}`);
+      if (isInputActive) {
+        return; // Don't interfere with typing
+      }
+
+      // Check for Delete or Backspace keys and if nodes are selected
+      const isDeleteKey = e.key === 'Delete' || e.key === 'Backspace';
+      const nodesSelected = selectedNodes.size > 0;
+      console.log(`[Delete KeyDown] Is Delete Key? ${isDeleteKey}, Nodes Selected: ${nodesSelected} (size: ${selectedNodes.size})`);
+
+      if (isDeleteKey && nodesSelected) {
+        console.log('[Delete KeyDown] Deleting nodes:', Array.from(selectedNodes));
+        e.preventDefault(); // Prevent default Backspace behavior (like browser back)
+
+        // Capture IDs before clearing selection
+        const idsToDelete = new Set(selectedNodes);
+
+        // Filter out selected nodes
+        setNodes(prevNodes => {
+            const remainingNodes = prevNodes.filter(node => !idsToDelete.has(node.id));
+            console.log(`[Delete KeyDown] Nodes remaining: ${remainingNodes.length}`);
+            return remainingNodes;
+        });
+
+        // Clear selection
+        setSelectedNodes(new Set());
+
+        // Optional: Close any panel tabs related to deleted nodes
+        if (panelRef.current && panelRef.current.closeTabsByIds) {
+            console.log('[Delete KeyDown] Requesting panel close tabs for IDs:', Array.from(idsToDelete));
+            panelRef.current.closeTabsByIds(idsToDelete); // Use the captured IDs
+        }
+      }
+    };
+
+    console.log('[Delete KeyDown] Adding keydown listener');
+    window.addEventListener('keydown', handleKeyDown);
+
+    // Cleanup listener on component unmount
+    return () => {
+      console.log('[Delete KeyDown] Removing keydown listener');
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedNodes, isHeaderEditing, isPanelInputFocused, nodeNamePrompt.visible]); // Dependencies for the condition checks
+
+  // --- Callbacks for Lifted State ---
+  const handleProjectTitleChange = (newTitle) => {
+    setProjectTitle(newTitle || 'Untitled'); // Ensure it doesn't become empty
+  };
+
+  const handleProjectBioChange = (newBio) => {
+    setProjectBio(newBio);
   };
 
   return (
@@ -1099,7 +1225,11 @@ const NodeCanvas = () => {
       className="app-container"
       style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', position: 'relative' }}
     >
-      <Header onEditingStateChange={handleHeaderEditingChange} />
+      <Header
+        projectTitle={projectTitle}
+        onTitleChange={handleProjectTitleChange}
+        onEditingStateChange={handleHeaderEditingChange}
+      />
       {renderCustomPrompt()}
 
       <RedstringMenu
@@ -1116,6 +1246,10 @@ const NodeCanvas = () => {
         nodes={nodes}
         onSaveNodeData={handleSaveNodeData}
         onFocusChange={handlePanelFocusChange}
+        projectTitle={projectTitle}
+        projectBio={projectBio}
+        onProjectTitleChange={handleProjectTitleChange}
+        onProjectBioChange={handleProjectBioChange}
       />
 
       <div
@@ -1136,19 +1270,16 @@ const NodeCanvas = () => {
           onMouseUp={handleMouseUp}
         >
           <g className="base-layer">
+            {/* Render Connections First */}
             {connections.map((conn, idx) => {
               const sNode = nodes.find(n => n.id === conn.startId);
               const eNode = nodes.find(n => n.id === conn.endId);
               if (!sNode || !eNode) return null;
-
-              // Get dynamic dimensions for start and end nodes
               const sNodeDims = getNodeDimensions(sNode);
               const eNodeDims = getNodeDimensions(eNode);
-
               return (
                 <line
                   key={idx}
-                  // Calculate center based on dynamic dimensions
                   x1={sNode.x + sNodeDims.currentWidth / 2}
                   y1={sNode.y + sNodeDims.currentHeight / 2}
                   x2={eNode.x + eNodeDims.currentWidth / 2}
@@ -1168,26 +1299,63 @@ const NodeCanvas = () => {
                 strokeWidth="5"
               />
             )}
-            {nodes.map((node) => {
-              // Calculate dimensions here
-              const dimensions = getNodeDimensions(node);
+
+            {/* Separate dragging nodes for render order */}
+            {(() => {
+              let draggingNodeIds = new Set();
+              if (draggingNode) {
+                if (draggingNode.initialPositions) {
+                  draggingNodeIds = new Set(Object.keys(draggingNode.initialPositions).map(Number));
+                } else if (draggingNode.nodeId) {
+                  draggingNodeIds = new Set([draggingNode.nodeId]);
+                }
+              }
+
+              const nonDraggingNodes = nodes.filter(node => !draggingNodeIds.has(node.id));
+              const draggingNodes = nodes.filter(node => draggingNodeIds.has(node.id));
+
               return (
-                <Node
-                  key={node.id}
-                  node={node}
-                  // Pass calculated dimensions as props
-                  currentWidth={dimensions.currentWidth}
-                  currentHeight={dimensions.currentHeight}
-                  textAreaHeight={dimensions.textAreaHeight}
-                  imageWidth={dimensions.imageWidth}
-                  imageHeight={dimensions.calculatedImageHeight}
-                  // Other props
-                  isSelected={selectedNodes.has(node.id)}
-                  isDragging={draggingNode?.id === node.id}
-                  onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                />
+                <>
+                  {/* Render Non-Dragging Nodes */}
+                  {nonDraggingNodes.map((node) => {
+                    const dimensions = getNodeDimensions(node);
+                    return (
+                      <Node
+                        key={node.id}
+                        node={node}
+                        currentWidth={dimensions.currentWidth}
+                        currentHeight={dimensions.currentHeight}
+                        textAreaHeight={dimensions.textAreaHeight}
+                        imageWidth={dimensions.imageWidth}
+                        imageHeight={dimensions.calculatedImageHeight}
+                        isSelected={selectedNodes.has(node.id)}
+                        isDragging={false} // Explicitly false for this group
+                        onMouseDown={(e) => handleNodeMouseDown(node, e)}
+                      />
+                    );
+                  })}
+
+                  {/* Render Dragging Nodes Last */}
+                  {draggingNodes.map((node) => {
+                    const dimensions = getNodeDimensions(node);
+                    return (
+                      <Node
+                        key={node.id}
+                        node={node}
+                        currentWidth={dimensions.currentWidth}
+                        currentHeight={dimensions.currentHeight}
+                        textAreaHeight={dimensions.textAreaHeight}
+                        imageWidth={dimensions.imageWidth}
+                        imageHeight={dimensions.calculatedImageHeight}
+                        isSelected={selectedNodes.has(node.id)}
+                        isDragging={true} // Explicitly true for this group
+                        onMouseDown={(e) => handleNodeMouseDown(node, e)}
+                      />
+                    );
+                  })}
+                </>
               );
-            })}
+            })()}
           </g>
           {selectionRect && (
             <rect

@@ -11,16 +11,16 @@ import logo5 from './assets/redstring_button/header_logo_5.svg';
 import logo6 from './assets/redstring_button/header_logo_6.svg';
 import logo7 from './assets/redstring_button/header_logo_7.svg';
 
-const Header = ({ onEditingStateChange }) => {
+const Header = ({ projectTitle, onTitleChange, onEditingStateChange }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [currentLogoIndex, setCurrentLogoIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
   const [imagesLoaded, setImagesLoaded] = useState(false);
 
-  // Add state for editable title
-  const [headerText, setHeaderText] = useState('Untitled');
+  // Keep local editing state, but text state is now props
   const [isEditing, setIsEditing] = useState(false);
-  const inputRef = useRef(null); // Ref to focus the input
+  const [tempTitle, setTempTitle] = useState(projectTitle); // Local temp title for editing
+  const inputRef = useRef(null);
 
   const logos = [logo1, logo2, logo3, logo4, logo5, logo6, logo7];
 
@@ -47,11 +47,18 @@ const Header = ({ onEditingStateChange }) => {
     preloadImages();
   }, []);
 
+  // Update temp title if prop changes while not editing
+  useEffect(() => {
+    if (!isEditing) {
+      setTempTitle(projectTitle);
+    }
+  }, [projectTitle, isEditing]);
+
   // Focus input when editing starts
   useEffect(() => {
     if (isEditing && inputRef.current) {
       inputRef.current.focus();
-      inputRef.current.select(); // Select text for easy replacement
+      inputRef.current.select();
     }
   }, [isEditing]);
 
@@ -81,33 +88,34 @@ const Header = ({ onEditingStateChange }) => {
   };
 
   const handleTitleDoubleClick = () => {
+    setTempTitle(projectTitle); // Start editing with current prop value
     setIsEditing(true);
     onEditingStateChange?.(true);
   };
 
   const handleTitleChange = (event) => {
-    setHeaderText(event.target.value);
+    setTempTitle(event.target.value); // Update local temp title
+  };
+
+  // Commit changes using the callback prop
+  const commitChange = () => {
+      setIsEditing(false);
+      onEditingStateChange?.(false);
+      onTitleChange(tempTitle); // Call the callback passed from NodeCanvas
   };
 
   const handleTitleBlur = () => {
-    setIsEditing(false);
-    onEditingStateChange?.(false);
-    if (!headerText.trim()) {
-      setHeaderText('Untitled');
-    }
+    commitChange();
   };
 
   const handleTitleKeyDown = (event) => {
     if (event.key === 'Enter') {
-      setIsEditing(false);
-      onEditingStateChange?.(false);
-      if (!headerText.trim()) {
-        setHeaderText('Untitled');
-      }
+      commitChange();
       event.target.blur();
     }
     if (event.key === 'Escape') {
-      setIsEditing(false);
+      setIsEditing(false); // Discard changes on Escape
+      setTempTitle(projectTitle); // Reset temp title
       onEditingStateChange?.(false);
       event.target.blur();
     }
@@ -198,11 +206,11 @@ const Header = ({ onEditingStateChange }) => {
           <input
             ref={inputRef}
             type="text"
-            value={headerText}
+            value={tempTitle}
             onChange={handleTitleChange}
             onBlur={handleTitleBlur}
             onKeyDown={handleTitleKeyDown}
-            size={Math.max(headerText.length, 10) + 4}
+            size={Math.max(tempTitle.length, 10) + 4}
             style={{
               background: 'rgba(255, 255, 255, 0.1)',
               border: '1px solid #bdb5b5',
@@ -217,8 +225,8 @@ const Header = ({ onEditingStateChange }) => {
             autoFocus
           />
         ) : (
-          <span onDoubleClick={handleTitleDoubleClick} style={{ cursor: 'pointer', padding: '2px 5px' }}> { /* Reduce horizontal padding */ }
-            {headerText}
+          <span onDoubleClick={handleTitleDoubleClick} style={{ cursor: 'pointer', padding: '2px 5px' }}>
+            {projectTitle}
           </span>
         )}
       </div>

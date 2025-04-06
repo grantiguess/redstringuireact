@@ -40,10 +40,10 @@ const Node = ({
       <defs>
         <clipPath id={clipPathId}>
           <rect
-            x={imageX}
-            y={imageY}
-            width={imageWidth}
-            height={imageHeight}
+            x={imageX - 1}
+            y={imageY - 1}
+            width={imageWidth + 2}
+            height={imageHeight + 2}
             rx={NODE_CORNER_RADIUS}
             ry={NODE_CORNER_RADIUS}
           />
@@ -112,10 +112,13 @@ const Node = ({
           y={imageY}
           width={imageWidth}
           height={imageHeight}
-          href={node.image.src}
+          href={node.image?.thumbnailSrc || node.image?.src}
           preserveAspectRatio="xMidYMid meet"
           clipPath={`url(#${clipPathId})`}
-          style={{ opacity: 1 }}
+          style={{ 
+            opacity: 1,
+            transform: 'translateZ(0)'
+          }}
         />
       )}
     </g>

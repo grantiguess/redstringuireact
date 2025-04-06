@@ -8,7 +8,7 @@
 }
 
 .node.dragging rect {
-    filter: drop-shadow(0px 15px 10px rgba(0, 0, 0, 1));
+    filter: drop-shadow(0px 8px 10px rgba(0, 0, 0, 0.4));
 }
 
 /* Add class for background rect transition */
