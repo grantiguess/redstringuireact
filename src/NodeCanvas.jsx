@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import './NodeCanvas.css';
 import { X } from 'lucide-react';
 import Header from './Header.jsx';
@@ -6,6 +6,7 @@ import TypeList from './TypeList.jsx';
 import DebugOverlay from './DebugOverlay.jsx';
 import { useCanvasWorker } from './useCanvasWorker.js';
 import Node from './Node.jsx';
+import { getNodeDimensions } from './utils.js';
 
 import {
   NODE_WIDTH,
@@ -24,18 +25,20 @@ import {
   EXPANDED_NODE_WIDTH,
   AVERAGE_CHAR_WIDTH,
   WRAPPED_NODE_HEIGHT,
-  LINE_HEIGHT_ESTIMATE
+  LINE_HEIGHT_ESTIMATE,
+  EDGE_MARGIN,
+  TRACKPAD_ZOOM_SENSITIVITY,
+  PAN_DRAG_SENSITIVITY,
+  SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY
 } from './constants';
 
 import Panel from './Panel';
-import RedstringMenu from './RedstringMenu';
+
 // Check if user's on a Mac using userAgent as platform is deprecated
 const isMac = /Mac/i.test(navigator.userAgent);
 
 // Sensitivity constants
 const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1;        // Sensitivity for standard mouse wheel zooming
-const TRACKPAD_ZOOM_SENSITIVITY = 5;       // Sensitivity for trackpad pinch-zooming (macOS)
-const PAN_DRAG_SENSITIVITY = 1.25; // for panning (mouse-drag or trackpad)
 const KEYBOARD_PAN_SPEED = 0.115;                // for keyboard panning
 const KEYBOARD_ZOOM_SPEED = 0.15;               // for keyboard zooming
 
@@ -233,12 +236,10 @@ const NodeCanvas = () => {
     { id: 2, x: 1000, y: 800, name: 'Node 2', scale: 1, bio: '', image: null },
   ]);
   const [selectedNodes, setSelectedNodes] = useState(new Set());
-  const wasSelectionBox = useRef(false);
   const [draggingNode, setDraggingNode] = useState(null);
   const [longPressingNode, setLongPressingNode] = useState(null);
   const [drawingConnectionFrom, setDrawingConnectionFrom] = useState(null);
   const [connections, setConnections] = useState([]);
-  const wasDrawingConnection = useRef(false);
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -247,7 +248,6 @@ const NodeCanvas = () => {
 
   const [selectionRect, setSelectionRect] = useState(null);
   const [selectionStart, setSelectionStart] = useState(null);
-  const selectionBaseRef = useRef(new Set());
 
   const [viewportSize, setViewportSize] = useState({
     width: window.innerWidth,
@@ -272,11 +272,27 @@ const NodeCanvas = () => {
     panOffsetX: '0',
     panOffsetY: '0',
     zoomLevel: '1.00',
+    localSelectedNodeId_debug: 'N/A', // Add to debug state
   });
   const [isPaused, setIsPaused] = useState(false);
   const [lastInteractionType, setLastInteractionType] = useState(null);
 
-  const containerRef = useRef(null);
+  // Restore necessary state removed during manual deletion
+  const [plusSign, setPlusSign] = useState(null);
+  const [nodeNamePrompt, setNodeNamePrompt] = useState({ visible: false, name: '' });
+  const [panelExpanded, setPanelExpanded] = useState(false);
+  const [isHeaderEditing, setIsHeaderEditing] = useState(false);
+  const [isPanelInputFocused, setIsPanelInputFocused] = useState(false);
+  // END Restore
+
+  const [projectTitle, setProjectTitle] = useState('Untitled Project');
+  const [projectBio, setProjectBio] = useState('');
+
+  // --- Add Preview State ---
+  const [previewingNodeId, setPreviewingNodeId] = useState(null);
+
+  // --- Refs ---
+  const containerRef = useRef(null); 
   const isMouseDown = useRef(false);
   const ignoreCanvasClick = useRef(false);
   const mouseDownPosition = useRef({ x: 0, y: 0 });
@@ -284,80 +300,17 @@ const NodeCanvas = () => {
   const startedOnNode = useRef(false);
   const longPressTimeout = useRef(null);
   const mouseInsideNode = useRef(true);
-
-  const [plusSign, setPlusSign] = useState(null);
-  const [nodeNamePrompt, setNodeNamePrompt] = useState({ visible: false, name: '' });
-
-  const [panelExpanded, setPanelExpanded] = useState(false);
   const panelRef = useRef(null);
-
   const canvasWorker = useCanvasWorker();
   const isKeyboardZooming = useRef(false);
-  const [isHeaderEditing, setIsHeaderEditing] = useState(false);
-  const [isPanelInputFocused, setIsPanelInputFocused] = useState(false);
-  const resizeTimeoutRef = useRef(null); // Ref for debounce timeout
-
-  const [projectTitle, setProjectTitle] = useState('Untitled Project');
-  const [projectBio, setProjectBio] = useState('');
-
-  // --- Add useEffect for debugging debugMode state ---
-  useEffect(() => {
-    console.log('NodeCanvas debugMode state changed:', debugMode);
-  }, [debugMode]);
-  // -------------------------------------------------
-
-  // --- Handle Window Resize ---
-  useEffect(() => {
-    const handleResize = () => {
-      // Clear previous timeout if it exists
-      if (resizeTimeoutRef.current) {
-        clearTimeout(resizeTimeoutRef.current);
-      }
-
-      // Set a new timeout to debounce the resize
-      resizeTimeoutRef.current = setTimeout(() => {
-        console.log('[Window Resize] Debounced resize triggered.');
-        const newWindowWidth = window.innerWidth;
-        const newWindowHeight = window.innerHeight;
-
-        // Calculate potential new canvas size based on current window size
-        const potentialWidth = newWindowWidth * 4;
-        const potentialHeight = (newWindowHeight - HEADER_HEIGHT) * 4;
-
-        // Update canvas size, only growing
-        setCanvasSize(currentSize => {
-          const newWidth = Math.max(currentSize.width, potentialWidth);
-          const newHeight = Math.max(currentSize.height, potentialHeight);
-
-          // Only log if size actually changes
-          if (newWidth > currentSize.width || newHeight > currentSize.height) {
-            console.log(`[Window Resize] Canvas size increasing to ${newWidth}x${newHeight}`);
-          }
-
-          return {
-            width: newWidth,
-            height: newHeight,
-          };
-        });
-
-        // Also update viewport size state
-        setViewportSize({ width: newWindowWidth, height: newWindowHeight - HEADER_HEIGHT });
-
-      }, 250); // Debounce time in ms
-    };
-
-    console.log('[Window Resize] Adding resize listener');
-    window.addEventListener('resize', handleResize);
-
-    // Cleanup: remove listener and clear timeout on unmount
-    return () => {
-      console.log('[Window Resize] Removing resize listener');
-      window.removeEventListener('resize', handleResize);
-      if (resizeTimeoutRef.current) {
-        clearTimeout(resizeTimeoutRef.current);
-      }
-    };
-  }, []); // Empty dependency array ensures this runs only on mount and unmount
+  const resizeTimeoutRef = useRef(null);
+  const selectionBaseRef = useRef(new Set());
+  const wasSelectionBox = useRef(false);
+  const wasDrawingConnection = useRef(false);
+  // Add refs for click vs double-click detection
+  const clickTimeoutIdRef = useRef(null);
+  const potentialClickNodeRef = useRef(null);
+  const CLICK_DELAY = 250; // milliseconds to wait for a potential double-click
 
   // --- Utility Functions ---
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -365,71 +318,6 @@ const NodeCanvas = () => {
     const boundedX = Math.min(Math.max(x, 0), canvasSize.width);
     const boundedY = Math.min(Math.max(y, 0), canvasSize.height);
     return { x: boundedX, y: boundedY };
-  };
-
-  const getNodeDimensions = (node) => {
-    const hasImage = Boolean(node.image?.src);
-    const hasValidImageDimensions = hasImage && node.image.naturalWidth > 0;
-
-    // Create temporary span to measure text width
-    const tempSpan = document.createElement('span');
-    tempSpan.style.fontSize = '20px';
-    tempSpan.style.fontWeight = 'bold';
-    tempSpan.style.visibility = 'hidden';
-    tempSpan.style.position = 'absolute';
-    tempSpan.style.whiteSpace = 'nowrap';
-    tempSpan.textContent = node.name;
-    document.body.appendChild(tempSpan);
-    
-    // Get the actual text width
-    const textWidth = tempSpan.offsetWidth;
-    document.body.removeChild(tempSpan);
-
-    // Calculate width needed for the text itself
-    const calculatedTextWidth = textWidth + (NODE_PADDING * 2);
-
-    // Determine currentWidth
-    const currentWidth = hasImage
-      ? EXPANDED_NODE_WIDTH
-      : Math.max(NODE_WIDTH, Math.min(calculatedTextWidth, EXPANDED_NODE_WIDTH));
-
-    // Calculate image height if needed
-    let calculatedImageHeight = 0;
-    if (hasImage && hasValidImageDimensions) {
-      const imageWidth = currentWidth - 2 * NODE_PADDING;
-      const aspectRatio = node.image.naturalHeight / node.image.naturalWidth;
-      calculatedImageHeight = imageWidth * aspectRatio;
-    }
-
-    // Estimate lines needed based on text width vs available width
-    let estimatedLines = 1;
-    const availableTextWidth = currentWidth - NODE_PADDING * 2;
-    if (textWidth > availableTextWidth * 2) {
-      estimatedLines = 3; // Needs > 2 lines
-    } else if (textWidth > availableTextWidth) {
-      estimatedLines = 2; // Needs > 1 line
-    }
-
-    // Calculate height needed for text area
-    const requiredTextHeight = estimatedLines * LINE_HEIGHT_ESTIMATE;
-    let textAreaHeight = requiredTextHeight + (NODE_PADDING * 2);
-    textAreaHeight = Math.max(textAreaHeight, NODE_HEIGHT);
-
-    // Determine total currentHeight based on image presence
-    let currentHeight;
-    if (hasImage) {
-      currentHeight = textAreaHeight + calculatedImageHeight + NODE_PADDING;
-    } else {
-      currentHeight = textAreaHeight;
-    }
-
-    return {
-      currentWidth,
-      currentHeight,
-      textAreaHeight,
-      imageWidth: hasImage ? currentWidth - 2 * NODE_PADDING : 0,
-      calculatedImageHeight: hasImage ? calculatedImageHeight : 0
-    };
   };
 
   const isInsideNode = (node, clientX, clientY) => {
@@ -448,59 +336,99 @@ const NodeCanvas = () => {
     );
   };
 
-  const openNodeTab = (nodeId, nodeName) => {
-    setPanelExpanded(true);
-    if (panelRef.current && panelRef.current.openNodeTab) {
-      panelRef.current.openNodeTab(nodeId, nodeName);
-    }
-  };
-
   const handleNodeMouseDown = (node, e) => {
     e.stopPropagation();
     if (isPaused) return;
+
+    // --- Double-click --- 
     if (e.detail === 2) {
       e.preventDefault();
-      openNodeTab(node.id, node.name);
+      // Clear the pending single-click timeout
+      if (clickTimeoutIdRef.current) {
+          clearTimeout(clickTimeoutIdRef.current);
+          clickTimeoutIdRef.current = null;
+      }
+      potentialClickNodeRef.current = null; // Clear potential click target
+      
+      // Toggle preview state ONLY
+      setPreviewingNodeId(prev => prev === node.id ? null : node.id);
       return;
     }
-    isMouseDown.current = true;
-    mouseDownPosition.current = { x: e.clientX, y: e.clientY };
-    mouseMoved.current = false;
-    mouseInsideNode.current = true;
-    startedOnNode.current = true;
-    clearTimeout(longPressTimeout.current);
-    longPressTimeout.current = setTimeout(() => {
-      if (mouseInsideNode.current && !mouseMoved.current) {
-        const canvasRect = containerRef.current.getBoundingClientRect();
-        const adjustedX = (e.clientX - canvasRect.left - panOffset.x) / zoomLevel;
-        const adjustedY = (e.clientY - canvasRect.top - panOffset.y) / zoomLevel;
-        const offset = { x: adjustedX - node.x, y: adjustedY - node.y };
-        if (selectedNodes.has(node.id)) {
-          const initialPositions = {};
-          nodes.forEach(n => {
-            if (selectedNodes.has(n.id)) {
-              initialPositions[n.id] = { x: n.x, y: n.y };
-            }
-          });
-          setDraggingNode({
-            initialMouse: { x: e.clientX, y: e.clientY },
-            offset,
-            initialPositions,
-            primaryId: node.id,
-          });
-          selectedNodes.forEach(id => { animateNodeLerp(id, 1.1); });
-        } else {
-          setDraggingNode({
-            initialMouse: { x: e.clientX, y: e.clientY },
-            nodeId: node.id,
-            initialPos: { x: node.x, y: node.y },
-            offset,
-          });
-          animateNodeLerp(node.id, 1.1);
+
+    // --- Single click initiation & Long press --- 
+    if (e.detail === 1) {
+        isMouseDown.current = true; // Still needed for dragging checks
+        mouseDownPosition.current = { x: e.clientX, y: e.clientY };
+        mouseMoved.current = false;
+        mouseInsideNode.current = true;
+        startedOnNode.current = true;
+
+        // --- Handle Click vs Double Click Timing --- 
+        // Clear previous timeout just in case
+        if (clickTimeoutIdRef.current) {
+            clearTimeout(clickTimeoutIdRef.current);
         }
-      }
-    }, LONG_PRESS_DURATION);
-    setLongPressingNode(node);
+        potentialClickNodeRef.current = node; // Store node for potential single click
+
+        clickTimeoutIdRef.current = setTimeout(() => {
+            // If this timeout runs, it's a potential single click
+            // Check if the node is still the target AND the mouse is UP
+            if (potentialClickNodeRef.current?.id === node.id && !mouseMoved.current && !isMouseDown.current) {
+                // --- Execute Selection Logic --- 
+                const wasSelected = selectedNodes.has(node.id);
+                const newSelectedNodes = new Set([...selectedNodes]);
+                if (wasSelected) {
+                    // If it was selected, deselect it (unless it's the one being previewed)
+                    if (node.id !== previewingNodeId) { 
+                        newSelectedNodes.delete(node.id);
+                    }
+                } else {
+                    // If it wasn't selected, select it
+                    newSelectedNodes.add(node.id);
+                }
+                setSelectedNodes(newSelectedNodes);
+                console.log(`[Single Click] Timeout executed for node ${node.id}`);
+            } else {
+                // Log why it didn't select if needed
+                console.log(`[Single Click] Timeout skipped for node ${node.id}. Reason:`, {
+                    targetMatch: potentialClickNodeRef.current?.id === node.id,
+                    mouseMoved: mouseMoved.current,
+                    isMouseDown: isMouseDown.current
+                });
+            }
+            clickTimeoutIdRef.current = null;
+            potentialClickNodeRef.current = null;
+        }, CLICK_DELAY);
+
+        // --- Setup Long Press for Drag/Connection --- 
+        clearTimeout(longPressTimeout.current);
+        longPressTimeout.current = setTimeout(() => {
+            // Long press activates: clear potential single click
+            if (clickTimeoutIdRef.current) {
+                clearTimeout(clickTimeoutIdRef.current);
+                clickTimeoutIdRef.current = null;
+            }
+            potentialClickNodeRef.current = null;
+            
+            // Existing long press logic
+            if (mouseInsideNode.current && !mouseMoved.current) {
+                const canvasRect = containerRef.current.getBoundingClientRect();
+                const adjustedX = (e.clientX - canvasRect.left - panOffset.x) / zoomLevel;
+                const adjustedY = (e.clientY - canvasRect.top - panOffset.y) / zoomLevel;
+                const offset = { x: adjustedX - node.x, y: adjustedY - node.y };
+                if (selectedNodes.has(node.id)) {
+                    const initialPositions = {};
+                    nodes.forEach(n => { if (selectedNodes.has(n.id)) { initialPositions[n.id] = { x: n.x, y: n.y }; } });
+                    setDraggingNode({ initialMouse: { x: e.clientX, y: e.clientY }, offset, initialPositions, primaryId: node.id });
+                    selectedNodes.forEach(id => { animateNodeLerp(id, 1.1); });
+                } else {
+                    setDraggingNode({ initialMouse: { x: e.clientX, y: e.clientY }, nodeId: node.id, initialPos: { x: node.x, y: node.y }, offset });
+                    animateNodeLerp(node.id, 1.1);
+                }
+            }
+        }, LONG_PRESS_DURATION);
+        setLongPressingNode(node); // Keep setting this for mouseMove checks
+    }
   };
 
   const animateNodeLerp = (nodeId, targetScale) => {
@@ -525,10 +453,6 @@ const NodeCanvas = () => {
     requestAnimationFrame(animate);
   };
 
-  const handleOpenNodeTab = (nodeId, nodeName) => {
-    setPanelExpanded(true);
-  };
-
   const handleSaveNodeData = (nodeId, newData) => {
     setNodes(prev =>
       prev.map(n => (n.id === nodeId ? { ...n, ...newData } : n))
@@ -541,15 +465,14 @@ const NodeCanvas = () => {
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    // Normalize deltaY based on deltaMode for consistent zoom speed
     let deltaY = e.deltaY;
-    if (e.deltaMode === 1) { // Line scrolling
-      deltaY *= 33; // Approximate pixels per line
-    } else if (e.deltaMode === 2) { // Page scrolling
-      deltaY *= window.innerHeight;
-    }
+    if (e.deltaMode === 1) { deltaY *= 33; } 
+    else if (e.deltaMode === 2) { deltaY *= window.innerHeight; }
+    // Also handle deltaX normalization if needed for panning
+    let deltaX = e.deltaX;
+    if (e.deltaMode === 1) { deltaX *= 33; }
+    else if (e.deltaMode === 2) { deltaX *= window.innerWidth; } 
 
-    // Update basic debug info first
     setDebugData((prev) => ({
       ...prev,
       info: 'Wheel event',
@@ -559,21 +482,17 @@ const NodeCanvas = () => {
       isMac: isMac.toString(),
     }));
 
-    if (isMac) {
-      // --- macOS Trackpad Handling ---
-      if (e.ctrlKey) {
-        // Pinch-to-Zoom (ctrlKey is true during pinch)
+    // --- Heuristic-Based Wheel Logic --- 
+    
+    // 1. Check for macOS Pinch-to-Zoom first
+    if (isMac && e.ctrlKey) {
         const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
         try {
           const result = await canvasWorker.calculateZoom({
-            deltaY: zoomDelta, // Pass natural delta for pinch: positive=pinch_in->zoom_out, negative=pinch_out->zoom_in
+            deltaY: zoomDelta, 
             currentZoom: zoomLevel,
             mousePos: { x: mouseX, y: mouseY },
-            panOffset,
-            viewportSize,
-            canvasSize,
-            MIN_ZOOM,
-            MAX_ZOOM,
+            panOffset, viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
           });
           setPanOffset(result.panOffset);
           setZoomLevel(result.zoomLevel);
@@ -592,10 +511,11 @@ const NodeCanvas = () => {
           console.error('Mac pinch zoom calculation failed:', error);
           setDebugData((prev) => ({ ...prev, info: 'Mac pinch zoom error', error: error.message }));
         }
-      } else {
-        // Two-Finger Scroll (Pan)
-        const dx = -e.deltaX * PAN_DRAG_SENSITIVITY;
-        const dy = -e.deltaY * PAN_DRAG_SENSITIVITY;
+    // 2. Check for Mac Trackpad Pan (heuristic: non-zero deltaX)
+    } else if (isMac && deltaX !== 0) { 
+        // Use normalized deltaX and deltaY for panning
+        const dx = -deltaX * PAN_DRAG_SENSITIVITY;
+        const dy = -deltaY * PAN_DRAG_SENSITIVITY; // Still include vertical pan component
         const maxX = 0;
         const maxY = 0;
         const minX = viewportSize.width - canvasSize.width * zoomLevel;
@@ -610,48 +530,49 @@ const NodeCanvas = () => {
             gesture: 'two-finger pan',
             zooming: false,
             panning: true,
-            deltaX: e.deltaX.toFixed(2),
-            deltaY: e.deltaY.toFixed(2),
+            sensitivity: PAN_DRAG_SENSITIVITY,
+            deltaX: deltaX.toFixed(2),
+            deltaY: deltaY.toFixed(2),
             panOffsetX: newX.toFixed(2),
             panOffsetY: newY.toFixed(2),
             zoomLevel: zoomLevel.toFixed(2),
           }));
           return { x: newX, y: newY };
         });
-      }
-    } else {
-      // --- Non-macOS (Assume Mouse Wheel or Standard Trackpad Zoom) ---
-      const zoomDelta = deltaY * MOUSE_WHEEL_ZOOM_SENSITIVITY;
-      try {
-        const result = await canvasWorker.calculateZoom({
-          deltaY: -zoomDelta, // Keep inverted delta for typical wheel zoom feel
-          currentZoom: zoomLevel,
-          mousePos: { x: mouseX, y: mouseY },
-          panOffset,
-          viewportSize,
-          canvasSize,
-          MIN_ZOOM,
-          MAX_ZOOM,
-        });
-        setPanOffset(result.panOffset);
-        setZoomLevel(result.zoomLevel);
-        setDebugData((prev) => ({
-          ...prev,
-          inputDevice: 'Mouse or Trackpad (Non-Mac)',
-          gesture: 'wheel-zoom',
-          zooming: true,
-          panning: false,
-          sensitivity: MOUSE_WHEEL_ZOOM_SENSITIVITY,
-          deltaY: deltaY.toFixed(2),
-          zoomLevel: result.zoomLevel.toFixed(2),
-          panOffsetX: result.panOffset.x.toFixed(2),
-          panOffsetY: result.panOffset.y.toFixed(2),
-        }));
-      } catch (error) {
-        console.error('Zoom calculation failed:', error);
-        setDebugData((prev) => ({ ...prev, info: 'Non-Mac zoom error', error: error.message }));
-      }
+    // 3. Handle all other vertical scrolls as standard zoom 
+    //    (Non-Mac OR Mac with deltaX === 0, likely mouse wheel)
+    } else if (deltaY !== 0) { 
+        const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
+        try {
+            const result = await canvasWorker.calculateZoom({
+                // Direction: scroll up/forward = zoom in (natural)
+                deltaY: zoomDelta, 
+                // OR: scroll up/forward = zoom out (inverted)
+                // deltaY: -zoomDelta, 
+                currentZoom: zoomLevel,
+                mousePos: { x: mouseX, y: mouseY },
+                panOffset, viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
+            });
+            setPanOffset(result.panOffset);
+            setZoomLevel(result.zoomLevel);
+            setDebugData((prev) => ({
+                ...prev,
+                inputDevice: 'Mouse Wheel or Trackpad Scroll',
+                gesture: 'wheel-zoom',
+                zooming: true,
+                panning: false,
+                sensitivity: SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY,
+                deltaY: deltaY.toFixed(2),
+                zoomLevel: result.zoomLevel.toFixed(2),
+                panOffsetX: result.panOffset.x.toFixed(2),
+                panOffsetY: result.panOffset.y.toFixed(2),
+            }));
+        } catch (error) {
+            console.error('Zoom calculation failed:', error);
+            setDebugData((prev) => ({ ...prev, info: 'Wheel zoom error', error: error.message }));
+        }
     }
+    // Note: Mac scrolls with deltaY === 0 and deltaX === 0 won't trigger anything here.
   };
 
   useEffect(() => {
@@ -706,34 +627,33 @@ const NodeCanvas = () => {
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist > MOVEMENT_THRESHOLD) {
         mouseMoved.current = true;
-        if (longPressingNode && !draggingNode) {
-          const inside = isInsideNode(longPressingNode, e.clientX, e.clientY);
-          if (!inside) {
-            clearTimeout(longPressTimeout.current);
-            mouseInsideNode.current = false;
-
-            // Get current dimensions for start point calculation
-            const startNodeDims = getNodeDimensions(longPressingNode);
-            const startPt = {
-              x: longPressingNode.x + startNodeDims.currentWidth / 2,
-              y: longPressingNode.y + startNodeDims.currentHeight / 2
-            };
-
-            setDrawingConnectionFrom({
-              node: longPressingNode,
-              startX: startPt.x,
-              startY: startPt.y,
-              currentX,
-              currentY,
-              originalNodeX: longPressingNode.x,
-              originalNodeY: longPressingNode.y,
-            });
-            animateNodeLerp(longPressingNode.id, 1);
-            setLongPressingNode(null);
-          }
+        // If mouse moves significantly, it's not a click -> cancel timeout
+        if (clickTimeoutIdRef.current) {
+            clearTimeout(clickTimeoutIdRef.current);
+            clickTimeoutIdRef.current = null;
+            potentialClickNodeRef.current = null;
+            console.log('[MouseMove] Click timeout cancelled due to movement.');
+        }
+        // Keep existing logic for starting connection line or panning
+        if (longPressingNode && !draggingNode) { 
+            // ... start drawing connection ...
+             const inside = isInsideNode(longPressingNode, e.clientX, e.clientY);
+             if (!inside) {
+                 clearTimeout(longPressTimeout.current); // Ensure long press drag doesn't start
+                 mouseInsideNode.current = false;
+                 const startNodeDims = getNodeDimensions(longPressingNode, previewingNodeId === longPressingNode.id);
+                 const startPt = { x: longPressingNode.x + startNodeDims.currentWidth / 2, y: longPressingNode.y + startNodeDims.currentHeight / 2 };
+                 const rect = containerRef.current.getBoundingClientRect();
+                 const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
+                 const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
+                 const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
+                 setDrawingConnectionFrom({ node: longPressingNode, startX: startPt.x, startY: startPt.y, currentX, currentY, originalNodeX: longPressingNode.x, originalNodeY: longPressingNode.y });
+                 animateNodeLerp(longPressingNode.id, 1);
+                 setLongPressingNode(null);
+             }
         } else if (!draggingNode && !drawingConnectionFrom && !isPanning && !startedOnNode.current) {
-          setIsPanning(true);
-          setPanStart({ x: e.clientX, y: e.clientY });
+            setIsPanning(true);
+            setPanStart({ x: e.clientX, y: e.clientY });
         }
       }
     }
@@ -806,12 +726,23 @@ const NodeCanvas = () => {
   };
 
   const handleMouseDown = (e) => {
+    // Canvas background mouse down
     if (isPaused) return;
+
+    // Clear any pending single click on a node
+    if (clickTimeoutIdRef.current) {
+        clearTimeout(clickTimeoutIdRef.current);
+        clickTimeoutIdRef.current = null;
+        potentialClickNodeRef.current = null;
+        console.log('[CanvasMouseDown] Cleared pending node click timeout.');
+    }
+
     isMouseDown.current = true;
     mouseDownPosition.current = { x: e.clientX, y: e.clientY };
     startedOnNode.current = false;
     mouseMoved.current = false;
     setLastInteractionType('mouse_down');
+
     if ((isMac && e.metaKey) || (!isMac && e.ctrlKey)) {
       e.preventDefault();
       e.stopPropagation();
@@ -829,65 +760,75 @@ const NodeCanvas = () => {
 
   const handleMouseUp = (e) => {
     if (isPaused) return;
-    clearTimeout(longPressTimeout.current);
-    mouseInsideNode.current = false;
+    clearTimeout(longPressTimeout.current); // Clear long press timer
+    // Timeout for single click (`clickTimeoutIdRef`) should clear itself or be cleared by other actions.
+
+    mouseInsideNode.current = false; 
+
+    // Finalize drawing connection
     if (drawingConnectionFrom) {
-      const targetNode = nodes.find(n => isInsideNode(n, e.clientX, e.clientY));
-      if (targetNode && targetNode.id !== drawingConnectionFrom.node.id) {
-        const exists = connections.some(
-          c =>
-            (c.startId === drawingConnectionFrom.node.id && c.endId === targetNode.id) ||
-            (c.startId === targetNode.id && c.endId === drawingConnectionFrom.node.id)
-        );
-        if (!exists) {
-          setConnections(prev => [...prev, { startId: drawingConnectionFrom.node.id, endId: targetNode.id }]);
+        const targetNode = nodes.find(n => isInsideNode(n, e.clientX, e.clientY));
+        if (targetNode && targetNode.id !== drawingConnectionFrom.node.id) {
+          const exists = connections.some(c => (c.startId === drawingConnectionFrom.node.id && c.endId === targetNode.id) || (c.startId === targetNode.id && c.endId === drawingConnectionFrom.node.id));
+          if (!exists) {
+            setConnections(prev => [...prev, { startId: drawingConnectionFrom.node.id, endId: targetNode.id }]);
+          }
         }
-      }
-      setDrawingConnectionFrom(null);
-      wasDrawingConnection.current = true;
+        setDrawingConnectionFrom(null);
+        wasDrawingConnection.current = true;
     }
+
+    // --- Remove single-click selection logic from here --- 
+   
+    // Reset scale if mouse up happens after long press starts but before drag/connect
+    if (longPressingNode && !draggingNode && !drawingConnectionFrom) {
+       animateNodeLerp(longPressingNode.id, 1);
+    }
+    // Always clear longPressingNode on mouse up
     if (longPressingNode) {
-      const dx = e.clientX - mouseDownPosition.current.x;
-      const dy = e.clientY - mouseDownPosition.current.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < MOVEMENT_THRESHOLD && isInsideNode(longPressingNode, e.clientX, e.clientY) && !draggingNode) {
-        const wasSelected = selectedNodes.has(longPressingNode.id);
-        setSelectedNodes(prev =>
-          wasSelected
-            ? new Set([...Array.from(prev)].filter(id => id !== longPressingNode.id))
-            : new Set([...Array.from(prev), longPressingNode.id])
-        );
-      }
-      animateNodeLerp(longPressingNode.id, 1);
-      setLongPressingNode(null);
+        setLongPressingNode(null);
     }
+
+    // Finalize selection box
     if (selectionStart) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
-      const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
-      const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
-      canvasWorker.calculateSelection({ selectionStart, currentX, currentY })
-        .then(selectionRes => {
-          const finalSelectedIds = nodes
-            .filter(nd => !(selectionRes.x > nd.x + NODE_WIDTH ||
-                              selectionRes.x + selectionRes.width < nd.x ||
-                              selectionRes.y > nd.y + NODE_HEIGHT ||
-                              selectionRes.y + selectionRes.height < nd.y))
-            .map(nd => nd.id);
-          setSelectedNodes(prev => new Set([...prev, ...finalSelectedIds]));
-        })
-        .catch(error => console.error("Final selection calc failed:", error));
-      ignoreCanvasClick.current = true;
-      setSelectionStart(null);
-      setSelectionRect(null);
+        const rect = containerRef.current.getBoundingClientRect();
+        const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
+        const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
+        const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
+        canvasWorker.calculateSelection({ selectionStart, currentX, currentY })
+          .then(selectionRes => {
+            const finalSelectedIds = nodes
+              .filter(nd => !(selectionRes.x > nd.x + getNodeDimensions(nd, previewingNodeId === nd.id).currentWidth ||
+                                selectionRes.x + selectionRes.width < nd.x ||
+                                selectionRes.y > nd.y + getNodeDimensions(nd, previewingNodeId === nd.id).currentHeight ||
+                                selectionRes.y + selectionRes.height < nd.y))
+              .map(nd => nd.id);
+            setSelectedNodes(prev => new Set([...prev, ...finalSelectedIds]));
+          })
+          .catch(error => console.error("Final selection calc failed:", error));
+        ignoreCanvasClick.current = true;
+        setSelectionStart(null);
+        setSelectionRect(null);
     }
+
+    // Finalize panning state
     setIsPanning(false);
     isMouseDown.current = false;
-    mouseMoved.current = false;
+    // Reset mouseMoved ref *after* potential single click timeout has run or been cancelled
+    // Doing it here prevents the timeout check from failing if mouseup happens quickly
+    // mouseMoved.current = false; 
+    // Let's reset it slightly later to ensure timeout logic completes
+    setTimeout(() => { mouseMoved.current = false; }, 0); 
+
+    // Finalize dragging state
     if (draggingNode) {
-      Object.keys(draggingNode.initialPositions).forEach(id => {
-        animateNodeLerp(parseInt(id, 10), 1);
-      });
+      if (draggingNode.initialPositions) {
+        Object.keys(draggingNode.initialPositions).forEach(id => {
+          animateNodeLerp(parseInt(id, 10), 1);
+        });
+      } else if (draggingNode.nodeId) {
+        animateNodeLerp(draggingNode.nodeId, 1);
+      }
       setDraggingNode(null);
     }
   };
@@ -921,36 +862,40 @@ const NodeCanvas = () => {
     isMouseDown.current = false;
   };
 
+  // --- handleCanvasClick ---
   const handleCanvasClick = (e) => {
-    if (wasDrawingConnection.current) {
-      wasDrawingConnection.current = false;
-      return;
-    }
-    if (e.target.closest('g[data-plus-sign="true"]')) return;
-    if (e.target.tagName !== 'svg') return;
-    if (isPaused || draggingNode || drawingConnectionFrom || mouseMoved.current || recentlyPanned || nodeNamePrompt.visible) {
-      setLastInteractionType('blocked_click');
-      return;
-    }
-    if (ignoreCanvasClick.current) {
-      ignoreCanvasClick.current = false;
-      return;
-    }
-    if (selectedNodes.size > 0) {
-      setSelectedNodes(new Set());
-      return;
-    }
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
-    const mouseY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
-    if (!plusSign) {
-      setPlusSign({ x: mouseX, y: mouseY, mode: 'appear', tempName: '' });
-      setLastInteractionType('plus_sign_shown');
-    } else {
-      if (nodeNamePrompt.visible) return;
-      setPlusSign(ps => ps && { ...ps, mode: 'disappear' });
-      setLastInteractionType('plus_sign_hidden');
-    }
+      if (wasDrawingConnection.current) {
+          wasDrawingConnection.current = false;
+          return;
+      }
+      if (e.target.closest('g[data-plus-sign="true"]')) return;
+      if (e.target.tagName !== 'svg' || !e.target.classList.contains('canvas')) return;
+
+      if (isPaused || draggingNode || drawingConnectionFrom || mouseMoved.current || recentlyPanned || nodeNamePrompt.visible) {
+          setLastInteractionType('blocked_click');
+          return;
+      }
+      if (ignoreCanvasClick.current) {
+          ignoreCanvasClick.current = false;
+          return;
+      }
+
+      if (selectedNodes.size > 0) {
+          setSelectedNodes(new Set());
+          return; // Don't show plus sign if we just cleared selection
+      }
+
+      const rect = containerRef.current.getBoundingClientRect();
+      const mouseX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
+      const mouseY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
+      if (!plusSign) {
+          setPlusSign({ x: mouseX, y: mouseY, mode: 'appear', tempName: '' });
+          setLastInteractionType('plus_sign_shown');
+      } else {
+          if (nodeNamePrompt.visible) return;
+          setPlusSign(ps => ps && { ...ps, mode: 'disappear' });
+          setLastInteractionType('plus_sign_hidden');
+      }
   };
 
   const handlePlusSignClick = () => {
@@ -1114,6 +1059,8 @@ const NodeCanvas = () => {
           <div style={{ display: 'flex', alignItems: 'center' }}>
             <input
               type="text"
+              id="node-name-prompt-input" // Add id
+              name="nodeNamePromptInput" // Add name
               value={nodeNamePrompt.name}
               onChange={(e) => setNodeNamePrompt({ ...nodeNamePrompt, name: e.target.value })}
               onKeyDown={(e) => { if (e.key === 'Enter') handlePromptSubmit(); }}
@@ -1217,23 +1164,25 @@ const NodeCanvas = () => {
 
   return (
     <div
-      className="node-canvas-container"
+      className={`node-canvas-container`}
       style={{
         height: '100vh',
         width: '100vw',
         display: 'flex',
         flexDirection: 'column',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        backgroundColor: 'transparent',
+        transition: 'background-color 0.3s ease',
       }}
       tabIndex="0"
-      onBlur={() => keysPressed.current = {}} // Clear keys on blur
+      onBlur={() => keysPressed.current = {}}
     >
       <Header
-        projectTitle={projectTitle}
-        onTitleChange={handleProjectTitleChange}
-        onEditingStateChange={handleHeaderEditingChange}
-        debugMode={debugMode}
-        setDebugMode={setDebugMode}
+         projectTitle={projectTitle}
+         onTitleChange={handleProjectTitleChange}
+         onEditingStateChange={handleHeaderEditingChange}
+         debugMode={debugMode}
+         setDebugMode={setDebugMode}
       />
       <div
         ref={containerRef}
@@ -1241,7 +1190,8 @@ const NodeCanvas = () => {
         style={{
           flexGrow: 1,
           position: 'relative',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          backgroundColor: '#bdb5b5'
         }}
         onWheel={handleWheel}
         onMouseMove={handleMouseMove}
@@ -1253,11 +1203,16 @@ const NodeCanvas = () => {
           className="canvas"
           width={canvasSize.width}
           height={canvasSize.height}
-          style={{ transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`, transformOrigin: '0 0', backgroundColor: '#bdb5b5' }}
+          style={{
+              transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
+              transformOrigin: '0 0',
+              backgroundColor: '#bdb5b5',
+              opacity: 1,
+              pointerEvents: 'auto',
+          }}
           onMouseUp={handleMouseUp}
         >
           <g className="base-layer">
-            {/* Render Connections First */}
             {connections.map((conn, idx) => {
               const sNode = nodes.find(n => n.id === conn.startId);
               const eNode = nodes.find(n => n.id === conn.endId);
@@ -1266,7 +1221,7 @@ const NodeCanvas = () => {
               const eNodeDims = getNodeDimensions(eNode);
               return (
                 <line
-                  key={idx}
+                  key={`inner-conn-${idx}`}
                   x1={sNode.x + sNodeDims.currentWidth / 2}
                   y1={sNode.y + sNodeDims.currentHeight / 2}
                   x2={eNode.x + eNodeDims.currentWidth / 2}
@@ -1287,88 +1242,106 @@ const NodeCanvas = () => {
               />
             )}
 
-            {/* Separate dragging nodes for render order */}
             {(() => {
-              let draggingNodeIds = new Set();
-              if (draggingNode) {
-                if (draggingNode.initialPositions) {
-                  draggingNodeIds = new Set(Object.keys(draggingNode.initialPositions).map(Number));
-                } else if (draggingNode.nodeId) {
-                  draggingNodeIds = new Set([draggingNode.nodeId]);
-                }
-              }
+               let draggingNodeIds = new Set();
+               if (draggingNode) {
+                 if (draggingNode.initialPositions) {
+                   draggingNodeIds = new Set(Object.keys(draggingNode.initialPositions).map(Number));
+                 } else if (draggingNode.nodeId) {
+                   draggingNodeIds = new Set([draggingNode.nodeId]);
+                 }
+               }
 
-              const nonDraggingNodes = nodes.filter(node => !draggingNodeIds.has(node.id));
-              const draggingNodes = nodes.filter(node => draggingNodeIds.has(node.id));
+               const nonDraggingNodes = nodes.filter(node => !draggingNodeIds.has(node.id));
+               const draggingNodes = nodes.filter(node => draggingNodeIds.has(node.id));
 
-              return (
-                <>
-                  {/* Render Non-Dragging Nodes */}
-                  {nonDraggingNodes.map((node) => {
-                    const dimensions = getNodeDimensions(node);
-                    return (
-                      <Node
-                        key={node.id}
-                        node={node}
-                        currentWidth={dimensions.currentWidth}
-                        currentHeight={dimensions.currentHeight}
-                        textAreaHeight={dimensions.textAreaHeight}
-                        imageWidth={dimensions.imageWidth}
-                        imageHeight={dimensions.calculatedImageHeight}
-                        isSelected={selectedNodes.has(node.id)}
-                        isDragging={false} // Explicitly false for this group
-                        onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                      />
-                    );
-                  })}
+               return (
+                 <>
+                   {nonDraggingNodes.map((node) => {
+                     // Determine if previewing THIS node
+                     const isPreviewing = previewingNodeId === node.id;
+                     // Pass preview state to dimension calculator
+                     const dimensions = getNodeDimensions(node, isPreviewing);
+                     return (
+                       <Node
+                         key={node.id}
+                         node={node}
+                         currentWidth={dimensions.currentWidth}
+                         currentHeight={dimensions.currentHeight}
+                         textAreaHeight={dimensions.textAreaHeight}
+                         imageWidth={dimensions.imageWidth}
+                         imageHeight={dimensions.calculatedImageHeight}
+                         // Pass calculated inner dimensions if previewing
+                         innerNetworkWidth={dimensions.innerNetworkWidth}
+                         innerNetworkHeight={dimensions.innerNetworkHeight}
+                         isSelected={selectedNodes.has(node.id)}
+                         isDragging={false}
+                         onMouseDown={(e) => handleNodeMouseDown(node, e)}
+                         // --- Pass necessary props for preview ---
+                         isPreviewing={isPreviewing}
+                         allNodes={nodes}
+                         connections={connections}
+                       />
+                     );
+                   })}
 
-                  {/* Render Dragging Nodes Last */}
-                  {draggingNodes.map((node) => {
-                    const dimensions = getNodeDimensions(node);
-                    return (
-                      <Node
-                        key={node.id}
-                        node={node}
-                        currentWidth={dimensions.currentWidth}
-                        currentHeight={dimensions.currentHeight}
-                        textAreaHeight={dimensions.textAreaHeight}
-                        imageWidth={dimensions.imageWidth}
-                        imageHeight={dimensions.calculatedImageHeight}
-                        isSelected={selectedNodes.has(node.id)}
-                        isDragging={true} // Explicitly true for this group
-                        onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                      />
-                    );
-                  })}
-                </>
-              );
-            })()}
+                   {draggingNodes.map((node) => {
+                     // Determine if previewing THIS node
+                     const isPreviewing = previewingNodeId === node.id;
+                     // Pass preview state to dimension calculator
+                     const dimensions = getNodeDimensions(node, isPreviewing);
+                     return (
+                       <Node
+                         key={node.id}
+                         node={node}
+                         currentWidth={dimensions.currentWidth}
+                         currentHeight={dimensions.currentHeight}
+                         textAreaHeight={dimensions.textAreaHeight}
+                         imageWidth={dimensions.imageWidth}
+                         imageHeight={dimensions.calculatedImageHeight}
+                         // Pass calculated inner dimensions if previewing
+                         innerNetworkWidth={dimensions.innerNetworkWidth}
+                         innerNetworkHeight={dimensions.innerNetworkHeight}
+                         isSelected={selectedNodes.has(node.id)}
+                         isDragging={true}
+                         onMouseDown={(e) => handleNodeMouseDown(node, e)}
+                         // --- Pass necessary props for preview ---
+                         isPreviewing={isPreviewing}
+                         allNodes={nodes}
+                         connections={connections}
+                       />
+                     );
+                   })}
+                 </>
+               );
+             })()}
           </g>
-          {selectionRect && (
-            <rect
-              x={selectionRect.x}
-              y={selectionRect.y}
-              width={selectionRect.width}
-              height={selectionRect.height}
-              fill="rgba(255, 0, 0, 0.1)"
-              stroke="red"
-              strokeWidth={1}
-            />
-          )}
-          {plusSign && (
-            <PlusSign
-              plusSign={plusSign}
-              onClick={handlePlusSignClick}
-              onMorphDone={handleMorphDone}
-              onDisappearDone={() => setPlusSign(null)}
-            />
-          )}
+
+           {selectionRect && (
+             <rect
+               x={selectionRect.x}
+               y={selectionRect.y}
+               width={selectionRect.width}
+               height={selectionRect.height}
+               fill="rgba(255, 0, 0, 0.1)"
+               stroke="red"
+               strokeWidth={1}
+             />
+           )}
+
+           {plusSign && (
+             <PlusSign
+               plusSign={plusSign}
+               onClick={handlePlusSignClick}
+               onMorphDone={handleMorphDone}
+               onDisappearDone={() => setPlusSign(null)}
+             />
+           )}
         </svg>
-        
+
         {renderCustomPrompt()}
       </div>
 
-      {/* Render DebugOverlay conditionally based on debugMode state */}
       {debugMode && (
         <DebugOverlay 
           debugData={debugData}
@@ -1376,20 +1349,20 @@ const NodeCanvas = () => {
         />
       )}
 
-      <Panel 
-        ref={panelRef}
-        isExpanded={panelExpanded}
-        onToggleExpand={handleTogglePanel}
-        nodes={nodes}
-        onSaveNodeData={handleSaveNodeData}
-        onFocusChange={handlePanelFocusChange}
-        projectTitle={projectTitle}
-        projectBio={projectBio}
-        onProjectTitleChange={handleProjectTitleChange}
-        onProjectBioChange={handleProjectBioChange}
+      <Panel
+          ref={panelRef}
+          isExpanded={panelExpanded}
+          onToggleExpand={handleTogglePanel}
+          nodes={nodes}
+          onSaveNodeData={handleSaveNodeData}
+          onFocusChange={handlePanelFocusChange}
+          projectTitle={projectTitle}
+          projectBio={projectBio}
+          onProjectTitleChange={handleProjectTitleChange}
+          onProjectBioChange={handleProjectBioChange}
       />
 
-      <TypeList 
+      <TypeList
         nodes={nodes}
         setSelectedNodes={setSelectedNodes}
       />

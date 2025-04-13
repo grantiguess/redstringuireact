@@ -38,3 +38,8 @@
 .hide-scrollbar::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
 }
+
+.panel-content-inner {
+  padding: 15px; /* Add general padding to the content area */
+  box-sizing: border-box;
+}

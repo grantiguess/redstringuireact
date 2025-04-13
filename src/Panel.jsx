@@ -491,42 +491,30 @@ const Panel = forwardRef(
       );
     } else if (activeTab.type === 'home') {
       tabContent = (
-        <div style={{ padding: '10px' }}>
-          <div style={{ marginBottom: '8px' }}>
+        <div className="panel-content-inner home-tab" >
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px', flexWrap: 'nowrap' }}>
+            {/* Project Title - Editable on Double Click */}
             {editingProjectTitle ? (
               <input
                 ref={projectTitleInputRef}
                 type="text"
-                className="panel-title-input"
+                id="project-title-input"
+                name="projectTitleInput"
                 value={tempProjectTitle}
                 onChange={(e) => setTempProjectTitle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') commitProjectTitleChange(); }}
+                onBlur={commitProjectTitleChange}
                 onFocus={() => onFocusChange?.(true)}
-                onBlur={() => {
-                  commitProjectTitleChange();
-                  onFocusChange?.(false);
-                }}
-                onKeyDown={(e) => {
-                  if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
-                    e.stopPropagation();
-                  }
-                  if (e.key === 'Enter') {
-                    commitProjectTitleChange();
-                  } else if (e.key === 'Escape') {
-                    setEditingProjectTitle(false);
-                    onFocusChange?.(false);
-                  }
-                }}
                 style={{ fontFamily: 'inherit', fontSize: '1.1rem', fontWeight: 'bold', color: '#260000' }}
-                autoFocus
               />
             ) : (
               <h2
                 style={{
-                  margin: 0,
+                  margin: '0 10px 0 0', 
                   color: '#260000',
                   cursor: 'pointer',
-                  fontSize: '1.1rem',
-                  fontWeight: 'bold',
+                  overflow: 'hidden',
+                  userSelect: 'none'
                 }}
                 onDoubleClick={() => {
                   setEditingProjectTitle(true);
@@ -537,9 +525,10 @@ const Panel = forwardRef(
               </h2>
             )}
           </div>
-
           <textarea
-            placeholder="Add a bio..."
+            placeholder="Add a project bio..."
+            id="project-bio-textarea"
+            name="projectBioTextarea"
             className="panel-bio-textarea"
             style={{
               width: '100%',
@@ -566,7 +555,6 @@ const Panel = forwardRef(
               }
             }}
           />
-
           {/* Divider Line */}
           <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
 
@@ -655,41 +643,20 @@ const Panel = forwardRef(
         };
 
         tabContent = (
-          <div style={{ padding: '10px' }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '8px',
-              }}
-            >
-              {/* Editable title: double‑click to enable editing */}
+          <div className="panel-content-inner node-tab">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               {editingTitle ? (
                 <input
                   ref={titleInputRef}
                   type="text"
-                  className="panel-title-input"
+                  id={`node-title-input-${nodeId}`}
+                  name={`nodeTitleInput-${nodeId}`}
                   value={tempTitle}
                   onChange={(e) => setTempTitle(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') commitTitleChange(); }}
+                  onBlur={commitTitleChange}
                   onFocus={() => onFocusChange?.(true)}
-                  onBlur={() => {
-                    commitTitleChange();
-                    onFocusChange?.(false);
-                  }}
-                  onKeyDown={(e) => {
-                    if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
-                      e.stopPropagation();
-                    }
-                    if (e.key === 'Enter') {
-                      commitTitleChange();
-                    } else if (e.key === 'Escape') {
-                      setEditingTitle(false);
-                      onFocusChange?.(false);
-                    }
-                  }}
                   style={{ fontFamily: 'inherit' }}
-                  autoFocus
                 />
               ) : (
                 <h3
@@ -698,7 +665,7 @@ const Panel = forwardRef(
                     color: '#260000',
                     cursor: 'pointer',
                     overflow: 'hidden',
-                    userSelect: 'none' // Make non-editable text non-selectable
+                    userSelect: 'none'
                   }}
                   onDoubleClick={() => {
                     setEditingTitle(true);
@@ -727,6 +694,8 @@ const Panel = forwardRef(
 
             <textarea
               placeholder="Add a bio..."
+              id={`node-bio-textarea-${nodeId}`}
+              name={`nodeBioTextarea-${nodeId}`}
               className="panel-bio-textarea"
               style={{
                 width: '100%',
@@ -742,7 +711,7 @@ const Panel = forwardRef(
                 fontSize: '14px',
                 lineHeight: '1.4',
                 fontFamily: 'inherit',
-                userSelect: 'text' // Allow text selection only when focused
+                userSelect: 'text'
               }}
               value={nodeData.bio || ''}
               onFocus={() => onFocusChange?.(true)}

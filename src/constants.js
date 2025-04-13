@@ -18,3 +18,12 @@ export const EXPANDED_NODE_WIDTH = 300; // Width when image is present
 export const AVERAGE_CHAR_WIDTH = 9; // Approx width per char for 16px font
 export const WRAPPED_NODE_HEIGHT = 110; // Height for text-only nodes when text wraps
 export const LINE_HEIGHT_ESTIMATE = 28; // Approx height of one line of text (px)
+
+export const EDGE_MARGIN = 75; // Pixels from viewport edge for decomposed view placement
+
+export const TRACKPAD_ZOOM_SENSITIVITY = 5;       // Sensitivity for trackpad pinch-zooming (macOS)
+export const PAN_DRAG_SENSITIVITY = 1.25; // for panning (mouse-drag or trackpad)
+export const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1.5; // Renaming this slightly for clarity, adjust value if needed
+export const SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY = MOUSE_WHEEL_ZOOM_SENSITIVITY / 3.0; // For standard wheel zoom
+export const KEYBOARD_PAN_SPEED = 0.115;                // for keyboard panning
+export const KEYBOARD_ZOOM_SPEED = 0.15;               // for keyboard zooming

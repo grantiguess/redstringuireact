@@ -1,33 +1,35 @@
 .node {
     cursor: pointer;
-    transition: transform 0.05s ease, filter 0.1s ease;
+    /* Remove transitions handled by inline styles in Node.jsx */
+    /* transition: transform 0.05s ease, filter 0.1s ease; */
 }
 
-.node.selected rect {
+.node.selected .node-background {
+    /* Use node-background directly for stroke */
     stroke: black;
 }
 
-.node.dragging rect {
+.node.dragging .node-background {
+    /* Use node-background directly for filter */
     filter: drop-shadow(0px 8px 10px rgba(0, 0, 0, 0.4));
 }
 
-/* Add class for background rect transition */
-.node-background {
-  transition: height 0.3s ease, width 0.3s ease; /* Transition both */
+/* Add style for previewing state */
+.node.previewing .node-background {
+  /* stroke: #a0a0a0; */ /* Removed light grey stroke */
+  filter: drop-shadow(0px 10px 15px rgba(0, 0, 0, 0.2));
 }
 
-/* Add transition for image opacity */
-.node-image {
-  opacity: 0;
-  transition: opacity 0.5s ease-in-out; /* Adjust duration/timing as needed */
-}
+/* Remove class for background rect transition - handled inline */
+/* .node-background { ... } */
 
-/* Style when image should be visible (implicitly set via style={{ opacity: 1 }} in JSX) */
-/* We rely on the inline style to trigger the transition */
+/* Remove transition for image opacity - handled inline */
+/* .node-image { ... } */
 
-/* Style for the inner text span to enable smooth transition */
+/* Style for the inner text span - ensure it works with foreignObject */
 .node-name-text {
   display: inline-block;
-  width: 100%; /* Needed for ellipsis */
+  width: 100%; /* Needed for ellipsis/centering */
   text-align: center; /* Ensure centered text */
+  /* Remove transition - handled inline */
 }
