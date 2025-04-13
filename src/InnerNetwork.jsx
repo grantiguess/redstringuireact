@@ -75,7 +75,7 @@ const InnerNetwork = React.memo(({ nodes, connections, width, height, padding })
          return (
            <Node
              key={`inner-node-${node.id}`}
-             node={{...node, scale: 1}} 
+             node={node}
              currentWidth={dimensions.currentWidth}
              currentHeight={dimensions.currentHeight}
              textAreaHeight={dimensions.textAreaHeight}

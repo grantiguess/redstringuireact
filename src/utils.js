@@ -15,8 +15,18 @@ const PREVIEW_TEXT_AREA_HEIGHT = 60; // Fixed height for name in preview
 
 // --- getNodeDimensions Utility Function ---
 export const getNodeDimensions = (node, isPreviewing = false) => {
-    const hasImage = Boolean(node.image?.src);
-    const hasValidImageDimensions = hasImage && node.image.naturalWidth > 0;
+    // Use getters to access node properties
+    const nodeName = node.getName ? node.getName() : node.name; // Handle potential plain objects gracefully for now?
+    const thumbnailSrc = node.getThumbnailSrc ? node.getThumbnailSrc() : node.thumbnailSrc; // Use getter
+    // const imageSrc = node.getImageSrc ? node.getImageSrc() : node.imageSrc; // If needed for dimensions
+
+    const hasImage = Boolean(thumbnailSrc); // Check based on thumbnail
+    // We can't easily get naturalWidth/Height from a src string here.
+    // We might need to pass pre-calculated image dimensions into the node data itself,
+    // or adjust the logic to not rely on naturalWidth/Height if possible.
+    // For now, let's assume hasValidImageDimensions might be simplified or handled differently.
+    // const hasValidImageDimensions = hasImage && node.image.naturalWidth > 0; // This needs re-evaluation
+    const hasValidImageDimensions = hasImage; // Simplification for now
 
     // --- Determine base dimensions based on state ---
     let baseWidth, baseHeight, textWidthTarget;
@@ -41,7 +51,7 @@ export const getNodeDimensions = (node, isPreviewing = false) => {
     tempSpan.style.visibility = 'hidden';
     tempSpan.style.position = 'absolute';
     tempSpan.style.whiteSpace = 'nowrap'; // Measure full width first
-    tempSpan.textContent = node.name;
+    tempSpan.textContent = nodeName; // Use nodeName variable
     document.body.appendChild(tempSpan);
     const textWidth = tempSpan.offsetWidth;
     document.body.removeChild(tempSpan);
@@ -81,25 +91,41 @@ export const getNodeDimensions = (node, isPreviewing = false) => {
         // Calculate image dimensions
         imageWidth = currentWidth - 2 * NODE_PADDING;
         if (hasValidImageDimensions) {
-            const aspectRatio = node.image.naturalHeight / node.image.naturalWidth;
-            calculatedImageHeight = imageWidth * aspectRatio;
+            // Get stored aspect ratio or use a default (e.g., 1 for square)
+            const aspectRatio = node.getImageAspectRatio ? node.getImageAspectRatio() : 1;
+
+            // Calculate height based on width and aspect ratio
+            calculatedImageHeight = aspectRatio ? imageWidth * aspectRatio : 0;
+
+            // *** Add Logging ***
+            console.log(`[getNodeDimensions] Node ID: ${node.getId ? node.getId() : node.id}, Image: true`);
+            console.log(`  - textAreaHeight: ${textAreaHeight}`);
+            console.log(`  - imageWidth: ${imageWidth}`);
+            console.log(`  - aspectRatio: ${aspectRatio}`);
+            console.log(`  - calculatedImageHeight: ${calculatedImageHeight}`);
+
+            // Adjust overall node height to accommodate image
+            currentHeight = textAreaHeight + calculatedImageHeight + NODE_PADDING; // Text + Image + Bottom Padding
+            console.log(`  - currentHeight (before min): ${currentHeight}`);
         } else {
             calculatedImageHeight = 0; // Handle invalid image data
+            currentHeight = textAreaHeight + NODE_PADDING; // Adjusted height calc for no image
         }
-        // Ensure this also uses one bottom padding
-        currentHeight = textAreaHeight + calculatedImageHeight + NODE_PADDING; 
         // Reset network dimensions
         innerNetworkWidth = 0;
         innerNetworkHeight = 0;
     } else {
-        // Calculate text lines based on standard width
-        let estimatedLines = 1;
-        if (textWidth > textWidthTarget * 2) { estimatedLines = 3; }
-        else if (textWidth > textWidthTarget) { estimatedLines = 2; }
-        textAreaHeight = Math.max(NODE_HEIGHT, estimatedLines * LINE_HEIGHT_ESTIMATE + 2 * NODE_PADDING);
+        // --- Node WITHOUT Image --- 
+
+        // Determine width based on text length, clamped between NODE_WIDTH and EXPANDED_NODE_WIDTH
         currentWidth = Math.max(NODE_WIDTH, Math.min(textWidth + 2 * NODE_PADDING, EXPANDED_NODE_WIDTH));
-        // Text only node height is just the text area height (which includes its own padding)
-        currentHeight = textAreaHeight;
+
+        // Calculate text area height needed for the determined width
+        textAreaHeight = calculateTextAreaHeight(nodeName, currentWidth - 2 * NODE_PADDING);
+
+        // Total height is the text area height (ensure minimum)
+        currentHeight = Math.max(NODE_HEIGHT, textAreaHeight); 
+
         // Reset image and network dimensions
         imageWidth = 0;
         calculatedImageHeight = 0;
@@ -107,15 +133,94 @@ export const getNodeDimensions = (node, isPreviewing = false) => {
         innerNetworkHeight = 0;
     }
 
+    // Ensure minimum height (redundant check, but safe)
+    currentHeight = Math.max(currentHeight, NODE_HEIGHT);
+
+    // Ensure all return values are numbers (prevent NaN)
+    currentWidth = Number(currentWidth) || NODE_WIDTH;
+    currentHeight = Number(currentHeight) || NODE_HEIGHT;
+    textAreaHeight = Number(textAreaHeight) || NODE_HEIGHT;
+    imageWidth = Number(imageWidth) || 0;
+    calculatedImageHeight = Number(calculatedImageHeight) || 0;
+    innerNetworkWidth = Number(innerNetworkWidth) || 0;
+    innerNetworkHeight = Number(innerNetworkHeight) || 0;
+
     return {
         currentWidth,
         currentHeight,
-        textAreaHeight, // Now dynamically calculated for preview
+        textAreaHeight: textAreaHeight, // Return calculated text area height
         imageWidth,
-        calculatedImageHeight,
+        calculatedImageHeight, // Return calculated image height
         innerNetworkWidth, // Add inner network dimensions
         innerNetworkHeight // Add inner network dimensions
     };
 };
 
 // Add other utility functions here if needed 
+
+export const calculateTextAreaHeight = (name, width) => {
+    // ... existing code ...
+};
+
+/**
+ * Generates a thumbnail data URL from an image source.
+ * @param {string | File} imageSource - The image source (data URL or File object).
+ * @param {number} maxDimension - The maximum width or height for the thumbnail.
+ * @returns {Promise<string>} A promise that resolves with the thumbnail data URL.
+ */
+export const generateThumbnail = (imageSource, maxDimension) => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      let { width, height } = img;
+
+      // Calculate new dimensions
+      if (width > height) {
+        if (width > maxDimension) {
+          height = Math.round(height * (maxDimension / width));
+          width = maxDimension;
+        }
+      } else {
+        if (height > maxDimension) {
+          width = Math.round(width * (maxDimension / height));
+          height = maxDimension;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      // Draw the image onto the canvas
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Get the data URL (default is PNG, can specify JPEG with quality)
+      // For thumbnails, JPEG might be smaller
+      const thumbnailDataUrl = canvas.toDataURL('image/jpeg', 0.8); // Adjust quality as needed
+      resolve(thumbnailDataUrl);
+    };
+    img.onerror = (error) => {
+      console.error("Error loading image for thumbnail generation:", error);
+      reject(new Error("Could not load image"));
+    };
+
+    // Set the image source
+    if (imageSource instanceof File) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        img.src = e.target.result;
+      };
+      reader.onerror = (error) => {
+          console.error("Error reading file for thumbnail generation:", error);
+          reject(new Error("Could not read file"));
+      };
+      reader.readAsDataURL(imageSource);
+    } else if (typeof imageSource === 'string') {
+      img.src = imageSource;
+    } else {
+       reject(new Error("Invalid image source type"));
+    }
+  });
+}; 

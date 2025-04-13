@@ -8,6 +8,11 @@ import { useCanvasWorker } from './useCanvasWorker.js';
 import Node from './Node.jsx';
 import { getNodeDimensions } from './utils.js';
 
+// Import core graph classes
+import Graph from './core/Graph.js';
+import { default as CoreNode } from './core/Node.js'; // Alias core Node class
+import Edge from './core/Edge.js';
+
 import {
   NODE_WIDTH,
   NODE_HEIGHT,
@@ -231,15 +236,12 @@ const PlusSign = ({
 
 const NodeCanvas = () => {
   // --- State and Refs ---
-  const [nodes, setNodes] = useState([
-    { id: 1, x: 500, y: 500, name: 'Node 1', scale: 1, bio: '', image: null },
-    { id: 2, x: 1000, y: 800, name: 'Node 2', scale: 1, bio: '', image: null },
-  ]);
+  const [graph, setGraph] = useState(() => new Graph(true)); // Initialize with a directed graph
+
   const [selectedNodes, setSelectedNodes] = useState(new Set());
   const [draggingNode, setDraggingNode] = useState(null);
   const [longPressingNode, setLongPressingNode] = useState(null);
   const [drawingConnectionFrom, setDrawingConnectionFrom] = useState(null);
-  const [connections, setConnections] = useState([]);
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -321,18 +323,21 @@ const NodeCanvas = () => {
   };
 
   const isInsideNode = (node, clientX, clientY) => {
+    if (!containerRef.current) return false; // Guard against null ref
     const rect = containerRef.current.getBoundingClientRect();
     const scaledX = (clientX - rect.left - panOffset.x) / zoomLevel;
     const scaledY = (clientY - rect.top - panOffset.y) / zoomLevel;
 
     // Get current dimensions for the node
-    const { currentWidth, currentHeight } = getNodeDimensions(node);
+    const { currentWidth, currentHeight } = getNodeDimensions(node); // Assumes getNodeDimensions handles CoreNode
+    const nodeX = node.getX(); // Use getter
+    const nodeY = node.getY(); // Use getter
 
     return (
-      scaledX >= node.x &&
-      scaledX <= node.x + currentWidth && // Use currentWidth
-      scaledY >= node.y &&
-      scaledY <= node.y + currentHeight // Use currentHeight
+      scaledX >= nodeX &&
+      scaledX <= nodeX + currentWidth &&
+      scaledY >= nodeY &&
+      scaledY <= nodeY + currentHeight
     );
   };
 
@@ -417,13 +422,57 @@ const NodeCanvas = () => {
                 const adjustedY = (e.clientY - canvasRect.top - panOffset.y) / zoomLevel;
                 const offset = { x: adjustedX - node.x, y: adjustedY - node.y };
                 if (selectedNodes.has(node.id)) {
+                    // For selected nodes, calculate initial positions relative to the primary dragged node
                     const initialPositions = {};
-                    nodes.forEach(n => { if (selectedNodes.has(n.id)) { initialPositions[n.id] = { x: n.x, y: n.y }; } });
-                    setDraggingNode({ initialMouse: { x: e.clientX, y: e.clientY }, offset, initialPositions, primaryId: node.id });
-                    selectedNodes.forEach(id => { animateNodeLerp(id, 1.1); });
+                    const primaryNode = graph.getNodes().find(n => n.id === node.id);
+                    if (!primaryNode) return; // Should not happen
+
+                    const initialPrimaryPos = { x: primaryNode.getX(), y: primaryNode.getY() }; // Store initial primary pos
+                    graph.getNodes().forEach(n => {
+                        if (selectedNodes.has(n.id) && n.id !== primaryNode.id) { // Store only relative offsets for others
+                            initialPositions[n.id] = {
+                                offsetX: n.getX() - initialPrimaryPos.x,
+                                offsetY: n.getY() - initialPrimaryPos.y,
+                            };
+                        }
+                    });
+                    setDraggingNode({ 
+                        initialMouse: { x: e.clientX, y: e.clientY }, 
+                        initialPrimaryPos, // Add initial primary position to state
+                        relativeOffsets: initialPositions, // Rename for clarity
+                        primaryId: node.id 
+                    });
+                    // Update scale for selected nodes immutably
+                    setGraph(currentGraph => {
+                        const newGraph = currentGraph.clone();
+                        let changed = false;
+                        selectedNodes.forEach(id => {
+                            const nodeToUpdate = newGraph.getNodeById(id); // Assuming getNodeById exists or we add it
+                            if (nodeToUpdate && nodeToUpdate.scale !== 1.1) {
+                                const clonedNode = nodeToUpdate.clone(); // Clone the node
+                                clonedNode.setScale(1.1); // Update the cloned node
+                                newGraph.updateNode(clonedNode); // Assuming updateNode exists or we add it
+                                changed = true;
+                            }
+                        });
+                        return changed ? newGraph : currentGraph; // Return new graph only if changed
+                    });
                 } else {
-                    setDraggingNode({ initialMouse: { x: e.clientX, y: e.clientY }, nodeId: node.id, initialPos: { x: node.x, y: node.y }, offset });
-                    animateNodeLerp(node.id, 1.1);
+                    // Single node drag
+                    const offset = { x: e.clientX - node.x * zoomLevel - panOffset.x, y: e.clientY - node.y * zoomLevel - panOffset.y };
+                    setDraggingNode({ nodeId: node.id, offset });
+                    // Update scale for single node immutably
+                    setGraph(currentGraph => {
+                        const newGraph = currentGraph.clone();
+                        const nodeToUpdate = newGraph.getNodeById(node.id);
+                        if (nodeToUpdate && nodeToUpdate.scale !== 1.1) {
+                            const clonedNode = nodeToUpdate.clone();
+                            clonedNode.setScale(1.1);
+                            newGraph.updateNode(clonedNode);
+                            return newGraph;
+                        }
+                        return currentGraph; // No change
+                    });
                 }
             }
         }, LONG_PRESS_DURATION);
@@ -431,32 +480,35 @@ const NodeCanvas = () => {
     }
   };
 
-  const animateNodeLerp = (nodeId, targetScale) => {
-    const animate = () => {
-      setNodes(prev =>
-        prev.map(n => {
-          if (n.id === nodeId) {
-            const newScale = lerp(n.scale, targetScale, LERP_SPEED);
-            if (Math.abs(newScale - targetScale) < 0.01) {
-              return { ...n, scale: targetScale };
-            }
-            return { ...n, scale: newScale };
-          }
-          return n;
-        })
-      );
-      const currentNode = nodes.find(n => n.id === nodeId);
-      if (currentNode && Math.abs(currentNode.scale - targetScale) >= 0.01) {
-        requestAnimationFrame(animate);
-      }
-    };
-    requestAnimationFrame(animate);
-  };
-
   const handleSaveNodeData = (nodeId, newData) => {
-    setNodes(prev =>
-      prev.map(n => (n.id === nodeId ? { ...n, ...newData } : n))
-    );
+    console.log('Saving node data for ID:', nodeId, 'Data:', newData);
+    setGraph(currentGraph => {
+        const newGraph = currentGraph.clone();
+        const nodeToUpdate = newGraph.getNodeById(nodeId); // Use getNodeById
+        if (nodeToUpdate) {
+            const clonedNode = nodeToUpdate.clone(); // Clone the node
+            // Update properties from newData
+            Object.keys(newData).forEach(key => {
+                // Handle specific properties with setters first
+                if (key === 'name') {
+                    clonedNode.setName(newData[key]);
+                } else if (key === 'description' || key === 'bio') {
+                    clonedNode.setDescription(newData[key]);
+                } else if (key === 'imageSrc') { // Handle full image source
+                    clonedNode.setImageSrc(newData[key]);
+                } else if (key === 'thumbnailSrc') { // Handle thumbnail source
+                    clonedNode.setThumbnailSrc(newData[key]);
+                } else if (key === 'imageAspectRatio') { // Handle aspect ratio
+                    clonedNode.setImageAspectRatio(newData[key]);
+                } else if (key in clonedNode) {
+                    clonedNode[key] = newData[key];
+                }
+            });
+            newGraph.updateNode(clonedNode); // Use updateNode
+            return newGraph;
+        }
+        return currentGraph; // Return old graph if node not found
+    });
   };
 
   const handleWheel = async (e) => {
@@ -599,7 +651,7 @@ const NodeCanvas = () => {
         const selectionRes = await canvasWorker.calculateSelection({ selectionStart, currentX, currentY });
         setSelectionRect(selectionRes);
         const currentIds = new Set();
-        nodes.forEach(nd => {
+        graph.getNodes().forEach(nd => {
           if (!(selectionRes.x > nd.x + NODE_WIDTH ||
                 selectionRes.x + selectionRes.width < nd.x ||
                 selectionRes.y > nd.y + NODE_HEIGHT ||
@@ -608,7 +660,7 @@ const NodeCanvas = () => {
           }
         });
         const finalSelection = new Set([...selectionBaseRef.current]);
-        nodes.forEach(nd => {
+        graph.getNodes().forEach(nd => {
           if (!selectionBaseRef.current.has(nd.id)) {
             if (currentIds.has(nd.id)) finalSelection.add(nd.id);
             else finalSelection.delete(nd.id);
@@ -647,8 +699,8 @@ const NodeCanvas = () => {
                  const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
                  const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
                  const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
-                 setDrawingConnectionFrom({ node: longPressingNode, startX: startPt.x, startY: startPt.y, currentX, currentY, originalNodeX: longPressingNode.x, originalNodeY: longPressingNode.y });
-                 animateNodeLerp(longPressingNode.id, 1);
+                 // Store node ID instead of the full node object
+                 setDrawingConnectionFrom({ sourceNodeId: longPressingNode.id, startX: startPt.x, startY: startPt.y, currentX, currentY });
                  setLongPressingNode(null);
              }
         } else if (!draggingNode && !drawingConnectionFrom && !isPanning && !startedOnNode.current) {
@@ -659,40 +711,62 @@ const NodeCanvas = () => {
     }
 
     if (draggingNode) {
-      if (draggingNode.initialPositions && draggingNode.offset && draggingNode.primaryId) {
-        const currentAdjustedX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
-        const currentAdjustedY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
-        const newPrimaryX = currentAdjustedX - draggingNode.offset.x;
-        const newPrimaryY = currentAdjustedY - draggingNode.offset.y;
-        const primaryInitial = draggingNode.initialPositions[draggingNode.primaryId];
-        const deltaX = newPrimaryX - primaryInitial.x;
-        const deltaY = newPrimaryY - primaryInitial.y;
-        setNodes(prev =>
-          prev.map(n => {
-            if (draggingNode.initialPositions[n.id] !== undefined) {
-              const initPos = draggingNode.initialPositions[n.id];
-              const newX = initPos.x + deltaX;
-              const newY = initPos.y + deltaY;
-              const clamped = clampCoordinates(newX, newY);
-              return { ...n, x: clamped.x, y: clamped.y };
+      // --- Multi-node drag --- //
+      if (draggingNode.relativeOffsets) {
+        const primaryNodeId = draggingNode.primaryId;
+        const dx = (e.clientX - draggingNode.initialMouse.x) / zoomLevel;
+        const dy = (e.clientY - draggingNode.initialMouse.y) / zoomLevel;
+
+        setGraph(currentGraph => {
+            const newGraph = currentGraph.clone();
+            let changed = false;
+
+            // Calculate new primary node position first
+            const primaryNodeToUpdate = newGraph.getNodeById(primaryNodeId);
+            if (!primaryNodeToUpdate) return currentGraph; // Should not happen
+
+            const clonedPrimary = primaryNodeToUpdate.clone();
+            const newPrimaryX = draggingNode.initialPrimaryPos.x + dx;
+            const newPrimaryY = draggingNode.initialPrimaryPos.y + dy;
+            clonedPrimary.setX(newPrimaryX);
+            clonedPrimary.setY(newPrimaryY);
+            newGraph.updateNode(clonedPrimary);
+            changed = true;
+
+            // Calculate positions for other selected nodes based on the new primary position and relative offsets
+            Object.keys(draggingNode.relativeOffsets).forEach(idStr => {
+                const nodeId = Number(idStr);
+                const nodeToUpdate = newGraph.getNodeById(nodeId);
+                if (nodeToUpdate) {
+                    const clonedNode = nodeToUpdate.clone();
+                    const relativeOffset = draggingNode.relativeOffsets[nodeId];
+                    clonedNode.setX(newPrimaryX + relativeOffset.offsetX);
+                    clonedNode.setY(newPrimaryY + relativeOffset.offsetY);
+                    newGraph.updateNode(clonedNode);
+                    changed = true;
+                }
+            });
+            return changed ? newGraph : currentGraph;
+        });
+      } else {
+        // --- Single node drag --- //
+        const currentAdjustedX = (e.clientX - panOffset.x) / zoomLevel;
+        const currentAdjustedY = (e.clientY - panOffset.y) / zoomLevel;
+        const newX = currentAdjustedX - (draggingNode.offset.x / zoomLevel);
+        const newY = currentAdjustedY - (draggingNode.offset.y / zoomLevel);
+
+        setGraph(currentGraph => {
+            const newGraph = currentGraph.clone();
+            const nodeToUpdate = newGraph.getNodeById(draggingNode.nodeId);
+            if (nodeToUpdate) {
+                const clonedNode = nodeToUpdate.clone();
+                clonedNode.setX(newX);
+                clonedNode.setY(newY);
+                newGraph.updateNode(clonedNode);
+                return newGraph;
             }
-            return n;
-          })
-        );
-      } else if (draggingNode.nodeId) {
-        const currentAdjustedX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
-        const currentAdjustedY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
-        const newX = currentAdjustedX - draggingNode.offset.x;
-        const newY = currentAdjustedY - draggingNode.offset.y;
-        setNodes(prev =>
-          prev.map(n => {
-            if (n.id === draggingNode.nodeId) {
-              const clamped = clampCoordinates(newX, newY);
-              return { ...n, x: clamped.x, y: clamped.y };
-            }
-            return n;
-          })
-        );
+            return currentGraph;
+        });
       }
     } else if (drawingConnectionFrom) {
       const bounded = clampCoordinates(currentX, currentY);
@@ -767,26 +841,55 @@ const NodeCanvas = () => {
 
     // Finalize drawing connection
     if (drawingConnectionFrom) {
-        const targetNode = nodes.find(n => isInsideNode(n, e.clientX, e.clientY));
-        if (targetNode && targetNode.id !== drawingConnectionFrom.node.id) {
-          const exists = connections.some(c => (c.startId === drawingConnectionFrom.node.id && c.endId === targetNode.id) || (c.startId === targetNode.id && c.endId === drawingConnectionFrom.node.id));
-          if (!exists) {
-            setConnections(prev => [...prev, { startId: drawingConnectionFrom.node.id, endId: targetNode.id }]);
-          }
+        const targetNode = graph.getNodes().find(n => isInsideNode(n, e.clientX, e.clientY));
+        if (targetNode && targetNode.id !== drawingConnectionFrom.sourceNodeId) {
+            setGraph(currentGraph => {
+                const newGraph = currentGraph.clone();
+                // Find the actual node instances in the new graph copy
+                const sourceNodeInstance = newGraph.getNodeById(drawingConnectionFrom.sourceNodeId);
+                const targetNodeInstance = newGraph.getNodeById(targetNode.id);
+
+                if (sourceNodeInstance && targetNodeInstance) {
+                    // Check if edge already exists (using node instances)
+                    const exists = newGraph.getEdges().some(edge =>
+                        (edge.getSource() === sourceNodeInstance && edge.getDestination() === targetNodeInstance) ||
+                        (edge.getSource() === targetNodeInstance && edge.getDestination() === sourceNodeInstance)
+                    );
+                    if (!exists) {
+                        newGraph.addEdge(sourceNodeInstance, targetNodeInstance); // Add edge using node instances
+                        return newGraph;
+                    }
+                }
+                return currentGraph; // No change if nodes not found or edge exists
+            });
         }
         setDrawingConnectionFrom(null);
-        wasDrawingConnection.current = true;
     }
 
-    // --- Remove single-click selection logic from here --- 
-   
-    // Reset scale if mouse up happens after long press starts but before drag/connect
-    if (longPressingNode && !draggingNode && !drawingConnectionFrom) {
-       animateNodeLerp(longPressingNode.id, 1);
-    }
-    // Always clear longPressingNode on mouse up
-    if (longPressingNode) {
-        setLongPressingNode(null);
+    // Reset scale for dragged/selected nodes
+    if (draggingNode) {
+      setGraph(currentGraph => {
+          const newGraph = currentGraph.clone();
+          let changed = false;
+          const nodeIdsToReset = new Set();
+          if (draggingNode.relativeOffsets) {
+              Object.keys(draggingNode.relativeOffsets).forEach(id => nodeIdsToReset.add(Number(id)));
+          } else if (draggingNode.nodeId) {
+              nodeIdsToReset.add(draggingNode.nodeId);
+          }
+
+          nodeIdsToReset.forEach(id => {
+              const nodeToUpdate = newGraph.getNodeById(id);
+              if (nodeToUpdate && nodeToUpdate.scale !== 1) {
+                  const clonedNode = nodeToUpdate.clone();
+                  clonedNode.setScale(1);
+                  newGraph.updateNode(clonedNode);
+                  changed = true;
+              }
+          });
+          return changed ? newGraph : currentGraph;
+      });
+      setDraggingNode(null);
     }
 
     // Finalize selection box
@@ -797,7 +900,7 @@ const NodeCanvas = () => {
         const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
         canvasWorker.calculateSelection({ selectionStart, currentX, currentY })
           .then(selectionRes => {
-            const finalSelectedIds = nodes
+            const finalSelectedIds = graph.getNodes()
               .filter(nd => !(selectionRes.x > nd.x + getNodeDimensions(nd, previewingNodeId === nd.id).currentWidth ||
                                 selectionRes.x + selectionRes.width < nd.x ||
                                 selectionRes.y > nd.y + getNodeDimensions(nd, previewingNodeId === nd.id).currentHeight ||
@@ -819,18 +922,6 @@ const NodeCanvas = () => {
     // mouseMoved.current = false; 
     // Let's reset it slightly later to ensure timeout logic completes
     setTimeout(() => { mouseMoved.current = false; }, 0); 
-
-    // Finalize dragging state
-    if (draggingNode) {
-      if (draggingNode.initialPositions) {
-        Object.keys(draggingNode.initialPositions).forEach(id => {
-          animateNodeLerp(parseInt(id, 10), 1);
-        });
-      } else if (draggingNode.nodeId) {
-        animateNodeLerp(draggingNode.nodeId, 1);
-      }
-      setDraggingNode(null);
-    }
   };
 
   const handleMouseUpCanvas = (e) => {
@@ -922,15 +1013,25 @@ const NodeCanvas = () => {
   };
 
   const handleMorphDone = () => {
-    if (!plusSign?.tempName) {
+      if (!plusSign || !plusSign.tempName) return;
+
+      setGraph(currentGraph => {
+          const newGraph = currentGraph.clone();
+          const newNode = new CoreNode(
+              null, // data
+              plusSign.tempName, // name
+              undefined, // description
+              undefined, // picture
+              undefined, // color
+              Date.now(), // id
+              plusSign.x - NODE_WIDTH / 2, // x
+              plusSign.y - NODE_HEIGHT / 2, // y
+              1 // scale
+          );
+          newGraph.addNode(newNode);
+          return newGraph;
+      });
       setPlusSign(null);
-      return;
-    }
-    setNodes(prev => [
-      ...prev,
-      { id: Date.now(), x: plusSign.x - NODE_WIDTH / 2, y: plusSign.y - NODE_HEIGHT / 2, name: plusSign.tempName, scale: 1, bio: '', image: null },
-    ]);
-    setPlusSign(null);
   };
 
   // --- Keyboard Controls ---
@@ -1125,21 +1226,25 @@ const NodeCanvas = () => {
         // Capture IDs before clearing selection
         const idsToDelete = new Set(selectedNodes);
 
-        // Filter out selected nodes
-        setNodes(prevNodes => {
-            const remainingNodes = prevNodes.filter(node => !idsToDelete.has(node.id));
-            console.log(`[Delete KeyDown] Nodes remaining: ${remainingNodes.length}`);
-            return remainingNodes;
+        // Filter out selected nodes using immutable update
+        setGraph(prevGraph => {
+            const newGraph = prevGraph.clone();
+            let changed = false;
+            idsToDelete.forEach(id => {
+                const nodeToRemove = newGraph.getNodeById(id); // Find node in the clone
+                if (nodeToRemove) {
+                    newGraph.removeNode(nodeToRemove); // Use graph's removeNode method
+                    changed = true;
+                }
+            });
+
+            if (changed) {
+                setSelectedNodes(new Set()); // Clear selection state
+                console.log(`[Delete KeyDown] Nodes remaining: ${newGraph.getNodes().length}`);
+                return newGraph; // Return the modified clone
+            }
+            return prevGraph; // Return original graph if no changes made
         });
-
-        // Clear selection
-        setSelectedNodes(new Set());
-
-        // Optional: Close any panel tabs related to deleted nodes
-        if (panelRef.current && panelRef.current.closeTabsByIds) {
-            console.log('[Delete KeyDown] Requesting panel close tabs for IDs:', Array.from(idsToDelete));
-            panelRef.current.closeTabsByIds(idsToDelete); // Use the captured IDs
-        }
       }
     };
 
@@ -1213,19 +1318,27 @@ const NodeCanvas = () => {
           onMouseUp={handleMouseUp}
         >
           <g className="base-layer">
-            {connections.map((conn, idx) => {
-              const sNode = nodes.find(n => n.id === conn.startId);
-              const eNode = nodes.find(n => n.id === conn.endId);
+            {graph.getEdges().map((edge, idx) => {
+              const sourceId = edge.getSource()?.getId();
+              const destId = edge.getDestination()?.getId();
+
+              if (sourceId === undefined || destId === undefined) return null;
+
+              const sNode = graph.getNodeById(sourceId);
+              const eNode = graph.getNodeById(destId);
+
               if (!sNode || !eNode) return null;
+
               const sNodeDims = getNodeDimensions(sNode);
               const eNodeDims = getNodeDimensions(eNode);
+
               return (
                 <line
-                  key={`inner-conn-${idx}`}
-                  x1={sNode.x + sNodeDims.currentWidth / 2}
-                  y1={sNode.y + sNodeDims.currentHeight / 2}
-                  x2={eNode.x + eNodeDims.currentWidth / 2}
-                  y2={eNode.y + eNodeDims.currentHeight / 2}
+                  key={`edge-${sNode.getId()}-${eNode.getId()}-${idx}`}
+                  x1={sNode.getX() + sNodeDims.currentWidth / 2}
+                  y1={sNode.getY() + sNodeDims.currentHeight / 2}
+                  x2={eNode.getX() + eNodeDims.currentWidth / 2}
+                  y2={eNode.getY() + eNodeDims.currentHeight / 2}
                   stroke="black"
                   strokeWidth="5"
                 />
@@ -1245,22 +1358,24 @@ const NodeCanvas = () => {
             {(() => {
                let draggingNodeIds = new Set();
                if (draggingNode) {
-                 if (draggingNode.initialPositions) {
-                   draggingNodeIds = new Set(Object.keys(draggingNode.initialPositions).map(Number));
+                 if (draggingNode.relativeOffsets) {
+                   draggingNodeIds = new Set([
+                       draggingNode.primaryId, 
+                       ...Object.keys(draggingNode.relativeOffsets).map(Number)
+                   ]);
                  } else if (draggingNode.nodeId) {
                    draggingNodeIds = new Set([draggingNode.nodeId]);
                  }
                }
 
+               const nodes = graph.getNodes();
                const nonDraggingNodes = nodes.filter(node => !draggingNodeIds.has(node.id));
                const draggingNodes = nodes.filter(node => draggingNodeIds.has(node.id));
 
                return (
                  <>
                    {nonDraggingNodes.map((node) => {
-                     // Determine if previewing THIS node
                      const isPreviewing = previewingNodeId === node.id;
-                     // Pass preview state to dimension calculator
                      const dimensions = getNodeDimensions(node, isPreviewing);
                      return (
                        <Node
@@ -1271,24 +1386,20 @@ const NodeCanvas = () => {
                          textAreaHeight={dimensions.textAreaHeight}
                          imageWidth={dimensions.imageWidth}
                          imageHeight={dimensions.calculatedImageHeight}
-                         // Pass calculated inner dimensions if previewing
                          innerNetworkWidth={dimensions.innerNetworkWidth}
                          innerNetworkHeight={dimensions.innerNetworkHeight}
                          isSelected={selectedNodes.has(node.id)}
                          isDragging={false}
                          onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                         // --- Pass necessary props for preview ---
                          isPreviewing={isPreviewing}
                          allNodes={nodes}
-                         connections={connections}
+                         connections={graph.getEdges()}
                        />
                      );
                    })}
 
                    {draggingNodes.map((node) => {
-                     // Determine if previewing THIS node
                      const isPreviewing = previewingNodeId === node.id;
-                     // Pass preview state to dimension calculator
                      const dimensions = getNodeDimensions(node, isPreviewing);
                      return (
                        <Node
@@ -1299,16 +1410,14 @@ const NodeCanvas = () => {
                          textAreaHeight={dimensions.textAreaHeight}
                          imageWidth={dimensions.imageWidth}
                          imageHeight={dimensions.calculatedImageHeight}
-                         // Pass calculated inner dimensions if previewing
                          innerNetworkWidth={dimensions.innerNetworkWidth}
                          innerNetworkHeight={dimensions.innerNetworkHeight}
                          isSelected={selectedNodes.has(node.id)}
                          isDragging={true}
                          onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                         // --- Pass necessary props for preview ---
                          isPreviewing={isPreviewing}
                          allNodes={nodes}
-                         connections={connections}
+                         connections={graph.getEdges()}
                        />
                      );
                    })}
@@ -1353,7 +1462,7 @@ const NodeCanvas = () => {
           ref={panelRef}
           isExpanded={panelExpanded}
           onToggleExpand={handleTogglePanel}
-          nodes={nodes}
+          nodes={graph.getNodes()}
           onSaveNodeData={handleSaveNodeData}
           onFocusChange={handlePanelFocusChange}
           projectTitle={projectTitle}
@@ -1363,7 +1472,7 @@ const NodeCanvas = () => {
       />
 
       <TypeList
-        nodes={nodes}
+        nodes={graph.getNodes()}
         setSelectedNodes={setSelectedNodes}
       />
     </div>

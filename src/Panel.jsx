@@ -1,9 +1,10 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
-import { HEADER_HEIGHT, NODE_CORNER_RADIUS } from './constants';
+import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION } from './constants';
 import { ArrowLeftFromLine, Home, ImagePlus, XCircle } from 'lucide-react';
 import './Panel.css'
+import { generateThumbnail } from './utils'; // Import thumbnail generator
 
 // Define Item Type for react-dnd
 const ItemTypes = {
@@ -395,36 +396,54 @@ const Panel = forwardRef(
       input.onchange = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
+
+        // 1. Read full image as data URL
         const reader = new FileReader();
-        reader.onload = (evt) => {
-          const src = evt.target?.result;
-          if (typeof src === 'string') {
-            // Create an Image object to get dimensions
-            const img = new Image();
-            img.onload = () => {
-              // Save src and original dimensions
-              const placeholderThumbnailSrc = src; // TODO: Generate/get real thumbnail URL
-              onSaveNodeData(nodeId, {
-                image: {
-                  src, // Original source
-                  thumbnailSrc: placeholderThumbnailSrc, // Thumbnail source
-                  naturalWidth: img.naturalWidth,
-                  naturalHeight: img.naturalHeight,
-                },
-              });
-            };
-            img.onerror = () => {
-              console.error('Image failed to load for dimension reading');
-              // Optionally save just the src as a fallback?
-              // onSaveNodeData(nodeId, { image: { src } });
-            };
-            img.src = src;
-          } else {
+        reader.onload = async (loadEvent) => {
+          const fullImageSrc = loadEvent.target?.result;
+          if (typeof fullImageSrc !== 'string') {
             console.error('FileReader did not return a string src');
+            return;
           }
+
+          // Need to load the full image to get dimensions for aspect ratio
+          const img = new Image();
+          img.onload = async () => {
+            try {
+              // Calculate aspect ratio
+              const aspectRatio = (img.naturalHeight > 0 && img.naturalWidth > 0) 
+                                  ? img.naturalHeight / img.naturalWidth 
+                                  : 1; // Default aspect ratio if dimensions are zero
+
+              // Generate thumbnail
+              const thumbSrc = await generateThumbnail(fullImageSrc, THUMBNAIL_MAX_DIMENSION);
+
+              // Prepare data with aspect ratio
+              const nodeDataToSave = {
+                imageSrc: fullImageSrc,
+                thumbnailSrc: thumbSrc,
+                imageAspectRatio: aspectRatio, // Include aspect ratio
+              };
+
+              // Call the save handler
+              console.log('Calling onSaveNodeData with aspect ratio:', nodeId, nodeDataToSave);
+              onSaveNodeData(nodeId, nodeDataToSave);
+
+            } catch (error) {
+              console.error("Thumbnail generation or saving failed:", error);
+              // Fallback: Save without thumbnail/aspect ratio? Consider error handling.
+              // onSaveNodeData(nodeId, { imageSrc: fullImageSrc }); 
+            }
+          };
+          img.onerror = (error) => {
+            console.error('Image failed to load for dimension/aspect ratio reading:', error);
+            // Handle failure - maybe don't save image data?
+          };
+          img.src = fullImageSrc; // Load the full image src
+
         };
-        reader.onerror = () => {
-          console.error('FileReader failed to read the file');
+        reader.onerror = (error) => {
+          console.error('FileReader failed to read the file:', error);
         };
         reader.readAsDataURL(file);
       };
@@ -432,7 +451,7 @@ const Panel = forwardRef(
     };
 
     const handleBioChange = (nodeId, newBio) => {
-      onSaveNodeData(nodeId, { bio: newBio });
+      onSaveNodeData(nodeId, { description: newBio }); // Use 'description' key for CoreNode
     };
 
     const commitProjectTitleChange = () => {
@@ -724,7 +743,7 @@ const Panel = forwardRef(
               }}
             />
 
-            {nodeData.image?.src && (
+            {nodeData.getImageSrc && nodeData.getImageSrc() && (
               <div
                 style={{
                   marginTop: '8px',
@@ -735,7 +754,7 @@ const Panel = forwardRef(
                 }}
               >
                 <img
-                  src={nodeData.image.src}
+                  src={nodeData.getImageSrc()}
                   alt="Node"
                   style={{
                     display: 'block',

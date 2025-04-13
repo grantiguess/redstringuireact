@@ -25,7 +25,7 @@ const Node = ({
   innerNetworkWidth,
   innerNetworkHeight
 }) => {
-  const hasImage = !isPreviewing && Boolean(node.image?.src);
+  const hasThumbnail = !isPreviewing && Boolean(node.getThumbnailSrc());
 
   // Unique ID for the clip path
   const clipPathId = `node-clip-${node.id}`;
@@ -80,19 +80,22 @@ const Node = ({
         const finalX = previewCenterX + scaledX - (dims.currentWidth * PREVIEW_SCALE_FACTOR) / 2;
         const finalY = previewCenterY + scaledY - (dims.currentHeight * PREVIEW_SCALE_FACTOR) / 2;
 
-        return {
-            ...n,
-            x: finalX,
-            y: finalY,
-            // Also scale the node size visually in the preview?
-            // scale: PREVIEW_SCALE_FACTOR // Optional: Visually shrink nodes too
-        };
+        // Clone the original node to preserve its class and methods
+        const previewNode = n.clone(); 
+        // Set the calculated preview coordinates
+        previewNode.setX(finalX);
+        previewNode.setY(finalY);
+        // Optional: Adjust scale for preview if needed
+        // previewNode.setScale(PREVIEW_SCALE_FACTOR * n.getScale()); 
+        return previewNode;
     });
 
   }, [isPreviewing, allNodes, innerNetworkWidth, innerNetworkHeight]);
 
   // Define the canvas background color (or import from constants if preferred)
   const canvasBackgroundColor = '#bdb5b5';
+
+  console.log('Rendering Node:', node.getId ? node.getId() : node.id, 'Thumbnail:', node.getThumbnailSrc ? node.getThumbnailSrc() : 'No getter or undefined');
 
   return (
     <g
@@ -202,14 +205,14 @@ const Node = ({
 
       {/* Image Container (fades out during preview) */}
       <g style={{ transition: 'opacity 0.3s ease', opacity: isPreviewing ? 0 : 1 }}>
-        {hasImage && (
+        {hasThumbnail && (
           <image
             className="node-image"
             x={node.x + NODE_PADDING}
             y={contentAreaY}
             width={imageWidth}
             height={imageHeight}
-            href={node.image?.thumbnailSrc || node.image?.src}
+            href={node.getThumbnailSrc()}
             preserveAspectRatio="xMidYMid meet"
             clipPath={`url(#${clipPathId})`}
             style={{ 
