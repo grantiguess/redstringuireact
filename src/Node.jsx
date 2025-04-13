@@ -50,21 +50,21 @@ const Node = ({
         </clipPath>
       </defs>
 
-      {/* Background Rect - Uses total currentHeight */}
+      {/* Background Rect - Adjusted for stroke width */}
       <rect
         className="node-background"
-        x={node.x}
-        y={node.y}
-        rx={NODE_CORNER_RADIUS}
-        ry={NODE_CORNER_RADIUS}
-        width={currentWidth}
-        height={currentHeight}
+        x={node.x + 6} // Inset by half stroke width (12/2 = 6)
+        y={node.y + 6} // Inset by half stroke width
+        rx={NODE_CORNER_RADIUS - 6} // Adjust radius
+        ry={NODE_CORNER_RADIUS - 6} // Adjust radius
+        width={currentWidth - 12} // Reduce by full stroke width
+        height={currentHeight - 12} // Reduce by full stroke width
         fill="maroon"
         stroke={isSelected ? 'black' : 'none'}
-        strokeWidth={4}
+        strokeWidth={12} // Increase stroke width
       />
 
-      {/* ForeignObject for Name - Use specific textAreaHeight */}
+      {/* ForeignObject for Name - Position/Size should be relative to original node coords */}
       <foreignObject
         x={node.x}
         y={node.y}

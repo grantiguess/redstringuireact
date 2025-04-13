@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import './NodeCanvas.css';
 import { X } from 'lucide-react';
 import Header from './Header.jsx';
+import TypeList from './TypeList.jsx';
 import DebugOverlay from './DebugOverlay.jsx';
 import { useCanvasWorker } from './useCanvasWorker.js';
 import Node from './Node.jsx';
@@ -264,7 +265,6 @@ const NodeCanvas = () => {
 
   const [debugMode, setDebugMode] = useState(false);
   const [debugData, setDebugData] = useState({
-    info: 'Debug overlay active shawty',
     inputDevice: 'Unknown',
     gesture: 'none',
     deltaX: '0',
@@ -297,7 +297,7 @@ const NodeCanvas = () => {
   const [isPanelInputFocused, setIsPanelInputFocused] = useState(false);
   const resizeTimeoutRef = useRef(null); // Ref for debounce timeout
 
-  const [projectTitle, setProjectTitle] = useState('Untitled');
+  const [projectTitle, setProjectTitle] = useState('Untitled Project');
   const [projectBio, setProjectBio] = useState('');
 
   // --- Add useEffect for debugging debugMode state ---
@@ -564,7 +564,6 @@ const NodeCanvas = () => {
       if (e.ctrlKey) {
         // Pinch-to-Zoom (ctrlKey is true during pinch)
         const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
-        console.log(`Passing zoomDelta (Trackpad): ${zoomDelta}`);
         try {
           const result = await canvasWorker.calculateZoom({
             deltaY: zoomDelta, // Pass natural delta for pinch: positive=pinch_in->zoom_out, negative=pinch_out->zoom_in
@@ -623,7 +622,6 @@ const NodeCanvas = () => {
     } else {
       // --- Non-macOS (Assume Mouse Wheel or Standard Trackpad Zoom) ---
       const zoomDelta = deltaY * MOUSE_WHEEL_ZOOM_SENSITIVITY;
-      console.log(`Passing zoomDelta (Mouse): ${zoomDelta}`);
       try {
         const result = await canvasWorker.calculateZoom({
           deltaY: -zoomDelta, // Keep inverted delta for typical wheel zoom feel
@@ -1219,40 +1217,32 @@ const NodeCanvas = () => {
 
   return (
     <div
-      className="app-container"
-      style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', position: 'relative' }}
+      className="node-canvas-container"
+      style={{
+        height: '100vh',
+        width: '100vw',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden'
+      }}
+      tabIndex="0"
+      onBlur={() => keysPressed.current = {}} // Clear keys on blur
     >
       <Header
         projectTitle={projectTitle}
         onTitleChange={handleProjectTitleChange}
         onEditingStateChange={handleHeaderEditingChange}
-      />
-      {renderCustomPrompt()}
-
-      <RedstringMenu
-        isOpen={panelExpanded}
-        onHoverView={handleHoverView}
         debugMode={debugMode}
         setDebugMode={setDebugMode}
       />
-
-      <Panel
-        ref={panelRef}
-        isExpanded={panelExpanded}
-        onToggleExpand={handleTogglePanel}
-        nodes={nodes}
-        onSaveNodeData={handleSaveNodeData}
-        onFocusChange={handlePanelFocusChange}
-        projectTitle={projectTitle}
-        projectBio={projectBio}
-        onProjectTitleChange={handleProjectTitleChange}
-        onProjectBioChange={handleProjectBioChange}
-      />
-
       <div
-        className="canvas-container"
         ref={containerRef}
-        style={{ flex: 1, position: 'relative', touchAction: 'none', overflow: 'hidden', overscrollBehavior: 'none' }}
+        className="canvas-area"
+        style={{
+          flexGrow: 1,
+          position: 'relative',
+          overflow: 'hidden'
+        }}
         onWheel={handleWheel}
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
@@ -1374,8 +1364,35 @@ const NodeCanvas = () => {
             />
           )}
         </svg>
+        
+        {renderCustomPrompt()}
       </div>
-      {debugMode && <DebugOverlay debugData={debugData} hideOverlay={() => setDebugMode(false)} />}
+
+      {/* Render DebugOverlay conditionally based on debugMode state */}
+      {debugMode && (
+        <DebugOverlay 
+          debugData={debugData}
+          hideOverlay={() => setDebugMode(false)}
+        />
+      )}
+
+      <Panel 
+        ref={panelRef}
+        isExpanded={panelExpanded}
+        onToggleExpand={handleTogglePanel}
+        nodes={nodes}
+        onSaveNodeData={handleSaveNodeData}
+        onFocusChange={handlePanelFocusChange}
+        projectTitle={projectTitle}
+        projectBio={projectBio}
+        onProjectTitleChange={handleProjectTitleChange}
+        onProjectBioChange={handleProjectBioChange}
+      />
+
+      <TypeList 
+        nodes={nodes}
+        setSelectedNodes={setSelectedNodes}
+      />
     </div>
   );
 }

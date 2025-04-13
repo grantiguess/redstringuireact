@@ -11,7 +11,14 @@ import logo5 from './assets/redstring_button/header_logo_5.svg';
 import logo6 from './assets/redstring_button/header_logo_6.svg';
 import logo7 from './assets/redstring_button/header_logo_7.svg';
 
-const Header = ({ projectTitle, onTitleChange, onEditingStateChange }) => {
+const Header = ({ 
+  projectTitle, 
+  onTitleChange, 
+  onEditingStateChange, 
+  // Receive debug props
+  debugMode, 
+  setDebugMode 
+}) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [currentLogoIndex, setCurrentLogoIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -149,8 +156,12 @@ const Header = ({ projectTitle, onTitleChange, onEditingStateChange }) => {
             onClick={toggleMenu}
           />
           
-          {/* Menu is rendered separately */}
-          <RedstringMenu isOpen={isMenuOpen} />
+          {/* Pass debug props to RedstringMenu here */}
+          <RedstringMenu 
+            isOpen={isMenuOpen} 
+            debugMode={debugMode} 
+            setDebugMode={setDebugMode} 
+          />
       </header>
     );
   }
@@ -187,7 +198,12 @@ const Header = ({ projectTitle, onTitleChange, onEditingStateChange }) => {
           }}
           onClick={toggleMenu}
         />
-        <RedstringMenu isOpen={isMenuOpen} />
+        {/* Pass debug props to RedstringMenu here */}
+        <RedstringMenu 
+          isOpen={isMenuOpen} 
+          debugMode={debugMode} 
+          setDebugMode={setDebugMode} 
+        />
       </div>
 
       {/* Title container - adjust padding */}
