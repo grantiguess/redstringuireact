@@ -717,37 +717,40 @@ const NodeCanvas = () => {
         const dx = (e.clientX - draggingNode.initialMouse.x) / zoomLevel;
         const dy = (e.clientY - draggingNode.initialMouse.y) / zoomLevel;
 
-        setGraph(currentGraph => {
-            const newGraph = currentGraph.clone();
-            let changed = false;
+        // Wrap state update in requestAnimationFrame
+        requestAnimationFrame(() => {
+          setGraph(currentGraph => {
+              const newGraph = currentGraph.clone();
+              let changed = false;
 
-            // Calculate new primary node position first
-            const primaryNodeToUpdate = newGraph.getNodeById(primaryNodeId);
-            if (!primaryNodeToUpdate) return currentGraph; // Should not happen
+              // Calculate new primary node position first
+              const primaryNodeToUpdate = newGraph.getNodeById(primaryNodeId);
+              if (!primaryNodeToUpdate) return currentGraph; // Should not happen
 
-            const clonedPrimary = primaryNodeToUpdate.clone();
-            const newPrimaryX = draggingNode.initialPrimaryPos.x + dx;
-            const newPrimaryY = draggingNode.initialPrimaryPos.y + dy;
-            clonedPrimary.setX(newPrimaryX);
-            clonedPrimary.setY(newPrimaryY);
-            newGraph.updateNode(clonedPrimary);
-            changed = true;
+              const clonedPrimary = primaryNodeToUpdate.clone();
+              const newPrimaryX = draggingNode.initialPrimaryPos.x + dx;
+              const newPrimaryY = draggingNode.initialPrimaryPos.y + dy;
+              clonedPrimary.setX(newPrimaryX);
+              clonedPrimary.setY(newPrimaryY);
+              newGraph.updateNode(clonedPrimary);
+              changed = true;
 
-            // Calculate positions for other selected nodes based on the new primary position and relative offsets
-            Object.keys(draggingNode.relativeOffsets).forEach(idStr => {
-                const nodeId = Number(idStr);
-                const nodeToUpdate = newGraph.getNodeById(nodeId);
-                if (nodeToUpdate) {
-                    const clonedNode = nodeToUpdate.clone();
-                    const relativeOffset = draggingNode.relativeOffsets[nodeId];
-                    clonedNode.setX(newPrimaryX + relativeOffset.offsetX);
-                    clonedNode.setY(newPrimaryY + relativeOffset.offsetY);
-                    newGraph.updateNode(clonedNode);
-                    changed = true;
-                }
-            });
-            return changed ? newGraph : currentGraph;
-        });
+              // Calculate positions for other selected nodes based on the new primary position and relative offsets
+              Object.keys(draggingNode.relativeOffsets).forEach(idStr => {
+                  const nodeId = Number(idStr);
+                  const nodeToUpdate = newGraph.getNodeById(nodeId);
+                  if (nodeToUpdate) {
+                      const clonedNode = nodeToUpdate.clone();
+                      const relativeOffset = draggingNode.relativeOffsets[nodeId];
+                      clonedNode.setX(newPrimaryX + relativeOffset.offsetX);
+                      clonedNode.setY(newPrimaryY + relativeOffset.offsetY);
+                      newGraph.updateNode(clonedNode);
+                      changed = true;
+                  }
+              });
+              return changed ? newGraph : currentGraph;
+          });
+        }); // End requestAnimationFrame
       } else {
         // --- Single node drag --- //
         const currentAdjustedX = (e.clientX - panOffset.x) / zoomLevel;
@@ -755,18 +758,21 @@ const NodeCanvas = () => {
         const newX = currentAdjustedX - (draggingNode.offset.x / zoomLevel);
         const newY = currentAdjustedY - (draggingNode.offset.y / zoomLevel);
 
-        setGraph(currentGraph => {
-            const newGraph = currentGraph.clone();
-            const nodeToUpdate = newGraph.getNodeById(draggingNode.nodeId);
-            if (nodeToUpdate) {
-                const clonedNode = nodeToUpdate.clone();
-                clonedNode.setX(newX);
-                clonedNode.setY(newY);
-                newGraph.updateNode(clonedNode);
-                return newGraph;
-            }
-            return currentGraph;
-        });
+        // Wrap state update in requestAnimationFrame
+        requestAnimationFrame(() => {
+          setGraph(currentGraph => {
+              const newGraph = currentGraph.clone();
+              const nodeToUpdate = newGraph.getNodeById(draggingNode.nodeId);
+              if (nodeToUpdate) {
+                  const clonedNode = nodeToUpdate.clone();
+                  clonedNode.setX(newX);
+                  clonedNode.setY(newY);
+                  newGraph.updateNode(clonedNode);
+                  return newGraph;
+              }
+              return currentGraph;
+          });
+        }); // End requestAnimationFrame
       }
     } else if (drawingConnectionFrom) {
       const bounded = clampCoordinates(currentX, currentY);
@@ -1329,18 +1335,15 @@ const NodeCanvas = () => {
 
               if (!sNode || !eNode) return null;
 
-              const sNodeDims = getNodeDimensions(sNode);
-              const eNodeDims = getNodeDimensions(eNode);
-
               return (
                 <line
                   key={`edge-${sNode.getId()}-${eNode.getId()}-${idx}`}
-                  x1={sNode.getX() + sNodeDims.currentWidth / 2}
-                  y1={sNode.getY() + sNodeDims.currentHeight / 2}
-                  x2={eNode.getX() + eNodeDims.currentWidth / 2}
-                  y2={eNode.getY() + eNodeDims.currentHeight / 2}
+                  x1={sNode.getX() + NODE_WIDTH / 2}
+                  y1={sNode.getY() + NODE_HEIGHT / 2}
+                  x2={eNode.getX() + NODE_WIDTH / 2}
+                  y2={eNode.getY() + NODE_HEIGHT / 2}
                   stroke="black"
-                  strokeWidth="5"
+                  strokeWidth="8"
                 />
               );
             })}
@@ -1351,7 +1354,7 @@ const NodeCanvas = () => {
                 x2={drawingConnectionFrom.currentX}
                 y2={drawingConnectionFrom.currentY}
                 stroke="black"
-                strokeWidth="5"
+                strokeWidth="8"
               />
             )}
 

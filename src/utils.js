@@ -10,7 +10,7 @@ import {
 
 // --- Define constants for preview dimensions ---
 const PREVIEW_NODE_WIDTH = 600; // Wider for preview
-const PREVIEW_NODE_MIN_HEIGHT = 450; // Taller minimum for preview
+const PREVIEW_NODE_MIN_HEIGHT = 600; // Taller minimum for preview (Increased from 450)
 const PREVIEW_TEXT_AREA_HEIGHT = 60; // Fixed height for name in preview
 
 // --- getNodeDimensions Utility Function ---
@@ -97,16 +97,8 @@ export const getNodeDimensions = (node, isPreviewing = false) => {
             // Calculate height based on width and aspect ratio
             calculatedImageHeight = aspectRatio ? imageWidth * aspectRatio : 0;
 
-            // *** Add Logging ***
-            console.log(`[getNodeDimensions] Node ID: ${node.getId ? node.getId() : node.id}, Image: true`);
-            console.log(`  - textAreaHeight: ${textAreaHeight}`);
-            console.log(`  - imageWidth: ${imageWidth}`);
-            console.log(`  - aspectRatio: ${aspectRatio}`);
-            console.log(`  - calculatedImageHeight: ${calculatedImageHeight}`);
-
             // Adjust overall node height to accommodate image
             currentHeight = textAreaHeight + calculatedImageHeight + NODE_PADDING; // Text + Image + Bottom Padding
-            console.log(`  - currentHeight (before min): ${currentHeight}`);
         } else {
             calculatedImageHeight = 0; // Handle invalid image data
             currentHeight = textAreaHeight + NODE_PADDING; // Adjusted height calc for no image
