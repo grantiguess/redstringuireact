@@ -1335,13 +1335,27 @@ const NodeCanvas = () => {
 
               if (!sNode || !eNode) return null;
 
+              // Get dynamic dimensions based on node state (default, image, or preview)
+              const sNodeDims = getNodeDimensions(sNode);
+              const eNodeDims = getNodeDimensions(eNode);
+
+              // Determine if source/dest nodes are the one being previewed
+              const isSNodePreviewing = previewingNodeId === sNode.getId();
+              const isENodePreviewing = previewingNodeId === eNode.getId();
+
+              // Calculate endpoints, adjusting Y for previewing node
+              const x1 = sNode.getX() + sNodeDims.currentWidth / 2;
+              const y1 = sNode.getY() + (isSNodePreviewing ? NODE_HEIGHT / 2 : sNodeDims.currentHeight / 2);
+              const x2 = eNode.getX() + eNodeDims.currentWidth / 2;
+              const y2 = eNode.getY() + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
+
               return (
                 <line
                   key={`edge-${sNode.getId()}-${eNode.getId()}-${idx}`}
-                  x1={sNode.getX() + NODE_WIDTH / 2}
-                  y1={sNode.getY() + NODE_HEIGHT / 2}
-                  x2={eNode.getX() + NODE_WIDTH / 2}
-                  y2={eNode.getY() + NODE_HEIGHT / 2}
+                  x1={x1} 
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
                   stroke="black"
                   strokeWidth="8"
                 />
