@@ -499,6 +499,74 @@ const Panel = forwardRef(
       }
     }, []); // Run only once on mount
 
+    // --- START: Effect to synchronize local tabs with nodes prop ---
+    useEffect(() => {
+        setTabs(currentTabs => {
+            let needsUpdate = false;
+            const updatedTabs = currentTabs.map(tab => {
+                if (tab.type === 'node' && tab.nodeId) {
+                    const nodeFromProp = nodes.find(n => n.id === tab.nodeId);
+                    if (nodeFromProp) {
+                        let updatedTab = { ...tab };
+                        let tabChanged = false;
+
+                        // Sync Title (if not currently editing)
+                        const latestName = nodeFromProp.getName() || 'Untitled';
+                        if (!editingTitle && tab.title !== latestName) {
+                           updatedTab.title = latestName;
+                           tabChanged = true;
+                        }
+
+                        // --- Refined Bio Sync Logic --- 
+                        const latestBio = nodeFromProp.getDescription(); // Get raw description
+                        const isDefaultPlaceholder = latestBio === "No description.";
+                        // Target empty string if it's the default placeholder, otherwise use actual value or empty
+                        const targetBio = isDefaultPlaceholder ? '' : latestBio || '';
+
+                        // Update local tab state if it differs from the target
+                        if (tab.bio !== targetBio) {
+                            updatedTab.bio = targetBio;
+                            tabChanged = true;
+                        }
+                        // --- End Refined Bio Sync Logic ---
+
+                        // Sync Thumbnail
+                        const latestThumb = nodeFromProp.getThumbnailSrc() || null;
+                        if (tab.thumbnailSrc !== latestThumb) {
+                            updatedTab.thumbnailSrc = latestThumb;
+                            tabChanged = true;
+                        }
+                         // Sync Full Image Src (might not be needed directly in tab state unless used)
+                         const latestImageSrc = nodeFromProp.getImageSrc() || null;
+                         if (tab.imageSrc !== latestImageSrc) {
+                             updatedTab.imageSrc = latestImageSrc;
+                             tabChanged = true;
+                         }
+                         // Sync Aspect Ratio
+                         const latestAspectRatio = nodeFromProp.getImageAspectRatio() || null;
+                         if (tab.imageAspectRatio !== latestAspectRatio) {
+                             updatedTab.imageAspectRatio = latestAspectRatio;
+                             tabChanged = true;
+                         }
+
+                        if (tabChanged) {
+                            needsUpdate = true;
+                            return updatedTab;
+                        }
+                    } else {
+                        // Node doesn't exist in props anymore? Maybe remove tab? (Optional)
+                        // console.warn(`Node ${tab.nodeId} for tab not found in props.`);
+                    }
+                }
+                return tab; // Return unchanged tab if no sync needed or not a node tab
+            });
+
+            // Only update state if any tab actually changed
+            return needsUpdate ? updatedTabs : currentTabs;
+        });
+    }, [nodes, editingTitle]); // Rerun when nodes prop changes (or when title editing stops)
+    // --- END: Effect to synchronize --- 
+
     const activeTab = tabs.find((t) => t.isActive);
 
     let tabContent = null;
@@ -642,20 +710,21 @@ const Panel = forwardRef(
           <div style={{ padding: '10px', color: '#aaa' }}>Node not found...</div>
         );
       } else {
+        // Use the state value directly now, as useEffect synchronizes it
+        const displayBio = activeTab.bio || '';
+        const displayTitle = activeTab.title || 'Untitled';
+
         // Function to commit the title change (on blur or Enter key)
         const commitTitleChange = () => {
           const newName = tempTitle.trim();
-          if (newName && newName !== nodeData.name) {
+          if (newName && newName !== activeTab.title) {
             // Update the node data
             onSaveNodeData(nodeId, { name: newName });
-            // Update the tab's title in state
+            // Update the tab's title in state immediately for responsiveness
             setTabs((prev) =>
-              prev.map((tab) => {
-                if (tab.type === 'node' && tab.nodeId === nodeId) {
-                  return { ...tab, title: newName };
-                }
-                return tab;
-              })
+              prev.map((tab) =>
+                tab.nodeId === nodeId ? { ...tab, title: newName } : tab
+              )
             );
           }
           setEditingTitle(false);
@@ -688,7 +757,7 @@ const Panel = forwardRef(
                   }}
                   onDoubleClick={() => {
                     setEditingTitle(true);
-                    setTempTitle(nodeData.name);
+                    setTempTitle(displayTitle);
                   }}
                 >
                   <span style={{
@@ -698,7 +767,7 @@ const Panel = forwardRef(
                      overflowWrap: 'break-word',
                      verticalAlign: 'bottom'
                   }}>
-                     {nodeData.name}
+                     {displayTitle}
                   </span>
                 </h3>
               )}
@@ -732,7 +801,7 @@ const Panel = forwardRef(
                 fontFamily: 'inherit',
                 userSelect: 'text'
               }}
-              value={nodeData.bio || ''}
+              value={displayBio}
               onFocus={() => onFocusChange?.(true)}
               onBlur={() => onFocusChange?.(false)}
               onChange={(e) => handleBioChange(nodeId, e.target.value)}

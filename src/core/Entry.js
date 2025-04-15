@@ -8,14 +8,16 @@ class Entry {
    * @param {string} [description="No description."]
    * @param {string} [picture=""]
    * @param {string} [color=""] // Added color property based on Java
-   * @param {number} [id=-1] // Assuming IDs are numbers in JS
+   * @param {string | null} [id=null] // Use string for UUID, allow null for generation
    */
-  constructor(name = "Untitled", description = "No description.", picture = "", color = "", id = -1) {
+  constructor(name = "Untitled", description = "No description.", picture = "", color = "", id = null) {
     this.name = name;
     this.description = description;
     this.picture = picture;
     this.color = color;
-    this.id = id; // Note: Java uses long, JS uses number (up to 2^53-1 accurately)
+    // Note: Java uses long. We'll use string UUIDs. Generate if null.
+    // Actual UUID generation will happen in subclasses (Node, Graph, Edge).
+    this.id = id;
   }
 
   // Getters
@@ -35,8 +37,10 @@ class Entry {
     return this.color;
   }
 
+  /**
+   * @returns {string | null}
+   */
   getId() {
-    // Note: Java getter returned picture, which seems like a typo. Returning id here.
     return this.id;
   }
 
@@ -57,6 +61,9 @@ class Entry {
     this.color = color;
   }
 
+  /**
+   * @param {string | null} id
+   */
   setId(id) {
     this.id = id;
   }
