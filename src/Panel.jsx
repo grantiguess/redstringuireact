@@ -613,7 +613,7 @@ const Panel = forwardRef(
             )}
           </div>
           <textarea
-            placeholder="Add a project bio..."
+            placeholder="Add a bio..."
             id="project-bio-textarea"
             name="projectBioTextarea"
             className="panel-bio-textarea"

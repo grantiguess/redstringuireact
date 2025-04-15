@@ -287,7 +287,7 @@ const NodeCanvas = () => {
   const [isPanelInputFocused, setIsPanelInputFocused] = useState(false);
   // END Restore
 
-  const [projectTitle, setProjectTitle] = useState('Untitled Project');
+  const [projectTitle, setProjectTitle] = useState('New Thing');
   const [projectBio, setProjectBio] = useState('');
 
   // --- Add Preview State ---
