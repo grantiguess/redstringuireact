@@ -1183,7 +1183,7 @@ const NodeCanvas = () => {
             <X size={20} color="#999" onClick={handleClosePrompt} />
           </div>
           <div style={{ textAlign: 'center', marginBottom: '15px', color: 'black' }}>
-            <strong style={{ fontSize: '18px' }}>Enter Node Name</strong>
+            <strong style={{ fontSize: '18px' }}>Name Your Thing</strong>
           </div>
           <div style={{ display: 'flex', alignItems: 'center' }}>
             <input
