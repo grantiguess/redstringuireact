@@ -68,16 +68,23 @@ const InnerNetwork = ({ nodes, connections, width, height, padding }) => {
     <g transform={`translate(${translateX}, ${translateY}) scale(${scale})`} pointerEvents="none">
       {/* Render Edges using original coordinates (scaled by parent g) */}
       {connections.map((edge, idx) => {
-        const originalSNode = edge.getSource();
-        const originalENode = edge.getDestination();
+        // Use the new methods that return string IDs directly
+        const sourceId = edge.getSourceId();
+        const destId = edge.getDestinationId();
 
-        if (!originalSNode || !originalENode) return null;
+        if (!sourceId || !destId) {
+            console.warn(`InnerNetwork edge at index ${idx} missing ID`, edge);
+            return null;
+        }
 
-        // Find node data (needed for dimensions)
-        const sNodeData = nodes.find(n => n.getId() === originalSNode.getId());
-        const eNodeData = nodes.find(n => n.getId() === originalENode.getId());
+        // Find node data using the IDs
+        const sNodeData = nodes.find(n => n.getId() === sourceId);
+        const eNodeData = nodes.find(n => n.getId() === destId);
 
-        if (!sNodeData || !eNodeData) return null;
+        if (!sNodeData || !eNodeData) {
+             console.warn(`InnerNetwork could not find nodes for edge ${edge.getId()}`, { sourceId, destId });
+             return null;
+        }
 
         // Get original dimensions for center calculation
         const sNodeDims = getNodeDimensions(sNodeData);

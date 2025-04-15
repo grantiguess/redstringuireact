@@ -694,13 +694,13 @@ const NodeCanvas = () => {
                  clearTimeout(longPressTimeout.current); // Ensure long press drag doesn't start
                  mouseInsideNode.current = false;
                  const startNodeDims = getNodeDimensions(longPressingNode, previewingNodeId === longPressingNode.id);
-                 const startPt = { x: longPressingNode.x + startNodeDims.currentWidth / 2, y: longPressingNode.y + startNodeDims.currentHeight / 2 };
+                 const startPt = { x: longPressingNode.getX() + startNodeDims.currentWidth / 2, y: longPressingNode.getY() + startNodeDims.currentHeight / 2 }; // Use getters
                  const rect = containerRef.current.getBoundingClientRect();
                  const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
                  const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
                  const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
-                 // Store node ID instead of the full node object
-                 setDrawingConnectionFrom({ sourceNodeId: longPressingNode.id, startX: startPt.x, startY: startPt.y, currentX, currentY });
+                 // Store node ID using the getter method
+                 setDrawingConnectionFrom({ sourceNodeId: longPressingNode.getId(), startX: startPt.x, startY: startPt.y, currentX, currentY });
                  setLongPressingNode(null);
              }
         } else if (!draggingNode && !drawingConnectionFrom && !isPanning && !startedOnNode.current) {
@@ -847,28 +847,50 @@ const NodeCanvas = () => {
 
     // Finalize drawing connection
     if (drawingConnectionFrom) {
+        // Find target node using its geometry
         const targetNode = graph.getNodes().find(n => isInsideNode(n, e.clientX, e.clientY));
-        if (targetNode && targetNode.id !== drawingConnectionFrom.sourceNodeId) {
+        const targetNodeId = targetNode?.getId(); // Get ID using getter
+
+        // Ensure target node exists and is not the same as source
+        if (targetNodeId && targetNodeId !== drawingConnectionFrom.sourceNodeId) {
             setGraph(currentGraph => {
                 const newGraph = currentGraph.clone();
-                // Find the actual node instances in the new graph copy
-                const sourceNodeInstance = newGraph.getNodeById(drawingConnectionFrom.sourceNodeId);
-                const targetNodeInstance = newGraph.getNodeById(targetNode.id);
 
-                if (sourceNodeInstance && targetNodeInstance) {
-                    // Check if edge already exists (using node instances)
-                    const exists = newGraph.getEdges().some(edge =>
-                        (edge.getSource() === sourceNodeInstance && edge.getDestination() === targetNodeInstance) ||
-                        (edge.getSource() === targetNodeInstance && edge.getDestination() === sourceNodeInstance)
-                    );
-                    if (!exists) {
-                        newGraph.addEdge(sourceNodeInstance, targetNodeInstance); // Add edge using node instances
+                // Check for existing edge using IDs
+                const exists = newGraph.getEdges().some(edge =>
+                    (edge.getSourceId() === drawingConnectionFrom.sourceNodeId && edge.getDestinationId() === targetNodeId) ||
+                    (edge.getSourceId() === targetNodeId && edge.getDestinationId() === drawingConnectionFrom.sourceNodeId)
+                );
+                
+                if (!exists) {
+                    // Pass the STRING IDs to addEdge
+                    try {
+                        const sourceId = drawingConnectionFrom.sourceNodeId;
+                        const destId = targetNodeId;
+
+                        // --- DEBUGGING: Check IDs before calling addEdge ---
+                        console.log(`Attempting addEdge: Source=${sourceId} (Type: ${typeof sourceId}), Target=${destId} (Type: ${typeof destId})`);
+                        if (typeof sourceId !== 'string' || !sourceId) {
+                            console.error('CRITICAL: Invalid sourceId before addEdge call!', sourceId);
+                            return currentGraph; // Prevent crash
+                        }
+                        if (typeof destId !== 'string' || !destId) {
+                            console.error('CRITICAL: Invalid destId before addEdge call!', destId);
+                            return currentGraph; // Prevent crash
+                        }
+                        // --- END DEBUGGING ---
+
+                        newGraph.addEdge(sourceId, destId);
                         return newGraph;
+                    } catch (error) {
+                        console.error("Error adding edge in graph:", error); 
                     }
                 }
-                return currentGraph; // No change if nodes not found or edge exists
+                // If edge exists or addEdge failed, return original graph
+                return currentGraph;
             });
         }
+        // Clear drawing state regardless of success
         setDrawingConnectionFrom(null);
     }
 
@@ -1029,7 +1051,7 @@ const NodeCanvas = () => {
               undefined, // description
               undefined, // picture
               undefined, // color
-              Date.now(), // id
+              null, // id <-- Pass null to trigger UUID generation in constructor
               plusSign.x - NODE_WIDTH / 2, // x
               plusSign.y - NODE_HEIGHT / 2, // y
               1 // scale
@@ -1325,15 +1347,22 @@ const NodeCanvas = () => {
         >
           <g className="base-layer">
             {graph.getEdges().map((edge, idx) => {
-              const sourceId = edge.getSource()?.getId();
-              const destId = edge.getDestination()?.getId();
+              // Use the new methods that return string IDs directly
+              const sourceId = edge.getSourceId(); 
+              const destId = edge.getDestinationId();
 
-              if (sourceId === undefined || destId === undefined) return null;
+              if (sourceId === undefined || destId === undefined) {
+                console.warn(`Edge at index ${idx} has undefined source/dest ID`, edge);
+                return null;
+              }
 
               const sNode = graph.getNodeById(sourceId);
               const eNode = graph.getNodeById(destId);
 
-              if (!sNode || !eNode) return null;
+              if (!sNode || !eNode) {
+                 console.warn(`Could not find source/dest node for edge ${edge.getId()}`, { sourceId, destId });
+                 return null;
+              }
 
               // Get dynamic dimensions based on node state (default, image, or preview)
               const sNodeDims = getNodeDimensions(sNode);
