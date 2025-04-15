@@ -1,83 +1,106 @@
 import Entry from './Entry.js';
-import Node from './Node.js'; // Assuming Node class is defined in Node.js
+import { v4 as uuidv4 } from 'uuid';
+// Node import is just for type checking, we store IDs
+// import Node from './Node.js';
 
 /**
  * Represents an edge connecting two nodes in the graph.
  * Extends the base Entry class.
+ * Stores references to nodes via their string IDs.
  * Equivalent to Edge.java.
  */
 class Edge extends Entry {
   /**
-   * @param {Node} source - The source node of the edge.
-   * @param {Node} destination - The destination node of the edge.
-   * @param {Node | null} [definition=null] - Optional node defining the edge type/meaning.
-   * @param {string} [name] - Name inherited from Entry.
-   * @param {string} [description] - Description inherited from Entry.
-   * @param {string} [picture] - Picture inherited from Entry.
-   * @param {string} [color] - Color inherited from Entry.
-   * @param {number} [id] - ID inherited from Entry.
+   * @param {string} sourceId - The ID of the source node.
+   * @param {string} destinationId - The ID of the destination node.
+   * @param {string | null} [definitionNodeId=null] - Optional ID of the node defining the edge type/meaning.
+   * @param {string} [name]
+   * @param {string} [description]
+   * @param {string} [picture]
+   * @param {string} [color]
+   * @param {string | null} [id=null] // Use string UUID, null generates one
    */
-  constructor(source, destination, definition = null, name, description, picture, color, id) {
-    // Call the parent Entry constructor
-    super(name, description, picture, color, id);
+  constructor(sourceId, destinationId, definitionNodeId = null, name, description, picture, color, id = null) {
+    // Call the parent Entry constructor, generate UUID if id is null
+    super(name, description, picture, color, id === null ? uuidv4() : id);
 
-    if (!(source instanceof Node)) {
-      throw new Error('Edge source must be an instance of Node.');
+    if (typeof sourceId !== 'string' || !sourceId) {
+      throw new Error('Edge sourceId must be a non-empty string.');
     }
-    if (!(destination instanceof Node)) {
-      throw new Error('Edge destination must be an instance of Node.');
+    if (typeof destinationId !== 'string' || !destinationId) {
+      throw new Error('Edge destinationId must be a non-empty string.');
     }
 
-    /** @type {Node} The source node. */
-    this.source = source;
+    /** @type {string} The ID of the source node. */
+    this.sourceId = sourceId;
 
-    /** @type {Node} The destination node. */
-    this.destination = destination;
+    /** @type {string} The ID of the destination node. */
+    this.destinationId = destinationId;
 
-    /** @type {Array<Node>} List of nodes defining this edge. */
-    this.definitions = [];
+    /** @type {Array<string>} List of Node IDs defining this edge. */
+    this.definitionNodeIds = [];
 
-    if (definition) {
-      if (!(definition instanceof Node)) {
-        throw new Error('Edge definition must be an instance of Node.');
+    if (definitionNodeId) {
+      if (typeof definitionNodeId !== 'string') {
+        throw new Error('Edge definitionNodeId must be a string.');
       }
-      this.definitions.push(definition);
+      this.definitionNodeIds.push(definitionNodeId);
     }
   }
 
   /**
-   * Gets the source node of the edge.
-   * @returns {Node}
+   * Gets the ID of the source node.
+   * @returns {string}
    */
-  getSource() {
-    return this.source;
+  getSourceId() {
+    return this.sourceId;
   }
 
   /**
-   * Gets the destination node of the edge.
-   * @returns {Node}
+   * Gets the ID of the destination node.
+   * @returns {string}
    */
-  getDestination() {
-    return this.destination;
+  getDestinationId() {
+    return this.destinationId;
   }
 
   /**
-   * Gets the definition nodes for this edge.
-   * @returns {Array<Node>}
+   * Gets the definition node IDs for this edge.
+   * @returns {Array<string>}
    */
-  getDefinitions() {
-    return this.definitions;
+  getDefinitionNodeIds() {
+    return this.definitionNodeIds;
   }
 
   /**
-   * Adds a definition node for this edge.
-   * @param {Node} definitionNode
+   * Adds a definition node ID for this edge.
+   * @param {string} definitionNodeId
    */
-  addDefinition(definitionNode) {
-     if (!(definitionNode instanceof Node)) {
-        throw new Error('Edge definition must be an instance of Node.');
+  addDefinitionNodeId(definitionNodeId) {
+     if (typeof definitionNodeId !== 'string' || !definitionNodeId) {
+        throw new Error('Edge definitionNodeId must be a non-empty string.');
       }
-    this.definitions.push(definitionNode);
+    this.definitionNodeIds.push(definitionNodeId);
+  }
+
+  /**
+   * Creates a clone of the edge.
+   * @returns {Edge}
+   */
+  clone() {
+    const newEdge = new Edge(
+        this.sourceId,
+        this.destinationId,
+        null, // Definitions handled separately
+        this.getName(),
+        this.getDescription(),
+        this.getPicture(),
+        this.getColor(),
+        this.getId() // Clone uses the same ID
+    );
+    // Shallow copy the definition ID array
+    newEdge.definitionNodeIds = [...this.definitionNodeIds];
+    return newEdge;
   }
 }
 

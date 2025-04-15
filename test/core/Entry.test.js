@@ -8,16 +8,17 @@ describe('Entry Class', () => {
     expect(entry.getDescription()).toBe('No description.');
     expect(entry.getPicture()).toBe('');
     expect(entry.getColor()).toBe('');
-    expect(entry.getId()).toBe(-1);
+    expect(entry.getId()).toBeNull();
   });
 
-  it('should initialize with provided values', () => {
-    const entry = new Entry('Test Name', 'Test Desc', 'test.jpg', '#ff0000', 123);
+  it('should initialize with provided values, including a string ID', () => {
+    const testId = 'test-uuid-123';
+    const entry = new Entry('Test Name', 'Test Desc', 'test.jpg', '#ff0000', testId);
     expect(entry.getName()).toBe('Test Name');
     expect(entry.getDescription()).toBe('Test Desc');
     expect(entry.getPicture()).toBe('test.jpg');
     expect(entry.getColor()).toBe('#ff0000');
-    expect(entry.getId()).toBe(123);
+    expect(entry.getId()).toBe(testId);
   });
 
   it('should allow setting and getting name', () => {
@@ -44,9 +45,16 @@ describe('Entry Class', () => {
     expect(entry.getColor()).toBe('#00ff00');
   });
 
-  it('should allow setting and getting id', () => {
+  it('should allow setting and getting a string id', () => {
     const entry = new Entry();
-    entry.setId(456);
-    expect(entry.getId()).toBe(456);
+    const newId = 'new-uuid-456';
+    entry.setId(newId);
+    expect(entry.getId()).toBe(newId);
+  });
+
+  it('should allow setting and getting a null id', () => {
+    const entry = new Entry(undefined, undefined, undefined, undefined, 'initial-id');
+    entry.setId(null);
+    expect(entry.getId()).toBeNull();
   });
 }); 

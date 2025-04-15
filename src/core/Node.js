@@ -1,4 +1,5 @@
 import Entry from './Entry.js';
+import { v4 as uuidv4 } from 'uuid';
 // We'll define Edge and Graph later, but import placeholders for now
 // import Edge from './Edge.js';
 // import Graph from './Graph.js';
@@ -14,17 +15,18 @@ class Node extends Entry {
    * @param {string} [description="No description."]
    * @param {string} [picture=""]
    * @param {string} [color=""]
-   * @param {number} [id=-1]
+   * @param {string | null} [id=null] // Use string UUID, null generates one
    * @param {number} [x=0] - UI x-coordinate
    * @param {number} [y=0] - UI y-coordinate
    * @param {number} [scale=1] - UI scale factor
    * @param {string | null} [imageSrc=null] - Full resolution image data URL
    * @param {string | null} [thumbnailSrc=null] - Thumbnail image data URL
    * @param {number | null} [imageAspectRatio=null] - Aspect ratio (height/width) of the image
+   * @param {string | null} [parentDefinitionNodeId=null] - ID of the parent definition node, if any.
    */
-  constructor(data = null, name, description, picture, color, id, x = 0, y = 0, scale = 1, imageSrc = null, thumbnailSrc = null, imageAspectRatio = null) {
-    // Call the parent Entry constructor
-    super(name, description, picture, color, id);
+  constructor(data = null, name, description, picture, color, id = null, x = 0, y = 0, scale = 1, imageSrc = null, thumbnailSrc = null, imageAspectRatio = null, parentDefinitionNodeId = null) {
+    // Call the parent Entry constructor, generate UUID if id is null
+    super(name, description, picture, color, id === null ? uuidv4() : id);
 
     /** @type {any} The data held by the node. */
     this.data = data;
@@ -45,27 +47,44 @@ class Node extends Entry {
     /** @type {number | null} Aspect ratio (height/width) of the image. */
     this.imageAspectRatio = imageAspectRatio;
 
-    /** @type {Array<import('./Edge.js').default>} List of edges connected to this node. */
-    this.edges = [];
+    /** @type {string | null} ID of the parent definition node, if any. */
+    this.parentDefinitionNodeId = parentDefinitionNodeId;
 
-    /** @type {Array<import('./Graph.js').default>} List of graphs defining this node (Reverse Blackboxing). */
-    this.definitions = [];
+    /** @type {Array<string>} List of Edge IDs connected to this node. (Edges stored in Graph) */
+    this.edgeIds = []; // Renamed from edges, stores IDs now
+
+    /** @type {Array<string>} List of Graph IDs defining this node (Reverse Blackboxing). */
+    this.definitionGraphIds = []; // Renamed from definitions, stores IDs now
   }
 
   /**
-   * Adds an edge to this node's list of edges.
-   * @param {import('./Edge.js').default} edge - The edge to add.
+   * Adds an edge ID to this node's list of edge IDs.
+   * @param {string} edgeId - The ID of the edge to add.
    */
-  addEdge(edge) {
-    this.edges.push(edge);
+  addEdgeId(edgeId) {
+    this.edgeIds.push(edgeId);
   }
 
   /**
-   * Gets the list of edges connected to this node.
-   * @returns {Array<import('./Edge.js').default>}
+   * Gets the list of edge IDs connected to this node.
+   * @returns {Array<string>}
    */
-  getEdges() {
-    return this.edges;
+  getEdgeIds() {
+    return this.edgeIds;
+  }
+
+  /**
+   * Removes an edge ID from this node's list.
+   * @param {string} edgeId - The ID of the edge to remove.
+   * @returns {boolean} True if the edge ID was removed, false otherwise.
+   */
+  removeEdgeId(edgeId) {
+    const index = this.edgeIds.indexOf(edgeId);
+    if (index > -1) {
+      this.edgeIds.splice(index, 1);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -85,21 +104,37 @@ class Node extends Entry {
   }
 
   /**
-   * Gets the list of graph definitions for this node.
-   * @returns {Array<import('./Graph.js').default>}
+   * Gets the list of graph definition IDs for this node.
+   * @returns {Array<string>}
    */
-  getDefinitions() {
-    return this.definitions;
+  getDefinitionGraphIds() {
+    return this.definitionGraphIds;
   }
 
   /**
-   * Adds a graph definition to this node.
-   * @param {import('./Graph.js').default} graph - The graph definition to add.
+   * Adds a graph definition ID to this node.
+   * @param {string} graphId - The graph definition ID to add.
    * @returns {boolean} - Returns true (consistent with Java ArrayList.add behavior).
    */
-  addDefinition(graph) {
-    this.definitions.push(graph);
+  addDefinitionGraphId(graphId) {
+    this.definitionGraphIds.push(graphId);
     return true; // Mimic Java's ArrayList.add return
+  }
+
+  /**
+   * Gets the ID of the parent definition node.
+   * @returns {string | null}
+   */
+  getParentDefinitionNodeId() {
+    return this.parentDefinitionNodeId;
+  }
+
+  /**
+   * Sets the ID of the parent definition node.
+   * @param {string | null} nodeId
+   */
+  setParentDefinitionNodeId(nodeId) {
+    this.parentDefinitionNodeId = nodeId;
   }
 
   // --- UI Property Getters/Setters ---
@@ -160,7 +195,7 @@ class Node extends Entry {
 
   /**
    * Creates a shallow clone of the node.
-   * Note: edges and definitions arrays are copied by reference initially.
+   * Note: edgeIds and definitionGraphIds arrays are shallow copied.
    * Data object is also copied by reference.
    * @returns {Node}
    */
@@ -171,17 +206,18 @@ class Node extends Entry {
       this.getDescription(),
       this.getPicture(),
       this.getColor(),
-      this.getId(),
+      this.getId(), // Clone uses the same ID
       this.x,
       this.y,
       this.scale,
-      this.imageSrc,     // Clone full image src
-      this.thumbnailSrc, // Clone thumbnail src
-      this.imageAspectRatio // Clone aspect ratio
+      this.imageSrc,
+      this.thumbnailSrc,
+      this.imageAspectRatio,
+      this.parentDefinitionNodeId // Clone parent definition node ID
     );
-    // Copy edges and definitions by reference (arrays themselves are new)
-    newNode.edges = [...this.edges];
-    newNode.definitions = [...this.definitions];
+    // Shallow copy the ID arrays
+    newNode.edgeIds = [...this.edgeIds];
+    newNode.definitionGraphIds = [...this.definitionGraphIds];
     return newNode;
   }
 }
