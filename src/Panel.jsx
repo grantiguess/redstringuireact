@@ -517,16 +517,18 @@ const Panel = forwardRef(
                            tabChanged = true;
                         }
 
-                        // Sync Bio
-                        const latestBio = nodeFromProp.getDescription() || '';
-                        // Only update if the prop is different from local state
-                        // Avoid overwriting just after user input but before save
-                        // We might need more sophisticated logic if instant feedback is desired
-                        // For now, let's assume prop is truth after save
-                        if (tab.bio !== latestBio) {
-                            updatedTab.bio = latestBio;
+                        // --- Refined Bio Sync Logic --- 
+                        const latestBio = nodeFromProp.getDescription(); // Get raw description
+                        const isDefaultPlaceholder = latestBio === "No description.";
+                        // Target empty string if it's the default placeholder, otherwise use actual value or empty
+                        const targetBio = isDefaultPlaceholder ? '' : latestBio || '';
+
+                        // Update local tab state if it differs from the target
+                        if (tab.bio !== targetBio) {
+                            updatedTab.bio = targetBio;
                             tabChanged = true;
                         }
+                        // --- End Refined Bio Sync Logic ---
 
                         // Sync Thumbnail
                         const latestThumb = nodeFromProp.getThumbnailSrc() || null;
