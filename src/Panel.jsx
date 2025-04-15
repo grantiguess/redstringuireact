@@ -291,6 +291,23 @@ const Panel = forwardRef(
 
     // Exposed so NodeCanvas can open tabs
     const openNodeTab = (nodeId, nodeName) => {
+      // Find the corresponding node data from the props
+      const nodeData = nodes.find(n => n.id === nodeId);
+      
+      // Determine initial values for the new tab
+      let initialBio = '';
+      let initialThumb = null;
+      let initialImageSrc = null;
+      let initialAspectRatio = null;
+
+      if (nodeData) {
+        const desc = nodeData.getDescription();
+        initialBio = (desc && desc !== "No description.") ? desc : ''; // Use empty string if default placeholder
+        initialThumb = nodeData.getThumbnailSrc() || null;
+        initialImageSrc = nodeData.getImageSrc() || null; 
+        initialAspectRatio = nodeData.getImageAspectRatio() || null;
+      }
+
       setTabs((prev) => {
         let updated = prev.map((t) => ({ ...t, isActive: false }));
         const existingIndex = updated.findIndex(
@@ -299,17 +316,29 @@ const Panel = forwardRef(
         if (existingIndex >= 0) {
           const [theTab] = updated.splice(existingIndex, 1);
           theTab.isActive = true;
+          // Update existing tab data on reopen?
+          // For now, just reactivate and move to front.
+          // The useEffect sync should handle data updates if needed.
           updated.splice(1, 0, theTab);
         } else {
+          // Create new tab with pre-populated data
           updated.splice(1, 0, {
             type: 'node',
             nodeId,
-            title: nodeName,
+            title: nodeName, // Use name passed from NodeCanvas
             isActive: true,
+            // Initialize with data derived from nodeData
+            bio: initialBio,
+            thumbnailSrc: initialThumb,
+            imageSrc: initialImageSrc, 
+            imageAspectRatio: initialAspectRatio,
           });
         }
         return updated;
       });
+      // Reset editing state when opening/switching tabs
+      setEditingTitle(false);
+      setEditingProjectTitle(false);
     };
 
     // Optionally track onOpenNodeTab changes if needed.
