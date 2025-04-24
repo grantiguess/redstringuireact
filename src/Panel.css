@@ -80,30 +80,39 @@
 
 /* Right-side panel specifics */
 .panel-container.right {
-  border-left: 1px solid #ccc;
-  width: 300px; /* Example starting width */
+  /* border-left: 1px solid #ccc; */ /* Remove border */
+  width: 350px; /* Default expanded width */
+  /* height: calc(100vh - 60px); */ /* Remove explicit height, rely on flexbox */
+  /* position: absolute; */ /* Remove absolute positioning */
+  /* right: 0; */
+  /* top: 60px; */
+  /* bottom: 0; */
+  flex-shrink: 0; /* Prevent shrinking */
+  /* Ensure other styles like background, transition are kept */
 }
 
 /* Collapsed right panel styles */
 .panel-container.right.collapsed {
-  width: 0; /* Collapse fully */
-  border-left: none; /* Hide border when collapsed */
+  width: 40px; /* Narrow width when collapsed */
+  /* border-left: none; */ /* Border already removed */
   padding: 0; /* Remove padding */
+  overflow: hidden; /* Ensure content is hidden when collapsed */
+  /* Ensure toggle button remains visible/accessible */
 }
-/* Add a class for the container when the right panel is collapsed */
-.right-panel-collapsed .panel-container.right {
-    /* Styles when right panel specifically is collapsed */
+
+/* Remove the specific class for right-panel-collapsed as we use .collapsed directly */
+/* .right-panel-collapsed .panel-container.right {
     width: 0;
-}
+} */
 
 
 /* --- Toggle Button --- */
 .panel-toggle-button {
   position: absolute;
-  top: 50%; /* Center vertically */
-  transform: translateY(-50%);
+  top: 10px; /* Position near the top */
+  /* transform: translateY(-50%); */ /* Remove vertical centering */
   width: 20px; /* Smaller button */
-  height: 60px; /* Taller button */
+  height: 30px; /* Shorter button */
   background-color: #555;
   color: white;
   border: none;
@@ -123,14 +132,14 @@
 /* Position button for left panel (when expanded) */
 .panel-container.left .panel-toggle-button {
   right: -20px; /* Position outside the panel to the right */
-  border-radius: 0 5px 5px 0; /* Rounded on the right */
+  /* border-radius: 0 5px 5px 0; */ /* Removed rounded corners */
   left: auto; /* Ensure left is not set */
 }
 
 /* Position button for right panel (when expanded) */
-.panel-container.right .panel-toggle-button {
+.panel-container.right:not(.collapsed) .panel-toggle-button {
   left: -20px; /* Position outside the panel to the left */
-  border-radius: 5px 0 0 5px; /* Rounded on the left */
+  /* border-radius: 5px 0 0 5px; */ /* Removed rounded corners */
   right: auto; /* Ensure right is not set */
 }
 
@@ -142,8 +151,10 @@
 
 /* Adjust button position when right panel is collapsed */
 .panel-container.right.collapsed .panel-toggle-button {
-  left: -20px; /* Keep it accessible from the edge */
-  /* Or potentially position relative to the collapsed edge if needed */
+  left: 10px; /* Position inside the collapsed panel */
+  top: 10px; /* Keep near the top */
+  /* border-radius: 3px; */ /* Removed rounded corners */
+  /* transform: none; */ /* Reset transform */
 }
 
 

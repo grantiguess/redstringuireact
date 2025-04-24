@@ -5,6 +5,7 @@ import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION } from './co
 import { ArrowLeftFromLine, Home, ImagePlus, XCircle } from 'lucide-react';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
+import ToggleButton from './ToggleButton'; // Import the new component
 
 // Define Item Type for react-dnd
 const ItemTypes = {
@@ -253,10 +254,7 @@ const Panel = forwardRef(
     projectBio,
     onProjectTitleChange,
     onProjectBioChange,
-    inlineSide, // 'left' or 'right'
   }, ref) => {
-    const sideClass = inlineSide ? ` inline ${inlineSide}` : '';
-
     const [tabs, setTabs] = useState([{ type: 'home', isActive: true }]);
     const [closingOverlay, setClosingOverlay] = useState(false);
 
@@ -873,44 +871,26 @@ const Panel = forwardRef(
     }
 
     return (
-      <div className={`panel-container${isExpanded ? ' expanded' : ' collapsed'}${sideClass}`}>
-        {/* Render the custom drag layer */}
-        <CustomDragLayer tabBarRef={tabBarRef} />
+      <>
+        {/* Render ToggleButton independently */}
+        <ToggleButton isExpanded={isExpanded} onClick={onToggleExpand} />
 
-        {closingOverlay && (
-          <div
-            style={{
-              position: 'fixed',
-              top: HEADER_HEIGHT + 20,
-              right: 20,
-              width: isExpanded ? 300 : 40,
-              height: isExpanded ? 'auto' : 40,
-              backgroundColor: '#260000',
-              opacity: 0.4,
-              transition: 'opacity 0.3s ease',
-              borderRadius: '10px',
-              pointerEvents: 'none',
-              zIndex: 9998,
-            }}
-          />
-        )}
-
+        {/* Main Sliding Panel Container */}
         <div
           style={{
             position: 'fixed',
-            top: HEADER_HEIGHT + 20,
-            right: 20,
-            width: isExpanded ? 300 : 40,
-            height: 'auto',
-            maxHeight: isExpanded ? 'calc(100vh - 80px)' : '40px',
+            top: HEADER_HEIGHT, // Align to bottom of header
+            right: 0, // Align to right edge
+            bottom: 0, // Align to bottom edge
+            width: 300, // Fixed expanded width (adjust if needed)
             backgroundColor: '#bdb5b5',
-            borderRadius: '10px',
             boxShadow: '0 2px 5px rgba(0, 0, 0, 0.2)',
-            zIndex: 9999,
-            overflow: 'hidden',
-            transition: 'width 0.2s ease, max-height 0.2s ease',
+            zIndex: 9999, // Below the toggle button
+            overflow: 'hidden', // Important for content clipping
             display: 'flex',
             flexDirection: 'column',
+            transform: isExpanded ? 'translateX(0%)' : 'translateX(100%)', // Slide animation
+            transition: 'transform 0.2s ease', // Animate transform
           }}
         >
           {/* Main Header Row Container */}
@@ -932,7 +912,7 @@ const Panel = forwardRef(
                    style={{
                      width: 40,
                      height: 40,
-                     borderTopLeftRadius: '10px', // Only top-left
+                     // borderTopLeftRadius: '10px', // Removed rounding
                      borderTopRightRadius: 0,
                      borderBottomLeftRadius: 0,
                      borderBottomRightRadius: 0,
@@ -989,52 +969,21 @@ const Panel = forwardRef(
                 </div>
               </div>
             )}
-
-            {/* 3. Close/Open Panel Button (Fixed Right - ALWAYS RENDER) */}
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                backgroundColor: isExpanded ? '#979090' : '#260000',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                userSelect: 'none',
-                borderTopLeftRadius: 0, // Match home button shape (mirrored)
-                borderTopRightRadius: '10px', 
-                borderBottomLeftRadius: 0,
-                borderBottomRightRadius: isExpanded ? 0 : '10px',
-                transition: 'background-color 0.2s ease',
-                flexShrink: 0, // Prevent shrinking
-                zIndex: 2 // Ensure above scroll area
-              }}
-              onClick={onToggleExpand}
-            >
-              <ArrowLeftFromLine
-                size={20}
-                color={isExpanded ? '#260000' : '#aaa'}
-                style={{
-                  transform: `rotate(${isExpanded ? '180deg' : '0deg'})`,
-                  transformOrigin: 'center',
-                  transition: 'transform 0.2s ease',
-                }}
-              />
-            </div>
           </div>
 
           {/* Conditionally Render Content */}
           <div style={{ 
             flex: 1, 
             overflow: 'auto',
-            opacity: isExpanded ? 1 : 0,
-            pointerEvents: isExpanded ? 'auto' : 'none',
-            transition: 'opacity 0.15s ease'
+            // Opacity/pointerEvents might be redundant if parent uses transform 
+            // opacity: isExpanded ? 1 : 0, 
+            // pointerEvents: isExpanded ? 'auto' : 'none',
+            // transition: 'opacity 0.15s ease'
           }}>
             {tabContent}
           </div>
         </div>
-      </div>
+      </>
     );
   }
 );
