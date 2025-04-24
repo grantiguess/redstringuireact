@@ -785,10 +785,31 @@ const Panel = forwardRef(
     let panelContent = null;
     if (side === 'left') {
         if (leftViewActive === 'library') {
-            // TODO: Integrate GraphBrowserPanel logic here
-            panelContent = <div className="panel-content-inner">Library View (Graph Browser Placeholder)</div>;
+            // Replace placeholder with styled title and placeholder content
+            panelContent = (
+                <div className="panel-content-inner"> {/* Keep existing padding */}
+                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}> {/* Wrapper for alignment */}
+                        <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold' }}>
+                            Library
+                        </h2>
+                    </div>
+                    {/* TODO: Add actual Library/Graph Browser content here */}
+                    <div style={{ color: '#555', fontSize: '0.9rem' }}>[Graph Browser Content Placeholder]</div>
+                </div>
+            );
         } else if (leftViewActive === 'grid') {
-            panelContent = <div className="panel-content-inner">Grid View Placeholder</div>;
+            // Replace placeholder with styled title and placeholder content
+            panelContent = (
+                <div className="panel-content-inner"> {/* Keep existing padding */}
+                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}> {/* Wrapper for alignment */}
+                        <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold' }}>
+                            Tabs
+                        </h2>
+                    </div>
+                     {/* TODO: Add actual Grid/Tabs content here */}
+                    <div style={{ color: '#555', fontSize: '0.9rem' }}>[Grid View Content Placeholder]</div>
+                </div>
+            );
         }
     } else { // side === 'right'
         if (!activeRightPanelTab) {
@@ -818,7 +839,8 @@ const Panel = forwardRef(
                                     color: '#260000',
                                     cursor: 'pointer',
                                     overflow: 'hidden',
-                                    userSelect: 'none'
+                                    userSelect: 'none',
+                                    fontSize: '1.1rem'
                                 }}
                                 onDoubleClick={() => {
                                     setEditingProjectTitle(true);
@@ -961,7 +983,7 @@ const Panel = forwardRef(
                                     onKeyDown={(e) => { if (e.key === 'Enter') commitTitleChange(); }}
                                     onBlur={commitTitleChange}
                                     onFocus={() => onFocusChange?.(true)}
-                                    style={{ fontFamily: 'inherit' }}
+                                    style={{ fontFamily: 'inherit', fontSize: '1.1rem' }}
                                 />
                             ) : (
                                 <h3
@@ -970,7 +992,8 @@ const Panel = forwardRef(
                                         color: '#260000',
                                         cursor: 'pointer',
                                         overflow: 'hidden',
-                                        userSelect: 'none'
+                                        userSelect: 'none',
+                                        fontSize: '1.1rem'
                                     }}
                                     onDoubleClick={() => {
                                         setEditingTitle(true);
@@ -1176,7 +1199,7 @@ const Panel = forwardRef(
                                         }}
                                         onClick={() => activateTab(0)}
                                     >
-                                        <Home size={20} color="#260000" />
+                                        <Home size={22} color="#260000" />
                                     </div>
                                 );
                             })()}
