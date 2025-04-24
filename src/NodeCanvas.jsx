@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import './NodeCanvas.css';
 import { X } from 'lucide-react';
 import Header from './Header.jsx';
-import TypeList from './TypeList.jsx';
 import DebugOverlay from './DebugOverlay.jsx';
 import { useCanvasWorker } from './useCanvasWorker.js';
 import Node from './Node.jsx';
@@ -37,7 +36,9 @@ import {
   SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY
 } from './constants';
 
-import Panel from './Panel';
+import LeftPanel from './LeftPanel'; // Left-side library panel
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import Panel from './Panel'; // Renamed from RightPanel
 
 // Check if user's on a Mac using userAgent as platform is deprecated
 const isMac = /Mac/i.test(navigator.userAgent);
@@ -234,9 +235,18 @@ const PlusSign = ({
   );
 };
 
-const NodeCanvas = () => {
+function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onGraphUpdate, readOnly = false, _initialGraphForTest, _setGraphForTest }) {
+  const svgRef = useRef(null);
+  const wrapperRef = useRef(null);
   // --- State and Refs ---
-  const [graph, setGraph] = useState(() => new Graph(true)); // Initialize with a directed graph
+  const [graph, internalSetGraph] = useState(() => {
+    if (_initialGraphForTest) return _initialGraphForTest;
+    // ... existing initialization logic ...
+    return new Graph(); // Fallback if nothing else is provided
+  });
+
+  // Allow overriding setGraph for testing purposes
+  const setGraph = _setGraphForTest || internalSetGraph;
 
   const [selectedNodes, setSelectedNodes] = useState(new Set());
   const [draggingNode, setDraggingNode] = useState(null);
@@ -736,8 +746,7 @@ const NodeCanvas = () => {
               changed = true;
 
               // Calculate positions for other selected nodes based on the new primary position and relative offsets
-              Object.keys(draggingNode.relativeOffsets).forEach(idStr => {
-                  const nodeId = Number(idStr);
+              Object.keys(draggingNode.relativeOffsets).forEach(nodeId => {
                   const nodeToUpdate = newGraph.getNodeById(nodeId);
                   if (nodeToUpdate) {
                       const clonedNode = nodeToUpdate.clone();
@@ -901,12 +910,13 @@ const NodeCanvas = () => {
           let changed = false;
           const nodeIdsToReset = new Set();
           if (draggingNode.relativeOffsets) {
-              Object.keys(draggingNode.relativeOffsets).forEach(id => nodeIdsToReset.add(Number(id)));
+              // Use the string keys directly
+              Object.keys(draggingNode.relativeOffsets).forEach(id => nodeIdsToReset.add(id));
           } else if (draggingNode.nodeId) {
               nodeIdsToReset.add(draggingNode.nodeId);
           }
 
-          nodeIdsToReset.forEach(id => {
+          nodeIdsToReset.forEach(id => { // Now iterating with correct string IDs
               const nodeToUpdate = newGraph.getNodeById(id);
               if (nodeToUpdate && nodeToUpdate.scale !== 1) {
                   const clonedNode = nodeToUpdate.clone();
@@ -1063,17 +1073,21 @@ const NodeCanvas = () => {
   };
 
   // --- Keyboard Controls ---
-  const keysPressed = useRef({});
-  useEffect(() => {
-    const handleKeyDown = (e) => { keysPressed.current[e.key] = true; };
-    const handleKeyUp = (e) => { keysPressed.current[e.key] = false; };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, []);
+  // Remove manual keysPressed ref and useEffect for listeners
+  // const keysPressed = useRef({});
+  // useEffect(() => {
+  //   const handleKeyDown = (e) => { keysPressed.current[e.key] = true; };
+  //   const handleKeyUp = (e) => { keysPressed.current[e.key] = false; };
+  //   window.addEventListener('keydown', handleKeyDown);
+  //   window.addEventListener('keyup', handleKeyUp);
+  //   return () => {
+  //     window.removeEventListener('keydown', handleKeyDown);
+  //     window.removeEventListener('keyup', handleKeyUp);
+  //   };
+  // }, []);
+
+  // Use the hook instead
+  const keysPressed = useKeyboardShortcuts();
 
   useEffect(() => {
     let animationFrameId;
@@ -1155,9 +1169,12 @@ const NodeCanvas = () => {
       animationFrameId = requestAnimationFrame(keyboardLoop);
     };
 
-    keyboardLoop();
+    // Only run the keyboard loop in a browser environment, not JSDOM
+    if (typeof window !== 'undefined' && !window.navigator.userAgent?.includes('jsdom')) {
+        keyboardLoop();
+    }
+    
     return () => cancelAnimationFrame(animationFrameId);
-    // Dependencies: add isHeaderEditing and isPanelInputFocused
   }, [viewportSize, canvasSize, zoomLevel, panOffset, canvasWorker, nodeNamePrompt.visible, isHeaderEditing, isPanelInputFocused]);
 
   const renderCustomPrompt = () => {
@@ -1267,12 +1284,14 @@ const NodeCanvas = () => {
             });
 
             if (changed) {
-                setSelectedNodes(new Set()); // Clear selection state
                 console.log(`[Delete KeyDown] Nodes remaining: ${newGraph.getNodes().length}`);
                 return newGraph; // Return the modified clone
             }
             return prevGraph; // Return original graph if no changes made
         });
+
+        // Clear selection state AFTER updating the graph
+        setSelectedNodes(new Set()); 
       }
     };
 
@@ -1284,7 +1303,7 @@ const NodeCanvas = () => {
       console.log('[Delete KeyDown] Removing keydown listener');
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedNodes, isHeaderEditing, isPanelInputFocused, nodeNamePrompt.visible]); // Dependencies for the condition checks
+  }, [isHeaderEditing, isPanelInputFocused, nodeNamePrompt.visible]);
 
   // --- Callbacks for Lifted State ---
   const handleProjectTitleChange = (newTitle) => {
@@ -1295,12 +1314,14 @@ const NodeCanvas = () => {
     setProjectBio(newBio);
   };
 
+  // Memoize the nodes array
+  const memoizedNodes = useMemo(() => graph.getNodes(), [graph]);
+
   return (
     <div
-      className={`node-canvas-container`}
+      className="node-canvas-container"
       style={{
         height: '100vh',
-        width: '100vw',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -1317,210 +1338,211 @@ const NodeCanvas = () => {
          debugMode={debugMode}
          setDebugMode={setDebugMode}
       />
-      <div
-        ref={containerRef}
-        className="canvas-area"
-        style={{
-          flexGrow: 1,
-          position: 'relative',
-          overflow: 'hidden',
-          backgroundColor: '#bdb5b5'
-        }}
-        onWheel={handleWheel}
-        onMouseMove={handleMouseMove}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUpCanvas}
-        onClick={handleCanvasClick}
-      >
-        <svg
-          className="canvas"
-          width={canvasSize.width}
-          height={canvasSize.height}
+
+      {/* Main content: left panel, canvas, right panel */}
+      <div style={{ display: 'flex', flexGrow: 1 }}>        
+        <LeftPanel />
+
+        <div
+          ref={containerRef}
+          className="canvas-area"
           style={{
-              transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
-              transformOrigin: '0 0',
-              backgroundColor: '#bdb5b5',
-              opacity: 1,
-              pointerEvents: 'auto',
+            flexGrow: 1,
+            position: 'relative',
+            overflow: 'hidden',
+            backgroundColor: '#bdb5b5',
           }}
-          onMouseUp={handleMouseUp}
+          onWheel={handleWheel}
+          onMouseMove={handleMouseMove}
+          onMouseDown={handleMouseDown}
+          onMouseUp={handleMouseUpCanvas}
+          onClick={handleCanvasClick}
         >
-          <g className="base-layer">
-            {graph.getEdges().map((edge, idx) => {
-              // Use the new methods that return string IDs directly
-              const sourceId = edge.getSourceId(); 
-              const destId = edge.getDestinationId();
+          <svg
+            className="canvas"
+            width={canvasSize.width}
+            height={canvasSize.height}
+            style={{
+                transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
+                transformOrigin: '0 0',
+                backgroundColor: '#bdb5b5',
+                opacity: 1,
+                pointerEvents: 'auto',
+            }}
+            onMouseUp={handleMouseUp}
+          >
+            <g className="base-layer">
+              {graph.getEdges().map((edge, idx) => {
+                // Use the new methods that return string IDs directly
+                const sourceId = edge.getSourceId(); 
+                const destId = edge.getDestinationId();
 
-              if (sourceId === undefined || destId === undefined) {
-                console.warn(`Edge at index ${idx} has undefined source/dest ID`, edge);
-                return null;
-              }
+                if (sourceId === undefined || destId === undefined) {
+                  console.warn(`Edge at index ${idx} has undefined source/dest ID`, edge);
+                  return null;
+                }
 
-              const sNode = graph.getNodeById(sourceId);
-              const eNode = graph.getNodeById(destId);
+                const sNode = graph.getNodeById(sourceId);
+                const eNode = graph.getNodeById(destId);
 
-              if (!sNode || !eNode) {
-                 console.warn(`Could not find source/dest node for edge ${edge.getId()}`, { sourceId, destId });
-                 return null;
-              }
+                if (!sNode || !eNode) {
+                   console.warn(`Could not find source/dest node for edge ${edge.getId()}`, { sourceId, destId });
+                   return null;
+                }
 
-              // Get dynamic dimensions based on node state (default, image, or preview)
-              const sNodeDims = getNodeDimensions(sNode);
-              const eNodeDims = getNodeDimensions(eNode);
+                // Get dynamic dimensions based on node state (default, image, or preview)
+                const sNodeDims = getNodeDimensions(sNode);
+                const eNodeDims = getNodeDimensions(eNode);
 
-              // Determine if source/dest nodes are the one being previewed
-              const isSNodePreviewing = previewingNodeId === sNode.getId();
-              const isENodePreviewing = previewingNodeId === eNode.getId();
+                // Determine if source/dest nodes are the one being previewed
+                const isSNodePreviewing = previewingNodeId === sNode.getId();
+                const isENodePreviewing = previewingNodeId === eNode.getId();
 
-              // Calculate endpoints, adjusting Y for previewing node
-              const x1 = sNode.getX() + sNodeDims.currentWidth / 2;
-              const y1 = sNode.getY() + (isSNodePreviewing ? NODE_HEIGHT / 2 : sNodeDims.currentHeight / 2);
-              const x2 = eNode.getX() + eNodeDims.currentWidth / 2;
-              const y2 = eNode.getY() + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
+                // Calculate endpoints, adjusting Y for previewing node
+                const x1 = sNode.getX() + sNodeDims.currentWidth / 2;
+                const y1 = sNode.getY() + (isSNodePreviewing ? NODE_HEIGHT / 2 : sNodeDims.currentHeight / 2);
+                const x2 = eNode.getX() + eNodeDims.currentWidth / 2;
+                const y2 = eNode.getY() + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
 
-              return (
+                return (
+                  <line
+                    key={`edge-${sNode.getId()}-${eNode.getId()}-${idx}`}
+                    x1={x1} 
+                    y1={y1}
+                    x2={x2}
+                    y2={y2}
+                    stroke="black"
+                    strokeWidth="8"
+                  />
+                );
+              })}
+              {drawingConnectionFrom && (
                 <line
-                  key={`edge-${sNode.getId()}-${eNode.getId()}-${idx}`}
-                  x1={x1} 
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
+                  x1={drawingConnectionFrom.startX}
+                  y1={drawingConnectionFrom.startY}
+                  x2={drawingConnectionFrom.currentX}
+                  y2={drawingConnectionFrom.currentY}
                   stroke="black"
                   strokeWidth="8"
                 />
-              );
-            })}
-            {drawingConnectionFrom && (
-              <line
-                x1={drawingConnectionFrom.startX}
-                y1={drawingConnectionFrom.startY}
-                x2={drawingConnectionFrom.currentX}
-                y2={drawingConnectionFrom.currentY}
-                stroke="black"
-                strokeWidth="8"
-              />
-            )}
+              )}
 
-            {(() => {
-               let draggingNodeIds = new Set();
-               if (draggingNode) {
-                 if (draggingNode.relativeOffsets) {
-                   draggingNodeIds = new Set([
-                       draggingNode.primaryId, 
-                       ...Object.keys(draggingNode.relativeOffsets).map(Number)
-                   ]);
-                 } else if (draggingNode.nodeId) {
-                   draggingNodeIds = new Set([draggingNode.nodeId]);
+              {(() => {
+                 let draggingNodeIds = new Set();
+                 if (draggingNode) {
+                   if (draggingNode.relativeOffsets) {
+                     draggingNodeIds = new Set([
+                         draggingNode.primaryId, 
+                         ...Object.keys(draggingNode.relativeOffsets)
+                     ]);
+                   } else if (draggingNode.nodeId) {
+                     draggingNodeIds = new Set([draggingNode.nodeId]);
+                   }
                  }
-               }
 
-               const nodes = graph.getNodes();
-               const nonDraggingNodes = nodes.filter(node => !draggingNodeIds.has(node.id));
-               const draggingNodes = nodes.filter(node => draggingNodeIds.has(node.id));
+                 const nodes = graph.getNodes();
+                 const nonDraggingNodes = nodes.filter(node => !draggingNodeIds.has(node.id));
+                 const draggingNodes = nodes.filter(node => draggingNodeIds.has(node.id));
 
-               return (
-                 <>
-                   {nonDraggingNodes.map((node) => {
-                     const isPreviewing = previewingNodeId === node.id;
-                     const dimensions = getNodeDimensions(node, isPreviewing);
-                     return (
-                       <Node
-                         key={node.id}
-                         node={node}
-                         currentWidth={dimensions.currentWidth}
-                         currentHeight={dimensions.currentHeight}
-                         textAreaHeight={dimensions.textAreaHeight}
-                         imageWidth={dimensions.imageWidth}
-                         imageHeight={dimensions.calculatedImageHeight}
-                         innerNetworkWidth={dimensions.innerNetworkWidth}
-                         innerNetworkHeight={dimensions.innerNetworkHeight}
-                         isSelected={selectedNodes.has(node.id)}
-                         isDragging={false}
-                         onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                         isPreviewing={isPreviewing}
-                         allNodes={nodes}
-                         connections={graph.getEdges()}
-                       />
-                     );
-                   })}
+                 return (
+                   <>
+                     {nonDraggingNodes.map((node) => {
+                       const isPreviewing = previewingNodeId === node.id;
+                       const dimensions = getNodeDimensions(node, isPreviewing);
+                       return (
+                         <Node
+                           key={node.id}
+                           node={node}
+                           currentWidth={dimensions.currentWidth}
+                           currentHeight={dimensions.currentHeight}
+                           textAreaHeight={dimensions.textAreaHeight}
+                           imageWidth={dimensions.imageWidth}
+                           imageHeight={dimensions.calculatedImageHeight}
+                           innerNetworkWidth={dimensions.innerNetworkWidth}
+                           innerNetworkHeight={dimensions.innerNetworkHeight}
+                           isSelected={selectedNodes.has(node.id)}
+                           isDragging={false}
+                           onMouseDown={(e) => handleNodeMouseDown(node, e)}
+                           isPreviewing={isPreviewing}
+                           allNodes={nodes}
+                           connections={graph.getEdges()}
+                         />
+                       );
+                     })}
 
-                   {draggingNodes.map((node) => {
-                     const isPreviewing = previewingNodeId === node.id;
-                     const dimensions = getNodeDimensions(node, isPreviewing);
-                     return (
-                       <Node
-                         key={node.id}
-                         node={node}
-                         currentWidth={dimensions.currentWidth}
-                         currentHeight={dimensions.currentHeight}
-                         textAreaHeight={dimensions.textAreaHeight}
-                         imageWidth={dimensions.imageWidth}
-                         imageHeight={dimensions.calculatedImageHeight}
-                         innerNetworkWidth={dimensions.innerNetworkWidth}
-                         innerNetworkHeight={dimensions.innerNetworkHeight}
-                         isSelected={selectedNodes.has(node.id)}
-                         isDragging={true}
-                         onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                         isPreviewing={isPreviewing}
-                         allNodes={nodes}
-                         connections={graph.getEdges()}
-                       />
-                     );
-                   })}
-                 </>
-               );
-             })()}
-          </g>
+                     {draggingNodes.map((node) => {
+                       const isPreviewing = previewingNodeId === node.id;
+                       const dimensions = getNodeDimensions(node, isPreviewing);
+                       return (
+                         <Node
+                           key={node.id}
+                           node={node}
+                           currentWidth={dimensions.currentWidth}
+                           currentHeight={dimensions.currentHeight}
+                           textAreaHeight={dimensions.textAreaHeight}
+                           imageWidth={dimensions.imageWidth}
+                           imageHeight={dimensions.calculatedImageHeight}
+                           innerNetworkWidth={dimensions.innerNetworkWidth}
+                           innerNetworkHeight={dimensions.innerNetworkHeight}
+                           isSelected={selectedNodes.has(node.id)}
+                           isDragging={true}
+                           onMouseDown={(e) => handleNodeMouseDown(node, e)}
+                           isPreviewing={isPreviewing}
+                           allNodes={nodes}
+                           connections={graph.getEdges()}
+                         />
+                       );
+                     })}
+                   </>
+                 );
+               })()}
+            </g>
 
-           {selectionRect && (
-             <rect
-               x={selectionRect.x}
-               y={selectionRect.y}
-               width={selectionRect.width}
-               height={selectionRect.height}
-               fill="rgba(255, 0, 0, 0.1)"
-               stroke="red"
-               strokeWidth={1}
-             />
-           )}
+             {selectionRect && (
+               <rect
+                 x={selectionRect.x}
+                 y={selectionRect.y}
+                 width={selectionRect.width}
+                 height={selectionRect.height}
+                 fill="rgba(255, 0, 0, 0.1)"
+                 stroke="red"
+                 strokeWidth={1}
+               />
+             )}
 
-           {plusSign && (
-             <PlusSign
-               plusSign={plusSign}
-               onClick={handlePlusSignClick}
-               onMorphDone={handleMorphDone}
-               onDisappearDone={() => setPlusSign(null)}
-             />
-           )}
-        </svg>
+             {plusSign && (
+               <PlusSign
+                 plusSign={plusSign}
+                 onClick={handlePlusSignClick}
+                 onMorphDone={handleMorphDone}
+                 onDisappearDone={() => setPlusSign(null)}
+               />
+             )}
+          </svg>
 
-        {renderCustomPrompt()}
-      </div>
+          {renderCustomPrompt()}
+          {debugMode && (
+            <DebugOverlay 
+              debugData={debugData}
+              hideOverlay={() => setDebugMode(false)}
+            />
+          )}
+        </div>
 
-      {debugMode && (
-        <DebugOverlay 
-          debugData={debugData}
-          hideOverlay={() => setDebugMode(false)}
-        />
-      )}
-
-      <Panel
+        {/* Right-side details panel */}
+        <Panel
           ref={panelRef}
           isExpanded={panelExpanded}
           onToggleExpand={handleTogglePanel}
-          nodes={graph.getNodes()}
-          onSaveNodeData={handleSaveNodeData}
           onFocusChange={handlePanelFocusChange}
+          nodes={memoizedNodes}
+          onSaveNodeData={handleSaveNodeData}
           projectTitle={projectTitle}
           projectBio={projectBio}
           onProjectTitleChange={handleProjectTitleChange}
           onProjectBioChange={handleProjectBioChange}
-      />
-
-      <TypeList
-        nodes={graph.getNodes()}
-        setSelectedNodes={setSelectedNodes}
-      />
+        />
+      </div>
     </div>
   );
 }

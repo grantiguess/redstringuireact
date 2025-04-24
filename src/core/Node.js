@@ -23,8 +23,9 @@ class Node extends Entry {
    * @param {string | null} [thumbnailSrc=null] - Thumbnail image data URL
    * @param {number | null} [imageAspectRatio=null] - Aspect ratio (height/width) of the image
    * @param {string | null} [parentDefinitionNodeId=null] - ID of the parent definition node, if any.
+   * @param {string | null} [graphId=null] - ID of the graph this node belongs to.
    */
-  constructor(data = null, name, description, picture, color, id = null, x = 0, y = 0, scale = 1, imageSrc = null, thumbnailSrc = null, imageAspectRatio = null, parentDefinitionNodeId = null) {
+  constructor(data = null, name, description, picture, color, id = null, x = 0, y = 0, scale = 1, imageSrc = null, thumbnailSrc = null, imageAspectRatio = null, parentDefinitionNodeId = null, graphId = null) {
     // Call the parent Entry constructor, generate UUID if id is null
     super(name, description, picture, color, id === null ? uuidv4() : id);
 
@@ -49,6 +50,9 @@ class Node extends Entry {
 
     /** @type {string | null} ID of the parent definition node, if any. */
     this.parentDefinitionNodeId = parentDefinitionNodeId;
+
+    /** @type {string | null} ID of the graph this node belongs to. */
+    this.graphId = graphId;
 
     /** @type {Array<string>} List of Edge IDs connected to this node. (Edges stored in Graph) */
     this.edgeIds = []; // Renamed from edges, stores IDs now
@@ -213,7 +217,8 @@ class Node extends Entry {
       this.imageSrc,
       this.thumbnailSrc,
       this.imageAspectRatio,
-      this.parentDefinitionNodeId // Clone parent definition node ID
+      this.parentDefinitionNodeId, // Clone parent definition node ID
+      this.graphId // Clone graph ID
     );
     // Shallow copy the ID arrays
     newNode.edgeIds = [...this.edgeIds];

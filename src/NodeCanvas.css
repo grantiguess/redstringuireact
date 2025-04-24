@@ -4,6 +4,16 @@ html, body {
   -webkit-overflow-scrolling: auto;
 }
 
+/* Apply Flexbox layout to the main container */
+.node-canvas-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh; /* Ensure container takes full viewport height */
+  width: 100vw;
+  overflow: hidden; /* Prevent content overflow */
+  background-color: #f0f0f0; /* Match SVG background for now */
+}
+
 .canvas-container {
   width: 100vw;
   height: 100vh;
@@ -19,6 +29,14 @@ html, body {
 .node {
   cursor: pointer;
   transition: transform 0.05s ease, filter 0.1s ease;
+}
+
+/* Add temporary style to ensure SVG takes space */
+.node-canvas-svg {
+  display: block; /* Ensure it's treated as a block */
+  min-height: 300px; /* Temporary minimum height for testing */
+  flex: 1; /* If container is flex, allow SVG to grow */
+  border: 2px dashed red; /* Make it visible */
 }
 
 .node.selected rect {

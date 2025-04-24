@@ -252,8 +252,11 @@ const Panel = forwardRef(
     projectTitle,
     projectBio,
     onProjectTitleChange,
-    onProjectBioChange
+    onProjectBioChange,
+    inlineSide, // 'left' or 'right'
   }, ref) => {
+    const sideClass = inlineSide ? ` inline ${inlineSide}` : '';
+
     const [tabs, setTabs] = useState([{ type: 'home', isActive: true }]);
     const [closingOverlay, setClosingOverlay] = useState(false);
 
@@ -675,13 +678,13 @@ const Panel = forwardRef(
           <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
 
           {/* 3. "Components" Header (no border) */}
-          <h3 style={{
-             marginTop: 0,
-             marginBottom: '10px',
-             color: '#555',
+          <h3 style={{ 
+             marginTop: 0, 
+             marginBottom: '10px', 
+             color: '#555', 
              fontSize: '0.9rem',
              userSelect: 'none' // Prevent selection
-             /* Remove borderBottom */
+             /* Remove borderBottom */ 
            }}>
             Components
           </h3>
@@ -870,7 +873,7 @@ const Panel = forwardRef(
     }
 
     return (
-      <div>
+      <div className={`panel-container${isExpanded ? ' expanded' : ' collapsed'}${sideClass}`}>
         {/* Render the custom drag layer */}
         <CustomDragLayer tabBarRef={tabBarRef} />
 
@@ -880,7 +883,7 @@ const Panel = forwardRef(
               position: 'fixed',
               top: HEADER_HEIGHT + 20,
               right: 20,
-              width: isExpanded ? 320 : 40,
+              width: isExpanded ? 300 : 40,
               height: isExpanded ? 'auto' : 40,
               backgroundColor: '#260000',
               opacity: 0.4,
@@ -897,7 +900,7 @@ const Panel = forwardRef(
             position: 'fixed',
             top: HEADER_HEIGHT + 20,
             right: 20,
-            width: isExpanded ? 320 : 40,
+            width: isExpanded ? 300 : 40,
             height: 'auto',
             maxHeight: isExpanded ? 'calc(100vh - 80px)' : '40px',
             backgroundColor: '#bdb5b5',

@@ -1,0 +1,79 @@
+.graph-browser-panel {
+  font-family: sans-serif;
+  font-size: 14px;
+  border-right: 1px solid #ccc;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: #f8f8f8;
+  overflow: hidden;
+  min-width: 200px; /* Ensure minimum width */
+}
+
+.graph-browser-panel.empty {
+  padding: 10px;
+  color: #888;
+  text-align: center;
+}
+
+.panel-header {
+  padding: 10px;
+  font-weight: bold;
+  border-bottom: 1px solid #ccc;
+  background-color: #eee;
+  flex-shrink: 0; /* Prevent header from shrinking */
+}
+
+.panel-content {
+  padding: 5px 0;
+  overflow-y: auto; /* Enable vertical scrolling */
+  flex-grow: 1; /* Allow content to fill available space */
+}
+
+.node-item-container {
+  /* No specific styles needed here currently */
+}
+
+.node-item {
+  display: flex;
+  align-items: center;
+  padding: 4px 10px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-item:hover {
+  background-color: #e0e0e0;
+}
+
+.node-name {
+  margin-left: 4px;
+  flex-grow: 1; /* Allow name to take up space */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toggle-icon {
+  display: inline-block;
+  width: 15px; /* Fixed width for alignment */
+  text-align: center;
+  margin-right: 1px;
+  cursor: pointer;
+  flex-shrink: 0; /* Prevent icon shrinking */
+  color: #555;
+}
+
+.toggle-icon.collapsed {
+  /* Styles for collapsed state if needed */
+}
+
+.toggle-icon.expanded {
+  /* Styles for expanded state if needed */
+}
+
+.node-children {
+  /* No specific styles needed here currently */
+} 

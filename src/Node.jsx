@@ -4,10 +4,12 @@ import { NODE_WIDTH, NODE_HEIGHT, NODE_CORNER_RADIUS, NODE_PADDING } from './con
 import './Node.css';
 import InnerNetwork from './InnerNetwork.jsx'; // Import InnerNetwork
 import { getNodeDimensions } from './utils.js'; // Import needed for node dims
+import { v4 as uuidv4 } from 'uuid';
 
 const PREVIEW_SCALE_FACTOR = 0.3; // How much to shrink the network layout
 
 // Accept dimensions and other props
+// Expect plain node data object
 const Node = ({
   node,
   isSelected,
@@ -20,23 +22,26 @@ const Node = ({
   imageHeight,
   // --- Add preview-related props ---
   isPreviewing,
-  allNodes,
-  connections,
+  allNodes, // Expect plain array of node data
+  connections, // Expect plain array of edge data
   innerNetworkWidth,
   innerNetworkHeight,
   idPrefix = '' // Add optional idPrefix prop with default
 }) => {
+  // Access properties directly from the node data object
+  const nodeId = node.id ?? uuidv4(); // Use ID or generate fallback (should have ID from store)
   const nodeX = node.x ?? 0; // Use provided x or default to 0
   const nodeY = node.y ?? 0; // Use provided y or default to 0
   const nodeScale = node.scale ?? 1; // Use provided scale or default to 1
   const nodeName = node.name ?? 'Untitled'; // Use provided name or default
-  const nodeThumbnailSrc = node.getThumbnailSrc ? node.getThumbnailSrc() : null;
+  // Access thumbnailSrc directly if it exists
+  const nodeThumbnailSrc = node.thumbnailSrc ?? null;
 
   const hasThumbnail = Boolean(nodeThumbnailSrc);
 
   // Unique ID for the clip path - incorporate prefix
-  const clipPathId = `${idPrefix}node-clip-${node.id ?? Math.random()}`;
-  const innerClipPathId = `${idPrefix}node-inner-clip-${node.id ?? Math.random()}`;
+  const clipPathId = `${idPrefix}node-clip-${nodeId}`;
+  const innerClipPathId = `${idPrefix}node-inner-clip-${nodeId}`;
 
   // Calculate image position based on dynamic textAreaHeight
   const contentAreaY = nodeY + textAreaHeight;
@@ -48,6 +53,8 @@ const Node = ({
     <g
       className={`node ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isPreviewing ? 'previewing' : ''}`}
       onMouseDown={onMouseDown}
+      role="graphics-symbol"
+      aria-label={nodeName}
       style={{
           // Apply only scaling transform, position is handled by element attributes
           transform: isDragging ? `scale(${nodeScale})` : 'scale(1)',
@@ -174,8 +181,9 @@ const Node = ({
                   />
                   <g transform={`translate(${nodeX + NODE_PADDING}, ${contentAreaY})`}>
                       <InnerNetwork
-                          nodes={allNodes}
-                          connections={connections}
+                          nodes={allNodes} // Pass plain node data
+                          // Pass connections as edges (plain edge data)
+                          edges={connections} 
                           width={innerNetworkWidth}
                           height={innerNetworkHeight}
                           padding={5}

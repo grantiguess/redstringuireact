@@ -1,12 +1,9 @@
 import React from 'react';
-import NodeCanvas from './NodeCanvas'; // Import the NodeCanvas component
+import NodeCanvas from './NodeCanvas';
+import './App.css';
 
 function App() {
-  return (
-    <div className="App">
-      <NodeCanvas />
-    </div>
-  );
+  return <NodeCanvas />;
 }
 
 export default App;

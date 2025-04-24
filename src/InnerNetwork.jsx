@@ -12,16 +12,18 @@ import {
 import { getNodeDimensions } from './utils.js'; // Import from utils.js
 
 // --- InnerNetwork Component --- 
-const InnerNetwork = ({ nodes, connections, width, height, padding }) => {
-  if (!nodes || nodes.length === 0 || width <= 0 || height <= 0) {
+// Rename connections to edges, expect plain data objects
+const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
+  // Check for edges instead of connections
+  if (!nodes || nodes.length === 0 || !edges || width <= 0 || height <= 0) {
     return null; 
   }
 
   // --- Bounding Box Calculation ---
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   nodes.forEach(node => {
-    // Use dimensions of the original nodes passed in
-    const dims = getNodeDimensions(node); 
+    // Use dimensions of the original nodes passed in (plain data)
+    const dims = getNodeDimensions(node); // Ensure getNodeDimensions handles plain data
     minX = Math.min(minX, node.x);
     minY = Math.min(minY, node.y);
     maxX = Math.max(maxX, node.x + dims.currentWidth);
@@ -67,39 +69,43 @@ const InnerNetwork = ({ nodes, connections, width, height, padding }) => {
     // Apply calculated transform to the parent group
     <g transform={`translate(${translateX}, ${translateY}) scale(${scale})`} pointerEvents="none">
       {/* Render Edges using original coordinates (scaled by parent g) */}
-      {connections.map((edge, idx) => {
-        // Use the new methods that return string IDs directly
-        const sourceId = edge.getSourceId();
-        const destId = edge.getDestinationId();
+      {/* Iterate over edges */}
+      {edges.map((edge, idx) => {
+        // Access IDs directly from edge data object
+        const sourceId = edge.sourceId;
+        const destId = edge.destinationId;
 
         if (!sourceId || !destId) {
             console.warn(`InnerNetwork edge at index ${idx} missing ID`, edge);
             return null;
         }
 
-        // Find node data using the IDs
-        const sNodeData = nodes.find(n => n.getId() === sourceId);
-        const eNodeData = nodes.find(n => n.getId() === destId);
+        // Find node data using the IDs in the nodes array prop
+        const sNodeData = nodes.find(n => n.id === sourceId);
+        const eNodeData = nodes.find(n => n.id === destId);
 
         if (!sNodeData || !eNodeData) {
-             console.warn(`InnerNetwork could not find nodes for edge ${edge.getId()}`, { sourceId, destId });
+             // Use edge.id from data object
+             console.warn(`InnerNetwork could not find nodes for edge ${edge.id}`, { sourceId, destId });
              return null;
         }
 
-        // Get original dimensions for center calculation
+        // Get original dimensions for center calculation from plain node data
         const sNodeDims = getNodeDimensions(sNodeData);
         const eNodeDims = getNodeDimensions(eNodeData);
 
         // Calculate center points using the *up-to-date* node data from the `nodes` prop
-        const sCenterX = sNodeData.getX() + sNodeDims.currentWidth / 2;
-        const sCenterY = sNodeData.getY() + sNodeDims.currentHeight / 2;
-        const eCenterX = eNodeData.getX() + eNodeDims.currentWidth / 2;
-        const eCenterY = eNodeData.getY() + eNodeDims.currentHeight / 2;
+        // Access coordinates directly
+        const sCenterX = sNodeData.x + sNodeDims.currentWidth / 2;
+        const sCenterY = sNodeData.y + sNodeDims.currentHeight / 2;
+        const eCenterX = eNodeData.x + eNodeDims.currentWidth / 2;
+        const eCenterY = eNodeData.y + eNodeDims.currentHeight / 2;
 
         // Use center coordinates for the line
         return (
           <line
-            key={`inner-conn-${sNodeData.getId()}-${eNodeData.getId()}-${idx}`}
+            // Use edge.id for key
+            key={`inner-conn-${edge.id || idx}`}
             x1={sCenterX} 
             y1={sCenterY}
             x2={eCenterX}
@@ -118,16 +124,9 @@ const InnerNetwork = ({ nodes, connections, width, height, padding }) => {
 
          return (
            <Node
-             key={`inner-node-${node.getId()}`}
-             node={{
-                 id: node.getId(),
-                 name: node.getName(),
-                 getThumbnailSrc: () => node.getThumbnailSrc ? node.getThumbnailSrc() : null,
-                 // Pass original coordinates; transform is handled by parent <g>
-                 x: node.getX(), 
-                 y: node.getY(),
-                 scale: 1 // Scale is handled by parent <g>
-             }}
+             key={`inner-node-${node.id}`}
+             // Pass the plain node data object directly
+             node={node}
              // Pass original dimensions
              currentWidth={dimensions.currentWidth}
              currentHeight={dimensions.currentHeight}
