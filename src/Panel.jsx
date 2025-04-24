@@ -1,4 +1,4 @@
-import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, useCallback } from 'react';
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION } from './constants';
@@ -242,6 +242,45 @@ const DraggableTab = ({ tab, index, moveTab, activateTab, closeTab }) => {
  * - Image is scaled horizontally with "objectFit: contain."
  * - The circle around X has a fade‑in transition on hover.
  */
+const MIN_PANEL_WIDTH = 100;
+const INITIAL_PANEL_WIDTH = 250;
+
+// Helper to read width from storage
+const getInitialWidth = (side, defaultValue) => {
+  try {
+    const storedWidth = localStorage.getItem(`panelWidth_${side}`);
+    if (storedWidth !== null) {
+      const parsedWidth = JSON.parse(storedWidth);
+      if (typeof parsedWidth === 'number' && parsedWidth >= MIN_PANEL_WIDTH && parsedWidth <= window.innerWidth) {
+         return parsedWidth;
+      }
+    }
+  } catch (error) {
+    console.error(`Error reading panelWidth_${side} from localStorage:`, error);
+  }
+  return defaultValue; 
+};
+
+// Helper to read the last *non-default* width
+const getInitialLastCustomWidth = (side, defaultValue) => {
+    // Attempt to read specific key first
+    try {
+      const stored = localStorage.getItem(`lastCustomPanelWidth_${side}`);
+      if (stored !== null) {
+        const parsed = JSON.parse(stored);
+        // Ensure it's valid and not the default width itself
+        if (typeof parsed === 'number' && parsed >= MIN_PANEL_WIDTH && parsed <= window.innerWidth && parsed !== INITIAL_PANEL_WIDTH) {
+           return parsed;
+        }
+      }
+    } catch (error) {
+      console.error(`Error reading lastCustomPanelWidth_${side} from localStorage:`, error);
+    }
+    // Fallback: Read the current width, use if it's not the default
+    const currentWidth = getInitialWidth(side, defaultValue);
+    return currentWidth !== INITIAL_PANEL_WIDTH ? currentWidth : defaultValue;
+  };
+
 const Panel = forwardRef(
   ({
     isExpanded,
@@ -254,6 +293,7 @@ const Panel = forwardRef(
     projectBio,
     onProjectTitleChange,
     onProjectBioChange,
+    side = 'right',
   }, ref) => {
     const [tabs, setTabs] = useState([{ type: 'home', isActive: true }]);
     const [closingOverlay, setClosingOverlay] = useState(false);
@@ -265,6 +305,17 @@ const Panel = forwardRef(
     const [tempProjectTitle, setTempProjectTitle] = useState('');
     const projectTitleInputRef = useRef(null);
     const tabBarRef = useRef(null);
+
+    // Initialize width using helper
+    const [panelWidth, setPanelWidth] = useState(() => getInitialWidth(side, INITIAL_PANEL_WIDTH));
+    // Initialize last custom width using helper
+    const [lastCustomWidth, setLastCustomWidth] = useState(() => getInitialLastCustomWidth(side, INITIAL_PANEL_WIDTH));
+    const [isAnimatingWidth, setIsAnimatingWidth] = useState(false);
+
+    const isResizing = useRef(false);
+    const resizeStartX = useRef(0);
+    const resizeStartWidth = useRef(0);
+    const panelRef = useRef(null);
 
     useEffect(() => {
       if (!isExpanded) {
@@ -531,6 +582,7 @@ const Panel = forwardRef(
 
     // --- START: Effect to synchronize local tabs with nodes prop ---
     useEffect(() => {
+      if (side === 'right') { 
         setTabs(currentTabs => {
             let needsUpdate = false;
             const updatedTabs = currentTabs.map(tab => {
@@ -594,8 +646,146 @@ const Panel = forwardRef(
             // Only update state if any tab actually changed
             return needsUpdate ? updatedTabs : currentTabs;
         });
-    }, [nodes, editingTitle]); // Rerun when nodes prop changes (or when title editing stops)
-    // --- END: Effect to synchronize --- 
+      } else {
+        // TODO: Implement specific sync logic for left panel tabs (e.g., graph browser)
+        // For now, maybe initialize with a placeholder tab if side is left?
+        // Or perhaps the initial state should differ based on side?
+        // Let's keep the default [{ type: 'home', isActive: true }] for now.
+      }
+    }, [nodes, editingTitle, side]); // Add side to dependency array
+    // --- END: Effect to synchronize ---
+
+    // --- Resize Handlers (Reordered definitions) ---
+    const handleResizeMouseMove = useCallback((e) => {
+      if (!isResizing.current) return;
+
+      const currentX = e.clientX;
+      const dx = currentX - resizeStartX.current;
+      let newWidth;
+
+      if (side === 'left') {
+        newWidth = resizeStartWidth.current + dx;
+      } else { // side === 'right'
+        newWidth = resizeStartWidth.current - dx;
+      }
+
+      // Clamp width
+      const maxWidth = window.innerWidth / 2;
+      const clampedWidth = Math.max(MIN_PANEL_WIDTH, Math.min(newWidth, maxWidth));
+      
+      setPanelWidth(clampedWidth);
+    }, [side]); // Dependency on `side`
+
+    const handleResizeMouseUp = useCallback(() => {
+      if (isResizing.current) {
+        isResizing.current = false;
+        window.removeEventListener('mousemove', handleResizeMouseMove);
+        window.removeEventListener('mouseup', handleResizeMouseUp);
+        document.body.style.userSelect = ''; 
+        document.body.style.cursor = ''; 
+
+        try {
+            const finalWidth = panelRef.current?.offsetWidth; // Get final width
+            if (finalWidth) {
+                // Save current width
+                localStorage.setItem(`panelWidth_${side}`, JSON.stringify(finalWidth));
+                // If it's not the default, save as last custom width
+                if (finalWidth !== INITIAL_PANEL_WIDTH) {
+                  setLastCustomWidth(finalWidth); // Update state
+                  localStorage.setItem(`lastCustomPanelWidth_${side}`, JSON.stringify(finalWidth));
+                }
+            }
+        } catch (error) {
+            console.error(`Error saving panelWidth_${side} to localStorage:`, error);
+        }
+      }
+    }, [side, handleResizeMouseMove]); // Now handleResizeMouseMove is defined above
+
+    const handleResizeMouseDown = useCallback((e) => {
+      e.preventDefault(); // Prevent text selection during drag
+      e.stopPropagation(); // Stop propagation if needed
+      isResizing.current = true;
+      resizeStartX.current = e.clientX;
+      resizeStartWidth.current = panelRef.current?.offsetWidth || panelWidth; // Get current width accurately
+      window.addEventListener('mousemove', handleResizeMouseMove);
+      window.addEventListener('mouseup', handleResizeMouseUp);
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+    }, [handleResizeMouseMove, handleResizeMouseUp]); // Dependencies are defined above
+
+    // --- Double Click Handler ---
+    const handleHeaderDoubleClick = useCallback((e) => {
+      console.log('[Panel DblClick] Handler triggered');
+      const target = e.target;
+
+      // Check if the click originated within a draggable tab element
+      if (target.closest('.panel-tab')) { 
+        console.log('[Panel DblClick] Click originated inside a .panel-tab, exiting.');
+        return;
+      }
+      
+      // If we reach here, the click was on the header bar itself or empty space within it.
+      console.log('[Panel DblClick] Click target OK (not inside a tab).');
+
+      let newWidth;
+      console.log('[Panel DblClick] Before toggle:', { currentWidth: panelWidth, lastCustom: lastCustomWidth });
+      
+      if (panelWidth === INITIAL_PANEL_WIDTH) {
+        // Toggle to last custom width (if it's different)
+        newWidth = (lastCustomWidth !== INITIAL_PANEL_WIDTH) ? lastCustomWidth : panelWidth; 
+        console.log('[Panel DblClick] Was default, toggling to last custom (or current if same):', newWidth);
+      } else {
+        // Current width is custom, save it as last custom and toggle to default
+        console.log('[Panel DblClick] Was custom, saving current as last custom:', panelWidth);
+        setLastCustomWidth(panelWidth); // Update state
+        try { // Separate try/catch for this specific save
+          localStorage.setItem(`lastCustomPanelWidth_${side}`, JSON.stringify(panelWidth));
+        } catch (error) {
+          console.error(`Error saving lastCustomPanelWidth_${side} before toggle:`, error);
+        }
+        newWidth = INITIAL_PANEL_WIDTH;
+        console.log('[Panel DblClick] Toggling to default:', newWidth);
+      }
+
+      if (newWidth !== panelWidth) {
+        setIsAnimatingWidth(true);
+        setPanelWidth(newWidth);
+        try {
+          localStorage.setItem(`panelWidth_${side}`, JSON.stringify(newWidth));
+        } catch (error) {
+          console.error(`Error saving panelWidth_${side} after double click:`, error);
+        }
+      } else {
+        console.log('[Panel DblClick] Width did not change, no update needed.');
+      }
+    }, [panelWidth, lastCustomWidth, side]);
+
+    // Effect for cleanup
+    useEffect(() => {
+      // Cleanup function to remove listeners if component unmounts while resizing
+      return () => {
+        if (isResizing.current) {
+          window.removeEventListener('mousemove', handleResizeMouseMove);
+          window.removeEventListener('mouseup', handleResizeMouseUp);
+          document.body.style.userSelect = ''; 
+          document.body.style.cursor = ''; 
+        }
+      };
+    }, [handleResizeMouseMove, handleResizeMouseUp]);
+
+    // <<< Add Effect to reset animation state after transition >>>
+    useEffect(() => {
+        let timeoutId = null;
+        if (isAnimatingWidth) {
+          // Set timeout matching the transition duration
+          timeoutId = setTimeout(() => {
+            setIsAnimatingWidth(false);
+          }, 200); // Duration of width transition
+        }
+        // Cleanup the timeout if the component unmounts or state changes again
+        return () => clearTimeout(timeoutId);
+      }, [isAnimatingWidth]);
+    // --- End Resize Handlers & related effects ---
 
     const activeTab = tabs.find((t) => t.isActive);
 
@@ -842,7 +1032,7 @@ const Panel = forwardRef(
               }}
             />
 
-            {nodeData.getImageSrc && nodeData.getImageSrc() && (
+            {nodeData.getImageSrc() && (
               <div
                 style={{
                   marginTop: '8px',
@@ -870,37 +1060,76 @@ const Panel = forwardRef(
       }
     }
 
+    // --- Positioning and Animation Styles based on side ---
+    const positionStyle = side === 'left' ? { left: 0 } : { right: 0 };
+    const transformStyle = side === 'left'
+      ? (isExpanded ? 'translateX(0%)' : 'translateX(-100%)')
+      : (isExpanded ? 'translateX(0%)' : 'translateX(100%)');
+
+    // Dynamically build transition string
+    const transitionStyle = `transform 0.2s ease${isAnimatingWidth ? ', width 0.2s ease' : ''}`;
+
+    // --- Resize Handle Styles ---
+    const handleStyle = {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      width: '5px', // Width of the handle
+      cursor: 'col-resize',
+      zIndex: 10000, // Above panel content, below toggle button maybe?
+      backgroundColor: 'transparent', // Make it invisible initially
+      // Add visual feedback on hover if desired
+      // 'transition': 'background-color 0.2s ease',
+    };
+    if (side === 'left') {
+      handleStyle.right = '-2px'; // Position slightly outside on the right
+    } else { // side === 'right'
+      handleStyle.left = '-2px'; // Position slightly outside on the left
+    }
+
     return (
       <>
-        {/* Render ToggleButton independently */}
-        <ToggleButton isExpanded={isExpanded} onClick={onToggleExpand} />
+        {/* Pass side prop to ToggleButton */}
+        <ToggleButton isExpanded={isExpanded} onClick={onToggleExpand} side={side} />
 
         {/* Main Sliding Panel Container */}
         <div
+          ref={panelRef} // Assign ref here
           style={{
             position: 'fixed',
-            top: HEADER_HEIGHT, // Align to bottom of header
-            right: 0, // Align to right edge
-            bottom: 0, // Align to bottom edge
-            width: 300, // Fixed expanded width (adjust if needed)
+            top: HEADER_HEIGHT, 
+            ...positionStyle, 
+            bottom: 0, 
+            width: `${panelWidth}px`, // Use state variable for width
             backgroundColor: '#bdb5b5',
             boxShadow: '0 2px 5px rgba(0, 0, 0, 0.2)',
-            zIndex: 9999, // Below the toggle button
-            overflow: 'hidden', // Important for content clipping
+            zIndex: 9999, 
+            overflow: 'hidden', // Keep hidden to clip content
             display: 'flex',
             flexDirection: 'column',
-            transform: isExpanded ? 'translateX(0%)' : 'translateX(100%)', // Slide animation
-            transition: 'transform 0.2s ease', // Animate transform
+            transform: transformStyle, 
+            transition: transitionStyle, // Animate transform and width
           }}
         >
+          {/* Resize Handle */}
+          <div 
+             style={handleStyle}
+             onMouseDown={handleResizeMouseDown}
+             // Add hover effect inline if needed
+             // onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.1)'}
+             // onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+          />
+
           {/* Main Header Row Container */}
-          <div style={{
+          <div 
+            style={{
               height: 40,
               backgroundColor: '#716C6C',
               display: 'flex',
               alignItems: 'stretch',
               position: 'relative',
             }}
+            onDoubleClick={handleHeaderDoubleClick}
           >
              {/* 1. Home Button (Fixed Left - RENDER ONLY IF EXPANDED) */}
              {isExpanded && (() => {
@@ -949,7 +1178,8 @@ const Panel = forwardRef(
                     height: '100%', // Fill the scroll area container
                     display: 'flex',
                     alignItems: 'stretch',
-                    paddingLeft: '8px', // ADD left padding for separation
+                    paddingLeft: '10px', // <<< Increased left padding
+                    paddingRight: '50px', // <<< Increased right padding
                     overflowX: 'auto', // Still needs to scroll horizontally
                     overflowY: 'hidden',
                     whiteSpace: 'nowrap'

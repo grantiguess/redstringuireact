@@ -1,17 +1,25 @@
 import React from 'react';
-import { ArrowLeftFromLine } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine } from 'lucide-react';
 import { HEADER_HEIGHT } from './constants'; // Assuming constants file is accessible
 
-const ToggleButton = ({ isExpanded, onClick }) => {
+const ToggleButton = ({ isExpanded, onClick, side = 'right' }) => {
   const buttonTop = HEADER_HEIGHT; // Position directly below header (remove +10 gap)
-  const buttonRight = 0; // Position flush with right edge (remove 10px gap)
+  const buttonPosition = 0; // Position flush with the edge
+
+  const positionStyle = side === 'left' 
+    ? { left: `${buttonPosition}px` } 
+    : { right: `${buttonPosition}px` };
+
+  // Choose icon and rotation based on side and state
+  const Icon = side === 'left' ? ArrowRightFromLine : ArrowLeftFromLine;
+  const rotation = isExpanded ? 'rotate(180deg)' : 'none';
 
   return (
     <div
       style={{
         position: 'fixed',
         top: `${buttonTop}px`,
-        right: `${buttonRight}px`,
+        ...positionStyle, // Apply left or right style
         width: 40,
         height: 40,
         backgroundColor: 'maroon', // Always maroon
@@ -30,11 +38,11 @@ const ToggleButton = ({ isExpanded, onClick }) => {
       onClick={onClick}
       title={isExpanded ? 'Collapse Panel' : 'Expand Panel'} // Tooltip
     >
-      <ArrowLeftFromLine 
+      <Icon 
         size={20} 
         color="#bdb5b5" 
         style={{ 
-          transform: isExpanded ? 'rotate(180deg)' : 'none',
+          transform: rotation,
           transition: 'transform 0.2s ease' 
         }} 
       />

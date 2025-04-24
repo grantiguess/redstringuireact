@@ -36,9 +36,8 @@ import {
   SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY
 } from './constants';
 
-import LeftPanel from './LeftPanel'; // Left-side library panel
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import Panel from './Panel'; // Renamed from RightPanel
+import Panel from './Panel'; // This is now used for both sides
 
 // Check if user's on a Mac using userAgent as platform is deprecated
 const isMac = /Mac/i.test(navigator.userAgent);
@@ -292,9 +291,11 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
   // Restore necessary state removed during manual deletion
   const [plusSign, setPlusSign] = useState(null);
   const [nodeNamePrompt, setNodeNamePrompt] = useState({ visible: false, name: '' });
-  const [panelExpanded, setPanelExpanded] = useState(false);
+  const [rightPanelExpanded, setRightPanelExpanded] = useState(false);
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
-  const [isPanelInputFocused, setIsPanelInputFocused] = useState(false);
+  const [isRightPanelInputFocused, setIsRightPanelInputFocused] = useState(false);
+  const [leftPanelExpanded, setLeftPanelExpanded] = useState(false);
+  const [isLeftPanelInputFocused, setIsLeftPanelInputFocused] = useState(false);
   // END Restore
 
   const [projectTitle, setProjectTitle] = useState('New Thing');
@@ -1092,7 +1093,7 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
   useEffect(() => {
     let animationFrameId;
     const keyboardLoop = async () => {
-      if (nodeNamePrompt.visible || isHeaderEditing || isPanelInputFocused) {
+      if (nodeNamePrompt.visible || isHeaderEditing || isRightPanelInputFocused) {
         animationFrameId = requestAnimationFrame(keyboardLoop);
         return;
       }
@@ -1175,7 +1176,7 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
     }
     
     return () => cancelAnimationFrame(animationFrameId);
-  }, [viewportSize, canvasSize, zoomLevel, panOffset, canvasWorker, nodeNamePrompt.visible, isHeaderEditing, isPanelInputFocused]);
+  }, [viewportSize, canvasSize, zoomLevel, panOffset, canvasWorker, nodeNamePrompt.visible, isHeaderEditing, isRightPanelInputFocused]);
 
   const renderCustomPrompt = () => {
     if (!nodeNamePrompt.visible) return null;
@@ -1225,27 +1226,24 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
     );
   };
 
-  const handleTogglePanel = () => { setPanelExpanded(prev => !prev); };
+  const handleToggleRightPanel = () => { setRightPanelExpanded(prev => !prev); };
+  const handleToggleLeftPanel = () => { setLeftPanelExpanded(prev => !prev); };
 
-  const handleHoverView = () => {
-    setDebugMode(true);
+  const handleRightPanelFocusChange = (isFocused) => {
+    console.log(`[Right Panel Focus Change] Setting isRightPanelInputFocused to: ${isFocused}`);
+    setIsRightPanelInputFocused(isFocused);
+  };
+  const handleLeftPanelFocusChange = (isFocused) => {
+    console.log(`[Left Panel Focus Change] Setting isLeftPanelInputFocused to: ${isFocused}`);
+    setIsLeftPanelInputFocused(isFocused);
   };
 
-  // Callback for Header component
-  const handleHeaderEditingChange = (isEditing) => {
-    setIsHeaderEditing(isEditing);
-  };
-
-  // Callback for Panel component
-  const handlePanelFocusChange = (isFocused) => {
-    console.log(`[Panel Focus Change] Setting isPanelInputFocused to: ${isFocused}`);
-    setIsPanelInputFocused(isFocused);
-  };
-
-  // --- Log Panel Focus State ---
   useEffect(() => {
-    console.log(`[Panel Focus State] isPanelInputFocused is now: ${isPanelInputFocused}`);
-  }, [isPanelInputFocused]);
+    console.log(`[Right Panel Focus State] isRightPanelInputFocused is now: ${isRightPanelInputFocused}`);
+  }, [isRightPanelInputFocused]);
+  useEffect(() => {
+    console.log(`[Left Panel Focus State] isLeftPanelInputFocused is now: ${isLeftPanelInputFocused}`);
+  }, [isLeftPanelInputFocused]);
 
   // --- Delete Node Logic ---
   useEffect(() => {
@@ -1253,7 +1251,7 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
       console.log(`[Delete KeyDown] Key pressed: ${e.key}`);
 
       // Check if any input field is focused or prompt is visible
-      const isInputActive = isHeaderEditing || isPanelInputFocused || nodeNamePrompt.visible;
+      const isInputActive = isHeaderEditing || isRightPanelInputFocused || isLeftPanelInputFocused || nodeNamePrompt.visible;
       console.log(`[Delete KeyDown] Is Input Active? ${isInputActive}`);
       if (isInputActive) {
         return; // Don't interfere with typing
@@ -1303,7 +1301,7 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
       console.log('[Delete KeyDown] Removing keydown listener');
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isHeaderEditing, isPanelInputFocused, nodeNamePrompt.visible]);
+  }, [selectedNodes, graph, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible]);
 
   // --- Callbacks for Lifted State ---
   const handleProjectTitleChange = (newTitle) => {
@@ -1334,14 +1332,26 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
       <Header
          projectTitle={projectTitle}
          onTitleChange={handleProjectTitleChange}
-         onEditingStateChange={handleHeaderEditingChange}
+         onEditingStateChange={setIsHeaderEditing}
          debugMode={debugMode}
          setDebugMode={setDebugMode}
       />
 
       {/* Main content: left panel, canvas, right panel */}
-      <div style={{ display: 'flex', flexGrow: 1 }}>        
-        <LeftPanel />
+      <div style={{ display: 'flex', flexGrow: 1, position: 'relative', overflow: 'hidden' }}> 
+        <Panel 
+          side="left" 
+          isExpanded={leftPanelExpanded} 
+          onToggleExpand={handleToggleLeftPanel} 
+          onFocusChange={handleLeftPanelFocusChange} 
+          nodes={memoizedNodes} 
+          onOpenNodeTab={() => {}}
+          onSaveNodeData={() => {}}
+          projectTitle={projectTitle}
+          projectBio={projectBio}
+          onProjectTitleChange={handleProjectTitleChange}
+          onProjectBioChange={handleProjectBioChange}
+        />
 
         <div
           ref={containerRef}
@@ -1529,12 +1539,12 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
           )}
         </div>
 
-        {/* Right-side details panel */}
         <Panel
+          side="right"
           ref={panelRef}
-          isExpanded={panelExpanded}
-          onToggleExpand={handleTogglePanel}
-          onFocusChange={handlePanelFocusChange}
+          isExpanded={rightPanelExpanded}
+          onToggleExpand={handleToggleRightPanel}
+          onFocusChange={handleRightPanelFocusChange}
           nodes={memoizedNodes}
           onSaveNodeData={handleSaveNodeData}
           projectTitle={projectTitle}
