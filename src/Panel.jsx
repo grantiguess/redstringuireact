@@ -2,7 +2,7 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, us
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION } from './constants';
-import { ArrowLeftFromLine, Home, ImagePlus, XCircle } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Home, ImagePlus, XCircle, BookOpen, LayoutGrid } from 'lucide-react';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
 import ToggleButton from './ToggleButton'; // Import the new component
@@ -295,37 +295,28 @@ const Panel = forwardRef(
     onProjectBioChange,
     side = 'right',
   }, ref) => {
+    // Right panel state (tabs for nodes/home)
     const [tabs, setTabs] = useState([{ type: 'home', isActive: true }]);
-    const [closingOverlay, setClosingOverlay] = useState(false);
+    // Left panel state
+    const [leftViewActive, setLeftViewActive] = useState('library'); // 'library' or 'grid'
 
-    const [editingTitle, setEditingTitle] = useState(false);
-    const [tempTitle, setTempTitle] = useState('');
-    const titleInputRef = useRef(null);
-    const [editingProjectTitle, setEditingProjectTitle] = useState(false);
-    const [tempProjectTitle, setTempProjectTitle] = useState('');
-    const projectTitleInputRef = useRef(null);
-    const tabBarRef = useRef(null);
-
-    // Initialize width using helper
+    // Shared state
     const [panelWidth, setPanelWidth] = useState(() => getInitialWidth(side, INITIAL_PANEL_WIDTH));
-    // Initialize last custom width using helper
     const [lastCustomWidth, setLastCustomWidth] = useState(() => getInitialLastCustomWidth(side, INITIAL_PANEL_WIDTH));
     const [isAnimatingWidth, setIsAnimatingWidth] = useState(false);
+    const [editingTitle, setEditingTitle] = useState(false); // Used by right panel node tabs
+    const [tempTitle, setTempTitle] = useState(''); // Used by right panel node tabs
+    const [editingProjectTitle, setEditingProjectTitle] = useState(false); // Used by right panel home tab
+    const [tempProjectTitle, setTempProjectTitle] = useState(''); // Used by right panel home tab
 
+    // Refs
     const isResizing = useRef(false);
     const resizeStartX = useRef(0);
     const resizeStartWidth = useRef(0);
     const panelRef = useRef(null);
-
-    useEffect(() => {
-      if (!isExpanded) {
-        setClosingOverlay(true);
-        const timer = setTimeout(() => {
-          setClosingOverlay(false);
-        }, 300);
-        return () => clearTimeout(timer);
-      }
-    }, [isExpanded]);
+    const titleInputRef = useRef(null); // Used by right panel
+    const projectTitleInputRef = useRef(null); // Used by right panel
+    const tabBarRef = useRef(null); // Used by right panel
 
     useEffect(() => {
       if (editingTitle && titleInputRef.current) {
@@ -787,435 +778,452 @@ const Panel = forwardRef(
       }, [isAnimatingWidth]);
     // --- End Resize Handlers & related effects ---
 
-    const activeTab = tabs.find((t) => t.isActive);
+    // --- Determine Active View/Tab --- 
+    const activeRightPanelTab = side === 'right' ? tabs.find((t) => t.isActive) : null;
 
-    let tabContent = null;
-    if (!activeTab) {
-      tabContent = (
-        <div style={{ padding: '10px' }}>
-          No tab selected, default to home soon...
-        </div>
-      );
-    } else if (activeTab.type === 'home') {
-      tabContent = (
-        <div className="panel-content-inner home-tab" >
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px', flexWrap: 'nowrap' }}>
-            {/* Project Title - Editable on Double Click */}
-            {editingProjectTitle ? (
-              <input
-                ref={projectTitleInputRef}
-                type="text"
-                id="project-title-input"
-                name="projectTitleInput"
-                value={tempProjectTitle}
-                onChange={(e) => setTempProjectTitle(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') commitProjectTitleChange(); }}
-                onBlur={commitProjectTitleChange}
-                onFocus={() => onFocusChange?.(true)}
-                style={{ fontFamily: 'inherit', fontSize: '1.1rem', fontWeight: 'bold', color: '#260000' }}
-              />
-            ) : (
-              <h2
-                style={{
-                  margin: '0 10px 0 0', 
-                  color: '#260000',
-                  cursor: 'pointer',
-                  overflow: 'hidden',
-                  userSelect: 'none'
-                }}
-                onDoubleClick={() => {
-                  setEditingProjectTitle(true);
-                  setTempProjectTitle(projectTitle);
-                }}
-              >
-                {projectTitle}
-              </h2>
-            )}
-          </div>
-          <textarea
-            placeholder="Add a bio..."
-            id="project-bio-textarea"
-            name="projectBioTextarea"
-            className="panel-bio-textarea"
-            style={{
-              width: '100%',
-              maxWidth: '100%',
-              boxSizing: 'border-box',
-              resize: 'vertical',
-              minHeight: '60px',
-              color: '#260000',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              padding: '0.5rem',
-              backgroundColor: '#bdb5b5',
-              fontSize: '14px',
-              lineHeight: '1.4',
-              fontFamily: 'inherit',
-            }}
-            value={projectBio || ''}
-            onFocus={() => onFocusChange?.(true)}
-            onBlur={() => onFocusChange?.(false)}
-            onChange={(e) => onProjectBioChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
-                e.stopPropagation();
-              }
-            }}
-          />
-          {/* Divider Line */}
-          <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
+    // --- Generate Content based on Side --- 
+    let panelContent = null;
+    if (side === 'left') {
+        if (leftViewActive === 'library') {
+            // TODO: Integrate GraphBrowserPanel logic here
+            panelContent = <div className="panel-content-inner">Library View (Graph Browser Placeholder)</div>;
+        } else if (leftViewActive === 'grid') {
+            panelContent = <div className="panel-content-inner">Grid View Placeholder</div>;
+        }
+    } else { // side === 'right'
+        if (!activeRightPanelTab) {
+            panelContent = <div className="panel-content-inner">No tab selected...</div>;
+        } else if (activeRightPanelTab.type === 'home') {
+            panelContent = (
+                <div className="panel-content-inner home-tab" >
+                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px', flexWrap: 'nowrap' }}>
+                        {/* Project Title - Editable on Double Click */}
+                        {editingProjectTitle ? (
+                            <input
+                                ref={projectTitleInputRef}
+                                type="text"
+                                id="project-title-input"
+                                name="projectTitleInput"
+                                value={tempProjectTitle}
+                                onChange={(e) => setTempProjectTitle(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') commitProjectTitleChange(); }}
+                                onBlur={commitProjectTitleChange}
+                                onFocus={() => onFocusChange?.(true)}
+                                style={{ fontFamily: 'inherit', fontSize: '1.1rem', fontWeight: 'bold', color: '#260000' }}
+                            />
+                        ) : (
+                            <h2
+                                style={{
+                                    margin: '0 10px 0 0', 
+                                    color: '#260000',
+                                    cursor: 'pointer',
+                                    overflow: 'hidden',
+                                    userSelect: 'none'
+                                }}
+                                onDoubleClick={() => {
+                                    setEditingProjectTitle(true);
+                                    setTempProjectTitle(projectTitle);
+                                }}
+                            >
+                                {projectTitle}
+                            </h2>
+                        )}
+                    </div>
+                    <textarea
+                        placeholder="Add a bio..."
+                        id="project-bio-textarea"
+                        name="projectBioTextarea"
+                        className="panel-bio-textarea"
+                        style={{
+                            width: '100%',
+                            maxWidth: '100%',
+                            boxSizing: 'border-box',
+                            resize: 'vertical',
+                            minHeight: '60px',
+                            color: '#260000',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                            padding: '0.5rem',
+                            backgroundColor: '#bdb5b5',
+                            fontSize: '14px',
+                            lineHeight: '1.4',
+                            fontFamily: 'inherit',
+                        }}
+                        value={projectBio || ''}
+                        onFocus={() => onFocusChange?.(true)}
+                        onBlur={() => onFocusChange?.(false)}
+                        onChange={(e) => onProjectBioChange(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
+                                e.stopPropagation();
+                            }
+                        }}
+                    />
+                    {/* Divider Line */}
+                    <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
 
-          {/* 3. "Components" Header (no border) */}
-          <h3 style={{ 
-             marginTop: 0, 
-             marginBottom: '10px', 
-             color: '#555', 
-             fontSize: '0.9rem',
-             userSelect: 'none' // Prevent selection
-             /* Remove borderBottom */ 
-           }}>
-            Components
-          </h3>
+                    {/* 3. "Components" Header (no border) */}
+                    <h3 style={{ 
+                        marginTop: 0, 
+                        marginBottom: '10px', 
+                        color: '#555', 
+                        fontSize: '0.9rem',
+                        userSelect: 'none' // Prevent selection
+                        /* Remove borderBottom */ 
+                    }}>
+                        Components
+                    </h3>
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '8px',
-              maxHeight: '300px',
-              overflowY: 'auto',
-            }}
-          >
-            {nodes.map((node) => (
-              <div
-                key={node.id}
-                style={{
-                  backgroundColor: 'maroon',
-                  borderRadius: NODE_CORNER_RADIUS,
-                  height: '40px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  padding: '0 5px',
-                  overflow: 'hidden'
-                }}
-                title={node.name}
-                onClick={() => openNodeTab(node.id, node.name)}
-              >
-                <span style={{
-                  color: '#bdb5b5',
-                  fontSize: '0.8rem',
-                  width: '100%',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  textAlign: 'center',
-                  padding: '0 10px',
-                  boxSizing: 'border-box',
-                  userSelect: 'none'
-                }}>
-                  {node.name}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    } else if (activeTab.type === 'node') {
-      const nodeId = activeTab.nodeId;
-      const nodeData = nodes.find((n) => n.id === nodeId);
-      if (!nodeData) {
-        tabContent = (
-          <div style={{ padding: '10px', color: '#aaa' }}>Node not found...</div>
-        );
-      } else {
-        // Use the state value directly now, as useEffect synchronizes it
-        const displayBio = activeTab.bio || '';
-        const displayTitle = activeTab.title || 'Untitled';
-
-        // Function to commit the title change (on blur or Enter key)
-        const commitTitleChange = () => {
-          const newName = tempTitle.trim();
-          if (newName && newName !== activeTab.title) {
-            // Update the node data
-            onSaveNodeData(nodeId, { name: newName });
-            // Update the tab's title in state immediately for responsiveness
-            setTabs((prev) =>
-              prev.map((tab) =>
-                tab.nodeId === nodeId ? { ...tab, title: newName } : tab
-              )
+                    <div
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr',
+                            gap: '8px',
+                            maxHeight: '300px',
+                            overflowY: 'auto',
+                        }}
+                    >
+                        {nodes.map((node) => (
+                            <div
+                                key={node.id}
+                                style={{
+                                    backgroundColor: 'maroon',
+                                    borderRadius: NODE_CORNER_RADIUS,
+                                    height: '40px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    padding: '0 5px',
+                                    overflow: 'hidden'
+                                }}
+                                title={node.name}
+                                onClick={() => openNodeTab(node.id, node.name)}
+                            >
+                                <span style={{
+                                    color: '#bdb5b5',
+                                    fontSize: '0.8rem',
+                                    width: '100%',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    textAlign: 'center',
+                                    padding: '0 10px',
+                                    boxSizing: 'border-box',
+                                    userSelect: 'none'
+                                }}>
+                                    {node.name}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
             );
-          }
-          setEditingTitle(false);
-        };
+        } else if (activeRightPanelTab.type === 'node') {
+            const nodeId = activeRightPanelTab.nodeId;
+            const nodeData = nodes.find((n) => n.id === nodeId);
+            if (!nodeData) {
+                panelContent = (
+                    <div style={{ padding: '10px', color: '#aaa' }}>Node not found...</div>
+                );
+            } else {
+                // Use the state value directly now, as useEffect synchronizes it
+                const displayBio = activeRightPanelTab.bio || '';
+                const displayTitle = activeRightPanelTab.title || 'Untitled';
 
-        tabContent = (
-          <div className="panel-content-inner node-tab">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              {editingTitle ? (
-                <input
-                  ref={titleInputRef}
-                  type="text"
-                  id={`node-title-input-${nodeId}`}
-                  name={`nodeTitleInput-${nodeId}`}
-                  value={tempTitle}
-                  onChange={(e) => setTempTitle(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') commitTitleChange(); }}
-                  onBlur={commitTitleChange}
-                  onFocus={() => onFocusChange?.(true)}
-                  style={{ fontFamily: 'inherit' }}
-                />
-              ) : (
-                <h3
-                  style={{
-                    margin: 0,
-                    color: '#260000',
-                    cursor: 'pointer',
-                    overflow: 'hidden',
-                    userSelect: 'none'
-                  }}
-                  onDoubleClick={() => {
-                    setEditingTitle(true);
-                    setTempTitle(displayTitle);
-                  }}
-                >
-                  <span style={{
-                     display: 'inline-block',
-                     maxWidth: '210px',
-                     whiteSpace: 'normal',
-                     overflowWrap: 'break-word',
-                     verticalAlign: 'bottom'
-                  }}>
-                     {displayTitle}
-                  </span>
-                </h3>
-              )}
+                // Function to commit the title change (on blur or Enter key)
+                const commitTitleChange = () => {
+                    const newName = tempTitle.trim();
+                    if (newName && newName !== activeRightPanelTab.title) {
+                        // Update the node data
+                        onSaveNodeData(nodeId, { name: newName });
+                        // Update the tab's title in state immediately for responsiveness
+                        setTabs((prev) =>
+                            prev.map((tab) =>
+                                tab.nodeId === nodeId ? { ...tab, title: newName } : tab
+                            )
+                        );
+                    }
+                    setEditingTitle(false);
+                };
 
-              <ImagePlus
-                size={24}
-                color="#260000"
-                style={{ cursor: 'pointer', flexShrink: 0 }}
-                onClick={() => handleAddImage(nodeId)}
-              />
-            </div>
+                panelContent = (
+                    <div className="panel-content-inner node-tab">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            {editingTitle ? (
+                                <input
+                                    ref={titleInputRef}
+                                    type="text"
+                                    id={`node-title-input-${nodeId}`}
+                                    name={`nodeTitleInput-${nodeId}`}
+                                    value={tempTitle}
+                                    onChange={(e) => setTempTitle(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') commitTitleChange(); }}
+                                    onBlur={commitTitleChange}
+                                    onFocus={() => onFocusChange?.(true)}
+                                    style={{ fontFamily: 'inherit' }}
+                                />
+                            ) : (
+                                <h3
+                                    style={{
+                                        margin: 0,
+                                        color: '#260000',
+                                        cursor: 'pointer',
+                                        overflow: 'hidden',
+                                        userSelect: 'none'
+                                    }}
+                                    onDoubleClick={() => {
+                                        setEditingTitle(true);
+                                        setTempTitle(displayTitle);
+                                    }}
+                                >
+                                    <span style={{
+                                        display: 'inline-block',
+                                        maxWidth: '210px',
+                                        whiteSpace: 'normal',
+                                        overflowWrap: 'break-word',
+                                        verticalAlign: 'bottom'
+                                    }}>
+                                        {displayTitle}
+                                    </span>
+                                </h3>
+                            )}
 
-            <textarea
-              placeholder="Add a bio..."
-              id={`node-bio-textarea-${nodeId}`}
-              name={`nodeBioTextarea-${nodeId}`}
-              className="panel-bio-textarea"
-              style={{
-                width: '100%',
-                maxWidth: '100%',
-                boxSizing: 'border-box',
-                resize: 'vertical',
-                minHeight: '60px',
-                color: '#260000',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-                padding: '0.5rem',
-                backgroundColor: '#bdb5b5',
-                fontSize: '14px',
-                lineHeight: '1.4',
-                fontFamily: 'inherit',
-                userSelect: 'text'
-              }}
-              value={displayBio}
-              onFocus={() => onFocusChange?.(true)}
-              onBlur={() => onFocusChange?.(false)}
-              onChange={(e) => handleBioChange(nodeId, e.target.value)}
-              onKeyDown={(e) => {
-                if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
-                  e.stopPropagation();
-                }
-              }}
-            />
+                            <ImagePlus
+                                size={24}
+                                color="#260000"
+                                style={{ cursor: 'pointer', flexShrink: 0 }}
+                                onClick={() => handleAddImage(nodeId)}
+                            />
+                        </div>
 
-            {nodeData.getImageSrc() && (
-              <div
-                style={{
-                  marginTop: '8px',
-                  position: 'relative',
-                  width: '100%',
-                  maxWidth: '100%',
-                  overflow: 'hidden',
-                }}
-              >
-                <img
-                  src={nodeData.getImageSrc()}
-                  alt="Node"
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    height: 'auto',
-                    objectFit: 'contain',
-                    borderRadius: '6px'
-                  }}
-                />
-              </div>
-            )}
-          </div>
-        );
-      }
+                        <textarea
+                            placeholder="Add a bio..."
+                            id={`node-bio-textarea-${nodeId}`}
+                            name={`nodeBioTextarea-${nodeId}`}
+                            className="panel-bio-textarea"
+                            style={{
+                                width: '100%',
+                                maxWidth: '100%',
+                                boxSizing: 'border-box',
+                                resize: 'vertical',
+                                minHeight: '60px',
+                                color: '#260000',
+                                border: '1px solid #ccc',
+                                borderRadius: '4px',
+                                padding: '0.5rem',
+                                backgroundColor: '#bdb5b5',
+                                fontSize: '14px',
+                                lineHeight: '1.4',
+                                fontFamily: 'inherit',
+                                userSelect: 'text'
+                            }}
+                            value={displayBio}
+                            onFocus={() => onFocusChange?.(true)}
+                            onBlur={() => onFocusChange?.(false)}
+                            onChange={(e) => handleBioChange(nodeId, e.target.value)}
+                            onKeyDown={(e) => {
+                                if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
+                                    e.stopPropagation();
+                                }
+                            }}
+                        />
+
+                        {nodeData.getImageSrc() && (
+                            <div
+                                style={{
+                                    marginTop: '8px',
+                                    position: 'relative',
+                                    width: '100%',
+                                    maxWidth: '100%',
+                                    overflow: 'hidden',
+                                }}
+                            >
+                                <img
+                                    src={nodeData.getImageSrc()}
+                                    alt="Node"
+                                    style={{
+                                        display: 'block',
+                                        width: '100%',
+                                        height: 'auto',
+                                        objectFit: 'contain',
+                                        borderRadius: '6px'
+                                    }}
+                                />
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+        }
     }
 
     // --- Positioning and Animation Styles based on side ---
     const positionStyle = side === 'left' ? { left: 0 } : { right: 0 };
     const transformStyle = side === 'left'
-      ? (isExpanded ? 'translateX(0%)' : 'translateX(-100%)')
-      : (isExpanded ? 'translateX(0%)' : 'translateX(100%)');
+        ? (isExpanded ? 'translateX(0%)' : 'translateX(-100%)')
+        : (isExpanded ? 'translateX(0%)' : 'translateX(100%)');
 
-    // Dynamically build transition string
+    // Dynamically build transition string, removing backgroundColor
     const transitionStyle = `transform 0.2s ease${isAnimatingWidth ? ', width 0.2s ease' : ''}`;
 
-    // --- Resize Handle Styles ---
     const handleStyle = {
-      position: 'absolute',
-      top: 0,
-      bottom: 0,
-      width: '5px', // Width of the handle
-      cursor: 'col-resize',
-      zIndex: 10000, // Above panel content, below toggle button maybe?
-      backgroundColor: 'transparent', // Make it invisible initially
-      // Add visual feedback on hover if desired
-      // 'transition': 'background-color 0.2s ease',
+        position: 'absolute',
+        top: 0,
+        bottom: 0,
+        width: '5px', // Width of the handle
+        cursor: 'col-resize',
+        zIndex: 10000, // Above panel content, below toggle button maybe?
+        backgroundColor: 'transparent', // Make it invisible initially
+        // Add visual feedback on hover if desired
+        // 'transition': 'background-color 0.2s ease',
     };
     if (side === 'left') {
-      handleStyle.right = '-2px'; // Position slightly outside on the right
+        handleStyle.right = '-2px'; // Position slightly outside on the right
     } else { // side === 'right'
-      handleStyle.left = '-2px'; // Position slightly outside on the left
+        handleStyle.left = '-2px'; // Position slightly outside on the left
     }
 
     return (
-      <>
-        {/* Pass side prop to ToggleButton */}
-        <ToggleButton isExpanded={isExpanded} onClick={onToggleExpand} side={side} />
+        <>
+            {/* Pass side prop to ToggleButton */}
+            <ToggleButton isExpanded={isExpanded} onClick={onToggleExpand} side={side} />
 
-        {/* Main Sliding Panel Container */}
-        <div
-          ref={panelRef} // Assign ref here
-          style={{
-            position: 'fixed',
-            top: HEADER_HEIGHT, 
-            ...positionStyle, 
-            bottom: 0, 
-            width: `${panelWidth}px`, // Use state variable for width
-            backgroundColor: '#bdb5b5',
-            boxShadow: '0 2px 5px rgba(0, 0, 0, 0.2)',
-            zIndex: 9999, 
-            overflow: 'hidden', // Keep hidden to clip content
-            display: 'flex',
-            flexDirection: 'column',
-            transform: transformStyle, 
-            transition: transitionStyle, // Animate transform and width
-          }}
-        >
-          {/* Resize Handle */}
-          <div 
-             style={handleStyle}
-             onMouseDown={handleResizeMouseDown}
-             // Add hover effect inline if needed
-             // onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.1)'}
-             // onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-          />
-
-          {/* Main Header Row Container */}
-          <div 
-            style={{
-              height: 40,
-              backgroundColor: '#716C6C',
-              display: 'flex',
-              alignItems: 'stretch',
-              position: 'relative',
-            }}
-            onDoubleClick={handleHeaderDoubleClick}
-          >
-             {/* 1. Home Button (Fixed Left - RENDER ONLY IF EXPANDED) */}
-             {isExpanded && (() => {
-               const isActive = tabs[0]?.isActive;
-               const bg = isActive ? '#bdb5b5' : '#979090';
-               return (
-                 <div
-                   key="home"
-                   style={{
-                     width: 40,
-                     height: 40,
-                     // borderTopLeftRadius: '10px', // Removed rounding
-                     borderTopRightRadius: 0,
-                     borderBottomLeftRadius: 0,
-                     borderBottomRightRadius: 0,
-                     display: 'flex',
-                     alignItems: 'center',
-                     justifyContent: 'center',
-                     cursor: 'pointer',
-                     backgroundColor: bg,
-                     flexShrink: 0,
-                     zIndex: 2
-                   }}
-                   onClick={() => activateTab(0)}
-                 >
-                   <Home size={20} color="#260000" />
-                 </div>
-               );
-             })()}
-
-            {/* 2. Scrollable Tab Area (RENDER ONLY IF EXPANDED) */}
-            {isExpanded && (
-              <div
+            {/* Main Sliding Panel Container */}
+            <div
+                ref={panelRef} // Assign ref here
                 style={{
-                  flexGrow: 1,
-                  overflow: 'hidden',
-                  position: 'relative',
-                  height: '100%'
-                }}
-              >
-                {/* Inner div that actually scrolls */}
-                <div
-                  ref={tabBarRef}
-                  className="hide-scrollbar"
-                  style={{
-                    height: '100%', // Fill the scroll area container
+                    position: 'fixed',
+                    top: HEADER_HEIGHT, 
+                    ...positionStyle, 
+                    bottom: 0, 
+                    width: `${panelWidth}px`, // Use state variable for width
+                    backgroundColor: '#bdb5b5', // <<< Set back to static color
+                    boxShadow: '0 2px 5px rgba(0, 0, 0, 0.2)',
+                    zIndex: 9999, 
+                    overflow: 'hidden', // Keep hidden to clip content
                     display: 'flex',
-                    alignItems: 'stretch',
-                    paddingLeft: '10px', // <<< Increased left padding
-                    paddingRight: '50px', // <<< Increased right padding
-                    overflowX: 'auto', // Still needs to scroll horizontally
-                    overflowY: 'hidden',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  {/* Map ONLY node tabs (index > 0) */}
-                  {tabs.slice(1).map((tab, index) => (
-                      <DraggableTab
-                        key={tab.nodeId} // Use nodeId as key
-                        tab={tab}
-                        index={index} // Pass relative index
-                        moveTab={moveTab}
-                        activateTab={activateTab}
-                        closeTab={closeTab}
-                      />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+                    flexDirection: 'column',
+                    transform: transformStyle, 
+                    transition: transitionStyle, // Animate transform and width
+                }}
+            >
+                {/* Resize Handle */}
+                <div 
+                    style={handleStyle}
+                    onMouseDown={handleResizeMouseDown}
+                    // Add hover effect inline if needed
+                    // onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.1)'}
+                    // onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                />
 
-          {/* Conditionally Render Content */}
-          <div style={{ 
-            flex: 1, 
-            overflow: 'auto',
-            // Opacity/pointerEvents might be redundant if parent uses transform 
-            // opacity: isExpanded ? 1 : 0, 
-            // pointerEvents: isExpanded ? 'auto' : 'none',
-            // transition: 'opacity 0.15s ease'
-          }}>
-            {tabContent}
-          </div>
-        </div>
-      </>
+                {/* Main Header Row Container */}
+                <div 
+                    style={{
+                        height: 40,
+                        backgroundColor: '#716C6C',
+                        display: 'flex',
+                        alignItems: 'stretch',
+                        position: 'relative',
+                    }}
+                    onDoubleClick={handleHeaderDoubleClick}
+                >
+                    {/* === Conditional Header Content === */} 
+                    {side === 'left' ? (
+                        // --- Left Panel Header --- 
+                        <div style={{ flexGrow: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'stretch' }}>
+                            {/* Library Button */} 
+                            <div 
+                                title="Library" 
+                                style={{ /* Common Button Styles */ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backgroundColor: leftViewActive === 'library' ? '#bdb5b5' : '#979090', zIndex: 2 }}
+                                onClick={() => setLeftViewActive('library')}
+                            >
+                                <BookOpen size={20} color="#260000" />
+                            </div>
+                            {/* Grid Button */} 
+                            <div 
+                                title="Grid View" 
+                                style={{ /* Common Button Styles */ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backgroundColor: leftViewActive === 'grid' ? '#bdb5b5' : '#979090', zIndex: 2 }}
+                                onClick={() => setLeftViewActive('grid')}
+                            >
+                                <LayoutGrid size={20} color="#260000" />
+                            </div>
+                        </div>
+                    ) : (
+                        // --- Right Panel Header (Existing Logic) --- 
+                        <> 
+                            {/* 1. Home Button (Only if Expanded) */} 
+                            {isExpanded && (() => {
+                                const isActive = tabs[0]?.isActive;
+                                const bg = isActive ? '#bdb5b5' : '#979090';
+                                return (
+                                    <div
+                                        key="home"
+                                        style={{
+                                            width: 40,
+                                            height: 40,
+                                            // borderTopLeftRadius: '10px', // Removed rounding
+                                            borderTopRightRadius: 0,
+                                            borderBottomLeftRadius: 0,
+                                            borderBottomRightRadius: 0,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            cursor: 'pointer',
+                                            backgroundColor: bg,
+                                            flexShrink: 0,
+                                            zIndex: 2
+                                        }}
+                                        onClick={() => activateTab(0)}
+                                    >
+                                        <Home size={20} color="#260000" />
+                                    </div>
+                                );
+                            })()}
+                            {/* 2. Scrollable Tab Area (Only if Expanded) */} 
+                            {isExpanded && (
+                                <div style={{ flexGrow: 1, overflow: 'hidden', position: 'relative', height: '100%' }}>
+                                    <div 
+                                        ref={tabBarRef} 
+                                        className="hide-scrollbar" 
+                                        style={{ /* ... scroll area styles ... */ 
+                                            height: '100%', 
+                                            display: 'flex', 
+                                            alignItems: 'stretch', 
+                                            paddingLeft: '10px', 
+                                            paddingRight: '50px', 
+                                            overflowX: 'auto', 
+                                            overflowY: 'hidden', 
+                                            whiteSpace: 'nowrap' 
+                                        }}
+                                    >
+                                        {/* Map ONLY node tabs (index > 0) */}
+                                        {tabs.slice(1).map((tab, index) => (
+                                            <DraggableTab
+                                                key={tab.nodeId} // Use nodeId as key
+                                                tab={tab}
+                                                index={index} // Pass relative index
+                                                moveTab={moveTab}
+                                                activateTab={activateTab}
+                                                closeTab={closeTab}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    )}
+                    {/* === End Conditional Header Content === */} 
+                </div>
+
+                {/* Content Area */} 
+                <div style={{ flex: 1, overflow: 'auto' }}>
+                    {panelContent}
+                </div>
+            </div>
+        </>
     );
-  }
+}
 );
 
 export default Panel;
