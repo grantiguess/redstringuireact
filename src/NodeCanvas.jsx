@@ -6,11 +6,15 @@ import DebugOverlay from './DebugOverlay.jsx';
 import { useCanvasWorker } from './useCanvasWorker.js';
 import Node from './Node.jsx';
 import { getNodeDimensions } from './utils.js';
+import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
 
-// Import core graph classes
-import Graph from './core/Graph.js';
-import { default as CoreNode } from './core/Node.js'; // Alias core Node class
-import Edge from './core/Edge.js';
+// Import Zustand store and selectors/actions
+import useGraphStore, {
+    getActiveGraphId,
+    getNodesForGraph,
+    getEdgesForGraph,
+} from './store/graphStore.js';
+import { shallow } from 'zustand/shallow';
 
 import {
   NODE_WIDTH,
@@ -234,23 +238,191 @@ const PlusSign = ({
   );
 };
 
-function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onGraphUpdate, readOnly = false, _initialGraphForTest, _setGraphForTest }) {
+function NodeCanvas() {
   const svgRef = useRef(null);
   const wrapperRef = useRef(null);
-  // --- State and Refs ---
-  const [graph, internalSetGraph] = useState(() => {
-    if (_initialGraphForTest) return _initialGraphForTest;
-    // ... existing initialization logic ...
-    return new Graph(); // Fallback if nothing else is provided
-  });
 
-  // Allow overriding setGraph for testing purposes
-  const setGraph = _setGraphForTest || internalSetGraph;
+  // --- Local State for Subscribed Zustand Data ---
+  const [localActiveGraphId, setLocalActiveGraphId] = useState(null);
+  const [localActiveGraphName, setLocalActiveGraphName] = useState('Loading...');
+  const [localActiveGraphDescription, setLocalActiveGraphDescription] = useState('');
+  // Store actions in state as well, assuming they are stable
+  const [localStoreActions, setLocalStoreActions] = useState(() => ({
+    updateNode: (id, fn) => console.log('Initial dummy updateNode', id, fn),
+    addEdge: (graphId, edge) => console.log('Initial dummy addEdge', graphId, edge),
+    addNode: (graphId, node) => console.log('Initial dummy addNode', graphId, node),
+    removeNode: (id) => console.log('Initial dummy removeNode', id),
+    updateGraph: (id, fn) => console.log('Initial dummy updateGraph', id, fn),
+  }));
 
-  const [selectedNodes, setSelectedNodes] = useState(new Set());
-  const [draggingNode, setDraggingNode] = useState(null);
-  const [longPressingNode, setLongPressingNode] = useState(null);
-  const [drawingConnectionFrom, setDrawingConnectionFrom] = useState(null);
+  // Ref to track the last subscribed state to prevent unnecessary updates
+  const lastSubscribedStateRef = useRef({ id: null, name: null, description: null });
+
+  // --- Subscribe to Zustand Store Manually ---
+  useEffect(() => {
+    console.log('[Effect: Subscribe] Setting up Zustand subscription.');
+    const unsubscribe = useGraphStore.subscribe(
+      (state) => {
+        const currentActiveGraphId = getActiveGraphId(state);
+        const currentGraphData = currentActiveGraphId ? state.graphs.get(currentActiveGraphId) : null;
+        const currentName = currentGraphData?.name ?? 'Loading...';
+        const currentDescription = currentGraphData?.description ?? '';
+
+        // Compare with last seen state to avoid loops if data is the same
+        if (
+          currentActiveGraphId !== lastSubscribedStateRef.current.id ||
+          currentName !== lastSubscribedStateRef.current.name ||
+          currentDescription !== lastSubscribedStateRef.current.description
+        ) {
+          console.log('[Subscribe Callback] State change detected, updating local state:', {
+            id: currentActiveGraphId,
+            name: currentName,
+            description: currentDescription,
+          });
+          setLocalActiveGraphId(currentActiveGraphId);
+          setLocalActiveGraphName(currentName);
+          setLocalActiveGraphDescription(currentDescription);
+          // Actions are likely stable, but update them just in case
+          // If actions *are* guaranteed stable, this could be optimized
+          setLocalStoreActions({
+            updateNode: state.updateNode,
+            addEdge: state.addEdge,
+            addNode: state.addNode,
+            removeNode: state.removeNode,
+            updateGraph: state.updateGraph,
+          });
+
+          // Update the ref with the latest state
+          lastSubscribedStateRef.current = {
+            id: currentActiveGraphId,
+            name: currentName,
+            description: currentDescription,
+          };
+        } else {
+           console.log('[Subscribe Callback] State unchanged, skipping local update.');
+        }
+      }
+    );
+
+    // Initial sync: Call the listener once manually after subscribing
+    const initialState = useGraphStore.getState();
+    const initialActiveGraphId = getActiveGraphId(initialState);
+    const initialGraphData = initialActiveGraphId ? initialState.graphs.get(initialActiveGraphId) : null;
+    const initialName = initialGraphData?.name ?? 'Loading...';
+    const initialDescription = initialGraphData?.description ?? '';
+
+    setLocalActiveGraphId(initialActiveGraphId);
+    setLocalActiveGraphName(initialName);
+    setLocalActiveGraphDescription(initialDescription);
+    setLocalStoreActions({
+      updateNode: initialState.updateNode,
+      addEdge: initialState.addEdge,
+      addNode: initialState.addNode,
+      removeNode: initialState.removeNode,
+      updateGraph: initialState.updateGraph,
+    });
+    lastSubscribedStateRef.current = {
+      id: initialActiveGraphId,
+      name: initialName,
+      description: initialDescription,
+    };
+    console.log('[Effect: Subscribe] Initial state synced:', lastSubscribedStateRef.current);
+
+
+    return () => {
+      console.log('[Effect: Subscribe] Cleaning up subscription.');
+      unsubscribe();
+    };
+  }, []); // Empty dependency array ensures this runs only once on mount
+
+  /*
+  // --- Original Consolidated Zustand State Selection (COMMENTED OUT FOR REFERENCE) ---
+  const stateSelector = useCallback((state) => {
+    const currentActiveGraphId = getActiveGraphId(state);
+    const currentActiveGraphData = currentActiveGraphId ? state.graphs.get(currentActiveGraphId) : null;
+    return {
+        activeGraphId: currentActiveGraphId,
+        activeGraphName: currentActiveGraphData?.name, // Select primitive
+        activeGraphDescription: currentActiveGraphData?.description, // Select primitive
+        // Actions (assuming these are stable references)
+        updateNode: state.updateNode,
+        addEdge: state.addEdge,
+        addNode: state.addNode,
+        removeNode: state.removeNode,
+        updateGraph: state.updateGraph,
+    };
+  }, []);
+
+  const {
+    activeGraphId,
+    activeGraphName, // Destructure new primitives
+    activeGraphDescription, // Destructure new primitives
+    updateNode,
+    addEdge,
+    addNode,
+    removeNode,
+    updateGraph
+  } = useGraphStore(stateSelector, shallow);
+  */
+
+
+  /*
+  // Previous constant selector test - REMOVED
+  // Use a constant selector to test the subscription mechanism
+  useGraphStore(() => 0);
+
+  // Provide dummy/placeholder values since we are not selecting real state/actions
+  const activeGraphId = null;
+  const activeGraphName = 'Loading...';
+  const activeGraphDescription = '';
+  const storeActions = useMemo(() => ({ // Keep actions structure, but functions do nothing or log
+    updateNode: (id, fn) => console.log('Dummy updateNode called', id, fn),
+    addEdge: (graphId, edge) => console.log('Dummy addEdge called', graphId, edge),
+    addNode: (graphId, node) => console.log('Dummy addNode called', graphId, node),
+    removeNode: (id) => console.log('Dummy removeNode called', id),
+    updateGraph: (id, fn) => console.log('Dummy updateGraph called', id, fn),
+  }), []);
+  */
+
+  // Group actions for easier passing if needed elsewhere (use localStoreActions now)
+  // const storeActions = useMemo(() => ({ // Original using destructured actions
+  //   updateNode,
+  //   addEdge,
+  //   addNode,
+  //   removeNode,
+  //   updateGraph
+  // }), [updateNode, addEdge, addNode, removeNode, updateGraph]);
+
+  // Derive nodes and edges using useMemo (Update to use localActiveGraphId)
+  const nodes = useMemo(() => {
+    if (!localActiveGraphId) return []; // Use local state
+    const state = useGraphStore.getState();
+    const currentGraphData = state.graphs.get(localActiveGraphId); // Use local state
+    const nodeIds = currentGraphData?.nodeIds;
+    if (!nodeIds) return [];
+    const currentNodesMap = state.nodes;
+
+    console.log(`[NodeCanvas] Memoizing nodes for graph ${localActiveGraphId}`); // Use local state
+    return nodeIds.map(id => currentNodesMap.get(id)).filter(Boolean);
+  }, [localActiveGraphId]); // Depend on local state
+
+  const edges = useMemo(() => {
+    if (!localActiveGraphId) return []; // Use local state
+    const state = useGraphStore.getState();
+    const currentGraphData = state.graphs.get(localActiveGraphId); // Use local state
+    const edgeIds = currentGraphData?.edgeIds;
+    if (!edgeIds) return [];
+    const currentEdgesMap = state.edges;
+
+    console.log(`[NodeCanvas] Memoizing edges for graph ${localActiveGraphId}`); // Use local state
+    return edgeIds.map(id => currentEdgesMap.get(id)).filter(Boolean);
+  }, [localActiveGraphId]); // Depend on local state
+
+  // --- Local UI State (Keep these) ---
+  const [selectedNodeIds, setSelectedNodeIds] = useState(new Set()); // Changed to store IDs
+  const [draggingNodeInfo, setDraggingNodeInfo] = useState(null); // Renamed, structure might change
+  const [longPressingNodeId, setLongPressingNodeId] = useState(null); // Store ID
+  const [drawingConnectionFrom, setDrawingConnectionFrom] = useState(null); // Structure might change (store source ID)
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -288,24 +460,22 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
   const [isPaused, setIsPaused] = useState(false);
   const [lastInteractionType, setLastInteractionType] = useState(null);
 
-  // Restore necessary state removed during manual deletion
   const [plusSign, setPlusSign] = useState(null);
   const [nodeNamePrompt, setNodeNamePrompt] = useState({ visible: false, name: '' });
-  const [rightPanelExpanded, setRightPanelExpanded] = useState(false);
+  const [rightPanelExpanded, setRightPanelExpanded] = useState(true); // Default to open?
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
   const [isRightPanelInputFocused, setIsRightPanelInputFocused] = useState(false);
-  const [leftPanelExpanded, setLeftPanelExpanded] = useState(false);
+  const [leftPanelExpanded, setLeftPanelExpanded] = useState(true); // Default to open?
   const [isLeftPanelInputFocused, setIsLeftPanelInputFocused] = useState(false);
-  // END Restore
 
-  const [projectTitle, setProjectTitle] = useState('New Thing');
-  const [projectBio, setProjectBio] = useState('');
+  // Use the local state values populated by subscribe
+  const projectTitle = localActiveGraphName ?? 'Loading...';
+  const projectBio = localActiveGraphDescription ?? '';
 
-  // --- Add Preview State ---
   const [previewingNodeId, setPreviewingNodeId] = useState(null);
 
-  // --- Refs ---
-  const containerRef = useRef(null); 
+  // --- Refs (Keep these) ---
+  const containerRef = useRef(null);
   const isMouseDown = useRef(false);
   const ignoreCanvasClick = useRef(false);
   const mouseDownPosition = useRef({ x: 0, y: 0 });
@@ -313,7 +483,9 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
   const startedOnNode = useRef(false);
   const longPressTimeout = useRef(null);
   const mouseInsideNode = useRef(true);
-  const panelRef = useRef(null);
+  const panelRef = useRef(null); // Ref for Right Panel (if needed for openNodeTab)
+  const leftPanelRef = useRef(null); // Ref for Left Panel
+
   const canvasWorker = useCanvasWorker();
   const isKeyboardZooming = useRef(false);
   const resizeTimeoutRef = useRef(null);
@@ -325,6 +497,9 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
   const potentialClickNodeRef = useRef(null);
   const CLICK_DELAY = 250; // milliseconds to wait for a potential double-click
 
+  // Ref to track initial mount completion
+  const isMountedRef = useRef(false);
+
   // --- Utility Functions ---
   const lerp = (a, b, t) => a + (b - a) * t;
   const clampCoordinates = (x, y) => {
@@ -333,192 +508,134 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
     return { x: boundedX, y: boundedY };
   };
 
-  const isInsideNode = (node, clientX, clientY) => {
-    if (!containerRef.current) return false; // Guard against null ref
-    const rect = containerRef.current.getBoundingClientRect();
-    const scaledX = (clientX - rect.left - panOffset.x) / zoomLevel;
-    const scaledY = (clientY - rect.top - panOffset.y) / zoomLevel;
+  const isInsideNode = (nodeData, clientX, clientY) => {
+     if (!containerRef.current || !nodeData) return false;
+     const rect = containerRef.current.getBoundingClientRect();
+     const scaledX = (clientX - rect.left - panOffset.x) / zoomLevel;
+     const scaledY = (clientY - rect.top - panOffset.y) / zoomLevel;
 
-    // Get current dimensions for the node
-    const { currentWidth, currentHeight } = getNodeDimensions(node); // Assumes getNodeDimensions handles CoreNode
-    const nodeX = node.getX(); // Use getter
-    const nodeY = node.getY(); // Use getter
+     // TODO: Adapt getNodeDimensions or get dimensions directly
+     // For now, use fixed size as placeholder
+     const { currentWidth, currentHeight } = getNodeDimensions(nodeData, previewingNodeId === nodeData.id); // Pass NodeData
+     // const currentWidth = NODE_WIDTH; // Placeholder
+     // const currentHeight = NODE_HEIGHT; // Placeholder
 
-    return (
-      scaledX >= nodeX &&
-      scaledX <= nodeX + currentWidth &&
-      scaledY >= nodeY &&
-      scaledY <= nodeY + currentHeight
-    );
+     const nodeX = nodeData.x;
+     const nodeY = nodeData.y;
+
+     return (
+       scaledX >= nodeX &&
+       scaledX <= nodeX + currentWidth &&
+       scaledY >= nodeY &&
+       scaledY <= nodeY + currentHeight
+     );
   };
 
-  const handleNodeMouseDown = (node, e) => {
+  const handleNodeMouseDown = (nodeData, e) => { // Takes nodeData now
     e.stopPropagation();
-    if (isPaused) return;
+    if (isPaused || !localActiveGraphId) return; // Check local state
 
-    // --- Double-click --- 
+    const nodeId = nodeData.id;
+
+    // --- Double-click ---
     if (e.detail === 2) {
       e.preventDefault();
-      // Clear the pending single-click timeout
-      if (clickTimeoutIdRef.current) {
-          clearTimeout(clickTimeoutIdRef.current);
-          clickTimeoutIdRef.current = null;
-      }
-      potentialClickNodeRef.current = null; // Clear potential click target
-      
-      // Toggle preview state ONLY
-      setPreviewingNodeId(prev => prev === node.id ? null : node.id);
+      if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); clickTimeoutIdRef.current = null; }
+      potentialClickNodeRef.current = null;
+      // Use Panel ref to call openNodeTab (assuming Panel exposes it)
+      // panelRef.current?.openNodeTab(nodeId, nodeData.name); // TODO: Re-enable later
+      // For now, just toggle preview
+      setPreviewingNodeId(prev => prev === nodeId ? null : nodeId);
       return;
     }
 
-    // --- Single click initiation & Long press --- 
+    // --- Single click initiation & Long press ---
     if (e.detail === 1) {
-        isMouseDown.current = true; // Still needed for dragging checks
+        isMouseDown.current = true;
         mouseDownPosition.current = { x: e.clientX, y: e.clientY };
         mouseMoved.current = false;
         mouseInsideNode.current = true;
         startedOnNode.current = true;
 
-        // --- Handle Click vs Double Click Timing --- 
-        // Clear previous timeout just in case
-        if (clickTimeoutIdRef.current) {
-            clearTimeout(clickTimeoutIdRef.current);
-        }
-        potentialClickNodeRef.current = node; // Store node for potential single click
+        // --- Handle Click vs Double Click Timing ---
+        if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); }
+        potentialClickNodeRef.current = nodeData; // Store nodeData
 
         clickTimeoutIdRef.current = setTimeout(() => {
-            // If this timeout runs, it's a potential single click
-            // Check if the node is still the target AND the mouse is UP
-            if (potentialClickNodeRef.current?.id === node.id && !mouseMoved.current && !isMouseDown.current) {
-                // --- Execute Selection Logic --- 
-                const wasSelected = selectedNodes.has(node.id);
-                const newSelectedNodes = new Set([...selectedNodes]);
-                if (wasSelected) {
-                    // If it was selected, deselect it (unless it's the one being previewed)
-                    if (node.id !== previewingNodeId) { 
-                        newSelectedNodes.delete(node.id);
+            if (potentialClickNodeRef.current?.id === nodeId && !mouseMoved.current && !isMouseDown.current) {
+                // --- Execute Selection Logic ---
+                const wasSelected = selectedNodeIds.has(nodeId);
+                setSelectedNodeIds(prev => {
+                    const newSelected = new Set(prev);
+                    if (wasSelected) {
+                       if (nodeId !== previewingNodeId) { newSelected.delete(nodeId); }
+                    } else {
+                       newSelected.add(nodeId);
                     }
-                } else {
-                    // If it wasn't selected, select it
-                    newSelectedNodes.add(node.id);
-                }
-                setSelectedNodes(newSelectedNodes);
-                console.log(`[Single Click] Timeout executed for node ${node.id}`);
-            } else {
-                // Log why it didn't select if needed
-                console.log(`[Single Click] Timeout skipped for node ${node.id}. Reason:`, {
-                    targetMatch: potentialClickNodeRef.current?.id === node.id,
-                    mouseMoved: mouseMoved.current,
-                    isMouseDown: isMouseDown.current
+                    return newSelected;
                 });
+                console.log(`[Single Click] Timeout executed for node ${nodeId}`);
+            } else {
+                console.log(`[Single Click] Timeout skipped for node ${nodeId}.`);
             }
             clickTimeoutIdRef.current = null;
             potentialClickNodeRef.current = null;
         }, CLICK_DELAY);
 
-        // --- Setup Long Press for Drag/Connection --- 
+        // --- Setup Long Press for Drag/Connection ---
         clearTimeout(longPressTimeout.current);
+        setLongPressingNodeId(nodeId); // Store ID
         longPressTimeout.current = setTimeout(() => {
-            // Long press activates: clear potential single click
-            if (clickTimeoutIdRef.current) {
-                clearTimeout(clickTimeoutIdRef.current);
-                clickTimeoutIdRef.current = null;
-            }
+            if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); clickTimeoutIdRef.current = null; }
             potentialClickNodeRef.current = null;
-            
-            // Existing long press logic
-            if (mouseInsideNode.current && !mouseMoved.current) {
+
+            if (mouseInsideNode.current && !mouseMoved.current && longPressingNodeId === nodeId) { // Check against stored ID
                 const canvasRect = containerRef.current.getBoundingClientRect();
                 const adjustedX = (e.clientX - canvasRect.left - panOffset.x) / zoomLevel;
                 const adjustedY = (e.clientY - canvasRect.top - panOffset.y) / zoomLevel;
-                const offset = { x: adjustedX - node.x, y: adjustedY - node.y };
-                if (selectedNodes.has(node.id)) {
-                    // For selected nodes, calculate initial positions relative to the primary dragged node
-                    const initialPositions = {};
-                    const primaryNode = graph.getNodes().find(n => n.id === node.id);
-                    if (!primaryNode) return; // Should not happen
 
-                    const initialPrimaryPos = { x: primaryNode.getX(), y: primaryNode.getY() }; // Store initial primary pos
-                    graph.getNodes().forEach(n => {
-                        if (selectedNodes.has(n.id) && n.id !== primaryNode.id) { // Store only relative offsets for others
-                            initialPositions[n.id] = {
-                                offsetX: n.getX() - initialPrimaryPos.x,
-                                offsetY: n.getY() - initialPrimaryPos.y,
-                            };
+                if (selectedNodeIds.has(nodeId)) {
+                    // Multi-node drag setup
+                    const initialPositions = {};
+                    const primaryNodeData = nodes.find(n => n.id === nodeId);
+                    if (!primaryNodeData) return;
+                    const initialPrimaryPos = { x: primaryNodeData.x, y: primaryNodeData.y };
+
+                    nodes.forEach(n => {
+                        if (selectedNodeIds.has(n.id) && n.id !== nodeId) {
+                            initialPositions[n.id] = { offsetX: n.x - initialPrimaryPos.x, offsetY: n.y - initialPrimaryPos.y };
                         }
                     });
-                    setDraggingNode({ 
-                        initialMouse: { x: e.clientX, y: e.clientY }, 
-                        initialPrimaryPos, // Add initial primary position to state
-                        relativeOffsets: initialPositions, // Rename for clarity
-                        primaryId: node.id 
+                    setDraggingNodeInfo({
+                        initialMouse: { x: e.clientX, y: e.clientY },
+                        initialPrimaryPos,
+                        relativeOffsets: initialPositions,
+                        primaryId: nodeId
                     });
-                    // Update scale for selected nodes immutably
-                    setGraph(currentGraph => {
-                        const newGraph = currentGraph.clone();
-                        let changed = false;
-                        selectedNodes.forEach(id => {
-                            const nodeToUpdate = newGraph.getNodeById(id); // Assuming getNodeById exists or we add it
-                            if (nodeToUpdate && nodeToUpdate.scale !== 1.1) {
-                                const clonedNode = nodeToUpdate.clone(); // Clone the node
-                                clonedNode.setScale(1.1); // Update the cloned node
-                                newGraph.updateNode(clonedNode); // Assuming updateNode exists or we add it
-                                changed = true;
-                            }
-                        });
-                        return changed ? newGraph : currentGraph; // Return new graph only if changed
+                    // Use localStoreActions
+                    selectedNodeIds.forEach(id => {
+                        localStoreActions.updateNode(id, draft => { draft.scale = 1.1; });
                     });
+
                 } else {
-                    // Single node drag
-                    const offset = { x: e.clientX - node.x * zoomLevel - panOffset.x, y: e.clientY - node.y * zoomLevel - panOffset.y };
-                    setDraggingNode({ nodeId: node.id, offset });
-                    // Update scale for single node immutably
-                    setGraph(currentGraph => {
-                        const newGraph = currentGraph.clone();
-                        const nodeToUpdate = newGraph.getNodeById(node.id);
-                        if (nodeToUpdate && nodeToUpdate.scale !== 1.1) {
-                            const clonedNode = nodeToUpdate.clone();
-                            clonedNode.setScale(1.1);
-                            newGraph.updateNode(clonedNode);
-                            return newGraph;
-                        }
-                        return currentGraph; // No change
-                    });
+                    // Single node drag setup
+                    const offset = { x: e.clientX - nodeData.x * zoomLevel - panOffset.x, y: e.clientY - nodeData.y * zoomLevel - panOffset.y };
+                    setDraggingNodeInfo({ nodeId: nodeId, offset });
+                    // Use localStoreActions
+                    localStoreActions.updateNode(nodeId, draft => { draft.scale = 1.1; });
                 }
             }
+            setLongPressingNodeId(null); // Clear after processing
         }, LONG_PRESS_DURATION);
-        setLongPressingNode(node); // Keep setting this for mouseMove checks
     }
   };
 
   const handleSaveNodeData = (nodeId, newData) => {
     console.log('Saving node data for ID:', nodeId, 'Data:', newData);
-    setGraph(currentGraph => {
-        const newGraph = currentGraph.clone();
-        const nodeToUpdate = newGraph.getNodeById(nodeId); // Use getNodeById
-        if (nodeToUpdate) {
-            const clonedNode = nodeToUpdate.clone(); // Clone the node
-            // Update properties from newData
-            Object.keys(newData).forEach(key => {
-                // Handle specific properties with setters first
-                if (key === 'name') {
-                    clonedNode.setName(newData[key]);
-                } else if (key === 'description' || key === 'bio') {
-                    clonedNode.setDescription(newData[key]);
-                } else if (key === 'imageSrc') { // Handle full image source
-                    clonedNode.setImageSrc(newData[key]);
-                } else if (key === 'thumbnailSrc') { // Handle thumbnail source
-                    clonedNode.setThumbnailSrc(newData[key]);
-                } else if (key === 'imageAspectRatio') { // Handle aspect ratio
-                    clonedNode.setImageAspectRatio(newData[key]);
-                } else if (key in clonedNode) {
-                    clonedNode[key] = newData[key];
-                }
-            });
-            newGraph.updateNode(clonedNode); // Use updateNode
-            return newGraph;
-        }
-        return currentGraph; // Return old graph if node not found
+    if (!localActiveGraphId) return; // Check local state
+    // Use localStoreActions
+    localStoreActions.updateNode(nodeId, draft => {
+        Object.assign(draft, newData); // Simple merge for now
     });
   };
 
@@ -649,7 +766,7 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
 
   // --- Mouse Drag Panning (unchanged) ---
   const handleMouseMove = async (e) => {
-    if (isPaused) return;
+    if (isPaused || !localActiveGraphId) return;
     const rect = containerRef.current.getBoundingClientRect();
     const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
     const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
@@ -662,7 +779,7 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
         const selectionRes = await canvasWorker.calculateSelection({ selectionStart, currentX, currentY });
         setSelectionRect(selectionRes);
         const currentIds = new Set();
-        graph.getNodes().forEach(nd => {
+        nodes.forEach(nd => {
           if (!(selectionRes.x > nd.x + NODE_WIDTH ||
                 selectionRes.x + selectionRes.width < nd.x ||
                 selectionRes.y > nd.y + NODE_HEIGHT ||
@@ -671,13 +788,13 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
           }
         });
         const finalSelection = new Set([...selectionBaseRef.current]);
-        graph.getNodes().forEach(nd => {
+        nodes.forEach(nd => {
           if (!selectionBaseRef.current.has(nd.id)) {
             if (currentIds.has(nd.id)) finalSelection.add(nd.id);
             else finalSelection.delete(nd.id);
           }
         });
-        setSelectedNodes(finalSelection);
+        setSelectedNodeIds(finalSelection);
       } catch (error) {
         console.error("Selection calc failed:", error);
       }
@@ -690,135 +807,95 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist > MOVEMENT_THRESHOLD) {
         mouseMoved.current = true;
-        // If mouse moves significantly, it's not a click -> cancel timeout
-        if (clickTimeoutIdRef.current) {
-            clearTimeout(clickTimeoutIdRef.current);
-            clickTimeoutIdRef.current = null;
-            potentialClickNodeRef.current = null;
-            console.log('[MouseMove] Click timeout cancelled due to movement.');
-        }
-        // Keep existing logic for starting connection line or panning
-        if (longPressingNode && !draggingNode) { 
-            // ... start drawing connection ...
-             const inside = isInsideNode(longPressingNode, e.clientX, e.clientY);
-             if (!inside) {
-                 clearTimeout(longPressTimeout.current); // Ensure long press drag doesn't start
+        if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); clickTimeoutIdRef.current = null; potentialClickNodeRef.current = null;}
+
+        // Start drawing connection
+        if (longPressingNodeId && !draggingNodeInfo) { // Check longPressingNodeId
+             const longPressNodeData = nodes.find(n => n.id === longPressingNodeId); // Get data
+             if (longPressNodeData && !isInsideNode(longPressNodeData, e.clientX, e.clientY)) {
+                 clearTimeout(longPressTimeout.current);
                  mouseInsideNode.current = false;
-                 const startNodeDims = getNodeDimensions(longPressingNode, previewingNodeId === longPressingNode.id);
-                 const startPt = { x: longPressingNode.getX() + startNodeDims.currentWidth / 2, y: longPressingNode.getY() + startNodeDims.currentHeight / 2 }; // Use getters
+                 const startNodeDims = getNodeDimensions(longPressNodeData, previewingNodeId === longPressNodeData.id);
+                 const startPt = { x: longPressNodeData.x + startNodeDims.currentWidth / 2, y: longPressNodeData.y + startNodeDims.currentHeight / 2 };
                  const rect = containerRef.current.getBoundingClientRect();
                  const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
                  const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
                  const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
-                 // Store node ID using the getter method
-                 setDrawingConnectionFrom({ sourceNodeId: longPressingNode.getId(), startX: startPt.x, startY: startPt.y, currentX, currentY });
-                 setLongPressingNode(null);
+                 setDrawingConnectionFrom({ sourceNodeId: longPressingNodeId, startX: startPt.x, startY: startPt.y, currentX, currentY });
+                 setLongPressingNodeId(null); // Clear ID
              }
-        } else if (!draggingNode && !drawingConnectionFrom && !isPanning && !startedOnNode.current) {
+        } else if (!draggingNodeInfo && !drawingConnectionFrom && !isPanning && !startedOnNode.current) {
             setIsPanning(true);
             setPanStart({ x: e.clientX, y: e.clientY });
         }
       }
     }
 
-    if (draggingNode) {
-      // --- Multi-node drag --- //
-      if (draggingNode.relativeOffsets) {
-        const primaryNodeId = draggingNode.primaryId;
-        const dx = (e.clientX - draggingNode.initialMouse.x) / zoomLevel;
-        const dy = (e.clientY - draggingNode.initialMouse.y) / zoomLevel;
+    // Dragging Node Logic
+    if (draggingNodeInfo) {
+        requestAnimationFrame(() => { // Keep RAF
+            // Multi-node drag
+            if (draggingNodeInfo.relativeOffsets) {
+                const primaryNodeId = draggingNodeInfo.primaryId;
+                const dx = (e.clientX - draggingNodeInfo.initialMouse.x) / zoomLevel;
+                const dy = (e.clientY - draggingNodeInfo.initialMouse.y) / zoomLevel;
+                const newPrimaryX = draggingNodeInfo.initialPrimaryPos.x + dx;
+                const newPrimaryY = draggingNodeInfo.initialPrimaryPos.y + dy;
 
-        // Wrap state update in requestAnimationFrame
-        requestAnimationFrame(() => {
-          setGraph(currentGraph => {
-              const newGraph = currentGraph.clone();
-              let changed = false;
+                // Update primary node position via store (use localStoreActions)
+                localStoreActions.updateNode(primaryNodeId, draft => {
+                    draft.x = newPrimaryX;
+                    draft.y = newPrimaryY;
+                });
 
-              // Calculate new primary node position first
-              const primaryNodeToUpdate = newGraph.getNodeById(primaryNodeId);
-              if (!primaryNodeToUpdate) return currentGraph; // Should not happen
-
-              const clonedPrimary = primaryNodeToUpdate.clone();
-              const newPrimaryX = draggingNode.initialPrimaryPos.x + dx;
-              const newPrimaryY = draggingNode.initialPrimaryPos.y + dy;
-              clonedPrimary.setX(newPrimaryX);
-              clonedPrimary.setY(newPrimaryY);
-              newGraph.updateNode(clonedPrimary);
-              changed = true;
-
-              // Calculate positions for other selected nodes based on the new primary position and relative offsets
-              Object.keys(draggingNode.relativeOffsets).forEach(nodeId => {
-                  const nodeToUpdate = newGraph.getNodeById(nodeId);
-                  if (nodeToUpdate) {
-                      const clonedNode = nodeToUpdate.clone();
-                      const relativeOffset = draggingNode.relativeOffsets[nodeId];
-                      clonedNode.setX(newPrimaryX + relativeOffset.offsetX);
-                      clonedNode.setY(newPrimaryY + relativeOffset.offsetY);
-                      newGraph.updateNode(clonedNode);
-                      changed = true;
-                  }
-              });
-              return changed ? newGraph : currentGraph;
-          });
-        }); // End requestAnimationFrame
-      } else {
-        // --- Single node drag --- //
-        const currentAdjustedX = (e.clientX - panOffset.x) / zoomLevel;
-        const currentAdjustedY = (e.clientY - panOffset.y) / zoomLevel;
-        const newX = currentAdjustedX - (draggingNode.offset.x / zoomLevel);
-        const newY = currentAdjustedY - (draggingNode.offset.y / zoomLevel);
-
-        // Wrap state update in requestAnimationFrame
-        requestAnimationFrame(() => {
-          setGraph(currentGraph => {
-              const newGraph = currentGraph.clone();
-              const nodeToUpdate = newGraph.getNodeById(draggingNode.nodeId);
-              if (nodeToUpdate) {
-                  const clonedNode = nodeToUpdate.clone();
-                  clonedNode.setX(newX);
-                  clonedNode.setY(newY);
-                  newGraph.updateNode(clonedNode);
-                  return newGraph;
-              }
-              return currentGraph;
-          });
-        }); // End requestAnimationFrame
-      }
-    } else if (drawingConnectionFrom) {
-      const bounded = clampCoordinates(currentX, currentY);
-      setDrawingConnectionFrom(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          currentX: bounded.x,
-          currentY: bounded.y,
-        };
-      });
-    } else if (isPanning) {
-      requestAnimationFrame(() => {
-        if (!panStart?.x || !panStart?.y) return;
-        const dx = (e.clientX - panStart.x) * PAN_DRAG_SENSITIVITY;
-        const dy = (e.clientY - panStart.y) * PAN_DRAG_SENSITIVITY;
-        const maxX = 0;
-        const maxY = 0;
-        const minX = viewportSize.width - canvasSize.width * zoomLevel;
-        const minY = viewportSize.height - canvasSize.height * zoomLevel;
-        setPanOffset(prev => {
-          const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
-          const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
-          if (newX !== prev.x || newY !== prev.y) {
-            setPanStart({ x: e.clientX, y: e.clientY });
-          }
-          return { x: newX, y: newY };
+                // Update other selected nodes relative to primary (use localStoreActions)
+                Object.keys(draggingNodeInfo.relativeOffsets).forEach(nodeId => {
+                    const relativeOffset = draggingNodeInfo.relativeOffsets[nodeId];
+                    localStoreActions.updateNode(nodeId, draft => {
+                        draft.x = newPrimaryX + relativeOffset.offsetX;
+                        draft.y = newPrimaryY + relativeOffset.offsetY;
+                    });
+                });
+            } else {
+                // Single node drag
+                const { nodeId, offset } = draggingNodeInfo;
+                const currentAdjustedX = (e.clientX - panOffset.x) / zoomLevel;
+                const currentAdjustedY = (e.clientY - panOffset.y) / zoomLevel;
+                const newX = currentAdjustedX - (offset.x / zoomLevel);
+                const newY = currentAdjustedY - (offset.y / zoomLevel);
+                // Update single node position via store (use localStoreActions)
+                localStoreActions.updateNode(nodeId, draft => {
+                    draft.x = newX;
+                    draft.y = newY;
+                });
+            }
         });
-      });
+    } else if (drawingConnectionFrom) {
+        const bounded = clampCoordinates(currentX, currentY);
+        setDrawingConnectionFrom(prev => prev && ({ ...prev, currentX: bounded.x, currentY: bounded.y }));
+    } else if (isPanning) {
+        requestAnimationFrame(() => {
+            if (!panStart?.x || !panStart?.y) return;
+            const dx = (e.clientX - panStart.x) * PAN_DRAG_SENSITIVITY;
+            const dy = (e.clientY - panStart.y) * PAN_DRAG_SENSITIVITY;
+            const maxX = 0;
+            const maxY = 0;
+            const minX = viewportSize.width - canvasSize.width * zoomLevel;
+            const minY = viewportSize.height - canvasSize.height * zoomLevel;
+            setPanOffset(prev => {
+                const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
+                const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
+                if (newX !== prev.x || newY !== prev.y) {
+                    setPanStart({ x: e.clientX, y: e.clientY });
+                }
+                return { x: newX, y: newY };
+            });
+        });
     }
   };
 
   const handleMouseDown = (e) => {
-    // Canvas background mouse down
-    if (isPaused) return;
-
+    if (isPaused || !localActiveGraphId) return;
     // Clear any pending single click on a node
     if (clickTimeoutIdRef.current) {
         clearTimeout(clickTimeoutIdRef.current);
@@ -841,7 +918,7 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
       const startY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
       setSelectionStart({ x: startX, y: startY });
       setSelectionRect({ x: startX, y: startY, width: 0, height: 0 });
-      selectionBaseRef.current = new Set([...selectedNodes]);
+      selectionBaseRef.current = new Set([...selectedNodeIds]);
       return;
     }
     setPanStart({ x: e.clientX, y: e.clientY });
@@ -849,86 +926,53 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
   };
 
   const handleMouseUp = (e) => {
-    if (isPaused) return;
-    clearTimeout(longPressTimeout.current); // Clear long press timer
-    // Timeout for single click (`clickTimeoutIdRef`) should clear itself or be cleared by other actions.
-
-    mouseInsideNode.current = false; 
+    if (isPaused || !localActiveGraphId) return;
+    clearTimeout(longPressTimeout.current);
+    setLongPressingNodeId(null); // Clear ID
+    mouseInsideNode.current = false;
 
     // Finalize drawing connection
     if (drawingConnectionFrom) {
-        // Find target node using its geometry
-        const targetNode = graph.getNodes().find(n => isInsideNode(n, e.clientX, e.clientY));
-        const targetNodeId = targetNode?.getId(); // Get ID using getter
+        const targetNodeData = nodes.find(n => isInsideNode(n, e.clientX, e.clientY)); // Use nodes from store
 
-        // Ensure target node exists and is not the same as source
-        if (targetNodeId && targetNodeId !== drawingConnectionFrom.sourceNodeId) {
-            setGraph(currentGraph => {
-                const newGraph = currentGraph.clone();
+        if (targetNodeData && targetNodeData.id !== drawingConnectionFrom.sourceNodeId) {
+            const sourceId = drawingConnectionFrom.sourceNodeId;
+            const destId = targetNodeData.id;
 
-                // Check for existing edge using IDs
-                const exists = newGraph.getEdges().some(edge =>
-                    (edge.getSourceId() === drawingConnectionFrom.sourceNodeId && edge.getDestinationId() === targetNodeId) ||
-                    (edge.getSourceId() === targetNodeId && edge.getDestinationId() === drawingConnectionFrom.sourceNodeId)
-                );
-                
-                if (!exists) {
-                    // Pass the STRING IDs to addEdge
-                    try {
-                        const sourceId = drawingConnectionFrom.sourceNodeId;
-                        const destId = targetNodeId;
+            // Check for existing edge in store's edges
+            const exists = edges.some(edge => // Use edges from store
+                (edge.sourceId === sourceId && edge.destinationId === destId) ||
+                (edge.sourceId === destId && edge.destinationId === sourceId)
+            );
 
-                        // --- DEBUGGING: Check IDs before calling addEdge ---
-                        console.log(`Attempting addEdge: Source=${sourceId} (Type: ${typeof sourceId}), Target=${destId} (Type: ${typeof destId})`);
-                        if (typeof sourceId !== 'string' || !sourceId) {
-                            console.error('CRITICAL: Invalid sourceId before addEdge call!', sourceId);
-                            return currentGraph; // Prevent crash
-                        }
-                        if (typeof destId !== 'string' || !destId) {
-                            console.error('CRITICAL: Invalid destId before addEdge call!', destId);
-                            return currentGraph; // Prevent crash
-                        }
-                        // --- END DEBUGGING ---
-
-                        newGraph.addEdge(sourceId, destId);
-                        return newGraph;
-                    } catch (error) {
-                        console.error("Error adding edge in graph:", error); 
-                    }
-                }
-                // If edge exists or addEdge failed, return original graph
-                return currentGraph;
-            });
+            if (!exists) {
+                // Create new edge data and add via store action
+                const newEdgeId = uuidv4();
+                const newEdgeData = { id: newEdgeId, sourceId, destinationId }; // Add other default properties if needed
+                 // Use localStoreActions
+                localStoreActions.addEdge(localActiveGraphId, newEdgeData);
+            }
         }
-        // Clear drawing state regardless of success
         setDrawingConnectionFrom(null);
     }
 
-    // Reset scale for dragged/selected nodes
-    if (draggingNode) {
-      setGraph(currentGraph => {
-          const newGraph = currentGraph.clone();
-          let changed = false;
-          const nodeIdsToReset = new Set();
-          if (draggingNode.relativeOffsets) {
-              // Use the string keys directly
-              Object.keys(draggingNode.relativeOffsets).forEach(id => nodeIdsToReset.add(id));
-          } else if (draggingNode.nodeId) {
-              nodeIdsToReset.add(draggingNode.nodeId);
-          }
-
-          nodeIdsToReset.forEach(id => { // Now iterating with correct string IDs
-              const nodeToUpdate = newGraph.getNodeById(id);
-              if (nodeToUpdate && nodeToUpdate.scale !== 1) {
-                  const clonedNode = nodeToUpdate.clone();
-                  clonedNode.setScale(1);
-                  newGraph.updateNode(clonedNode);
-                  changed = true;
-              }
-          });
-          return changed ? newGraph : currentGraph;
-      });
-      setDraggingNode(null);
+    // Reset scale for dragged nodes
+    if (draggingNodeInfo) {
+        const nodeIdsToReset = new Set();
+        if (draggingNodeInfo.relativeOffsets) {
+            nodeIdsToReset.add(draggingNodeInfo.primaryId);
+            Object.keys(draggingNodeInfo.relativeOffsets).forEach(id => nodeIdsToReset.add(id));
+        } else if (draggingNodeInfo.nodeId) {
+            nodeIdsToReset.add(draggingNodeInfo.nodeId);
+        }
+        nodeIdsToReset.forEach(id => {
+            const nodeExists = nodes.some(n => n.id === id); // nodes uses localActiveGraphId
+            if(nodeExists) {
+                 // Use localStoreActions
+                localStoreActions.updateNode(id, draft => { draft.scale = 1; });
+            }
+        });
+        setDraggingNodeInfo(null);
     }
 
     // Finalize selection box
@@ -939,13 +983,13 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
         const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
         canvasWorker.calculateSelection({ selectionStart, currentX, currentY })
           .then(selectionRes => {
-            const finalSelectedIds = graph.getNodes()
+            const finalSelectedIds = nodes
               .filter(nd => !(selectionRes.x > nd.x + getNodeDimensions(nd, previewingNodeId === nd.id).currentWidth ||
                                 selectionRes.x + selectionRes.width < nd.x ||
                                 selectionRes.y > nd.y + getNodeDimensions(nd, previewingNodeId === nd.id).currentHeight ||
                                 selectionRes.y + selectionRes.height < nd.y))
               .map(nd => nd.id);
-            setSelectedNodes(prev => new Set([...prev, ...finalSelectedIds]));
+            setSelectedNodeIds(prev => new Set([...prev, ...finalSelectedIds]));
           })
           .catch(error => console.error("Final selection calc failed:", error));
         ignoreCanvasClick.current = true;
@@ -956,15 +1000,11 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
     // Finalize panning state
     setIsPanning(false);
     isMouseDown.current = false;
-    // Reset mouseMoved ref *after* potential single click timeout has run or been cancelled
-    // Doing it here prevents the timeout check from failing if mouseup happens quickly
-    // mouseMoved.current = false; 
-    // Let's reset it slightly later to ensure timeout logic completes
-    setTimeout(() => { mouseMoved.current = false; }, 0); 
+    setTimeout(() => { mouseMoved.current = false; }, 0);
   };
 
   const handleMouseUpCanvas = (e) => {
-    if (isPaused) return;
+    if (isPaused || !localActiveGraphId) return;
     if (isPanning) {
       const dx = e.clientX - mouseDownPosition.current.x;
       const dy = e.clientY - mouseDownPosition.current.y;
@@ -987,12 +1027,11 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
       setSelectionRect(null);
     }
     setIsPanning(false);
-    setDraggingNode(null);
+    setDraggingNodeInfo(null);
     setDrawingConnectionFrom(null);
     isMouseDown.current = false;
   };
 
-  // --- handleCanvasClick ---
   const handleCanvasClick = (e) => {
       if (wasDrawingConnection.current) {
           wasDrawingConnection.current = false;
@@ -1000,19 +1039,15 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
       }
       if (e.target.closest('g[data-plus-sign="true"]')) return;
       if (e.target.tagName !== 'svg' || !e.target.classList.contains('canvas')) return;
-
-      if (isPaused || draggingNode || drawingConnectionFrom || mouseMoved.current || recentlyPanned || nodeNamePrompt.visible) {
+      if (isPaused || draggingNodeInfo || drawingConnectionFrom || mouseMoved.current || recentlyPanned || nodeNamePrompt.visible || !localActiveGraphId) {
           setLastInteractionType('blocked_click');
           return;
       }
-      if (ignoreCanvasClick.current) {
-          ignoreCanvasClick.current = false;
-          return;
-      }
+      if (ignoreCanvasClick.current) { ignoreCanvasClick.current = false; return; }
 
-      if (selectedNodes.size > 0) {
-          setSelectedNodes(new Set());
-          return; // Don't show plus sign if we just cleared selection
+      if (selectedNodeIds.size > 0) {
+          setSelectedNodeIds(new Set());
+          return;
       }
 
       const rect = containerRef.current.getBoundingClientRect();
@@ -1052,47 +1087,52 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
   };
 
   const handleMorphDone = () => {
-      if (!plusSign || !plusSign.tempName) return;
-
-      setGraph(currentGraph => {
-          const newGraph = currentGraph.clone();
-          const newNode = new CoreNode(
-              null, // data
-              plusSign.tempName, // name
-              undefined, // description
-              undefined, // picture
-              undefined, // color
-              null, // id <-- Pass null to trigger UUID generation in constructor
-              plusSign.x - NODE_WIDTH / 2, // x
-              plusSign.y - NODE_HEIGHT / 2, // y
-              1 // scale
-          );
-          newGraph.addNode(newNode);
-          return newGraph;
-      });
+      if (!plusSign || !plusSign.tempName || !localActiveGraphId) return;
+      const name = plusSign.tempName;
+      const newNodeId = uuidv4();
+      const newNodeData = {
+          id: newNodeId,
+          name: name,
+          description: '',
+          picture: null,
+          color: 'maroon', // Default color?
+          data: null,
+          x: plusSign.x - NODE_WIDTH / 2,
+          y: plusSign.y - NODE_HEIGHT / 2,
+          scale: 1,
+          imageSrc: null,
+          thumbnailSrc: null,
+          imageAspectRatio: null,
+          parentDefinitionNodeId: null,
+          edgeIds: [],
+          definitionGraphIds: [],
+      };
+      localStoreActions.addNode(localActiveGraphId, newNodeData);
       setPlusSign(null);
   };
 
-  // --- Keyboard Controls ---
-  // Remove manual keysPressed ref and useEffect for listeners
-  // const keysPressed = useRef({});
-  // useEffect(() => {
-  //   const handleKeyDown = (e) => { keysPressed.current[e.key] = true; };
-  //   const handleKeyUp = (e) => { keysPressed.current[e.key] = false; };
-  //   window.addEventListener('keydown', handleKeyDown);
-  //   window.addEventListener('keyup', handleKeyUp);
-  //   return () => {
-  //     window.removeEventListener('keydown', handleKeyDown);
-  //     window.removeEventListener('keyup', handleKeyUp);
-  //   };
-  // }, []);
-
-  // Use the hook instead
   const keysPressed = useKeyboardShortcuts();
 
+  // Effect to mark component as mounted
   useEffect(() => {
+    isMountedRef.current = true;
+    // Optional: Cleanup function if needed, though likely not for a simple flag
+    // return () => { isMountedRef.current = false; }; 
+  }, []); // Runs once after initial mount
+
+  useEffect(() => {
+    // Restore effect body
     let animationFrameId;
     const keyboardLoop = async () => {
+      // --- Wait for initial mount before processing --- 
+      if (!isMountedRef.current) {
+        console.log("[Keyboard Loop] Waiting for mount...");
+        animationFrameId = requestAnimationFrame(keyboardLoop);
+        return;
+      }
+      // --- End Wait --- 
+
+      console.log("[Keyboard Loop] Running frame..."); // Log start of frame
       if (nodeNamePrompt.visible || isHeaderEditing || isRightPanelInputFocused) {
         animationFrameId = requestAnimationFrame(keyboardLoop);
         return;
@@ -1133,6 +1173,7 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
       // 4. Apply Updates Functionally if needed
       if (zoomResult || panDx !== 0 || panDy !== 0) {
         // Update Zoom Level Functionally
+        console.log("[Keyboard Loop] Applying state updates..."); // Log before setState
         if (zoomResult) {
             setZoomLevel(zoomResult.zoomLevel); // Can set directly as it depends only on worker result
         }
@@ -1166,8 +1207,14 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
         });
       }
 
-      // Continue the loop
-      animationFrameId = requestAnimationFrame(keyboardLoop);
+      // Continue the loop ONLY if keys are actively being pressed
+      if (panDx !== 0 || panDy !== 0 || zoomDelta !== 0) {
+          animationFrameId = requestAnimationFrame(keyboardLoop);
+      } else {
+         // Otherwise, let the effect rest until a dependency changes or keys are pressed again
+         // (The useKeyboardShortcuts hook likely handles waking the component)
+         console.log("[Keyboard Loop] No active keys, resting.");
+      }
     };
 
     // Only run the keyboard loop in a browser environment, not JSDOM
@@ -1176,7 +1223,7 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
     }
     
     return () => cancelAnimationFrame(animationFrameId);
-  }, [viewportSize, canvasSize, zoomLevel, panOffset, canvasWorker, nodeNamePrompt.visible, isHeaderEditing, isRightPanelInputFocused]);
+  }, [viewportSize, canvasSize, zoomLevel, panOffset, canvasWorker, nodeNamePrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused]);
 
   const renderCustomPrompt = () => {
     if (!nodeNamePrompt.visible) return null;
@@ -1226,17 +1273,23 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
     );
   };
 
-  const handleToggleRightPanel = () => { setRightPanelExpanded(prev => !prev); };
-  const handleToggleLeftPanel = () => { setLeftPanelExpanded(prev => !prev); };
+  const handleToggleRightPanel = useCallback(() => {
+    setRightPanelExpanded(prev => !prev);
+  }, []);
 
-  const handleRightPanelFocusChange = (isFocused) => {
+  const handleToggleLeftPanel = useCallback(() => {
+    setLeftPanelExpanded(prev => !prev);
+  }, []);
+
+  const handleRightPanelFocusChange = useCallback((isFocused) => {
     console.log(`[Right Panel Focus Change] Setting isRightPanelInputFocused to: ${isFocused}`);
     setIsRightPanelInputFocused(isFocused);
-  };
-  const handleLeftPanelFocusChange = (isFocused) => {
+  }, []);
+
+  const handleLeftPanelFocusChange = useCallback((isFocused) => {
     console.log(`[Left Panel Focus Change] Setting isLeftPanelInputFocused to: ${isFocused}`);
     setIsLeftPanelInputFocused(isFocused);
-  };
+  }, []);
 
   useEffect(() => {
     console.log(`[Right Panel Focus State] isRightPanelInputFocused is now: ${isRightPanelInputFocused}`);
@@ -1245,75 +1298,45 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
     console.log(`[Left Panel Focus State] isLeftPanelInputFocused is now: ${isLeftPanelInputFocused}`);
   }, [isLeftPanelInputFocused]);
 
-  // --- Delete Node Logic ---
   useEffect(() => {
     const handleKeyDown = (e) => {
-      console.log(`[Delete KeyDown] Key pressed: ${e.key}`);
-
-      // Check if any input field is focused or prompt is visible
       const isInputActive = isHeaderEditing || isRightPanelInputFocused || isLeftPanelInputFocused || nodeNamePrompt.visible;
-      console.log(`[Delete KeyDown] Is Input Active? ${isInputActive}`);
-      if (isInputActive) {
-        return; // Don't interfere with typing
-      }
+      if (isInputActive || !localActiveGraphId) { return; }
 
-      // Check for Delete or Backspace keys and if nodes are selected
       const isDeleteKey = e.key === 'Delete' || e.key === 'Backspace';
-      const nodesSelected = selectedNodes.size > 0;
-      console.log(`[Delete KeyDown] Is Delete Key? ${isDeleteKey}, Nodes Selected: ${nodesSelected} (size: ${selectedNodes.size})`);
+      const nodesSelected = selectedNodeIds.size > 0;
 
       if (isDeleteKey && nodesSelected) {
-        console.log('[Delete KeyDown] Deleting nodes:', Array.from(selectedNodes));
-        e.preventDefault(); // Prevent default Backspace behavior (like browser back)
+        e.preventDefault();
+        const idsToDelete = new Set(selectedNodeIds); // Use local selection state
+        console.log('[Delete KeyDown] Deleting nodes:', Array.from(idsToDelete));
 
-        // Capture IDs before clearing selection
-        const idsToDelete = new Set(selectedNodes);
-
-        // Filter out selected nodes using immutable update
-        setGraph(prevGraph => {
-            const newGraph = prevGraph.clone();
-            let changed = false;
-            idsToDelete.forEach(id => {
-                const nodeToRemove = newGraph.getNodeById(id); // Find node in the clone
-                if (nodeToRemove) {
-                    newGraph.removeNode(nodeToRemove); // Use graph's removeNode method
-                    changed = true;
-                }
-            });
-
-            if (changed) {
-                console.log(`[Delete KeyDown] Nodes remaining: ${newGraph.getNodes().length}`);
-                return newGraph; // Return the modified clone
-            }
-            return prevGraph; // Return original graph if no changes made
+        // Call removeNode action for each selected ID (Use localStoreActions)
+        idsToDelete.forEach(id => {
+            localStoreActions.removeNode(id);
         });
 
-        // Clear selection state AFTER updating the graph
-        setSelectedNodes(new Set()); 
+        // Clear local selection state AFTER dispatching actions
+        setSelectedNodeIds(new Set());
       }
     };
-
-    console.log('[Delete KeyDown] Adding keydown listener');
     window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNodeIds, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible, localActiveGraphId, localStoreActions.removeNode]);
 
-    // Cleanup listener on component unmount
-    return () => {
-      console.log('[Delete KeyDown] Removing keydown listener');
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [selectedNodes, graph, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible]);
-
-  // --- Callbacks for Lifted State ---
   const handleProjectTitleChange = (newTitle) => {
-    setProjectTitle(newTitle || 'Untitled'); // Ensure it doesn't become empty
+    if (localActiveGraphId) { // Use local state
+         // Use localStoreActions
+        localStoreActions.updateGraph(localActiveGraphId, draft => { draft.name = newTitle || 'Untitled'; });
+    }
   };
 
   const handleProjectBioChange = (newBio) => {
-    setProjectBio(newBio);
+     if (localActiveGraphId) { // Use local state
+         // Use localStoreActions
+        localStoreActions.updateGraph(localActiveGraphId, draft => { draft.description = newBio; });
+    }
   };
-
-  // Memoize the nodes array
-  const memoizedNodes = useMemo(() => graph.getNodes(), [graph]);
 
   return (
     <div
@@ -1329,28 +1352,26 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
       tabIndex="0"
       onBlur={() => keysPressed.current = {}}
     >
+      {/* Main content uncommented */}
+      
       <Header
-         projectTitle={projectTitle}
-         onTitleChange={handleProjectTitleChange}
+         projectTitle={projectTitle} // Uses local state via variable
+         onTitleChange={handleProjectTitleChange} // Uses local state/actions
          onEditingStateChange={setIsHeaderEditing}
          debugMode={debugMode}
          setDebugMode={setDebugMode}
       />
 
-      {/* Main content: left panel, canvas, right panel */}
       <div style={{ display: 'flex', flexGrow: 1, position: 'relative', overflow: 'hidden' }}> 
-        <Panel 
-          side="left" 
-          isExpanded={leftPanelExpanded} 
-          onToggleExpand={handleToggleLeftPanel} 
-          onFocusChange={handleLeftPanelFocusChange} 
-          nodes={memoizedNodes} 
-          onOpenNodeTab={() => {}}
-          onSaveNodeData={() => {}}
-          projectTitle={projectTitle}
-          projectBio={projectBio}
-          onProjectTitleChange={handleProjectTitleChange}
-          onProjectBioChange={handleProjectBioChange}
+        <Panel
+          key="left-panel"
+          ref={leftPanelRef}
+          side="left"
+          isExpanded={leftPanelExpanded}
+          onToggleExpand={handleToggleLeftPanel}
+          onFocusChange={handleLeftPanelFocusChange}
+          activeGraphId={localActiveGraphId}
+          storeActions={localStoreActions}
         />
 
         <div
@@ -1362,173 +1383,165 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
             overflow: 'hidden',
             backgroundColor: '#bdb5b5',
           }}
+          // Event handlers uncommented
           onWheel={handleWheel}
           onMouseMove={handleMouseMove}
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUpCanvas}
           onClick={handleCanvasClick}
         >
-          <svg
-            className="canvas"
-            width={canvasSize.width}
-            height={canvasSize.height}
-            style={{
-                transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
-                transformOrigin: '0 0',
-                backgroundColor: '#bdb5b5',
-                opacity: 1,
-                pointerEvents: 'auto',
-            }}
-            onMouseUp={handleMouseUp}
-          >
-            <g className="base-layer">
-              {graph.getEdges().map((edge, idx) => {
-                // Use the new methods that return string IDs directly
-                const sourceId = edge.getSourceId(); 
-                const destId = edge.getDestinationId();
+          {!localActiveGraphId ? ( // Check local state
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
+              No graph selected. Open or create a graph from the left panel.
+            </div>
+          ) : (
+            <svg
+              className="canvas"
+              width={canvasSize.width}
+              height={canvasSize.height}
+              style={{
+                  transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
+                  transformOrigin: '0 0',
+                  backgroundColor: '#bdb5b5',
+                  opacity: 1,
+                  pointerEvents: 'auto',
+              }}
+              onMouseUp={handleMouseUp} // Uncommented
+            >
+             
+              <g className="base-layer">
+                {edges.map((edge, idx) => {
+                  const sourceNode = nodes.find(n => n.id === edge.sourceId);
+                  const destNode = nodes.find(n => n.id === edge.destinationId);
 
-                if (sourceId === undefined || destId === undefined) {
-                  console.warn(`Edge at index ${idx} has undefined source/dest ID`, edge);
-                  return null;
-                }
+                  if (!sourceNode || !destNode) {
+                     console.warn(`Could not find source/dest node for edge ${edge.id}`, edge);
+                     return null;
+                  }
+                  const sNodeDims = getNodeDimensions(sourceNode);
+                  const eNodeDims = getNodeDimensions(destNode);
+                  const isSNodePreviewing = previewingNodeId === sourceNode.id;
+                  const isENodePreviewing = previewingNodeId === destNode.id;
+                  const x1 = sourceNode.x + sNodeDims.currentWidth / 2;
+                  const y1 = sourceNode.y + (isSNodePreviewing ? NODE_HEIGHT / 2 : sNodeDims.currentHeight / 2);
+                  const x2 = destNode.x + eNodeDims.currentWidth / 2;
+                  const y2 = destNode.y + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
 
-                const sNode = graph.getNodeById(sourceId);
-                const eNode = graph.getNodeById(destId);
-
-                if (!sNode || !eNode) {
-                   console.warn(`Could not find source/dest node for edge ${edge.getId()}`, { sourceId, destId });
-                   return null;
-                }
-
-                // Get dynamic dimensions based on node state (default, image, or preview)
-                const sNodeDims = getNodeDimensions(sNode);
-                const eNodeDims = getNodeDimensions(eNode);
-
-                // Determine if source/dest nodes are the one being previewed
-                const isSNodePreviewing = previewingNodeId === sNode.getId();
-                const isENodePreviewing = previewingNodeId === eNode.getId();
-
-                // Calculate endpoints, adjusting Y for previewing node
-                const x1 = sNode.getX() + sNodeDims.currentWidth / 2;
-                const y1 = sNode.getY() + (isSNodePreviewing ? NODE_HEIGHT / 2 : sNodeDims.currentHeight / 2);
-                const x2 = eNode.getX() + eNodeDims.currentWidth / 2;
-                const y2 = eNode.getY() + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
-
-                return (
+                  return (
+                    <line
+                      key={`edge-${edge.id}-${idx}`}
+                      x1={x1} 
+                      y1={y1}
+                      x2={x2}
+                      y2={y2}
+                      stroke="black"
+                      strokeWidth="8"
+                    />
+                  );
+                })}
+                {drawingConnectionFrom && (
                   <line
-                    key={`edge-${sNode.getId()}-${eNode.getId()}-${idx}`}
-                    x1={x1} 
-                    y1={y1}
-                    x2={x2}
-                    y2={y2}
+                    x1={drawingConnectionFrom.startX}
+                    y1={drawingConnectionFrom.startY}
+                    x2={drawingConnectionFrom.currentX}
+                    y2={drawingConnectionFrom.currentY}
                     stroke="black"
                     strokeWidth="8"
                   />
-                );
-              })}
-              {drawingConnectionFrom && (
-                <line
-                  x1={drawingConnectionFrom.startX}
-                  y1={drawingConnectionFrom.startY}
-                  x2={drawingConnectionFrom.currentX}
-                  y2={drawingConnectionFrom.currentY}
-                  stroke="black"
-                  strokeWidth="8"
-                />
-              )}
+                )}
 
-              {(() => {
-                 let draggingNodeIds = new Set();
-                 if (draggingNode) {
-                   if (draggingNode.relativeOffsets) {
-                     draggingNodeIds = new Set([
-                         draggingNode.primaryId, 
-                         ...Object.keys(draggingNode.relativeOffsets)
-                     ]);
-                   } else if (draggingNode.nodeId) {
-                     draggingNodeIds = new Set([draggingNode.nodeId]);
+                {(() => {
+                   let draggingNodeIds = new Set();
+                   if (draggingNodeInfo) {
+                     if (draggingNodeInfo.relativeOffsets) {
+                       draggingNodeIds = new Set([
+                           draggingNodeInfo.primaryId, 
+                           ...Object.keys(draggingNodeInfo.relativeOffsets)
+                       ]);
+                     } else if (draggingNodeInfo.nodeId) {
+                       draggingNodeIds = new Set([draggingNodeInfo.nodeId]);
+                     }
                    }
-                 }
 
-                 const nodes = graph.getNodes();
-                 const nonDraggingNodes = nodes.filter(node => !draggingNodeIds.has(node.id));
-                 const draggingNodes = nodes.filter(node => draggingNodeIds.has(node.id));
+                   const nonDraggingNodes = nodes.filter(node => !draggingNodeIds.has(node.id));
+                   const draggingNodes = nodes.filter(node => draggingNodeIds.has(node.id));
 
-                 return (
-                   <>
-                     {nonDraggingNodes.map((node) => {
-                       const isPreviewing = previewingNodeId === node.id;
-                       const dimensions = getNodeDimensions(node, isPreviewing);
-                       return (
-                         <Node
-                           key={node.id}
-                           node={node}
-                           currentWidth={dimensions.currentWidth}
-                           currentHeight={dimensions.currentHeight}
-                           textAreaHeight={dimensions.textAreaHeight}
-                           imageWidth={dimensions.imageWidth}
-                           imageHeight={dimensions.calculatedImageHeight}
-                           innerNetworkWidth={dimensions.innerNetworkWidth}
-                           innerNetworkHeight={dimensions.innerNetworkHeight}
-                           isSelected={selectedNodes.has(node.id)}
-                           isDragging={false}
-                           onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                           isPreviewing={isPreviewing}
-                           allNodes={nodes}
-                           connections={graph.getEdges()}
-                         />
-                       );
-                     })}
+                   return (
+                     <>
+                       {nonDraggingNodes.map((node) => {
+                         const isPreviewing = previewingNodeId === node.id;
+                         const dimensions = getNodeDimensions(node, isPreviewing);
+                         return (
+                           <Node
+                             key={node.id}
+                             node={node}
+                             currentWidth={dimensions.currentWidth}
+                             currentHeight={dimensions.currentHeight}
+                             textAreaHeight={dimensions.textAreaHeight}
+                             imageWidth={dimensions.imageWidth}
+                             imageHeight={dimensions.calculatedImageHeight}
+                             innerNetworkWidth={dimensions.innerNetworkWidth}
+                             innerNetworkHeight={dimensions.innerNetworkHeight}
+                             isSelected={selectedNodeIds.has(node.id)}
+                             isDragging={false}
+                             onMouseDown={(e) => handleNodeMouseDown(node, e)}
+                             isPreviewing={isPreviewing}
+                             allNodes={nodes}
+                             connections={edges}
+                           />
+                         );
+                       })}
 
-                     {draggingNodes.map((node) => {
-                       const isPreviewing = previewingNodeId === node.id;
-                       const dimensions = getNodeDimensions(node, isPreviewing);
-                       return (
-                         <Node
-                           key={node.id}
-                           node={node}
-                           currentWidth={dimensions.currentWidth}
-                           currentHeight={dimensions.currentHeight}
-                           textAreaHeight={dimensions.textAreaHeight}
-                           imageWidth={dimensions.imageWidth}
-                           imageHeight={dimensions.calculatedImageHeight}
-                           innerNetworkWidth={dimensions.innerNetworkWidth}
-                           innerNetworkHeight={dimensions.innerNetworkHeight}
-                           isSelected={selectedNodes.has(node.id)}
-                           isDragging={true}
-                           onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                           isPreviewing={isPreviewing}
-                           allNodes={nodes}
-                           connections={graph.getEdges()}
-                         />
-                       );
-                     })}
-                   </>
-                 );
-               })()}
-            </g>
+                       {draggingNodes.map((node) => {
+                         const isPreviewing = previewingNodeId === node.id;
+                         const dimensions = getNodeDimensions(node, isPreviewing);
+                         return (
+                           <Node
+                             key={node.id}
+                             node={node}
+                             currentWidth={dimensions.currentWidth}
+                             currentHeight={dimensions.currentHeight}
+                             textAreaHeight={dimensions.textAreaHeight}
+                             imageWidth={dimensions.imageWidth}
+                             imageHeight={dimensions.calculatedImageHeight}
+                             innerNetworkWidth={dimensions.innerNetworkWidth}
+                             innerNetworkHeight={dimensions.innerNetworkHeight}
+                             isSelected={selectedNodeIds.has(node.id)}
+                             isDragging={true}
+                             onMouseDown={(e) => handleNodeMouseDown(node, e)}
+                             isPreviewing={isPreviewing}
+                             allNodes={nodes}
+                             connections={edges}
+                           />
+                         );
+                       })}
+                     </>
+                   );
+                 })()}
+              </g>
 
-             {selectionRect && (
-               <rect
-                 x={selectionRect.x}
-                 y={selectionRect.y}
-                 width={selectionRect.width}
-                 height={selectionRect.height}
-                 fill="rgba(255, 0, 0, 0.1)"
-                 stroke="red"
-                 strokeWidth={1}
-               />
-             )}
+               {selectionRect && (
+                 <rect
+                   x={selectionRect.x}
+                   y={selectionRect.y}
+                   width={selectionRect.width}
+                   height={selectionRect.height}
+                   fill="rgba(255, 0, 0, 0.1)"
+                   stroke="red"
+                   strokeWidth={1}
+                 />
+               )}
 
-             {plusSign && (
-               <PlusSign
-                 plusSign={plusSign}
-                 onClick={handlePlusSignClick}
-                 onMorphDone={handleMorphDone}
-                 onDisappearDone={() => setPlusSign(null)}
-               />
-             )}
-          </svg>
+               {plusSign && (
+                 <PlusSign
+                   plusSign={plusSign}
+                   onClick={handlePlusSignClick}
+                   onMorphDone={handleMorphDone}
+                   onDisappearDone={() => setPlusSign(null)}
+                 />
+               )}
+            </svg>
+          )}
 
           {renderCustomPrompt()}
           {debugMode && (
@@ -1540,19 +1553,18 @@ function NodeCanvas({ graphId, initialGraphData, initialNodes, initialEdges, onG
         </div>
 
         <Panel
+          key="right-panel"
           side="right"
           ref={panelRef}
           isExpanded={rightPanelExpanded}
           onToggleExpand={handleToggleRightPanel}
           onFocusChange={handleRightPanelFocusChange}
-          nodes={memoizedNodes}
-          onSaveNodeData={handleSaveNodeData}
-          projectTitle={projectTitle}
-          projectBio={projectBio}
-          onProjectTitleChange={handleProjectTitleChange}
-          onProjectBioChange={handleProjectBioChange}
+          activeGraphId={localActiveGraphId}
+          storeActions={localStoreActions}
         />
       </div>
+      
+      {/* <div>NodeCanvas Simplified - Testing Loop</div> */}
     </div>
   );
 }

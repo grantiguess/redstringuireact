@@ -74,6 +74,7 @@ const useGraphStore = create((set, get) => ({
   edges: new Map(),       // Map<string, EdgeData> - NEW
   openGraphIds: [],     // Start with no graphs open
   activeGraphId: null,  // Start with no active graph
+  rightPanelTabs: [{ type: 'home', isActive: true }], // Initialize with home tab
 
   // --- Actions --- (Operating on plain data)
 
@@ -280,6 +281,137 @@ const useGraphStore = create((set, get) => ({
     } else {
        console.warn(`Cannot set active tab: Graph with id ${graphId} not found or not open.`);
     }
+  })),
+
+  // Creates a new, empty graph, adds it to the store, opens it, and makes it active.
+  createNewGraph: () => set(produce((draft) => {
+    const newGraphId = uuidv4();
+    const newGraphData = {
+      id: newGraphId,
+      name: "New Thing",
+      description: "", // Add default empty description
+      picture: null,   // Add default null picture
+      color: null,     // Add default null color
+      directed: false, // Assuming default is undirected
+      nodeIds: [],
+      edgeIds: []
+    };
+
+    if (!draft.graphs.has(newGraphId)) {
+      draft.graphs.set(newGraphId, newGraphData);
+
+      // Add to open graphs if not already there (shouldn't be)
+      if (!draft.openGraphIds.includes(newGraphId)) {
+        draft.openGraphIds.push(newGraphId);
+      }
+
+      // Set as active graph
+      draft.activeGraphId = newGraphId;
+    } else {
+      // This should ideally not happen with UUIDs
+      console.warn(`createNewGraph: Graph with generated ID ${newGraphId} already exists.`);
+    }
+  })),
+
+  // Sets the currently active graph tab.
+  setActiveGraph: (graphId) => set(produce((draft) => {
+      if (draft.graphs.has(graphId)) { // Ensure the graph exists
+          if (draft.openGraphIds.includes(graphId)) { // Ensure it's an open graph
+            draft.activeGraphId = graphId;
+          } else {
+              console.warn(`setActiveGraph: Graph ${graphId} is not open.`);
+              // Optionally open it here: draft.openGraphIds.push(graphId);
+              // draft.activeGraphId = graphId;
+          }
+      } else {
+          console.warn(`setActiveGraph: Graph ${graphId} not found.`);
+      }
+  })),
+
+  // Updates specific properties of a graph
+  updateGraph: (graphId, updateFn) => set(produce((draft) => {
+      const graphData = draft.graphs.get(graphId);
+      if (graphData) {
+          const updatedGraphData = updateFn(graphData);
+          draft.graphs.set(graphId, updatedGraphData);
+      } else {
+          console.warn(`updateGraph: Graph ${graphId} not found.`);
+      }
+  })),
+
+  // --- Right Panel Tab Management Actions ---
+  openRightPanelNodeTab: (nodeId) => set(produce((draft) => {
+    // Find node data to get the title
+    const nodeData = draft.nodes.get(nodeId);
+    if (!nodeData) {
+      console.warn(`openRightPanelNodeTab: Node with id ${nodeId} not found.`);
+      return;
+    }
+    
+    // Check if tab already exists
+    const existingTabIndex = draft.rightPanelTabs.findIndex(tab => 
+      tab.type === 'node' && tab.nodeId === nodeId
+    );
+    
+    // Set all tabs to inactive
+    draft.rightPanelTabs.forEach(tab => { tab.isActive = false; });
+    
+    if (existingTabIndex > -1) {
+      // Tab exists, just activate it
+      draft.rightPanelTabs[existingTabIndex].isActive = true;
+    } else {
+      // Create new tab
+      draft.rightPanelTabs.push({
+        type: 'node',
+        nodeId,
+        title: nodeData.name,
+        isActive: true
+      });
+    }
+  })),
+  
+  activateRightPanelTab: (index) => set(produce((draft) => {
+    if (index < 0 || index >= draft.rightPanelTabs.length) {
+      console.warn(`activateRightPanelTab: Tab index ${index} out of bounds.`);
+      return;
+    }
+    
+    // Set all tabs to inactive, then activate the selected tab
+    draft.rightPanelTabs.forEach(tab => { tab.isActive = false; });
+    draft.rightPanelTabs[index].isActive = true;
+  })),
+  
+  closeRightPanelTab: (index) => set(produce((draft) => {
+    if (index <= 0 || index >= draft.rightPanelTabs.length) {
+      console.warn(`closeRightPanelTab: Tab index ${index} out of bounds or is home tab.`);
+      return;
+    }
+    
+    const wasActive = draft.rightPanelTabs[index].isActive;
+    
+    // Remove the tab
+    draft.rightPanelTabs.splice(index, 1);
+    
+    // If the closed tab was active, activate the home tab
+    if (wasActive) {
+      draft.rightPanelTabs[0].isActive = true;
+    }
+  })),
+  
+  moveRightPanelTab: (dragIndex, hoverIndex) => set(produce((draft) => {
+    // Convert to absolute indices (drag and hover are 0-based from the UI but we need to add 1 for the home tab)
+    const sourceDragIndex = dragIndex + 1;
+    const sourceHoverIndex = hoverIndex + 1;
+    
+    if (sourceDragIndex <= 0 || sourceHoverIndex <= 0 || 
+        sourceDragIndex >= draft.rightPanelTabs.length || sourceHoverIndex >= draft.rightPanelTabs.length) {
+      console.warn(`moveRightPanelTab: Invalid indices drag=${sourceDragIndex}, hover=${sourceHoverIndex}`);
+      return;
+    }
+    
+    // Move the tab
+    const [movedTab] = draft.rightPanelTabs.splice(sourceDragIndex, 1);
+    draft.rightPanelTabs.splice(sourceHoverIndex, 0, movedTab);
   })),
 
 }));

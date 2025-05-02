@@ -1,11 +1,17 @@
-import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, useCallback } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, useCallback, useMemo } from 'react';
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION } from './constants';
-import { ArrowLeftFromLine, ArrowRightFromLine, Home, ImagePlus, XCircle, BookOpen, LayoutGrid } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Home, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus } from 'lucide-react';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
 import ToggleButton from './ToggleButton'; // Import the new component
+import useGraphStore, {
+    getActiveGraphId,
+    getNodesForGraph,
+    getActiveGraphData,
+} from './store/graphStore';
+import { shallow } from 'zustand/shallow';
 
 // Define Item Type for react-dnd
 const ItemTypes = {
@@ -106,7 +112,7 @@ const CustomDragLayer = ({ tabBarRef }) => {
 
 
 // Draggable Tab Component
-const DraggableTab = ({ tab, index, moveTab, activateTab, closeTab }) => {
+const DraggableTab = ({ tab, index, moveTabAction, activateTabAction, closeTabAction }) => {
   const ref = useRef(null);
 
   const [, drop] = useDrop({
@@ -116,7 +122,7 @@ const DraggableTab = ({ tab, index, moveTab, activateTab, closeTab }) => {
         return;
       }
       const dragIndex = item.index;
-      const hoverIndex = index;
+      const hoverIndex = index - 1;
 
       if (dragIndex === hoverIndex) {
         return;
@@ -134,37 +140,32 @@ const DraggableTab = ({ tab, index, moveTab, activateTab, closeTab }) => {
         return;
       }
 
-      moveTab(dragIndex, hoverIndex);
+      moveTabAction(dragIndex, hoverIndex);
       item.index = hoverIndex;
     },
   });
 
   const [{ isDragging }, drag, preview] = useDrag({
     type: ItemTypes.TAB,
-    item: () => {
-      // Include tab title in the item for the drag layer
-      return { id: tab.nodeId, index, title: tab.title, tab: tab }; // Pass full tab data
-    },
-    collect: (monitor) => ({
-      isDragging: monitor.isDragging(),
+    item: () => ({
+      id: tab.nodeId,
+      index: index - 1,
+      title: tab.title,
+      tab: tab
     }),
+    collect: (monitor) => ({ isDragging: monitor.isDragging() }),
   });
 
-  // Hide default browser preview
   useEffect(() => {
     preview(getEmptyImage(), { captureDraggingState: true });
   }, [preview]);
 
-  // Style the original tab when dragging
-  const opacity = isDragging ? 0.4 : 1; // Make original tab faded, not invisible
-  const cursor = isDragging ? 'grabbing' : 'grab'; // Change cursor based on state
-
+  const opacity = isDragging ? 0.4 : 1;
+  const cursor = isDragging ? 'grabbing' : 'grab';
   const isActive = tab.isActive;
   const bg = isActive ? '#bdb5b5' : '#979090';
 
   drag(drop(ref));
-
-  const originalIndex = index + 1;
 
   return (
     <div
@@ -185,13 +186,12 @@ const DraggableTab = ({ tab, index, moveTab, activateTab, closeTab }) => {
         padding: '0px 8px',
         marginRight: '6px',
         height: '100%',
-        cursor: cursor, // Updated cursor
+        cursor: cursor,
         maxWidth: '150px',
-        transition: 'opacity 0.1s ease' // Smooth fade out
+        transition: 'opacity 0.1s ease'
       }}
-      onClick={() => activateTab(originalIndex)}
+      onClick={() => activateTabAction(index)}
     >
-       {/* Content remains same, but invisible when dragging */}
       <span style={{
         whiteSpace: 'nowrap',
         overflow: 'hidden',
@@ -217,7 +217,7 @@ const DraggableTab = ({ tab, index, moveTab, activateTab, closeTab }) => {
         }}
         onClick={(e) => {
           e.stopPropagation();
-          closeTab(originalIndex);
+          closeTabAction(index);
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.backgroundColor = '#ccc';
@@ -281,32 +281,94 @@ const getInitialLastCustomWidth = (side, defaultValue) => {
     return currentWidth !== INITIAL_PANEL_WIDTH ? currentWidth : defaultValue;
   };
 
+let panelRenderCount = 0; // Add counter outside component
+
 const Panel = forwardRef(
   ({
     isExpanded,
     onToggleExpand,
-    nodes,
-    onOpenNodeTab,
-    onSaveNodeData,
     onFocusChange,
-    projectTitle,
-    projectBio,
-    onProjectTitleChange,
-    onProjectBioChange,
     side = 'right',
+    // Add props for store data/actions
+    activeGraphId, 
+    storeActions,
   }, ref) => {
-    // Right panel state (tabs for nodes/home)
-    const [tabs, setTabs] = useState([{ type: 'home', isActive: true }]);
+    panelRenderCount++; // Increment counter
+    // console.log(`[Panel ${side}] Render #${panelRenderCount}. Expanded: ${isExpanded}`); // Temporarily disable logs
+    // --- Zustand State and Actions ---
+    /* // Store subscription remains commented out
+    const selector = useCallback(
+        (state) => {
+            // Select only ID and actions reactively
+            const currentActiveGraphId = getActiveGraphId(state);
+            return {
+                activeGraphId: currentActiveGraphId,
+                createNewGraph: state.createNewGraph,
+                setActiveGraph: state.setActiveGraph,
+                openRightPanelNodeTab: state.openRightPanelNodeTab,
+                closeRightPanelTab: state.closeRightPanelTab,
+                activateRightPanelTab: state.activateRightPanelTab,
+                moveRightPanelTab: state.moveRightPanelTab,
+                updateNode: state.updateNode,
+                updateGraph: state.updateGraph,
+            };
+        },
+        [side] // Side prop is stable, but keep it just in case?
+    );
+
+    const store = useGraphStore(selector, shallow);
+    */
+
+    // Destructure selected state and actions (Use props now)
+    const { 
+        createNewGraph,
+        setActiveGraph,
+        openRightPanelNodeTab,
+        closeRightPanelTab,
+        activateRightPanelTab,
+        moveRightPanelTab,
+        updateNode,
+        updateGraph
+    } = storeActions || {}; // Use passed actions, provide empty object fallback
+    
+    // activeGraphId is now directly available as a prop
+
+    /* // Remove Dummy Values
+    const activeGraphId = null;
+    const createNewGraph = () => console.log("Dummy createNewGraph");
+    const setActiveGraph = (id) => console.log("Dummy setActiveGraph", id);
+    const openRightPanelNodeTab = (id) => console.log("Dummy openRightPanelNodeTab", id);
+    const closeRightPanelTab = (index) => console.log("Dummy closeRightPanelTab", index);
+    const activateRightPanelTab = (index) => console.log("Dummy activateRightPanelTab", index);
+    const moveRightPanelTab = (from, to) => console.log("Dummy moveRightPanelTab", from, to);
+    const updateNode = (id, fn) => console.log("Dummy updateNode", id, fn);
+    const updateGraph = (id, fn) => console.log("Dummy updateGraph", id, fn);
+    */
+
+    // Derive the array needed for the left panel grid
+    const graphsForTabs = useMemo(() => {
+        // Use getState() inside memo
+        const currentGraphsMap = useGraphStore.getState().graphs;
+        return Array.from(currentGraphsMap.values()).map(g => ({ id: g.id, name: g.name }));
+    }, []); // No reactive dependencies needed?
+
     // Left panel state
+    // console.log(`[Panel ${side}] Initializing leftViewActive state`); // Keep logs disabled for now
     const [leftViewActive, setLeftViewActive] = useState('library'); // 'library' or 'grid'
 
     // Shared state
-    const [panelWidth, setPanelWidth] = useState(() => getInitialWidth(side, INITIAL_PANEL_WIDTH));
-    const [lastCustomWidth, setLastCustomWidth] = useState(() => getInitialLastCustomWidth(side, INITIAL_PANEL_WIDTH));
+    // Initialize with defaults, load from localStorage in useEffect
+    const [panelWidth, setPanelWidth] = useState(INITIAL_PANEL_WIDTH);
+    const [lastCustomWidth, setLastCustomWidth] = useState(INITIAL_PANEL_WIDTH);
+    // console.log(`[Panel ${side}] Initializing isAnimatingWidth state`);
     const [isAnimatingWidth, setIsAnimatingWidth] = useState(false);
+    // console.log(`[Panel ${side}] Initializing editingTitle state`);
     const [editingTitle, setEditingTitle] = useState(false); // Used by right panel node tabs
+    console.log(`[Panel ${side}] Initializing tempTitle state`);
     const [tempTitle, setTempTitle] = useState(''); // Used by right panel node tabs
+    console.log(`[Panel ${side}] Initializing editingProjectTitle state`);
     const [editingProjectTitle, setEditingProjectTitle] = useState(false); // Used by right panel home tab
+    console.log(`[Panel ${side}] Initializing tempProjectTitle state`);
     const [tempProjectTitle, setTempProjectTitle] = useState(''); // Used by right panel home tab
 
     // Refs
@@ -317,6 +379,19 @@ const Panel = forwardRef(
     const titleInputRef = useRef(null); // Used by right panel
     const projectTitleInputRef = useRef(null); // Used by right panel
     const tabBarRef = useRef(null); // Used by right panel
+    const initialWidthsSet = useRef(false); // Ref to track initialization
+
+    useEffect(() => {
+      // Load initial widths from localStorage ONCE on mount
+      if (!initialWidthsSet.current) {
+          const initialWidth = getInitialWidth(side, INITIAL_PANEL_WIDTH);
+          const initialLastCustom = getInitialLastCustomWidth(side, INITIAL_PANEL_WIDTH);
+          setPanelWidth(initialWidth);
+          setLastCustomWidth(initialLastCustom);
+          initialWidthsSet.current = true; // Mark as set
+          console.log(`[Panel ${side} Mount Effect] Loaded initial widths:`, { initialWidth, initialLastCustom });
+      }
+    }, [side]); // Run once on mount (and if side changes, though unlikely)
 
     useEffect(() => {
       if (editingTitle && titleInputRef.current) {
@@ -333,318 +408,16 @@ const Panel = forwardRef(
     }, [editingProjectTitle]);
 
     // Exposed so NodeCanvas can open tabs
-    const openNodeTab = (nodeId, nodeName) => {
-      // Find the corresponding node data from the props
-      const nodeData = nodes.find(n => n.id === nodeId);
-      
-      // Determine initial values for the new tab
-      let initialBio = '';
-      let initialThumb = null;
-      let initialImageSrc = null;
-      let initialAspectRatio = null;
-
-      if (nodeData) {
-        const desc = nodeData.getDescription();
-        initialBio = (desc && desc !== "No description.") ? desc : ''; // Use empty string if default placeholder
-        initialThumb = nodeData.getThumbnailSrc() || null;
-        initialImageSrc = nodeData.getImageSrc() || null; 
-        initialAspectRatio = nodeData.getImageAspectRatio() || null;
-      }
-
-      setTabs((prev) => {
-        let updated = prev.map((t) => ({ ...t, isActive: false }));
-        const existingIndex = updated.findIndex(
-          (t) => t.type === 'node' && t.nodeId === nodeId
-        );
-        if (existingIndex >= 0) {
-          const [theTab] = updated.splice(existingIndex, 1);
-          theTab.isActive = true;
-          // Update existing tab data on reopen?
-          // For now, just reactivate and move to front.
-          // The useEffect sync should handle data updates if needed.
-          updated.splice(1, 0, theTab);
-        } else {
-          // Create new tab with pre-populated data
-          updated.splice(1, 0, {
-            type: 'node',
-            nodeId,
-            title: nodeName, // Use name passed from NodeCanvas
-            isActive: true,
-            // Initialize with data derived from nodeData
-            bio: initialBio,
-            thumbnailSrc: initialThumb,
-            imageSrc: initialImageSrc, 
-            imageAspectRatio: initialAspectRatio,
-          });
-        }
-        return updated;
-      });
-      // Reset editing state when opening/switching tabs
-      setEditingTitle(false);
-      setEditingProjectTitle(false);
+    const openNodeTab = (nodeId) => {
+       if (side !== 'right') return;
+       console.log(`[Panel ${side}] Imperative openNodeTab called for ${nodeId}`);
+       openRightPanelNodeTab(nodeId);
+       setEditingTitle(false);
     };
-
-    // Optionally track onOpenNodeTab changes if needed.
-    useEffect(() => {
-      // For now we don't need to do anything here.
-    }, [onOpenNodeTab]);
 
     useImperativeHandle(ref, () => ({
       openNodeTab,
-      // Expose function to close tabs based on a Set of node IDs
-      closeTabsByIds: (idsToDelete) => {
-        setTabs(prevTabs => {
-          let activeTabWasDeleted = false;
-          const currentActiveIndex = prevTabs.findIndex(t => t.isActive);
-
-          // Filter out tabs whose nodeId is in the Set
-          const remainingTabs = prevTabs.filter(tab => {
-            if (tab.type === 'node' && idsToDelete.has(tab.nodeId)) {
-              if (tab.isActive) {
-                activeTabWasDeleted = true;
-              }
-              return false; // Filter out this tab
-            }
-            return true; // Keep this tab
-          });
-
-          // If the active tab was deleted, or no node tabs remain,
-          // activate the home tab if it exists.
-          if ((activeTabWasDeleted || remainingTabs.length <= 1) && remainingTabs[0]?.type === 'home') {
-              remainingTabs[0].isActive = true;
-               // Ensure other tabs (if any somehow remained active) are inactive
-              for(let i = 1; i < remainingTabs.length; i++) {
-                   remainingTabs[i].isActive = false;
-               }
-          } else if (remainingTabs.length > 0 && !remainingTabs.some(t => t.isActive)) {
-              // Fallback: if no tab is active after deletion, activate home
-              remainingTabs[0].isActive = true;
-          }
-
-          return remainingTabs;
-        });
-      }
     }));
-
-    const closeTab = (index) => {
-      if (index === 0) return; // can't close home
-      setTabs((prev) => {
-        let updated = [...prev];
-        const wasActive = updated[index].isActive;
-        updated.splice(index, 1);
-        if (wasActive && updated.length > 0) {
-          updated[0].isActive = true;
-        }
-        return updated;
-      });
-    };
-
-    const activateTab = (index) => {
-      setTabs((prev) =>
-        prev.map((t, i) => ({ ...t, isActive: i === index }))
-      );
-    };
-
-    // --- Function to handle moving tabs ---
-    const moveTab = (dragIndex, hoverIndex) => {
-      setTabs((prevTabs) => {
-        const nodeTabs = prevTabs.slice(1); // Get only the draggable node tabs
-        const draggedTab = nodeTabs[dragIndex];
-
-        const updatedNodeTabs = [...nodeTabs];
-        updatedNodeTabs.splice(dragIndex, 1); // Remove dragged tab
-        updatedNodeTabs.splice(hoverIndex, 0, draggedTab); // Insert at hover position
-
-        // Reconstruct the full tabs array with Home tab first
-        return [prevTabs[0], ...updatedNodeTabs];
-      });
-    };
-    // -------------------------------------
-
-    const handleAddImage = (nodeId) => {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*';
-      input.onchange = async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        // 1. Read full image as data URL
-        const reader = new FileReader();
-        reader.onload = async (loadEvent) => {
-          const fullImageSrc = loadEvent.target?.result;
-          if (typeof fullImageSrc !== 'string') {
-            console.error('FileReader did not return a string src');
-            return;
-          }
-
-          // Need to load the full image to get dimensions for aspect ratio
-          const img = new Image();
-          img.onload = async () => {
-            try {
-              // Calculate aspect ratio
-              const aspectRatio = (img.naturalHeight > 0 && img.naturalWidth > 0) 
-                                  ? img.naturalHeight / img.naturalWidth 
-                                  : 1; // Default aspect ratio if dimensions are zero
-
-              // Generate thumbnail
-              const thumbSrc = await generateThumbnail(fullImageSrc, THUMBNAIL_MAX_DIMENSION);
-
-              // Prepare data with aspect ratio
-              const nodeDataToSave = {
-                imageSrc: fullImageSrc,
-                thumbnailSrc: thumbSrc,
-                imageAspectRatio: aspectRatio, // Include aspect ratio
-              };
-
-              // Call the save handler
-              console.log('Calling onSaveNodeData with aspect ratio:', nodeId, nodeDataToSave);
-              onSaveNodeData(nodeId, nodeDataToSave);
-
-            } catch (error) {
-              console.error("Thumbnail generation or saving failed:", error);
-              // Fallback: Save without thumbnail/aspect ratio? Consider error handling.
-              // onSaveNodeData(nodeId, { imageSrc: fullImageSrc }); 
-            }
-          };
-          img.onerror = (error) => {
-            console.error('Image failed to load for dimension/aspect ratio reading:', error);
-            // Handle failure - maybe don't save image data?
-          };
-          img.src = fullImageSrc; // Load the full image src
-
-        };
-        reader.onerror = (error) => {
-          console.error('FileReader failed to read the file:', error);
-        };
-        reader.readAsDataURL(file);
-      };
-      input.click();
-    };
-
-    const handleBioChange = (nodeId, newBio) => {
-      onSaveNodeData(nodeId, { description: newBio }); // Use 'description' key for CoreNode
-    };
-
-    const commitProjectTitleChange = () => {
-      const newName = tempProjectTitle.trim();
-      onProjectTitleChange(newName);
-      setEditingProjectTitle(false);
-    };
-
-    // --- Tab Bar Scroll Handler ---
-    const handleTabBarWheel = (e) => {
-      if (tabBarRef.current) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        let scrollAmount = 0;
-        // Prioritize axis with larger absolute delta
-        if (Math.abs(e.deltaY) >= Math.abs(e.deltaX)) {
-          scrollAmount = e.deltaY;
-        } else {
-          scrollAmount = e.deltaX;
-        }
-
-        const sensitivity = 0.5; 
-        const scrollChange = scrollAmount * sensitivity;
-
-        tabBarRef.current.scrollLeft += scrollChange;
-      } else {
-        console.log('[Tab Wheel] Ref does NOT exist'); // Log if ref is missing
-      }
-    };
-
-    // --- Effect to manually add non-passive wheel listener ---
-    useEffect(() => {
-      const tabBarNode = tabBarRef.current;
-      if (tabBarNode) {
-        console.log('[Tab Wheel Effect] Adding non-passive wheel listener');
-        // Add listener with passive: false to allow preventDefault
-        tabBarNode.addEventListener('wheel', handleTabBarWheel, { passive: false });
-
-        // Cleanup function
-        return () => {
-          console.log('[Tab Wheel Effect] Removing wheel listener');
-          tabBarNode.removeEventListener('wheel', handleTabBarWheel, { passive: false });
-        };
-      }
-    }, []); // Run only once on mount
-
-    // --- START: Effect to synchronize local tabs with nodes prop ---
-    useEffect(() => {
-      if (side === 'right') { 
-        setTabs(currentTabs => {
-            let needsUpdate = false;
-            const updatedTabs = currentTabs.map(tab => {
-                if (tab.type === 'node' && tab.nodeId) {
-                    const nodeFromProp = nodes.find(n => n.id === tab.nodeId);
-                    if (nodeFromProp) {
-                        let updatedTab = { ...tab };
-                        let tabChanged = false;
-
-                        // Sync Title (if not currently editing)
-                        const latestName = nodeFromProp.getName() || 'Untitled';
-                        if (!editingTitle && tab.title !== latestName) {
-                           updatedTab.title = latestName;
-                           tabChanged = true;
-                        }
-
-                        // --- Refined Bio Sync Logic --- 
-                        const latestBio = nodeFromProp.getDescription(); // Get raw description
-                        const isDefaultPlaceholder = latestBio === "No description.";
-                        // Target empty string if it's the default placeholder, otherwise use actual value or empty
-                        const targetBio = isDefaultPlaceholder ? '' : latestBio || '';
-
-                        // Update local tab state if it differs from the target
-                        if (tab.bio !== targetBio) {
-                            updatedTab.bio = targetBio;
-                            tabChanged = true;
-                        }
-                        // --- End Refined Bio Sync Logic ---
-
-                        // Sync Thumbnail
-                        const latestThumb = nodeFromProp.getThumbnailSrc() || null;
-                        if (tab.thumbnailSrc !== latestThumb) {
-                            updatedTab.thumbnailSrc = latestThumb;
-                            tabChanged = true;
-                        }
-                         // Sync Full Image Src (might not be needed directly in tab state unless used)
-                         const latestImageSrc = nodeFromProp.getImageSrc() || null;
-                         if (tab.imageSrc !== latestImageSrc) {
-                             updatedTab.imageSrc = latestImageSrc;
-                             tabChanged = true;
-                         }
-                         // Sync Aspect Ratio
-                         const latestAspectRatio = nodeFromProp.getImageAspectRatio() || null;
-                         if (tab.imageAspectRatio !== latestAspectRatio) {
-                             updatedTab.imageAspectRatio = latestAspectRatio;
-                             tabChanged = true;
-                         }
-
-                        if (tabChanged) {
-                            needsUpdate = true;
-                            return updatedTab;
-                        }
-                    } else {
-                        // Node doesn't exist in props anymore? Maybe remove tab? (Optional)
-                        // console.warn(`Node ${tab.nodeId} for tab not found in props.`);
-                    }
-                }
-                return tab; // Return unchanged tab if no sync needed or not a node tab
-            });
-
-            // Only update state if any tab actually changed
-            return needsUpdate ? updatedTabs : currentTabs;
-        });
-      } else {
-        // TODO: Implement specific sync logic for left panel tabs (e.g., graph browser)
-        // For now, maybe initialize with a placeholder tab if side is left?
-        // Or perhaps the initial state should differ based on side?
-        // Let's keep the default [{ type: 'home', isActive: true }] for now.
-      }
-    }, [nodes, editingTitle, side]); // Add side to dependency array
-    // --- END: Effect to synchronize ---
 
     // --- Resize Handlers (Reordered definitions) ---
     const handleResizeMouseMove = useCallback((e) => {
@@ -675,22 +448,25 @@ const Panel = forwardRef(
         document.body.style.userSelect = ''; 
         document.body.style.cursor = ''; 
 
-        try {
-            const finalWidth = panelRef.current?.offsetWidth; // Get final width
-            if (finalWidth) {
-                // Save current width
-                localStorage.setItem(`panelWidth_${side}`, JSON.stringify(finalWidth));
-                // If it's not the default, save as last custom width
-                if (finalWidth !== INITIAL_PANEL_WIDTH) {
-                  setLastCustomWidth(finalWidth); // Update state
-                  localStorage.setItem(`lastCustomPanelWidth_${side}`, JSON.stringify(finalWidth));
+        // Wrap state update and localStorage access in requestAnimationFrame
+        requestAnimationFrame(() => { 
+            try {
+                const finalWidth = panelRef.current?.offsetWidth; // Get final width
+                if (finalWidth) {
+                    // Save current width
+                    localStorage.setItem(`panelWidth_${side}`, JSON.stringify(finalWidth));
+                    // If it's not the default AND different from the current lastCustomWidth, save as last custom width
+                    if (finalWidth !== INITIAL_PANEL_WIDTH && finalWidth !== lastCustomWidth) {
+                      setLastCustomWidth(finalWidth); // Update state inside RAF only if different
+                      localStorage.setItem(`lastCustomPanelWidth_${side}`, JSON.stringify(finalWidth));
+                    }
                 }
+            } catch (error) {
+                console.error(`Error saving panelWidth_${side} to localStorage:`, error);
             }
-        } catch (error) {
-            console.error(`Error saving panelWidth_${side} to localStorage:`, error);
-        }
+        });
       }
-    }, [side, handleResizeMouseMove]); // Now handleResizeMouseMove is defined above
+    }, [side, handleResizeMouseMove, lastCustomWidth]); // <<< Added lastCustomWidth to dependencies
 
     const handleResizeMouseDown = useCallback((e) => {
       e.preventDefault(); // Prevent text selection during drag
@@ -779,9 +555,22 @@ const Panel = forwardRef(
     // --- End Resize Handlers & related effects ---
 
     // --- Determine Active View/Tab --- 
-    const activeRightPanelTab = side === 'right' ? tabs.find((t) => t.isActive) : null;
+    // Get tabs non-reactively
+    const currentRightPanelTabs = side === 'right' ? useGraphStore.getState().rightPanelTabs : [];
+    const activeRightPanelTab = currentRightPanelTabs.find((t) => t.isActive);
 
-    // --- Generate Content based on Side --- 
+    // Derive nodes for active graph on right side using useMemo to keep reference stable
+    const activeGraphNodes = useMemo(() => {
+        if (side !== 'right' || !activeGraphId) return [];
+        // Use getState() inside memo
+        const state = useGraphStore.getState();
+        const graphData = state.graphs.get(activeGraphId);
+        if (!graphData) return [];
+        const currentNodesMap = state.nodes;
+        return graphData.nodeIds.map(id => currentNodesMap.get(id)).filter(Boolean);
+    }, [side, activeGraphId]);
+
+    // --- Generate Content based on Side ---
     let panelContent = null;
     if (side === 'left') {
         if (leftViewActive === 'library') {
@@ -798,16 +587,75 @@ const Panel = forwardRef(
                 </div>
             );
         } else if (leftViewActive === 'grid') {
-            // Replace placeholder with styled title and placeholder content
+            // Render Tabs view using graphStore data
             panelContent = (
-                <div className="panel-content-inner"> {/* Keep existing padding */}
-                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}> {/* Wrapper for alignment */}
+                <div className="panel-content-inner"> 
+                    {/* Title Row with Plus button */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}> 
                         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold' }}>
                             Tabs
                         </h2>
+                        <button 
+                            onClick={createNewGraph} // Uses dummy action
+                            title="Create New Graph"
+                            style={{
+                                background: 'none',
+                                border: 'none',
+                                padding: '4px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}
+                        >
+                            <Plus size={20} color="#260000" />
+                        </button>
                     </div>
-                     {/* TODO: Add actual Grid/Tabs content here */}
-                    <div style={{ color: '#555', fontSize: '0.9rem' }}>[Grid View Content Placeholder]</div>
+
+                    {/* Graph Grid */}
+                    <div
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr',
+                            gap: '8px',
+                            maxHeight: 'calc(100vh - 120px)', // Adjust height based on header/title
+                            overflowY: 'auto',
+                        }}
+                    >
+                        {graphsForTabs.map((graph) => (
+                            <div
+                                key={graph.id}
+                                style={{
+                                    backgroundColor: 'maroon',
+                                    borderRadius: NODE_CORNER_RADIUS, // Use constant
+                                    height: '40px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    padding: '0 5px',
+                                    overflow: 'hidden'
+                                }}
+                                title={graph.name} // Use graph name for tooltip
+                                onClick={() => setActiveGraph(graph.id)} // Uses dummy action
+                            >
+                                <span style={{
+                                    color: '#bdb5b5',
+                                    fontSize: '0.8rem',
+                                    width: '100%',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    textAlign: 'center',
+                                    padding: '0 10px',
+                                    boxSizing: 'border-box',
+                                    userSelect: 'none'
+                                }}>
+                                    {graph.name} {/* Display graph name */}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             );
         }
@@ -815,6 +663,7 @@ const Panel = forwardRef(
         if (!activeRightPanelTab) {
             panelContent = <div className="panel-content-inner">No tab selected...</div>;
         } else if (activeRightPanelTab.type === 'home') {
+            const currentGraphName = side === 'right' ? (useGraphStore.getState().graphs.get(activeGraphId)?.name ?? 'Loading...') : ''; // Uses dummy activeGraphId (null)
             panelContent = (
                 <div className="panel-content-inner home-tab" >
                     <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px', flexWrap: 'nowrap' }}>
@@ -827,9 +676,9 @@ const Panel = forwardRef(
                                 name="projectTitleInput"
                                 value={tempProjectTitle}
                                 onChange={(e) => setTempProjectTitle(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') commitProjectTitleChange(); }}
-                                onBlur={commitProjectTitleChange}
-                                onFocus={() => onFocusChange?.(true)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') commitProjectTitleChange(); }} // Uses dummy updateGraph
+                                onBlur={commitProjectTitleChange} // Uses dummy updateGraph
+                                onFocus={() => onFocusChange?.(true)} // Uncommented
                                 style={{ fontFamily: 'inherit', fontSize: '1.1rem', fontWeight: 'bold', color: '#260000' }}
                             />
                         ) : (
@@ -844,10 +693,10 @@ const Panel = forwardRef(
                                 }}
                                 onDoubleClick={() => {
                                     setEditingProjectTitle(true);
-                                    setTempProjectTitle(projectTitle);
+                                    setTempProjectTitle(currentGraphName);
                                 }}
                             >
-                                {projectTitle}
+                                {currentGraphName}
                             </h2>
                         )}
                     </div>
@@ -871,10 +720,10 @@ const Panel = forwardRef(
                             lineHeight: '1.4',
                             fontFamily: 'inherit',
                         }}
-                        value={projectBio || ''}
-                        onFocus={() => onFocusChange?.(true)}
-                        onBlur={() => onFocusChange?.(false)}
-                        onChange={(e) => onProjectBioChange(e.target.value)}
+                        value={useGraphStore.getState().graphs.get(activeGraphId)?.description ?? ''} // Uses dummy activeGraphId (null)
+                        onFocus={() => onFocusChange?.(true)} // Uncommented
+                        onBlur={() => onFocusChange?.(false)} // Uncommented
+                        onChange={(e) => handleProjectBioChange(e.target.value)} // Uses dummy updateGraph action
                         onKeyDown={(e) => {
                             if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
                                 e.stopPropagation();
@@ -905,7 +754,7 @@ const Panel = forwardRef(
                             overflowY: 'auto',
                         }}
                     >
-                        {nodes.map((node) => (
+                        {activeGraphNodes.map((node) => ( // Uses dummy activeGraphId (null) -> empty array
                             <div
                                 key={node.id}
                                 style={{
@@ -920,7 +769,7 @@ const Panel = forwardRef(
                                     overflow: 'hidden'
                                 }}
                                 title={node.name}
-                                onClick={() => openNodeTab(node.id, node.name)}
+                                onClick={() => openNodeTab(node.id)} // Uses dummy action
                             >
                                 <span style={{
                                     color: '#bdb5b5',
@@ -943,7 +792,7 @@ const Panel = forwardRef(
             );
         } else if (activeRightPanelTab.type === 'node') {
             const nodeId = activeRightPanelTab.nodeId;
-            const nodeData = nodes.find((n) => n.id === nodeId);
+            const nodeData = activeGraphNodes.find((n) => n.id === nodeId); // Uses dummy activeGraphId -> empty array
             if (!nodeData) {
                 panelContent = (
                     <div style={{ padding: '10px', color: '#aaa' }}>Node not found...</div>
@@ -958,13 +807,13 @@ const Panel = forwardRef(
                     const newName = tempTitle.trim();
                     if (newName && newName !== activeRightPanelTab.title) {
                         // Update the node data
-                        onSaveNodeData(nodeId, { name: newName });
+                        updateNode(nodeId, draft => { draft.name = newName; }); // Uses dummy action
                         // Update the tab's title in state immediately for responsiveness
-                        setTabs((prev) =>
-                            prev.map((tab) =>
-                                tab.nodeId === nodeId ? { ...tab, title: newName } : tab
-                            )
-                        );
+                        // setTabs((prev) => // Cannot call setTabs here, this needs state from store
+                        //     prev.map((tab) =>
+                        //         tab.nodeId === nodeId ? { ...tab, title: newName } : tab
+                        //     )
+                        // );
                     }
                     setEditingTitle(false);
                 };
@@ -980,9 +829,9 @@ const Panel = forwardRef(
                                     name={`nodeTitleInput-${nodeId}`}
                                     value={tempTitle}
                                     onChange={(e) => setTempTitle(e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter') commitTitleChange(); }}
-                                    onBlur={commitTitleChange}
-                                    onFocus={() => onFocusChange?.(true)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') commitTitleChange(); }} // Uses dummy action
+                                    onBlur={commitTitleChange} // Uses dummy action
+                                    onFocus={() => onFocusChange?.(true)} // Uncommented
                                     style={{ fontFamily: 'inherit', fontSize: '1.1rem' }}
                                 />
                             ) : (
@@ -1016,7 +865,7 @@ const Panel = forwardRef(
                                 size={24}
                                 color="#260000"
                                 style={{ cursor: 'pointer', flexShrink: 0 }}
-                                onClick={() => handleAddImage(nodeId)}
+                                onClick={() => handleAddImage(nodeId)} // Uses dummy updateNode action
                             />
                         </div>
 
@@ -1042,9 +891,9 @@ const Panel = forwardRef(
                                 userSelect: 'text'
                             }}
                             value={displayBio}
-                            onFocus={() => onFocusChange?.(true)}
-                            onBlur={() => onFocusChange?.(false)}
-                            onChange={(e) => handleBioChange(nodeId, e.target.value)}
+                            onFocus={() => onFocusChange?.(true)} // Uncommented
+                            onBlur={() => onFocusChange?.(false)} // Uncommented
+                            onChange={(e) => handleBioChange(nodeId, e.target.value)} // Uses dummy updateNode action
                             onKeyDown={(e) => {
                                 if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
                                     e.stopPropagation();
@@ -1052,7 +901,7 @@ const Panel = forwardRef(
                             }}
                         />
 
-                        {nodeData.getImageSrc() && (
+                        {nodeData.imageSrc && (
                             <div
                                 style={{
                                     marginTop: '8px',
@@ -1063,7 +912,7 @@ const Panel = forwardRef(
                                 }}
                             >
                                 <img
-                                    src={nodeData.getImageSrc()}
+                                    src={nodeData.imageSrc}
                                     alt="Node"
                                     style={{
                                         display: 'block',
@@ -1080,6 +929,7 @@ const Panel = forwardRef(
             }
         }
     }
+    
 
     // --- Positioning and Animation Styles based on side ---
     const positionStyle = side === 'left' ? { left: 0 } : { right: 0 };
@@ -1106,6 +956,92 @@ const Panel = forwardRef(
     } else { // side === 'right'
         handleStyle.left = '-2px'; // Position slightly outside on the left
     }
+
+    const handleAddImage = (nodeId) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (loadEvent) => {
+          const fullImageSrc = loadEvent.target?.result;
+          if (typeof fullImageSrc !== 'string') return;
+          const img = new Image();
+          img.onload = async () => {
+            try {
+              const aspectRatio = (img.naturalHeight > 0 && img.naturalWidth > 0) ? img.naturalHeight / img.naturalWidth : 1;
+              const thumbSrc = await generateThumbnail(fullImageSrc, THUMBNAIL_MAX_DIMENSION);
+              const nodeDataToSave = { imageSrc: fullImageSrc, thumbnailSrc: thumbSrc, imageAspectRatio: aspectRatio };
+              console.log('Calling store updateNode with image data:', nodeId, nodeDataToSave);
+              // Call store action directly
+              updateNode(nodeId, draft => { Object.assign(draft, nodeDataToSave); });
+            } catch (error) { console.error("Thumbnail/save failed:", error); }
+          };
+          img.onerror = (error) => { console.error('Image load failed:', error); };
+          img.src = fullImageSrc;
+        };
+        reader.onerror = (error) => { console.error('FileReader failed:', error); };
+        reader.readAsDataURL(file);
+      };
+      input.click();
+    };
+
+    const handleBioChange = (nodeId, newBio) => {
+        if (!activeGraphId) return;
+        console.log('Calling store updateNode with description:', nodeId);
+        // Call store action directly
+        updateNode(nodeId, draft => { draft.description = newBio; });
+    };
+
+    const commitProjectTitleChange = () => {
+      if (!activeGraphId) return;
+      const newName = tempProjectTitle.trim() || 'Untitled';
+      console.log('Calling store updateGraph with name:', activeGraphId, newName);
+      // Call store action directly
+      updateGraph(activeGraphId, draft => { draft.name = newName; });
+      setEditingProjectTitle(false);
+    };
+
+    // --- Tab Bar Scroll Handler ---
+    const handleTabBarWheel = (e) => {
+      if (tabBarRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        let scrollAmount = 0;
+        // Prioritize axis with larger absolute delta
+        if (Math.abs(e.deltaY) >= Math.abs(e.deltaX)) {
+          scrollAmount = e.deltaY;
+        } else {
+          scrollAmount = e.deltaX;
+        }
+
+        const sensitivity = 0.5; 
+        const scrollChange = scrollAmount * sensitivity;
+
+        tabBarRef.current.scrollLeft += scrollChange;
+      } else {
+        console.log('[Tab Wheel] Ref does NOT exist'); // Log if ref is missing
+      }
+    };
+
+    // --- Effect to manually add non-passive wheel listener ---
+    useEffect(() => {
+      const tabBarNode = tabBarRef.current;
+      if (tabBarNode) {
+        console.log('[Tab Wheel Effect] Adding non-passive wheel listener');
+        // Add listener with passive: false to allow preventDefault
+        tabBarNode.addEventListener('wheel', handleTabBarWheel, { passive: false });
+
+        // Cleanup function
+        return () => {
+          console.log('[Tab Wheel Effect] Removing wheel listener');
+          tabBarNode.removeEventListener('wheel', handleTabBarWheel, { passive: false });
+        };
+      }
+    }, []); // Run only once on mount
 
     return (
         <>
@@ -1134,10 +1070,9 @@ const Panel = forwardRef(
                 {/* Resize Handle */}
                 <div 
                     style={handleStyle}
-                    onMouseDown={handleResizeMouseDown}
+                    onMouseDown={handleResizeMouseDown} // Uncommented
                     // Add hover effect inline if needed
                     // onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.1)'}
-                    // onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 />
 
                 {/* Main Header Row Container */}
@@ -1149,7 +1084,7 @@ const Panel = forwardRef(
                         alignItems: 'stretch',
                         position: 'relative',
                     }}
-                    onDoubleClick={handleHeaderDoubleClick}
+                    onDoubleClick={handleHeaderDoubleClick} // Uncommented
                 >
                     {/* === Conditional Header Content === */} 
                     {side === 'left' ? (
@@ -1173,10 +1108,11 @@ const Panel = forwardRef(
                             </div>
                         </div>
                     ) : (
-                        // --- Right Panel Header (Existing Logic) --- 
+                        // --- Right Panel Header (Uses store state `rightPanelTabs`) ---
                         <> 
-                            {/* 1. Home Button (Only if Expanded) */} 
+                            {/* Home Button (checks store state) */}
                             {isExpanded && (() => {
+                                const tabs = currentRightPanelTabs;
                                 const isActive = tabs[0]?.isActive;
                                 const bg = isActive ? '#bdb5b5' : '#979090';
                                 return (
@@ -1185,7 +1121,6 @@ const Panel = forwardRef(
                                         style={{
                                             width: 40,
                                             height: 40,
-                                            // borderTopLeftRadius: '10px', // Removed rounding
                                             borderTopRightRadius: 0,
                                             borderBottomLeftRadius: 0,
                                             borderBottomRightRadius: 0,
@@ -1197,19 +1132,19 @@ const Panel = forwardRef(
                                             flexShrink: 0,
                                             zIndex: 2
                                         }}
-                                        onClick={() => activateTab(0)}
+                                        onClick={() => activateRightPanelTab(0)}
                                     >
                                         <Home size={22} color="#260000" />
                                     </div>
                                 );
                             })()}
-                            {/* 2. Scrollable Tab Area (Only if Expanded) */} 
+                            {/* Scrollable Tab Area (uses store state) */} 
                             {isExpanded && (
                                 <div style={{ flexGrow: 1, overflow: 'hidden', position: 'relative', height: '100%' }}>
                                     <div 
                                         ref={tabBarRef} 
                                         className="hide-scrollbar" 
-                                        style={{ /* ... scroll area styles ... */ 
+                                        style={{ 
                                             height: '100%', 
                                             display: 'flex', 
                                             alignItems: 'stretch', 
@@ -1220,15 +1155,15 @@ const Panel = forwardRef(
                                             whiteSpace: 'nowrap' 
                                         }}
                                     >
-                                        {/* Map ONLY node tabs (index > 0) */}
-                                        {tabs.slice(1).map((tab, index) => (
+                                        {/* Map ONLY node tabs (index > 0) - get tabs non-reactively */}
+                                        {currentRightPanelTabs.slice(1).map((tab, index) => (
                                             <DraggableTab
                                                 key={tab.nodeId} // Use nodeId as key
-                                                tab={tab}
-                                                index={index} // Pass relative index
-                                                moveTab={moveTab}
-                                                activateTab={activateTab}
-                                                closeTab={closeTab}
+                                                tab={tab} // Pass tab data from store
+                                                index={index + 1} // Pass absolute index (1..N)
+                                                moveTabAction={moveRightPanelTab}
+                                                activateTabAction={activateRightPanelTab}
+                                                closeTabAction={closeRightPanelTab}
                                             />
                                         ))}
                                     </div>
