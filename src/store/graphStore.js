@@ -295,7 +295,7 @@ const useGraphStore = create((set, get) => ({
   // Creates a new, empty graph and sets it as active
   createNewGraph: (initialData = {}) => set(produce((draft) => {
     const newGraphId = uuidv4();
-    const newGraphName = initialData.name || "Untitled Graph"; // Use provided name or default
+    const newGraphName = initialData.name || "New Thing";
 
     const newGraphData = {
         id: newGraphId,

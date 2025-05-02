@@ -12,6 +12,7 @@ import useGraphStore, {
     getActiveGraphData,
 } from './store/graphStore';
 import { shallow } from 'zustand/shallow';
+import GraphListItem from './GraphListItem'; // <<< Import the new component
 
 // Define Item Type for react-dnd
 const ItemTypes = {
@@ -350,12 +351,28 @@ const Panel = forwardRef(
     const updateGraph = (id, fn) => console.log("Dummy updateGraph", id, fn);
     */
 
-    // Derive the array needed for the left panel grid
-    const graphsForTabs = useMemo(() => {
+    // Derive the array needed for the left panel grid (ALL graphs)
+    const graphsForGrid = useMemo(() => {
         // Use getState() inside memo
         const currentGraphsMap = useGraphStore.getState().graphs;
         return Array.from(currentGraphsMap.values()).map(g => ({ id: g.id, name: g.name }));
     }, []); // No reactive dependencies needed?
+
+    // NEW: Derive data for open graphs for the left panel list view
+    const openGraphsForList = useMemo(() => {
+        const state = useGraphStore.getState();
+        const openIds = state.openGraphIds || [];
+        return openIds.map(id => {
+            const graphData = state.graphs.get(id);
+            if (!graphData) return null; // Handle case where graph might not be found
+            // Fetch nodes and edges for the preview
+            const nodeIds = graphData.nodeIds || [];
+            const edgeIds = graphData.edgeIds || [];
+            const nodes = nodeIds.map(nodeId => state.nodes.get(nodeId)).filter(Boolean);
+            const edges = edgeIds.map(edgeId => state.edges.get(edgeId)).filter(Boolean);
+            return { ...graphData, nodes, edges }; // Combine graph data with its nodes/edges
+        }).filter(Boolean); // Filter out any nulls
+    }, [renderTrigger]); // Re-run when NodeCanvas triggers update (e.g., graph added/removed)
 
     // Left panel state
     // console.log(`[Panel ${side}] Initializing leftViewActive state`); // Keep logs disabled for now
@@ -673,7 +690,7 @@ const Panel = forwardRef(
                             Tabs
                         </h2>
                         <button 
-                            onClick={createNewGraph} // Uses dummy action
+                            onClick={createNewGraph} // Uses store action
                             title="Create New Graph"
                             style={{
                                 background: 'none',
@@ -689,7 +706,34 @@ const Panel = forwardRef(
                         </button>
                     </div>
 
-                    {/* Graph Grid */}
+                    {/* === NEW: Scrollable List of Open Graphs === */}
+                    <div
+                        className="hide-scrollbar"
+                        style={{
+                            flexGrow: 1, // Allow list to take available space
+                            overflowY: 'auto', // Make it scrollable
+                            paddingRight: '5px', // Prevent scrollbar overlap
+                            maxHeight: 'calc(100vh - 120px)', // Example max height
+                        }}
+                    >
+                        {openGraphsForList.map((graph) => (
+                            <GraphListItem
+                                key={graph.id}
+                                graphData={graph} // Pass full graph data (name, nodes, edges)
+                                panelWidth={panelWidth} // Pass current panel width
+                                isActive={graph.id === activeGraphId} // Check if it's the active graph
+                                onClick={setActiveGraph} // Use store action for click
+                                // onDoubleClick={() => { /* Optional: Define double-click behavior */ }}
+                            />
+                        ))}
+                         {openGraphsForList.length === 0 && (
+                            <div style={{ color: '#666', textAlign: 'center', marginTop: '20px' }}>No graphs currently open.</div>
+                        )}
+                    </div>
+                    {/* === END NEW === */}
+
+                    {/* Graph Grid (Commented out or removed) */}
+                    {/*
                     <div
                         style={{
                             display: 'grid',
@@ -699,40 +743,17 @@ const Panel = forwardRef(
                             overflowY: 'auto',
                         }}
                     >
-                        {graphsForTabs.map((graph) => (
+                        {graphsForGrid.map((graph) => (
                             <div
                                 key={graph.id}
-                                style={{
-                                    backgroundColor: 'maroon',
-                                    borderRadius: NODE_CORNER_RADIUS, // Use constant
-                                    height: '40px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    cursor: 'pointer',
-                                    padding: '0 5px',
-                                    overflow: 'hidden'
-                                }}
-                                title={graph.name} // Use graph name for tooltip
-                                onClick={() => setActiveGraph(graph.id)} // Uses dummy action
+                                // ... rest of grid item styling ...
+                                onClick={() => setActiveGraph(graph.id)} // Uses store action
                             >
-                                <span style={{
-                                    color: '#bdb5b5',
-                                    fontSize: '0.8rem',
-                                    width: '100%',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                    textAlign: 'center',
-                                    padding: '0 10px',
-                                    boxSizing: 'border-box',
-                                    userSelect: 'none'
-                                }}>
-                                    {graph.name} {/* Display graph name */}
-                                </span>
+                                // ... rest of grid item content ...
                             </div>
                         ))}
                     </div>
+                    */}
                 </div>
             );
         }
