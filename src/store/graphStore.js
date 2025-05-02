@@ -125,6 +125,7 @@ const useGraphStore = create((set, get) => ({
       draft.nodes.set(nodeId, newNodeData);
       // Add node ID to graph's nodeIds array
       graph.nodeIds.push(nodeId);
+      console.log(`[Store addNode] Successfully added node ${nodeId} to graph ${graphId}`); // Log success
     } else if (!graph) {
       console.warn(`addNode: Graph with id ${graphId} not found.`);
     } else {
@@ -132,16 +133,24 @@ const useGraphStore = create((set, get) => ({
     }
   })),
 
-  // Updates existing node data in the global pool
-  // updateFn receives the existing NodeData and should return updated NodeData
+  // Updates specific properties of a node
   updateNode: (nodeId, updateFn) => set(produce((draft) => {
     const nodeData = draft.nodes.get(nodeId);
     if (nodeData) {
-      const updatedNodeData = updateFn(nodeData);
-      draft.nodes.set(nodeId, updatedNodeData);
-      // No need to update graphs if they only store IDs
+        // Apply the update function directly to the draft state
+        updateFn(nodeData);
+
+        // --- BEGIN FIX ---
+        // Also update the corresponding right panel tab's bio if it exists
+        const tabIndex = draft.rightPanelTabs.findIndex(tab => tab.nodeId === nodeId);
+        if (tabIndex !== -1) {
+            // Update the bio using the potentially updated node description
+            draft.rightPanelTabs[tabIndex].bio = nodeData.description || '';
+        }
+        // --- END FIX ---
+
     } else {
-      console.warn(`updateNode: Node with id ${nodeId} not found.`);
+        console.warn(`updateNode: Node ${nodeId} not found.`);
     }
   })),
 
@@ -283,34 +292,33 @@ const useGraphStore = create((set, get) => ({
     }
   })),
 
-  // Creates a new, empty graph, adds it to the store, opens it, and makes it active.
-  createNewGraph: () => set(produce((draft) => {
+  // Creates a new, empty graph and sets it as active
+  createNewGraph: (initialData = {}) => set(produce((draft) => {
     const newGraphId = uuidv4();
+    const newGraphName = initialData.name || "Untitled Graph"; // Use provided name or default
+
     const newGraphData = {
-      id: newGraphId,
-      name: "New Thing",
-      description: "", // Add default empty description
-      picture: null,   // Add default null picture
-      color: null,     // Add default null color
-      directed: false, // Assuming default is undirected
-      nodeIds: [],
-      edgeIds: []
+        id: newGraphId,
+        name: newGraphName,
+        description: initialData.description || '',
+        picture: initialData.picture || null,
+        color: initialData.color || '#ccc', // Default color
+        directed: initialData.directed !== undefined ? initialData.directed : false, // Default undirected
+        nodeIds: [],
+        edgeIds: [],
     };
 
-    if (!draft.graphs.has(newGraphId)) {
-      draft.graphs.set(newGraphId, newGraphData);
+    draft.graphs.set(newGraphId, newGraphData);
+    draft.activeGraphId = newGraphId; // Set the new graph as active
 
-      // Add to open graphs if not already there (shouldn't be)
-      if (!draft.openGraphIds.includes(newGraphId)) {
+    // Optionally open it automatically (if using openGraphIds)
+    if (!draft.openGraphIds.includes(newGraphId)) {
         draft.openGraphIds.push(newGraphId);
-      }
-
-      // Set as active graph
-      draft.activeGraphId = newGraphId;
-    } else {
-      // This should ideally not happen with UUIDs
-      console.warn(`createNewGraph: Graph with generated ID ${newGraphId} already exists.`);
     }
+    
+    console.log('[Store] Created and activated new graph:', newGraphId, newGraphName);
+    // Return the ID (though set() doesn't directly return it, caller can read state after)
+    // No explicit return needed here, state is updated via Immer
   })),
 
   // Sets the currently active graph tab.
@@ -332,8 +340,11 @@ const useGraphStore = create((set, get) => ({
   updateGraph: (graphId, updateFn) => set(produce((draft) => {
       const graphData = draft.graphs.get(graphId);
       if (graphData) {
-          const updatedGraphData = updateFn(graphData);
-          draft.graphs.set(graphId, updatedGraphData);
+          // Apply the update function directly to the draft state
+          updateFn(graphData);
+          // Immer will handle the update, no need to set it back manually
+          // const updatedGraphData = updateFn(graphData);
+          // draft.graphs.set(graphId, updatedGraphData);
       } else {
           console.warn(`updateGraph: Graph ${graphId} not found.`);
       }

@@ -292,6 +292,11 @@ const Panel = forwardRef(
     // Add props for store data/actions
     activeGraphId, 
     storeActions,
+    // Add props for graph name/desc
+    graphName, 
+    graphDescription,
+    // Add prop for render trigger
+    renderTrigger,
   }, ref) => {
     panelRenderCount++; // Increment counter
     // console.log(`[Panel ${side}] Render #${panelRenderCount}. Expanded: ${isExpanded}`); // Temporarily disable logs
@@ -364,22 +369,23 @@ const Panel = forwardRef(
     const [isAnimatingWidth, setIsAnimatingWidth] = useState(false);
     // console.log(`[Panel ${side}] Initializing editingTitle state`);
     const [editingTitle, setEditingTitle] = useState(false); // Used by right panel node tabs
-    console.log(`[Panel ${side}] Initializing tempTitle state`);
+    // console.log(`[Panel ${side}] Initializing tempTitle state`);
     const [tempTitle, setTempTitle] = useState(''); // Used by right panel node tabs
-    console.log(`[Panel ${side}] Initializing editingProjectTitle state`);
+    // console.log(`[Panel ${side}] Initializing editingProjectTitle state`);
     const [editingProjectTitle, setEditingProjectTitle] = useState(false); // Used by right panel home tab
-    console.log(`[Panel ${side}] Initializing tempProjectTitle state`);
+    // console.log(`[Panel ${side}] Initializing tempProjectTitle state`);
     const [tempProjectTitle, setTempProjectTitle] = useState(''); // Used by right panel home tab
 
     // Refs
     const isResizing = useRef(false);
-    const resizeStartX = useRef(0);
-    const resizeStartWidth = useRef(0);
     const panelRef = useRef(null);
     const titleInputRef = useRef(null); // Used by right panel
     const projectTitleInputRef = useRef(null); // Used by right panel
     const tabBarRef = useRef(null); // Used by right panel
     const initialWidthsSet = useRef(false); // Ref to track initialization
+    // Refs for resizing drag state:
+    const resizeStartX = useRef(0);
+    const resizeStartWidth = useRef(0);
 
     useEffect(() => {
       // Load initial widths from localStorage ONCE on mount
@@ -389,7 +395,7 @@ const Panel = forwardRef(
           setPanelWidth(initialWidth);
           setLastCustomWidth(initialLastCustom);
           initialWidthsSet.current = true; // Mark as set
-          console.log(`[Panel ${side} Mount Effect] Loaded initial widths:`, { initialWidth, initialLastCustom });
+          // console.log(`[Panel ${side} Mount Effect] Loaded initial widths:`, { initialWidth, initialLastCustom });
       }
     }, [side]); // Run once on mount (and if side changes, though unlikely)
 
@@ -410,7 +416,7 @@ const Panel = forwardRef(
     // Exposed so NodeCanvas can open tabs
     const openNodeTab = (nodeId) => {
        if (side !== 'right') return;
-       console.log(`[Panel ${side}] Imperative openNodeTab called for ${nodeId}`);
+       // console.log(`[Panel ${side}] Imperative openNodeTab called for ${nodeId}`);
        openRightPanelNodeTab(nodeId);
        setEditingTitle(false);
     };
@@ -482,28 +488,28 @@ const Panel = forwardRef(
 
     // --- Double Click Handler ---
     const handleHeaderDoubleClick = useCallback((e) => {
-      console.log('[Panel DblClick] Handler triggered');
+      // console.log('[Panel DblClick] Handler triggered');
       const target = e.target;
 
       // Check if the click originated within a draggable tab element
       if (target.closest('.panel-tab')) { 
-        console.log('[Panel DblClick] Click originated inside a .panel-tab, exiting.');
+        // console.log('[Panel DblClick] Click originated inside a .panel-tab, exiting.');
         return;
       }
       
       // If we reach here, the click was on the header bar itself or empty space within it.
-      console.log('[Panel DblClick] Click target OK (not inside a tab).');
+      // console.log('[Panel DblClick] Click target OK (not inside a tab).');
 
       let newWidth;
-      console.log('[Panel DblClick] Before toggle:', { currentWidth: panelWidth, lastCustom: lastCustomWidth });
+      // console.log('[Panel DblClick] Before toggle:', { currentWidth: panelWidth, lastCustom: lastCustomWidth });
       
       if (panelWidth === INITIAL_PANEL_WIDTH) {
         // Toggle to last custom width (if it's different)
         newWidth = (lastCustomWidth !== INITIAL_PANEL_WIDTH) ? lastCustomWidth : panelWidth; 
-        console.log('[Panel DblClick] Was default, toggling to last custom (or current if same):', newWidth);
+        // console.log('[Panel DblClick] Was default, toggling to last custom (or current if same):', newWidth);
       } else {
         // Current width is custom, save it as last custom and toggle to default
-        console.log('[Panel DblClick] Was custom, saving current as last custom:', panelWidth);
+        // console.log('[Panel DblClick] Was custom, saving current as last custom:', panelWidth);
         setLastCustomWidth(panelWidth); // Update state
         try { // Separate try/catch for this specific save
           localStorage.setItem(`lastCustomPanelWidth_${side}`, JSON.stringify(panelWidth));
@@ -511,7 +517,7 @@ const Panel = forwardRef(
           console.error(`Error saving lastCustomPanelWidth_${side} before toggle:`, error);
         }
         newWidth = INITIAL_PANEL_WIDTH;
-        console.log('[Panel DblClick] Toggling to default:', newWidth);
+        // console.log('[Panel DblClick] Toggling to default:', newWidth);
       }
 
       if (newWidth !== panelWidth) {
@@ -523,7 +529,7 @@ const Panel = forwardRef(
           console.error(`Error saving panelWidth_${side} after double click:`, error);
         }
       } else {
-        console.log('[Panel DblClick] Width did not change, no update needed.');
+        // console.log('[Panel DblClick] Width did not change, no update needed.');
       }
     }, [panelWidth, lastCustomWidth, side]);
 
@@ -559,16 +565,87 @@ const Panel = forwardRef(
     const currentRightPanelTabs = side === 'right' ? useGraphStore.getState().rightPanelTabs : [];
     const activeRightPanelTab = currentRightPanelTabs.find((t) => t.isActive);
 
-    // Derive nodes for active graph on right side using useMemo to keep reference stable
+    // Derive nodes for active graph on right side (Calculate on every render)
     const activeGraphNodes = useMemo(() => {
+        // console.log(`[Panel ${side}] Recalculating activeGraphNodes (Trigger: ${renderTrigger})`); // Temporarily disable
         if (side !== 'right' || !activeGraphId) return [];
-        // Use getState() inside memo
         const state = useGraphStore.getState();
         const graphData = state.graphs.get(activeGraphId);
         if (!graphData) return [];
         const currentNodesMap = state.nodes;
         return graphData.nodeIds.map(id => currentNodesMap.get(id)).filter(Boolean);
-    }, [side, activeGraphId]);
+    }, [activeGraphId, renderTrigger, side]); // Depend on trigger and ID
+    /* // Original IIFE calculation
+    const activeGraphNodes = (() => { 
+        if (side !== 'right' || !activeGraphId) return [];
+        const state = useGraphStore.getState();
+        const graphData = state.graphs.get(activeGraphId);
+        if (!graphData) return [];
+        const currentNodesMap = state.nodes;
+        return graphData.nodeIds.map(id => currentNodesMap.get(id)).filter(Boolean);
+    })(); // IIFE to calculate directly
+    */
+
+    // --- Action Handlers defined earlier --- 
+    const handleAddImage = (nodeId) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (loadEvent) => {
+          const fullImageSrc = loadEvent.target?.result;
+          if (typeof fullImageSrc !== 'string') return;
+          const img = new Image();
+          img.onload = async () => {
+            try {
+              const aspectRatio = (img.naturalHeight > 0 && img.naturalWidth > 0) ? img.naturalHeight / img.naturalWidth : 1;
+              const thumbSrc = await generateThumbnail(fullImageSrc, THUMBNAIL_MAX_DIMENSION);
+              const nodeDataToSave = { imageSrc: fullImageSrc, thumbnailSrc: thumbSrc, imageAspectRatio: aspectRatio };
+              console.log('Calling store updateNode with image data:', nodeId, nodeDataToSave); // Keep log for this one
+              // Call store action directly (using prop)
+              updateNode(nodeId, draft => { Object.assign(draft, nodeDataToSave); });
+            } catch (error) {
+              // console.error("Thumbnail/save failed:", error);
+              // Handle error appropriately, e.g., show a message to the user
+            }
+          };
+          img.onerror = (error) => { 
+             // console.error('Image load failed:', error);
+             // Handle error appropriately
+           };
+          img.src = fullImageSrc;
+        };
+        reader.onerror = (error) => {
+          // console.error('FileReader failed:', error);
+          // Handle error appropriately
+        };
+        reader.readAsDataURL(file);
+      };
+      input.click();
+    };
+
+    const handleBioChange = (nodeId, newBio) => {
+        if (!activeGraphId) return;
+        // Call store action directly (using prop)
+        updateNode(nodeId, draft => { draft.description = newBio; });
+    };
+
+    const commitProjectTitleChange = () => {
+      // Get CURRENT activeGraphId directly from store
+      const currentActiveId = useGraphStore.getState().activeGraphId;
+      if (!currentActiveId) {
+        console.warn("commitProjectTitleChange: No active graph ID found in store.");
+        setEditingProjectTitle(false); // Still stop editing
+        return;
+      }
+      const newName = tempProjectTitle.trim() || 'Untitled';
+      // Call store action directly (using prop and current ID)
+      updateGraph(currentActiveId, draft => { draft.name = newName; });
+      setEditingProjectTitle(false);
+    };
 
     // --- Generate Content based on Side ---
     let panelContent = null;
@@ -663,7 +740,6 @@ const Panel = forwardRef(
         if (!activeRightPanelTab) {
             panelContent = <div className="panel-content-inner">No tab selected...</div>;
         } else if (activeRightPanelTab.type === 'home') {
-            const currentGraphName = side === 'right' ? (useGraphStore.getState().graphs.get(activeGraphId)?.name ?? 'Loading...') : ''; // Uses dummy activeGraphId (null)
             panelContent = (
                 <div className="panel-content-inner home-tab" >
                     <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px', flexWrap: 'nowrap' }}>
@@ -693,10 +769,10 @@ const Panel = forwardRef(
                                 }}
                                 onDoubleClick={() => {
                                     setEditingProjectTitle(true);
-                                    setTempProjectTitle(currentGraphName);
+                                    setTempProjectTitle(graphName);
                                 }}
                             >
-                                {currentGraphName}
+                                {graphName ?? 'Loading...'}
                             </h2>
                         )}
                     </div>
@@ -720,10 +796,14 @@ const Panel = forwardRef(
                             lineHeight: '1.4',
                             fontFamily: 'inherit',
                         }}
-                        value={useGraphStore.getState().graphs.get(activeGraphId)?.description ?? ''} // Uses dummy activeGraphId (null)
+                        value={graphDescription ?? ''}
                         onFocus={() => onFocusChange?.(true)} // Uncommented
                         onBlur={() => onFocusChange?.(false)} // Uncommented
-                        onChange={(e) => handleProjectBioChange(e.target.value)} // Uses dummy updateGraph action
+                        onChange={(e) => {
+                            if (activeGraphId && storeActions?.updateGraph) {
+                                storeActions.updateGraph(activeGraphId, draft => { draft.description = e.target.value; });
+                            }
+                        }}
                         onKeyDown={(e) => {
                             if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
                                 e.stopPropagation();
@@ -957,53 +1037,6 @@ const Panel = forwardRef(
         handleStyle.left = '-2px'; // Position slightly outside on the left
     }
 
-    const handleAddImage = (nodeId) => {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*';
-      input.onchange = async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async (loadEvent) => {
-          const fullImageSrc = loadEvent.target?.result;
-          if (typeof fullImageSrc !== 'string') return;
-          const img = new Image();
-          img.onload = async () => {
-            try {
-              const aspectRatio = (img.naturalHeight > 0 && img.naturalWidth > 0) ? img.naturalHeight / img.naturalWidth : 1;
-              const thumbSrc = await generateThumbnail(fullImageSrc, THUMBNAIL_MAX_DIMENSION);
-              const nodeDataToSave = { imageSrc: fullImageSrc, thumbnailSrc: thumbSrc, imageAspectRatio: aspectRatio };
-              console.log('Calling store updateNode with image data:', nodeId, nodeDataToSave);
-              // Call store action directly
-              updateNode(nodeId, draft => { Object.assign(draft, nodeDataToSave); });
-            } catch (error) { console.error("Thumbnail/save failed:", error); }
-          };
-          img.onerror = (error) => { console.error('Image load failed:', error); };
-          img.src = fullImageSrc;
-        };
-        reader.onerror = (error) => { console.error('FileReader failed:', error); };
-        reader.readAsDataURL(file);
-      };
-      input.click();
-    };
-
-    const handleBioChange = (nodeId, newBio) => {
-        if (!activeGraphId) return;
-        console.log('Calling store updateNode with description:', nodeId);
-        // Call store action directly
-        updateNode(nodeId, draft => { draft.description = newBio; });
-    };
-
-    const commitProjectTitleChange = () => {
-      if (!activeGraphId) return;
-      const newName = tempProjectTitle.trim() || 'Untitled';
-      console.log('Calling store updateGraph with name:', activeGraphId, newName);
-      // Call store action directly
-      updateGraph(activeGraphId, draft => { draft.name = newName; });
-      setEditingProjectTitle(false);
-    };
-
     // --- Tab Bar Scroll Handler ---
     const handleTabBarWheel = (e) => {
       if (tabBarRef.current) {
@@ -1023,7 +1056,7 @@ const Panel = forwardRef(
 
         tabBarRef.current.scrollLeft += scrollChange;
       } else {
-        console.log('[Tab Wheel] Ref does NOT exist'); // Log if ref is missing
+        // console.log('[Tab Wheel] Ref does NOT exist'); // Log if ref is missing
       }
     };
 
@@ -1031,13 +1064,13 @@ const Panel = forwardRef(
     useEffect(() => {
       const tabBarNode = tabBarRef.current;
       if (tabBarNode) {
-        console.log('[Tab Wheel Effect] Adding non-passive wheel listener');
+        // console.log('[Tab Wheel Effect] Adding non-passive wheel listener');
         // Add listener with passive: false to allow preventDefault
         tabBarNode.addEventListener('wheel', handleTabBarWheel, { passive: false });
 
         // Cleanup function
         return () => {
-          console.log('[Tab Wheel Effect] Removing wheel listener');
+          // console.log('[Tab Wheel Effect] Removing wheel listener');
           tabBarNode.removeEventListener('wheel', handleTabBarWheel, { passive: false });
         };
       }

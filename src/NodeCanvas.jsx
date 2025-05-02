@@ -238,14 +238,19 @@ const PlusSign = ({
   );
 };
 
+// Helper to force component re-render AND get a changing value
+const useForceUpdate = () => React.useReducer(c => c + 1, 0);
+
 function NodeCanvas() {
   const svgRef = useRef(null);
   const wrapperRef = useRef(null);
+  // Get both the state value (renderTrigger) and the dispatch function (forceUpdate)
+  const [renderTrigger, forceUpdate] = useForceUpdate(); 
 
   // --- Local State for Subscribed Zustand Data ---
   const [localActiveGraphId, setLocalActiveGraphId] = useState(null);
   const [localActiveGraphName, setLocalActiveGraphName] = useState('Loading...');
-  const [localActiveGraphDescription, setLocalActiveGraphDescription] = useState('');
+  const [localActiveGraphDescription, setLocalActiveGraphDescription] = useState(''); // Ensure this state exists
   // Store actions in state as well, assuming they are stable
   const [localStoreActions, setLocalStoreActions] = useState(() => ({
     updateNode: (id, fn) => console.log('Initial dummy updateNode', id, fn),
@@ -260,163 +265,107 @@ function NodeCanvas() {
 
   // --- Subscribe to Zustand Store Manually ---
   useEffect(() => {
-    console.log('[Effect: Subscribe] Setting up Zustand subscription.');
     const unsubscribe = useGraphStore.subscribe(
       (state) => {
+        // RERUN LOGIC ON EVERY NOTIFICATION
         const currentActiveGraphId = getActiveGraphId(state);
+
         const currentGraphData = currentActiveGraphId ? state.graphs.get(currentActiveGraphId) : null;
         const currentName = currentGraphData?.name ?? 'Loading...';
         const currentDescription = currentGraphData?.description ?? '';
 
-        // Compare with last seen state to avoid loops if data is the same
-        if (
-          currentActiveGraphId !== lastSubscribedStateRef.current.id ||
-          currentName !== lastSubscribedStateRef.current.name ||
-          currentDescription !== lastSubscribedStateRef.current.description
-        ) {
-          console.log('[Subscribe Callback] State change detected, updating local state:', {
-            id: currentActiveGraphId,
-            name: currentName,
-            description: currentDescription,
-          });
-          setLocalActiveGraphId(currentActiveGraphId);
-          setLocalActiveGraphName(currentName);
-          setLocalActiveGraphDescription(currentDescription);
-          // Actions are likely stable, but update them just in case
-          // If actions *are* guaranteed stable, this could be optimized
-          setLocalStoreActions({
-            updateNode: state.updateNode,
-            addEdge: state.addEdge,
-            addNode: state.addNode,
-            removeNode: state.removeNode,
-            updateGraph: state.updateGraph,
-          });
+        // Update local state regardless of ID change
+        setLocalActiveGraphId(currentActiveGraphId);
+        setLocalActiveGraphName(currentName); 
+        setLocalActiveGraphDescription(currentDescription); // Ensure this update happens
 
-          // Update the ref with the latest state
-          lastSubscribedStateRef.current = {
-            id: currentActiveGraphId,
-            name: currentName,
-            description: currentDescription,
-          };
-        } else {
-           console.log('[Subscribe Callback] State unchanged, skipping local update.');
-        }
+        // Force re-render to ensure derived state (like nodes) updates
+        forceUpdate();
+
+        // Update the ref (optional now, but keep for potential future use)
+        lastSubscribedStateRef.current = {
+          id: currentActiveGraphId,
+          name: currentName, 
+          description: currentDescription,
+        };
       }
     );
 
     // Initial sync: Call the listener once manually after subscribing
     const initialState = useGraphStore.getState();
-    const initialActiveGraphId = getActiveGraphId(initialState);
-    const initialGraphData = initialActiveGraphId ? initialState.graphs.get(initialActiveGraphId) : null;
-    const initialName = initialGraphData?.name ?? 'Loading...';
-    const initialDescription = initialGraphData?.description ?? '';
+    let currentActiveGraphId = getActiveGraphId(initialState);
 
-    setLocalActiveGraphId(initialActiveGraphId);
-    setLocalActiveGraphName(initialName);
-    setLocalActiveGraphDescription(initialDescription);
-    setLocalStoreActions({
+    // If no graph is active initially, create and activate a default one
+    if (currentActiveGraphId === null) {
+        initialState.createNewGraph({ name: 'New Thing' }); 
+        // Read the state *again* after the action to get the new active ID
+        const updatedState = useGraphStore.getState(); 
+        currentActiveGraphId = getActiveGraphId(updatedState);
+    }
+
+    // Now proceed with the potentially updated activeGraphId
+    const currentGraphData = currentActiveGraphId ? useGraphStore.getState().graphs.get(currentActiveGraphId) : null;
+    const currentName = currentGraphData?.name ?? 'Loading...'; // Use updated ID
+    const currentDescription = currentGraphData?.description ?? ''; // Use updated ID
+    //   const currentStoreActions = { // Get actions from the potentially updated state
+    //     updateNode: useGraphStore.getState().updateNode,
+    //     addEdge: useGraphStore.getState().addEdge,
+    //     addNode: useGraphStore.getState().addNode,
+    //     removeNode: useGraphStore.getState().removeNode,
+    //     updateGraph: useGraphStore.getState().updateGraph,
+    //   };
+
+    setLocalActiveGraphId(currentActiveGraphId);
+    setLocalActiveGraphName(currentName);
+    setLocalStoreActions({ 
       updateNode: initialState.updateNode,
       addEdge: initialState.addEdge,
       addNode: initialState.addNode,
       removeNode: initialState.removeNode,
       updateGraph: initialState.updateGraph,
+      // Add missing actions for Panel
+      createNewGraph: initialState.createNewGraph,
+      setActiveGraph: initialState.setActiveGraph,
+      openRightPanelNodeTab: initialState.openRightPanelNodeTab,
+      closeRightPanelTab: initialState.closeRightPanelTab,
+      activateRightPanelTab: initialState.activateRightPanelTab,
+      moveRightPanelTab: initialState.moveRightPanelTab,
     });
-    lastSubscribedStateRef.current = {
-      id: initialActiveGraphId,
-      name: initialName,
-      description: initialDescription,
-    };
     console.log('[Effect: Subscribe] Initial state synced:', lastSubscribedStateRef.current);
 
-
     return () => {
-      console.log('[Effect: Subscribe] Cleaning up subscription.');
       unsubscribe();
     };
   }, []); // Empty dependency array ensures this runs only once on mount
 
-  /*
-  // --- Original Consolidated Zustand State Selection (COMMENTED OUT FOR REFERENCE) ---
-  const stateSelector = useCallback((state) => {
-    const currentActiveGraphId = getActiveGraphId(state);
-    const currentActiveGraphData = currentActiveGraphId ? state.graphs.get(currentActiveGraphId) : null;
-    return {
-        activeGraphId: currentActiveGraphId,
-        activeGraphName: currentActiveGraphData?.name, // Select primitive
-        activeGraphDescription: currentActiveGraphData?.description, // Select primitive
-        // Actions (assuming these are stable references)
-        updateNode: state.updateNode,
-        addEdge: state.addEdge,
-        addNode: state.addNode,
-        removeNode: state.removeNode,
-        updateGraph: state.updateGraph,
-    };
-  }, []);
-
-  const {
-    activeGraphId,
-    activeGraphName, // Destructure new primitives
-    activeGraphDescription, // Destructure new primitives
-    updateNode,
-    addEdge,
-    addNode,
-    removeNode,
-    updateGraph
-  } = useGraphStore(stateSelector, shallow);
-  */
-
-
-  /*
-  // Previous constant selector test - REMOVED
-  // Use a constant selector to test the subscription mechanism
-  useGraphStore(() => 0);
-
-  // Provide dummy/placeholder values since we are not selecting real state/actions
-  const activeGraphId = null;
-  const activeGraphName = 'Loading...';
-  const activeGraphDescription = '';
-  const storeActions = useMemo(() => ({ // Keep actions structure, but functions do nothing or log
-    updateNode: (id, fn) => console.log('Dummy updateNode called', id, fn),
-    addEdge: (graphId, edge) => console.log('Dummy addEdge called', graphId, edge),
-    addNode: (graphId, node) => console.log('Dummy addNode called', graphId, node),
-    removeNode: (id) => console.log('Dummy removeNode called', id),
-    updateGraph: (id, fn) => console.log('Dummy updateGraph called', id, fn),
-  }), []);
-  */
-
-  // Group actions for easier passing if needed elsewhere (use localStoreActions now)
-  // const storeActions = useMemo(() => ({ // Original using destructured actions
-  //   updateNode,
-  //   addEdge,
-  //   addNode,
-  //   removeNode,
-  //   updateGraph
-  // }), [updateNode, addEdge, addNode, removeNode, updateGraph]);
-
-  // Derive nodes and edges using useMemo (Update to use localActiveGraphId)
-  const nodes = useMemo(() => {
-    if (!localActiveGraphId) return []; // Use local state
+  // Derive nodes and edges using useMemo (Update dependency array)
+  const nodes = useMemo(() => { 
+    // if (!localActiveGraphId) return []; // Use local state - Re-enable check
+    if (!localActiveGraphId) return [];
     const state = useGraphStore.getState();
-    const currentGraphData = state.graphs.get(localActiveGraphId); // Use local state
+    const currentGraphData = localActiveGraphId ? state.graphs.get(localActiveGraphId) : null; // Use local state, handle null
     const nodeIds = currentGraphData?.nodeIds;
     if (!nodeIds) return [];
     const currentNodesMap = state.nodes;
 
-    console.log(`[NodeCanvas] Memoizing nodes for graph ${localActiveGraphId}`); // Use local state
-    return nodeIds.map(id => currentNodesMap.get(id)).filter(Boolean);
-  }, [localActiveGraphId]); // Depend on local state
+    // console.log(`[nodes useMemo] Graph ${localActiveGraphId} nodeIds:`, nodeIds); // REMOVE Log nodeIds
+    const derivedNodes = nodeIds.map(id => currentNodesMap.get(id)).filter(Boolean);
+    // console.log(`[nodes useMemo] Derived nodes array length: ${derivedNodes.length}`); // REMOVE Log derived nodes length
+    return derivedNodes;
+  }, [localActiveGraphId, renderTrigger]); // Depend on local state AND renderTrigger
 
-  const edges = useMemo(() => {
-    if (!localActiveGraphId) return []; // Use local state
+  const edges = useMemo(() => { 
+    // if (!localActiveGraphId) return []; // Use local state - Re-enable check
+    if (!localActiveGraphId) return [];
     const state = useGraphStore.getState();
-    const currentGraphData = state.graphs.get(localActiveGraphId); // Use local state
+    const currentGraphData = localActiveGraphId ? state.graphs.get(localActiveGraphId) : null; // Use local state, handle null
     const edgeIds = currentGraphData?.edgeIds;
     if (!edgeIds) return [];
     const currentEdgesMap = state.edges;
 
-    console.log(`[NodeCanvas] Memoizing edges for graph ${localActiveGraphId}`); // Use local state
+    // console.log(`[NodeCanvas] Memoizing edges for graph ${localActiveGraphId}`); // Debug
     return edgeIds.map(id => currentEdgesMap.get(id)).filter(Boolean);
-  }, [localActiveGraphId]); // Depend on local state
+  }, [localActiveGraphId, renderTrigger]); // Depend on local state AND renderTrigger
 
   // --- Local UI State (Keep these) ---
   const [selectedNodeIds, setSelectedNodeIds] = useState(new Set()); // Changed to store IDs
@@ -574,9 +523,6 @@ function NodeCanvas() {
                     }
                     return newSelected;
                 });
-                console.log(`[Single Click] Timeout executed for node ${nodeId}`);
-            } else {
-                console.log(`[Single Click] Timeout skipped for node ${nodeId}.`);
             }
             clickTimeoutIdRef.current = null;
             potentialClickNodeRef.current = null;
@@ -589,7 +535,8 @@ function NodeCanvas() {
             if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); clickTimeoutIdRef.current = null; }
             potentialClickNodeRef.current = null;
 
-            if (mouseInsideNode.current && !mouseMoved.current && longPressingNodeId === nodeId) { // Check against stored ID
+            // FIX: Compare against the nodeId captured in the closure, not the state variable
+            if (mouseInsideNode.current && !mouseMoved.current /* && longPressingNodeId === nodeId */) { 
                 const canvasRect = containerRef.current.getBoundingClientRect();
                 const adjustedX = (e.clientX - canvasRect.left - panOffset.x) / zoomLevel;
                 const adjustedY = (e.clientY - canvasRect.top - panOffset.y) / zoomLevel;
@@ -606,6 +553,7 @@ function NodeCanvas() {
                             initialPositions[n.id] = { offsetX: n.x - initialPrimaryPos.x, offsetY: n.y - initialPrimaryPos.y };
                         }
                     });
+                    console.log("[handleNodeMouseDown] Setting up multi-node drag:", { primaryId: nodeId, offsets: initialPositions }); // ADD Log
                     setDraggingNodeInfo({
                         initialMouse: { x: e.clientX, y: e.clientY },
                         initialPrimaryPos,
@@ -620,6 +568,7 @@ function NodeCanvas() {
                 } else {
                     // Single node drag setup
                     const offset = { x: e.clientX - nodeData.x * zoomLevel - panOffset.x, y: e.clientY - nodeData.y * zoomLevel - panOffset.y };
+                    console.log("[handleNodeMouseDown] Setting up single-node drag:", { nodeId, offset }); // ADD Log
                     setDraggingNodeInfo({ nodeId: nodeId, offset });
                     // Use localStoreActions
                     localStoreActions.updateNode(nodeId, draft => { draft.scale = 1.1; });
@@ -631,7 +580,6 @@ function NodeCanvas() {
   };
 
   const handleSaveNodeData = (nodeId, newData) => {
-    console.log('Saving node data for ID:', nodeId, 'Data:', newData);
     if (!localActiveGraphId) return; // Check local state
     // Use localStoreActions
     localStoreActions.updateNode(nodeId, draft => {
@@ -863,7 +811,6 @@ function NodeCanvas() {
                 const currentAdjustedY = (e.clientY - panOffset.y) / zoomLevel;
                 const newX = currentAdjustedX - (offset.x / zoomLevel);
                 const newY = currentAdjustedY - (offset.y / zoomLevel);
-                // Update single node position via store (use localStoreActions)
                 localStoreActions.updateNode(nodeId, draft => {
                     draft.x = newX;
                     draft.y = newY;
@@ -901,7 +848,6 @@ function NodeCanvas() {
         clearTimeout(clickTimeoutIdRef.current);
         clickTimeoutIdRef.current = null;
         potentialClickNodeRef.current = null;
-        console.log('[CanvasMouseDown] Cleared pending node click timeout.');
     }
 
     isMouseDown.current = true;
@@ -948,7 +894,7 @@ function NodeCanvas() {
             if (!exists) {
                 // Create new edge data and add via store action
                 const newEdgeId = uuidv4();
-                const newEdgeData = { id: newEdgeId, sourceId, destinationId }; // Add other default properties if needed
+                const newEdgeData = { id: newEdgeId, sourceId, destinationId: destId };
                  // Use localStoreActions
                 localStoreActions.addEdge(localActiveGraphId, newEdgeData);
             }
@@ -1107,6 +1053,7 @@ function NodeCanvas() {
           edgeIds: [],
           definitionGraphIds: [],
       };
+      console.log(`[handleMorphDone] About to add node:`, { graphId: localActiveGraphId, nodeData: newNodeData }); // Log before action
       localStoreActions.addNode(localActiveGraphId, newNodeData);
       setPlusSign(null);
   };
@@ -1116,8 +1063,6 @@ function NodeCanvas() {
   // Effect to mark component as mounted
   useEffect(() => {
     isMountedRef.current = true;
-    // Optional: Cleanup function if needed, though likely not for a simple flag
-    // return () => { isMountedRef.current = false; }; 
   }, []); // Runs once after initial mount
 
   useEffect(() => {
@@ -1126,13 +1071,11 @@ function NodeCanvas() {
     const keyboardLoop = async () => {
       // --- Wait for initial mount before processing --- 
       if (!isMountedRef.current) {
-        console.log("[Keyboard Loop] Waiting for mount...");
         animationFrameId = requestAnimationFrame(keyboardLoop);
         return;
       }
       // --- End Wait --- 
 
-      console.log("[Keyboard Loop] Running frame..."); // Log start of frame
       if (nodeNamePrompt.visible || isHeaderEditing || isRightPanelInputFocused) {
         animationFrameId = requestAnimationFrame(keyboardLoop);
         return;
@@ -1173,15 +1116,17 @@ function NodeCanvas() {
       // 4. Apply Updates Functionally if needed
       if (zoomResult || panDx !== 0 || panDy !== 0) {
         // Update Zoom Level Functionally
-        console.log("[Keyboard Loop] Applying state updates..."); // Log before setState
         if (zoomResult) {
-            setZoomLevel(zoomResult.zoomLevel); // Can set directly as it depends only on worker result
+            // FIX: Round zoom level to prevent float issues triggering dependency loop
+            const roundedZoom = parseFloat(zoomResult.zoomLevel.toFixed(4)); // Round to 4 decimal places
+            setZoomLevel(roundedZoom);
         }
 
         // Update Pan Offset Functionally
         setPanOffset(prevPan => {
           // Determine the target zoom level for clamping
-          const targetZoomLevel = zoomResult ? zoomResult.zoomLevel : zoomLevel;
+          // Use the rounded zoom if available, otherwise current state zoom
+          const targetZoomLevel = zoomResult ? parseFloat(zoomResult.zoomLevel.toFixed(4)) : zoomLevel;
 
           // Start with the pan offset from zoom result (includes centering) or previous pan state
           const basePan = zoomResult ? zoomResult.panOffset : prevPan;
@@ -1197,9 +1142,15 @@ function NodeCanvas() {
           finalX = Math.min(Math.max(finalX, minX), maxX);
           finalY = Math.min(Math.max(finalY, minY), maxY);
 
-          // Return the new state only if it has actually changed
-          if (finalX !== prevPan.x || finalY !== prevPan.y) {
-            return { x: finalX, y: finalY };
+          // FIX: Round final pan values and compare rounded values to prevent float issues
+          const roundedX = parseFloat(finalX.toFixed(2)); // Round to 2 decimal places
+          const roundedY = parseFloat(finalY.toFixed(2));
+          const roundedPrevX = parseFloat(prevPan.x.toFixed(2));
+          const roundedPrevY = parseFloat(prevPan.y.toFixed(2));
+
+          // Return the new state only if it has actually changed (after rounding)
+          if (roundedX !== roundedPrevX || roundedY !== roundedPrevY) {
+            return { x: roundedX, y: roundedY }; // Set rounded values
           }
 
           // Otherwise, return the previous state to prevent unnecessary re-renders
@@ -1213,7 +1164,6 @@ function NodeCanvas() {
       } else {
          // Otherwise, let the effect rest until a dependency changes or keys are pressed again
          // (The useKeyboardShortcuts hook likely handles waking the component)
-         console.log("[Keyboard Loop] No active keys, resting.");
       }
     };
 
@@ -1281,22 +1231,10 @@ function NodeCanvas() {
     setLeftPanelExpanded(prev => !prev);
   }, []);
 
-  const handleRightPanelFocusChange = useCallback((isFocused) => {
-    console.log(`[Right Panel Focus Change] Setting isRightPanelInputFocused to: ${isFocused}`);
-    setIsRightPanelInputFocused(isFocused);
-  }, []);
-
   const handleLeftPanelFocusChange = useCallback((isFocused) => {
     console.log(`[Left Panel Focus Change] Setting isLeftPanelInputFocused to: ${isFocused}`);
     setIsLeftPanelInputFocused(isFocused);
   }, []);
-
-  useEffect(() => {
-    console.log(`[Right Panel Focus State] isRightPanelInputFocused is now: ${isRightPanelInputFocused}`);
-  }, [isRightPanelInputFocused]);
-  useEffect(() => {
-    console.log(`[Left Panel Focus State] isLeftPanelInputFocused is now: ${isLeftPanelInputFocused}`);
-  }, [isLeftPanelInputFocused]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -1309,7 +1247,6 @@ function NodeCanvas() {
       if (isDeleteKey && nodesSelected) {
         e.preventDefault();
         const idsToDelete = new Set(selectedNodeIds); // Use local selection state
-        console.log('[Delete KeyDown] Deleting nodes:', Array.from(idsToDelete));
 
         // Call removeNode action for each selected ID (Use localStoreActions)
         idsToDelete.forEach(id => {
@@ -1325,16 +1262,22 @@ function NodeCanvas() {
   }, [selectedNodeIds, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible, localActiveGraphId, localStoreActions.removeNode]);
 
   const handleProjectTitleChange = (newTitle) => {
-    if (localActiveGraphId) { // Use local state
-         // Use localStoreActions
-        localStoreActions.updateGraph(localActiveGraphId, draft => { draft.name = newTitle || 'Untitled'; });
+    // Get CURRENT activeGraphId directly from store
+    const currentActiveId = useGraphStore.getState().activeGraphId;
+    if (currentActiveId) { 
+        // Use localStoreActions
+        localStoreActions.updateGraph(currentActiveId, draft => { draft.name = newTitle || 'Untitled'; });
+    } else {
+        console.warn("handleProjectTitleChange: No active graph ID found in store.");
     }
   };
 
   const handleProjectBioChange = (newBio) => {
-     if (localActiveGraphId) { // Use local state
+     // Get CURRENT activeGraphId directly from store
+     const currentActiveId = useGraphStore.getState().activeGraphId;
+     if (currentActiveId) { 
          // Use localStoreActions
-        localStoreActions.updateGraph(localActiveGraphId, draft => { draft.description = newBio; });
+        localStoreActions.updateGraph(currentActiveId, draft => { draft.description = newBio; });
     }
   };
 
@@ -1372,6 +1315,9 @@ function NodeCanvas() {
           onFocusChange={handleLeftPanelFocusChange}
           activeGraphId={localActiveGraphId}
           storeActions={localStoreActions}
+          graphName={localActiveGraphName}
+          graphDescription={localActiveGraphDescription}
+          renderTrigger={renderTrigger}
         />
 
         <div
@@ -1415,7 +1361,6 @@ function NodeCanvas() {
                   const destNode = nodes.find(n => n.id === edge.destinationId);
 
                   if (!sourceNode || !destNode) {
-                     console.warn(`Could not find source/dest node for edge ${edge.id}`, edge);
                      return null;
                   }
                   const sNodeDims = getNodeDimensions(sourceNode);
@@ -1558,9 +1503,15 @@ function NodeCanvas() {
           ref={panelRef}
           isExpanded={rightPanelExpanded}
           onToggleExpand={handleToggleRightPanel}
-          onFocusChange={handleRightPanelFocusChange}
+          onFocusChange={(isFocused) => {
+            console.log(`[Right Panel Focus Change] Setting isRightPanelInputFocused to: ${isFocused}`);
+            setIsRightPanelInputFocused(isFocused);
+          }}
           activeGraphId={localActiveGraphId}
           storeActions={localStoreActions}
+          graphName={localActiveGraphName}
+          graphDescription={localActiveGraphDescription}
+          renderTrigger={renderTrigger}
         />
       </div>
       
