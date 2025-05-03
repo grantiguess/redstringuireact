@@ -914,13 +914,16 @@ const Panel = forwardRef(
             );
         } else if (activeRightPanelTab.type === 'node') {
             const nodeId = activeRightPanelTab.nodeId;
-            const nodeData = activeGraphNodes.find((n) => n.id === nodeId); // Uses dummy activeGraphId -> empty array
+            // --- Fetch node data globally using the tab's nodeId ---
+            const nodeData = useGraphStore.getState().nodes.get(nodeId);
+
             if (!nodeData) {
+                // Node data doesn't exist globally - error case
                 panelContent = (
-                    <div style={{ padding: '10px', color: '#aaa' }}>Node not found...</div>
+                    <div style={{ padding: '10px', color: '#aaa' }}>Node data not found globally...</div>
                 );
             } else {
-                // Use the state value directly now, as useEffect synchronizes it
+                // --- Node data found globally - Render the full editable view --- 
                 const displayBio = activeRightPanelTab.bio || '';
                 const displayTitle = activeRightPanelTab.title || 'Untitled';
 
@@ -929,13 +932,7 @@ const Panel = forwardRef(
                     const newName = tempTitle.trim();
                     if (newName && newName !== activeRightPanelTab.title) {
                         // Update the node data
-                        updateNode(nodeId, draft => { draft.name = newName; }); // Uses dummy action
-                        // Update the tab's title in state immediately for responsiveness
-                        // setTabs((prev) => // Cannot call setTabs here, this needs state from store
-                        //     prev.map((tab) =>
-                        //         tab.nodeId === nodeId ? { ...tab, title: newName } : tab
-                        //     )
-                        // );
+                        updateNode(nodeId, draft => { draft.name = newName; });
                     }
                     setEditingTitle(false);
                 };
@@ -951,9 +948,9 @@ const Panel = forwardRef(
                                     name={`nodeTitleInput-${nodeId}`}
                                     value={tempTitle}
                                     onChange={(e) => setTempTitle(e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter') commitTitleChange(); }} // Uses dummy action
-                                    onBlur={commitTitleChange} // Uses dummy action
-                                    onFocus={() => onFocusChange?.(true)} // Uncommented
+                                    onKeyDown={(e) => { if (e.key === 'Enter') commitTitleChange(); }}
+                                    onBlur={commitTitleChange}
+                                    onFocus={() => onFocusChange?.(true)}
                                     style={{ fontFamily: 'inherit', fontSize: '1.1rem' }}
                                 />
                             ) : (
@@ -987,7 +984,7 @@ const Panel = forwardRef(
                                 size={24}
                                 color="#260000"
                                 style={{ cursor: 'pointer', flexShrink: 0 }}
-                                onClick={() => handleAddImage(nodeId)} // Uses dummy updateNode action
+                                onClick={() => handleAddImage(nodeId)}
                             />
                         </div>
 
@@ -1013,9 +1010,9 @@ const Panel = forwardRef(
                                 userSelect: 'text'
                             }}
                             value={displayBio}
-                            onFocus={() => onFocusChange?.(true)} // Uncommented
-                            onBlur={() => onFocusChange?.(false)} // Uncommented
-                            onChange={(e) => handleBioChange(nodeId, e.target.value)} // Uses dummy updateNode action
+                            onFocus={() => onFocusChange?.(true)}
+                            onBlur={() => onFocusChange?.(false)}
+                            onChange={(e) => handleBioChange(nodeId, e.target.value)}
                             onKeyDown={(e) => {
                                 if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
                                     e.stopPropagation();
