@@ -2,7 +2,7 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, us
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION } from './constants';
-import { ArrowLeftFromLine, ArrowRightFromLine, Home, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark } from 'lucide-react';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
 import ToggleButton from './ToggleButton'; // Import the new component
@@ -711,7 +711,7 @@ const Panel = forwardRef(
                 <div className="panel-content-inner"> {/* Keep existing padding */}
                     <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}> {/* Wrapper for alignment */}
                         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold' }}>
-                            Library
+                            Saved Things
                         </h2>
                     </div>
                     {/* TODO: Add actual Library/Graph Browser content here */}
@@ -725,7 +725,7 @@ const Panel = forwardRef(
                     {/* Title Row with Plus button (No flexGrow) */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}> 
                         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold' }}>
-                            Tabs
+                            Open Things
                         </h2>
                         <button 
                             onClick={createNewGraph} // Uses store action
@@ -1131,7 +1131,7 @@ const Panel = forwardRef(
                     width: `${panelWidth}px`, // Use state variable for width
                     backgroundColor: '#bdb5b5', // <<< Set back to static color
                     boxShadow: '0 2px 5px rgba(0, 0, 0, 0.2)',
-                    zIndex: 9999, 
+                    zIndex: 9998, // Lowered to be below ToggleButton (9999)
                     overflow: 'hidden', // Keep hidden to clip content
                     display: 'flex',
                     flexDirection: 'column',
@@ -1162,21 +1162,21 @@ const Panel = forwardRef(
                     {side === 'left' ? (
                         // --- Left Panel Header --- 
                         <div style={{ flexGrow: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'stretch' }}>
-                            {/* Library Button */} 
+                            {/* Library Button -> Saved Things */} 
                             <div 
-                                title="Library" 
+                                title="Saved Things" 
                                 style={{ /* Common Button Styles */ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backgroundColor: leftViewActive === 'library' ? '#bdb5b5' : '#979090', zIndex: 2 }}
                                 onClick={() => setLeftViewActive('library')}
                             >
-                                <BookOpen size={20} color="#260000" />
+                                <Bookmark size={20} color="#260000" />
                             </div>
-                            {/* Grid Button */} 
+                            {/* Grid Button -> Open Things */} 
                             <div 
-                                title="Grid View" 
+                                title="Open Things" 
                                 style={{ /* Common Button Styles */ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backgroundColor: leftViewActive === 'grid' ? '#bdb5b5' : '#979090', zIndex: 2 }}
                                 onClick={() => setLeftViewActive('grid')}
                             >
-                                <LayoutGrid size={20} color="#260000" />
+                                <BookOpen size={20} color="#260000" />
                             </div>
                         </div>
                     ) : (
@@ -1189,6 +1189,7 @@ const Panel = forwardRef(
                                 const bg = isActive ? '#bdb5b5' : '#979090';
                                 return (
                                     <div
+                                        title="Home"
                                         key="home"
                                         style={{
                                             width: 40,
@@ -1206,7 +1207,7 @@ const Panel = forwardRef(
                                         }}
                                         onClick={() => activateRightPanelTab(0)}
                                     >
-                                        <Home size={22} color="#260000" />
+                                        <Info size={22} color="#260000" />
                                     </div>
                                 );
                             })()}
