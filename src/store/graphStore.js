@@ -73,8 +73,9 @@ const useGraphStore = create((set, get) => ({
   nodes: new Map(),       // Map<string, NodeData>
   edges: new Map(),       // Map<string, EdgeData> - NEW
   openGraphIds: [],     // Start with no graphs open
-  activeGraphId: null,  // Start with no active graph
-  rightPanelTabs: [{ type: 'home', isActive: true }], // Initialize with home tab
+  activeGraphId: null,  // string | null
+  rightPanelTabs: [{ type: 'home', isActive: true }], // Array<TabInfo>
+  expandedGraphIds: new Set(), // <<< ADD global state for expanded items
 
   // --- Actions --- (Operating on plain data)
 
@@ -141,11 +142,13 @@ const useGraphStore = create((set, get) => ({
         updateFn(nodeData);
 
         // --- BEGIN FIX ---
-        // Also update the corresponding right panel tab's bio if it exists
+        // Also update the corresponding right panel tab's bio AND title if it exists
         const tabIndex = draft.rightPanelTabs.findIndex(tab => tab.nodeId === nodeId);
         if (tabIndex !== -1) {
             // Update the bio using the potentially updated node description
             draft.rightPanelTabs[tabIndex].bio = nodeData.description || '';
+            // <<< ADD: Update the title using the updated node name >>>
+            draft.rightPanelTabs[tabIndex].title = nodeData.name || 'Untitled'; 
         }
         // --- END FIX ---
 
@@ -311,14 +314,15 @@ const useGraphStore = create((set, get) => ({
     draft.graphs.set(newGraphId, newGraphData);
     draft.activeGraphId = newGraphId; // Set the new graph as active
 
-    // Optionally open it automatically (if using openGraphIds)
     if (!draft.openGraphIds.includes(newGraphId)) {
-        draft.openGraphIds.push(newGraphId);
+        draft.openGraphIds.unshift(newGraphId);
     }
+    draft.expandedGraphIds.add(newGraphId); // <<< Add to expanded set
+    
+    // <<< Log ID change >>>
+    console.log(`[Store createNewGraph] Set lastCreatedGraphId to: ${newGraphId}`); 
     
     console.log('[Store] Created and activated new graph:', newGraphId, newGraphName);
-    // Return the ID (though set() doesn't directly return it, caller can read state after)
-    // No explicit return needed here, state is updated via Immer
   })),
 
   // Sets the currently active graph tab.
@@ -423,6 +427,53 @@ const useGraphStore = create((set, get) => ({
     // Move the tab
     const [movedTab] = draft.rightPanelTabs.splice(sourceDragIndex, 1);
     draft.rightPanelTabs.splice(sourceHoverIndex, 0, movedTab);
+  })),
+
+  closeGraph: (graphId) => set(produce((draft) => {
+    const index = draft.openGraphIds.indexOf(graphId);
+    if (index === -1) {
+      console.warn(`[Store closeGraph] Graph ID ${graphId} not found in openGraphIds.`);
+      return; // Graph not open, nothing to close
+    }
+
+    const wasActive = draft.activeGraphId === graphId;
+    let newActiveId = draft.activeGraphId;
+
+    // Remove the graph ID from the list
+    draft.openGraphIds.splice(index, 1);
+
+    // Determine the new active graph ONLY if the closed one was active
+    if (wasActive) {
+      if (draft.openGraphIds.length === 0) {
+        // No graphs left
+        newActiveId = null;
+      } else if (index > 0) {
+        // There was a graph above the closed one, try to activate it
+        // Note: The index before splicing corresponds to the item now *at* index-1
+        newActiveId = draft.openGraphIds[index - 1]; 
+      } else {
+        // Closed the first graph (index 0), activate the new first graph
+        newActiveId = draft.openGraphIds[0];
+      }
+    }
+
+    // Set the new active ID
+    draft.activeGraphId = newActiveId;
+
+    // <<< Also remove from expanded set if closed >>>
+    draft.expandedGraphIds.delete(graphId);
+  })),
+
+  // <<< Add action to toggle expanded state >>>
+  toggleGraphExpanded: (graphId) => set(produce((draft) => {
+    console.log(`[Store toggleGraphExpanded] Called for ${graphId}. Current state:`, new Set(draft.expandedGraphIds)); // <<< Log entry
+    if (draft.expandedGraphIds.has(graphId)) {
+      draft.expandedGraphIds.delete(graphId);
+      console.log(`[Store toggleGraphExpanded] Removed ${graphId}. New state:`, new Set(draft.expandedGraphIds)); // <<< Log after delete
+    } else {
+      draft.expandedGraphIds.add(graphId);
+      console.log(`[Store toggleGraphExpanded] Added ${graphId}. New state:`, new Set(draft.expandedGraphIds)); // <<< Log after add
+    }
   })),
 
 }));

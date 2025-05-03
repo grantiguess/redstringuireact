@@ -1,22 +1,31 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, forwardRef } from 'react';
 import { NODE_HEIGHT } from './constants'; // Assuming we use this height
 import GraphPreview from './GraphPreview'; // <<< Import GraphPreview
+import { XCircle } from 'lucide-react'; // <<< Import XCircle
 // import './GraphListItem.css'; // We'll create this later
 
-const GraphListItem = ({
+const GraphListItem = forwardRef(({
   graphData,
   panelWidth,
   isActive,
   onClick,
   onDoubleClick,
-}) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  onClose, // <<< Add onClose prop
+  isExpanded, // <<< Receive isExpanded prop
+  onToggleExpand // <<< Receive onToggleExpand prop
+}, ref) => {
+  // <<< Remove Log for isActive/isExpanded prop >>>
+  // useEffect(() => {
+  //   console.log(`[GraphListItem ${graphData.id}] Received isActive: ${isActive}, isExpanded: ${isExpanded}`);
+  // }, [isActive, isExpanded, graphData.id]);
 
   const handleDoubleClick = useCallback(() => {
-    setIsExpanded(prev => !prev);
+    // <<< Remove Log for double click >>>
+    // console.log(`[GraphListItem ${graphData.id}] handleDoubleClick called, calling onToggleExpand.`);
+    onToggleExpand?.(graphData.id); 
     // Potentially call onDoubleClick prop if needed for other actions
     // onDoubleClick?.(graphData.id); 
-  }, []);
+  }, [graphData.id, onToggleExpand]); // <<< Add dependencies
 
   const handleClick = useCallback(() => {
     onClick?.(graphData.id);
@@ -31,10 +40,11 @@ const GraphListItem = ({
   const itemStyle = {
     width: '100%',
     // FIX: Set height explicitly for smooth animation
-    height: isExpanded ? currentItemWidth : NODE_HEIGHT, 
+    height: isExpanded ? currentItemWidth : NODE_HEIGHT,
     // aspectRatio: isExpanded ? '1 / 1' : undefined, // REMOVE aspect-ratio
-    backgroundColor: 'maroon',
-    color: '#bdb5b5',
+    // FIX: Set static background/color, only border changes
+    backgroundColor: 'maroon', // Always maroon
+    color: '#bdb5b5', // Always light text
     // FIX: Use margin for spacing, remove marginBottom
     // marginBottom: '10px',
     margin: '5px 0', // Equal top/bottom margin
@@ -42,12 +52,11 @@ const GraphListItem = ({
     borderRadius: '12px', 
     boxSizing: 'border-box',
     cursor: 'pointer',
-    overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
-    // FIX: Apply border whenever active, regardless of expansion
-    border: isActive ? '8px solid black' : 'none',
-    // FIX: Update transition (remove aspect-ratio)
+    // FIX: Apply border always - thicker when active, use darker inactive color
+    border: isActive ? '12px solid black' : '1px solid #260000', // Active: thicker black, Inactive: thin dark
+    // FIX: Update transition (remove background-color, color)
     transition: 'height 0.2s ease, border 0.2s ease',
     // FIX: Add alignment for when expanded
     alignItems: 'center', // Center preview horizontally
@@ -57,7 +66,7 @@ const GraphListItem = ({
     paddingLeft: isExpanded ? '10px' : '0',
     paddingRight: isExpanded ? '10px' : '0',
     paddingBottom: isExpanded ? '15px' : '0', // Add more bottom padding for "chin"
-    // position: 'relative', // REMOVE relative positioning
+    position: 'relative', // <<< Add relative position for absolute close button
   };
 
   // Style for the preview container - Apply animation directly here
@@ -81,6 +90,7 @@ const GraphListItem = ({
 
   return (
     <div
+      ref={ref}
       style={itemStyle}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
@@ -120,8 +130,34 @@ const GraphListItem = ({
           )}
         {/* </div> */}
       </div>
+
+      {/* Add Close Button Conditionally */}
+      {isActive && (
+        <XCircle
+          size={24}
+          style={{
+            position: 'absolute',
+            top: '0px',
+            right: '0px',
+            transform: 'translate(40%, -40%)',
+            cursor: 'pointer',
+            color: '#bdb5b5',
+            backgroundColor: 'black',
+            borderRadius: '50%',
+            padding: '6px',
+            zIndex: 2
+          }}
+          onClick={(e) => {
+            e.stopPropagation(); // Prevent triggering item onClick
+            onClose?.(graphData.id); // Call onClose prop with graph ID
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.color = 'white'}
+          onMouseLeave={(e) => e.currentTarget.style.color = '#bdb5b5'}
+          title="Close Tab"
+        />
+      )}
     </div>
   );
-};
+});
 
 export default GraphListItem; 

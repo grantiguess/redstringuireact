@@ -189,3 +189,24 @@
   opacity: 1;
   transition: opacity 0.3s ease;
 }
+
+/* Style for the Add Graph button in the left panel */
+.panel-content-inner button[title="Create New Graph"] {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: none; /* Remove default focus outline */
+}
+
+.panel-content-inner button[title="Create New Graph"]:focus,
+.panel-content-inner button[title="Create New Graph"]:active {
+  outline: none; /* Ensure no outline on focus/active */
+  border: none; /* Ensure no border appears on focus/active */
+  box-shadow: none; /* Ensure no shadow appears */
+  /* You might add a subtle visual cue like opacity change if desired */
+  /* opacity: 0.8; */
+}

@@ -87,12 +87,21 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
   // Render static SVG
   return (
     <svg width="100%" height="100%" viewBox={viewBox} style={{ display: 'block' }}>
-      {/* Define Clip Path for Rounded Corners */}
       <defs>
-        <clipPath id="graph-preview-rounded-corners">
-          {/* Adjust rx/ry percentage as needed */}
-          <rect x="0" y="0" width="100%" height="100%" rx="15%" ry="15%" />
-        </clipPath>
+        {/* Define clipPaths dynamically if needed, or keep one if IDs are unique enough within SVG */}
+        {/* Example using node.id if nodes are guaranteed unique within the SVG output */}
+        {scaledNodes.map(node => {
+          const originalNode = nodes.find(n => n.id === node.id);
+          if (!originalNode?.imageSrc) return null; // Only for image nodes
+          // Calculate rx/ry based on scaled node dimensions
+          const clipRx = node.width * 0.15;
+          const clipRy = node.height * 0.15;
+          return (
+            <clipPath key={`clip-${node.id}`} id={`clip-${node.id}`}>
+              <rect x={node.x} y={node.y} width={node.width} height={node.height} rx={clipRx} ry={clipRy} />
+            </clipPath>
+          );
+        })}
       </defs>
 
       <g>
@@ -115,32 +124,44 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
           const imageSrc = originalNode?.imageSrc;
           const nodeColor = originalNode?.color || '#800000'; // Get node color or default
 
-          // Calculate stroke width scaled inversely (similar to edges)
-          const nodeStrokeWidth = Math.max(0.5, 1.5 / scale) || 1;
+          // FIX: Adjust node stroke width calculation - make thicker
+          const nodeStrokeWidth = Math.min(3.0, Math.max(0.5, 1.6 / scale)) || 0.5; // Increased base factor and max limit
 
           if (imageSrc) {
-            // --- Render Image Node --- 
+            // Calculate stroke offset and adjusted dimensions/radius for the stroke rect
+            const strokeOffset = nodeStrokeWidth / 2;
+            const strokeRectWidth = Math.max(0, node.width - nodeStrokeWidth);
+            const strokeRectHeight = Math.max(0, node.height - nodeStrokeWidth);
+            const strokeRectRx = strokeRectWidth * 0.15;
+            const strokeRectRy = strokeRectHeight * 0.15;
+            
             return (
-              // Apply transform and clip-path to the group
+              // Remove clipPath from group
               <g 
-                key={node.id} 
-                transform={`translate(${node.x} ${node.y})`}
-                clipPath="url(#graph-preview-rounded-corners)" // Apply clipping
+                key={node.id}
               >
-                {/* Render image within the clipped group */}
                 <image
-                  // x={node.x} // Position relative to group (0,0)
-                  // y={node.y}
+                  x={node.x} 
+                  y={node.y}
                   width={node.width}
                   height={node.height}
                   href={imageSrc}
-                  preserveAspectRatio="xMidYMid meet"
-                  // Stroke on image directly might not work well with clip-path
-                  // stroke={nodeColor} 
-                  // strokeWidth={nodeStrokeWidth}
+                  preserveAspectRatio="xMidYMid slice"
+                  // Apply unique clipPath directly to image
+                  clipPath={`url(#clip-${node.id})`}
                 />
-                 {/* Optional: Draw a separate rect for stroke if needed */}
-                 {/* <rect x="0" y="0" width={node.width} height={node.height} fill="none" stroke={nodeColor} strokeWidth={nodeStrokeWidth} /> */}
+                {/* Adjust stroke rect position, size, and radius */}
+                <rect 
+                  x={node.x + strokeOffset} // Offset position
+                  y={node.y + strokeOffset}
+                  width={strokeRectWidth} // Adjusted size
+                  height={strokeRectHeight} 
+                  fill="none" 
+                  stroke={nodeColor} 
+                  strokeWidth={nodeStrokeWidth} 
+                  rx={strokeRectRx} // Adjusted radius
+                  ry={strokeRectRy} 
+                />
               </g>
             );
           } else {

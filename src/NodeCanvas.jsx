@@ -251,14 +251,26 @@ function NodeCanvas() {
   const [localActiveGraphId, setLocalActiveGraphId] = useState(null);
   const [localActiveGraphName, setLocalActiveGraphName] = useState('Loading...');
   const [localActiveGraphDescription, setLocalActiveGraphDescription] = useState(''); // Ensure this state exists
-  // Store actions in state as well, assuming they are stable
-  const [localStoreActions, setLocalStoreActions] = useState(() => ({
-    updateNode: (id, fn) => console.log('Initial dummy updateNode', id, fn),
-    addEdge: (graphId, edge) => console.log('Initial dummy addEdge', graphId, edge),
-    addNode: (graphId, node) => console.log('Initial dummy addNode', graphId, node),
-    removeNode: (id) => console.log('Initial dummy removeNode', id),
-    updateGraph: (id, fn) => console.log('Initial dummy updateGraph', id, fn),
-  }));
+
+  // <<< Define storeActions using useMemo >>>
+  const storeActions = useMemo(() => {
+    const state = useGraphStore.getState();
+    return {
+      updateNode: state.updateNode,
+      addEdge: state.addEdge,
+      addNode: state.addNode,
+      removeNode: state.removeNode,
+      updateGraph: state.updateGraph,
+      createNewGraph: state.createNewGraph,
+      setActiveGraph: state.setActiveGraph,
+      openRightPanelNodeTab: state.openRightPanelNodeTab,
+      closeRightPanelTab: state.closeRightPanelTab,
+      activateRightPanelTab: state.activateRightPanelTab,
+      moveRightPanelTab: state.moveRightPanelTab,
+      closeGraph: state.closeGraph,
+      toggleGraphExpanded: state.toggleGraphExpanded,
+    };
+  }, []); // Empty dependency array means actions are stable (typical for Zustand)
 
   // Ref to track the last subscribed state to prevent unnecessary updates
   const lastSubscribedStateRef = useRef({ id: null, name: null, description: null });
@@ -307,30 +319,10 @@ function NodeCanvas() {
     const currentGraphData = currentActiveGraphId ? useGraphStore.getState().graphs.get(currentActiveGraphId) : null;
     const currentName = currentGraphData?.name ?? 'Loading...'; // Use updated ID
     const currentDescription = currentGraphData?.description ?? ''; // Use updated ID
-    //   const currentStoreActions = { // Get actions from the potentially updated state
-    //     updateNode: useGraphStore.getState().updateNode,
-    //     addEdge: useGraphStore.getState().addEdge,
-    //     addNode: useGraphStore.getState().addNode,
-    //     removeNode: useGraphStore.getState().removeNode,
-    //     updateGraph: useGraphStore.getState().updateGraph,
-    //   };
 
     setLocalActiveGraphId(currentActiveGraphId);
     setLocalActiveGraphName(currentName);
-    setLocalStoreActions({ 
-      updateNode: initialState.updateNode,
-      addEdge: initialState.addEdge,
-      addNode: initialState.addNode,
-      removeNode: initialState.removeNode,
-      updateGraph: initialState.updateGraph,
-      // Add missing actions for Panel
-      createNewGraph: initialState.createNewGraph,
-      setActiveGraph: initialState.setActiveGraph,
-      openRightPanelNodeTab: initialState.openRightPanelNodeTab,
-      closeRightPanelTab: initialState.closeRightPanelTab,
-      activateRightPanelTab: initialState.activateRightPanelTab,
-      moveRightPanelTab: initialState.moveRightPanelTab,
-    });
+    setLocalActiveGraphDescription(currentDescription);
     console.log('[Effect: Subscribe] Initial state synced:', lastSubscribedStateRef.current);
 
     return () => {
@@ -562,7 +554,7 @@ function NodeCanvas() {
                     });
                     // Use localStoreActions
                     selectedNodeIds.forEach(id => {
-                        localStoreActions.updateNode(id, draft => { draft.scale = 1.1; });
+                        storeActions.updateNode(id, draft => { draft.scale = 1.1; });
                     });
 
                 } else {
@@ -571,7 +563,7 @@ function NodeCanvas() {
                     console.log("[handleNodeMouseDown] Setting up single-node drag:", { nodeId, offset }); // ADD Log
                     setDraggingNodeInfo({ nodeId: nodeId, offset });
                     // Use localStoreActions
-                    localStoreActions.updateNode(nodeId, draft => { draft.scale = 1.1; });
+                    storeActions.updateNode(nodeId, draft => { draft.scale = 1.1; });
                 }
             }
             setLongPressingNodeId(null); // Clear after processing
@@ -582,7 +574,7 @@ function NodeCanvas() {
   const handleSaveNodeData = (nodeId, newData) => {
     if (!localActiveGraphId) return; // Check local state
     // Use localStoreActions
-    localStoreActions.updateNode(nodeId, draft => {
+    storeActions.updateNode(nodeId, draft => {
         Object.assign(draft, newData); // Simple merge for now
     });
   };
@@ -791,7 +783,7 @@ function NodeCanvas() {
                 const newPrimaryY = draggingNodeInfo.initialPrimaryPos.y + dy;
 
                 // Update primary node position via store (use localStoreActions)
-                localStoreActions.updateNode(primaryNodeId, draft => {
+                storeActions.updateNode(primaryNodeId, draft => {
                     draft.x = newPrimaryX;
                     draft.y = newPrimaryY;
                 });
@@ -799,7 +791,7 @@ function NodeCanvas() {
                 // Update other selected nodes relative to primary (use localStoreActions)
                 Object.keys(draggingNodeInfo.relativeOffsets).forEach(nodeId => {
                     const relativeOffset = draggingNodeInfo.relativeOffsets[nodeId];
-                    localStoreActions.updateNode(nodeId, draft => {
+                    storeActions.updateNode(nodeId, draft => {
                         draft.x = newPrimaryX + relativeOffset.offsetX;
                         draft.y = newPrimaryY + relativeOffset.offsetY;
                     });
@@ -811,7 +803,7 @@ function NodeCanvas() {
                 const currentAdjustedY = (e.clientY - panOffset.y) / zoomLevel;
                 const newX = currentAdjustedX - (offset.x / zoomLevel);
                 const newY = currentAdjustedY - (offset.y / zoomLevel);
-                localStoreActions.updateNode(nodeId, draft => {
+                storeActions.updateNode(nodeId, draft => {
                     draft.x = newX;
                     draft.y = newY;
                 });
@@ -896,7 +888,7 @@ function NodeCanvas() {
                 const newEdgeId = uuidv4();
                 const newEdgeData = { id: newEdgeId, sourceId, destinationId: destId };
                  // Use localStoreActions
-                localStoreActions.addEdge(localActiveGraphId, newEdgeData);
+                storeActions.addEdge(localActiveGraphId, newEdgeData);
             }
         }
         setDrawingConnectionFrom(null);
@@ -915,7 +907,7 @@ function NodeCanvas() {
             const nodeExists = nodes.some(n => n.id === id); // nodes uses localActiveGraphId
             if(nodeExists) {
                  // Use localStoreActions
-                localStoreActions.updateNode(id, draft => { draft.scale = 1; });
+                storeActions.updateNode(id, draft => { draft.scale = 1; });
             }
         });
         setDraggingNodeInfo(null);
@@ -1054,7 +1046,7 @@ function NodeCanvas() {
           definitionGraphIds: [],
       };
       console.log(`[handleMorphDone] About to add node:`, { graphId: localActiveGraphId, nodeData: newNodeData }); // Log before action
-      localStoreActions.addNode(localActiveGraphId, newNodeData);
+      storeActions.addNode(localActiveGraphId, newNodeData);
       setPlusSign(null);
   };
 
@@ -1250,7 +1242,7 @@ function NodeCanvas() {
 
         // Call removeNode action for each selected ID (Use localStoreActions)
         idsToDelete.forEach(id => {
-            localStoreActions.removeNode(id);
+            storeActions.removeNode(id);
         });
 
         // Clear local selection state AFTER dispatching actions
@@ -1259,14 +1251,14 @@ function NodeCanvas() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeIds, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible, localActiveGraphId, localStoreActions.removeNode]);
+  }, [selectedNodeIds, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible, localActiveGraphId, storeActions.removeNode]);
 
   const handleProjectTitleChange = (newTitle) => {
     // Get CURRENT activeGraphId directly from store
     const currentActiveId = useGraphStore.getState().activeGraphId;
     if (currentActiveId) { 
         // Use localStoreActions
-        localStoreActions.updateGraph(currentActiveId, draft => { draft.name = newTitle || 'Untitled'; });
+        storeActions.updateGraph(currentActiveId, draft => { draft.name = newTitle || 'Untitled'; });
     } else {
         console.warn("handleProjectTitleChange: No active graph ID found in store.");
     }
@@ -1277,7 +1269,7 @@ function NodeCanvas() {
      const currentActiveId = useGraphStore.getState().activeGraphId;
      if (currentActiveId) { 
          // Use localStoreActions
-        localStoreActions.updateGraph(currentActiveId, draft => { draft.description = newBio; });
+        storeActions.updateGraph(currentActiveId, draft => { draft.description = newBio; });
     }
   };
 
@@ -1314,7 +1306,7 @@ function NodeCanvas() {
           onToggleExpand={handleToggleLeftPanel}
           onFocusChange={handleLeftPanelFocusChange}
           activeGraphId={localActiveGraphId}
-          storeActions={localStoreActions}
+          storeActions={storeActions}
           graphName={localActiveGraphName}
           graphDescription={localActiveGraphDescription}
           renderTrigger={renderTrigger}
@@ -1508,7 +1500,7 @@ function NodeCanvas() {
             setIsRightPanelInputFocused(isFocused);
           }}
           activeGraphId={localActiveGraphId}
-          storeActions={localStoreActions}
+          storeActions={storeActions}
           graphName={localActiveGraphName}
           graphDescription={localActiveGraphDescription}
           renderTrigger={renderTrigger}

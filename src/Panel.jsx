@@ -202,33 +202,21 @@ const DraggableTab = ({ tab, index, moveTabAction, activateTabAction, closeTabAc
       }}>
         {tab.title}
       </span>
-      <div
+      <XCircle
+        size={16}
         style={{
           marginLeft: 'auto',
-          borderRadius: '50%',
-          width: '18px',
-          height: '18px',
-          display: 'flex',
-          flexShrink: 0,
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'background-color 0.2s ease, opacity 0.2s ease',
-          opacity: 1,
-          cursor: 'pointer'
+          cursor: 'pointer',
+          color: '#5c5c5c',
+          zIndex: 2
         }}
         onClick={(e) => {
           e.stopPropagation();
-          closeTabAction(index);
+          closeTabAction(tab.id);
         }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = '#ccc';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = 'transparent';
-        }}
-      >
-        <XCircle size={16} color="#260000" />
-      </div>
+        onMouseEnter={(e) => e.currentTarget.style.color = '#260000'}
+        onMouseLeave={(e) => e.currentTarget.style.color = '#5c5c5c'}
+      />
     </div>
   );
 };
@@ -300,7 +288,6 @@ const Panel = forwardRef(
     renderTrigger,
   }, ref) => {
     panelRenderCount++; // Increment counter
-    // console.log(`[Panel ${side}] Render #${panelRenderCount}. Expanded: ${isExpanded}`); // Temporarily disable logs
     // --- Zustand State and Actions ---
     /* // Store subscription remains commented out
     const selector = useCallback(
@@ -334,7 +321,9 @@ const Panel = forwardRef(
         activateRightPanelTab,
         moveRightPanelTab,
         updateNode,
-        updateGraph
+        updateGraph,
+        closeGraph,
+        toggleGraphExpanded
     } = storeActions || {}; // Use passed actions, provide empty object fallback
     
     // activeGraphId is now directly available as a prop
@@ -358,25 +347,72 @@ const Panel = forwardRef(
         return Array.from(currentGraphsMap.values()).map(g => ({ id: g.id, name: g.name }));
     }, []); // No reactive dependencies needed?
 
-    // NEW: Derive data for open graphs for the left panel list view
+    // <<< Select openGraphIds reactively >>>
+    const openGraphIds = useGraphStore(state => state.openGraphIds);
+
+    // <<< Select expanded state reactively >>>
+    const expandedGraphIds = useGraphStore(state => state.expandedGraphIds); // <<< Select the Set
+
+    // <<< ADD BACK: Select last created ID reactively >>>
+    const lastCreatedGraphId = useGraphStore(state => state.lastCreatedGraphId);
+
+    // <<< Select graphs map reactively >>>
+    const graphsMap = useGraphStore(state => state.graphs);
+
+    // <<< Select nodes map reactively >>>
+    const nodesMap = useGraphStore(state => state.nodes);
+
+    // <<< ADD Ref for the scrollable list container >>>
+    const listContainerRef = useRef(null);
+
+    // <<< ADD Ref to track previous open IDs >>>
+    const prevOpenGraphIdsRef = useRef(openGraphIds);
+
+    // <<< ADD BACK: Derive data for open graphs for the left panel list view >>>
     const openGraphsForList = useMemo(() => {
-        const state = useGraphStore.getState();
-        const openIds = state.openGraphIds || [];
-        return openIds.map(id => {
-            const graphData = state.graphs.get(id);
+        const state = useGraphStore.getState(); // Keep using getState here for nodes/edges
+        return openGraphIds.map(id => {
+            const graphData = graphsMap.get(id); // Use reactive graphsMap
             if (!graphData) return null; // Handle case where graph might not be found
-            // Fetch nodes and edges for the preview
+            // Fetch nodes and edges for the preview (still using getState for edges)
             const nodeIds = graphData.nodeIds || [];
             const edgeIds = graphData.edgeIds || [];
-            const nodes = nodeIds.map(nodeId => state.nodes.get(nodeId)).filter(Boolean);
+            const nodes = nodeIds.map(nodeId => nodesMap.get(nodeId)).filter(Boolean); // <<< Use reactive nodesMap
             const edges = edgeIds.map(edgeId => state.edges.get(edgeId)).filter(Boolean);
             return { ...graphData, nodes, edges }; // Combine graph data with its nodes/edges
         }).filter(Boolean); // Filter out any nulls
-    }, [renderTrigger]); // Re-run when NodeCanvas triggers update (e.g., graph added/removed)
+    }, [openGraphIds, graphsMap, nodesMap]); // <<< Add nodesMap dependency
 
     // Left panel state
     // console.log(`[Panel ${side}] Initializing leftViewActive state`); // Keep logs disabled for now
     const [leftViewActive, setLeftViewActive] = useState('library'); // 'library' or 'grid'
+
+    // <<< Effect to scroll to TOP when new item added >>>
+    useEffect(() => {
+        // Only scroll if it's the left panel and the ref exists
+        if (side === 'left' && listContainerRef.current) {
+            // Check if the first ID is new compared to the previous render
+            const firstId = openGraphIds.length > 0 ? openGraphIds[0] : null;
+            const prevFirstId = prevOpenGraphIdsRef.current.length > 0 ? prevOpenGraphIdsRef.current[0] : null;
+            
+            // Only scroll if the first ID actually changed (and isn't null)
+            if (firstId && firstId !== prevFirstId) {
+                const container = listContainerRef.current;
+                // Remove requestAnimationFrame to start scroll sooner
+                // requestAnimationFrame(() => {
+                if (container) {
+                    console.log(`[Panel Effect] New item detected at top. Scrolling list container to top. Current scrollTop: ${container.scrollTop}`);
+                    container.scrollTo({ top: 0, behavior: 'smooth' }); // <<< Keep smooth
+                }
+                // });
+            }
+        }
+        
+        // Update the ref for the next render *after* the effect runs
+        prevOpenGraphIdsRef.current = openGraphIds;
+
+    // Run when openGraphIds array reference changes OR side changes
+    }, [openGraphIds, side]); 
 
     // Shared state
     // Initialize with defaults, load from localStorage in useEffect
@@ -683,9 +719,9 @@ const Panel = forwardRef(
         } else if (leftViewActive === 'grid') {
             // Render Tabs view using graphStore data
             panelContent = (
-                <div className="panel-content-inner"> 
-                    {/* Title Row with Plus button */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}> 
+                <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}> 
+                    {/* Title Row with Plus button (No flexGrow) */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}> 
                         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold' }}>
                             Tabs
                         </h2>
@@ -706,14 +742,19 @@ const Panel = forwardRef(
                         </button>
                     </div>
 
-                    {/* === NEW: Scrollable List of Open Graphs === */}
+                    {/* === Scrollable List (Takes remaining space) === */}
                     <div
+                        ref={listContainerRef} // <<< Attach ref to the container
                         className="hide-scrollbar"
                         style={{
-                            flexGrow: 1, // Allow list to take available space
+                            flexGrow: 1, // <<< Takes up remaining vertical space
                             overflowY: 'auto', // Make it scrollable
-                            paddingRight: '5px', // Prevent scrollbar overlap
-                            maxHeight: 'calc(100vh - 120px)', // Example max height
+                            paddingLeft: '5px', // <<< Add left padding
+                            paddingRight: '5px', // <<< Add right padding
+                            paddingBottom: '30px',
+                            minHeight: 0, // <<< Add min-height to help flex calculation
+                            // Remove maxHeight, rely on flexGrow
+                            // maxHeight: 'calc(100vh - 120px)', 
                         }}
                     >
                         {openGraphsForList.map((graph) => (
@@ -722,38 +763,16 @@ const Panel = forwardRef(
                                 graphData={graph} // Pass full graph data (name, nodes, edges)
                                 panelWidth={panelWidth} // Pass current panel width
                                 isActive={graph.id === activeGraphId} // Check if it's the active graph
+                                isExpanded={expandedGraphIds.has(graph.id)} // <<< Pass derived expanded state
                                 onClick={setActiveGraph} // Use store action for click
-                                // onDoubleClick={() => { /* Optional: Define double-click behavior */ }}
+                                onClose={closeGraph} 
+                                onToggleExpand={toggleGraphExpanded} // <<< Pass toggle action
                             />
                         ))}
                          {openGraphsForList.length === 0 && (
                             <div style={{ color: '#666', textAlign: 'center', marginTop: '20px' }}>No graphs currently open.</div>
                         )}
                     </div>
-                    {/* === END NEW === */}
-
-                    {/* Graph Grid (Commented out or removed) */}
-                    {/*
-                    <div
-                        style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr 1fr',
-                            gap: '8px',
-                            maxHeight: 'calc(100vh - 120px)', // Adjust height based on header/title
-                            overflowY: 'auto',
-                        }}
-                    >
-                        {graphsForGrid.map((graph) => (
-                            <div
-                                key={graph.id}
-                                // ... rest of grid item styling ...
-                                onClick={() => setActiveGraph(graph.id)} // Uses store action
-                            >
-                                // ... rest of grid item content ...
-                            </div>
-                        ))}
-                    </div>
-                    */}
                 </div>
             );
         }
@@ -1197,16 +1216,15 @@ const Panel = forwardRef(
                                 <div style={{ flexGrow: 1, overflow: 'hidden', position: 'relative', height: '100%' }}>
                                     <div 
                                         ref={tabBarRef} 
-                                        className="hide-scrollbar" 
                                         style={{ 
+                                            position: 'relative',
                                             height: '100%', 
                                             display: 'flex', 
                                             alignItems: 'stretch', 
                                             paddingLeft: '10px', 
-                                            paddingRight: '50px', 
-                                            overflowX: 'auto', 
+                                            paddingRight: '10px',
+                                            overflowX: 'hidden',
                                             overflowY: 'hidden', 
-                                            whiteSpace: 'nowrap' 
                                         }}
                                     >
                                         {/* Map ONLY node tabs (index > 0) - get tabs non-reactively */}
@@ -1229,7 +1247,10 @@ const Panel = forwardRef(
                 </div>
 
                 {/* Content Area */} 
-                <div style={{ flex: 1, overflow: 'auto' }}>
+                <div 
+                    style={{ flex: 1, overflow: 'hidden' }}
+                    className="hide-scrollbar"
+                >
                     {panelContent}
                 </div>
             </div>

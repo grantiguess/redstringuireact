@@ -63,12 +63,12 @@ const Node = ({
       }}
     >
       <defs>
-        {/* Clip path for the main image - Use absolute coords */}
+        {/* FIX: Revert clipPath definition to use absolute coordinates */}
         <clipPath id={clipPathId}>
           <rect
-            x={nodeX + NODE_PADDING - 1} // Use absolute nodeX
-            y={contentAreaY - 1} // Use calculated absolute contentAreaY
-            width={imageWidth + 2}
+            x={nodeX + NODE_PADDING - 1} // Use absolute coords
+            y={contentAreaY - 1}
+            width={imageWidth + 2} 
             height={imageHeight + 2}
             rx={NODE_CORNER_RADIUS}
             ry={NODE_CORNER_RADIUS}
@@ -152,21 +152,28 @@ const Node = ({
       </foreignObject>
 
       {/* Image Container (renders if thumbnail exists) */}
-      <g>
+      {/* FIX: Remove the wrapping group and apply clipPath directly to image */}
+      {/* <g 
+        transform={`translate(${nodeX + NODE_PADDING -1}, ${contentAreaY - 1})`} 
+        clipPath={`url(#${clipPathId})`}
+      > */} 
         {hasThumbnail && (
           <image
             className="node-image"
-            x={nodeX + NODE_PADDING} // Use absolute nodeX
-            y={contentAreaY} // Use calculated absolute contentAreaY
+            // FIX: Use absolute positioning
+            x={nodeX + NODE_PADDING} 
+            y={contentAreaY}
+            // FIX: Use calculated image dimensions
             width={imageWidth}
             height={imageHeight}
             href={nodeThumbnailSrc}
-            preserveAspectRatio="xMidYMid meet"
+            // FIX: Change preserveAspectRatio to 'slice' to make image cover the area
+            preserveAspectRatio="xMidYMid slice"
             clipPath={`url(#${clipPathId})`}
             style={{ opacity: 1, transform: 'translateZ(0)' }}
           />
         )}
-      </g>
+      {/* </g> */} 
 
       {/* --- Network Preview Container --- */}
       {isPreviewing && innerNetworkWidth > 0 && innerNetworkHeight > 0 && (
