@@ -1,12 +1,31 @@
 import React from 'react';
 import useGraphStore from './store/graphStore';
+import { shallow } from 'zustand/shallow';
 import InnerNetwork from './InnerNetwork';
 import './Panel.css';
 
 const LeftPanel = () => {
   // Get all graphs from store
-  const graphs = useGraphStore(state => state.graphs);
-  const graphArray = Array.from(graphs.values());
+  const { graphArray } = useGraphStore(state => {
+      const graphs = Array.from(state.graphs.values());
+      return {
+          graphArray: graphs.map(graphData => {
+              const graphNodes = graphData.nodeIds
+                  .map(id => state.nodes.get(id))
+                  .filter(Boolean);
+              const graphEdges = graphData.edgeIds
+                  .map(id => state.edges.get(id))
+                  .filter(Boolean);
+
+              return {
+                  id: graphData.id,
+                  name: graphData.name,
+                  nodes: graphNodes,
+                  edges: graphEdges,
+              };
+          })
+      };
+  }, shallow);
 
   return (
     <div className="panel-container inline left">
@@ -21,8 +40,8 @@ const LeftPanel = () => {
             <strong style={{ display: 'block', marginBottom: '8px' }}>{graph.name || 'Untitled'}</strong>
             <svg width={200} height={100} style={{ background: '#f0f0f0' }}>
               <InnerNetwork
-                nodes={graph.getNodes().map(n => ({ id: n.id, x: n.x, y: n.y }))}
-                edges={graph.getEdges().map(e => ({ id: e.getId(), sourceId: e.getSourceId(), destinationId: e.getDestinationId() }))}
+                nodes={graph.nodes}
+                edges={graph.edges}
                 width={200}
                 height={100}
                 padding={10}

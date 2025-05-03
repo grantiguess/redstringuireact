@@ -359,8 +359,9 @@ const Panel = forwardRef(
     // <<< Select graphs map reactively >>>
     const graphsMap = useGraphStore(state => state.graphs);
 
-    // <<< Select nodes map reactively >>>
+    // <<< ADD: Select nodes and edges maps reactively >>>
     const nodesMap = useGraphStore(state => state.nodes);
+    const edgesMap = useGraphStore(state => state.edges);
 
     // <<< ADD Ref for the scrollable list container >>>
     const listContainerRef = useRef(null);
@@ -370,18 +371,18 @@ const Panel = forwardRef(
 
     // <<< ADD BACK: Derive data for open graphs for the left panel list view >>>
     const openGraphsForList = useMemo(() => {
-        const state = useGraphStore.getState(); // Keep using getState here for nodes/edges
+        console.log("[Panel useMemo] Recalculating openGraphsForList..."); // Optional: Log recalc
         return openGraphIds.map(id => {
             const graphData = graphsMap.get(id); // Use reactive graphsMap
             if (!graphData) return null; // Handle case where graph might not be found
-            // Fetch nodes and edges for the preview (still using getState for edges)
+            // Fetch nodes and edges using the REACTIVE maps
             const nodeIds = graphData.nodeIds || [];
             const edgeIds = graphData.edgeIds || [];
-            const nodes = nodeIds.map(nodeId => nodesMap.get(nodeId)).filter(Boolean); // <<< Use reactive nodesMap
-            const edges = edgeIds.map(edgeId => state.edges.get(edgeId)).filter(Boolean);
+            const nodes = nodeIds.map(nodeId => nodesMap.get(nodeId)).filter(Boolean); // Use nodesMap
+            const edges = edgeIds.map(edgeId => edgesMap.get(edgeId)).filter(Boolean); // Use edgesMap
             return { ...graphData, nodes, edges }; // Combine graph data with its nodes/edges
         }).filter(Boolean); // Filter out any nulls
-    }, [openGraphIds, graphsMap, nodesMap]); // <<< Add nodesMap dependency
+    }, [openGraphIds, graphsMap, nodesMap, edgesMap]); // Add nodesMap and edgesMap to dependencies
 
     // Left panel state
     // console.log(`[Panel ${side}] Initializing leftViewActive state`); // Keep logs disabled for now
