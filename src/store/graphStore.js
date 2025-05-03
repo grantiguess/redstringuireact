@@ -396,9 +396,13 @@ const useGraphStore = create((set, get) => ({
     draft.rightPanelTabs[index].isActive = true;
   })),
   
-  closeRightPanelTab: (index) => set(produce((draft) => {
-    if (index <= 0 || index >= draft.rightPanelTabs.length) {
-      console.warn(`closeRightPanelTab: Tab index ${index} out of bounds or is home tab.`);
+  closeRightPanelTab: (nodeIdToClose) => set(produce((draft) => {
+    // Find the index of the tab with the matching nodeId
+    const index = draft.rightPanelTabs.findIndex(tab => tab.nodeId === nodeIdToClose);
+
+    // Check if found and it's not the home tab (index 0)
+    if (index === -1 || index === 0) { 
+      console.warn(`closeRightPanelTab: Tab with node ID ${nodeIdToClose} not found or is home tab.`);
       return;
     }
     
@@ -408,7 +412,7 @@ const useGraphStore = create((set, get) => ({
     draft.rightPanelTabs.splice(index, 1);
     
     // If the closed tab was active, activate the home tab
-    if (wasActive) {
+    if (wasActive && draft.rightPanelTabs.length > 0) {
       draft.rightPanelTabs[0].isActive = true;
     }
   })),

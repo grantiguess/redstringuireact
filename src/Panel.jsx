@@ -212,7 +212,8 @@ const DraggableTab = ({ tab, index, moveTabAction, activateTabAction, closeTabAc
         }}
         onClick={(e) => {
           e.stopPropagation();
-          closeTabAction(tab.id);
+          console.log('[DraggableTab Close Click] Tab object:', tab);
+          closeTabAction(tab.nodeId);
         }}
         onMouseEnter={(e) => e.currentTarget.style.color = '#260000'}
         onMouseLeave={(e) => e.currentTarget.style.color = '#5c5c5c'}
