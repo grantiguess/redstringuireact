@@ -74,8 +74,10 @@ const useGraphStore = create((set, get) => ({
   edges: new Map(),       // Map<string, EdgeData> - NEW
   openGraphIds: [],     // Start with no graphs open
   activeGraphId: null,  // string | null
+  activeDefinitionNodeId: null, // string | null (node whose graph we are viewing)
   rightPanelTabs: [{ type: 'home', isActive: true }], // Array<TabInfo>
   expandedGraphIds: new Set(), // <<< ADD global state for expanded items
+  savedNodeIds: new Set(), // <<< ADD set of bookmarked nodes
 
   // --- Actions --- (Operating on plain data)
 
@@ -268,9 +270,28 @@ const useGraphStore = create((set, get) => ({
   })),
 
   // --- Tab Management Actions --- (Unaffected)
-  openGraphTab: (graphId) => set(produce((draft) => {
-    if (draft.graphs.has(graphId) && !draft.openGraphIds.includes(graphId)) {
-      draft.openGraphIds.push(graphId);
+  openGraphTab: (graphId, definitionNodeId = null) => set(produce((draft) => {
+    console.log(`[Store openGraphTab] Called with graphId: ${graphId}, definitionNodeId: ${definitionNodeId}`);
+    if (draft.graphs.has(graphId)) { // Ensure graph exists
+      // Add to open list if not already there
+      if (!draft.openGraphIds.includes(graphId)) {
+        draft.openGraphIds.push(graphId);
+      }
+      // Set this graph as the active one
+      draft.activeGraphId = graphId;
+      console.log(`[Store openGraphTab] Set activeGraphId to: ${graphId}`);
+
+      // Set the definition node ID if provided
+      if (definitionNodeId) {
+        console.log(`[Store openGraphTab] Setting activeDefinitionNodeId to: ${definitionNodeId}`);
+        draft.activeDefinitionNodeId = definitionNodeId;
+      } else {
+        // If opening a graph tab without a specific definition node, clear the active definition node
+        console.log(`[Store openGraphTab] No definitionNodeId provided, clearing activeDefinitionNodeId.`);
+        draft.activeDefinitionNodeId = null;
+      }
+    } else {
+      console.warn(`[Store openGraphTab] Graph ${graphId} not found.`);
     }
   })),
 
@@ -297,7 +318,9 @@ const useGraphStore = create((set, get) => ({
 
   // Creates a new, empty graph and sets it as active
   createNewGraph: (initialData = {}) => set(produce((draft) => {
+    console.log('[Store createNewGraph] Setting activeDefinitionNodeId to null');
     const newGraphId = uuidv4();
+    const newNodeId = uuidv4();
     const newGraphName = initialData.name || "New Thing";
 
     const newGraphData = {
@@ -311,29 +334,94 @@ const useGraphStore = create((set, get) => ({
         edgeIds: [],
     };
 
+    const newNodeData = {
+      id: newNodeId,
+      name: newGraphName,
+      description: '',
+      picture: null,
+      color: 'maroon',
+      data: null,
+      x: 0,
+      y: 0,
+      scale: 1,
+      imageSrc: null,
+      thumbnailSrc: null,
+      imageAspectRatio: null,
+      parentDefinitionNodeId: null,
+      edgeIds: [],
+      definitionGraphIds: [newGraphId],
+    };
+
+    draft.nodes.set(newNodeId, newNodeData);
+
     draft.graphs.set(newGraphId, newGraphData);
-    draft.activeGraphId = newGraphId; // Set the new graph as active
+
+    draft.activeGraphId = newGraphId;
+    draft.activeDefinitionNodeId = newNodeId;
 
     if (!draft.openGraphIds.includes(newGraphId)) {
         draft.openGraphIds.unshift(newGraphId);
     }
-    draft.expandedGraphIds.add(newGraphId); // <<< Add to expanded set
-    
-    // <<< Log ID change >>>
-    console.log(`[Store createNewGraph] Set lastCreatedGraphId to: ${newGraphId}`); 
-    
+    draft.expandedGraphIds.add(newGraphId);
+
     console.log('[Store] Created and activated new graph:', newGraphId, newGraphName);
+    console.log('[Store] Created corresponding definition node:', newNodeId);
+  })),
+
+  // Creates a new graph and assigns it as a definition for a given node
+  createAndAssignGraphDefinition: (nodeId) => set(produce((draft) => {
+    const nodeData = draft.nodes.get(nodeId);
+    if (!nodeData) {
+      console.warn(`[Store createAndAssignGraphDefinition] Node ${nodeId} not found.`);
+      return;
+    }
+
+    // Create a new graph, named after the node
+    const newGraphId = uuidv4();
+    const newGraphName = nodeData.name || "Untitled Definition";
+    const newGraphData = {
+      id: newGraphId,
+      name: newGraphName,
+      description: `Definition for node: ${nodeData.name} (${nodeId})`,
+      picture: null,
+      color: '#ccc',
+      directed: false,
+      nodeIds: [],
+      edgeIds: [],
+    };
+
+    draft.graphs.set(newGraphId, newGraphData);
+    console.log(`[Store createAndAssignGraphDefinition] Created new graph ${newGraphId} for node ${nodeId}`);
+
+    // Assign the new graph ID to the node's definitions
+    if (!Array.isArray(nodeData.definitionGraphIds)) {
+      nodeData.definitionGraphIds = [];
+    }
+    nodeData.definitionGraphIds.push(newGraphId);
+    console.log(`[Store createAndAssignGraphDefinition] Assigned graph ${newGraphId} to node ${nodeId}`);
+
+    // Make the new graph active and set the defining node
+    draft.activeGraphId = newGraphId;
+    draft.activeDefinitionNodeId = nodeId;
+    console.log(`[Store createAndAssignGraphDefinition] Set active graph to ${newGraphId} and definition node to ${nodeId}`);
+
+    // Ensure the new graph is in the open list
+    if (!draft.openGraphIds.includes(newGraphId)) {
+      draft.openGraphIds.unshift(newGraphId); // Add to front
+    }
+    draft.expandedGraphIds.add(newGraphId); // Expand it in the list
   })),
 
   // Sets the currently active graph tab.
   setActiveGraph: (graphId) => set(produce((draft) => {
+      console.log(`[Store setActiveGraph] Called with graphId: ${graphId}`);
       if (draft.graphs.has(graphId)) { // Ensure the graph exists
           if (draft.openGraphIds.includes(graphId)) { // Ensure it's an open graph
             draft.activeGraphId = graphId;
+            console.log(`[Store setActiveGraph] Set activeGraphId to ${graphId}. Definition node ID (${draft.activeDefinitionNodeId}) remains unchanged.`);
           } else {
               console.warn(`setActiveGraph: Graph ${graphId} is not open.`);
               // Optionally open it here: draft.openGraphIds.push(graphId);
-              // draft.activeGraphId = graphId;
           }
       } else {
           console.warn(`setActiveGraph: Graph ${graphId} not found.`);
@@ -344,11 +432,28 @@ const useGraphStore = create((set, get) => ({
   updateGraph: (graphId, updateFn) => set(produce((draft) => {
       const graphData = draft.graphs.get(graphId);
       if (graphData) {
+          const originalName = graphData.name; // Store original name
           // Apply the update function directly to the draft state
           updateFn(graphData);
           // Immer will handle the update, no need to set it back manually
-          // const updatedGraphData = updateFn(graphData);
-          // draft.graphs.set(graphId, updatedGraphData);
+
+          // Check if the name was changed
+          const newName = graphData.name;
+          if (newName !== originalName) {
+            console.log(`[Store updateGraph] Graph ${graphId} name changed from "${originalName}" to "${newName}". Syncing defining node name.`);
+            // Find the corresponding definition node(s) and update their names
+            for (const node of draft.nodes.values()) {
+              if (Array.isArray(node.definitionGraphIds) && node.definitionGraphIds.includes(graphId)) {
+                console.log(`[Store updateGraph] Updating node ${node.id} name to match graph.`);
+                node.name = newName;
+                // Also update the node's tab title if it's open in the right panel
+                const tabIndex = draft.rightPanelTabs.findIndex(tab => tab.nodeId === node.id);
+                if (tabIndex !== -1) {
+                  draft.rightPanelTabs[tabIndex].title = newName;
+                }
+              }
+            }
+          }
       } else {
           console.warn(`updateGraph: Graph ${graphId} not found.`);
       }
@@ -434,6 +539,7 @@ const useGraphStore = create((set, get) => ({
   })),
 
   closeGraph: (graphId) => set(produce((draft) => {
+    console.log(`[Store closeGraph] Called with graphId: ${graphId}`);
     const index = draft.openGraphIds.indexOf(graphId);
     if (index === -1) {
       console.warn(`[Store closeGraph] Graph ID ${graphId} not found in openGraphIds.`);
@@ -463,6 +569,10 @@ const useGraphStore = create((set, get) => ({
 
     // Set the new active ID
     draft.activeGraphId = newActiveId;
+    if (draft.activeGraphId === null) {
+      console.log('[Store closeGraph] Active graph became null, setting activeDefinitionNodeId to null');
+      draft.activeDefinitionNodeId = null;
+    }
 
     // <<< Also remove from expanded set if closed >>>
     draft.expandedGraphIds.delete(graphId);
@@ -478,6 +588,23 @@ const useGraphStore = create((set, get) => ({
       draft.expandedGraphIds.add(graphId);
       console.log(`[Store toggleGraphExpanded] Added ${graphId}. New state:`, new Set(draft.expandedGraphIds)); // <<< Log after add
     }
+  })),
+
+  // Toggle node bookmark status in savedNodeIds set
+  toggleSavedNode: (nodeId) => set(produce((draft) => {
+    if (draft.savedNodeIds.has(nodeId)) {
+      draft.savedNodeIds.delete(nodeId);
+    } else {
+      draft.savedNodeIds.add(nodeId);
+    }
+    // Replace with a new Set instance to ensure reference change
+    draft.savedNodeIds = new Set(draft.savedNodeIds);
+  })),
+
+  // Explicitly set active definition node (e.g., when switching graphs)
+  setActiveDefinitionNode: (nodeId) => set(produce((draft) => {
+    console.log(`[Store setActiveDefinitionNode] Setting activeDefinitionNodeId to: ${nodeId}`);
+    draft.activeDefinitionNodeId = nodeId;
   })),
 
 }));
@@ -523,6 +650,9 @@ export const getGraphTitleById = (graphId) => (state) => {
 
 export const getOpenGraphIds = (state) => state.openGraphIds;
 export const getActiveGraphId = (state) => state.activeGraphId;
+
+// Selector to check if a node is bookmarked
+export const isNodeSaved = (nodeId) => (state) => state.savedNodeIds.has(nodeId);
 
 // Export the store hook
 export default useGraphStore; 

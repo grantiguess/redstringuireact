@@ -98,7 +98,7 @@ const GraphBrowserPanel = () => {
 
   const handleNodeClick = (graphId, nodeId) => {
     console.log(`Opening graph ${graphId} from node ${nodeId}`);
-    openGraphTab(graphId);
+    openGraphTab(graphId, nodeId);
   };
 
   if (!nodes || Object.keys(nodes).length === 0) {

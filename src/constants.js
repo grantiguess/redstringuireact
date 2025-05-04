@@ -30,3 +30,6 @@ export const KEYBOARD_ZOOM_SPEED = 0.15;               // for keyboard zooming
 
 // Image Processing
 export const THUMBNAIL_MAX_DIMENSION = 800; // Max width/height for thumbnails (increased again)
+
+// Define default node color
+export const NODE_DEFAULT_COLOR = 'maroon';

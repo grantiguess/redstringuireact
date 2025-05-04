@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { HEADER_HEIGHT } from './constants';
 import RedstringMenu from './RedstringMenu';
+import { Bookmark } from 'lucide-react';
 
 // Import all logo states
 import logo1 from './assets/redstring_button/header_logo_1.svg';
@@ -17,7 +18,9 @@ const Header = ({
   onEditingStateChange, 
   // Receive debug props
   debugMode, 
-  setDebugMode 
+  setDebugMode,
+  bookmarkActive = false,
+  onBookmarkToggle,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [currentLogoIndex, setCurrentLogoIndex] = useState(0);
@@ -245,6 +248,29 @@ const Header = ({
             {projectTitle}
           </span>
         )}
+      </div>
+
+      {/* Bookmark Icon Button */}
+      <div
+        title={bookmarkActive ? 'Remove Bookmark' : 'Add Bookmark'}
+        style={{
+          position: 'absolute',
+          right: '0',
+          height: `${HEADER_HEIGHT}px`,
+          width: `${HEADER_HEIGHT}px`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+        }}
+        onClick={onBookmarkToggle}
+      >
+        <Bookmark
+          size={28}
+          color="#D60001"
+          fill={bookmarkActive ? '#7A0000' : 'none'}
+          strokeWidth={3}
+        />
       </div>
     </header>
   );

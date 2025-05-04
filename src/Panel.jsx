@@ -1,7 +1,7 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, useCallback, useMemo } from 'react';
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
-import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION } from './constants';
+import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR } from './constants';
 import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark } from 'lucide-react';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
@@ -287,6 +287,8 @@ const Panel = forwardRef(
     graphDescription,
     // Add prop for render trigger
     renderTrigger,
+    // Add prop for active definition node ID
+    activeDefinitionNodeId: propActiveDefinitionNodeId, 
   }, ref) => {
     panelRenderCount++; // Increment counter
     // --- Zustand State and Actions ---
@@ -324,7 +326,10 @@ const Panel = forwardRef(
         updateNode,
         updateGraph,
         closeGraph,
-        toggleGraphExpanded
+        toggleGraphExpanded,
+        toggleSavedNode,
+        setActiveDefinitionNode,
+        createAndAssignGraphDefinition,
     } = storeActions || {}; // Use passed actions, provide empty object fallback
     
     // activeGraphId is now directly available as a prop
@@ -340,6 +345,9 @@ const Panel = forwardRef(
     const updateNode = (id, fn) => console.log("Dummy updateNode", id, fn);
     const updateGraph = (id, fn) => console.log("Dummy updateGraph", id, fn);
     */
+
+    // Destructure openGraphTab explicitly if not already done (ensure it's available)
+    const { openGraphTab } = storeActions || {}; 
 
     // Derive the array needed for the left panel grid (ALL graphs)
     const graphsForGrid = useMemo(() => {
@@ -363,6 +371,12 @@ const Panel = forwardRef(
     // <<< ADD: Select nodes and edges maps reactively >>>
     const nodesMap = useGraphStore(state => state.nodes);
     const edgesMap = useGraphStore(state => state.edges);
+    const savedNodeIds = useGraphStore(state => state.savedNodeIds);
+
+    // Derive saved nodes array reactively
+    const savedNodes = useMemo(() => {
+        return Array.from(savedNodeIds).map(id => nodesMap.get(id)).filter(Boolean);
+    }, [savedNodeIds, nodesMap]);
 
     // <<< ADD Ref for the scrollable list container >>>
     const listContainerRef = useRef(null);
@@ -385,9 +399,20 @@ const Panel = forwardRef(
         }).filter(Boolean); // Filter out any nulls
     }, [openGraphIds, graphsMap, nodesMap, edgesMap]); // Add nodesMap and edgesMap to dependencies
 
-    // Left panel state
-    // console.log(`[Panel ${side}] Initializing leftViewActive state`); // Keep logs disabled for now
+    // Left panel view state and collapsed sections
     const [leftViewActive, setLeftViewActive] = useState('library'); // 'library' or 'grid'
+    const [sectionCollapsed, setSectionCollapsed] = useState({ Thing: false });
+
+    // Ref for the content div inside the collapsible section
+    const thingContentRef = useRef(null);
+    // State to hold the dynamic max-height
+    const [thingMaxHeight, setThingMaxHeight] = useState('0px');
+
+    const toggleSection = (name) => {
+        // Simply toggle the collapsed state
+        setSectionCollapsed(prev => ({ ...prev, [name]: !prev[name] }));
+        console.log(`[toggleSection] Toggled section '${name}'. New collapsed state: ${!sectionCollapsed[name]}`);
+    };
 
     // <<< Effect to scroll to TOP when new item added >>>
     useEffect(() => {
@@ -415,6 +440,27 @@ const Panel = forwardRef(
 
     // Run when openGraphIds array reference changes OR side changes
     }, [openGraphIds, side]); 
+
+    // Effect to update maxHeight when content changes while section is open
+    useEffect(() => {
+        // Only run if the 'Thing' section is currently open
+        if (!sectionCollapsed['Thing']) {
+             // Section is OPEN
+             if (thingContentRef.current) {
+                const currentScrollHeight = thingContentRef.current.scrollHeight;
+                console.log(`[useEffect] Section open, setting maxHeight: ${currentScrollHeight}px`);
+                setThingMaxHeight(`${currentScrollHeight}px`);
+             } else {
+                 // Attempt to set based on a reasonable estimate if ref not ready?
+                 // console.log(`[useEffect] Section open, ref not ready, setting default open height.`);
+                 // setThingMaxHeight('500px'); // Or keep previous value?
+             }
+        } else {
+            // Section is CLOSED
+            console.log(`[useEffect] Section closed, setting maxHeight: 0px`);
+            setThingMaxHeight('0px');
+        }
+    }, [savedNodes, sectionCollapsed]); // Rerun when savedNodes or collapsed state changes
 
     // Shared state
     // Initialize with defaults, load from localStorage in useEffect
@@ -706,16 +752,117 @@ const Panel = forwardRef(
     let panelContent = null;
     if (side === 'left') {
         if (leftViewActive === 'library') {
-            // Replace placeholder with styled title and placeholder content
             panelContent = (
-                <div className="panel-content-inner"> {/* Keep existing padding */}
-                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}> {/* Wrapper for alignment */}
+                <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
                         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold' }}>
                             Saved Things
                         </h2>
                     </div>
-                    {/* TODO: Add actual Library/Graph Browser content here */}
-                    <div style={{ color: '#555', fontSize: '0.9rem' }}>[Graph Browser Content Placeholder]</div>
+
+                    {/* --- Thing Section --- */}
+                    <div style={{ marginBottom: '10px' }}>
+                        {/* Section Header */}
+                        <div
+                            onClick={() => toggleSection('Thing')}
+                            style={{
+                                backgroundColor: '#979090',
+                                padding: '6px 8px',
+                                cursor: 'pointer',
+                                color: '#260000',
+                                fontWeight: 'bold',
+                                userSelect: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                            }}
+                        >
+                            <span>Thing ({savedNodes.length})</span>
+                            <span style={{
+                                display: 'inline-block', // Needed for transform
+                                transition: 'transform 0.2s ease', // Faster
+                                transform: sectionCollapsed['Thing'] ? 'rotate(0deg)' : 'rotate(90deg)',
+                            }}>▶</span>
+                        </div>
+
+                        {/* Section Content */}
+                        {!sectionCollapsed['Thing'] && (
+                            <div // Outer container for overflow
+                                style={{
+                                    overflow: 'hidden',
+                                    transition: 'max-height 0.2s ease-out', // Faster
+                                    maxHeight: thingMaxHeight, // Use state variable for max-height
+                                }}
+                            >
+                                <div // Inner container for content & opacity transition
+                                    ref={thingContentRef} // <<< Assign ref here
+                                    style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: '1fr 1fr',
+                                        gap: '8px',
+                                        marginTop: '8px',
+                                        paddingBottom: '8px', // Add some padding below grid
+                                    }}
+                                >
+                                    {savedNodes.length === 0 && (
+                                        <div style={{ gridColumn: 'span 2', color: '#666', fontSize: '0.9rem' }}>No saved nodes.</div>
+                                    )}
+                                    {savedNodes.map(node => {
+                                        // Single click opens the graph definition OR creates one
+                                        const handleSingleClick = () => {
+                                            // Use openGraphTab to handle opening and setting definition node
+                                            if (node.definitionGraphIds && node.definitionGraphIds.length > 0) {
+                                                const graphIdToOpen = node.definitionGraphIds[0]; // Open the first definition
+                                                console.log(`[Panel Saved Node Click] Opening existing graph ${graphIdToOpen} defined by node ${node.id}`);
+                                                openGraphTab(graphIdToOpen, node.id); // Pass both graph and node ID
+                                            } else if (createAndAssignGraphDefinition) {
+                                                // Node has no definitions, create one
+                                                console.warn(`[Panel Saved Node Click] Node ${node.id} has no graph definitions. Creating one.`);
+                                                createAndAssignGraphDefinition(node.id);
+                                            } else {
+                                                console.error('[Panel Saved Node Click] Missing required actions (openGraphTab or createAndAssignGraphDefinition)');
+                                            }
+                                        };
+
+                                        // Double click opens the node tab
+                                        const handleDoubleClick = () => {
+                                            console.log(`[Panel Saved Node DblClick] Opening node tab for ${node.id}`);
+                                            openRightPanelNodeTab(node.id);
+                                        };
+
+                                        return (
+                                            <div
+                                                key={node.id}
+                                                title={node.name}
+                                                onClick={handleSingleClick}
+                                                onDoubleClick={handleDoubleClick}
+                                                style={{
+                                                    position: 'relative', // Needed for positioning the close button
+                                                    backgroundColor: node.color || NODE_DEFAULT_COLOR, // Use node color or default
+                                                    color: '#bdb5b5', // Set text color for contrast
+                                                    borderRadius: '10px', // Keep rounded corners
+                                                    padding: '4px 6px', // Adjust padding slightly
+                                                    fontSize: '0.8rem', // Smaller font size
+                                                    fontWeight: 'bold', // Bold text
+                                                    textAlign: 'center',
+                                                    cursor: 'pointer',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap',
+                                                    userSelect: 'none',
+                                                    border: node.id === propActiveDefinitionNodeId ? '2px solid black' : '2px solid transparent', // Use black for active border
+                                                    boxSizing: 'border-box', // Ensure border is included in size
+                                                    transition: 'opacity 0.3s ease, border-color 0.2s ease', // Add transition for fade and border
+                                                }}
+                                            >
+                                                {node.name || 'Unnamed'}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div> // Close outer container
+                        )}
+                    </div>
                 </div>
             );
         } else if (leftViewActive === 'grid') {

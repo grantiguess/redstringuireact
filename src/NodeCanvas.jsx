@@ -263,12 +263,16 @@ function NodeCanvas() {
       updateGraph: state.updateGraph,
       createNewGraph: state.createNewGraph,
       setActiveGraph: state.setActiveGraph,
+      setActiveDefinitionNode: state.setActiveDefinitionNode,
       openRightPanelNodeTab: state.openRightPanelNodeTab,
+      createAndAssignGraphDefinition: state.createAndAssignGraphDefinition,
       closeRightPanelTab: state.closeRightPanelTab,
       activateRightPanelTab: state.activateRightPanelTab,
+      openGraphTab: state.openGraphTab,
       moveRightPanelTab: state.moveRightPanelTab,
       closeGraph: state.closeGraph,
       toggleGraphExpanded: state.toggleGraphExpanded,
+      toggleSavedNode: state.toggleSavedNode,
     };
   }, []); // Empty dependency array means actions are stable (typical for Zustand)
 
@@ -414,6 +418,34 @@ function NodeCanvas() {
   const projectBio = localActiveGraphDescription ?? '';
 
   const [previewingNodeId, setPreviewingNodeId] = useState(null);
+
+  // --- Saved Nodes Management ---
+  const savedNodeIds = useGraphStore(state => state.savedNodeIds);
+
+  const activeDefinitionNodeId = useGraphStore(state => state.activeDefinitionNodeId);
+
+  const bookmarkActive = useMemo(() => {
+    // Directly use activeDefinitionNodeId - store ensures it's set
+    return activeDefinitionNodeId ? savedNodeIds.has(activeDefinitionNodeId) : false;
+  }, [activeDefinitionNodeId, savedNodeIds]);
+
+  const handleToggleBookmark = useCallback(() => {
+    console.log('[Bookmark Click State] activeDefinitionNodeId:', activeDefinitionNodeId);
+    // Add direct store state check for comparison
+    const directStoreDefId = useGraphStore.getState().activeDefinitionNodeId;
+    console.log('[Bookmark Click State] Direct store read activeDefinitionNodeId:', directStoreDefId);
+    
+    if (activeDefinitionNodeId) {
+      // Toggle the active definition node (guaranteed by store logic)
+      console.log('[Bookmark] Toggling saved state for active definition node:', activeDefinitionNodeId);
+      storeActions.toggleSavedNode(activeDefinitionNodeId);
+    } else {
+      // If no definition node could be derived, do nothing
+      // This case should theoretically not happen anymore for active graphs
+      console.warn('[Bookmark] No active definition node found. This might indicate an issue.');
+      return;
+    }
+  }, [activeDefinitionNodeId, storeActions]);
 
   // --- Refs (Keep these) ---
   const containerRef = useRef(null);
@@ -1295,6 +1327,8 @@ function NodeCanvas() {
          onEditingStateChange={setIsHeaderEditing}
          debugMode={debugMode}
          setDebugMode={setDebugMode}
+         bookmarkActive={bookmarkActive}
+         onBookmarkToggle={handleToggleBookmark}
       />
 
       <div style={{ display: 'flex', flexGrow: 1, position: 'relative', overflow: 'hidden' }}> 
@@ -1310,6 +1344,7 @@ function NodeCanvas() {
           graphName={localActiveGraphName}
           graphDescription={localActiveGraphDescription}
           renderTrigger={renderTrigger}
+          activeDefinitionNodeId={activeDefinitionNodeId}
         />
 
         <div
