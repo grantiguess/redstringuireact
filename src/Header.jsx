@@ -267,7 +267,7 @@ const Header = ({
       >
         <Bookmark
           size={28}
-          color="#D60001"
+          color="#7A0000"
           fill={bookmarkActive ? '#7A0000' : 'none'}
           strokeWidth={3}
         />
