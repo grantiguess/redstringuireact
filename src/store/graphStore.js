@@ -336,27 +336,27 @@ const useGraphStore = create((set, get) => {
     }
   })),
 
-  // Updates specific properties of a node
-  updateNode: (nodeId, updateFn) => set(produce((draft) => {
-    const nodeData = draft.nodes.get(nodeId);
-    if (nodeData) {
-        // Apply the update function directly to the draft state
-        updateFn(nodeData);
-
-        // --- BEGIN FIX ---
-        // Also update the corresponding right panel tab's bio AND title if it exists
-        const tabIndex = draft.rightPanelTabs.findIndex(tab => tab.nodeId === nodeId);
-        if (tabIndex !== -1) {
-            // Update the bio using the potentially updated node description
-            draft.rightPanelTabs[tabIndex].bio = nodeData.description || '';
-            // <<< ADD: Update the title using the updated node name >>>
-            draft.rightPanelTabs[tabIndex].title = nodeData.name || 'Untitled'; 
-        }
-        // --- END FIX ---
-
+  // Update a node's data using Immer's recipe
+  updateNode: (nodeId, recipe) => set(produce((draft) => {
+    const node = draft.nodes.get(nodeId);
+    if (node) {
+      recipe(node); // Apply the Immer updates
     } else {
-        console.warn(`updateNode: Node ${nodeId} not found.`);
+      console.warn(`updateNode: Node with id ${nodeId} not found.`);
     }
+  })),
+
+  // Update positions of multiple nodes efficiently
+  updateMultipleNodePositions: (updates) => set(produce((draft) => {
+    updates.forEach(({ nodeId, x, y }) => {
+      const node = draft.nodes.get(nodeId);
+      if (node) {
+        node.x = x;
+        node.y = y;
+      } else {
+        console.warn(`updateMultipleNodePositions: Node with id ${nodeId} not found.`);
+      }
+    });
   })),
 
   // Adds a NEW edge (provided as plain data) to the global pool and a specific graph

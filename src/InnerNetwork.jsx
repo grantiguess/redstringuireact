@@ -7,7 +7,9 @@ import {
     AVERAGE_CHAR_WIDTH, 
     LINE_HEIGHT_ESTIMATE, 
     EXPANDED_NODE_WIDTH, 
-    NAME_AREA_FACTOR 
+    NAME_AREA_FACTOR,
+    NODE_CORNER_RADIUS,
+    NODE_DEFAULT_COLOR
 } from './constants'; // Import necessary constants
 import { getNodeDimensions } from './utils.js'; // Import from utils.js
 
@@ -118,29 +120,27 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
       })}
 
       {/* Render Nodes using original coordinates and dimensions (scaled by parent g) */}
+      {/* SIMPLIFIED NODE RENDERING FOR PREVIEW */}
       {nodes.map((node) => {
-         // Get original dimensions 
+         // Get original dimensions
          const dimensions = getNodeDimensions(node);
 
          return (
-           <Node
+           <rect
              key={`inner-node-${node.id}`}
-             // Pass the plain node data object directly
-             node={node}
-             // Pass original dimensions
-             currentWidth={dimensions.currentWidth}
-             currentHeight={dimensions.currentHeight}
-             textAreaHeight={dimensions.textAreaHeight}
-             imageWidth={dimensions.imageWidth}
-             imageHeight={dimensions.calculatedImageHeight}
-             // Other props
-             isSelected={false}
-             isDragging={false}
-             idPrefix="inner-" // Keep prefix for ID uniqueness
-             isPreviewing={false} // Don't trigger preview state within preview
+             x={node.x}
+             y={node.y}
+             width={dimensions.currentWidth}
+             height={dimensions.currentHeight}
+             rx={NODE_CORNER_RADIUS} // Use constant for consistency
+             ry={NODE_CORNER_RADIUS}
+             fill={node.color || NODE_DEFAULT_COLOR || 'grey'} // Use node color or fallback
+             stroke="rgba(0,0,0,0.5)" // Optional subtle border
+             strokeWidth={Math.max(0.5, 1 / scale)} // Keep border thin
            />
          );
       })}
+      {/* END SIMPLIFIED NODE RENDERING */}
     </g>
   );
 };

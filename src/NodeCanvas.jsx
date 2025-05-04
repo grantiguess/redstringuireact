@@ -263,6 +263,7 @@ function NodeCanvas() {
       closeGraph: state.closeGraph,
       toggleGraphExpanded: state.toggleGraphExpanded,
       toggleSavedNode: state.toggleSavedNode,
+      updateMultipleNodePositions: state.updateMultipleNodePositions,
     };
   }, []); // Empty dependency array means actions are stable (typical for Zustand)
 
@@ -763,20 +764,26 @@ function NodeCanvas() {
                 const newPrimaryX = draggingNodeInfo.initialPrimaryPos.x + dx;
                 const newPrimaryY = draggingNodeInfo.initialPrimaryPos.y + dy;
 
-                // Update primary node position via store (use localStoreActions)
-                storeActions.updateNode(primaryNodeId, draft => {
-                    draft.x = newPrimaryX;
-                    draft.y = newPrimaryY;
-                });
+                // --- BATCH UPDATE --- 
+                const positionUpdates = [];
 
-                // Update other selected nodes relative to primary (use localStoreActions)
+                // Add primary node update
+                positionUpdates.push({ nodeId: primaryNodeId, x: newPrimaryX, y: newPrimaryY });
+
+                // Add other selected nodes relative to primary
                 Object.keys(draggingNodeInfo.relativeOffsets).forEach(nodeId => {
                     const relativeOffset = draggingNodeInfo.relativeOffsets[nodeId];
-                    storeActions.updateNode(nodeId, draft => {
-                        draft.x = newPrimaryX + relativeOffset.offsetX;
-                        draft.y = newPrimaryY + relativeOffset.offsetY;
+                    positionUpdates.push({
+                        nodeId: nodeId,
+                        x: newPrimaryX + relativeOffset.offsetX,
+                        y: newPrimaryY + relativeOffset.offsetY
                     });
                 });
+
+                // Dispatch single batch update action
+                storeActions.updateMultipleNodePositions(positionUpdates);
+                // --- END BATCH UPDATE ---
+
             } else {
                 // Single node drag
                 const { nodeId, offset } = draggingNodeInfo;
