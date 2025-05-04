@@ -162,7 +162,7 @@ const DraggableTab = ({ tab, index, moveTabAction, activateTabAction, closeTabAc
   }, [preview]);
 
   const opacity = isDragging ? 0.4 : 1;
-  const cursor = isDragging ? 'grabbing' : 'grab';
+  const cursor = isDragging ? 'grabbing' : 'pointer';
   const isActive = tab.isActive;
   const bg = isActive ? '#bdb5b5' : '#979090';
 
@@ -282,12 +282,9 @@ const Panel = forwardRef(
     // Add props for store data/actions
     activeGraphId, 
     storeActions,
-    // Add props for graph name/desc
+    renderTrigger,
     graphName, 
     graphDescription,
-    // Add prop for render trigger
-    renderTrigger,
-    // Add prop for active definition node ID
     activeDefinitionNodeId: propActiveDefinitionNodeId, 
   }, ref) => {
     panelRenderCount++; // Increment counter
@@ -374,6 +371,8 @@ const Panel = forwardRef(
     const savedNodeIds = useGraphStore(state => state.savedNodeIds);
     // <<< ADD: Read activeDefinitionNodeId directly from the store >>>
     const activeDefinitionNodeId = useGraphStore(state => state.activeDefinitionNodeId);
+    // <<< ADD: Select rightPanelTabs reactively >>>
+    const rightPanelTabs = useGraphStore(state => state.rightPanelTabs);
 
     // Derive saved nodes array reactively
     const savedNodes = useMemo(() => {
@@ -388,7 +387,6 @@ const Panel = forwardRef(
 
     // <<< ADD BACK: Derive data for open graphs for the left panel list view >>>
     const openGraphsForList = useMemo(() => {
-        console.log("[Panel useMemo] Recalculating openGraphsForList..."); // Optional: Log recalc
         return openGraphIds.map(id => {
             const graphData = graphsMap.get(id); // Use reactive graphsMap
             if (!graphData) return null; // Handle case where graph might not be found
@@ -664,30 +662,20 @@ const Panel = forwardRef(
     // --- End Resize Handlers & related effects ---
 
     // --- Determine Active View/Tab --- 
-    // Get tabs non-reactively
-    const currentRightPanelTabs = side === 'right' ? useGraphStore.getState().rightPanelTabs : [];
-    const activeRightPanelTab = currentRightPanelTabs.find((t) => t.isActive);
+    // Get tabs reactively if side is 'right'
+    const activeRightPanelTab = useMemo(() => {
+        if (side !== 'right') return null;
+        return rightPanelTabs.find((t) => t.isActive);
+    }, [side, rightPanelTabs]); // Depend on side and the reactive tabs
 
     // Derive nodes for active graph on right side (Calculate on every render)
     const activeGraphNodes = useMemo(() => {
-        // console.log(`[Panel ${side}] Recalculating activeGraphNodes (Trigger: ${renderTrigger})`); // Temporarily disable
         if (side !== 'right' || !activeGraphId) return [];
-        const state = useGraphStore.getState();
-        const graphData = state.graphs.get(activeGraphId);
-        if (!graphData) return [];
-        const currentNodesMap = state.nodes;
-        return graphData.nodeIds.map(id => currentNodesMap.get(id)).filter(Boolean);
-    }, [activeGraphId, renderTrigger, side]); // Depend on trigger and ID
-    /* // Original IIFE calculation
-    const activeGraphNodes = (() => { 
-        if (side !== 'right' || !activeGraphId) return [];
-        const state = useGraphStore.getState();
-        const graphData = state.graphs.get(activeGraphId);
-        if (!graphData) return [];
-        const currentNodesMap = state.nodes;
-        return graphData.nodeIds.map(id => currentNodesMap.get(id)).filter(Boolean);
-    })(); // IIFE to calculate directly
-    */
+        // Use the reactively selected maps directly
+        const graphData = graphsMap.get(activeGraphId); 
+        if (!graphData || !graphData.nodeIds) return []; 
+        return graphData.nodeIds.map(id => nodesMap.get(id)).filter(Boolean);
+    }, [activeGraphId, side, graphsMap, nodesMap]); // <<< ADD graphsMap and nodesMap to dependencies
 
     // --- Action Handlers defined earlier --- 
     const handleAddImage = (nodeId) => {
@@ -1002,7 +990,7 @@ const Panel = forwardRef(
             panelContent = (
                 <div className="panel-content-inner home-tab" >
                     <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px', flexWrap: 'nowrap' }}>
-                        {/* Project Title - Editable on Double Click */}
+                        {/* Project Title - Use locally derived name */}
                         {editingProjectTitle ? (
                             <input
                                 ref={projectTitleInputRef}
@@ -1011,9 +999,9 @@ const Panel = forwardRef(
                                 name="projectTitleInput"
                                 value={tempProjectTitle}
                                 onChange={(e) => setTempProjectTitle(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') commitProjectTitleChange(); }} // Uses dummy updateGraph
-                                onBlur={commitProjectTitleChange} // Uses dummy updateGraph
-                                onFocus={() => onFocusChange?.(true)} // Uncommented
+                                onKeyDown={(e) => { if (e.key === 'Enter') commitProjectTitleChange(); }}
+                                onBlur={commitProjectTitleChange}
+                                onFocus={() => onFocusChange?.(true)}
                                 style={{ fontFamily: 'inherit', fontSize: '1.1rem', fontWeight: 'bold', color: '#260000' }}
                             />
                         ) : (
@@ -1055,9 +1043,9 @@ const Panel = forwardRef(
                             lineHeight: '1.4',
                             fontFamily: 'inherit',
                         }}
-                        value={graphDescription ?? ''}
-                        onFocus={() => onFocusChange?.(true)} // Uncommented
-                        onBlur={() => onFocusChange?.(false)} // Uncommented
+                        value={graphDescription}
+                        onFocus={() => onFocusChange?.(true)}
+                        onBlur={() => onFocusChange?.(false)}
                         onChange={(e) => {
                             if (activeGraphId && storeActions?.updateGraph) {
                                 storeActions.updateGraph(activeGraphId, draft => { draft.description = e.target.value; });
@@ -1401,7 +1389,7 @@ const Panel = forwardRef(
                         <> 
                             {/* Home Button (checks store state) */}
                             {isExpanded && (() => {
-                                const tabs = currentRightPanelTabs;
+                                const tabs = rightPanelTabs;
                                 const isActive = tabs[0]?.isActive;
                                 const bg = isActive ? '#bdb5b5' : '#979090';
                                 return (
@@ -1445,7 +1433,7 @@ const Panel = forwardRef(
                                         }}
                                     >
                                         {/* Map ONLY node tabs (index > 0) - get tabs non-reactively */}
-                                        {currentRightPanelTabs.slice(1).map((tab, index) => (
+                                        {rightPanelTabs.slice(1).map((tab, index) => (
                                             <DraggableTab
                                                 key={tab.nodeId} // Use nodeId as key
                                                 tab={tab} // Pass tab data from store

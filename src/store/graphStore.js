@@ -921,10 +921,10 @@ useGraphStore.subscribe(
     // Nodes Map Persistence
     const nodesMapChanged = state.nodes !== prevState.nodes;
     if (nodesMapChanged) {
-      console.log('[Store Subscribe] nodes map changed!', { prevSize: prevState.nodes.size, nextSize: state.nodes.size });
+      // console.log('[Store Subscribe] nodes map changed!', { prevSize: prevState.nodes.size, nextSize: state.nodes.size });
       try {
         localStorage.setItem('nodesMap', serializeMap(state.nodes));
-        console.log(`[Store Subscribe] Saved ${state.nodes.size} nodes map to localStorage.`);
+        // console.log(`[Store Subscribe] Saved ${state.nodes.size} nodes map to localStorage.`);
       } catch (error) {
         console.error('[Store Subscribe] Error saving nodes map to localStorage:', error);
       }

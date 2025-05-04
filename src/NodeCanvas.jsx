@@ -287,11 +287,11 @@ function NodeCanvas() {
   useEffect(() => {
       // Check if graph maps are loaded and if there's no active graph AND no open graphs
       if (graphsMap.size > 0 && activeGraphId === null && openGraphIds.length === 0) {
-           console.log('[Effect: Initial Check] No active or open graphs found, creating default "New Thing".');
+           //console.log('[Effect: Initial Check] No active or open graphs found, creating default "New Thing".');
            storeActions.createNewGraph({ name: 'New Thing' });
       } else if (graphsMap.size === 0 && localStorage.getItem('graphsMap') === null) {
           // Handle the very first load case where localStorage is empty
-          console.log('[Effect: Initial Check] First load (no persisted graphs), creating default "New Thing".');
+          //console.log('[Effect: Initial Check] First load (no persisted graphs), creating default "New Thing".');
           storeActions.createNewGraph({ name: 'New Thing' });
       }
   }, [graphsMap, activeGraphId, openGraphIds, storeActions]); // Depend on relevant state
@@ -385,14 +385,14 @@ function NodeCanvas() {
   const handleToggleBookmark = useCallback(() => {
     // Get current state for logging
     const currentState = useGraphStore.getState();
-    console.log('[Bookmark Click State] activeGraphId:', currentState.activeGraphId, 'activeDefinitionNodeId:', currentState.activeDefinitionNodeId);
+    //console.log('[Bookmark Click State] activeGraphId:', currentState.activeGraphId, 'activeDefinitionNodeId:', currentState.activeDefinitionNodeId);
 
     if (currentState.activeDefinitionNodeId) {
       // Toggle the active definition node
-      console.log('[Bookmark] Toggling saved state for active definition node:', currentState.activeDefinitionNodeId);
+      //console.log('[Bookmark] Toggling saved state for active definition node:', currentState.activeDefinitionNodeId);
       storeActions.toggleSavedNode(currentState.activeDefinitionNodeId);
     } else {
-      console.warn('[Bookmark] No active definition node found. Cannot toggle.');
+      //console.warn('[Bookmark] No active definition node found. Cannot toggle.');
     }
   }, [storeActions]); // Dependency only on storeActions as we read fresh state inside
 
@@ -526,7 +526,7 @@ function NodeCanvas() {
                             initialPositions[n.id] = { offsetX: n.x - initialPrimaryPos.x, offsetY: n.y - initialPrimaryPos.y };
                         }
                     });
-                    console.log("[handleNodeMouseDown] Setting up multi-node drag:", { primaryId: nodeId, offsets: initialPositions }); // ADD Log
+                    //console.log("[handleNodeMouseDown] Setting up multi-node drag:", { primaryId: nodeId, offsets: initialPositions }); // ADD Log
                     setDraggingNodeInfo({
                         initialMouse: { x: e.clientX, y: e.clientY },
                         initialPrimaryPos,
@@ -541,7 +541,7 @@ function NodeCanvas() {
                 } else {
                     // Single node drag setup
                     const offset = { x: e.clientX - nodeData.x * zoomLevel - panOffset.x, y: e.clientY - nodeData.y * zoomLevel - panOffset.y };
-                    console.log("[handleNodeMouseDown] Setting up single-node drag:", { nodeId, offset }); // ADD Log
+                    //console.log("[handleNodeMouseDown] Setting up single-node drag:", { nodeId, offset }); // ADD Log
                     setDraggingNodeInfo({ nodeId: nodeId, offset });
                     // Use localStoreActions
                     storeActions.updateNode(nodeId, draft => { draft.scale = 1.1; });
@@ -1026,7 +1026,7 @@ function NodeCanvas() {
           edgeIds: [],
           definitionGraphIds: [],
       };
-      console.log(`[handleMorphDone] About to add node:`, { graphId: activeGraphId, nodeData: newNodeData }); // Log before action
+      //console.log(`[handleMorphDone] About to add node:`, { graphId: activeGraphId, nodeData: newNodeData }); // Log before action
       storeActions.addNode(activeGraphId, newNodeData);
       setPlusSign(null);
   };
@@ -1205,7 +1205,7 @@ function NodeCanvas() {
   }, []);
 
   const handleLeftPanelFocusChange = useCallback((isFocused) => {
-    console.log(`[Left Panel Focus Change] Setting isLeftPanelInputFocused to: ${isFocused}`);
+    //console.log(`[Left Panel Focus Change] Setting isLeftPanelInputFocused to: ${isFocused}`);
     setIsLeftPanelInputFocused(isFocused);
   }, []);
 
@@ -1478,7 +1478,7 @@ function NodeCanvas() {
           isExpanded={rightPanelExpanded}
           onToggleExpand={handleToggleRightPanel}
           onFocusChange={(isFocused) => {
-            console.log(`[Right Panel Focus Change] Setting isRightPanelInputFocused to: ${isFocused}`);
+            //console.log(`[Right Panel Focus Change] Setting isRightPanelInputFocused to: ${isFocused}`);
             setIsRightPanelInputFocused(isFocused);
           }}
           activeGraphId={activeGraphId}
