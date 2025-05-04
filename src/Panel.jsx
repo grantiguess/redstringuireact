@@ -372,6 +372,8 @@ const Panel = forwardRef(
     const nodesMap = useGraphStore(state => state.nodes);
     const edgesMap = useGraphStore(state => state.edges);
     const savedNodeIds = useGraphStore(state => state.savedNodeIds);
+    // <<< ADD: Read activeDefinitionNodeId directly from the store >>>
+    const activeDefinitionNodeId = useGraphStore(state => state.activeDefinitionNodeId);
 
     // Derive saved nodes array reactively
     const savedNodes = useMemo(() => {
@@ -834,8 +836,25 @@ const Panel = forwardRef(
                                             <div
                                                 key={node.id}
                                                 title={node.name}
-                                                onClick={handleSingleClick}
-                                                onDoubleClick={handleDoubleClick}
+                                                onClick={() => {
+                                                    console.log(`[Saved Node Click] Node: ${node.name} (${node.id})`);
+                                                    const hasDefinition = node.definitionGraphIds && node.definitionGraphIds.length > 0;
+                                                    console.log(`   - Has Definitions: ${!!hasDefinition}`);
+                                                    if (hasDefinition) {
+                                                        const graphIdToOpen = node.definitionGraphIds[0]; // Assume first one
+                                                        console.log(`   - Definition Graph ID: ${graphIdToOpen}`);
+                                                        console.log(`   -> Calling openGraphTab(${graphIdToOpen}, ${node.id})`);
+                                                        openGraphTab(graphIdToOpen, node.id); // Pass node ID as definitionNodeId
+                                                    } else {
+                                                        console.log(`   - Node has no definition graph.`);
+                                                        console.log(`   -> Calling createAndAssignGraphDefinition(${node.id})`);
+                                                        createAndAssignGraphDefinition(node.id);
+                                                    }
+                                                }}
+                                                onDoubleClick={() => {
+                                                    console.log(`Double clicked saved node: ${node.name} (${node.id}). Opening right panel tab.`);
+                                                    openRightPanelNodeTab(node.id);
+                                                }}
                                                 style={{
                                                     position: 'relative', // Needed for positioning the close button
                                                     backgroundColor: node.color || NODE_DEFAULT_COLOR, // Use node color or default
@@ -846,16 +865,58 @@ const Panel = forwardRef(
                                                     fontWeight: 'bold', // Bold text
                                                     textAlign: 'center',
                                                     cursor: 'pointer',
-                                                    overflow: 'hidden',
                                                     textOverflow: 'ellipsis',
                                                     whiteSpace: 'nowrap',
                                                     userSelect: 'none',
-                                                    border: node.id === propActiveDefinitionNodeId ? '2px solid black' : '2px solid transparent', // Use black for active border
+                                                    // <<< UPDATE: Keep border width consistent, change color >>>
+                                                    borderWidth: '4px',
+                                                    borderStyle: 'solid',
+                                                    borderColor: node.id === activeDefinitionNodeId ? 'black' : 'transparent',
                                                     boxSizing: 'border-box', // Ensure border is included in size
-                                                    transition: 'opacity 0.3s ease, border-color 0.2s ease', // Add transition for fade and border
+                                                    transition: 'opacity 0.3s ease, border-color 0.2s ease', // Animate border-color
                                                 }}
                                             >
                                                 {node.name || 'Unnamed'}
+                                                {/* Add Unsave Button - Conditionally Rendered */}
+                                                {node.id === activeDefinitionNodeId && (
+                                                    <div
+                                                        style={{
+                                                            position: 'absolute',
+                                                            top: '-6px',       // Adjust for visual overlap
+                                                            right: '-6px',      // Adjust for visual overlap
+                                                            cursor: 'pointer',
+                                                            zIndex: 10,       // Ensure it's above the node item
+                                                            // Use fully opaque black background
+                                                            backgroundColor: '#000000', 
+                                                            borderRadius: '50%',
+                                                            padding: '2px',   // Small padding around icon
+                                                            display: 'flex', // Center icon
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            // No background transition needed
+                                                        }}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation(); // Prevent parent click
+                                                            console.log(`[Unsave Click] Toggling saved state for ${node.id}`);
+                                                            toggleSavedNode(node.id); // Call store action
+                                                        }}
+                                                        // Remove background hover, use icon hover below
+                                                        // onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.9)'}
+                                                        // onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.6)'}
+                                                        title="Unsave this item"
+                                                    >
+                                                        <XCircle 
+                                                            size={16}         // Adjust size as needed
+                                                            // Style icon color and hover effect
+                                                            style={{
+                                                                color: '#999999', // Grey color normally
+                                                                transition: 'color 0.2s ease', // Transition color
+                                                            }}
+                                                            onMouseEnter={(e) => e.currentTarget.style.color = '#ffffff'} // White on hover
+                                                            onMouseLeave={(e) => e.currentTarget.style.color = '#999999'} // Back to grey
+                                                        />
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -866,6 +927,15 @@ const Panel = forwardRef(
                 </div>
             );
         } else if (leftViewActive === 'grid') {
+            // Define the click handler ONLY when grid is active
+            const handleGridItemClick = (graphId) => {
+                if (leftViewActive === 'grid') { // Double check view is still grid
+                    setActiveGraph(graphId);
+                } else {
+                    console.warn("[Panel] Grid item click handler called while view was not grid!");
+                }
+            };
+
             // Render Tabs view using graphStore data
             panelContent = (
                 <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}> 
@@ -913,7 +983,7 @@ const Panel = forwardRef(
                                 panelWidth={panelWidth} // Pass current panel width
                                 isActive={graph.id === activeGraphId} // Check if it's the active graph
                                 isExpanded={expandedGraphIds.has(graph.id)} // <<< Pass derived expanded state
-                                onClick={setActiveGraph} // Use store action for click
+                                onClick={handleGridItemClick} // <<< Use the guarded handler
                                 onClose={closeGraph} 
                                 onToggleExpand={toggleGraphExpanded} // <<< Pass toggle action
                             />

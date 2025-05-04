@@ -210,3 +210,31 @@
   /* You might add a subtle visual cue like opacity change if desired */
   /* opacity: 0.8; */
 }
+
+.tab-close-button {
+  margin-left: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-muted); /* Dimmed color */
+  opacity: 0; /* Initially hidden */
+  transition: opacity 0.3s ease; /* Add transition for opacity */
+  line-height: 1; /* Align better with text */
+  font-size: 1.1em; /* Slightly larger */
+  font-weight: bold;
+}
+
+.tab:hover .tab-close-button,
+.tab.active .tab-close-button {
+  opacity: 0.6; /* Slightly visible on hover/active */
+}
+
+.tab-close-button:hover {
+  color: var(--text-standard); /* Brighter color on hover */
+  opacity: 1; /* Fully visible on its own hover */
+}
+
+.tab-content {
+  /* ... existing code ... */
+}

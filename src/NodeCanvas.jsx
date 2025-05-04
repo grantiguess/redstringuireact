@@ -238,19 +238,9 @@ const PlusSign = ({
   );
 };
 
-// Helper to force component re-render AND get a changing value
-const useForceUpdate = () => React.useReducer(c => c + 1, 0);
-
 function NodeCanvas() {
   const svgRef = useRef(null);
   const wrapperRef = useRef(null);
-  // Get both the state value (renderTrigger) and the dispatch function (forceUpdate)
-  const [renderTrigger, forceUpdate] = useForceUpdate(); 
-
-  // --- Local State for Subscribed Zustand Data ---
-  const [localActiveGraphId, setLocalActiveGraphId] = useState(null);
-  const [localActiveGraphName, setLocalActiveGraphName] = useState('Loading...');
-  const [localActiveGraphDescription, setLocalActiveGraphDescription] = useState(''); // Ensure this state exists
 
   // <<< Define storeActions using useMemo >>>
   const storeActions = useMemo(() => {
@@ -276,92 +266,59 @@ function NodeCanvas() {
     };
   }, []); // Empty dependency array means actions are stable (typical for Zustand)
 
-  // Ref to track the last subscribed state to prevent unnecessary updates
-  const lastSubscribedStateRef = useRef({ id: null, name: null, description: null });
+  // <<< SELECT STATE DIRECTLY >>>
+  const activeGraphId = useGraphStore(state => state.activeGraphId);
+  const activeDefinitionNodeId = useGraphStore(state => state.activeDefinitionNodeId);
+  const graphsMap = useGraphStore(state => state.graphs);
+  const nodesMap = useGraphStore(state => state.nodes);
+  const edgesMap = useGraphStore(state => state.edges);
+  const savedNodeIds = useGraphStore(state => state.savedNodeIds);
+  // Get open graph IDs needed for initial check
+  const openGraphIds = useGraphStore(state => state.openGraphIds);
 
-  // --- Subscribe to Zustand Store Manually ---
+  // <<< Derive active graph data directly >>>
+  const activeGraphData = useMemo(() => {
+      return activeGraphId ? graphsMap.get(activeGraphId) : null;
+  }, [activeGraphId, graphsMap]);
+  const activeGraphName = activeGraphData?.name ?? 'Loading...';
+  const activeGraphDescription = activeGraphData?.description ?? '';
+
+  // <<< Initial Graph Creation Logic (Revised) >>>
   useEffect(() => {
-    const unsubscribe = useGraphStore.subscribe(
-      (state) => {
-        // RERUN LOGIC ON EVERY NOTIFICATION
-        const currentActiveGraphId = getActiveGraphId(state);
-
-        const currentGraphData = currentActiveGraphId ? state.graphs.get(currentActiveGraphId) : null;
-        const currentName = currentGraphData?.name ?? 'Loading...';
-        const currentDescription = currentGraphData?.description ?? '';
-
-        // Update local state regardless of ID change
-        setLocalActiveGraphId(currentActiveGraphId);
-        setLocalActiveGraphName(currentName); 
-        setLocalActiveGraphDescription(currentDescription); // Ensure this update happens
-
-        // Force re-render to ensure derived state (like nodes) updates
-        forceUpdate();
-
-        // Update the ref (optional now, but keep for potential future use)
-        lastSubscribedStateRef.current = {
-          id: currentActiveGraphId,
-          name: currentName, 
-          description: currentDescription,
-        };
+      // Check if graph maps are loaded and if there's no active graph AND no open graphs
+      if (graphsMap.size > 0 && activeGraphId === null && openGraphIds.length === 0) {
+           console.log('[Effect: Initial Check] No active or open graphs found, creating default "New Thing".');
+           storeActions.createNewGraph({ name: 'New Thing' });
+      } else if (graphsMap.size === 0 && localStorage.getItem('graphsMap') === null) {
+          // Handle the very first load case where localStorage is empty
+          console.log('[Effect: Initial Check] First load (no persisted graphs), creating default "New Thing".');
+          storeActions.createNewGraph({ name: 'New Thing' });
       }
-    );
-
-    // Initial sync: Call the listener once manually after subscribing
-    const initialState = useGraphStore.getState();
-    let currentActiveGraphId = getActiveGraphId(initialState);
-
-    // If no graph is active initially, create and activate a default one
-    if (currentActiveGraphId === null) {
-        initialState.createNewGraph({ name: 'New Thing' }); 
-        // Read the state *again* after the action to get the new active ID
-        const updatedState = useGraphStore.getState(); 
-        currentActiveGraphId = getActiveGraphId(updatedState);
-    }
-
-    // Now proceed with the potentially updated activeGraphId
-    const currentGraphData = currentActiveGraphId ? useGraphStore.getState().graphs.get(currentActiveGraphId) : null;
-    const currentName = currentGraphData?.name ?? 'Loading...'; // Use updated ID
-    const currentDescription = currentGraphData?.description ?? ''; // Use updated ID
-
-    setLocalActiveGraphId(currentActiveGraphId);
-    setLocalActiveGraphName(currentName);
-    setLocalActiveGraphDescription(currentDescription);
-    console.log('[Effect: Subscribe] Initial state synced:', lastSubscribedStateRef.current);
-
-    return () => {
-      unsubscribe();
-    };
-  }, []); // Empty dependency array ensures this runs only once on mount
+  }, [graphsMap, activeGraphId, openGraphIds, storeActions]); // Depend on relevant state
 
   // Derive nodes and edges using useMemo (Update dependency array)
   const nodes = useMemo(() => { 
-    // if (!localActiveGraphId) return []; // Use local state - Re-enable check
-    if (!localActiveGraphId) return [];
-    const state = useGraphStore.getState();
-    const currentGraphData = localActiveGraphId ? state.graphs.get(localActiveGraphId) : null; // Use local state, handle null
+    if (!activeGraphId) return [];
+    // const state = useGraphStore.getState(); // No longer need getState
+    const currentGraphData = activeGraphId ? graphsMap.get(activeGraphId) : null; // Use selected map
     const nodeIds = currentGraphData?.nodeIds;
     if (!nodeIds) return [];
-    const currentNodesMap = state.nodes;
-
-    // console.log(`[nodes useMemo] Graph ${localActiveGraphId} nodeIds:`, nodeIds); // REMOVE Log nodeIds
-    const derivedNodes = nodeIds.map(id => currentNodesMap.get(id)).filter(Boolean);
-    // console.log(`[nodes useMemo] Derived nodes array length: ${derivedNodes.length}`); // REMOVE Log derived nodes length
+    // const currentNodesMap = state.nodes; // Use selected map
+    const derivedNodes = nodeIds.map(id => nodesMap.get(id)).filter(Boolean);
     return derivedNodes;
-  }, [localActiveGraphId, renderTrigger]); // Depend on local state AND renderTrigger
+  // }, [localActiveGraphId, renderTrigger]); // Depend on local state AND renderTrigger
+  }, [activeGraphId, graphsMap, nodesMap]); // <<< UPDATE DEPENDENCIES
 
   const edges = useMemo(() => { 
-    // if (!localActiveGraphId) return []; // Use local state - Re-enable check
-    if (!localActiveGraphId) return [];
-    const state = useGraphStore.getState();
-    const currentGraphData = localActiveGraphId ? state.graphs.get(localActiveGraphId) : null; // Use local state, handle null
+    if (!activeGraphId) return [];
+    // const state = useGraphStore.getState(); // No longer need getState
+    const currentGraphData = activeGraphId ? graphsMap.get(activeGraphId) : null; // Use selected map
     const edgeIds = currentGraphData?.edgeIds;
     if (!edgeIds) return [];
-    const currentEdgesMap = state.edges;
-
-    // console.log(`[NodeCanvas] Memoizing edges for graph ${localActiveGraphId}`); // Debug
-    return edgeIds.map(id => currentEdgesMap.get(id)).filter(Boolean);
-  }, [localActiveGraphId, renderTrigger]); // Depend on local state AND renderTrigger
+    // const currentEdgesMap = state.edges; // Use selected map
+    return edgeIds.map(id => edgesMap.get(id)).filter(Boolean);
+  // }, [localActiveGraphId, renderTrigger]); // Depend on local state AND renderTrigger
+  }, [activeGraphId, graphsMap, edgesMap]); // <<< UPDATE DEPENDENCIES
 
   // --- Local UI State (Keep these) ---
   const [selectedNodeIds, setSelectedNodeIds] = useState(new Set()); // Changed to store IDs
@@ -414,38 +371,30 @@ function NodeCanvas() {
   const [isLeftPanelInputFocused, setIsLeftPanelInputFocused] = useState(false);
 
   // Use the local state values populated by subscribe
-  const projectTitle = localActiveGraphName ?? 'Loading...';
-  const projectBio = localActiveGraphDescription ?? '';
+  const projectTitle = activeGraphName ?? 'Loading...';
+  const projectBio = activeGraphDescription ?? '';
 
   const [previewingNodeId, setPreviewingNodeId] = useState(null);
 
   // --- Saved Nodes Management ---
-  const savedNodeIds = useGraphStore(state => state.savedNodeIds);
-
-  const activeDefinitionNodeId = useGraphStore(state => state.activeDefinitionNodeId);
-
   const bookmarkActive = useMemo(() => {
     // Directly use activeDefinitionNodeId - store ensures it's set
     return activeDefinitionNodeId ? savedNodeIds.has(activeDefinitionNodeId) : false;
   }, [activeDefinitionNodeId, savedNodeIds]);
 
   const handleToggleBookmark = useCallback(() => {
-    console.log('[Bookmark Click State] activeDefinitionNodeId:', activeDefinitionNodeId);
-    // Add direct store state check for comparison
-    const directStoreDefId = useGraphStore.getState().activeDefinitionNodeId;
-    console.log('[Bookmark Click State] Direct store read activeDefinitionNodeId:', directStoreDefId);
-    
-    if (activeDefinitionNodeId) {
-      // Toggle the active definition node (guaranteed by store logic)
-      console.log('[Bookmark] Toggling saved state for active definition node:', activeDefinitionNodeId);
-      storeActions.toggleSavedNode(activeDefinitionNodeId);
+    // Get current state for logging
+    const currentState = useGraphStore.getState();
+    console.log('[Bookmark Click State] activeGraphId:', currentState.activeGraphId, 'activeDefinitionNodeId:', currentState.activeDefinitionNodeId);
+
+    if (currentState.activeDefinitionNodeId) {
+      // Toggle the active definition node
+      console.log('[Bookmark] Toggling saved state for active definition node:', currentState.activeDefinitionNodeId);
+      storeActions.toggleSavedNode(currentState.activeDefinitionNodeId);
     } else {
-      // If no definition node could be derived, do nothing
-      // This case should theoretically not happen anymore for active graphs
-      console.warn('[Bookmark] No active definition node found. This might indicate an issue.');
-      return;
+      console.warn('[Bookmark] No active definition node found. Cannot toggle.');
     }
-  }, [activeDefinitionNodeId, storeActions]);
+  }, [storeActions]); // Dependency only on storeActions as we read fresh state inside
 
   // --- Refs (Keep these) ---
   const containerRef = useRef(null);
@@ -506,7 +455,7 @@ function NodeCanvas() {
 
   const handleNodeMouseDown = (nodeData, e) => { // Takes nodeData now
     e.stopPropagation();
-    if (isPaused || !localActiveGraphId) return; // Check local state
+    if (isPaused || !activeGraphId) return; // Check local state
 
     const nodeId = nodeData.id;
 
@@ -604,7 +553,7 @@ function NodeCanvas() {
   };
 
   const handleSaveNodeData = (nodeId, newData) => {
-    if (!localActiveGraphId) return; // Check local state
+    if (!activeGraphId) return; // Check local state
     // Use localStoreActions
     storeActions.updateNode(nodeId, draft => {
         Object.assign(draft, newData); // Simple merge for now
@@ -738,7 +687,7 @@ function NodeCanvas() {
 
   // --- Mouse Drag Panning (unchanged) ---
   const handleMouseMove = async (e) => {
-    if (isPaused || !localActiveGraphId) return;
+    if (isPaused || !activeGraphId) return;
     const rect = containerRef.current.getBoundingClientRect();
     const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
     const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
@@ -866,7 +815,7 @@ function NodeCanvas() {
   };
 
   const handleMouseDown = (e) => {
-    if (isPaused || !localActiveGraphId) return;
+    if (isPaused || !activeGraphId) return;
     // Clear any pending single click on a node
     if (clickTimeoutIdRef.current) {
         clearTimeout(clickTimeoutIdRef.current);
@@ -896,7 +845,7 @@ function NodeCanvas() {
   };
 
   const handleMouseUp = (e) => {
-    if (isPaused || !localActiveGraphId) return;
+    if (isPaused || !activeGraphId) return;
     clearTimeout(longPressTimeout.current);
     setLongPressingNodeId(null); // Clear ID
     mouseInsideNode.current = false;
@@ -920,7 +869,7 @@ function NodeCanvas() {
                 const newEdgeId = uuidv4();
                 const newEdgeData = { id: newEdgeId, sourceId, destinationId: destId };
                  // Use localStoreActions
-                storeActions.addEdge(localActiveGraphId, newEdgeData);
+                storeActions.addEdge(activeGraphId, newEdgeData);
             }
         }
         setDrawingConnectionFrom(null);
@@ -974,7 +923,7 @@ function NodeCanvas() {
   };
 
   const handleMouseUpCanvas = (e) => {
-    if (isPaused || !localActiveGraphId) return;
+    if (isPaused || !activeGraphId) return;
     if (isPanning) {
       const dx = e.clientX - mouseDownPosition.current.x;
       const dy = e.clientY - mouseDownPosition.current.y;
@@ -1009,7 +958,7 @@ function NodeCanvas() {
       }
       if (e.target.closest('g[data-plus-sign="true"]')) return;
       if (e.target.tagName !== 'svg' || !e.target.classList.contains('canvas')) return;
-      if (isPaused || draggingNodeInfo || drawingConnectionFrom || mouseMoved.current || recentlyPanned || nodeNamePrompt.visible || !localActiveGraphId) {
+      if (isPaused || draggingNodeInfo || drawingConnectionFrom || mouseMoved.current || recentlyPanned || nodeNamePrompt.visible || !activeGraphId) {
           setLastInteractionType('blocked_click');
           return;
       }
@@ -1057,7 +1006,7 @@ function NodeCanvas() {
   };
 
   const handleMorphDone = () => {
-      if (!plusSign || !plusSign.tempName || !localActiveGraphId) return;
+      if (!plusSign || !plusSign.tempName || !activeGraphId) return;
       const name = plusSign.tempName;
       const newNodeId = uuidv4();
       const newNodeData = {
@@ -1077,8 +1026,8 @@ function NodeCanvas() {
           edgeIds: [],
           definitionGraphIds: [],
       };
-      console.log(`[handleMorphDone] About to add node:`, { graphId: localActiveGraphId, nodeData: newNodeData }); // Log before action
-      storeActions.addNode(localActiveGraphId, newNodeData);
+      console.log(`[handleMorphDone] About to add node:`, { graphId: activeGraphId, nodeData: newNodeData }); // Log before action
+      storeActions.addNode(activeGraphId, newNodeData);
       setPlusSign(null);
   };
 
@@ -1263,7 +1212,7 @@ function NodeCanvas() {
   useEffect(() => {
     const handleKeyDown = (e) => {
       const isInputActive = isHeaderEditing || isRightPanelInputFocused || isLeftPanelInputFocused || nodeNamePrompt.visible;
-      if (isInputActive || !localActiveGraphId) { return; }
+      if (isInputActive || !activeGraphId) { return; }
 
       const isDeleteKey = e.key === 'Delete' || e.key === 'Backspace';
       const nodesSelected = selectedNodeIds.size > 0;
@@ -1283,7 +1232,7 @@ function NodeCanvas() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeIds, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible, localActiveGraphId, storeActions.removeNode]);
+  }, [selectedNodeIds, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible, activeGraphId, storeActions.removeNode]);
 
   const handleProjectTitleChange = (newTitle) => {
     // Get CURRENT activeGraphId directly from store
@@ -1339,12 +1288,10 @@ function NodeCanvas() {
           isExpanded={leftPanelExpanded}
           onToggleExpand={handleToggleLeftPanel}
           onFocusChange={handleLeftPanelFocusChange}
-          activeGraphId={localActiveGraphId}
+          activeGraphId={activeGraphId}
           storeActions={storeActions}
-          graphName={localActiveGraphName}
-          graphDescription={localActiveGraphDescription}
-          renderTrigger={renderTrigger}
-          activeDefinitionNodeId={activeDefinitionNodeId}
+          graphName={activeGraphName}
+          graphDescription={activeGraphDescription}
         />
 
         <div
@@ -1363,7 +1310,7 @@ function NodeCanvas() {
           onMouseUp={handleMouseUpCanvas}
           onClick={handleCanvasClick}
         >
-          {!localActiveGraphId ? ( // Check local state
+          {!activeGraphId ? ( // Check local state
             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
               No graph selected. Open or create a graph from the left panel.
             </div>
@@ -1534,11 +1481,10 @@ function NodeCanvas() {
             console.log(`[Right Panel Focus Change] Setting isRightPanelInputFocused to: ${isFocused}`);
             setIsRightPanelInputFocused(isFocused);
           }}
-          activeGraphId={localActiveGraphId}
+          activeGraphId={activeGraphId}
           storeActions={storeActions}
-          graphName={localActiveGraphName}
-          graphDescription={localActiveGraphDescription}
-          renderTrigger={renderTrigger}
+          graphName={activeGraphName}
+          graphDescription={activeGraphDescription}
         />
       </div>
       
