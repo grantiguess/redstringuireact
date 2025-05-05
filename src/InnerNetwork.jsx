@@ -122,7 +122,7 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
       {/* Render Nodes using original coordinates and dimensions (scaled by parent g) */}
       {/* SIMPLIFIED NODE RENDERING FOR PREVIEW */}
       {nodes.map((node) => {
-         // Get original dimensions
+         // Get original dimensions 
          const dimensions = getNodeDimensions(node);
 
          return (

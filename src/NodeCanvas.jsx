@@ -423,6 +423,43 @@ function NodeCanvas() {
   // Ref to track initial mount completion
   const isMountedRef = useRef(false);
 
+  // Effect to center view on graph load/change
+  useEffect(() => {
+    // Ensure we have valid sizes and an active graph
+    if (activeGraphId && viewportSize.width > 0 && viewportSize.height > 0 && canvasSize.width > 0 && canvasSize.height > 0 && zoomLevel > 0) {
+
+      // Target the center of the canvas
+      const targetCanvasX = canvasSize.width / 2;
+      const targetCanvasY = canvasSize.height / 2;
+
+      // Use the CURRENT zoom level state
+      const currentZoom = zoomLevel;
+
+      // Calculate pan needed to place targetCanvas coords at viewport center
+      const initialPanX = viewportSize.width / 2 - targetCanvasX * currentZoom;
+      const initialPanY = viewportSize.height / 2 - targetCanvasY * currentZoom;
+
+      // Clamp the initial pan to valid bounds based on current canvas/viewport/zoom
+      const maxX = 0;
+      const maxY = 0;
+      const minX = viewportSize.width - canvasSize.width * currentZoom;
+      const minY = viewportSize.height - canvasSize.height * currentZoom;
+      const clampedX = Math.min(Math.max(initialPanX, minX), maxX);
+      const clampedY = Math.min(Math.max(initialPanY, minY), maxY);
+
+      // Apply the calculated and clamped pan offset
+      setPanOffset({ x: clampedX, y: clampedY });
+
+      // Avoid resetting zoom here, let user control persist
+    }
+    // If activeGraphId becomes null, we might optionally reset pan/zoom
+    // else if (activeGraphId === null) {
+    //   setPanOffset({ x: 0, y: 0 });
+    //   setZoomLevel(1);
+    // }
+    // REMOVE zoomLevel from dependencies to prevent recentering on zoom
+  }, [activeGraphId, viewportSize, canvasSize]);
+
   // --- Utility Functions ---
   const lerp = (a, b, t) => a + (b - a) * t;
   const clampCoordinates = (x, y) => {

@@ -441,25 +441,35 @@ const Panel = forwardRef(
     // Run when openGraphIds array reference changes OR side changes
     }, [openGraphIds, side]); 
 
-    // Effect to update maxHeight when content changes while section is open
+    // Effect to update maxHeight when content changes or visibility toggles
     useEffect(() => {
-        // Only run if the 'Thing' section is currently open
-        if (!sectionCollapsed['Thing']) {
-             // Section is OPEN
-             if (thingContentRef.current) {
-                const currentScrollHeight = thingContentRef.current.scrollHeight;
-                console.log(`[useEffect] Section open, setting maxHeight: ${currentScrollHeight}px`);
-                setThingMaxHeight(`${currentScrollHeight}px`);
-             } else {
-                 // Attempt to set based on a reasonable estimate if ref not ready?
-                 // console.log(`[useEffect] Section open, ref not ready, setting default open height.`);
-                 // setThingMaxHeight('500px'); // Or keep previous value?
-             }
+        let newMaxHeight = '0px'; // Default to collapsed height
+
+        // Calculate the potential open height based on content
+        if (thingContentRef.current) {
+            const currentScrollHeight = thingContentRef.current.scrollHeight;
+            // Add a small buffer (e.g., 10px) if needed, or use scrollHeight directly
+            const potentialOpenHeight = `${currentScrollHeight}px`; 
+            //console.log(`[useEffect] Calculated potential open height: ${potentialOpenHeight}`);
+
+            // Decide whether to use the calculated height or 0px
+            if (!sectionCollapsed['Thing']) {
+                // Section is OPEN, use the calculated height
+                newMaxHeight = potentialOpenHeight;
+                //console.log(`[useEffect] Section open, setting maxHeight: ${newMaxHeight}`);
+            } else {
+                // Section is CLOSED, maxHeight remains '0px'
+                //console.log(`[useEffect] Section closed, setting maxHeight: 0px`);
+            }
         } else {
-            // Section is CLOSED
-            console.log(`[useEffect] Section closed, setting maxHeight: 0px`);
-            setThingMaxHeight('0px');
+            //console.log("[useEffect] Ref not available, defaulting maxHeight based on collapsed state.");
+            // Fallback if ref isn't ready (might happen on initial render)
+            newMaxHeight = sectionCollapsed['Thing'] ? '0px' : '500px'; // Use 0 or a default open height
         }
+
+        // Set the state
+        setThingMaxHeight(newMaxHeight);
+
     }, [savedNodes, sectionCollapsed]); // Rerun when savedNodes or collapsed state changes
 
     // Shared state
@@ -844,24 +854,24 @@ const Panel = forwardRef(
                                                     openRightPanelNodeTab(node.id);
                                                 }}
                                                 style={{
-                                                    position: 'relative', // Needed for positioning the close button
+                                                    position: 'relative',
                                                     backgroundColor: node.color || NODE_DEFAULT_COLOR, // Use node color or default
                                                     color: '#bdb5b5', // Set text color for contrast
                                                     borderRadius: '10px', // Keep rounded corners
-                                                    padding: '4px 6px', // Adjust padding slightly
-                                                    fontSize: '0.8rem', // Smaller font size
-                                                    fontWeight: 'bold', // Bold text
+                                                    padding: '4px 6px',
+                                                    fontSize: '0.8rem',
+                                                    fontWeight: 'bold',
                                                     textAlign: 'center',
                                                     cursor: 'pointer',
                                                     textOverflow: 'ellipsis',
                                                     whiteSpace: 'nowrap',
                                                     userSelect: 'none',
-                                                    // <<< UPDATE: Keep border width consistent, change color >>>
                                                     borderWidth: '4px',
                                                     borderStyle: 'solid',
                                                     borderColor: node.id === activeDefinitionNodeId ? 'black' : 'transparent',
-                                                    boxSizing: 'border-box', // Ensure border is included in size
-                                                    transition: 'opacity 0.3s ease, border-color 0.2s ease', // Animate border-color
+                                                    boxSizing: 'border-box',
+                                                    transition: 'opacity 0.3s ease, border-color 0.2s ease',
+                                                    margin: '4px',
                                                 }}
                                             >
                                                 {node.name || 'Unnamed'}

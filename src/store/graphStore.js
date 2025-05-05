@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { produce, enableMapSet } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
+import { NODE_WIDTH, NODE_HEIGHT } from '../constants'; // <<< Import node dimensions
 // No longer importing class instances
 // import Graph from '../core/Graph';
 // import Node from '../core/Node';
@@ -536,8 +537,8 @@ const useGraphStore = create((set, get) => {
       picture: null,
       color: 'maroon',
       data: null,
-      x: 0,
-      y: 0,
+      x: 5000 - NODE_WIDTH / 2, // <<< Center the node horizontally
+      y: 5000 - NODE_HEIGHT / 2, // <<< Center the node vertically
       scale: 1,
       imageSrc: null,
       thumbnailSrc: null,
