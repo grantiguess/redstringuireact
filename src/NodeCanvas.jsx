@@ -5,8 +5,11 @@ import Header from './Header.jsx';
 import DebugOverlay from './DebugOverlay.jsx';
 import { useCanvasWorker } from './useCanvasWorker.js';
 import Node from './Node.jsx';
+import PlusSign from './PlusSign.jsx'; // Import the new PlusSign component
+import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
+import { Edit3, Trash2, Link, GitFork, PlusSquare } from 'lucide-react'; // Example icons
 
 // Import Zustand store and selectors/actions
 import useGraphStore, {
@@ -50,193 +53,6 @@ const isMac = /Mac/i.test(navigator.userAgent);
 const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1;        // Sensitivity for standard mouse wheel zooming
 const KEYBOARD_PAN_SPEED = 0.115;                // for keyboard panning
 const KEYBOARD_ZOOM_SPEED = 0.15;               // for keyboard zooming
-
-/**
- * PlusSign component
- */
-const PlusSign = ({
-  plusSign,
-  onClick,
-  onMorphDone,
-  onDisappearDone
-}) => {
-  const animationFrameRef = useRef(null);
-  const plusRef = useRef({
-    rotation: -90,
-    width: 0,
-    height: 0,
-    cornerRadius: 40,
-    color: '#DEDADA',
-    lineOpacity: 1,
-    textOpacity: 0,
-  });
-  const [, forceUpdate] = React.useReducer((s) => s + 1, 0);
-
-  useEffect(() => {
-    runAnimation();
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [plusSign.mode]);
-
-  const lerp = (a, b, t) => a + (b - a) * t;
-
-  const runAnimation = () => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-    }
-    const startTime = performance.now();
-    const { mode } = plusSign;
-    const appearDisappearDuration = PLUS_SIGN_ANIMATION_DURATION || 200;
-    const morphDuration = 300;
-    const duration = mode === 'morph' ? morphDuration : appearDisappearDuration;
-
-    const {
-      rotation: startRot,
-      width: startW,
-      height: startH,
-      cornerRadius: startCorner,
-      color: startColor,
-      lineOpacity: startLineOp,
-      textOpacity: startTextOp,
-    } = plusRef.current;
-
-    let endRot = 0;
-    let endWidth = PLUS_SIGN_SIZE;
-    let endHeight = PLUS_SIGN_SIZE;
-    let endCorner = 40;
-    let endColor = '#DEDADA';
-    let endLineOp = 1;
-    let endTextOp = 0;
-
-    if (mode === 'appear') {
-      endRot = 0;
-      endWidth = PLUS_SIGN_SIZE;
-      endHeight = PLUS_SIGN_SIZE;
-      endCorner = 40;
-      endColor = '#DEDADA';
-      endLineOp = 1;
-      endTextOp = 0;
-    } else if (mode === 'disappear') {
-      endRot = -90;
-      endWidth = 0;
-      endHeight = 0;
-      endCorner = 40;
-      endColor = '#DEDADA';
-      endLineOp = 1;
-      endTextOp = 0;
-    } else if (mode === 'morph') {
-      endRot = 0;
-      endWidth = NODE_WIDTH;
-      endHeight = NODE_HEIGHT;
-      endCorner = 40;
-      endColor = 'maroon';
-      endLineOp = 0;
-      endTextOp = 1;
-    }
-
-    const animateFrame = (currentTime) => {
-      const elapsed = currentTime - startTime;
-      const t = Math.min(elapsed / duration, 1);
-      const easeT = t * t * (3 - 2 * t);
-
-      plusRef.current = {
-        rotation: lerp(startRot, endRot, easeT),
-        width: lerp(startW, endWidth, easeT),
-        height: lerp(startH, endHeight, easeT),
-        cornerRadius: lerp(startCorner, endCorner, easeT),
-        color: mode === 'morph'
-          ? (easeT < 0.5 ? startColor : endColor)
-          : '#DEDADA',
-        lineOpacity: mode === 'morph'
-          ? lerp(startLineOp, endLineOp, Math.min(easeT * 3, 1))
-          : lerp(startLineOp, endLineOp, easeT),
-        textOpacity: mode === 'morph'
-          ? lerp(startTextOp, endTextOp, easeT)
-          : 0,
-      };
-
-      forceUpdate();
-
-      if (t < 1) {
-        animationFrameRef.current = requestAnimationFrame(animateFrame);
-      } else {
-        animationFrameRef.current = null;
-        if (mode === 'disappear') {
-          onDisappearDone?.();
-        } else if (mode === 'morph') {
-          onMorphDone?.();
-        }
-      }
-    };
-
-    animationFrameRef.current = requestAnimationFrame(animateFrame);
-  };
-
-  const { rotation, width, height, cornerRadius, color, lineOpacity, textOpacity } = plusRef.current;
-  const { mode, tempName } = plusSign;
-  const halfCross = width / 4;
-
-  return (
-    <g
-      data-plus-sign="true"
-      transform={`translate(${plusSign.x}, ${plusSign.y}) rotate(${rotation})`}
-      style={{ cursor: 'pointer' }}
-      onClick={(e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        onClick?.();
-      }}
-    >
-      <rect
-        x={-width / 2}
-        y={-height / 2}
-        width={width}
-        height={height}
-        rx={cornerRadius}
-        ry={cornerRadius}
-        fill={color}
-        stroke="maroon"
-        strokeWidth={3}
-      />
-      <line
-        x1={-halfCross}
-        y1={0}
-        x2={halfCross}
-        y2={0}
-        stroke="maroon"
-        strokeWidth={3}
-        opacity={lineOpacity}
-      />
-      <line
-        x1={0}
-        y1={-halfCross}
-        x2={0}
-        y2={halfCross}
-        stroke="maroon"
-        strokeWidth={3}
-        opacity={lineOpacity}
-      />
-      {tempName && mode === 'morph' && (
-        <text
-          x="0"
-          y="5"
-          textAnchor="middle"
-          fontSize="16"
-          fontWeight="bold"
-          fontFamily="Helvetica"
-          fill="maroon"
-          opacity={textOpacity}
-          pointerEvents="none"
-        >
-          {tempName}
-        </text>
-      )}
-    </g>
-  );
-};
 
 function NodeCanvas() {
   const svgRef = useRef(null);
@@ -370,6 +186,7 @@ function NodeCanvas() {
   const [isRightPanelInputFocused, setIsRightPanelInputFocused] = useState(false);
   const [leftPanelExpanded, setLeftPanelExpanded] = useState(true); // Default to open?
   const [isLeftPanelInputFocused, setIsLeftPanelInputFocused] = useState(false);
+  const [showPieMenu, setShowPieMenu] = useState(false); // Initialize showPieMenu state
 
   // Use the local state values populated by subscribe
   const projectTitle = activeGraphName ?? 'Loading...';
@@ -422,6 +239,19 @@ function NodeCanvas() {
 
   // Ref to track initial mount completion
   const isMountedRef = useRef(false);
+
+  // Pie Menu Button Configuration
+  const pieMenuButtons = [
+    { id: 'edit', label: 'Edit', icon: Edit3, action: (nodeId) => console.log('Edit node:', nodeId) },
+    { id: 'delete', label: 'Delete', icon: Trash2, action: (nodeId) => {
+      storeActions.removeNode(nodeId);
+      setSelectedNodeIds(new Set()); // Deselect after deleting
+     } },
+    { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => console.log('Connect node:', nodeId) },
+    { id: 'define', label: 'Define', icon: PlusSquare, action: (nodeId) => console.log('Define node:', nodeId) },
+    // Add more buttons here as needed
+    // { id: 'branch', label: 'Branch', icon: GitFork, action: (nodeId) => console.log('Branch node:', nodeId) },
+  ];
 
   // Effect to center view on graph load/change
   useEffect(() => {
@@ -532,6 +362,8 @@ function NodeCanvas() {
                     } else {
                        newSelected.add(nodeId);
                     }
+                    // Update showPieMenu based on selection
+                    setShowPieMenu(newSelected.size === 1);
                     return newSelected;
                 });
             }
@@ -1010,6 +842,7 @@ function NodeCanvas() {
 
       if (selectedNodeIds.size > 0) {
           setSelectedNodeIds(new Set());
+          setShowPieMenu(false); // Hide pie menu when deselecting all
           return;
       }
 
@@ -1412,6 +1245,19 @@ function NodeCanvas() {
                     strokeWidth="8"
                   />
                 )}
+
+                {showPieMenu && selectedNodeIds.size === 1 && (() => {
+                  const selectedNode = nodes.find(n => n.id === [...selectedNodeIds][0]);
+                  if (!selectedNode) return null;
+                  const dimensions = getNodeDimensions(selectedNode, previewingNodeId === selectedNode.id);
+                  return (
+                    <PieMenu
+                      node={selectedNode}
+                      buttons={pieMenuButtons}
+                      nodeDimensions={dimensions}
+                    />
+                  );
+                })()}
 
                 {(() => {
                    let draggingNodeIds = new Set();

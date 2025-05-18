@@ -1,0 +1,29 @@
+/* PieMenu.css */
+
+/* Inner wrapper of each bubble that performs the pop-up animation. */
+.pie-menu-bubble-inner {
+  /* Start off at the node centre (values injected via CSS variables) and invisible */
+  transform: translate(var(--start-x), var(--start-y)) scale(0);
+  opacity: 0;
+  /* The custom cubic-bezier gives a gentle overshoot on scale */
+  animation: pie-bubble-pop 400ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  /* Ensure the transform and opacity transitions are smooth */
+  will-change: transform, opacity;
+}
+
+@keyframes pie-bubble-pop {
+  0% {
+    transform: translate(var(--start-x), var(--start-y)) scale(0);
+    opacity: 0;
+  }
+  70% {
+    /* Bubble reaches its final position and overshoots its size */
+    transform: translate(0, 0) scale(1.15); /* Final position, overshoot size */
+    opacity: 1;
+  }
+  100% {
+    /* Settles to final size at its final position */
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+} 
