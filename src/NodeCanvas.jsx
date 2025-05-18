@@ -9,7 +9,7 @@ import PlusSign from './PlusSign.jsx'; // Import the new PlusSign component
 import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
-import { Edit3, Trash2, Link, Maximize2, PlusSquare } from 'lucide-react'; // Example icons, Maximize2 for expand
+import { Edit3, Trash2, Link, Maximize2 } from 'lucide-react'; // Example icons, Maximize2 for expand
 
 // Import Zustand store and selectors/actions
 import useGraphStore, {
@@ -186,7 +186,8 @@ function NodeCanvas() {
   const [isRightPanelInputFocused, setIsRightPanelInputFocused] = useState(false);
   const [leftPanelExpanded, setLeftPanelExpanded] = useState(true); // Default to open?
   const [isLeftPanelInputFocused, setIsLeftPanelInputFocused] = useState(false);
-  const [showPieMenu, setShowPieMenu] = useState(false); // Initialize showPieMenu state
+  const [isPieMenuRendered, setIsPieMenuRendered] = useState(false); // Controls if PieMenu is in DOM for animation
+  const [currentPieMenuData, setCurrentPieMenuData] = useState(null); // Holds { node, buttons, nodeDimensions }
 
   // Use the local state values populated by subscribe
   const projectTitle = activeGraphName ?? 'Loading...';
@@ -241,12 +242,12 @@ function NodeCanvas() {
   const isMountedRef = useRef(false);
 
   // Pie Menu Button Configuration
-  const pieMenuButtons = [
+  const pieMenuButtons = useMemo(() => [
     { id: 'edit', label: 'Edit', icon: Edit3, action: (nodeId) => console.log('Edit node:', nodeId) },
     { id: 'delete', label: 'Delete', icon: Trash2, action: (nodeId) => {
       storeActions.removeNode(nodeId);
       setSelectedNodeIds(new Set()); // Deselect after deleting
-     } },
+    } },
     { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => console.log('Connect node:', nodeId) },
     { id: 'expand-preview', label: 'Expand', icon: Maximize2, action: (nodeId) => {
       setPreviewingNodeId(prev => prev === nodeId ? null : nodeId);
@@ -254,7 +255,7 @@ function NodeCanvas() {
     // { id: 'define', label: 'Define', icon: PlusSquare, action: (nodeId) => console.log('Define node:', nodeId) }, // Replaced by expand-preview
     // Add more buttons here as needed
     // { id: 'branch', label: 'Branch', icon: GitFork, action: (nodeId) => console.log('Branch node:', nodeId) },
-  ];
+  ], [storeActions, setSelectedNodeIds, setPreviewingNodeId]); // Dependencies for useMemo
 
   // Effect to center view on graph load/change
   useEffect(() => {
@@ -365,7 +366,11 @@ function NodeCanvas() {
                        newSelected.add(nodeId);
                     }
                     // Update showPieMenu based on selection
-                    setShowPieMenu(newSelected.size === 1);
+                    if (newSelected.size === 1) {
+                      // Prepare to show pie menu - will be handled by useEffect on selectedNodeIds
+                    } else if (newSelected.size !== 1 && isPieMenuRendered) {
+                      // If deselecting all or selecting multiple, PieMenu will be told to hide via its isVisible prop
+                    }
                     return newSelected;
                 });
             }
@@ -844,14 +849,15 @@ function NodeCanvas() {
 
       if (selectedNodeIds.size > 0) {
           setSelectedNodeIds(new Set());
-          setShowPieMenu(false); // Hide pie menu when deselecting all
+          // Pie menu will be handled by useEffect on selectedNodeIds, no direct setShowPieMenu here
           return;
       }
 
       const rect = containerRef.current.getBoundingClientRect();
       const mouseX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
       const mouseY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
-      if (!plusSign) {
+      // Prevent plus sign if pie menu is active or about to become active
+      if (!plusSign && selectedNodeIds.size === 0) {
           setPlusSign({ x: mouseX, y: mouseY, mode: 'appear', tempName: '' });
           setLastInteractionType('plus_sign_shown');
       } else {
@@ -1133,6 +1139,33 @@ function NodeCanvas() {
     }
   };
 
+  // Effect to manage PieMenu visibility and data for animations
+  useEffect(() => {
+    console.log(`[NodeCanvas] useEffect[selectedNodeIds]: Running. selectedNodeIds.size = ${selectedNodeIds.size}, isPieMenuRendered = ${isPieMenuRendered}`);
+    if (selectedNodeIds.size === 1) {
+      const nodeId = [...selectedNodeIds][0];
+      const node = nodes.find(n => n.id === nodeId);
+      if (node) {
+        const dimensions = getNodeDimensions(node, previewingNodeId === node.id);
+        console.log(`[NodeCanvas] Single node selected (${nodeId}). Setting currentPieMenuData and isPieMenuRendered=true.`);
+        setCurrentPieMenuData({ node, buttons: pieMenuButtons, nodeDimensions: dimensions });
+        setIsPieMenuRendered(true); // Mount/show PieMenu, it will animate in
+      } else {
+        console.log(`[NodeCanvas] Single node ID (${nodeId}) in selectedNodeIds, but node not found in nodes array. Hiding pie menu.`);
+        // Selected node not found, ensure pie menu is hidden if it was trying to show
+        // If it was rendered, PieMenu will receive isVisible=false and animate out.
+        // No direct setIsPieMenuRendered(false) here to allow animation.
+        setCurrentPieMenuData(null);
+      }
+    } else {
+      console.log("[NodeCanvas] No single node selected (or multiple). PieMenu will receive isVisible=false.");
+      // Not a single selection, PieMenu will be told to animate out via its isVisible prop
+      // It will unmount itself via onExitAnimationComplete callback
+      // If it was already not rendered, currentPieMenuData might be null, which is fine.
+      // If currentPieMenuData is null and isPieMenuRendered is true, means it was just told to hide.
+    }
+  }, [selectedNodeIds, nodes, previewingNodeId, pieMenuButtons]);
+
   return (
     <div
       className="node-canvas-container"
@@ -1248,18 +1281,19 @@ function NodeCanvas() {
                   />
                 )}
 
-                {showPieMenu && selectedNodeIds.size === 1 && (() => {
-                  const selectedNode = nodes.find(n => n.id === [...selectedNodeIds][0]);
-                  if (!selectedNode) return null;
-                  const dimensions = getNodeDimensions(selectedNode, previewingNodeId === selectedNode.id);
-                  return (
-                    <PieMenu
-                      node={selectedNode}
-                      buttons={pieMenuButtons}
-                      nodeDimensions={dimensions}
-                    />
-                  );
-                })()}
+                {isPieMenuRendered && currentPieMenuData && (
+                  <PieMenu
+                    node={currentPieMenuData.node}
+                    buttons={currentPieMenuData.buttons}
+                    nodeDimensions={currentPieMenuData.nodeDimensions}
+                    isVisible={selectedNodeIds.size === 1} // Controls animation within PieMenu
+                    onExitAnimationComplete={() => {
+                      console.log("[NodeCanvas] PieMenu onExitAnimationComplete: Setting isPieMenuRendered=false, currentPieMenuData=null.");
+                      setIsPieMenuRendered(false); // Now unmount
+                      setCurrentPieMenuData(null);
+                    }}
+                  />
+                )}
 
                 {(() => {
                    let draggingNodeIds = new Set();

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { NODE_CORNER_RADIUS } from './constants'; // Import node corner radius
 import './PieMenu.css'; // Animation styles
 
@@ -9,8 +9,107 @@ const NUM_FIXED_POSITIONS = 8;
 const FIXED_ANGLE_STEP = (2 * Math.PI) / NUM_FIXED_POSITIONS; // PI/4 or 45 degrees
 const START_ANGLE_OFFSET = -Math.PI / 2; // Start at the top position (North)
 
-const PieMenu = ({ node, buttons, nodeDimensions }) => {
+const POP_ANIMATION_DURATION = 400; // ms, matches CSS
+const SHRINK_ANIMATION_DURATION = 150; // ms, matches CSS (FASTER)
+const STAGGER_DELAY = 50; // ms
+const EXIT_ANIMATION_BUFFER = 50; // ms, extra buffer for animation to complete visually
+
+const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComplete }) => {
+  // animationState can be: null (initial/hidden), 'popping', 'visible_steady', 'shrinking'
+  const [animationState, setAnimationState] = useState(null);
+
+  const bubbleRefs = useRef([]);
+  if (bubbleRefs.current.length !== buttons.length) {
+    bubbleRefs.current = Array(buttons.length).fill().map((_, i) => bubbleRefs.current[i] || React.createRef());
+  }
+  const animationsEndedCountRef = useRef(0);
+
+  // Primary effect to react to visibility changes from parent
+  useEffect(() => {
+    console.log(`[PieMenu] useEffect[isVisible]: prop is ${isVisible}. Current animationState: ${animationState}`);
+    if (isVisible) {
+      // If not already popping or steady, start popping
+      if (animationState !== 'popping' && animationState !== 'visible_steady') {
+        console.log("[PieMenu] Setting animationState to 'popping'");
+        setAnimationState('popping');
+        animationsEndedCountRef.current = 0; // Reset for pop-in (though not strictly needed for pop yet)
+      }
+    } else { // isVisible is false
+      // If it was popping or is steady, start shrinking
+      if (animationState === 'popping' || animationState === 'visible_steady') {
+        console.log("[PieMenu] Setting animationState to 'shrinking'");
+        setAnimationState('shrinking');
+        animationsEndedCountRef.current = 0; // Reset for shrink-out listeners
+      } else if (animationState === null && buttons && buttons.length > 0 && node) {
+        // Edge case: component was mounted with isVisible=false but had data (e.g. quick toggle by parent)
+        // It might have briefly been set to 'popping' then immediately to 'shrinking'.
+        // If it ends up here (isVisible=false, animationState=null, but has data), it implies it should be hidden.
+        // This state should ideally be caught by the render null logic.
+      }
+    }
+  }, [isVisible, animationState, buttons, node]); // Added buttons/node to handle edge cases like initial hide with data
+
+  const handleAnimationEnd = useCallback((event, buttonIndex) => {
+    console.log(`[PieMenu] handleAnimationEnd for button ${buttonIndex}. Animation: ${event.animationName}, current animationState: ${animationState}`);
+    if (event.target === bubbleRefs.current[buttonIndex]?.current) {
+      if (animationState === 'popping' && event.animationName === 'pie-bubble-pop') {
+        animationsEndedCountRef.current += 1;
+        if (animationsEndedCountRef.current >= buttons.length) {
+          console.log("[PieMenu] All pop-in animations ended. Setting animationState to 'visible_steady'.");
+          setAnimationState('visible_steady');
+          animationsEndedCountRef.current = 0;
+        }
+      } else if (animationState === 'shrinking' && event.animationName === 'pie-bubble-shrink-out') {
+        animationsEndedCountRef.current += 1;
+        if (animationsEndedCountRef.current >= buttons.length) {
+          console.log("[PieMenu] All shrink animations ended. Calling onExitAnimationComplete.");
+          onExitAnimationComplete && onExitAnimationComplete();
+          setAnimationState(null); // Reset state after exit is complete
+          animationsEndedCountRef.current = 0;
+        }
+      }
+    }
+  }, [animationState, buttons, onExitAnimationComplete]);
+
+  // Effect to add/remove event listeners for exit animation
+  useEffect(() => {
+    console.log(`[PieMenu] useEffect[animationState for listeners]: current state is ${animationState}.`);
+    // Add listeners for both pop and shrink, as we need to count them to transition state
+    if (animationState === 'popping' || animationState === 'shrinking') {
+      console.log(`[PieMenu] Adding animationend listeners for state: ${animationState}`);
+      bubbleRefs.current.forEach((ref, index) => {
+        const currentRef = ref.current;
+        if (currentRef) {
+          const listener = (event) => handleAnimationEnd(event, index);
+          currentRef.addEventListener('animationend', listener);
+          // Store listener for cleanup
+          currentRef._animationEndListener = listener; 
+        }
+      });
+    }
+
+    return () => {
+      console.log("[PieMenu] Cleanup: Removing animationend listeners.");
+      bubbleRefs.current.forEach(ref => {
+        const currentRef = ref.current;
+        if (currentRef && currentRef._animationEndListener) {
+          currentRef.removeEventListener('animationend', currentRef._animationEndListener);
+          delete currentRef._animationEndListener; // Clean up stored listener
+        }
+      });
+    };
+  }, [animationState, handleAnimationEnd]);
+
+  // Render null if essential data is missing
   if (!node || !buttons || !buttons.length || !nodeDimensions) {
+    console.log("[PieMenu] Render: Rendering NULL due to missing essential data.");
+    return null;
+  }
+
+  // If it hasn't even started the appearing sequence, and it's not currently set to be visible,
+  // and it's not shrinking out, then render null.
+  if (!isVisible && animationState !== 'shrinking') {
+    console.log(`[PieMenu] Render: Rendering NULL. isVisible is ${isVisible}, animationState is ${animationState}.`);
     return null;
   }
 
@@ -23,6 +122,20 @@ const PieMenu = ({ node, buttons, nodeDimensions }) => {
   const totalVisualOffset = BUBBLE_PADDING + BUBBLE_SIZE / 2;
   const cornerRadius = NODE_CORNER_RADIUS;
 
+  let dynamicClassName = 'pie-menu-bubble-inner';
+  if (animationState === 'popping') {
+    dynamicClassName += ' is-popping';
+  } else if (animationState === 'visible_steady') {
+    dynamicClassName += ' is-visible-steady';
+  } else if (animationState === 'shrinking') {
+    dynamicClassName += ' is-shrinking';
+  } else if (isVisible) {
+    // Fallback if isVisible is true but animationState is somehow null (should become 'popping')
+    // Or if it just became visible and 'popping' state is next render cycle
+    dynamicClassName += ' is-popping'; // Attempt to pop
+  }
+
+  console.log(`[PieMenu] Render: Rendering PieMenu. isVisible=${isVisible}, animationState=${animationState}`);
   return (
     <g className="pie-menu">
       {buttons.map((button, index) => {
@@ -77,26 +190,35 @@ const PieMenu = ({ node, buttons, nodeDimensions }) => {
         const startDX = nodeCenterX - bubbleX;
         const startDY = nodeCenterY - bubbleY;
 
+        let animationDelayMs;
+        if (animationState === 'shrinking') {
+          animationDelayMs = (NUM_FIXED_POSITIONS - 1 - index) * STAGGER_DELAY;
+        } else { // For popping or steady (though steady doesn't animate)
+          animationDelayMs = index * STAGGER_DELAY;
+        }
+
         return (
           <g
             key={button.id || index}
             transform={`translate(${bubbleX}, ${bubbleY})`}
             style={{ cursor: 'pointer' }}
             onClick={(e) => {
+              if (animationState === 'shrinking') return; // Prevent click during exit animation
               e.stopPropagation();
+              if (!isVisible) return; // Prevent action if menu is supposed to be hidden but animation not complete
               button.action(node.id);
             }}
           >
             {/* Inner wrapper so CSS transform does not conflict with outer absolute positioning */}
             <g
-              className="pie-menu-bubble-inner"
+              className={dynamicClassName}
               style={{
                 // Custom properties used by CSS keyframes to calculate initial offset
                 '--start-x': `${startDX}px`,
                 '--start-y': `${startDY}px`,
-                // Small stagger so bubbles pop sequentially
-                animationDelay: `${index * 50}ms`,
+                animationDelay: `${animationDelayMs}ms`,
               }}
+              ref={bubbleRefs.current[index]} // Assign ref to the inner g
             >
               <circle
                 cx="0"
