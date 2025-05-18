@@ -113,7 +113,7 @@ const CustomDragLayer = ({ tabBarRef }) => {
 
 
 // Draggable Tab Component
-const DraggableTab = ({ tab, index, moveTabAction, activateTabAction, closeTabAction }) => {
+const DraggableTab = ({ tab, index, displayTitle, dragItemTitle, moveTabAction, activateTabAction, closeTabAction }) => {
   const ref = useRef(null);
 
   const [, drop] = useDrop({
@@ -151,7 +151,7 @@ const DraggableTab = ({ tab, index, moveTabAction, activateTabAction, closeTabAc
     item: () => ({
       id: tab.nodeId,
       index: index - 1,
-      title: tab.title,
+      title: dragItemTitle,
       tab: tab
     }),
     collect: (monitor) => ({ isDragging: monitor.isDragging() }),
@@ -162,7 +162,7 @@ const DraggableTab = ({ tab, index, moveTabAction, activateTabAction, closeTabAc
   }, [preview]);
 
   const opacity = isDragging ? 0.4 : 1;
-  const cursor = isDragging ? 'grabbing' : 'pointer';
+  const cursorStyle = isDragging ? 'grabbing' : 'pointer';
   const isActive = tab.isActive;
   const bg = isActive ? '#bdb5b5' : '#979090';
 
@@ -187,7 +187,7 @@ const DraggableTab = ({ tab, index, moveTabAction, activateTabAction, closeTabAc
         padding: '0px 8px',
         marginRight: '6px',
         height: '100%',
-        cursor: cursor,
+        cursor: cursorStyle,
         maxWidth: '150px',
         transition: 'opacity 0.1s ease'
       }}
@@ -200,7 +200,7 @@ const DraggableTab = ({ tab, index, moveTabAction, activateTabAction, closeTabAc
         marginRight: '8px',
         userSelect: 'none'
       }}>
-        {tab.title}
+        {displayTitle}
       </span>
       <XCircle
         size={16}
@@ -512,10 +512,65 @@ const Panel = forwardRef(
 
     useEffect(() => {
       if (editingTitle && titleInputRef.current) {
-        titleInputRef.current.focus();
-        titleInputRef.current.select();
+        const inputElement = titleInputRef.current;
+
+        // Function to calculate and set width
+        const updateInputWidth = () => {
+          const text = inputElement.value; // Use current value from input directly
+          const style = window.getComputedStyle(inputElement);
+
+          const tempSpan = document.createElement('span');
+          tempSpan.style.font = style.font; // Includes family, size, weight, etc.
+          tempSpan.style.letterSpacing = style.letterSpacing;
+          tempSpan.style.visibility = 'hidden';
+          tempSpan.style.position = 'absolute';
+          tempSpan.style.whiteSpace = 'pre'; // Handles spaces correctly
+
+          // Use a non-empty string for measurement if text is empty
+          tempSpan.innerText = text || ' '; // Measure at least a space to get padding/border accounted for by font style
+          
+          document.body.appendChild(tempSpan);
+          const textWidth = tempSpan.offsetWidth;
+          document.body.removeChild(tempSpan);
+
+          const paddingLeft = parseFloat(style.paddingLeft) || 0;
+          const paddingRight = parseFloat(style.paddingRight) || 0;
+          const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+          const borderRight = parseFloat(style.borderRightWidth) || 0;
+
+          // Total width is text width (which includes its own padding if span styled so) 
+          // or text width + input's padding + input's border
+          // Let's try with textWidth from span (assuming span has no extra padding/border) + structural parts of input
+          let newWidth = textWidth + paddingLeft + paddingRight + borderLeft + borderRight;
+
+          const minWidth = 40; // Minimum pixel width for the input
+          if (newWidth < minWidth) {
+            newWidth = minWidth;
+          }
+
+          inputElement.style.width = `${newWidth}px`;
+        };
+
+        inputElement.focus();
+        inputElement.select();
+        updateInputWidth(); // Initial width set
+
+        inputElement.addEventListener('input', updateInputWidth);
+
+        // Cleanup
+        return () => {
+          inputElement.removeEventListener('input', updateInputWidth);
+          // Optionally reset width if the component is re-rendered without editingTitle
+          // This might be needed if the style.width persists undesirably
+           if (inputElement) { // Check if still mounted
+            inputElement.style.width = 'auto'; // Or initial fixed width if it had one
+           }
+        };
+      } else if (titleInputRef.current) {
+        // If editingTitle becomes false, reset width for the next time it's opened
+        titleInputRef.current.style.width = 'auto';
       }
-    }, [editingTitle]);
+    }, [editingTitle]); // Effect for focus, select, and dynamic width
 
     useEffect(() => {
       if (editingProjectTitle && projectTitleInputRef.current) {
@@ -1007,12 +1062,13 @@ const Panel = forwardRef(
                                 type="text"
                                 id="project-title-input"
                                 name="projectTitleInput"
+                                className="editable-title-input"
                                 value={tempProjectTitle}
                                 onChange={(e) => setTempProjectTitle(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === 'Enter') commitProjectTitleChange(); }}
                                 onBlur={commitProjectTitleChange}
                                 onFocus={() => onFocusChange?.(true)}
-                                style={{ fontFamily: 'inherit', fontSize: '1.1rem', fontWeight: 'bold', color: '#260000' }}
+                                style={{}}
                             />
                         ) : (
                             <h2
@@ -1139,8 +1195,8 @@ const Panel = forwardRef(
                 );
             } else {
                 // --- Node data found globally - Render the full editable view --- 
-                const displayBio = activeRightPanelTab.bio || '';
-                const displayTitle = activeRightPanelTab.title || 'Untitled';
+                const displayBio = nodeData.description || '';
+                const displayTitle = nodeData.name || 'Untitled';
 
                 // Function to commit the title change (on blur or Enter key)
                 const commitTitleChange = () => {
@@ -1161,12 +1217,13 @@ const Panel = forwardRef(
                                     type="text"
                                     id={`node-title-input-${nodeId}`}
                                     name={`nodeTitleInput-${nodeId}`}
+                                    className="editable-title-input"
                                     value={tempTitle}
                                     onChange={(e) => setTempTitle(e.target.value)}
                                     onKeyDown={(e) => { if (e.key === 'Enter') commitTitleChange(); }}
                                     onBlur={commitTitleChange}
                                     onFocus={() => onFocusChange?.(true)}
-                                    style={{ fontFamily: 'inherit', fontSize: '1.1rem' }}
+                                    style={{}}
                                 />
                             ) : (
                                 <h3
@@ -1438,21 +1495,26 @@ const Panel = forwardRef(
                                             alignItems: 'stretch', 
                                             paddingLeft: '10px', 
                                             paddingRight: '10px',
-                                            overflowX: 'hidden',
+                                            overflowX: 'auto',
                                             overflowY: 'hidden', 
                                         }}
                                     >
                                         {/* Map ONLY node tabs (index > 0) - get tabs non-reactively */}
-                                        {rightPanelTabs.slice(1).map((tab, index) => (
-                                            <DraggableTab
-                                                key={tab.nodeId} // Use nodeId as key
-                                                tab={tab} // Pass tab data from store
-                                                index={index + 1} // Pass absolute index (1..N)
-                                                moveTabAction={moveRightPanelTab}
-                                                activateTabAction={activateRightPanelTab}
-                                                closeTabAction={closeRightPanelTab}
-                                            />
-                                        ))}
+                                        {rightPanelTabs.slice(1).map((tab, i) => { // Use different index variable like `i`
+                                            const nodeCurrentName = nodesMap.get(tab.nodeId)?.name || tab.title; // Get current name for display and drag
+                                            return (
+                                                <DraggableTab
+                                                    key={tab.nodeId} // Use nodeId as key
+                                                    tab={tab} // Pass tab data from store
+                                                    index={i + 1} // Pass absolute index (1..N) based on map index `i`
+                                                    displayTitle={nodeCurrentName} // Pass live name for display
+                                                    dragItemTitle={nodeCurrentName} // Pass live name for drag item
+                                                    moveTabAction={moveRightPanelTab}
+                                                    activateTabAction={activateRightPanelTab}
+                                                    closeTabAction={closeRightPanelTab}
+                                                />
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             )}

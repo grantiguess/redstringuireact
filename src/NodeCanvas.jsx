@@ -188,6 +188,7 @@ function NodeCanvas() {
   const [isLeftPanelInputFocused, setIsLeftPanelInputFocused] = useState(false);
   const [isPieMenuRendered, setIsPieMenuRendered] = useState(false); // Controls if PieMenu is in DOM for animation
   const [currentPieMenuData, setCurrentPieMenuData] = useState(null); // Holds { node, buttons, nodeDimensions }
+  const [editingNodeIdOnCanvas, setEditingNodeIdOnCanvas] = useState(null); // For panel-less editing
 
   // Use the local state values populated by subscribe
   const projectTitle = activeGraphName ?? 'Loading...';
@@ -243,7 +244,10 @@ function NodeCanvas() {
 
   // Pie Menu Button Configuration
   const pieMenuButtons = useMemo(() => [
-    { id: 'edit', label: 'Edit', icon: Edit3, action: (nodeId) => console.log('Edit node:', nodeId) },
+    { id: 'edit', label: 'Edit', icon: Edit3, action: (nodeId) => {
+        console.log(`[PieMenu Action] Edit clicked for node: ${nodeId}. Setting editingNodeIdOnCanvas.`);
+        setEditingNodeIdOnCanvas(nodeId);
+    } },
     { id: 'delete', label: 'Delete', icon: Trash2, action: (nodeId) => {
       storeActions.removeNode(nodeId);
       setSelectedNodeIds(new Set()); // Deselect after deleting
@@ -1332,6 +1336,9 @@ function NodeCanvas() {
                              onMouseDown={(e) => handleNodeMouseDown(node, e)}
                              isPreviewing={isPreviewing}
                              allNodes={nodes}
+                             isEditingOnCanvas={node.id === editingNodeIdOnCanvas}
+                             onCommitCanvasEdit={(nodeId, newName) => { storeActions.updateNode(nodeId, draft => { draft.name = newName; }); setEditingNodeIdOnCanvas(null); }}
+                             onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
                              connections={edges}
                            />
                          );
@@ -1356,6 +1363,9 @@ function NodeCanvas() {
                              onMouseDown={(e) => handleNodeMouseDown(node, e)}
                              isPreviewing={isPreviewing}
                              allNodes={nodes}
+                             isEditingOnCanvas={node.id === editingNodeIdOnCanvas}
+                             onCommitCanvasEdit={(nodeId, newName) => { storeActions.updateNode(nodeId, draft => { draft.name = newName; }); setEditingNodeIdOnCanvas(null); }}
+                             onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
                              connections={edges}
                            />
                          );
