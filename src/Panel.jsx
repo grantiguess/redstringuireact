@@ -574,8 +574,48 @@ const Panel = forwardRef(
 
     useEffect(() => {
       if (editingProjectTitle && projectTitleInputRef.current) {
-        projectTitleInputRef.current.focus();
-        projectTitleInputRef.current.select();
+        const inputElement = projectTitleInputRef.current;
+
+        const updateInputWidth = () => {
+          const text = inputElement.value;
+          const style = window.getComputedStyle(inputElement);
+          const tempSpan = document.createElement('span');
+          tempSpan.style.font = style.font;
+          tempSpan.style.letterSpacing = style.letterSpacing;
+          tempSpan.style.visibility = 'hidden';
+          tempSpan.style.position = 'absolute';
+          tempSpan.style.whiteSpace = 'pre';
+          tempSpan.innerText = text || ' ';
+          document.body.appendChild(tempSpan);
+          const textWidth = tempSpan.offsetWidth;
+          document.body.removeChild(tempSpan);
+
+          const paddingLeft = parseFloat(style.paddingLeft) || 0;
+          const paddingRight = parseFloat(style.paddingRight) || 0;
+          const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+          const borderRight = parseFloat(style.borderRightWidth) || 0;
+          let newWidth = textWidth + paddingLeft + paddingRight + borderLeft + borderRight;
+          const minWidth = 60; // Slightly larger min-width for project title?
+          if (newWidth < minWidth) {
+            newWidth = minWidth;
+          }
+          inputElement.style.width = `${newWidth}px`;
+        };
+
+        inputElement.focus();
+        inputElement.select();
+        updateInputWidth(); // Initial width set
+
+        inputElement.addEventListener('input', updateInputWidth);
+
+        return () => {
+          inputElement.removeEventListener('input', updateInputWidth);
+          if (inputElement) {
+            inputElement.style.width = 'auto';
+          }
+        };
+      } else if (projectTitleInputRef.current) {
+        projectTitleInputRef.current.style.width = 'auto';
       }
     }, [editingProjectTitle]);
 

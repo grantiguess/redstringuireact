@@ -67,8 +67,79 @@ const Header = ({
   // Focus input when editing starts
   useEffect(() => {
     if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
+      const inputElement = inputRef.current;
+
+      const updateInputWidth = () => {
+        const text = inputElement.value;
+        const style = window.getComputedStyle(inputElement);
+        const tempSpan = document.createElement('span');
+        tempSpan.style.font = style.font;
+        tempSpan.style.letterSpacing = style.letterSpacing;
+        tempSpan.style.visibility = 'hidden';
+        tempSpan.style.position = 'absolute';
+        tempSpan.style.whiteSpace = 'pre';
+        tempSpan.innerText = text || ' ';
+        document.body.appendChild(tempSpan);
+        const textWidth = tempSpan.offsetWidth;
+        document.body.removeChild(tempSpan);
+
+        const paddingLeft = parseFloat(style.paddingLeft) || 0;
+        const paddingRight = parseFloat(style.paddingRight) || 0;
+        const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+        const borderRight = parseFloat(style.borderRightWidth) || 0;
+        let newWidth = textWidth + paddingLeft + paddingRight + borderLeft + borderRight;
+        
+        // Min width specific to header input, can be adjusted
+        const minWidth = 50; 
+        if (newWidth < minWidth) {
+          newWidth = minWidth;
+        }
+        // Max width consideration if needed, though input has maxWidth style already
+        // const maxWidth = parseFloat(style.maxWidth) || Infinity;
+        // if (newWidth > maxWidth) newWidth = maxWidth;
+
+        inputElement.style.width = `${newWidth}px`;
+      };
+
+      inputElement.focus();
+
+      if (inputElement.value === '') {
+        const originalSelectionStart = inputElement.selectionStart;
+        const originalSelectionEnd = inputElement.selectionEnd;
+        inputElement.value = '\u200B'; // Insert zero-width space
+        inputElement.setSelectionRange(0, 0); // Move caret to start
+        // Schedule to remove the zero-width space and restore selection or select all
+        setTimeout(() => {
+          if (inputElement.value === '\u200B') { // Only if it's still our ZWS
+            inputElement.value = '';
+            inputElement.focus(); // Re-focus after clearing
+            inputElement.setSelectionRange(0, 0); // Caret at start for empty
+          } else {
+            // If user typed something super fast, try to restore original selection
+            // or just select all if that seems more appropriate.
+            // For now, if modified, we assume the user typed and don't interfere.
+            // Or, simply re-select all if that's the desired empty-field behavior.
+            // inputElement.select();
+          }
+          // Ensure caret is visible after this manipulation by focusing again if needed
+          // although it should already be focused.
+        }, 0);
+      } else {
+        inputElement.select(); // Select all if not empty
+      }
+
+      updateInputWidth(); // Initial width set
+
+      inputElement.addEventListener('input', updateInputWidth);
+
+      return () => {
+        inputElement.removeEventListener('input', updateInputWidth);
+        if (inputElement) {
+          inputElement.style.width = 'auto'; // Reset width
+        }
+      };
+    } else if (inputRef.current) {
+        inputRef.current.style.width = 'auto'; // Reset if editing becomes false
     }
   }, [isEditing]);
 
@@ -225,18 +296,14 @@ const Header = ({
           <input
             ref={inputRef}
             type="text"
+            className="editable-title-input"
             value={tempTitle}
             onChange={handleTitleChange}
             onBlur={handleTitleBlur}
             onKeyDown={handleTitleKeyDown}
-            size={Math.max(tempTitle.length, 10) + 4}
+            spellCheck="false"
             style={{
-              background: 'rgba(255, 255, 255, 0.1)',
-              border: '1px solid #bdb5b5',
               color: '#bdb5b5',
-              padding: '2px 5px',
-              fontSize: '18px',
-              fontFamily: 'inherit',
               textAlign: 'center',
               maxWidth: 'calc(100vw - 200px)',
               boxSizing: 'border-box'
@@ -244,7 +311,14 @@ const Header = ({
             autoFocus
           />
         ) : (
-          <span onDoubleClick={handleTitleDoubleClick} style={{ cursor: 'pointer', padding: '2px 5px' }}>
+          <span 
+            onDoubleClick={handleTitleDoubleClick} 
+            style={{ 
+              cursor: 'pointer', 
+              padding: '2px 5px',
+              fontWeight: 'bold'
+            }}
+          >
             {projectTitle}
           </span>
         )}
