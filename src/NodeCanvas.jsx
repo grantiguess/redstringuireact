@@ -9,7 +9,7 @@ import PlusSign from './PlusSign.jsx'; // Import the new PlusSign component
 import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
-import { Edit3, Trash2, Link, GitFork, PlusSquare } from 'lucide-react'; // Example icons
+import { Edit3, Trash2, Link, Maximize2, PlusSquare } from 'lucide-react'; // Example icons, Maximize2 for expand
 
 // Import Zustand store and selectors/actions
 import useGraphStore, {
@@ -235,7 +235,7 @@ function NodeCanvas() {
   // Add refs for click vs double-click detection
   const clickTimeoutIdRef = useRef(null);
   const potentialClickNodeRef = useRef(null);
-  const CLICK_DELAY = 250; // milliseconds to wait for a potential double-click
+  const CLICK_DELAY = 180; // Reduced milliseconds to wait for a potential double-click
 
   // Ref to track initial mount completion
   const isMountedRef = useRef(false);
@@ -248,7 +248,10 @@ function NodeCanvas() {
       setSelectedNodeIds(new Set()); // Deselect after deleting
      } },
     { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => console.log('Connect node:', nodeId) },
-    { id: 'define', label: 'Define', icon: PlusSquare, action: (nodeId) => console.log('Define node:', nodeId) },
+    { id: 'expand-preview', label: 'Expand', icon: Maximize2, action: (nodeId) => {
+      setPreviewingNodeId(prev => prev === nodeId ? null : nodeId);
+    } },
+    // { id: 'define', label: 'Define', icon: PlusSquare, action: (nodeId) => console.log('Define node:', nodeId) }, // Replaced by expand-preview
     // Add more buttons here as needed
     // { id: 'branch', label: 'Branch', icon: GitFork, action: (nodeId) => console.log('Branch node:', nodeId) },
   ];
@@ -332,10 +335,9 @@ function NodeCanvas() {
       e.preventDefault();
       if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); clickTimeoutIdRef.current = null; }
       potentialClickNodeRef.current = null;
-      // Use Panel ref to call openNodeTab (assuming Panel exposes it)
-      // panelRef.current?.openNodeTab(nodeId, nodeData.name); // TODO: Re-enable later
-      // For now, just toggle preview
-      setPreviewingNodeId(prev => prev === nodeId ? null : nodeId);
+      // Open node tab in the right panel
+      // console.log(`Double-click on node ${nodeId}. Opening in panel.`);
+      storeActions.openRightPanelNodeTab(nodeId, nodeData.name);
       return;
     }
 
