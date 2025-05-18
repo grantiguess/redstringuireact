@@ -25,6 +25,12 @@ header .editable-title-input {
   caret-color: #bdb5b5; /* Light caret for dark header background */
 }
 
+/* Override selection color for the input specifically within the header */
+header .editable-title-input::selection {
+  background-color: rgba(189, 181, 181, 0.2); /* Subtle light selection background */
+  color: #bdb5b5;                         /* Maintain light text color during selection */
+}
+
 .editable-title-input::selection {
   background-color: rgba(40, 0, 0, 0.2); /* Subtle dark selection background */
   color: #260000;                         /* Maintain text color during selection */
