@@ -30,7 +30,7 @@
   opacity: 1; 
   transform: translate(0,0) scale(1);
   animation-name: pie-bubble-shrink-out;
-  animation-duration: 150ms;
+  animation-duration: 120ms; /* Slightly faster shrink */
   animation-timing-function: cubic-bezier(0.6, -0.28, 0.735, 0.045);
   animation-fill-mode: forwards; /* Ends at opacity 0, scaled down */
 }

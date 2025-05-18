@@ -1,0 +1,54 @@
+# Redstring Project: AI Assistant Guide
+
+## Project Description:
+
+Redstring is a sophisticated React-based cognitive interface designed for constructing, traversing, and interacting with networks of conceptual nodes. It aims to be a "cognitive scaffold," mirroring the recursive, associative, contextual, and non-linear nature of human thought. The application allows users to build and navigate graphs where nodes can represent ideas and can themselves contain other graphs, enabling deep hierarchical recursion and composition.
+
+**Core Technical Aspects:**
+- **Frontend:** Fully React-rendered, with UI logic and state management handled on the client-side.
+- **State Management:** Zustand is used for managing global state, including the active graph context, node/edge data, saved states, multi-graph support, and interactive logic.
+- **Central Orchestration:** `src/NodeCanvas.jsx` is the pivotal component, mediating user interactions (mouse, touch, keyboard), graph state, view transformations (pan, zoom, drag), and the recursive structure engine.
+- **Rendering:** All graph rendering occurs within a React-managed `<svg>` canvas. Node rendering is dynamic, handling dimensions, image scaling, and connection positioning.
+- **Data Structures:** Core graph elements like Nodes, Edges, and Graphs are defined in `src/core/` (`Node.js`, `Edge.js`, `Graph.js`).
+- **Interaction:** Features drag-to-connect for edge creation, multiselect, pan/zoom, a Pie Menu for contextual actions, and graph-centric panels for editing and browsing.
+
+**Philosophical Architecture:**
+Redstring is more than a tool; it's an interface for thinking in networks. Its design is guided by key principles:
+1.  **All is a Graph:** Every concept is a node, every relationship an edge.
+2.  **Recursion as Ontology:** Nodes can contain entire graphs, reflecting cognitive abstraction and layering.
+3.  **Embodied Semantics:** Users spatially arrange knowledge, connecting meanings through direct manipulation.
+4.  **Open Topology:** No predefined root; users start where meaning begins for them, supporting a rhizomatic structure.
+5.  **Dual Interface (Syntax and Mythos):** Panels provide structured data access (syntax), while the canvas offers a symbolic, spatial, and intuitive interaction space (mythos).
+
+The ultimate goal of Redstring is to provide an interface that nurtures depth, pattern recognition, and symbolic recomposition, acting as a mirror to the human mind's layered and non-linear processing.
+
+## Specialized AI Instructions for Redstring:
+
+When assisting with the Redstring project, please adhere to the following guidelines:
+
+1.  **Understand the Core Philosophy:** Always consider Redstring's nature as a "cognitive scaffold." Changes and suggestions should align with its goal of mirroring and supporting complex, networked thought processes.
+2.  **Prioritize `NodeCanvas.jsx`:** Recognize `src/NodeCanvas.jsx` as the central hub for rendering, interaction, and state mediation. Modifications here will have significant impact.
+3.  **Respect Zustand State Management:**
+    *   Be mindful of how graph data (nodes, edges, active graph, saved states) is structured and managed within the Zustand store.
+    *   When dealing with state, look for relevant store actions and selectors.
+4.  **Embrace Recursion:** The concept of nodes containing other graphs is fundamental. Ensure that any logic related to graph manipulation, display, or interaction correctly handles this recursive nature.
+5.  **Maintain the Dual Interface:** Acknowledge the distinction and interplay between the structured data in panels (e.g., `Panel.jsx`, `GraphBrowserPanel.jsx`) and the spatial, symbolic canvas. Enhancements should ideally support both aspects.
+6.  **Focus on Interaction Mechanics:**
+    *   For UI/UX changes, ensure they are consistent with existing mechanics like drag-to-connect, pan/zoom (calibrated deltas), multiselect, and the Pie Menu (`PieMenu.jsx`).
+    *   New interactions should feel intuitive and "embodied."
+7.  **Core Data Structures:** Be familiar with the definitions and functionalities within `src/core/Graph.js`, `src/core/Node.js`, and `src/core/Edge.js` when implementing features related to graph elements.
+8.  **Rendering Logic:** Understand that rendering happens in an SVG canvas within React. Pay attention to transform application for pan/zoom and dynamic node rendering.
+9.  **File Structure Awareness:**
+    *   UI Components: Primarily in `src/` (e.g., `Node.jsx`, `Panel.jsx`, `Header.jsx`).
+    *   Core Logic: `src/core/`.
+    *   State Management: Likely within `src/store/` (though specific store files were not listed, Zustand is used).
+    *   Hooks: Custom hooks in `src/hooks/` (e.g., `useCanvasWorker.js`).
+    *   Styling: CSS files are co-located or in specific asset folders.
+10. **Problem Solving and Suggestions:**
+    *   When identifying issues or proposing solutions, explain how they relate to or affect the core principles (All is a Graph, Recursion as Ontology, etc.).
+    *   Suggest solutions that enhance the user's ability to think in networks and manage complex information visually and spatially.
+    *   If performance is a concern, especially with canvas rendering or large graphs, investigate solutions like offloading work to `canvasWorker.js` or optimizing React component rendering.
+11. **Code Style and Conventions:** Adhere to existing code patterns, styling (ESLint likely configured via `eslint.config.js`), and component structure.
+12. **Testing:** Note the presence of test files (e.g., `App.test.jsx`, `NodeCanvas.test.jsx`). New features or significant refactors should ideally be accompanied by relevant tests.
+
+By keeping these points in mind, you can effectively contribute to the development and refinement of Redstring, ensuring it stays true to its unique vision and technical architecture.

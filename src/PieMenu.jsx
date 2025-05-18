@@ -11,7 +11,7 @@ const START_ANGLE_OFFSET = -Math.PI / 2; // Start at the top position (North)
 
 const POP_ANIMATION_DURATION = 400; // ms, matches CSS
 const SHRINK_ANIMATION_DURATION = 150; // ms, matches CSS (FASTER)
-const STAGGER_DELAY = 50; // ms
+const STAGGER_DELAY = 40; // ms, slightly reduced
 const EXIT_ANIMATION_BUFFER = 50; // ms, extra buffer for animation to complete visually
 
 const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComplete }) => {
@@ -106,10 +106,20 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
     return null;
   }
 
-  // If it hasn't even started the appearing sequence, and it's not currently set to be visible,
-  // and it's not shrinking out, then render null.
-  if (!isVisible && animationState !== 'shrinking') {
-    console.log(`[PieMenu] Render: Rendering NULL. isVisible is ${isVisible}, animationState is ${animationState}.`);
+  // If animationState is null (meaning it's fully reset/hidden internally)
+  // AND the parent also says it's not visible (prop), then it should definitely be null.
+  // This primarily handles the initial mount if isVisible starts as false, or after a full exit sequence.
+  if (animationState === null && !isVisible) {
+    console.log(`[PieMenu] Render: Rendering NULL because animationState is null and isVisible is false.`);
+    return null;
+  }
+  // If animationState is NOT null, it means we are either popping, steady, or shrinking.
+  // In these cases, we must render the component to allow animations.
+  // The case where isVisible is false AND animationState is shrinking is handled by NodeCanvas unmounting later.
+  if (animationState === null && isVisible) {
+    // This is an inconsistent state, implies isVisible became true but animationState hasn't caught up to 'popping'.
+    // It should resolve in the next render due to useEffect. For now, render null to avoid issues.
+    console.log("[PieMenu] Render: Rendering NULL due to inconsistent state (animationState null, isVisible true). Waiting for effect.");
     return null;
   }
 
