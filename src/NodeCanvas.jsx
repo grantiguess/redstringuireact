@@ -450,7 +450,6 @@ function NodeCanvas() {
     let deltaY = e.deltaY;
     if (e.deltaMode === 1) { deltaY *= 33; } 
     else if (e.deltaMode === 2) { deltaY *= window.innerHeight; }
-    // Also handle deltaX normalization if needed for panning
     let deltaX = e.deltaX;
     if (e.deltaMode === 1) { deltaX *= 33; }
     else if (e.deltaMode === 2) { deltaX *= window.innerWidth; } 
@@ -464,17 +463,20 @@ function NodeCanvas() {
       isMac: isMac.toString(),
     }));
 
-    // --- Heuristic-Based Wheel Logic --- 
-    
-    // 1. Check for macOS Pinch-to-Zoom first
+    // --- Revised Heuristic-Based Wheel Logic --- 
+
+    // 1. Mac Pinch-to-Zoom (Ctrl key pressed)
     if (isMac && e.ctrlKey) {
         const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
+        const currentZoomForWorker = zoomLevel;
+        const currentPanOffsetForWorker = panOffset;
         try {
           const result = await canvasWorker.calculateZoom({
             deltaY: zoomDelta, 
-            currentZoom: zoomLevel,
+            currentZoom: currentZoomForWorker,
             mousePos: { x: mouseX, y: mouseY },
-            panOffset, viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
+            panOffset: currentPanOffsetForWorker, 
+            viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
           });
           setPanOffset(result.panOffset);
           setZoomLevel(result.zoomLevel);
@@ -493,15 +495,21 @@ function NodeCanvas() {
           console.error('Mac pinch zoom calculation failed:', error);
           setDebugData((prev) => ({ ...prev, info: 'Mac pinch zoom error', error: error.message }));
         }
-    // 2. Check for Mac Trackpad Pan (heuristic: non-zero deltaX)
-    } else if (isMac && deltaX !== 0) { 
-        // Use normalized deltaX and deltaY for panning
+        return; // Processed
+    }
+
+    // 2. Mac Trackpad Two-Finger Pan (No Ctrl key, any movement)
+    // This implies !e.ctrlKey due to falling through the first block.
+    if (isMac && (deltaX !== 0 || deltaY !== 0)) { 
         const dx = -deltaX * PAN_DRAG_SENSITIVITY;
-        const dy = -deltaY * PAN_DRAG_SENSITIVITY; // Still include vertical pan component
+        const dy = -deltaY * PAN_DRAG_SENSITIVITY; // Pan with both components
+        
+        const currentCanvasWidth = canvasSize.width * zoomLevel;
+        const currentCanvasHeight = canvasSize.height * zoomLevel;
+        const minX = viewportSize.width - currentCanvasWidth;
+        const minY = viewportSize.height - currentCanvasHeight;
         const maxX = 0;
         const maxY = 0;
-        const minX = viewportSize.width - canvasSize.width * zoomLevel;
-        const minY = viewportSize.height - canvasSize.height * zoomLevel;
 
         setPanOffset((prev) => {
           const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
@@ -513,33 +521,38 @@ function NodeCanvas() {
             zooming: false,
             panning: true,
             sensitivity: PAN_DRAG_SENSITIVITY,
-            deltaX: deltaX.toFixed(2),
-            deltaY: deltaY.toFixed(2),
+            deltaX: deltaX.toFixed(2), // Report original deltaX from event
+            deltaY: deltaY.toFixed(2), // Report original deltaY from event
             panOffsetX: newX.toFixed(2),
             panOffsetY: newY.toFixed(2),
             zoomLevel: zoomLevel.toFixed(2),
           }));
           return { x: newX, y: newY };
         });
-    // 3. Handle all other vertical scrolls as standard zoom 
-    //    (Non-Mac OR Mac with deltaX === 0, likely mouse wheel)
-    } else if (deltaY !== 0) { 
+        return; // Processed
+    }
+    
+    // 3. Non-Mac Mouse Wheel Zoom (or other non-Mac scroll devices)
+    // This block is reached if not a Mac, or if it's a Mac event not caught above 
+    // (e.g., no ctrlKey, and both deltaX and deltaY are 0 - unlikely for trackpad).
+    // We'll primarily gate this on !isMac and deltaY for zoom.
+    if (!isMac && deltaY !== 0) { 
         const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
+        const currentZoomForWorker = zoomLevel;
+        const currentPanOffsetForWorker = panOffset;
         try {
             const result = await canvasWorker.calculateZoom({
-                // Direction: scroll up/forward = zoom in (natural)
                 deltaY: zoomDelta, 
-                // OR: scroll up/forward = zoom out (inverted)
-                // deltaY: -zoomDelta, 
-                currentZoom: zoomLevel,
+                currentZoom: currentZoomForWorker,
                 mousePos: { x: mouseX, y: mouseY },
-                panOffset, viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
+                panOffset: currentPanOffsetForWorker, 
+                viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
             });
             setPanOffset(result.panOffset);
             setZoomLevel(result.zoomLevel);
             setDebugData((prev) => ({
                 ...prev,
-                inputDevice: 'Mouse Wheel or Trackpad Scroll',
+                inputDevice: 'Mouse Wheel', // Or 'Other Scroll Device'
                 gesture: 'wheel-zoom',
                 zooming: true,
                 panning: false,
@@ -550,11 +563,19 @@ function NodeCanvas() {
                 panOffsetY: result.panOffset.y.toFixed(2),
             }));
         } catch (error) {
-            console.error('Zoom calculation failed:', error);
-            setDebugData((prev) => ({ ...prev, info: 'Wheel zoom error', error: error.message }));
+            console.error('Non-Mac zoom calculation failed:', error);
+            setDebugData((prev) => ({ ...prev, info: 'Wheel zoom error (non-Mac)', error: error.message }));
         }
+        return; // Processed
     }
-    // Note: Mac scrolls with deltaY === 0 and deltaX === 0 won't trigger anything here.
+
+    // If the event hasn't been handled by any of the specific cases above, 
+    // update debug data to reflect it's unhandled by this logic.
+    // This helps in identifying if any wheel events are slipping through.
+    // (This assumes e.stopPropagation() and e.preventDefault() are handled elsewhere if needed for unhandled cases)
+    // No explicit 'return' here if we want to allow default browser behavior for unhandled wheel events,
+    // but given we have a preventDefault on the container, most will be stopped.
+    // For now, we can assume if it's not caught, it's not an intended canvas interaction.
   };
 
   useEffect(() => {

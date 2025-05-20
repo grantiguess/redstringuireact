@@ -6,7 +6,7 @@
   background-color: transparent !important;  /* No fill - added !important */
   background: transparent !important; /* Explicitly set background too - added !important */
   border: 2px solid #260000;      /* Text-colored border */
-  border-radius: 8px;             /* Rounded corners */
+    border-radius: 8px;             /* Rounded corners */
   padding: 5px 10px;              /* Padding */
   font-family: inherit;           /* Inherit font family */
   font-size: 1.1rem;              /* Match previous inline style */
@@ -18,8 +18,8 @@
   color-scheme: light;            /* Force light scheme for this input to avoid UA dark styles */
   caret-color: #260000;           /* Default caret color to match text */
   min-width: 10px;                /* CSS minimum width to help caret visibility */
-}
-
+  }
+  
 /* Override caret-color for the input specifically within the header */
 header .editable-title-input {
   caret-color: #bdb5b5; /* Light caret for dark header background */
@@ -36,17 +36,17 @@ header .editable-title-input::selection {
   color: #260000;                         /* Maintain text color during selection */
 }
 
-.panel-bio-textarea {
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font-size: 14px;
-  font-family: Helvetica, sans-serif;
-}
-
-.panel-tab {
-  line-height: 1.1;
-}
+  .panel-bio-textarea {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: Helvetica, sans-serif;
+  }
+  
+  .panel-tab {
+    line-height: 1.1;
+  }
 
 /* Utility to hide scrollbars */
 .hide-scrollbar {

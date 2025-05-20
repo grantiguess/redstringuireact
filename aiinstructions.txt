@@ -27,27 +27,30 @@ The ultimate goal of Redstring is to provide an interface that nurtures depth, p
 When assisting with the Redstring project, please adhere to the following guidelines:
 
 1.  **Understand the Core Philosophy:** Always consider Redstring's nature as a "cognitive scaffold." Changes and suggestions should align with its goal of mirroring and supporting complex, networked thought processes.
-2.  **Prioritize `NodeCanvas.jsx`:** Recognize `src/NodeCanvas.jsx` as the central hub for rendering, interaction, and state mediation. Modifications here will have significant impact.
+2.  **Prioritize `NodeCanvas.jsx`:** Recognize `src/NodeCanvas.jsx` as the central hub for rendering, interaction (including canvas-level mouse/wheel events), and state mediation. Modifications here will have significant impact.
 3.  **Respect Zustand State Management:**
     *   Be mindful of how graph data (nodes, edges, active graph, saved states) is structured and managed within the Zustand store.
     *   When dealing with state, look for relevant store actions and selectors.
 4.  **Embrace Recursion:** The concept of nodes containing other graphs is fundamental. Ensure that any logic related to graph manipulation, display, or interaction correctly handles this recursive nature.
 5.  **Maintain the Dual Interface:** Acknowledge the distinction and interplay between the structured data in panels (e.g., `Panel.jsx`, `GraphBrowserPanel.jsx`) and the spatial, symbolic canvas. Enhancements should ideally support both aspects.
-6.  **Focus on Interaction Mechanics:**
-    *   For UI/UX changes, ensure they are consistent with existing mechanics like drag-to-connect, pan/zoom (calibrated deltas), multiselect, and the Pie Menu (`PieMenu.jsx`).
+6.  **Focus on Interaction Mechanics & UX Tuning:**
+    *   For UI/UX changes, ensure they are consistent with existing mechanics like drag-to-connect, pan/zoom, multiselect, and the Pie Menu (`PieMenu.jsx`).
     *   New interactions should feel intuitive and "embodied."
+    *   Numerical parameters for user experience (e.g., scroll/zoom sensitivities, animation durations) are often centralized in `src/constants.js`.
 7.  **Core Data Structures:** Be familiar with the definitions and functionalities within `src/core/Graph.js`, `src/core/Node.js`, and `src/core/Edge.js` when implementing features related to graph elements.
 8.  **Rendering Logic:** Understand that rendering happens in an SVG canvas within React. Pay attention to transform application for pan/zoom and dynamic node rendering.
-9.  **File Structure Awareness:**
+9.  **File Structure & Component Logic Awareness:**
     *   UI Components: Primarily in `src/` (e.g., `Node.jsx`, `Panel.jsx`, `Header.jsx`).
     *   Core Logic: `src/core/`.
-    *   State Management: Likely within `src/store/` (though specific store files were not listed, Zustand is used).
+    *   State Management: Likely within `src/store/` (Zustand is used).
     *   Hooks: Custom hooks in `src/hooks/` (e.g., `useCanvasWorker.js`).
-    *   Styling: CSS files are co-located or in specific asset folders.
+    *   Styling: CSS files (e.g., `Panel.css`) may define shared classes with contextual overrides for specific components. CSS might be globally scoped or imported to be shared.
+    *   Component-Specific UI Logic: Similar UI features (e.g., editable titles) may have distinct implementations and state management within their respective components (`Header.jsx`, `Panel.jsx`) using React hooks (`useEffect`) and direct DOM manipulation for dynamic behaviors.
 10. **Problem Solving and Suggestions:**
-    *   When identifying issues or proposing solutions, explain how they relate to or affect the core principles (All is a Graph, Recursion as Ontology, etc.).
+    *   When identifying issues or proposing solutions, explain how they relate to or affect the core principles.
     *   Suggest solutions that enhance the user's ability to think in networks and manage complex information visually and spatially.
     *   If performance is a concern, especially with canvas rendering or large graphs, investigate solutions like offloading work to `canvasWorker.js` or optimizing React component rendering.
+    *   Be prepared for debugging subtle browser rendering quirks, especially concerning interactive form elements.
 11. **Code Style and Conventions:** Adhere to existing code patterns, styling (ESLint likely configured via `eslint.config.js`), and component structure.
 12. **Testing:** Note the presence of test files (e.g., `App.test.jsx`, `NodeCanvas.test.jsx`). New features or significant refactors should ideally be accompanied by relevant tests.
 
