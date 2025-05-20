@@ -189,6 +189,7 @@ function NodeCanvas() {
   const [isPieMenuRendered, setIsPieMenuRendered] = useState(false); // Controls if PieMenu is in DOM for animation
   const [currentPieMenuData, setCurrentPieMenuData] = useState(null); // Holds { node, buttons, nodeDimensions }
   const [editingNodeIdOnCanvas, setEditingNodeIdOnCanvas] = useState(null); // For panel-less editing
+  const [hasMouseMovedSinceDown, setHasMouseMovedSinceDown] = useState(false);
 
   // New states for PieMenu transition
   const [selectedNodeIdForPieMenu, setSelectedNodeIdForPieMenu] = useState(null);
@@ -364,7 +365,7 @@ function NodeCanvas() {
     if (isPaused || !activeGraphId) return; // Check local state
 
     const nodeId = nodeData.id;
-    // setHasMouseMovedSinceDown(false); // REVERTING THIS
+    setHasMouseMovedSinceDown(false); // Reset mouse moved state
 
     // --- Double-click ---
     if (e.detail === 2) {
@@ -660,14 +661,10 @@ function NodeCanvas() {
       const dy = e.clientY - mouseDownPosition.current.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist > MOVEMENT_THRESHOLD) {
-        mouseMoved.current = true; // Keep this ref for immediate checks
-        // setHasMouseMovedSinceDown(true); // REVERTING THIS
+        mouseMoved.current = true;
+        setHasMouseMovedSinceDown(true); // Set state for useEffect
         if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); clickTimeoutIdRef.current = null; potentialClickNodeRef.current = null;}
-        // If mouse moved significantly, it's likely a drag. If a pie menu was just set due to a quick click resolution
-        // but dragging hasn't formally started (draggingNodeInfo not set yet), hide the pie menu.
-        if (!draggingNodeInfo && selectedNodeIdForPieMenu) {
-          setSelectedNodeIdForPieMenu(null);
-        }
+        // REMOVED: setSelectedNodeIdForPieMenu(null); 
 
         // Start drawing connection
         if (longPressingNodeId && !draggingNodeInfo) { // Check longPressingNodeId
@@ -865,6 +862,7 @@ function NodeCanvas() {
     setIsPanning(false);
     isMouseDown.current = false;
     // It's important to reset mouseMoved.current here AFTER all logic that depends on it for this up-event is done.
+    // setHasMouseMovedSinceDown is reset on the next mousedown.
     setTimeout(() => { mouseMoved.current = false; }, 0);
   };
 
@@ -895,7 +893,7 @@ function NodeCanvas() {
     setDraggingNodeInfo(null);
     setDrawingConnectionFrom(null);
     isMouseDown.current = false;
-    // setHasMouseMovedSinceDown(false); // REVERTING THIS
+    // setHasMouseMovedSinceDown(false); // Reset on next mousedown
   };
 
   const handleCanvasClick = (e) => {
@@ -1205,49 +1203,22 @@ function NodeCanvas() {
 
   // Effect to manage PieMenu visibility and data for animations
   useEffect(() => {
-    console.log(`[NodeCanvas] useEffect[selectedNodeIds]: Running. selectedNodeIds.size = ${selectedNodeIds.size}, isTransitioningPieMenu = ${isTransitioningPieMenu}, currentSelectedPieId = ${selectedNodeIdForPieMenu}, dragging = ${!!draggingNodeInfo}`);
-    const newTargetNodeId = selectedNodeIds.size === 1 ? [...selectedNodeIds][0] : null;
-
-    if (newTargetNodeId) {
-      // Single node is selected
-      if (selectedNodeIdForPieMenu === newTargetNodeId && !isTransitioningPieMenu) {
-        // Menu is already visible for this node and not transitioning, keep it.
-        // console.log(`[NodeCanvas] PieMenu already visible for ${newTargetNodeId}. No change.`);
-        return;
-      }
-      // Menu is not visible for this node OR it is but we are transitioning OR target is different.
-      // Attempt to show/change menu if not transitioning and not dragging (at the start of interaction).
-      if (!isTransitioningPieMenu && !draggingNodeInfo && !mouseMoved.current) {
-        console.log(`[NodeCanvas] Setting PieMenu for ${newTargetNodeId}. Not transitioning, not dragging, mouse not moved.`);
-        setSelectedNodeIdForPieMenu(newTargetNodeId);
-      } else if (draggingNodeInfo && selectedNodeIdForPieMenu === newTargetNodeId) {
-        // If dragging THIS node and its menu is already supposed to be visible, ensure it stays.
-        // This case might be redundant if the above logic correctly preserves it.
-        // console.log(`[NodeCanvas] Dragging node ${newTargetNodeId} and its menu is up. Ensuring it stays.`);
-      } else if (isTransitioningPieMenu) {
-        // If transitioning, the onExitAnimationComplete will handle the next state.
-        console.log(`[NodeCanvas] Transitioning. PieMenu for ${newTargetNodeId} will be handled post-transition.`);
+    console.log(`[NodeCanvas] useEffect[selectedNodeIds, isTransitioningPieMenu]: Running. selectedNodeIds.size = ${selectedNodeIds.size}, isTransitioningPieMenu = ${isTransitioningPieMenu}`);
+    if (selectedNodeIds.size === 1) {
+      const nodeId = [...selectedNodeIds][0];
+      if (!isTransitioningPieMenu) {
+        console.log(`[NodeCanvas] Single node selected (${nodeId}), not transitioning. Setting selectedNodeIdForPieMenu.`);
+        setSelectedNodeIdForPieMenu(nodeId);
       } else {
-        // Conditions not met to show a NEW menu (e.g. drag started, mouse moved before selection finalized for menu)
-        // If selectedNodeIdForPieMenu is not null and not newTargetNodeId, it means selection changed from one node to another
-        // and the old menu should hide. If selectedNodeIdForPieMenu is already null, this does nothing.
-        if (selectedNodeIdForPieMenu && selectedNodeIdForPieMenu !== newTargetNodeId) {
-            console.log(`[NodeCanvas] Drag/move/etc. prevented new menu for ${newTargetNodeId}, or selection changed. Hiding old menu for ${selectedNodeIdForPieMenu}`);
-            setSelectedNodeIdForPieMenu(null);
-        } else if (!selectedNodeIdForPieMenu && (draggingNodeInfo || mouseMoved.current)){
-            // If no menu was visible, and a drag/move is happening, ensure no menu appears.
-            console.log(`[NodeCanvas] Drag/move during selection of ${newTargetNodeId}. No menu will show.`);
-            setSelectedNodeIdForPieMenu(null); // Explicitly keep it null
-        }
+        // If transitioning, PieMenu's onExitAnimationComplete will handle setting the next selectedNodeIdForPieMenu
+        console.log(`[NodeCanvas] Single node selected (${nodeId}), but IS transitioning. Waiting for exit animation to potentially set new pie menu target.`);
       }
     } else {
-      // No single node selected (0 or multiple)
-      if (!isTransitioningPieMenu) {
-        console.log("[NodeCanvas] No single node selected. Hiding PieMenu.");
-        setSelectedNodeIdForPieMenu(null);
-      }
+      // Not a single selection (0 or multiple)
+      console.log("[NodeCanvas] No single node selected (or multiple). Setting selectedNodeIdForPieMenu to null.");
+      setSelectedNodeIdForPieMenu(null);
     }
-  }, [selectedNodeIds, isTransitioningPieMenu, draggingNodeInfo]); // mouseMoved.current is a ref, can't be a dep here.
+  }, [selectedNodeIds, isTransitioningPieMenu]); // Dependencies: only selectedNodeIds and isTransitioningPieMenu
 
   // Effect to prepare and render PieMenu when selectedNodeIdForPieMenu changes and not transitioning
   useEffect(() => {
@@ -1391,71 +1362,28 @@ function NodeCanvas() {
                   />
                 )}
 
-                {isPieMenuRendered && currentPieMenuData && (
-                  <PieMenu
-                    node={currentPieMenuData.node}
-                    buttons={currentPieMenuData.buttons}
-                    nodeDimensions={currentPieMenuData.nodeDimensions}
-                    // isVisible controls animation within PieMenu. It should only be true if the menu
-                    // is for the currently targeted node AND we are not in a transition phase.
-                    isVisible={currentPieMenuData?.node?.id === selectedNodeIdForPieMenu && !isTransitioningPieMenu}
-                    onExitAnimationComplete={() => {
-                      console.log("[NodeCanvas] PieMenu onExitAnimationComplete: Resetting transition and render state.");
-                      setIsPieMenuRendered(false); // Unmount after animation
-                      setCurrentPieMenuData(null); // Clear data
-                      const wasTransitioning = isTransitioningPieMenu;
-                      setIsTransitioningPieMenu(false); // Transition finished
-
-                      // If a transition just finished (e.g., from expand to contract, or vice-versa)
-                      // and a node is still selected, we need to show the *new* pie menu.
-                      if (wasTransitioning) {
-                        // Update previewingNodeId based on the action that triggered the transition
-                        // The actual selected node for menu (selectedNodeIdForPieMenu) might be the same or different
-                        // We need to find the button that was clicked. This is tricky without more state.
-                        // For now, let's assume the expand/contract action was on the selectedNodeIdForPieMenu.
-                        const currentlySelectedNodeId = [...selectedNodeIds][0]; // Get current single selection if any
-
-                        if (currentlySelectedNodeId) {
-                            const selectedNodeIsPreviewing = previewingNodeId === currentlySelectedNodeId;
-                            if (selectedNodeIsPreviewing) { // If it was previewing, the action was to contract
-                                console.log("[NodeCanvas] Post-transition: Node was previewing, now contracting.");
-                                setPreviewingNodeId(null);
-                            } else { // If it was not previewing, the action was to expand
-                                console.log("[NodeCanvas] Post-transition: Node was not previewing, now expanding.");
-                                setPreviewingNodeId(currentlySelectedNodeId);
-                            }
-                            // Re-set selectedNodeIdForPieMenu to trigger the useEffect to show the new menu state
-                            console.log(`[NodeCanvas] Post-transition: Re-setting selectedNodeIdForPieMenu to ${currentlySelectedNodeId} to show new menu.`);
-                            setSelectedNodeIdForPieMenu(currentlySelectedNodeId);
-                        } else {
-                             console.log("[NodeCanvas] Post-transition: No node selected. Clearing preview.");
-                             setPreviewingNodeId(null); // Safety clear if no node is selected
-                        }
-                      }
-                    }}
-                  />
-                )}
-
                 {(() => {
-                   let draggingNodeIds = new Set();
-                   if (draggingNodeInfo) {
-                     if (draggingNodeInfo.relativeOffsets) {
-                       draggingNodeIds = new Set([
-                           draggingNodeInfo.primaryId, 
-                           ...Object.keys(draggingNodeInfo.relativeOffsets)
-                       ]);
-                     } else if (draggingNodeInfo.nodeId) {
-                       draggingNodeIds = new Set([draggingNodeInfo.nodeId]);
-                     }
-                   }
+                   const activeNodeIdForOrdering = previewingNodeId || selectedNodeIdForPieMenu;
+                   const draggingNodeId = draggingNodeInfo?.primaryId || draggingNodeInfo?.nodeId;
 
-                   const nonDraggingNodes = nodes.filter(node => !draggingNodeIds.has(node.id));
-                   const draggingNodes = nodes.filter(node => draggingNodeIds.has(node.id));
+                   const otherNodes = nodes.filter(node => 
+                     node.id !== activeNodeIdForOrdering && 
+                     node.id !== draggingNodeId
+                   );
+
+                   const activeNodeToRender = activeNodeIdForOrdering && activeNodeIdForOrdering !== draggingNodeId 
+                     ? nodes.find(n => n.id === activeNodeIdForOrdering)
+                     : null;
+
+                   const draggingNodeToRender = draggingNodeId
+                     ? nodes.find(n => n.id === draggingNodeId)
+                     : null;
 
                    return (
                      <>
-                       {nonDraggingNodes.map((node) => {
-                         const isPreviewing = previewingNodeId === node.id;
+                       {/* Render "Other" Nodes first */}                       
+                       {otherNodes.map((node) => {
+                         const isPreviewing = previewingNodeId === node.id; // Should be false or irrelevant for these nodes
                          const dimensions = getNodeDimensions(node, isPreviewing);
                          return (
                            <Node
@@ -1469,7 +1397,7 @@ function NodeCanvas() {
                              innerNetworkWidth={dimensions.innerNetworkWidth}
                              innerNetworkHeight={dimensions.innerNetworkHeight}
                              isSelected={selectedNodeIds.has(node.id)}
-                             isDragging={false}
+                             isDragging={false} // These are explicitly not the dragging node
                              onMouseDown={(e) => handleNodeMouseDown(node, e)}
                              isPreviewing={isPreviewing}
                              allNodes={nodes}
@@ -1481,32 +1409,102 @@ function NodeCanvas() {
                          );
                        })}
 
-                       {draggingNodes.map((node) => {
-                         const isPreviewing = previewingNodeId === node.id;
-                         const dimensions = getNodeDimensions(node, isPreviewing);
-                         return (
-                           <Node
-                             key={node.id}
-                             node={node}
-                             currentWidth={dimensions.currentWidth}
-                             currentHeight={dimensions.currentHeight}
-                             textAreaHeight={dimensions.textAreaHeight}
-                             imageWidth={dimensions.imageWidth}
-                             imageHeight={dimensions.calculatedImageHeight}
-                             innerNetworkWidth={dimensions.innerNetworkWidth}
-                             innerNetworkHeight={dimensions.innerNetworkHeight}
-                             isSelected={selectedNodeIds.has(node.id)}
-                             isDragging={true}
-                             onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                             isPreviewing={isPreviewing}
-                             allNodes={nodes}
-                             isEditingOnCanvas={node.id === editingNodeIdOnCanvas}
-                             onCommitCanvasEdit={(nodeId, newName) => { storeActions.updateNode(nodeId, draft => { draft.name = newName; }); setEditingNodeIdOnCanvas(null); }}
-                             onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
-                             connections={edges}
-                           />
-                         );
-                       })}
+                       {/* Render The PieMenu next (it will be visually under the active node) */} 
+                       {isPieMenuRendered && currentPieMenuData && (
+                         <PieMenu
+                           node={currentPieMenuData.node}
+                           buttons={currentPieMenuData.buttons}
+                           nodeDimensions={currentPieMenuData.nodeDimensions}
+                           isVisible={(
+                             currentPieMenuData?.node?.id === selectedNodeIdForPieMenu &&
+                             !isTransitioningPieMenu &&
+                             !(draggingNodeInfo && 
+                               (draggingNodeInfo.primaryId === selectedNodeIdForPieMenu || draggingNodeInfo.nodeId === selectedNodeIdForPieMenu)
+                             )
+                           )}
+                           onExitAnimationComplete={() => {
+                             console.log("[NodeCanvas] PieMenu onExitAnimationComplete: Resetting transition and render state.");
+                             setIsPieMenuRendered(false); 
+                             setCurrentPieMenuData(null); 
+                             const wasTransitioning = isTransitioningPieMenu;
+                             setIsTransitioningPieMenu(false); 
+                             if (wasTransitioning) {
+                               const currentlySelectedNodeId = [...selectedNodeIds][0]; 
+                               if (currentlySelectedNodeId) {
+                                   const selectedNodeIsPreviewing = previewingNodeId === currentlySelectedNodeId;
+                                   if (selectedNodeIsPreviewing) { 
+                                       setPreviewingNodeId(null);
+                                   } else { 
+                                       setPreviewingNodeId(currentlySelectedNodeId);
+                                   }
+                                   setSelectedNodeIdForPieMenu(currentlySelectedNodeId); 
+                               } else {
+                                    setPreviewingNodeId(null); 
+                               }
+                             }
+                           }}
+                         />
+                       )}
+
+                       {/* Render the "Active" Node (if it exists and not being dragged) */} 
+                       {activeNodeToRender && (
+                         (() => {
+                           const isPreviewing = previewingNodeId === activeNodeToRender.id;
+                           const dimensions = getNodeDimensions(activeNodeToRender, isPreviewing);
+                           return (
+                             <Node
+                               key={activeNodeToRender.id}
+                               node={activeNodeToRender}
+                               currentWidth={dimensions.currentWidth}
+                               currentHeight={dimensions.currentHeight}
+                               textAreaHeight={dimensions.textAreaHeight}
+                               imageWidth={dimensions.imageWidth}
+                               imageHeight={dimensions.calculatedImageHeight}
+                               innerNetworkWidth={dimensions.innerNetworkWidth}
+                               innerNetworkHeight={dimensions.innerNetworkHeight}
+                               isSelected={selectedNodeIds.has(activeNodeToRender.id)}
+                               isDragging={false} // Explicitly not the dragging node if rendered here
+                               onMouseDown={(e) => handleNodeMouseDown(activeNodeToRender, e)}
+                               isPreviewing={isPreviewing}
+                               allNodes={nodes}
+                               isEditingOnCanvas={activeNodeToRender.id === editingNodeIdOnCanvas}
+                               onCommitCanvasEdit={(nodeId, newName) => { storeActions.updateNode(nodeId, draft => { draft.name = newName; }); setEditingNodeIdOnCanvas(null); }}
+                               onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
+                               connections={edges}
+                             />
+                           );
+                         })()
+                       )}
+
+                       {/* Render the Dragging Node last (on top) */} 
+                       {draggingNodeToRender && (
+                         (() => {
+                           const isPreviewing = previewingNodeId === draggingNodeToRender.id;
+                           const dimensions = getNodeDimensions(draggingNodeToRender, isPreviewing);
+                           return (
+                             <Node
+                               key={draggingNodeToRender.id}
+                               node={draggingNodeToRender}
+                               currentWidth={dimensions.currentWidth}
+                               currentHeight={dimensions.currentHeight}
+                               textAreaHeight={dimensions.textAreaHeight}
+                               imageWidth={dimensions.imageWidth}
+                               imageHeight={dimensions.calculatedImageHeight}
+                               innerNetworkWidth={dimensions.innerNetworkWidth}
+                               innerNetworkHeight={dimensions.innerNetworkHeight}
+                               isSelected={selectedNodeIds.has(draggingNodeToRender.id)}
+                               isDragging={true} // This is the dragging node
+                               onMouseDown={(e) => handleNodeMouseDown(draggingNodeToRender, e)}
+                               isPreviewing={isPreviewing}
+                               allNodes={nodes}
+                               isEditingOnCanvas={draggingNodeToRender.id === editingNodeIdOnCanvas}
+                               onCommitCanvasEdit={(nodeId, newName) => { storeActions.updateNode(nodeId, draft => { draft.name = newName; }); setEditingNodeIdOnCanvas(null); }}
+                               onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
+                               connections={edges}
+                             />
+                           );
+                         })()
+                       )}
                      </>
                    );
                  })()}
