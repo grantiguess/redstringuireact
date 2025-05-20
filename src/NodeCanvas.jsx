@@ -364,6 +364,7 @@ function NodeCanvas() {
     if (isPaused || !activeGraphId) return; // Check local state
 
     const nodeId = nodeData.id;
+    // setHasMouseMovedSinceDown(false); // REVERTING THIS
 
     // --- Double-click ---
     if (e.detail === 2) {
@@ -659,8 +660,14 @@ function NodeCanvas() {
       const dy = e.clientY - mouseDownPosition.current.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist > MOVEMENT_THRESHOLD) {
-        mouseMoved.current = true;
+        mouseMoved.current = true; // Keep this ref for immediate checks
+        // setHasMouseMovedSinceDown(true); // REVERTING THIS
         if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); clickTimeoutIdRef.current = null; potentialClickNodeRef.current = null;}
+        // If mouse moved significantly, it's likely a drag. If a pie menu was just set due to a quick click resolution
+        // but dragging hasn't formally started (draggingNodeInfo not set yet), hide the pie menu.
+        if (!draggingNodeInfo && selectedNodeIdForPieMenu) {
+          setSelectedNodeIdForPieMenu(null);
+        }
 
         // Start drawing connection
         if (longPressingNodeId && !draggingNodeInfo) { // Check longPressingNodeId
@@ -857,6 +864,7 @@ function NodeCanvas() {
     // Finalize panning state
     setIsPanning(false);
     isMouseDown.current = false;
+    // It's important to reset mouseMoved.current here AFTER all logic that depends on it for this up-event is done.
     setTimeout(() => { mouseMoved.current = false; }, 0);
   };
 
@@ -887,6 +895,7 @@ function NodeCanvas() {
     setDraggingNodeInfo(null);
     setDrawingConnectionFrom(null);
     isMouseDown.current = false;
+    // setHasMouseMovedSinceDown(false); // REVERTING THIS
   };
 
   const handleCanvasClick = (e) => {
@@ -1196,23 +1205,49 @@ function NodeCanvas() {
 
   // Effect to manage PieMenu visibility and data for animations
   useEffect(() => {
-    console.log(`[NodeCanvas] useEffect[selectedNodeIds]: Running. selectedNodeIds.size = ${selectedNodeIds.size}, isTransitioningPieMenu = ${isTransitioningPieMenu}, selectedNodeIdForPieMenu = ${selectedNodeIdForPieMenu}`);
-    if (selectedNodeIds.size === 1) {
-      const nodeId = [...selectedNodeIds][0];
-      if (!isTransitioningPieMenu) {
-        // If not transitioning, this selection intends to show a menu for this node.
-        console.log(`[NodeCanvas] Single node selected (${nodeId}), not transitioning. Setting selectedNodeIdForPieMenu.`);
-        setSelectedNodeIdForPieMenu(nodeId);
+    console.log(`[NodeCanvas] useEffect[selectedNodeIds]: Running. selectedNodeIds.size = ${selectedNodeIds.size}, isTransitioningPieMenu = ${isTransitioningPieMenu}, currentSelectedPieId = ${selectedNodeIdForPieMenu}, dragging = ${!!draggingNodeInfo}`);
+    const newTargetNodeId = selectedNodeIds.size === 1 ? [...selectedNodeIds][0] : null;
+
+    if (newTargetNodeId) {
+      // Single node is selected
+      if (selectedNodeIdForPieMenu === newTargetNodeId && !isTransitioningPieMenu) {
+        // Menu is already visible for this node and not transitioning, keep it.
+        // console.log(`[NodeCanvas] PieMenu already visible for ${newTargetNodeId}. No change.`);
+        return;
+      }
+      // Menu is not visible for this node OR it is but we are transitioning OR target is different.
+      // Attempt to show/change menu if not transitioning and not dragging (at the start of interaction).
+      if (!isTransitioningPieMenu && !draggingNodeInfo && !mouseMoved.current) {
+        console.log(`[NodeCanvas] Setting PieMenu for ${newTargetNodeId}. Not transitioning, not dragging, mouse not moved.`);
+        setSelectedNodeIdForPieMenu(newTargetNodeId);
+      } else if (draggingNodeInfo && selectedNodeIdForPieMenu === newTargetNodeId) {
+        // If dragging THIS node and its menu is already supposed to be visible, ensure it stays.
+        // This case might be redundant if the above logic correctly preserves it.
+        // console.log(`[NodeCanvas] Dragging node ${newTargetNodeId} and its menu is up. Ensuring it stays.`);
+      } else if (isTransitioningPieMenu) {
+        // If transitioning, the onExitAnimationComplete will handle the next state.
+        console.log(`[NodeCanvas] Transitioning. PieMenu for ${newTargetNodeId} will be handled post-transition.`);
       } else {
-        // If transitioning, do nothing here. The onExitAnimationComplete will handle showing the *next* menu.
-        console.log(`[NodeCanvas] Single node selected (${nodeId}), but IS transitioning. Waiting for exit animation.`);
+        // Conditions not met to show a NEW menu (e.g. drag started, mouse moved before selection finalized for menu)
+        // If selectedNodeIdForPieMenu is not null and not newTargetNodeId, it means selection changed from one node to another
+        // and the old menu should hide. If selectedNodeIdForPieMenu is already null, this does nothing.
+        if (selectedNodeIdForPieMenu && selectedNodeIdForPieMenu !== newTargetNodeId) {
+            console.log(`[NodeCanvas] Drag/move/etc. prevented new menu for ${newTargetNodeId}, or selection changed. Hiding old menu for ${selectedNodeIdForPieMenu}`);
+            setSelectedNodeIdForPieMenu(null);
+        } else if (!selectedNodeIdForPieMenu && (draggingNodeInfo || mouseMoved.current)){
+            // If no menu was visible, and a drag/move is happening, ensure no menu appears.
+            console.log(`[NodeCanvas] Drag/move during selection of ${newTargetNodeId}. No menu will show.`);
+            setSelectedNodeIdForPieMenu(null); // Explicitly keep it null
+        }
       }
     } else {
-      // Not a single selection (0 or multiple)
-      console.log("[NodeCanvas] No single node selected (or multiple). Setting selectedNodeIdForPieMenu to null.");
-      setSelectedNodeIdForPieMenu(null); // This will trigger the other useEffect to hide the menu if visible.
+      // No single node selected (0 or multiple)
+      if (!isTransitioningPieMenu) {
+        console.log("[NodeCanvas] No single node selected. Hiding PieMenu.");
+        setSelectedNodeIdForPieMenu(null);
+      }
     }
-  }, [selectedNodeIds, isTransitioningPieMenu]); // Only react to selection changes and transition state
+  }, [selectedNodeIds, isTransitioningPieMenu, draggingNodeInfo]); // mouseMoved.current is a ref, can't be a dep here.
 
   // Effect to prepare and render PieMenu when selectedNodeIdForPieMenu changes and not transitioning
   useEffect(() => {
