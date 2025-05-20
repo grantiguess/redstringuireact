@@ -41,7 +41,7 @@
     opacity: 0;
   }
   70% {
-    transform: translate(0, 0) scale(1.15);
+    transform: translate(0, 0) scale(1.05);
     opacity: 1;
   }
   100% {

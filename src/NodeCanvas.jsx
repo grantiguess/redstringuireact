@@ -1226,16 +1226,19 @@ function NodeCanvas() {
         setIsPieMenuRendered(true); // Ensure PieMenu is in DOM to animate in
       } else {
         console.log(`[NodeCanvas] Node ${selectedNodeIdForPieMenu} not found, but was set for pie menu. Hiding.`);
-        setCurrentPieMenuData(null);
+        setCurrentPieMenuData(null); // Keep this for safety if node genuinely disappears
         // isPieMenuRendered will be set to false by onExitAnimationComplete if it was visible
       }
-    } else if (!selectedNodeIdForPieMenu) {
-        // If no node is targeted for pie menu (e.g., deselected, or during transition end before new one shows)
-        console.log("[NodeCanvas] selectedNodeIdForPieMenu is null. Ensuring currentPieMenuData is null.");
-        setCurrentPieMenuData(null); // This effectively tells an already rendered PieMenu to hide (via its isVisible prop)
+    } else if (!selectedNodeIdForPieMenu && !isTransitioningPieMenu) {
+        // If no node is targeted for pie menu (e.g., deselected), AND we are not in a transition
+        // (which implies the menu should just hide without further state changes from NodeCanvas side for now).
+        // The PieMenu will become invisible due to the isVisible prop calculation.
+        // currentPieMenuData should NOT be nulled here, as PieMenu needs it to animate out.
+        // It will be nulled in onExitAnimationComplete.
+        console.log("[NodeCanvas] selectedNodeIdForPieMenu is null and not transitioning. PieMenu will become invisible and animate out.");
     }
     // If isTransitioningPieMenu is true, we don't change currentPieMenuData or isPieMenuRendered here.
-    // The existing menu plays its exit animation.
+    // The existing menu plays its exit animation, and onExitAnimationComplete handles the next steps.
   }, [selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu]);
 
   return (
