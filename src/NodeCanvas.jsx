@@ -1363,16 +1363,22 @@ function NodeCanvas() {
                 )}
 
                 {(() => {
-                   const activeNodeIdForOrdering = previewingNodeId || selectedNodeIdForPieMenu;
                    const draggingNodeId = draggingNodeInfo?.primaryId || draggingNodeInfo?.nodeId;
 
+                   // Determine which node should be treated as "active" for stacking, 
+                   // giving priority to previewing, then the node whose PieMenu is currently active/animating.
+                   let nodeIdToKeepActiveForStacking = previewingNodeId || currentPieMenuData?.node?.id || selectedNodeIdForPieMenu;
+                   if (nodeIdToKeepActiveForStacking === draggingNodeId) {
+                     nodeIdToKeepActiveForStacking = null; // Dragging node is handled separately
+                   }
+
                    const otherNodes = nodes.filter(node => 
-                     node.id !== activeNodeIdForOrdering && 
+                     node.id !== nodeIdToKeepActiveForStacking && 
                      node.id !== draggingNodeId
                    );
 
-                   const activeNodeToRender = activeNodeIdForOrdering && activeNodeIdForOrdering !== draggingNodeId 
-                     ? nodes.find(n => n.id === activeNodeIdForOrdering)
+                   const activeNodeToRender = nodeIdToKeepActiveForStacking 
+                     ? nodes.find(n => n.id === nodeIdToKeepActiveForStacking)
                      : null;
 
                    const draggingNodeToRender = draggingNodeId
