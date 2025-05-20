@@ -19,9 +19,12 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
   const [animationState, setAnimationState] = useState(null);
 
   const bubbleRefs = useRef([]);
-  if (bubbleRefs.current.length !== buttons.length) {
+  // Ensure bubbleRefs array is the same length as buttons
+  // This needs to be robust against buttons array changing length
+  useEffect(() => {
     bubbleRefs.current = Array(buttons.length).fill().map((_, i) => bubbleRefs.current[i] || React.createRef());
-  }
+  }, [buttons.length]);
+
   const animationsEndedCountRef = useRef(0);
 
   // Primary effect to react to visibility changes from parent
@@ -103,6 +106,14 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
   // Render null if essential data is missing
   if (!node || !buttons || !buttons.length || !nodeDimensions) {
     console.log("[PieMenu] Render: Rendering NULL due to missing essential data.");
+    // If we were previously visible and now hiding due to missing data,
+    // ensure exit animation callback is called if it hasn't been.
+    // This can happen if the node providing data is suddenly removed.
+    if (animationState !== null && animationState !== 'shrinking' && onExitAnimationComplete) {
+      console.log("[PieMenu] Missing data, but was visible. Triggering onExitAnimationComplete.");
+      onExitAnimationComplete(); // Ensure parent knows we are gone.
+      setAnimationState(null); // Reset internal state.
+    }
     return null;
   }
 
@@ -149,13 +160,17 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
   return (
     <g className="pie-menu">
       {buttons.map((button, index) => {
-        if (index >= NUM_FIXED_POSITIONS) return null;
+        // Determine the effective index for positioning.
+        // If there's only one button, it should always take the "top-right" slot (index 1).
+        const effectiveIndex = buttons.length === 1 ? 1 : index;
 
-        const angle = START_ANGLE_OFFSET + index * FIXED_ANGLE_STEP;
+        if (effectiveIndex >= NUM_FIXED_POSITIONS) return null; // Use effectiveIndex for check
+
+        const angle = START_ANGLE_OFFSET + effectiveIndex * FIXED_ANGLE_STEP; // Use effectiveIndex for angle
         let bubbleX, bubbleY;
 
-        // Determine position based on angle index (0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW)
-        switch (index) {
+        // Determine position based on effectiveIndex
+        switch (effectiveIndex) { // Use effectiveIndex for positioning
           case 0: // Top (North)
             bubbleX = nodeCenterX;
             bubbleY = nodeCenterY - (currentHeight / 2 + totalVisualOffset);
@@ -201,9 +216,12 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
         const startDY = nodeCenterY - bubbleY;
 
         let animationDelayMs;
-        if (animationState === 'shrinking') {
-          animationDelayMs = (NUM_FIXED_POSITIONS - 1 - index) * STAGGER_DELAY;
-        } else { // For popping or steady (though steady doesn't animate)
+        if (buttons.length === 1) {
+          animationDelayMs = 0; // No delay if only one button
+        } else if (animationState === 'shrinking') {
+          // Reverse stagger for shrinking: last button (index N-1) gets 0 delay, first (index 0) gets (N-1)*delay
+          animationDelayMs = (buttons.length - 1 - index) * STAGGER_DELAY;
+        } else { // For popping or steady
           animationDelayMs = index * STAGGER_DELAY;
         }
 

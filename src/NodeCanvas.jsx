@@ -9,7 +9,7 @@ import PlusSign from './PlusSign.jsx'; // Import the new PlusSign component
 import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
-import { Edit3, Trash2, Link, Maximize2 } from 'lucide-react'; // Example icons, Maximize2 for expand
+import { Edit3, Trash2, Link, Maximize2, Minimize2 } from 'lucide-react'; // Example icons, Maximize2 for expand, Minimize2 for contract
 
 // Import Zustand store and selectors/actions
 import useGraphStore, {
@@ -190,6 +190,10 @@ function NodeCanvas() {
   const [currentPieMenuData, setCurrentPieMenuData] = useState(null); // Holds { node, buttons, nodeDimensions }
   const [editingNodeIdOnCanvas, setEditingNodeIdOnCanvas] = useState(null); // For panel-less editing
 
+  // New states for PieMenu transition
+  const [selectedNodeIdForPieMenu, setSelectedNodeIdForPieMenu] = useState(null);
+  const [isTransitioningPieMenu, setIsTransitioningPieMenu] = useState(false);
+
   // Use the local state values populated by subscribe
   const projectTitle = activeGraphName ?? 'Loading...';
   const projectBio = activeGraphDescription ?? '';
@@ -242,24 +246,50 @@ function NodeCanvas() {
   // Ref to track initial mount completion
   const isMountedRef = useRef(false);
 
-  // Pie Menu Button Configuration
-  const pieMenuButtons = useMemo(() => [
-    { id: 'edit', label: 'Edit', icon: Edit3, action: (nodeId) => {
-        console.log(`[PieMenu Action] Edit clicked for node: ${nodeId}. Setting editingNodeIdOnCanvas.`);
-        setEditingNodeIdOnCanvas(nodeId);
-    } },
-    { id: 'delete', label: 'Delete', icon: Trash2, action: (nodeId) => {
-      storeActions.removeNode(nodeId);
-      setSelectedNodeIds(new Set()); // Deselect after deleting
-    } },
-    { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => console.log('Connect node:', nodeId) },
-    { id: 'expand-preview', label: 'Expand', icon: Maximize2, action: (nodeId) => {
-      setPreviewingNodeId(prev => prev === nodeId ? null : nodeId);
-    } },
-    // { id: 'define', label: 'Define', icon: PlusSquare, action: (nodeId) => console.log('Define node:', nodeId) }, // Replaced by expand-preview
-    // Add more buttons here as needed
-    // { id: 'branch', label: 'Branch', icon: GitFork, action: (nodeId) => console.log('Branch node:', nodeId) },
-  ], [storeActions, setSelectedNodeIds, setPreviewingNodeId]); // Dependencies for useMemo
+  // Pie Menu Button Configuration - now targetPieMenuButtons and dynamic
+  const targetPieMenuButtons = useMemo(() => {
+    const selectedNode = selectedNodeIdForPieMenu ? nodes.find(n => n.id === selectedNodeIdForPieMenu) : null;
+
+    if (selectedNode && previewingNodeId === selectedNode.id) {
+      // If the selected node for the pie menu is the one being previewed, show only Contract
+      return [
+        {
+          id: 'contract-preview',
+          label: 'Contract',
+          icon: Minimize2,
+          action: (nodeId) => {
+            console.log(`[PieMenu Action] Contract clicked for node: ${nodeId}. Starting transition.`);
+            setIsTransitioningPieMenu(true); // Start transition, current menu will hide
+            // setPreviewingNodeId(null); // This will be set after animation
+          }
+        }
+      ];
+    } else {
+      // Default buttons: Edit, Delete, Connect, Expand (if not previewing THIS node)
+      return [
+        { id: 'edit', label: 'Edit', icon: Edit3, action: (nodeId) => {
+            console.log(`[PieMenu Action] Edit clicked for node: ${nodeId}. Setting editingNodeIdOnCanvas.`);
+            setEditingNodeIdOnCanvas(nodeId);
+        } },
+        { id: 'delete', label: 'Delete', icon: Trash2, action: (nodeId) => {
+          storeActions.removeNode(nodeId);
+          setSelectedNodeIds(new Set()); // Deselect after deleting
+          setSelectedNodeIdForPieMenu(null); // Ensure pie menu hides
+        } },
+        { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => console.log('Connect node:', nodeId) },
+        {
+          id: 'expand-preview',
+          label: 'Expand',
+          icon: Maximize2,
+          action: (nodeId) => {
+            console.log(`[PieMenu Action] Expand clicked for node: ${nodeId}. Starting transition.`);
+            setIsTransitioningPieMenu(true); // Start transition, current menu will hide
+            // setPreviewingNodeId(prev => prev === nodeId ? null : nodeId); // This will be set after animation
+          }
+        }
+      ];
+    }
+  }, [storeActions, setSelectedNodeIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, Minimize2, Maximize2, Edit3, Trash2, Link]);
 
   // Effect to center view on graph load/change
   useEffect(() => {
@@ -1166,30 +1196,47 @@ function NodeCanvas() {
 
   // Effect to manage PieMenu visibility and data for animations
   useEffect(() => {
-    console.log(`[NodeCanvas] useEffect[selectedNodeIds]: Running. selectedNodeIds.size = ${selectedNodeIds.size}, isPieMenuRendered = ${isPieMenuRendered}`);
+    console.log(`[NodeCanvas] useEffect[selectedNodeIds]: Running. selectedNodeIds.size = ${selectedNodeIds.size}, isTransitioningPieMenu = ${isTransitioningPieMenu}, selectedNodeIdForPieMenu = ${selectedNodeIdForPieMenu}`);
     if (selectedNodeIds.size === 1) {
       const nodeId = [...selectedNodeIds][0];
-      const node = nodes.find(n => n.id === nodeId);
-      if (node) {
-        const dimensions = getNodeDimensions(node, previewingNodeId === node.id);
-        console.log(`[NodeCanvas] Single node selected (${nodeId}). Setting currentPieMenuData and isPieMenuRendered=true.`);
-        setCurrentPieMenuData({ node, buttons: pieMenuButtons, nodeDimensions: dimensions });
-        setIsPieMenuRendered(true); // Mount/show PieMenu, it will animate in
+      if (!isTransitioningPieMenu) {
+        // If not transitioning, this selection intends to show a menu for this node.
+        console.log(`[NodeCanvas] Single node selected (${nodeId}), not transitioning. Setting selectedNodeIdForPieMenu.`);
+        setSelectedNodeIdForPieMenu(nodeId);
       } else {
-        console.log(`[NodeCanvas] Single node ID (${nodeId}) in selectedNodeIds, but node not found in nodes array. Hiding pie menu.`);
-        // Selected node not found, ensure pie menu is hidden if it was trying to show
-        // If it was rendered, PieMenu will receive isVisible=false and animate out.
-        // No direct setIsPieMenuRendered(false) here to allow animation.
-        setCurrentPieMenuData(null);
+        // If transitioning, do nothing here. The onExitAnimationComplete will handle showing the *next* menu.
+        console.log(`[NodeCanvas] Single node selected (${nodeId}), but IS transitioning. Waiting for exit animation.`);
       }
     } else {
-      console.log("[NodeCanvas] No single node selected (or multiple). PieMenu will receive isVisible=false.");
-      // Not a single selection, PieMenu will be told to animate out via its isVisible prop
-      // It will unmount itself via onExitAnimationComplete callback
-      // If it was already not rendered, currentPieMenuData might be null, which is fine.
-      // If currentPieMenuData is null and isPieMenuRendered is true, means it was just told to hide.
+      // Not a single selection (0 or multiple)
+      console.log("[NodeCanvas] No single node selected (or multiple). Setting selectedNodeIdForPieMenu to null.");
+      setSelectedNodeIdForPieMenu(null); // This will trigger the other useEffect to hide the menu if visible.
     }
-  }, [selectedNodeIds, nodes, previewingNodeId, pieMenuButtons]);
+  }, [selectedNodeIds, isTransitioningPieMenu]); // Only react to selection changes and transition state
+
+  // Effect to prepare and render PieMenu when selectedNodeIdForPieMenu changes and not transitioning
+  useEffect(() => {
+    console.log(`[NodeCanvas] useEffect[selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu]: Running. selectedNodeIdForPieMenu = ${selectedNodeIdForPieMenu}, isTransitioning = ${isTransitioningPieMenu}`);
+    if (selectedNodeIdForPieMenu && !isTransitioningPieMenu) {
+      const node = nodes.find(n => n.id === selectedNodeIdForPieMenu);
+      if (node) {
+        const dimensions = getNodeDimensions(node, previewingNodeId === node.id);
+        console.log(`[NodeCanvas] Preparing pie menu for node ${selectedNodeIdForPieMenu}. Not transitioning. Buttons:`, targetPieMenuButtons.map(b => b.id));
+        setCurrentPieMenuData({ node, buttons: targetPieMenuButtons, nodeDimensions: dimensions });
+        setIsPieMenuRendered(true); // Ensure PieMenu is in DOM to animate in
+      } else {
+        console.log(`[NodeCanvas] Node ${selectedNodeIdForPieMenu} not found, but was set for pie menu. Hiding.`);
+        setCurrentPieMenuData(null);
+        // isPieMenuRendered will be set to false by onExitAnimationComplete if it was visible
+      }
+    } else if (!selectedNodeIdForPieMenu) {
+        // If no node is targeted for pie menu (e.g., deselected, or during transition end before new one shows)
+        console.log("[NodeCanvas] selectedNodeIdForPieMenu is null. Ensuring currentPieMenuData is null.");
+        setCurrentPieMenuData(null); // This effectively tells an already rendered PieMenu to hide (via its isVisible prop)
+    }
+    // If isTransitioningPieMenu is true, we don't change currentPieMenuData or isPieMenuRendered here.
+    // The existing menu plays its exit animation.
+  }, [selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu]);
 
   return (
     <div
@@ -1311,11 +1358,42 @@ function NodeCanvas() {
                     node={currentPieMenuData.node}
                     buttons={currentPieMenuData.buttons}
                     nodeDimensions={currentPieMenuData.nodeDimensions}
-                    isVisible={selectedNodeIds.size === 1} // Controls animation within PieMenu
+                    // isVisible controls animation within PieMenu. It should only be true if the menu
+                    // is for the currently targeted node AND we are not in a transition phase.
+                    isVisible={currentPieMenuData?.node?.id === selectedNodeIdForPieMenu && !isTransitioningPieMenu}
                     onExitAnimationComplete={() => {
-                      console.log("[NodeCanvas] PieMenu onExitAnimationComplete: Setting isPieMenuRendered=false, currentPieMenuData=null.");
-                      setIsPieMenuRendered(false); // Now unmount
-                      setCurrentPieMenuData(null);
+                      console.log("[NodeCanvas] PieMenu onExitAnimationComplete: Resetting transition and render state.");
+                      setIsPieMenuRendered(false); // Unmount after animation
+                      setCurrentPieMenuData(null); // Clear data
+                      const wasTransitioning = isTransitioningPieMenu;
+                      setIsTransitioningPieMenu(false); // Transition finished
+
+                      // If a transition just finished (e.g., from expand to contract, or vice-versa)
+                      // and a node is still selected, we need to show the *new* pie menu.
+                      if (wasTransitioning) {
+                        // Update previewingNodeId based on the action that triggered the transition
+                        // The actual selected node for menu (selectedNodeIdForPieMenu) might be the same or different
+                        // We need to find the button that was clicked. This is tricky without more state.
+                        // For now, let's assume the expand/contract action was on the selectedNodeIdForPieMenu.
+                        const currentlySelectedNodeId = [...selectedNodeIds][0]; // Get current single selection if any
+
+                        if (currentlySelectedNodeId) {
+                            const selectedNodeIsPreviewing = previewingNodeId === currentlySelectedNodeId;
+                            if (selectedNodeIsPreviewing) { // If it was previewing, the action was to contract
+                                console.log("[NodeCanvas] Post-transition: Node was previewing, now contracting.");
+                                setPreviewingNodeId(null);
+                            } else { // If it was not previewing, the action was to expand
+                                console.log("[NodeCanvas] Post-transition: Node was not previewing, now expanding.");
+                                setPreviewingNodeId(currentlySelectedNodeId);
+                            }
+                            // Re-set selectedNodeIdForPieMenu to trigger the useEffect to show the new menu state
+                            console.log(`[NodeCanvas] Post-transition: Re-setting selectedNodeIdForPieMenu to ${currentlySelectedNodeId} to show new menu.`);
+                            setSelectedNodeIdForPieMenu(currentlySelectedNodeId);
+                        } else {
+                             console.log("[NodeCanvas] Post-transition: No node selected. Clearing preview.");
+                             setPreviewingNodeId(null); // Safety clear if no node is selected
+                        }
+                      }
                     }}
                   />
                 )}
