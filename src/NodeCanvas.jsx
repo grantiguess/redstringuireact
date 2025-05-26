@@ -293,9 +293,9 @@ function NodeCanvas() {
           label: 'Expand',
           icon: Maximize2,
           action: (nodeId) => {
-            console.log(`[PieMenu Action] Expand clicked for node: ${nodeId}. Starting transition.`);
+            //console.log(`[PieMenu Action] Expand clicked for node: ${nodeId}. Starting transition.`);
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
-            // setPreviewingNodeId(prev => prev === nodeId ? null : nodeId); // This will be set after animation
+            // previewingNodeId will be set in onExitAnimationComplete after animation
           }
         }
       ];
@@ -1314,35 +1314,35 @@ function NodeCanvas() {
 
   // Effect to manage PieMenu visibility and data for animations
   useEffect(() => {
-    console.log(`[NodeCanvas] useEffect[selectedNodeIds, isTransitioningPieMenu]: Running. selectedNodeIds.size = ${selectedNodeIds.size}, isTransitioningPieMenu = ${isTransitioningPieMenu}`);
+    //console.log(`[NodeCanvas] useEffect[selectedNodeIds, isTransitioningPieMenu]: Running. selectedNodeIds.size = ${selectedNodeIds.size}, isTransitioningPieMenu = ${isTransitioningPieMenu}`);
     if (selectedNodeIds.size === 1) {
       const nodeId = [...selectedNodeIds][0];
       if (!isTransitioningPieMenu) {
-        console.log(`[NodeCanvas] Single node selected (${nodeId}), not transitioning. Setting selectedNodeIdForPieMenu.`);
+        //console.log(`[NodeCanvas] Single node selected (${nodeId}), not transitioning. Setting selectedNodeIdForPieMenu.`);
         setSelectedNodeIdForPieMenu(nodeId);
       } else {
         // If transitioning, PieMenu's onExitAnimationComplete will handle setting the next selectedNodeIdForPieMenu
-        console.log(`[NodeCanvas] Single node selected (${nodeId}), but IS transitioning. Waiting for exit animation to potentially set new pie menu target.`);
+        //console.log(`[NodeCanvas] Single node selected (${nodeId}), but IS transitioning. Waiting for exit animation to potentially set new pie menu target.`);
       }
     } else {
       // Not a single selection (0 or multiple)
-      console.log("[NodeCanvas] No single node selected (or multiple). Setting selectedNodeIdForPieMenu to null.");
+      //console.log("[NodeCanvas] No single node selected (or multiple). Setting selectedNodeIdForPieMenu to null.");
       setSelectedNodeIdForPieMenu(null);
     }
   }, [selectedNodeIds, isTransitioningPieMenu]); // Dependencies: only selectedNodeIds and isTransitioningPieMenu
 
   // Effect to prepare and render PieMenu when selectedNodeIdForPieMenu changes and not transitioning
   useEffect(() => {
-    console.log(`[NodeCanvas] useEffect[selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu]: Running. selectedNodeIdForPieMenu = ${selectedNodeIdForPieMenu}, isTransitioning = ${isTransitioningPieMenu}`);
+    //console.log(`[NodeCanvas] useEffect[selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu]: Running. selectedNodeIdForPieMenu = ${selectedNodeIdForPieMenu}, isTransitioning = ${isTransitioningPieMenu}`);
     if (selectedNodeIdForPieMenu && !isTransitioningPieMenu) {
       const node = nodes.find(n => n.id === selectedNodeIdForPieMenu);
       if (node) {
         const dimensions = getNodeDimensions(node, previewingNodeId === node.id);
-        console.log(`[NodeCanvas] Preparing pie menu for node ${selectedNodeIdForPieMenu}. Not transitioning. Buttons:`, targetPieMenuButtons.map(b => b.id));
+        //console.log(`[NodeCanvas] Preparing pie menu for node ${selectedNodeIdForPieMenu}. Not transitioning. Buttons:`, targetPieMenuButtons.map(b => b.id));
         setCurrentPieMenuData({ node, buttons: targetPieMenuButtons, nodeDimensions: dimensions });
         setIsPieMenuRendered(true); // Ensure PieMenu is in DOM to animate in
       } else {
-        console.log(`[NodeCanvas] Node ${selectedNodeIdForPieMenu} not found, but was set for pie menu. Hiding.`);
+        //console.log(`[NodeCanvas] Node ${selectedNodeIdForPieMenu} not found, but was set for pie menu. Hiding.`);
         setCurrentPieMenuData(null); // Keep this for safety if node genuinely disappears
         // isPieMenuRendered will be set to false by onExitAnimationComplete if it was visible
       }
@@ -1352,7 +1352,7 @@ function NodeCanvas() {
         // The PieMenu will become invisible due to the isVisible prop calculation.
         // currentPieMenuData should NOT be nulled here, as PieMenu needs it to animate out.
         // It will be nulled in onExitAnimationComplete.
-        console.log("[NodeCanvas] selectedNodeIdForPieMenu is null and not transitioning. PieMenu will become invisible and animate out.");
+        //console.log("[NodeCanvas] selectedNodeIdForPieMenu is null and not transitioning. PieMenu will become invisible and animate out.");
     }
     // If isTransitioningPieMenu is true, we don't change currentPieMenuData or isPieMenuRendered here.
     // The existing menu plays its exit animation, and onExitAnimationComplete handles the next steps.

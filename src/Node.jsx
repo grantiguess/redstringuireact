@@ -5,6 +5,7 @@ import './Node.css';
 import InnerNetwork from './InnerNetwork.jsx'; // Import InnerNetwork
 import { getNodeDimensions } from './utils.js'; // Import needed for node dims
 import { v4 as uuidv4 } from 'uuid';
+import { ChevronLeft, ChevronRight } from 'lucide-react'; // Import navigation icons
 
 const PREVIEW_SCALE_FACTOR = 0.3; // How much to shrink the network layout
 
@@ -105,6 +106,36 @@ const Node = ({
 
   // Define the canvas background color (or import from constants if preferred)
   const canvasBackgroundColor = '#bdb5b5';
+
+  // Calculate text width for arrow positioning (only when previewing)
+  const textWidth = useMemo(() => {
+    if (!isPreviewing) return 0;
+    
+    // Create a temporary canvas to measure text width
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    context.font = 'bold 20px sans-serif'; // Match the font from the node name styling
+    const width = context.measureText(nodeName).width;
+    canvas.remove(); // Clean up
+    return width;
+  }, [isPreviewing, nodeName]);
+
+  // State to control arrow fade-in animation
+  const [showArrows, setShowArrows] = useState(false);
+
+  // Effect to handle arrow fade-in after expansion
+  useEffect(() => {
+    if (isPreviewing) {
+      // Small delay to let the expansion animation start, then fade in arrows
+      const timer = setTimeout(() => {
+        setShowArrows(true);
+      }, 200); // 200ms delay after expansion starts
+      return () => clearTimeout(timer);
+    } else {
+      // Immediately hide arrows when not previewing
+      setShowArrows(false);
+    }
+  }, [isPreviewing]);
 
   return (
     <g
@@ -266,6 +297,80 @@ const Node = ({
                       />
                   </g>
               </g>
+          </g>
+      )}
+
+      {/* Navigation Arrows - Positioned to hug the node title text */}
+      {isPreviewing && textWidth > 0 && (
+                      <g style={{ 
+              opacity: showArrows ? 1 : 0,
+              transition: 'opacity 0.2s ease-in'
+            }}>
+              {/* Left Arrow - Positioned just to the left of the text */}
+              <foreignObject
+                x={nodeX + (currentWidth / 2) - (textWidth / 2) - 50} // Position just left of text start
+                y={nodeY + (textAreaHeight / 2) - 20} // Center vertically with title area
+                width={40}
+                height={40}
+                style={{ 
+                  pointerEvents: showArrows ? 'auto' : 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <div
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: 0.5,
+                    transition: 'opacity 0.2s ease',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = '0.5'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // TODO: Handle left arrow click - navigate to previous graph
+                    console.log('Left arrow clicked for node:', nodeId);
+                  }}
+                >
+                  <ChevronLeft size={32} color="#bdb5b5" />
+                </div>
+              </foreignObject>
+
+              {/* Right Arrow - Positioned just to the right of the text */}
+              <foreignObject
+                x={nodeX + (currentWidth / 2) + (textWidth / 2) + 10} // Position just right of text end
+                y={nodeY + (textAreaHeight / 2) - 20} // Center vertically with title area
+                width={40}
+                height={40}
+                style={{ 
+                  pointerEvents: showArrows ? 'auto' : 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <div
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: 0.5,
+                    transition: 'opacity 0.2s ease',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = '0.5'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // TODO: Handle right arrow click - navigate to next graph
+                    console.log('Right arrow clicked for node:', nodeId);
+                  }}
+                >
+                  <ChevronRight size={32} color="#bdb5b5" />
+                </div>
+              </foreignObject>
           </g>
       )}
       {/* --- End Preview --- */}

@@ -86,12 +86,16 @@ Beyond the general guidelines, recent development has focused on more complex UI
     *   State variables like `hasMouseMovedSinceDown` in `NodeCanvas.jsx` can help differentiate between a click and the start of a drag, preventing unwanted PieMenu animations during node dragging.
 
 19. **Scroll Wheel and Trackpad Input Handling:**
-    *   The `handleWheel` function in `NodeCanvas.jsx` implements sophisticated input detection to provide appropriate behavior for different input devices:
-        - **Mac Trackpad Pinch-to-Zoom:** `Ctrl + scroll` triggers zoom with higher sensitivity (`TRACKPAD_ZOOM_SENSITIVITY`)
-        - **Mac Trackpad Two-Finger Pan:** Regular two-finger scroll (no Ctrl) with horizontal movement (`deltaX !== 0`) triggers panning in both X and Y directions
-        - **Universal Scroll Wheel Zoom:** Vertical scroll without horizontal movement falls through to zoom behavior using `SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY`
-    *   The key detection logic distinguishes between trackpad and mouse wheel on Mac by checking for horizontal movement (`deltaX !== 0`), as mouse wheels typically only produce vertical `deltaY` values while trackpads often have both components
-    *   This ensures natural behavior: trackpad users get expected pan/zoom gestures, while mouse wheel users get scroll-to-zoom functionality regardless of platform
+    *   The `handleWheel` function in `NodeCanvas.jsx` implements industry-standard input device detection to provide appropriate behavior for different input devices across all platforms:
+        - **Mac Trackpad Pinch-to-Zoom:** `Ctrl + scroll` on Mac always triggers zoom regardless of device type, using `TRACKPAD_ZOOM_SENSITIVITY`
+        - **Trackpad Two-Finger Pan:** Detected using multiple heuristics including fractional delta values (`deltaY % 1 !== 0`), horizontal movement (`deltaX > 0.1`), small continuous deltas (`deltaY < 50`), and varied delta patterns. Triggers panning in both X and Y directions using `PAN_DRAG_SENSITIVITY`
+        - **Mouse Wheel Zoom:** Detected by large discrete values (`deltaY >= 50`), integer-only deltas, and consistent/repeated value patterns typical of mouse wheels. Triggers zoom using `SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY`
+    *   The detection system maintains a rolling history of the last 10 delta values (`deltaHistoryRef`) to analyze patterns over time, providing more reliable device identification than single-event heuristics
+    *   Key detection indicators:
+        - **Trackpad:** Fractional deltas, horizontal movement, small varied values, continuous smooth input
+        - **Mouse Wheel:** Large integer deltas, repeated values, simple ratios (0.5x, 2x, 3x), discrete stepped input
+    *   This cross-platform approach ensures natural behavior on Windows, Mac, and Linux: trackpad users get expected pan/zoom gestures while mouse wheel users get scroll-to-zoom functionality
+    *   Debug information includes detected device type, delta history length, and analysis flags for troubleshooting input detection issues
 
 20. **Inline Node Editing and Panel Integration:**
     *   The PieMenu's "Edit" button (`targetPieMenuButtons` in `NodeCanvas.jsx`) triggers both inline canvas editing and panel tab creation/activation

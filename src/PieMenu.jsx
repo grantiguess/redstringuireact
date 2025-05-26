@@ -105,12 +105,12 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
 
   // Render null if essential data is missing
   if (!node || !buttons || !buttons.length || !nodeDimensions) {
-    console.log("[PieMenu] Render: Rendering NULL due to missing essential data.");
+    //console.log("[PieMenu] Render: Rendering NULL due to missing essential data.");
     // If we were previously visible and now hiding due to missing data,
     // ensure exit animation callback is called if it hasn't been.
     // This can happen if the node providing data is suddenly removed.
     if (animationState !== null && animationState !== 'shrinking' && onExitAnimationComplete) {
-      console.log("[PieMenu] Missing data, but was visible. Triggering onExitAnimationComplete.");
+      //console.log("[PieMenu] Missing data, but was visible. Triggering onExitAnimationComplete.");
       onExitAnimationComplete(); // Ensure parent knows we are gone.
       setAnimationState(null); // Reset internal state.
     }
@@ -121,7 +121,7 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
   // AND the parent also says it's not visible (prop), then it should definitely be null.
   // This primarily handles the initial mount if isVisible starts as false, or after a full exit sequence.
   if (animationState === null && !isVisible) {
-    console.log(`[PieMenu] Render: Rendering NULL because animationState is null and isVisible is false.`);
+    //console.log(`[PieMenu] Render: Rendering NULL because animationState is null and isVisible is false.`);
     return null;
   }
   // If animationState is NOT null, it means we are either popping, steady, or shrinking.

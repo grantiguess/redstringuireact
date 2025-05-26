@@ -197,9 +197,59 @@ const useGraphStore = create((set, get) => {
   const initialNodes = loadInitialNodes();
   const initialGraphs = loadInitialGraphs();
 
+  // --- Create Default Test Data if Empty ---
+  if (initialNodes.size === 0 && initialGraphs.size === 0) {
+    console.log('[Store Init] No existing data found. Creating default test data...');
+    
+    // Create a test graph
+    const testGraphId = 'test-graph-1';
+    const testGraphData = {
+      id: testGraphId,
+      name: 'Test Graph',
+      description: 'A test graph for development',
+      picture: '',
+      color: 'maroon',
+      directed: true,
+      nodeIds: [],
+      edgeIds: []
+    };
+    initialGraphs.set(testGraphId, testGraphData);
+
+    // Create a test node
+    const testNodeId = 'test-node-1';
+    const testNodeData = {
+      id: testNodeId,
+      name: 'Test Node - Click to Expand',
+      description: 'A test node that can be expanded',
+      picture: '',
+      color: 'maroon',
+      data: null,
+      x: 200,
+      y: 150,
+      scale: 1,
+      imageSrc: null,
+      thumbnailSrc: null,
+      imageAspectRatio: null,
+      parentDefinitionNodeId: null,
+      graphId: testGraphId,
+      definitionGraphIds: [testGraphId], // This node defines the test graph
+      edgeIds: []
+    };
+    initialNodes.set(testNodeId, testNodeData);
+    testGraphData.nodeIds.push(testNodeId);
+
+    console.log('[Store Init] Created default test data:', { graphId: testGraphId, nodeId: testNodeId });
+  }
+
   // --- Load Saved/Open State ---
   const initialSavedNodeIds = loadInitialSavedNodes();
   let initialOpenIds = loadInitialOpenGraphs(); // Use let for potential modification
+
+  // --- Ensure Test Graph is Open if Created ---
+  if (initialGraphs.has('test-graph-1') && !initialOpenIds.includes('test-graph-1')) {
+    console.log('[Store Init] Adding test graph to open tabs...');
+    initialOpenIds = ['test-graph-1', ...initialOpenIds];
+  }
 
   // --- Determine Initial Active State --- 
   let initialActiveGraphId = null;
