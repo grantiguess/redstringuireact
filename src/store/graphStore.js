@@ -215,12 +215,26 @@ const useGraphStore = create((set, get) => {
     };
     initialGraphs.set(testGraphId, testGraphData);
 
-    // Create a test node
+    // Create a second test graph for multiple definitions
+    const testGraphId2 = 'test-graph-2';
+    const testGraphData2 = {
+      id: testGraphId2,
+      name: 'Second Test Graph',
+      description: 'A second test graph for testing navigation',
+      picture: '',
+      color: 'blue',
+      directed: true,
+      nodeIds: [],
+      edgeIds: []
+    };
+    initialGraphs.set(testGraphId2, testGraphData2);
+
+    // Create a test node with multiple definitions
     const testNodeId = 'test-node-1';
     const testNodeData = {
       id: testNodeId,
-      name: 'Test Node - Click to Expand',
-      description: 'A test node that can be expanded',
+      name: 'Multi-Definition Node',
+      description: 'A test node with multiple graph definitions',
       picture: '',
       color: 'maroon',
       data: null,
@@ -232,7 +246,7 @@ const useGraphStore = create((set, get) => {
       imageAspectRatio: null,
       parentDefinitionNodeId: null,
       graphId: testGraphId,
-      definitionGraphIds: [testGraphId], // This node defines the test graph
+      definitionGraphIds: [testGraphId, testGraphId2], // This node defines both test graphs
       edgeIds: []
     };
     initialNodes.set(testNodeId, testNodeData);

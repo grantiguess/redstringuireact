@@ -31,7 +31,9 @@ const Node = ({
   // --- Add editing props ---
   isEditingOnCanvas,
   onCommitCanvasEdit,
-  onCancelCanvasEdit
+  onCancelCanvasEdit,
+  // --- Add store actions for creating definitions ---
+  onCreateDefinition
 }) => {
   // Access properties directly from the node data object
   const nodeId = node.id ?? uuidv4(); // Use ID or generate fallback (should have ID from store)
@@ -123,9 +125,36 @@ const Node = ({
   // State to control arrow fade-in animation
   const [showArrows, setShowArrows] = useState(false);
 
+  // State to track which definition graph is currently being shown (index in definitionGraphIds array)
+  const [currentDefinitionIndex, setCurrentDefinitionIndex] = useState(0);
+
+  // Get the node's definition graph IDs
+  const definitionGraphIds = node.definitionGraphIds || [];
+  const hasMultipleDefinitions = definitionGraphIds.length > 1;
+  const hasAnyDefinitions = definitionGraphIds.length > 0;
+
+  // Get the currently displayed graph ID
+  const currentGraphId = definitionGraphIds[currentDefinitionIndex] || definitionGraphIds[0];
+
+  // Filter nodes and edges for the current graph definition
+  const currentGraphNodes = useMemo(() => {
+    if (!currentGraphId || !allNodes) return [];
+    // For now, we'll show all nodes - in the future this could be filtered by graph
+    // The InnerNetwork will show a preview of the network structure
+    return allNodes;
+  }, [currentGraphId, allNodes]);
+
+  const currentGraphEdges = useMemo(() => {
+    if (!currentGraphId || !connections) return [];
+    // For now, we'll show all edges - in the future this could be filtered by graph
+    return connections;
+  }, [currentGraphId, connections]);
+
   // Effect to handle arrow fade-in after expansion
   useEffect(() => {
     if (isPreviewing) {
+      // Reset to first definition when expanding
+      setCurrentDefinitionIndex(0);
       // Small delay to let the expansion animation start, then fade in arrows
       const timer = setTimeout(() => {
         setShowArrows(true);
@@ -136,6 +165,21 @@ const Node = ({
       setShowArrows(false);
     }
   }, [isPreviewing]);
+
+  // Navigation functions
+  const navigateToPreviousDefinition = () => {
+    if (!hasMultipleDefinitions) return;
+    setCurrentDefinitionIndex(prev => 
+      prev === 0 ? definitionGraphIds.length - 1 : prev - 1
+    );
+  };
+
+  const navigateToNextDefinition = () => {
+    if (!hasMultipleDefinitions) return;
+    setCurrentDefinitionIndex(prev => 
+      prev === definitionGraphIds.length - 1 ? 0 : prev + 1
+    );
+  };
 
   return (
     <g
@@ -286,27 +330,96 @@ const Node = ({
                       height={innerNetworkHeight}
                       fill={canvasBackgroundColor}
                   />
-                  <g transform={`translate(${nodeX + NODE_PADDING}, ${contentAreaY})`}>
-                      <InnerNetwork
-                          nodes={allNodes} // Pass plain node data
-                          // Pass connections as edges (plain edge data)
-                          edges={connections} 
+                  
+                  {hasAnyDefinitions ? (
+                      // Show existing graph definition
+                      <>
+                          <g transform={`translate(${nodeX + NODE_PADDING}, ${contentAreaY})`}>
+                              <InnerNetwork
+                                  nodes={currentGraphNodes} // Pass filtered node data for current definition
+                                  edges={currentGraphEdges} // Pass filtered edge data for current definition
+                                  width={innerNetworkWidth}
+                                  height={innerNetworkHeight}
+                                  padding={5}
+                              />
+                          </g>
+                          
+                          {/* Definition indicator - show current definition index if multiple exist */}
+                          {hasMultipleDefinitions && (
+                              <text
+                                  x={nodeX + currentWidth - 20} // Position in bottom-right corner
+                                  y={contentAreaY + innerNetworkHeight - 10}
+                                  fontSize="12"
+                                  fill="#bdb5b5"
+                                  textAnchor="end"
+                                  style={{ opacity: 0.7 }}
+                              >
+                                  {currentDefinitionIndex + 1}/{definitionGraphIds.length}
+                              </text>
+                          )}
+                      </>
+                  ) : (
+                      // Show "Create Definition" interface when no definitions exist
+                      <foreignObject
+                          x={nodeX + NODE_PADDING}
+                          y={contentAreaY}
                           width={innerNetworkWidth}
                           height={innerNetworkHeight}
-                          padding={5}
-                      />
-                  </g>
+                          style={{ 
+                              pointerEvents: 'auto',
+                              cursor: 'pointer'
+                          }}
+                      >
+                          <div
+                              style={{
+                                  width: '100%',
+                                  height: '100%',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  backgroundColor: canvasBackgroundColor,
+                                  color: '#666',
+                                  fontSize: '16px',
+                                  fontWeight: 'bold',
+                                  textAlign: 'center',
+                                  padding: '20px',
+                                  boxSizing: 'border-box',
+                                  transition: 'all 0.2s ease',
+                              }}
+                              onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = '#a8a0a0';
+                                  e.currentTarget.style.color = '#333';
+                              }}
+                              onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = canvasBackgroundColor;
+                                  e.currentTarget.style.color = '#666';
+                              }}
+                              onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onCreateDefinition) {
+                                      onCreateDefinition(nodeId);
+                                  }
+                                  console.log(`Creating new definition for node: ${nodeName}`);
+                              }}
+                          >
+                              <div style={{ fontSize: '48px', marginBottom: '10px' }}>+</div>
+                              <div>Define {nodeName}</div>
+                              <div>With a New Web</div>
+                          </div>
+                      </foreignObject>
+                  )}
               </g>
           </g>
       )}
 
-      {/* Navigation Arrows - Positioned to hug the node title text */}
-      {isPreviewing && textWidth > 0 && (
-                      <g style={{ 
-              opacity: showArrows ? 1 : 0,
-              transition: 'opacity 0.2s ease-in'
-            }}>
-              {/* Left Arrow - Positioned just to the left of the text */}
+            {/* Navigation Arrows - Only show when there are multiple definitions */}
+      {isPreviewing && textWidth > 0 && hasMultipleDefinitions && (
+          <g style={{ 
+            opacity: showArrows ? 1 : 0,
+            transition: 'opacity 0.2s ease-in'
+          }}>
+              {/* Left Arrow - Navigate to previous definition */}
               <foreignObject
                 x={nodeX + (currentWidth / 2) - (textWidth / 2) - 50} // Position just left of text start
                 y={nodeY + (textAreaHeight / 2) - 20} // Center vertically with title area
@@ -331,15 +444,15 @@ const Node = ({
                   onMouseLeave={(e) => e.currentTarget.style.opacity = '0.5'}
                   onClick={(e) => {
                     e.stopPropagation();
-                    // TODO: Handle left arrow click - navigate to previous graph
-                    console.log('Left arrow clicked for node:', nodeId);
+                    navigateToPreviousDefinition();
+                    console.log(`Navigated to previous definition: ${currentDefinitionIndex - 1 >= 0 ? currentDefinitionIndex - 1 : definitionGraphIds.length - 1} of ${definitionGraphIds.length}`);
                   }}
                 >
                   <ChevronLeft size={32} color="#bdb5b5" />
                 </div>
               </foreignObject>
 
-              {/* Right Arrow - Positioned just to the right of the text */}
+              {/* Right Arrow - Navigate to next definition */}
               <foreignObject
                 x={nodeX + (currentWidth / 2) + (textWidth / 2) + 10} // Position just right of text end
                 y={nodeY + (textAreaHeight / 2) - 20} // Center vertically with title area
@@ -364,8 +477,8 @@ const Node = ({
                   onMouseLeave={(e) => e.currentTarget.style.opacity = '0.5'}
                   onClick={(e) => {
                     e.stopPropagation();
-                    // TODO: Handle right arrow click - navigate to next graph
-                    console.log('Right arrow clicked for node:', nodeId);
+                    navigateToNextDefinition();
+                    console.log(`Navigated to next definition: ${currentDefinitionIndex + 1 < definitionGraphIds.length ? currentDefinitionIndex + 1 : 0} of ${definitionGraphIds.length}`);
                   }}
                 >
                   <ChevronRight size={32} color="#bdb5b5" />

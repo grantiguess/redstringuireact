@@ -1524,6 +1524,9 @@ function NodeCanvas() {
                                if (!isRealTime) setEditingNodeIdOnCanvas(null); 
                              }}
                              onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
+                             onCreateDefinition={(nodeId) => {
+                               storeActions.createAndAssignGraphDefinition(nodeId);
+                             }}
                              connections={edges}
                            />
                          );
@@ -1593,6 +1596,9 @@ function NodeCanvas() {
                                  if (!isRealTime) setEditingNodeIdOnCanvas(null); 
                                }}
                                onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
+                               onCreateDefinition={(nodeId) => {
+                                 storeActions.createAndAssignGraphDefinition(nodeId);
+                               }}
                                connections={edges}
                              />
                            );
@@ -1626,6 +1632,9 @@ function NodeCanvas() {
                                  if (!isRealTime) setEditingNodeIdOnCanvas(null); 
                                }}
                                onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
+                               onCreateDefinition={(nodeId) => {
+                                 storeActions.createAndAssignGraphDefinition(nodeId);
+                               }}
                                connections={edges}
                              />
                            );
