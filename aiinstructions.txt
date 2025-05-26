@@ -55,3 +55,32 @@ When assisting with the Redstring project, please adhere to the following guidel
 12. **Testing:** Note the presence of test files (e.g., `App.test.jsx`, `NodeCanvas.test.jsx`). New features or significant refactors should ideally be accompanied by relevant tests.
 
 By keeping these points in mind, you can effectively contribute to the development and refinement of Redstring, ensuring it stays true to its unique vision and technical architecture.
+
+## Advanced Interaction Patterns & Recent Developments:
+
+Beyond the general guidelines, recent development has focused on more complex UI interactions, particularly concerning the PieMenu, node preview/expansion states, and animation synchronization. Key points to be aware of:
+
+13. **PieMenu State and Animation Coordination:**
+    *   The PieMenu's visibility and content are managed by several states in `NodeCanvas.jsx`, including `selectedNodeIdForPieMenu` (determines target node), `isTransitioningPieMenu` (manages state during expand/contract actions), and `currentPieMenuData` (holds data for the menu currently being rendered or animating out).
+    *   The `PieMenu.jsx` component itself has internal animation states (`animationState`: 'popping', 'visible_steady', 'shrinking') and relies on `onExitAnimationComplete` callback to `NodeCanvas.jsx` to signal completion of its exit animation. This callback is crucial for `NodeCanvas.jsx` to then update its own state (e.g., `previewingNodeId`, `selectedNodeIdForPieMenu`) and trigger the appearance of a new PieMenu configuration if needed.
+    *   Pay close attention to the sequence of state updates in `NodeCanvas.jsx`'s `useEffect` hooks that depend on `selectedNodeIds`, `isTransitioningPieMenu`, `selectedNodeIdForPieMenu`, and the `onExitAnimationComplete` callback. Incorrect sequencing can lead to animation glitches or incorrect menu states.
+
+14. **Dynamic PieMenu Buttons & Node Preview State:**
+    *   The buttons displayed in the PieMenu (`targetPieMenuButtons` in `NodeCanvas.jsx`) are dynamically generated based on the current context, especially whether the selected node is the `previewingNodeId`. For example, an "Expand" button might change to a "Contract" button.
+    *   The `previewingNodeId` state in `NodeCanvas.jsx` controls the expanded/preview appearance of a node. Transitions between normal and preview states are often linked to PieMenu actions and require careful state management to ensure smooth visual changes and correct menu updates.
+
+15. **Z-axis Management and SVG Rendering Order:**
+    *   To ensure correct visual layering (e.g., an expanded node and its contract button appearing above other nodes but below a dragged node), the rendering order within the SVG in `NodeCanvas.jsx` is critical.
+    *   The adopted strategy involves rendering a node's associated PieMenu immediately *before* that node in the SVG document order. This is achieved by integrating PieMenu rendering within the node mapping loops in `NodeCanvas.jsx`.
+
+16. **React Component Keys and CSS Animation Stability:**
+    *   When implementing CSS transitions or animations on React components (e.g., node resizing on expansion in `Node.jsx`), ensure that the `key` prop of the component remains stable throughout the animation.
+    *   Changes to the `key` prop cause React to unmount and remount the component, interrupting any ongoing CSS transitions.
+    *   If node data or rendering order needs to change, consider using a pre-processing step (e.g., creating a `processedNodes` array in `NodeCanvas.jsx`) to calculate new properties or sort nodes while maintaining stable `node.id` keys for the rendered components.
+
+17. **Debugging Complex UI Interactions:**
+    *   For features involving multiple interacting states, animations, and callbacks (like the PieMenu and node expansion), liberal use of `console.log` to trace state changes, prop values, and event firing sequences across components (`NodeCanvas.jsx`, `PieMenu.jsx`) is invaluable for debugging.
+
+18. **Managing Interaction Triggers (Clicks vs. Drags):**
+    *   Be mindful of how interactions like mouse down, mouse move, and mouse up are interpreted. For instance, a drag operation should not inadvertently trigger a click that would show/hide the PieMenu.
+    *   State variables like `hasMouseMovedSinceDown` in `NodeCanvas.jsx` can help differentiate between a click and the start of a drag, preventing unwanted PieMenu animations during node dragging.

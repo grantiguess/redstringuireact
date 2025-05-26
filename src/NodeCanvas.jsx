@@ -497,7 +497,7 @@ function NodeCanvas() {
 
     // --- Revised Heuristic-Based Wheel Logic --- 
 
-    // 1. Mac Pinch-to-Zoom (Ctrl key pressed)
+    // 1. Mac Pinch-to-Zoom (Ctrl key pressed) - keep existing trackpad pinch behavior
     if (isMac && e.ctrlKey) {
         const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
         const currentZoomForWorker = zoomLevel;
@@ -530,9 +530,13 @@ function NodeCanvas() {
         return; // Processed
     }
 
-    // 2. Mac Trackpad Two-Finger Pan (No Ctrl key, any movement)
-    // This implies !e.ctrlKey due to falling through the first block.
-    if (isMac && (deltaX !== 0 || deltaY !== 0)) { 
+    // 2. Mac Trackpad Two-Finger Pan (No Ctrl key, has both deltaX and deltaY)
+    // This handles the Mac trackpad's natural two-finger scrolling for panning
+    // Simple detection: if there's any horizontal movement, it's likely a trackpad
+    // Mouse wheels typically only produce deltaY, trackpads often have both deltaX and deltaY
+    const isLikelyTrackpad = isMac && !e.ctrlKey && deltaX !== 0;
+    
+    if (isLikelyTrackpad) { 
         const dx = -deltaX * PAN_DRAG_SENSITIVITY;
         const dy = -deltaY * PAN_DRAG_SENSITIVITY; // Pan with both components
         
@@ -555,6 +559,7 @@ function NodeCanvas() {
             sensitivity: PAN_DRAG_SENSITIVITY,
             deltaX: deltaX.toFixed(2), // Report original deltaX from event
             deltaY: deltaY.toFixed(2), // Report original deltaY from event
+            wheelDeltaY: (e.wheelDeltaY || 0).toFixed(2), // Add for debugging
             panOffsetX: newX.toFixed(2),
             panOffsetY: newY.toFixed(2),
             zoomLevel: zoomLevel.toFixed(2),
@@ -563,12 +568,10 @@ function NodeCanvas() {
         });
         return; // Processed
     }
-    
-    // 3. Non-Mac Mouse Wheel Zoom (or other non-Mac scroll devices)
-    // This block is reached if not a Mac, or if it's a Mac event not caught above 
-    // (e.g., no ctrlKey, and both deltaX and deltaY are 0 - unlikely for trackpad).
-    // We'll primarily gate this on !isMac and deltaY for zoom.
-    if (!isMac && deltaY !== 0) { 
+
+    // 3. Universal Zoom with deltaY (scroll wheel vertical movement)
+    // For non-Mac platforms or when not using trackpad panning
+    if (deltaY !== 0) { 
         const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
         const currentZoomForWorker = zoomLevel;
         const currentPanOffsetForWorker = panOffset;
@@ -584,7 +587,7 @@ function NodeCanvas() {
             setZoomLevel(result.zoomLevel);
             setDebugData((prev) => ({
                 ...prev,
-                inputDevice: 'Mouse Wheel', // Or 'Other Scroll Device'
+                inputDevice: isMac ? 'Mouse/Trackpad (Mac)' : 'Mouse Wheel',
                 gesture: 'wheel-zoom',
                 zooming: true,
                 panning: false,
@@ -595,8 +598,8 @@ function NodeCanvas() {
                 panOffsetY: result.panOffset.y.toFixed(2),
             }));
         } catch (error) {
-            console.error('Non-Mac zoom calculation failed:', error);
-            setDebugData((prev) => ({ ...prev, info: 'Wheel zoom error (non-Mac)', error: error.message }));
+            console.error('Wheel zoom calculation failed:', error);
+            setDebugData((prev) => ({ ...prev, info: 'Wheel zoom error', error: error.message }));
         }
         return; // Processed
     }

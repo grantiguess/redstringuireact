@@ -7,6 +7,7 @@
 .node.selected .node-background {
     /* Use node-background directly for stroke */
     stroke: black;
+    stroke-width: 8px;
 }
 
 .node.dragging .node-background {
