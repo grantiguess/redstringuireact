@@ -1527,6 +1527,7 @@ function NodeCanvas() {
                              onCreateDefinition={(nodeId) => {
                                storeActions.createAndAssignGraphDefinition(nodeId);
                              }}
+                             storeActions={storeActions}
                              connections={edges}
                            />
                          );
@@ -1599,6 +1600,7 @@ function NodeCanvas() {
                                onCreateDefinition={(nodeId) => {
                                  storeActions.createAndAssignGraphDefinition(nodeId);
                                }}
+                               storeActions={storeActions}
                                connections={edges}
                              />
                            );
@@ -1635,6 +1637,7 @@ function NodeCanvas() {
                                onCreateDefinition={(nodeId) => {
                                  storeActions.createAndAssignGraphDefinition(nodeId);
                                }}
+                               storeActions={storeActions}
                                connections={edges}
                              />
                            );

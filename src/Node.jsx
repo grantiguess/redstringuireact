@@ -6,6 +6,7 @@ import InnerNetwork from './InnerNetwork.jsx'; // Import InnerNetwork
 import { getNodeDimensions } from './utils.js'; // Import needed for node dims
 import { v4 as uuidv4 } from 'uuid';
 import { ChevronLeft, ChevronRight } from 'lucide-react'; // Import navigation icons
+import useGraphStore, { getNodesForGraph, getEdgesForGraph } from './store/graphStore.js'; // Import store selectors
 
 const PREVIEW_SCALE_FACTOR = 0.3; // How much to shrink the network layout
 
@@ -33,7 +34,9 @@ const Node = ({
   onCommitCanvasEdit,
   onCancelCanvasEdit,
   // --- Add store actions for creating definitions ---
-  onCreateDefinition
+  onCreateDefinition,
+  // --- Add store access for fetching definition graph data ---
+  storeActions
 }) => {
   // Access properties directly from the node data object
   const nodeId = node.id ?? uuidv4(); // Use ID or generate fallback (should have ID from store)
@@ -138,17 +141,18 @@ const Node = ({
 
   // Filter nodes and edges for the current graph definition
   const currentGraphNodes = useMemo(() => {
-    if (!currentGraphId || !allNodes) return [];
-    // For now, we'll show all nodes - in the future this could be filtered by graph
-    // The InnerNetwork will show a preview of the network structure
-    return allNodes;
-  }, [currentGraphId, allNodes]);
+    if (!currentGraphId) return [];
+    // Get the actual nodes from the definition graph using the store selector
+    const state = useGraphStore.getState();
+    return getNodesForGraph(currentGraphId)(state);
+  }, [currentGraphId]);
 
   const currentGraphEdges = useMemo(() => {
-    if (!currentGraphId || !connections) return [];
-    // For now, we'll show all edges - in the future this could be filtered by graph
-    return connections;
-  }, [currentGraphId, connections]);
+    if (!currentGraphId) return [];
+    // Get the actual edges from the definition graph using the store selector
+    const state = useGraphStore.getState();
+    return getEdgesForGraph(currentGraphId)(state);
+  }, [currentGraphId]);
 
   // Effect to handle arrow fade-in after expansion
   useEffect(() => {
