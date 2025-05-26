@@ -84,3 +84,18 @@ Beyond the general guidelines, recent development has focused on more complex UI
 18. **Managing Interaction Triggers (Clicks vs. Drags):**
     *   Be mindful of how interactions like mouse down, mouse move, and mouse up are interpreted. For instance, a drag operation should not inadvertently trigger a click that would show/hide the PieMenu.
     *   State variables like `hasMouseMovedSinceDown` in `NodeCanvas.jsx` can help differentiate between a click and the start of a drag, preventing unwanted PieMenu animations during node dragging.
+
+19. **Scroll Wheel and Trackpad Input Handling:**
+    *   The `handleWheel` function in `NodeCanvas.jsx` implements sophisticated input detection to provide appropriate behavior for different input devices:
+        - **Mac Trackpad Pinch-to-Zoom:** `Ctrl + scroll` triggers zoom with higher sensitivity (`TRACKPAD_ZOOM_SENSITIVITY`)
+        - **Mac Trackpad Two-Finger Pan:** Regular two-finger scroll (no Ctrl) with horizontal movement (`deltaX !== 0`) triggers panning in both X and Y directions
+        - **Universal Scroll Wheel Zoom:** Vertical scroll without horizontal movement falls through to zoom behavior using `SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY`
+    *   The key detection logic distinguishes between trackpad and mouse wheel on Mac by checking for horizontal movement (`deltaX !== 0`), as mouse wheels typically only produce vertical `deltaY` values while trackpads often have both components
+    *   This ensures natural behavior: trackpad users get expected pan/zoom gestures, while mouse wheel users get scroll-to-zoom functionality regardless of platform
+
+20. **Inline Node Editing and Panel Integration:**
+    *   The PieMenu's "Edit" button (`targetPieMenuButtons` in `NodeCanvas.jsx`) triggers both inline canvas editing and panel tab creation/activation
+    *   When the edit button is clicked, it: (1) opens/creates a panel tab for the node using `storeActions.openRightPanelNodeTab()`, (2) ensures the right panel is expanded, and (3) enables inline editing on the canvas by setting `editingNodeIdOnCanvas`
+    *   The `Node.jsx` component handles inline editing through `isEditingOnCanvas`, `onCommitCanvasEdit`, and `onCancelCanvasEdit` props, displaying either a text span or an input field based on editing state
+    *   Real-time synchronization between canvas and panel editing is achieved through the Zustand store - both interfaces update the same node data, ensuring changes appear immediately in both locations
+    *   Inline editing supports Enter to commit, Escape to cancel, and blur to commit, with proper focus management and visual styling via the `.node-name-input` CSS class

@@ -269,7 +269,17 @@ function NodeCanvas() {
       // Default buttons: Edit, Delete, Connect, Expand (if not previewing THIS node)
       return [
         { id: 'edit', label: 'Edit', icon: Edit3, action: (nodeId) => {
-            console.log(`[PieMenu Action] Edit clicked for node: ${nodeId}. Setting editingNodeIdOnCanvas.`);
+            console.log(`[PieMenu Action] Edit clicked for node: ${nodeId}. Opening panel tab and enabling inline editing.`);
+            // Open/create panel tab for the node
+            const nodeData = nodes.find(n => n.id === nodeId);
+            if (nodeData) {
+              storeActions.openRightPanelNodeTab(nodeId, nodeData.name);
+            }
+            // Ensure right panel is expanded
+            if (!rightPanelExpanded) {
+              setRightPanelExpanded(true);
+            }
+            // Enable inline editing on canvas
             setEditingNodeIdOnCanvas(nodeId);
         } },
         { id: 'delete', label: 'Delete', icon: Trash2, action: (nodeId) => {
@@ -473,6 +483,100 @@ function NodeCanvas() {
     });
   };
 
+  // Delta history for better trackpad/mouse detection
+  const deltaHistoryRef = useRef([]);
+  const DELTA_HISTORY_SIZE = 10;
+  const DELTA_TIMEOUT = 500; // Clear history after 500ms of inactivity
+  const deltaTimeoutRef = useRef(null);
+
+  // Improved trackpad vs mouse wheel detection based on industry patterns
+  const analyzeInputDevice = (deltaX, deltaY) => {
+    // Add current deltas to history
+    deltaHistoryRef.current.unshift({ deltaX, deltaY, timestamp: Date.now() });
+    if (deltaHistoryRef.current.length > DELTA_HISTORY_SIZE) {
+      deltaHistoryRef.current.pop();
+    }
+
+    // Clear history after timeout
+    if (deltaTimeoutRef.current) clearTimeout(deltaTimeoutRef.current);
+    deltaTimeoutRef.current = setTimeout(() => {
+      deltaHistoryRef.current = [];
+    }, DELTA_TIMEOUT);
+
+    // Need at least 3 samples for reliable detection
+    if (deltaHistoryRef.current.length < 3) {
+      return 'undetermined';
+    }
+
+    const recentDeltas = deltaHistoryRef.current.slice(0, 5); // Use last 5 samples
+    const deltaYValues = recentDeltas.map(d => Math.abs(d.deltaY)).filter(d => d > 0);
+    
+    if (deltaYValues.length === 0) return 'undetermined';
+
+    // Trackpad indicators (based on research from GitHub issue):
+    // 1. Fractional delta values (trackpads often produce non-integer deltas)
+    const hasFractionalDeltas = deltaYValues.some(d => d % 1 !== 0);
+    
+    // 2. Horizontal movement (trackpads support 2D scrolling)
+    const hasHorizontalMovement = Math.abs(deltaX) > 0.1;
+    
+    // 3. Small, continuous values (trackpads produce smaller, more frequent events)
+    const hasSmallDeltas = deltaYValues.every(d => d < 50);
+    const hasVariedDeltas = deltaYValues.length > 1 && 
+      Math.max(...deltaYValues) - Math.min(...deltaYValues) > deltaYValues[0] * 0.1;
+
+    // 4. Mouse wheel indicators:
+    // - Large, discrete values (often multiples of 120, 100, or other fixed amounts)
+    // - Integer values
+    // - Consistent patterns (same value repeated or simple multiples)
+    const hasLargeDeltas = deltaYValues.some(d => d >= 50);
+    const allIntegerDeltas = deltaYValues.every(d => d % 1 === 0);
+    
+    // Check for mouse wheel patterns (repeated values or simple ratios)
+    let hasMouseWheelPattern = false;
+    if (deltaYValues.length >= 2 && allIntegerDeltas) {
+      const uniqueValues = [...new Set(deltaYValues)];
+      if (uniqueValues.length <= 2) {
+        hasMouseWheelPattern = true; // Repeated values
+      } else {
+        // Check for simple ratios (1.5x, 2x, 3x, etc.)
+        const ratios = [];
+        for (let i = 1; i < deltaYValues.length; i++) {
+          if (deltaYValues[i-1] > 0 && deltaYValues[i] > 0) {
+            ratios.push(deltaYValues[i] / deltaYValues[i-1]);
+          }
+        }
+        const simpleRatios = [0.25, 0.5, 0.67, 1.0, 1.5, 2.0, 3.0, 4.0];
+        hasMouseWheelPattern = ratios.some(ratio => 
+          simpleRatios.some(simple => Math.abs(ratio - simple) < 0.1)
+        );
+      }
+    }
+
+    // Decision logic (prioritized)
+    if (hasHorizontalMovement && !hasLargeDeltas) {
+      return 'trackpad'; // Strong indicator: 2D scrolling with small deltas
+    }
+    
+    if (hasFractionalDeltas && hasSmallDeltas) {
+      return 'trackpad'; // Strong indicator: fractional + small values
+    }
+    
+    if (hasMouseWheelPattern && hasLargeDeltas && allIntegerDeltas) {
+      return 'mouse'; // Strong indicator: discrete wheel pattern
+    }
+    
+    if (hasSmallDeltas && hasVariedDeltas && !allIntegerDeltas) {
+      return 'trackpad'; // Moderate indicator: varied small fractional values
+    }
+    
+    if (hasLargeDeltas && allIntegerDeltas) {
+      return 'mouse'; // Moderate indicator: large integer values
+    }
+
+    return 'undetermined';
+  };
+
   const handleWheel = async (e) => {
     e.stopPropagation();
     const rect = containerRef.current.getBoundingClientRect();
@@ -486,6 +590,9 @@ function NodeCanvas() {
     if (e.deltaMode === 1) { deltaX *= 33; }
     else if (e.deltaMode === 2) { deltaX *= window.innerWidth; } 
 
+    // Analyze input device type
+    const deviceType = analyzeInputDevice(deltaX, deltaY);
+
     setDebugData((prev) => ({
       ...prev,
       info: 'Wheel event',
@@ -493,11 +600,13 @@ function NodeCanvas() {
       rawDeltaY: e.deltaY.toFixed(2),
       ctrlKey: e.ctrlKey.toString(),
       isMac: isMac.toString(),
+      deltaMode: e.deltaMode.toString(),
+      wheelDeltaY: (e.wheelDeltaY || 0).toFixed(2),
+      detectedDevice: deviceType,
+      historyLength: deltaHistoryRef.current.length.toString(),
     }));
 
-    // --- Revised Heuristic-Based Wheel Logic --- 
-
-    // 1. Mac Pinch-to-Zoom (Ctrl key pressed) - keep existing trackpad pinch behavior
+    // 1. Mac Pinch-to-Zoom (Ctrl key pressed) - always zoom regardless of device
     if (isMac && e.ctrlKey) {
         const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
         const currentZoomForWorker = zoomLevel;
@@ -530,15 +639,10 @@ function NodeCanvas() {
         return; // Processed
     }
 
-    // 2. Mac Trackpad Two-Finger Pan (No Ctrl key, has both deltaX and deltaY)
-    // This handles the Mac trackpad's natural two-finger scrolling for panning
-    // Simple detection: if there's any horizontal movement, it's likely a trackpad
-    // Mouse wheels typically only produce deltaY, trackpads often have both deltaX and deltaY
-    const isLikelyTrackpad = isMac && !e.ctrlKey && deltaX !== 0;
-    
-    if (isLikelyTrackpad) { 
+    // 2. Trackpad Two-Finger Pan (based on device detection)
+    if (deviceType === 'trackpad' || (deviceType === 'undetermined' && isMac && Math.abs(deltaX) > 0.1)) {
         const dx = -deltaX * PAN_DRAG_SENSITIVITY;
-        const dy = -deltaY * PAN_DRAG_SENSITIVITY; // Pan with both components
+        const dy = -deltaY * PAN_DRAG_SENSITIVITY;
         
         const currentCanvasWidth = canvasSize.width * zoomLevel;
         const currentCanvasHeight = canvasSize.height * zoomLevel;
@@ -552,14 +656,13 @@ function NodeCanvas() {
           const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
           setDebugData((prevData) => ({
             ...prevData,
-            inputDevice: 'Trackpad (Mac)',
+            inputDevice: 'Trackpad',
             gesture: 'two-finger pan',
             zooming: false,
             panning: true,
             sensitivity: PAN_DRAG_SENSITIVITY,
-            deltaX: deltaX.toFixed(2), // Report original deltaX from event
-            deltaY: deltaY.toFixed(2), // Report original deltaY from event
-            wheelDeltaY: (e.wheelDeltaY || 0).toFixed(2), // Add for debugging
+            deltaX: deltaX.toFixed(2),
+            deltaY: deltaY.toFixed(2),
             panOffsetX: newX.toFixed(2),
             panOffsetY: newY.toFixed(2),
             zoomLevel: zoomLevel.toFixed(2),
@@ -569,9 +672,8 @@ function NodeCanvas() {
         return; // Processed
     }
 
-    // 3. Universal Zoom with deltaY (scroll wheel vertical movement)
-    // For non-Mac platforms or when not using trackpad panning
-    if (deltaY !== 0) { 
+    // 3. Mouse Wheel Zoom (based on device detection or fallback)
+    if (deviceType === 'mouse' || (deviceType === 'undetermined' && deltaY !== 0)) {
         const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
         const currentZoomForWorker = zoomLevel;
         const currentPanOffsetForWorker = panOffset;
@@ -587,7 +689,7 @@ function NodeCanvas() {
             setZoomLevel(result.zoomLevel);
             setDebugData((prev) => ({
                 ...prev,
-                inputDevice: isMac ? 'Mouse/Trackpad (Mac)' : 'Mouse Wheel',
+                inputDevice: 'Mouse Wheel',
                 gesture: 'wheel-zoom',
                 zooming: true,
                 panning: false,
@@ -604,13 +706,19 @@ function NodeCanvas() {
         return; // Processed
     }
 
-    // If the event hasn't been handled by any of the specific cases above, 
-    // update debug data to reflect it's unhandled by this logic.
-    // This helps in identifying if any wheel events are slipping through.
-    // (This assumes e.stopPropagation() and e.preventDefault() are handled elsewhere if needed for unhandled cases)
-    // No explicit 'return' here if we want to allow default browser behavior for unhandled wheel events,
-    // but given we have a preventDefault on the container, most will be stopped.
-    // For now, we can assume if it's not caught, it's not an intended canvas interaction.
+    // 4. Fallback for truly unhandled events
+    if (deltaY !== 0 || deltaX !== 0) {
+      setDebugData((prev) => ({
+        ...prev,
+        inputDevice: 'Unhandled Input',
+        gesture: 'unprocessed',
+        zooming: false,
+        panning: false,
+        deltaX: deltaX.toFixed(2),
+        deltaY: deltaY.toFixed(2),
+      }));
+      console.warn('Unhandled wheel event:', { deltaX, deltaY, deviceType, ctrlKey: e.ctrlKey, isMac });
+    }
   };
 
   useEffect(() => {
@@ -1411,7 +1519,10 @@ function NodeCanvas() {
                              isPreviewing={isPreviewing}
                              allNodes={nodes}
                              isEditingOnCanvas={node.id === editingNodeIdOnCanvas}
-                             onCommitCanvasEdit={(nodeId, newName) => { storeActions.updateNode(nodeId, draft => { draft.name = newName; }); setEditingNodeIdOnCanvas(null); }}
+                             onCommitCanvasEdit={(nodeId, newName, isRealTime = false) => { 
+                               storeActions.updateNode(nodeId, draft => { draft.name = newName; }); 
+                               if (!isRealTime) setEditingNodeIdOnCanvas(null); 
+                             }}
                              onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
                              connections={edges}
                            />
@@ -1477,7 +1588,10 @@ function NodeCanvas() {
                                isPreviewing={isPreviewing}
                                allNodes={nodes}
                                isEditingOnCanvas={activeNodeToRender.id === editingNodeIdOnCanvas}
-                               onCommitCanvasEdit={(nodeId, newName) => { storeActions.updateNode(nodeId, draft => { draft.name = newName; }); setEditingNodeIdOnCanvas(null); }}
+                               onCommitCanvasEdit={(nodeId, newName, isRealTime = false) => { 
+                                 storeActions.updateNode(nodeId, draft => { draft.name = newName; }); 
+                                 if (!isRealTime) setEditingNodeIdOnCanvas(null); 
+                               }}
                                onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
                                connections={edges}
                              />
@@ -1507,7 +1621,10 @@ function NodeCanvas() {
                                isPreviewing={isPreviewing}
                                allNodes={nodes}
                                isEditingOnCanvas={draggingNodeToRender.id === editingNodeIdOnCanvas}
-                               onCommitCanvasEdit={(nodeId, newName) => { storeActions.updateNode(nodeId, draft => { draft.name = newName; }); setEditingNodeIdOnCanvas(null); }}
+                               onCommitCanvasEdit={(nodeId, newName, isRealTime = false) => { 
+                                 storeActions.updateNode(nodeId, draft => { draft.name = newName; }); 
+                                 if (!isRealTime) setEditingNodeIdOnCanvas(null); 
+                               }}
                                onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
                                connections={edges}
                              />

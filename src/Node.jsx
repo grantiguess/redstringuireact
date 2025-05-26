@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 // Import base constants used
 import { NODE_WIDTH, NODE_HEIGHT, NODE_CORNER_RADIUS, NODE_PADDING } from './constants';
 import './Node.css';
@@ -26,7 +26,11 @@ const Node = ({
   connections, // Expect plain array of edge data
   innerNetworkWidth,
   innerNetworkHeight,
-  idPrefix = '' // Add optional idPrefix prop with default
+  idPrefix = '', // Add optional idPrefix prop with default
+  // --- Add editing props ---
+  isEditingOnCanvas,
+  onCommitCanvasEdit,
+  onCancelCanvasEdit
 }) => {
   // Access properties directly from the node data object
   const nodeId = node.id ?? uuidv4(); // Use ID or generate fallback (should have ID from store)
@@ -36,6 +40,59 @@ const Node = ({
   const nodeName = node.name ?? 'Untitled'; // Use provided name or default
   // Access thumbnailSrc directly if it exists
   const nodeThumbnailSrc = node.thumbnailSrc ?? null;
+
+  // --- Inline Editing State ---
+  const [tempName, setTempName] = useState(nodeName);
+  const inputRef = useRef(null);
+
+  // Update tempName when node name changes (from panel or other sources)
+  useEffect(() => {
+    setTempName(nodeName);
+  }, [nodeName]);
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (isEditingOnCanvas && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditingOnCanvas]);
+
+  // Handle editing commit
+  const handleCommitEdit = () => {
+    const newName = tempName.trim();
+    if (newName && newName !== nodeName) {
+      onCommitCanvasEdit?.(nodeId, newName);
+    } else {
+      onCancelCanvasEdit?.();
+    }
+  };
+
+  // Handle editing cancel
+  const handleCancelEdit = () => {
+    setTempName(nodeName); // Reset to original name
+    onCancelCanvasEdit?.();
+  };
+
+  // Handle key events for editing
+  const handleKeyDown = (e) => {
+    e.stopPropagation(); // Prevent canvas keyboard shortcuts
+    if (e.key === 'Enter') {
+      handleCommitEdit();
+    } else if (e.key === 'Escape') {
+      handleCancelEdit();
+    }
+  };
+
+  // Handle real-time input changes for dynamic resizing
+  const handleInputChange = (e) => {
+    const newValue = e.target.value;
+    setTempName(newValue);
+    // Trigger real-time update to the store for dynamic resizing
+    if (onCommitCanvasEdit && newValue.trim()) {
+      onCommitCanvasEdit(nodeId, newValue, true); // Add 'true' flag for real-time update
+    }
+  };
 
   const hasThumbnail = Boolean(nodeThumbnailSrc);
 
@@ -123,31 +180,43 @@ const Node = ({
             height: '100%',
             padding: `0 ${NODE_PADDING}px`,
             boxSizing: 'border-box',
-            pointerEvents: 'none',
+            pointerEvents: isEditingOnCanvas ? 'auto' : 'none',
             userSelect: 'none',
             wordWrap: 'break-word',
             minWidth: 0
           }}
         >
-          <span
-            className="node-name-text"
-            style={{
-              fontSize: '20px',
-              fontWeight: 'bold',
-              color: '#bdb5b5',
-              whiteSpace: 'pre-wrap',
-              maxWidth: '100%',
-              textAlign: 'center',
-              wordBreak: 'keep-all',
-              overflowWrap: 'normal',
-              minWidth: 0,
-              display: 'inline-block',
-              width: '100%',
-              transition: 'color 0.3s ease' 
-            }}
-          >
-            {nodeName}
-          </span>
+          {isEditingOnCanvas ? (
+            <input
+              ref={inputRef}
+              type="text"
+              className="node-name-input"
+              value={tempName}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              onBlur={handleCommitEdit}
+            />
+          ) : (
+            <span
+              className="node-name-text"
+              style={{
+                fontSize: '20px',
+                fontWeight: 'bold',
+                color: '#bdb5b5',
+                whiteSpace: 'pre-wrap',
+                maxWidth: '100%',
+                textAlign: 'center',
+                wordBreak: 'keep-all',
+                overflowWrap: 'normal',
+                minWidth: 0,
+                display: 'inline-block',
+                width: '100%',
+                transition: 'color 0.3s ease' 
+              }}
+            >
+              {nodeName}
+            </span>
+          )}
         </div>
       </foreignObject>
 
