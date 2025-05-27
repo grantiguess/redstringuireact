@@ -2,7 +2,7 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, us
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR } from './constants';
-import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, Expand } from 'lucide-react';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
 import ToggleButton from './ToggleButton'; // Import the new component
@@ -1335,39 +1335,75 @@ const Panel = forwardRef(
                                         overflowY: 'auto',
                                     }}
                                 >
-                                    {definitionNodes.map((node) => (
-                                        <div
-                                            key={node.id}
-                                            style={{
-                                                backgroundColor: node.color || NODE_DEFAULT_COLOR, // Use actual node color
-                                                borderRadius: NODE_CORNER_RADIUS,
-                                                height: '40px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                cursor: 'pointer',
-                                                padding: '0 5px',
-                                                overflow: 'hidden'
-                                            }}
-                                            title={node.name}
-                                            onClick={() => openNodeTab(node.id)}
-                                        >
-                                            <span style={{
-                                                color: '#bdb5b5',
-                                                fontSize: '0.8rem',
-                                                width: '100%',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                whiteSpace: 'nowrap',
-                                                textAlign: 'center',
-                                                padding: '0 10px',
-                                                boxSizing: 'border-box',
-                                                userSelect: 'none'
-                                            }}>
-                                                {node.name}
-                                            </span>
-                                        </div>
-                                    ))}
+                                    {definitionNodes.map((node) => {
+                                        // The "definitionNodes" are nodes that define the current active graph
+                                        // We need to find which definition this node represents by looking at 
+                                        // the position of the current activeGraphId in this node's definitionGraphIds array
+                                        let definitionOrder = 1; // Default to 1 if we can't determine
+                                        
+                                        if (Array.isArray(node.definitionGraphIds) && activeGraphId) {
+                                            const orderIndex = node.definitionGraphIds.indexOf(activeGraphId);
+                                            if (orderIndex !== -1) {
+                                                definitionOrder = orderIndex + 1; // Convert to 1-based
+                                            }
+                                        }
+                                        
+                                        return (
+                                            <div
+                                                key={node.id}
+                                                style={{
+                                                    position: 'relative',
+                                                    backgroundColor: node.color || NODE_DEFAULT_COLOR, // Use actual node color
+                                                    borderRadius: NODE_CORNER_RADIUS,
+                                                    height: '40px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    cursor: 'pointer',
+                                                    padding: '0 5px',
+                                                    overflow: 'visible' // Changed to visible for bubble
+                                                }}
+                                                title={`${node.name} (Definition ${definitionOrder})`}
+                                                onClick={() => openNodeTab(node.id)}
+                                            >
+                                                <span style={{
+                                                    color: '#bdb5b5',
+                                                    fontSize: '0.8rem',
+                                                    width: '100%',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap',
+                                                    textAlign: 'center',
+                                                    padding: '0 10px',
+                                                    boxSizing: 'border-box',
+                                                    userSelect: 'none'
+                                                }}>
+                                                    {node.name}
+                                                </span>
+                                                
+                                                {/* Definition Order Notification Bubble */}
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: '2px',
+                                                    right: '-2px',
+                                                    backgroundColor: 'black',
+                                                    color: '#bdb5b5',
+                                                    borderRadius: '50%',
+                                                    width: '16px',
+                                                    height: '16px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    fontSize: '0.6rem',
+                                                    fontWeight: 'bold',
+                                                    userSelect: 'none',
+                                                    zIndex: 1
+                                                }}>
+                                                    {definitionOrder}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </>
                         );
@@ -1443,12 +1479,32 @@ const Panel = forwardRef(
                                 </h3>
                             )}
 
-                            <ImagePlus
-                                size={24}
-                                color="#260000"
-                                style={{ cursor: 'pointer', flexShrink: 0 }}
-                                onClick={() => handleAddImage(nodeId)}
-                            />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {/* Expand Icon - Only show if node has definitions */}
+                                {nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0 && (
+                                    <Expand
+                                        size={24}
+                                        color="#260000"
+                                        style={{ cursor: 'pointer', flexShrink: 0 }}
+                                        onClick={() => {
+                                            // Open the first definition graph (same logic as expanded node)
+                                            const graphIdToOpen = nodeData.definitionGraphIds[0];
+                                            console.log(`[Panel Expand Icon] Opening definition graph: ${graphIdToOpen} for node: ${nodeId}`);
+                                            if (storeActions?.openGraphTabAndBringToTop) {
+                                                storeActions.openGraphTabAndBringToTop(graphIdToOpen, nodeId);
+                                            }
+                                        }}
+                                        title="Open definition in new tab"
+                                    />
+                                )}
+                                
+                                <ImagePlus
+                                    size={24}
+                                    color="#260000"
+                                    style={{ cursor: 'pointer', flexShrink: 0 }}
+                                    onClick={() => handleAddImage(nodeId)}
+                                />
+                            </div>
                         </div>
 
                         <textarea

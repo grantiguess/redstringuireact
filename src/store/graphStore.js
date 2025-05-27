@@ -667,32 +667,11 @@ const useGraphStore = create((set, get) => {
 
   // Creates a new, empty graph and sets it as active
   createNewGraph: (initialData = {}) => set(produce((draft) => {
-    console.log('[Store createNewGraph] Setting activeDefinitionNodeId to null');
+    console.log('[Store createNewGraph] Creating new empty graph');
     const newGraphId = uuidv4();
-    const newNodeId = uuidv4();
     const newGraphName = initialData.name || "New Thing";
 
-    // Node is created first, needs the graph ID
-    const newNodeData = {
-      id: newNodeId,
-      name: newGraphName,
-      description: '',
-      picture: null,
-      color: 'maroon',
-      data: null,
-      x: 5000 - NODE_WIDTH / 2, // <<< Center the node horizontally
-      y: 5000 - NODE_HEIGHT / 2, // <<< Center the node vertically
-      scale: 1,
-      imageSrc: null,
-      thumbnailSrc: null,
-      imageAspectRatio: null,
-      parentDefinitionNodeId: null,
-      edgeIds: [],
-      definitionGraphIds: [newGraphId], // Link graph to node
-    };
-    draft.nodes.set(newNodeId, newNodeData);
-
-    // Graph is created second, needs the node ID
+    // Create a new empty graph (no circular references)
     const newGraphData = {
         id: newGraphId,
         name: newGraphName,
@@ -702,13 +681,13 @@ const useGraphStore = create((set, get) => {
         directed: initialData.directed !== undefined ? initialData.directed : false, // Default undirected
         nodeIds: [],
         edgeIds: [],
-        definingNodeIds: [newNodeId] // <<< FIX: Link node to graph >>>
+        definingNodeIds: [] // Empty - this graph is not defined by any node initially
     };
     draft.graphs.set(newGraphId, newGraphData);
 
-    // Set active state
+    // Set active state (no definition node since this is just an empty graph)
     draft.activeGraphId = newGraphId;
-    draft.activeDefinitionNodeId = newNodeId;
+    draft.activeDefinitionNodeId = null; // Clear definition node since this is not a definition graph
 
     // Manage open/expanded lists
     if (!draft.openGraphIds.includes(newGraphId)) {
@@ -716,8 +695,7 @@ const useGraphStore = create((set, get) => {
     }
     draft.expandedGraphIds.add(newGraphId);
     
-    console.log('[Store] Created and activated new graph:', newGraphId, newGraphName);
-    console.log('[Store] Created corresponding definition node:', newNodeId);
+    console.log('[Store] Created and activated new empty graph:', newGraphId, newGraphName);
   })),
 
   // Creates a new graph and assigns it as a definition for a given node
