@@ -918,6 +918,127 @@ const useGraphStore = create((set, get) => {
      set({ activeDefinitionNodeId: nodeId });
   },
 
+  // Remove a definition graph from a node and delete the graph if it's no longer referenced
+  removeDefinitionFromNode: (nodeId, graphId) => set(produce((draft) => {
+    const node = draft.nodes.get(nodeId);
+    if (!node) {
+      console.warn(`[Store removeDefinitionFromNode] Node ${nodeId} not found.`);
+      return;
+    }
+
+    // Remove the graph ID from the node's definition list
+    if (Array.isArray(node.definitionGraphIds)) {
+      const index = node.definitionGraphIds.indexOf(graphId);
+      if (index > -1) {
+        node.definitionGraphIds.splice(index, 1);
+        console.log(`[Store removeDefinitionFromNode] Removed graph ${graphId} from node ${nodeId} definitions.`);
+      } else {
+        console.warn(`[Store removeDefinitionFromNode] Graph ${graphId} not found in node ${nodeId} definitions.`);
+        return;
+      }
+    }
+
+    // Check if any other nodes still reference this graph as a definition
+    let isGraphStillReferenced = false;
+    for (const otherNode of draft.nodes.values()) {
+      if (otherNode.id !== nodeId && Array.isArray(otherNode.definitionGraphIds) && otherNode.definitionGraphIds.includes(graphId)) {
+        isGraphStillReferenced = true;
+        break;
+      }
+    }
+
+    // If no other nodes reference this graph, delete it completely
+    if (!isGraphStillReferenced) {
+      console.log(`[Store removeDefinitionFromNode] Graph ${graphId} is no longer referenced, deleting it.`);
+      
+      // Remove from graphs map
+      draft.graphs.delete(graphId);
+      
+      // Close the graph tab if it's open
+      const openIndex = draft.openGraphIds.indexOf(graphId);
+      if (openIndex > -1) {
+        draft.openGraphIds.splice(openIndex, 1);
+        
+        // If this was the active graph, switch to another one
+        if (draft.activeGraphId === graphId) {
+          draft.activeGraphId = draft.openGraphIds.length > 0 ? draft.openGraphIds[0] : null;
+          if (draft.activeGraphId === null) {
+            draft.activeDefinitionNodeId = null;
+          }
+        }
+      }
+      
+      // Remove from expanded set
+      draft.expandedGraphIds.delete(graphId);
+      
+      // Delete all nodes that belong to this graph
+      const nodesToDelete = [];
+      for (const [nodeId, nodeData] of draft.nodes.entries()) {
+        if (nodeData.parentDefinitionNodeId && draft.nodes.get(nodeData.parentDefinitionNodeId)?.definitionGraphIds?.includes(graphId)) {
+          nodesToDelete.push(nodeId);
+        }
+      }
+      
+      // Delete all edges that belong to this graph
+      const edgesToDelete = [];
+      for (const [edgeId, edgeData] of draft.edges.entries()) {
+        // Check if this edge belongs to the graph being deleted
+        const graph = draft.graphs.get(graphId);
+        if (graph && graph.edgeIds.includes(edgeId)) {
+          edgesToDelete.push(edgeId);
+        }
+      }
+      
+      // Actually delete the nodes and edges
+      nodesToDelete.forEach(id => draft.nodes.delete(id));
+      edgesToDelete.forEach(id => draft.edges.delete(id));
+      
+      console.log(`[Store removeDefinitionFromNode] Deleted graph ${graphId} and ${nodesToDelete.length} nodes, ${edgesToDelete.length} edges.`);
+    } else {
+      console.log(`[Store removeDefinitionFromNode] Graph ${graphId} is still referenced by other nodes, keeping it.`);
+    }
+  })),
+
+  // Open a graph tab and bring it to the top (similar to Panel.jsx double-click behavior)
+  openGraphTabAndBringToTop: (graphId, definitionNodeId = null) => set(produce((draft) => {
+    console.log(`[Store openGraphTabAndBringToTop] Called with graphId: ${graphId}, definitionNodeId: ${definitionNodeId}`);
+    if (!draft.graphs.has(graphId)) {
+      console.warn(`[Store openGraphTabAndBringToTop] Graph ${graphId} not found.`);
+      return;
+    }
+
+    // Check if graph is already open
+    const existingIndex = draft.openGraphIds.indexOf(graphId);
+    
+    if (existingIndex > -1) {
+      // Graph is already open, move it to the front
+      draft.openGraphIds.splice(existingIndex, 1); // Remove from current position
+      draft.openGraphIds.unshift(graphId); // Add to front
+      console.log(`[Store openGraphTabAndBringToTop] Moved existing graph ${graphId} to front.`);
+    } else {
+      // Graph is not open, add it to the front
+      draft.openGraphIds.unshift(graphId);
+      console.log(`[Store openGraphTabAndBringToTop] Added new graph ${graphId} to front.`);
+    }
+
+    // Set this graph as the active one
+    draft.activeGraphId = graphId;
+    console.log(`[Store openGraphTabAndBringToTop] Set activeGraphId to: ${graphId}`);
+
+    // Set the definition node ID if provided
+    if (definitionNodeId) {
+      console.log(`[Store openGraphTabAndBringToTop] Setting activeDefinitionNodeId to: ${definitionNodeId}`);
+      draft.activeDefinitionNodeId = definitionNodeId;
+    } else {
+      console.log(`[Store openGraphTabAndBringToTop] No definitionNodeId provided, clearing activeDefinitionNodeId.`);
+      draft.activeDefinitionNodeId = null;
+    }
+    
+    // Ensure the opened graph is expanded in the list
+    draft.expandedGraphIds.add(graphId);
+    console.log(`[Store openGraphTabAndBringToTop] Added ${graphId} to expanded set.`);
+  })),
+
   };
 });
 

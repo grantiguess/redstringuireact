@@ -5,7 +5,7 @@ import './Node.css';
 import InnerNetwork from './InnerNetwork.jsx'; // Import InnerNetwork
 import { getNodeDimensions } from './utils.js'; // Import needed for node dims
 import { v4 as uuidv4 } from 'uuid';
-import { ChevronLeft, ChevronRight } from 'lucide-react'; // Import navigation icons
+import { ChevronLeft, ChevronRight, Trash2, Expand } from 'lucide-react'; // Import navigation icons, trash, and expand
 import useGraphStore, { getNodesForGraph, getEdgesForGraph } from './store/graphStore.js'; // Import store selectors
 
 const PREVIEW_SCALE_FACTOR = 0.3; // How much to shrink the network layout
@@ -38,7 +38,11 @@ const Node = ({
   // --- Add store access for fetching definition graph data ---
   storeActions,
   // --- Add callback for adding nodes to definition ---
-  onAddNodeToDefinition
+  onAddNodeToDefinition,
+  // --- Add callback for deleting definition graphs ---
+  onDeleteDefinition,
+  // --- Add callback for expanding definition graphs ---
+  onExpandDefinition
 }) => {
   // Access properties directly from the node data object
   const nodeId = node.id ?? uuidv4(); // Use ID or generate fallback (should have ID from store)
@@ -248,7 +252,7 @@ const Node = ({
             width: '100%',
             height: '100%',
             padding: isPreviewing 
-              ? `0 ${hasMultipleDefinitions ? 100 : 60}px 0 ${hasMultipleDefinitions ? 100 : 60}px` // Symmetric padding to keep title centered
+              ? `0 ${hasAnyDefinitions ? 110 : 60}px 0 ${hasAnyDefinitions ? 110 : 60}px` // Balanced padding: left accounts for 3 buttons (~117px), right accounts for arrows (~110px) - arrows take same space regardless of count
               : `0 ${NODE_PADDING}px`,
             boxSizing: 'border-box',
             pointerEvents: isEditingOnCanvas ? 'auto' : 'none',
@@ -455,78 +459,262 @@ const Node = ({
                 </div>
               </foreignObject>
 
-              {/* Navigation Arrows - Only show when there are multiple definitions */}
-              {hasMultipleDefinitions && (
-                <>
-                  {/* Left Arrow - Navigate to previous definition */}
-                  <foreignObject
-                    x={nodeX + currentWidth - 95} // Move even further left from title
-                    y={nodeY + (textAreaHeight / 2) - 16} // Center vertically with title
-                    width={32}
-                    height={32}
-                    style={{ 
-                      pointerEvents: showArrows ? 'auto' : 'none',
-                      cursor: 'pointer'
+              {/* Delete Button - Only show when there are definitions to delete */}
+              {hasAnyDefinitions && (
+                <foreignObject
+                  x={nodeX + 55} // Position closer to plus button
+                  y={nodeY + (textAreaHeight / 2) - 16} // Center vertically with title
+                  width={32}
+                  height={32}
+                  style={{ 
+                    pointerEvents: showArrows ? 'auto' : 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      opacity: hasMultipleDefinitions ? 0.5 : 0.3, // Lower opacity when only one definition
+                      transition: 'opacity 0.2s ease'
                     }}
-                  >
-                    <div
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        opacity: 0.5,
-                        transition: 'opacity 0.2s ease'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                      onMouseLeave={(e) => e.currentTarget.style.opacity = '0.5'}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigateToPreviousDefinition();
-                        console.log(`Navigated to previous definition: ${currentDefinitionIndex - 1 >= 0 ? currentDefinitionIndex - 1 : definitionGraphIds.length - 1} of ${definitionGraphIds.length}`);
-                      }}
-                      title="Previous definition"
-                    >
-                      <ChevronLeft size={28} color="#bdb5b5" />
-                    </div>
-                  </foreignObject>
-
-                  {/* Right Arrow - Navigate to next definition */}
-                  <foreignObject
-                    x={nodeX + currentWidth - 60} // Position next to left arrow with spacing
-                    y={nodeY + (textAreaHeight / 2) - 16} // Center vertically with title
-                    width={32}
-                    height={32}
-                    style={{ 
-                      pointerEvents: showArrows ? 'auto' : 'none',
-                      cursor: 'pointer'
+                    onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                    onMouseLeave={(e) => e.currentTarget.style.opacity = hasMultipleDefinitions ? '0.5' : '0.3'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onDeleteDefinition && currentGraphId) {
+                        console.log(`[Delete Button] Deleting definition graph: ${currentGraphId} for node: ${nodeId}`);
+                        
+                        // Adjust currentDefinitionIndex before deletion
+                        const newLength = definitionGraphIds.length - 1; // Length after deletion
+                        if (newLength > 0) {
+                          // If we're deleting the last definition, move to the previous one
+                          if (currentDefinitionIndex >= newLength) {
+                            setCurrentDefinitionIndex(newLength - 1);
+                          }
+                          // If we're deleting from the middle or beginning, keep the same index
+                          // (which will now point to the next definition in the list)
+                        } else {
+                          // If this was the last definition, reset to 0
+                          setCurrentDefinitionIndex(0);
+                        }
+                        
+                        onDeleteDefinition(nodeId, currentGraphId);
+                      }
                     }}
+                    title="Delete current definition"
                   >
-                    <div
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        opacity: 0.5,
-                        transition: 'opacity 0.2s ease'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                      onMouseLeave={(e) => e.currentTarget.style.opacity = '0.5'}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigateToNextDefinition();
-                        console.log(`Navigated to next definition: ${currentDefinitionIndex + 1 < definitionGraphIds.length ? currentDefinitionIndex + 1 : 0} of ${definitionGraphIds.length}`);
-                      }}
-                      title="Next definition"
-                    >
-                      <ChevronRight size={28} color="#bdb5b5" />
-                    </div>
-                  </foreignObject>
-                </>
+                    <Trash2 size={20} color="#bdb5b5" />
+                  </div>
+                </foreignObject>
               )}
+
+              {/* Expand Button - Only show when there are definitions to expand */}
+              {hasAnyDefinitions && (
+                <foreignObject
+                  x={nodeX + 85} // Position closer to delete button
+                  y={nodeY + (textAreaHeight / 2) - 16} // Center vertically with title
+                  width={32}
+                  height={32}
+                  style={{ 
+                    pointerEvents: showArrows ? 'auto' : 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      opacity: hasMultipleDefinitions ? 0.5 : 0.3, // Lower opacity when only one definition
+                      transition: 'opacity 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                    onMouseLeave={(e) => e.currentTarget.style.opacity = hasMultipleDefinitions ? '0.5' : '0.3'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onExpandDefinition && currentGraphId) {
+                        console.log(`[Expand Button] Opening definition graph: ${currentGraphId} for node: ${nodeId}`);
+                        onExpandDefinition(nodeId, currentGraphId);
+                      }
+                    }}
+                    title="Open definition in new tab"
+                  >
+                    <Expand size={20} color="#bdb5b5" />
+                  </div>
+                </foreignObject>
+              )}
+
+              {/* Navigation Arrows - Show when there are any definitions */}
+              {hasAnyDefinitions && (() => {
+                // Calculate dynamic width for the number based on character count
+                const numberText = `${currentDefinitionIndex + 1}`;
+                const numberWidth = Math.max(20, numberText.length * 12); // Increased minimum and per-character width
+                const arrowSize = 32; // Increased arrow container size
+                const margin = 40; // Increased margin from right edge to move arrows more left
+                const spacing = 1; // Tighter spacing between elements
+                
+                // Calculate positions from right edge
+                const rightArrowX = nodeX + currentWidth - margin - arrowSize;
+                const numberX = rightArrowX - spacing - numberWidth;
+                const leftArrowX = numberX - spacing - arrowSize;
+                
+                return (
+                  <>
+                    {/* Left Arrow - Navigate to previous definition */}
+                    <foreignObject
+                      x={leftArrowX}
+                      y={nodeY + (textAreaHeight / 2) - 16} // Center vertically with title
+                      width={arrowSize}
+                      height={arrowSize}
+                      style={{ 
+                        pointerEvents: showArrows ? 'auto' : 'none',
+                        cursor: hasMultipleDefinitions ? 'pointer' : 'default'
+                      }}
+                    >
+                      <div
+                        data-arrow
+                        style={{
+                          width: `${arrowSize}px`,
+                          height: `${arrowSize}px`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          opacity: hasMultipleDefinitions ? 0.5 : 0.2,
+                          transition: 'opacity 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (hasMultipleDefinitions) {
+                            e.currentTarget.style.opacity = '1';
+                            // Also highlight the number
+                            const numberElement = e.currentTarget.parentElement.parentElement.querySelector('[data-number-indicator]');
+                            if (numberElement) numberElement.style.opacity = '1';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.opacity = hasMultipleDefinitions ? '0.5' : '0.2';
+                          // Reset number opacity
+                          const numberElement = e.currentTarget.parentElement.parentElement.querySelector('[data-number-indicator]');
+                          if (numberElement) numberElement.style.opacity = '0.7';
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (hasMultipleDefinitions) {
+                            navigateToPreviousDefinition();
+                            console.log(`Navigated to previous definition: ${currentDefinitionIndex - 1 >= 0 ? currentDefinitionIndex - 1 : definitionGraphIds.length - 1} of ${definitionGraphIds.length}`);
+                          }
+                        }}
+                        title={hasMultipleDefinitions ? "Previous definition" : "Only one definition"}
+                      >
+                        <ChevronLeft size={28} color="#bdb5b5" />
+                      </div>
+                    </foreignObject>
+
+                    {/* Number Indicator - Show current definition index */}
+                    <foreignObject
+                      x={numberX}
+                      y={nodeY + (textAreaHeight / 2) - 16} // Center vertically with title
+                      width={numberWidth}
+                      height={32}
+                      style={{ 
+                        pointerEvents: showArrows ? 'auto' : 'none',
+                        cursor: hasMultipleDefinitions ? 'pointer' : 'default'
+                      }}
+                    >
+                      <div
+                        data-number-indicator
+                        style={{
+                          width: `${numberWidth}px`,
+                          height: '32px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '18px',
+                          fontWeight: 'bold',
+                          color: '#bdb5b5',
+                          opacity: 0.7,
+                          transition: 'opacity 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.opacity = '1';
+                          // Also highlight both arrows
+                          const container = e.currentTarget.parentElement.parentElement;
+                          const arrows = container.querySelectorAll('[data-arrow]');
+                          arrows.forEach(arrow => {
+                            if (hasMultipleDefinitions) arrow.style.opacity = '1';
+                          });
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.opacity = '0.7';
+                          // Reset arrow opacity
+                          const container = e.currentTarget.parentElement.parentElement;
+                          const arrows = container.querySelectorAll('[data-arrow]');
+                          arrows.forEach(arrow => {
+                            arrow.style.opacity = hasMultipleDefinitions ? '0.5' : '0.2';
+                          });
+                        }}
+                        title={`Definition ${currentDefinitionIndex + 1} of ${definitionGraphIds.length}`}
+                      >
+                        {numberText}
+                      </div>
+                    </foreignObject>
+
+                    {/* Right Arrow - Navigate to next definition */}
+                    <foreignObject
+                      x={rightArrowX}
+                      y={nodeY + (textAreaHeight / 2) - 16} // Center vertically with title
+                      width={arrowSize}
+                      height={arrowSize}
+                      style={{ 
+                        pointerEvents: showArrows ? 'auto' : 'none',
+                        cursor: hasMultipleDefinitions ? 'pointer' : 'default'
+                      }}
+                    >
+                      <div
+                        data-arrow
+                        style={{
+                          width: `${arrowSize}px`,
+                          height: `${arrowSize}px`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          opacity: hasMultipleDefinitions ? 0.5 : 0.2,
+                          transition: 'opacity 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (hasMultipleDefinitions) {
+                            e.currentTarget.style.opacity = '1';
+                            // Also highlight the number
+                            const numberElement = e.currentTarget.parentElement.parentElement.querySelector('[data-number-indicator]');
+                            if (numberElement) numberElement.style.opacity = '1';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.opacity = hasMultipleDefinitions ? '0.5' : '0.2';
+                          // Reset number opacity
+                          const numberElement = e.currentTarget.parentElement.parentElement.querySelector('[data-number-indicator]');
+                          if (numberElement) numberElement.style.opacity = '0.7';
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (hasMultipleDefinitions) {
+                            navigateToNextDefinition();
+                            console.log(`Navigated to next definition: ${currentDefinitionIndex + 1 < definitionGraphIds.length ? currentDefinitionIndex + 1 : 0} of ${definitionGraphIds.length}`);
+                          }
+                        }}
+                        title={hasMultipleDefinitions ? "Next definition" : "Only one definition"}
+                      >
+                        <ChevronRight size={28} color="#bdb5b5" />
+                      </div>
+                    </foreignObject>
+                  </>
+                );
+              })()}
           </g>
       )}
       {/* --- End Preview --- */}

@@ -80,6 +80,8 @@ function NodeCanvas() {
       toggleGraphExpanded: state.toggleGraphExpanded,
       toggleSavedNode: state.toggleSavedNode,
       updateMultipleNodePositions: state.updateMultipleNodePositions,
+      removeDefinitionFromNode: state.removeDefinitionFromNode,
+      openGraphTabAndBringToTop: state.openGraphTabAndBringToTop,
     };
   }, []); // Empty dependency array means actions are stable (typical for Zustand)
 
@@ -1532,6 +1534,16 @@ function NodeCanvas() {
                                console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
                                storeActions.createAndAssignGraphDefinition(nodeId);
                              }}
+                             onDeleteDefinition={(nodeId, graphId) => {
+                               // Delete the specific definition graph from the node
+                               console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
+                               storeActions.removeDefinitionFromNode(nodeId, graphId);
+                             }}
+                             onExpandDefinition={(nodeId, graphId) => {
+                               // Open the definition graph in a new tab and bring to top
+                               console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
+                               storeActions.openGraphTabAndBringToTop(graphId, nodeId);
+                             }}
                              storeActions={storeActions}
                              connections={edges}
                            />
@@ -1610,6 +1622,16 @@ function NodeCanvas() {
                                  console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
                                  storeActions.createAndAssignGraphDefinition(nodeId);
                                }}
+                               onDeleteDefinition={(nodeId, graphId) => {
+                                 // Delete the specific definition graph from the node
+                                 console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
+                                 storeActions.removeDefinitionFromNode(nodeId, graphId);
+                               }}
+                               onExpandDefinition={(nodeId, graphId) => {
+                                 // Open the definition graph in a new tab and bring to top
+                                 console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
+                                 storeActions.openGraphTabAndBringToTop(graphId, nodeId);
+                               }}
                                storeActions={storeActions}
                                connections={edges}
                              />
@@ -1651,6 +1673,16 @@ function NodeCanvas() {
                                  // Create a new alternative definition for the node
                                  console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
                                  storeActions.createAndAssignGraphDefinition(nodeId);
+                               }}
+                               onDeleteDefinition={(nodeId, graphId) => {
+                                 // Delete the specific definition graph from the node
+                                 console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
+                                 storeActions.removeDefinitionFromNode(nodeId, graphId);
+                               }}
+                               onExpandDefinition={(nodeId, graphId) => {
+                                 // Open the definition graph in a new tab and bring to top
+                                 console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
+                                 storeActions.openGraphTabAndBringToTop(graphId, nodeId);
                                }}
                                storeActions={storeActions}
                                connections={edges}
