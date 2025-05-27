@@ -389,6 +389,14 @@ const useGraphStore = create((set, get) => {
     }
 
     if (graph && !draft.nodes.has(nodeId)) {
+      // Check if this graph is a definition graph (has definingNodeIds)
+      if (graph.definingNodeIds && graph.definingNodeIds.length > 0) {
+        // Set the parentDefinitionNodeId to the first defining node
+        const definingNodeId = graph.definingNodeIds[0];
+        console.log(`[Store addNode] Setting parentDefinitionNodeId to ${definingNodeId} for node ${nodeId} in definition graph ${graphId}`);
+        newNodeData.parentDefinitionNodeId = definingNodeId;
+      }
+      
       // Add node data to global pool
       draft.nodes.set(nodeId, newNodeData);
       // Add node ID to graph's nodeIds array
@@ -418,6 +426,62 @@ const useGraphStore = create((set, get) => {
           if (graph) {
             console.log(`[Store updateNode] Updating graph ${graphId} name to match node.`);
             graph.name = newName;
+          }
+        }
+        
+        // NEW: Also sync corresponding nodes across different definition graphs of the same parent node
+        if (node.parentDefinitionNodeId) {
+          console.log(`[Store updateNode] Node ${nodeId} has parent ${node.parentDefinitionNodeId}. Syncing across definition graphs.`);
+          
+          // Find which graph this node currently belongs to
+          let currentGraphId = null;
+          for (const [graphId, graph] of draft.graphs.entries()) {
+            if (graph.nodeIds.includes(nodeId)) {
+              currentGraphId = graphId;
+              break;
+            }
+          }
+          
+          // Get the parent node that this node belongs to
+          const parentNode = draft.nodes.get(node.parentDefinitionNodeId);
+          if (parentNode && Array.isArray(parentNode.definitionGraphIds)) {
+            console.log(`[Store updateNode] Parent node ${node.parentDefinitionNodeId} has ${parentNode.definitionGraphIds.length} definition graphs.`);
+            
+            // For each definition graph of the parent node
+            for (const parentGraphId of parentNode.definitionGraphIds) {
+              if (parentGraphId === currentGraphId) continue; // Skip the current graph
+              
+              const parentGraph = draft.graphs.get(parentGraphId);
+              if (parentGraph) {
+                console.log(`[Store updateNode] Checking definition graph ${parentGraphId} for corresponding nodes.`);
+                
+                // Find nodes in this definition graph that have the same name as the original node name
+                for (const nodeIdInGraph of parentGraph.nodeIds) {
+                  const nodeInGraph = draft.nodes.get(nodeIdInGraph);
+                  if (nodeInGraph && nodeInGraph.name === originalName) {
+                    console.log(`[Store updateNode] Found corresponding node ${nodeIdInGraph} in graph ${parentGraphId}, updating name to "${newName}".`);
+                    nodeInGraph.name = newName;
+                    
+                    // Also update any definition graphs that this corresponding node defines
+                    if (Array.isArray(nodeInGraph.definitionGraphIds)) {
+                      for (const correspondingGraphId of nodeInGraph.definitionGraphIds) {
+                        const correspondingGraph = draft.graphs.get(correspondingGraphId);
+                        if (correspondingGraph) {
+                          console.log(`[Store updateNode] Updating corresponding node's graph ${correspondingGraphId} name to match.`);
+                          correspondingGraph.name = newName;
+                        }
+                      }
+                    }
+                    
+                    // Update the corresponding node's tab title if it's open in the right panel
+                    const correspondingTabIndex = draft.rightPanelTabs.findIndex(tab => tab.nodeId === nodeIdInGraph);
+                    if (correspondingTabIndex !== -1) {
+                      draft.rightPanelTabs[correspondingTabIndex].title = newName;
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -670,7 +734,7 @@ const useGraphStore = create((set, get) => {
     const newGraphData = {
       id: newGraphId,
       name: newGraphName,
-      description: `Definition for node: ${nodeData.name} (${nodeId})`,
+      description: '',
       picture: null,
       color: '#ccc',
       directed: false,
@@ -761,6 +825,53 @@ const useGraphStore = create((set, get) => {
                 const tabIndex = draft.rightPanelTabs.findIndex(tab => tab.nodeId === node.id);
                 if (tabIndex !== -1) {
                   draft.rightPanelTabs[tabIndex].title = newName;
+                }
+                
+                // NEW: Also sync corresponding nodes across different definition graphs of the same parent node
+                if (node.parentDefinitionNodeId) {
+                  console.log(`[Store updateGraph] Node ${node.id} has parent ${node.parentDefinitionNodeId}. Syncing across definition graphs.`);
+                  
+                  // Get the parent node that this node belongs to
+                  const parentNode = draft.nodes.get(node.parentDefinitionNodeId);
+                  if (parentNode && Array.isArray(parentNode.definitionGraphIds)) {
+                    console.log(`[Store updateGraph] Parent node ${node.parentDefinitionNodeId} has ${parentNode.definitionGraphIds.length} definition graphs.`);
+                    
+                    // For each definition graph of the parent node
+                    for (const parentGraphId of parentNode.definitionGraphIds) {
+                      if (parentGraphId === graphId) continue; // Skip the current graph
+                      
+                      const parentGraph = draft.graphs.get(parentGraphId);
+                      if (parentGraph) {
+                        console.log(`[Store updateGraph] Checking definition graph ${parentGraphId} for corresponding nodes.`);
+                        
+                        // Find nodes in this definition graph that have the same name as the original node name
+                        for (const nodeIdInGraph of parentGraph.nodeIds) {
+                          const nodeInGraph = draft.nodes.get(nodeIdInGraph);
+                          if (nodeInGraph && nodeInGraph.name === originalName) {
+                            console.log(`[Store updateGraph] Found corresponding node ${nodeIdInGraph} in graph ${parentGraphId}, updating name to "${newName}".`);
+                            nodeInGraph.name = newName;
+                            
+                            // Also update any definition graphs that this corresponding node defines
+                            if (Array.isArray(nodeInGraph.definitionGraphIds)) {
+                              for (const correspondingGraphId of nodeInGraph.definitionGraphIds) {
+                                const correspondingGraph = draft.graphs.get(correspondingGraphId);
+                                if (correspondingGraph) {
+                                  console.log(`[Store updateGraph] Updating corresponding node's graph ${correspondingGraphId} name to match.`);
+                                  correspondingGraph.name = newName;
+                                }
+                              }
+                            }
+                            
+                            // Update the corresponding node's tab title if it's open in the right panel
+                            const correspondingTabIndex = draft.rightPanelTabs.findIndex(tab => tab.nodeId === nodeIdInGraph);
+                            if (correspondingTabIndex !== -1) {
+                              draft.rightPanelTabs[correspondingTabIndex].title = newName;
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -887,6 +998,13 @@ const useGraphStore = create((set, get) => {
 
     // <<< Also remove from expanded set if closed >>>
     draft.expandedGraphIds.delete(graphId);
+    
+    // Schedule cleanup after closing a graph
+    console.log(`[Store closeGraph] Graph ${graphId} closed, scheduling cleanup...`);
+    setTimeout(() => {
+      const currentState = get();
+      currentState.cleanupOrphanedData();
+    }, 100);
   })),
 
   // <<< Add action to toggle expanded state >>>
@@ -903,13 +1021,24 @@ const useGraphStore = create((set, get) => {
 
   // Toggle node bookmark status in savedNodeIds set
   toggleSavedNode: (nodeId) => set(produce((draft) => {
-    if (draft.savedNodeIds.has(nodeId)) {
+    const wasRemoved = draft.savedNodeIds.has(nodeId);
+    if (wasRemoved) {
       draft.savedNodeIds.delete(nodeId);
     } else {
       draft.savedNodeIds.add(nodeId);
     }
     // Replace with a new Set instance to ensure reference change
     draft.savedNodeIds = new Set(draft.savedNodeIds);
+    
+    // If we removed a saved node, trigger cleanup after a short delay
+    if (wasRemoved) {
+      console.log(`[Store toggleSavedNode] Node ${nodeId} was unsaved, scheduling cleanup...`);
+      // Use setTimeout to trigger cleanup after the current state update completes
+      setTimeout(() => {
+        const currentState = get();
+        currentState.cleanupOrphanedData();
+      }, 100);
+    }
   })),
 
   // Explicitly set active definition node (e.g., when switching graphs)
@@ -1037,6 +1166,135 @@ const useGraphStore = create((set, get) => {
     // Ensure the opened graph is expanded in the list
     draft.expandedGraphIds.add(graphId);
     console.log(`[Store openGraphTabAndBringToTop] Added ${graphId} to expanded set.`);
+  })),
+
+  // Clean up orphaned nodes and graphs that are no longer referenced
+  cleanupOrphanedData: () => set(produce((draft) => {
+    console.log('[Store cleanupOrphanedData] Starting cleanup of orphaned nodes and graphs...');
+    
+    // Step 1: Find all referenced nodes
+    const referencedNodeIds = new Set();
+    
+    // Add saved nodes
+    draft.savedNodeIds.forEach(nodeId => referencedNodeIds.add(nodeId));
+    
+    // Add nodes from open graphs
+    draft.openGraphIds.forEach(graphId => {
+      const graph = draft.graphs.get(graphId);
+      if (graph && graph.nodeIds) {
+        graph.nodeIds.forEach(nodeId => referencedNodeIds.add(nodeId));
+      }
+    });
+    
+    // Add nodes from definition graphs of referenced nodes
+    const addDefinitionNodes = (nodeId) => {
+      const node = draft.nodes.get(nodeId);
+      if (node && Array.isArray(node.definitionGraphIds)) {
+        node.definitionGraphIds.forEach(graphId => {
+          const defGraph = draft.graphs.get(graphId);
+          if (defGraph && defGraph.nodeIds) {
+            defGraph.nodeIds.forEach(defNodeId => {
+              if (!referencedNodeIds.has(defNodeId)) {
+                referencedNodeIds.add(defNodeId);
+                addDefinitionNodes(defNodeId); // Recursively add nested definitions
+              }
+            });
+          }
+        });
+      }
+    };
+    
+    // Recursively add all definition nodes
+    Array.from(referencedNodeIds).forEach(nodeId => addDefinitionNodes(nodeId));
+    
+    // Step 2: Find all referenced graphs
+    const referencedGraphIds = new Set();
+    
+    // Add open graphs
+    draft.openGraphIds.forEach(graphId => referencedGraphIds.add(graphId));
+    
+    // Add definition graphs from referenced nodes
+    referencedNodeIds.forEach(nodeId => {
+      const node = draft.nodes.get(nodeId);
+      if (node && Array.isArray(node.definitionGraphIds)) {
+        node.definitionGraphIds.forEach(graphId => referencedGraphIds.add(graphId));
+      }
+    });
+    
+    // Step 3: Remove orphaned nodes
+    const orphanedNodes = [];
+    for (const [nodeId, node] of draft.nodes.entries()) {
+      if (!referencedNodeIds.has(nodeId)) {
+        orphanedNodes.push(nodeId);
+      }
+    }
+    
+    orphanedNodes.forEach(nodeId => {
+      console.log(`[Store cleanupOrphanedData] Removing orphaned node: ${nodeId}`);
+      draft.nodes.delete(nodeId);
+    });
+    
+    // Step 4: Remove orphaned graphs
+    const orphanedGraphs = [];
+    for (const [graphId, graph] of draft.graphs.entries()) {
+      if (!referencedGraphIds.has(graphId)) {
+        orphanedGraphs.push(graphId);
+      }
+    }
+    
+    orphanedGraphs.forEach(graphId => {
+      console.log(`[Store cleanupOrphanedData] Removing orphaned graph: ${graphId}`);
+      draft.graphs.delete(graphId);
+      
+      // Also clean up related state
+      draft.expandedGraphIds.delete(graphId);
+      
+      // Remove from right panel tabs if open
+      draft.rightPanelTabs = draft.rightPanelTabs.filter(tab => 
+        tab.type !== 'graph' || tab.graphId !== graphId
+      );
+    });
+    
+    // Step 5: Remove orphaned edges
+    const orphanedEdges = [];
+    for (const [edgeId, edge] of draft.edges.entries()) {
+      const sourceExists = referencedNodeIds.has(edge.sourceId);
+      const destExists = referencedNodeIds.has(edge.destinationId);
+      if (!sourceExists || !destExists) {
+        orphanedEdges.push(edgeId);
+      }
+    }
+    
+    orphanedEdges.forEach(edgeId => {
+      console.log(`[Store cleanupOrphanedData] Removing orphaned edge: ${edgeId}`);
+      draft.edges.delete(edgeId);
+    });
+    
+    // Step 6: Clean up edge references in remaining nodes
+    referencedNodeIds.forEach(nodeId => {
+      const node = draft.nodes.get(nodeId);
+      if (node && Array.isArray(node.edgeIds)) {
+        const originalLength = node.edgeIds.length;
+        node.edgeIds = node.edgeIds.filter(edgeId => draft.edges.has(edgeId));
+        if (node.edgeIds.length !== originalLength) {
+          console.log(`[Store cleanupOrphanedData] Cleaned edge references in node ${nodeId}`);
+        }
+      }
+    });
+    
+    // Step 7: Clean up edge references in remaining graphs
+    referencedGraphIds.forEach(graphId => {
+      const graph = draft.graphs.get(graphId);
+      if (graph && Array.isArray(graph.edgeIds)) {
+        const originalLength = graph.edgeIds.length;
+        graph.edgeIds = graph.edgeIds.filter(edgeId => draft.edges.has(edgeId));
+        if (graph.edgeIds.length !== originalLength) {
+          console.log(`[Store cleanupOrphanedData] Cleaned edge references in graph ${graphId}`);
+        }
+      }
+    });
+    
+    console.log(`[Store cleanupOrphanedData] Cleanup complete. Removed ${orphanedNodes.length} nodes, ${orphanedGraphs.length} graphs, ${orphanedEdges.length} edges.`);
   })),
 
   };

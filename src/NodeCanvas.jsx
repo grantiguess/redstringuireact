@@ -82,6 +82,7 @@ function NodeCanvas() {
       updateMultipleNodePositions: state.updateMultipleNodePositions,
       removeDefinitionFromNode: state.removeDefinitionFromNode,
       openGraphTabAndBringToTop: state.openGraphTabAndBringToTop,
+      cleanupOrphanedData: state.cleanupOrphanedData,
     };
   }, []); // Empty dependency array means actions are stable (typical for Zustand)
 

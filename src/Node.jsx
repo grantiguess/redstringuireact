@@ -556,7 +556,7 @@ const Node = ({
                 const numberText = `${currentDefinitionIndex + 1}`;
                 const numberWidth = Math.max(20, numberText.length * 12); // Increased minimum and per-character width
                 const arrowSize = 32; // Increased arrow container size
-                const margin = 40; // Increased margin from right edge to move arrows more left
+                const margin = 25; // Reduced margin from right edge to move arrows more to the right
                 const spacing = 1; // Tighter spacing between elements
                 
                 // Calculate positions from right edge

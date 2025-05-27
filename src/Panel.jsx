@@ -327,6 +327,7 @@ const Panel = forwardRef(
         toggleSavedNode,
         setActiveDefinitionNode,
         createAndAssignGraphDefinition,
+        cleanupOrphanedData,
     } = storeActions || {}; // Use passed actions, provide empty object fallback
     
     // activeGraphId is now directly available as a prop
@@ -1166,16 +1167,15 @@ const Panel = forwardRef(
                     {/* Divider Line */}
                     <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
 
-                    {/* 3. "Components" Header (no border) */}
+                    {/* 3. "Components" Header with count */}
                     <h3 style={{ 
                         marginTop: 0, 
                         marginBottom: '10px', 
                         color: '#555', 
                         fontSize: '0.9rem',
-                        userSelect: 'none' // Prevent selection
-                        /* Remove borderBottom */ 
+                        userSelect: 'none'
                     }}>
-                        Components
+                        Components ({activeGraphNodes.length})
                     </h3>
 
                     <div
@@ -1221,6 +1221,77 @@ const Panel = forwardRef(
                             </div>
                         ))}
                     </div>
+
+                                        {/* Defines Section */}
+                    {(() => {
+                        // Find all nodes that have definition graphs (nodes that define other graphs)
+                        const definitionNodes = Array.from(nodesMap.values()).filter(node => 
+                            Array.isArray(node.definitionGraphIds) && node.definitionGraphIds.length > 0
+                        );
+
+                        if (definitionNodes.length === 0) return null;
+
+                        return (
+                            <>
+                                {/* Divider Line */}
+                                <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
+
+                                <h3 style={{ 
+                                    marginTop: 0, 
+                                    marginBottom: '10px', 
+                                    color: '#555', 
+                                    fontSize: '0.9rem',
+                                    userSelect: 'none'
+                                }}>
+                                    Defines ({definitionNodes.length})
+                                </h3>
+
+                                <div
+                                    style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: '1fr 1fr',
+                                        gap: '8px',
+                                        maxHeight: '300px',
+                                        overflowY: 'auto',
+                                    }}
+                                >
+                                    {definitionNodes.map((node) => (
+                                        <div
+                                            key={node.id}
+                                            style={{
+                                                backgroundColor: node.color || NODE_DEFAULT_COLOR, // Use actual node color
+                                                borderRadius: NODE_CORNER_RADIUS,
+                                                height: '40px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                cursor: 'pointer',
+                                                padding: '0 5px',
+                                                overflow: 'hidden'
+                                            }}
+                                            title={node.name}
+                                            onClick={() => openNodeTab(node.id)}
+                                        >
+                                            <span style={{
+                                                color: '#bdb5b5',
+                                                fontSize: '0.8rem',
+                                                width: '100%',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                                textAlign: 'center',
+                                                padding: '0 10px',
+                                                boxSizing: 'border-box',
+                                                userSelect: 'none'
+                                            }}>
+                                                {node.name}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        );
+                    })()}
                 </div>
             );
         } else if (activeRightPanelTab.type === 'node') {
