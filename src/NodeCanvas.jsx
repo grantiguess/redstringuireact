@@ -1527,6 +1527,11 @@ function NodeCanvas() {
                              onCreateDefinition={(nodeId) => {
                                storeActions.createAndAssignGraphDefinition(nodeId);
                              }}
+                             onAddNodeToDefinition={(nodeId) => {
+                               // Create a new alternative definition for the node
+                               console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
+                               storeActions.createAndAssignGraphDefinition(nodeId);
+                             }}
                              storeActions={storeActions}
                              connections={edges}
                            />
@@ -1600,6 +1605,11 @@ function NodeCanvas() {
                                onCreateDefinition={(nodeId) => {
                                  storeActions.createAndAssignGraphDefinition(nodeId);
                                }}
+                               onAddNodeToDefinition={(nodeId) => {
+                                 // Create a new alternative definition for the node
+                                 console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
+                                 storeActions.createAndAssignGraphDefinition(nodeId);
+                               }}
                                storeActions={storeActions}
                                connections={edges}
                              />
@@ -1635,6 +1645,11 @@ function NodeCanvas() {
                                }}
                                onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
                                onCreateDefinition={(nodeId) => {
+                                 storeActions.createAndAssignGraphDefinition(nodeId);
+                               }}
+                               onAddNodeToDefinition={(nodeId) => {
+                                 // Create a new alternative definition for the node
+                                 console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
                                  storeActions.createAndAssignGraphDefinition(nodeId);
                                }}
                                storeActions={storeActions}

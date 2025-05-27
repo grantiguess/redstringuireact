@@ -405,7 +405,22 @@ const useGraphStore = create((set, get) => {
   updateNode: (nodeId, recipe) => set(produce((draft) => {
     const node = draft.nodes.get(nodeId);
     if (node) {
+      const originalName = node.name; // Store original name
       recipe(node); // Apply the Immer updates
+      
+      // Check if the name was changed and sync to definition graphs
+      const newName = node.name;
+      if (newName !== originalName && Array.isArray(node.definitionGraphIds)) {
+        console.log(`[Store updateNode] Node ${nodeId} name changed from "${originalName}" to "${newName}". Syncing definition graph names.`);
+        // Update all graphs that this node defines
+        for (const graphId of node.definitionGraphIds) {
+          const graph = draft.graphs.get(graphId);
+          if (graph) {
+            console.log(`[Store updateNode] Updating graph ${graphId} name to match node.`);
+            graph.name = newName;
+          }
+        }
+      }
     } else {
       console.warn(`updateNode: Node with id ${nodeId} not found.`);
     }

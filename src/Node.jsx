@@ -36,7 +36,9 @@ const Node = ({
   // --- Add store actions for creating definitions ---
   onCreateDefinition,
   // --- Add store access for fetching definition graph data ---
-  storeActions
+  storeActions,
+  // --- Add callback for adding nodes to definition ---
+  onAddNodeToDefinition
 }) => {
   // Access properties directly from the node data object
   const nodeId = node.id ?? uuidv4(); // Use ID or generate fallback (should have ID from store)
@@ -112,18 +114,7 @@ const Node = ({
   // Define the canvas background color (or import from constants if preferred)
   const canvasBackgroundColor = '#bdb5b5';
 
-  // Calculate text width for arrow positioning (only when previewing)
-  const textWidth = useMemo(() => {
-    if (!isPreviewing) return 0;
-    
-    // Create a temporary canvas to measure text width
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    context.font = 'bold 20px sans-serif'; // Match the font from the node name styling
-    const width = context.measureText(nodeName).width;
-    canvas.remove(); // Clean up
-    return width;
-  }, [isPreviewing, nodeName]);
+  // No longer need text width calculation since arrows are in top-right corner
 
   // State to control arrow fade-in animation
   const [showArrows, setShowArrows] = useState(false);
@@ -139,20 +130,19 @@ const Node = ({
   // Get the currently displayed graph ID
   const currentGraphId = definitionGraphIds[currentDefinitionIndex] || definitionGraphIds[0];
 
+  // Get the store state once and use it for both selectors
+  const storeState = useGraphStore();
+  
   // Filter nodes and edges for the current graph definition
   const currentGraphNodes = useMemo(() => {
     if (!currentGraphId) return [];
-    // Get the actual nodes from the definition graph using the store selector
-    const state = useGraphStore.getState();
-    return getNodesForGraph(currentGraphId)(state);
-  }, [currentGraphId]);
+    return getNodesForGraph(currentGraphId)(storeState);
+  }, [currentGraphId, storeState.nodes, storeState.graphs]);
 
   const currentGraphEdges = useMemo(() => {
     if (!currentGraphId) return [];
-    // Get the actual edges from the definition graph using the store selector
-    const state = useGraphStore.getState();
-    return getEdgesForGraph(currentGraphId)(state);
-  }, [currentGraphId]);
+    return getEdgesForGraph(currentGraphId)(storeState);
+  }, [currentGraphId, storeState.edges, storeState.graphs]);
 
   // Effect to handle arrow fade-in after expansion
   useEffect(() => {
@@ -257,11 +247,12 @@ const Node = ({
             justifyContent: 'center',
             width: '100%',
             height: '100%',
-            padding: `0 ${NODE_PADDING}px`,
+            padding: isPreviewing 
+              ? `0 ${hasMultipleDefinitions ? 100 : 60}px 0 ${hasMultipleDefinitions ? 100 : 60}px` // Symmetric padding to keep title centered
+              : `0 ${NODE_PADDING}px`,
             boxSizing: 'border-box',
             pointerEvents: isEditingOnCanvas ? 'auto' : 'none',
             userSelect: 'none',
-            wordWrap: 'break-word',
             minWidth: 0
           }}
         >
@@ -282,11 +273,11 @@ const Node = ({
                 fontSize: '20px',
                 fontWeight: 'bold',
                 color: '#bdb5b5',
-                whiteSpace: 'pre-wrap',
+                whiteSpace: 'nowrap',
                 maxWidth: '100%',
                 textAlign: 'center',
-                wordBreak: 'keep-all',
-                overflowWrap: 'normal',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
                 minWidth: 0,
                 display: 'inline-block',
                 width: '100%',
@@ -361,6 +352,8 @@ const Node = ({
                                   {currentDefinitionIndex + 1}/{definitionGraphIds.length}
                               </text>
                           )}
+                          
+
                       </>
                   ) : (
                       // Show "Create Definition" interface when no definitions exist
@@ -417,18 +410,18 @@ const Node = ({
           </g>
       )}
 
-            {/* Navigation Arrows - Only show when there are multiple definitions */}
-      {isPreviewing && textWidth > 0 && hasMultipleDefinitions && (
+            {/* Plus Button and Navigation Arrows - Positioned in title area like a name tag */}
+      {isPreviewing && (
           <g style={{ 
             opacity: showArrows ? 1 : 0,
             transition: 'opacity 0.2s ease-in'
           }}>
-              {/* Left Arrow - Navigate to previous definition */}
+              {/* Plus Button - Left side of title area */}
               <foreignObject
-                x={nodeX + (currentWidth / 2) - (textWidth / 2) - 50} // Position just left of text start
-                y={nodeY + (textAreaHeight / 2) - 20} // Center vertically with title area
-                width={40}
-                height={40}
+                x={nodeX + 25} // Closer to title
+                y={nodeY + (textAreaHeight / 2) - 16} // Center vertically with title
+                width={32}
+                height={32}
                 style={{ 
                   pointerEvents: showArrows ? 'auto' : 'none',
                   cursor: 'pointer'
@@ -436,58 +429,104 @@ const Node = ({
               >
                 <div
                   style={{
-                    width: '40px',
-                    height: '40px',
+                    width: '32px',
+                    height: '32px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     opacity: 0.5,
                     transition: 'opacity 0.2s ease',
+                    fontSize: '24px',
+                    fontWeight: 'bold',
+                    color: '#bdb5b5'
                   }}
                   onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
                   onMouseLeave={(e) => e.currentTarget.style.opacity = '0.5'}
                   onClick={(e) => {
                     e.stopPropagation();
-                    navigateToPreviousDefinition();
-                    console.log(`Navigated to previous definition: ${currentDefinitionIndex - 1 >= 0 ? currentDefinitionIndex - 1 : definitionGraphIds.length - 1} of ${definitionGraphIds.length}`);
+                    if (onAddNodeToDefinition) {
+                      console.log(`[Plus Button] Creating alternative definition for node: ${nodeId}`);
+                      onAddNodeToDefinition(nodeId);
+                    }
                   }}
+                  title="Create alternative definition"
                 >
-                  <ChevronLeft size={32} color="#bdb5b5" />
+                  +
                 </div>
               </foreignObject>
 
-              {/* Right Arrow - Navigate to next definition */}
-              <foreignObject
-                x={nodeX + (currentWidth / 2) + (textWidth / 2) + 10} // Position just right of text end
-                y={nodeY + (textAreaHeight / 2) - 20} // Center vertically with title area
-                width={40}
-                height={40}
-                style={{ 
-                  pointerEvents: showArrows ? 'auto' : 'none',
-                  cursor: 'pointer'
-                }}
-              >
-                <div
-                  style={{
-                    width: '40px',
-                    height: '40px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    opacity: 0.5,
-                    transition: 'opacity 0.2s ease',
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                  onMouseLeave={(e) => e.currentTarget.style.opacity = '0.5'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigateToNextDefinition();
-                    console.log(`Navigated to next definition: ${currentDefinitionIndex + 1 < definitionGraphIds.length ? currentDefinitionIndex + 1 : 0} of ${definitionGraphIds.length}`);
-                  }}
-                >
-                  <ChevronRight size={32} color="#bdb5b5" />
-                </div>
-              </foreignObject>
+              {/* Navigation Arrows - Only show when there are multiple definitions */}
+              {hasMultipleDefinitions && (
+                <>
+                  {/* Left Arrow - Navigate to previous definition */}
+                  <foreignObject
+                    x={nodeX + currentWidth - 95} // Move even further left from title
+                    y={nodeY + (textAreaHeight / 2) - 16} // Center vertically with title
+                    width={32}
+                    height={32}
+                    style={{ 
+                      pointerEvents: showArrows ? 'auto' : 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        opacity: 0.5,
+                        transition: 'opacity 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                      onMouseLeave={(e) => e.currentTarget.style.opacity = '0.5'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateToPreviousDefinition();
+                        console.log(`Navigated to previous definition: ${currentDefinitionIndex - 1 >= 0 ? currentDefinitionIndex - 1 : definitionGraphIds.length - 1} of ${definitionGraphIds.length}`);
+                      }}
+                      title="Previous definition"
+                    >
+                      <ChevronLeft size={28} color="#bdb5b5" />
+                    </div>
+                  </foreignObject>
+
+                  {/* Right Arrow - Navigate to next definition */}
+                  <foreignObject
+                    x={nodeX + currentWidth - 60} // Position next to left arrow with spacing
+                    y={nodeY + (textAreaHeight / 2) - 16} // Center vertically with title
+                    width={32}
+                    height={32}
+                    style={{ 
+                      pointerEvents: showArrows ? 'auto' : 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        opacity: 0.5,
+                        transition: 'opacity 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                      onMouseLeave={(e) => e.currentTarget.style.opacity = '0.5'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateToNextDefinition();
+                        console.log(`Navigated to next definition: ${currentDefinitionIndex + 1 < definitionGraphIds.length ? currentDefinitionIndex + 1 : 0} of ${definitionGraphIds.length}`);
+                      }}
+                      title="Next definition"
+                    >
+                      <ChevronRight size={28} color="#bdb5b5" />
+                    </div>
+                  </foreignObject>
+                </>
+              )}
           </g>
       )}
       {/* --- End Preview --- */}

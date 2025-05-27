@@ -119,28 +119,46 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
         );
       })}
 
-      {/* Render Nodes using original coordinates and dimensions (scaled by parent g) */}
-      {/* SIMPLIFIED NODE RENDERING FOR PREVIEW */}
+      {/* Render Nodes with titles using original coordinates and dimensions (scaled by parent g) */}
       {nodes.map((node) => {
          // Get original dimensions 
          const dimensions = getNodeDimensions(node);
+         const titleHeight = dimensions.textAreaHeight || NODE_HEIGHT * NAME_AREA_FACTOR;
 
          return (
-           <rect
-             key={`inner-node-${node.id}`}
-             x={node.x}
-             y={node.y}
-             width={dimensions.currentWidth}
-             height={dimensions.currentHeight}
-             rx={NODE_CORNER_RADIUS} // Use constant for consistency
-             ry={NODE_CORNER_RADIUS}
-             fill={node.color || NODE_DEFAULT_COLOR || 'grey'} // Use node color or fallback
-             stroke="rgba(0,0,0,0.5)" // Optional subtle border
-             strokeWidth={Math.max(0.5, 1 / scale)} // Keep border thin
-           />
+           <g key={`inner-node-${node.id}`}>
+             {/* Node background */}
+             <rect
+               x={node.x + 3} // Small offset for border effect
+               y={node.y + 3}
+               width={dimensions.currentWidth - 6}
+               height={dimensions.currentHeight - 6}
+               rx={NODE_CORNER_RADIUS - 3}
+               ry={NODE_CORNER_RADIUS - 3}
+               fill={node.color || NODE_DEFAULT_COLOR || 'maroon'}
+               stroke="rgba(0,0,0,0.3)"
+               strokeWidth={Math.max(0.5, 1 / scale)}
+             />
+             
+             {/* Node title text */}
+             <text
+               x={node.x + dimensions.currentWidth / 2}
+               y={node.y + titleHeight / 2}
+               textAnchor="middle"
+               dominantBaseline="central"
+               fontSize={Math.max(8, 12 / scale)} // Scale font size but keep readable
+               fill="#bdb5b5"
+               fontWeight="bold"
+               style={{
+                 pointerEvents: 'none',
+                 userSelect: 'none'
+               }}
+             >
+               {node.name || 'Untitled'}
+             </text>
+           </g>
          );
       })}
-      {/* END SIMPLIFIED NODE RENDERING */}
     </g>
   );
 };
