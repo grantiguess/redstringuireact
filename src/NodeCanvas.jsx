@@ -9,7 +9,7 @@ import PlusSign from './PlusSign.jsx'; // Import the new PlusSign component
 import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
-import { Edit3, Trash2, Link, Maximize2, Minimize2 } from 'lucide-react'; // Example icons, Maximize2 for expand, Minimize2 for contract
+import { Edit3, Trash2, Link, Package, PackageOpen, Expand } from 'lucide-react'; // Icons for PieMenu
 
 // Import Zustand store and selectors/actions
 import useGraphStore, {
@@ -260,7 +260,7 @@ function NodeCanvas() {
         {
           id: 'contract-preview',
           label: 'Contract',
-          icon: Minimize2,
+          icon: Package,
           action: (nodeId) => {
             console.log(`[PieMenu Action] Contract clicked for node: ${nodeId}. Starting transition.`);
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
@@ -269,7 +269,7 @@ function NodeCanvas() {
         }
       ];
     } else {
-      // Default buttons: Edit, Delete, Connect, Expand (if not previewing THIS node)
+      // Default buttons: Edit, Delete, Connect, Package (if not previewing THIS node)
       return [
         { id: 'edit', label: 'Edit', icon: Edit3, action: (nodeId) => {
             console.log(`[PieMenu Action] Edit clicked for node: ${nodeId}. Opening panel tab and enabling inline editing.`);
@@ -292,18 +292,34 @@ function NodeCanvas() {
         } },
         { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => console.log('Connect node:', nodeId) },
         {
-          id: 'expand-preview',
-          label: 'Expand',
-          icon: Maximize2,
+          id: 'package-preview',
+          label: 'Package',
+          icon: PackageOpen,
           action: (nodeId) => {
-            //console.log(`[PieMenu Action] Expand clicked for node: ${nodeId}. Starting transition.`);
+            console.log(`[PieMenu Action] Package clicked for node: ${nodeId}. Starting transition.`);
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
             // previewingNodeId will be set in onExitAnimationComplete after animation
+          }
+        },
+        {
+          id: 'expand-tab',
+          label: 'Expand',
+          icon: Expand,
+          action: (nodeId) => {
+            console.log(`[PieMenu Action] Expand to tab clicked for node: ${nodeId}.`);
+            const nodeData = nodes.find(n => n.id === nodeId);
+            if (nodeData && nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
+              const graphIdToOpen = nodeData.definitionGraphIds[0]; // Open the first definition
+              console.log(`[PieMenu Expand] Opening definition graph: ${graphIdToOpen} for node: ${nodeId}`);
+              storeActions.openGraphTabAndBringToTop(graphIdToOpen, nodeId);
+            } else {
+              console.warn(`[PieMenu Expand] Node ${nodeId} has no definition graphs to expand.`);
+            }
           }
         }
       ];
     }
-  }, [storeActions, setSelectedNodeIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, Minimize2, Maximize2, Edit3, Trash2, Link]);
+  }, [storeActions, setSelectedNodeIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, PackageOpen, Package, Expand, Edit3, Trash2, Link]);
 
   // Effect to center view on graph load/change
   useEffect(() => {
