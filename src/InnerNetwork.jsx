@@ -143,7 +143,7 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
              {/* Node title text */}
              <text
                x={node.x + dimensions.currentWidth / 2}
-               y={node.y + titleHeight / 2}
+               y={node.y + titleHeight / 2 - (node.description ? Math.max(4, 6 / scale) : 0)} // Move title up slightly if there's a description
                textAnchor="middle"
                dominantBaseline="central"
                fontSize={Math.max(8, 12 / scale)} // Scale font size but keep readable
@@ -156,6 +156,26 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
              >
                {node.name || 'Untitled'}
              </text>
+             
+             {/* Node description text - only render if description exists */}
+             {node.description && (
+               <text
+                 x={node.x + dimensions.currentWidth / 2}
+                 y={node.y + titleHeight / 2 + Math.max(6, 8 / scale)} // Position below the title
+                 textAnchor="middle"
+                 dominantBaseline="central"
+                 fontSize={Math.max(6, 8 / scale)} // Smaller font size for description
+                 fill="#bdb5b5"
+                 fontWeight="normal" // Not bold
+                 style={{
+                   pointerEvents: 'none',
+                   userSelect: 'none',
+                   opacity: 0.8 // Slightly more subtle than the title
+                 }}
+               >
+                 {node.description.length > 30 ? `${node.description.substring(0, 30)}...` : node.description}
+               </text>
+             )}
            </g>
          );
       })}
