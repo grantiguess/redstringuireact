@@ -1222,12 +1222,92 @@ const Panel = forwardRef(
                         ))}
                     </div>
 
-                                        {/* Defines Section */}
+                    {/* Component Of Section */}
                     {(() => {
-                        // Find all nodes that have definition graphs (nodes that define other graphs)
-                        const definitionNodes = Array.from(nodesMap.values()).filter(node => 
-                            Array.isArray(node.definitionGraphIds) && node.definitionGraphIds.length > 0
+                        if (!activeGraphId) return null;
+                        
+                        // Find nodes from OTHER graphs that define this current graph
+                        const componentOfNodes = Array.from(nodesMap.values()).filter(node => 
+                            Array.isArray(node.definitionGraphIds) && 
+                            node.definitionGraphIds.includes(activeGraphId)
                         );
+
+                        if (componentOfNodes.length === 0) return null;
+
+                        return (
+                            <>
+                                {/* Divider Line */}
+                                <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
+
+                                <h3 style={{ 
+                                    marginTop: 0, 
+                                    marginBottom: '10px', 
+                                    color: '#555', 
+                                    fontSize: '0.9rem',
+                                    userSelect: 'none'
+                                }}>
+                                    Component Of ({componentOfNodes.length})
+                                </h3>
+
+                                <div
+                                    style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: '1fr 1fr',
+                                        gap: '8px',
+                                        maxHeight: '300px',
+                                        overflowY: 'auto',
+                                    }}
+                                >
+                                    {componentOfNodes.map((node) => (
+                                        <div
+                                            key={node.id}
+                                            style={{
+                                                backgroundColor: node.color || NODE_DEFAULT_COLOR,
+                                                borderRadius: NODE_CORNER_RADIUS,
+                                                height: '40px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                cursor: 'pointer',
+                                                padding: '0 5px',
+                                                overflow: 'hidden'
+                                            }}
+                                            title={node.name}
+                                            onClick={() => openNodeTab(node.id)}
+                                        >
+                                            <span style={{
+                                                color: '#bdb5b5',
+                                                fontSize: '0.8rem',
+                                                width: '100%',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                                textAlign: 'center',
+                                                padding: '0 10px',
+                                                boxSizing: 'border-box',
+                                                userSelect: 'none'
+                                            }}>
+                                                {node.name}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        );
+                    })()}
+
+                    {/* Defines Section */}
+                    {(() => {
+                        if (!activeGraphId) return null;
+                        
+                        // Find nodes that are defining the current active graph
+                        // These are nodes that have the current graph in their definitionGraphIds
+                        const currentGraph = graphsMap.get(activeGraphId);
+                        if (!currentGraph || !currentGraph.definingNodeIds) return null;
+                        
+                        const definitionNodes = currentGraph.definingNodeIds
+                            .map(nodeId => nodesMap.get(nodeId))
+                            .filter(Boolean); // Remove any null/undefined nodes
 
                         if (definitionNodes.length === 0) return null;
 
