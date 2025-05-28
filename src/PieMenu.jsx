@@ -27,47 +27,34 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
 
   const animationsEndedCountRef = useRef(0);
 
+  const [isVisibleInternal, setIsVisibleInternal] = useState(false);
+  const [isAnimatingOut, setIsAnimatingOut] = useState(false);
+
+  const radius = 70; // Main radius for button placement
+  const bubbleSize = 50; // Diameter of each button bubble
+
   // Primary effect to react to visibility changes from parent
   useEffect(() => {
-    console.log(`[PieMenu] useEffect[isVisible]: prop is ${isVisible}. Current animationState: ${animationState}`);
-    if (isVisible) {
-      // If not already popping or steady, start popping
-      if (animationState !== 'popping' && animationState !== 'visible_steady') {
-        console.log("[PieMenu] Setting animationState to 'popping'");
-        setAnimationState('popping');
-        animationsEndedCountRef.current = 0; // Reset for pop-in (though not strictly needed for pop yet)
-      }
-    } else { // isVisible is false
-      // If it was popping or is steady, start shrinking
-      if (animationState === 'popping' || animationState === 'visible_steady') {
-        console.log("[PieMenu] Setting animationState to 'shrinking'");
-        setAnimationState('shrinking');
-        animationsEndedCountRef.current = 0; // Reset for shrink-out listeners
-      } else if (animationState === null && buttons && buttons.length > 0 && node) {
-        // Edge case: component was mounted with isVisible=false but had data (e.g. quick toggle by parent)
-        // It might have briefly been set to 'popping' then immediately to 'shrinking'.
-        // If it ends up here (isVisible=false, animationState=null, but has data), it implies it should be hidden.
-        // This state should ideally be caught by the render null logic.
-      }
+    if (isVisible && !isVisibleInternal && !isAnimatingOut) {
+      setIsVisibleInternal(true); // Trigger appear animation
+    } else if (!isVisible && isVisibleInternal && !isAnimatingOut) {
+      setIsAnimatingOut(true);
     }
-  }, [isVisible, animationState, buttons, node]); // Added buttons/node to handle edge cases like initial hide with data
+  }, [isVisible, isVisibleInternal, isAnimatingOut, onExitAnimationComplete, node?.id]);
 
   const handleAnimationEnd = useCallback((event, buttonIndex) => {
-    console.log(`[PieMenu] handleAnimationEnd for button ${buttonIndex}. Animation: ${event.animationName}, current animationState: ${animationState}`);
     if (event.target === bubbleRefs.current[buttonIndex]?.current) {
       if (animationState === 'popping' && event.animationName === 'pie-bubble-pop') {
         animationsEndedCountRef.current += 1;
         if (animationsEndedCountRef.current >= buttons.length) {
-          console.log("[PieMenu] All pop-in animations ended. Setting animationState to 'visible_steady'.");
           setAnimationState('visible_steady');
           animationsEndedCountRef.current = 0;
         }
       } else if (animationState === 'shrinking' && event.animationName === 'pie-bubble-shrink-out') {
         animationsEndedCountRef.current += 1;
         if (animationsEndedCountRef.current >= buttons.length) {
-          console.log("[PieMenu] All shrink animations ended. Calling onExitAnimationComplete.");
           onExitAnimationComplete && onExitAnimationComplete();
-          setAnimationState(null); // Reset state after exit is complete
+          setAnimationState(null);
           animationsEndedCountRef.current = 0;
         }
       }
@@ -76,28 +63,23 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
 
   // Effect to add/remove event listeners for exit animation
   useEffect(() => {
-    console.log(`[PieMenu] useEffect[animationState for listeners]: current state is ${animationState}.`);
-    // Add listeners for both pop and shrink, as we need to count them to transition state
     if (animationState === 'popping' || animationState === 'shrinking') {
-      console.log(`[PieMenu] Adding animationend listeners for state: ${animationState}`);
       bubbleRefs.current.forEach((ref, index) => {
         const currentRef = ref.current;
         if (currentRef) {
           const listener = (event) => handleAnimationEnd(event, index);
           currentRef.addEventListener('animationend', listener);
-          // Store listener for cleanup
           currentRef._animationEndListener = listener; 
         }
       });
     }
 
     return () => {
-      console.log("[PieMenu] Cleanup: Removing animationend listeners.");
       bubbleRefs.current.forEach(ref => {
         const currentRef = ref.current;
         if (currentRef && currentRef._animationEndListener) {
           currentRef.removeEventListener('animationend', currentRef._animationEndListener);
-          delete currentRef._animationEndListener; // Clean up stored listener
+          delete currentRef._animationEndListener;
         }
       });
     };
@@ -105,32 +87,17 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
 
   // Render null if essential data is missing
   if (!node || !buttons || !buttons.length || !nodeDimensions) {
-    //console.log("[PieMenu] Render: Rendering NULL due to missing essential data.");
-    // If we were previously visible and now hiding due to missing data,
-    // ensure exit animation callback is called if it hasn't been.
-    // This can happen if the node providing data is suddenly removed.
     if (animationState !== null && animationState !== 'shrinking' && onExitAnimationComplete) {
-      //console.log("[PieMenu] Missing data, but was visible. Triggering onExitAnimationComplete.");
-      onExitAnimationComplete(); // Ensure parent knows we are gone.
-      setAnimationState(null); // Reset internal state.
+      onExitAnimationComplete();
+      setAnimationState(null);
     }
     return null;
   }
 
-  // If animationState is null (meaning it's fully reset/hidden internally)
-  // AND the parent also says it's not visible (prop), then it should definitely be null.
-  // This primarily handles the initial mount if isVisible starts as false, or after a full exit sequence.
   if (animationState === null && !isVisible) {
-    //console.log(`[PieMenu] Render: Rendering NULL because animationState is null and isVisible is false.`);
     return null;
   }
-  // If animationState is NOT null, it means we are either popping, steady, or shrinking.
-  // In these cases, we must render the component to allow animations.
-  // The case where isVisible is false AND animationState is shrinking is handled by NodeCanvas unmounting later.
   if (animationState === null && isVisible) {
-    // This is an inconsistent state, implies isVisible became true but animationState hasn't caught up to 'popping'.
-    // It should resolve in the next render due to useEffect. For now, render null to avoid issues.
-    console.log("[PieMenu] Render: Rendering NULL due to inconsistent state (animationState null, isVisible true). Waiting for effect.");
     return null;
   }
 
@@ -151,43 +118,45 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
   } else if (animationState === 'shrinking') {
     dynamicClassName += ' is-shrinking';
   } else if (isVisible) {
-    // Fallback if isVisible is true but animationState is somehow null (should become 'popping')
-    // Or if it just became visible and 'popping' state is next render cycle
-    dynamicClassName += ' is-popping'; // Attempt to pop
+    dynamicClassName += ' is-popping';
   }
 
-  console.log(`[PieMenu] Render: Rendering PieMenu. isVisible=${isVisible}, animationState=${animationState}`);
+  const handleBubbleClick = (buttonAction, e) => {
+    e.stopPropagation();
+    if (buttonAction && node) {
+      buttonAction(node.id);
+    }
+    setIsAnimatingOut(true);
+  };
+
   return (
     <g className="pie-menu">
       {buttons.map((button, index) => {
-        // Determine the effective index for positioning.
-        // If there's only one button, it should always take the "top-right" slot (index 1).
         const effectiveIndex = buttons.length === 1 ? 1 : index;
 
-        if (effectiveIndex >= NUM_FIXED_POSITIONS) return null; // Use effectiveIndex for check
+        if (effectiveIndex >= NUM_FIXED_POSITIONS) return null;
 
-        const angle = START_ANGLE_OFFSET + effectiveIndex * FIXED_ANGLE_STEP; // Use effectiveIndex for angle
+        const angle = START_ANGLE_OFFSET + effectiveIndex * FIXED_ANGLE_STEP;
         let bubbleX, bubbleY;
 
-        // Determine position based on effectiveIndex
-        switch (effectiveIndex) { // Use effectiveIndex for positioning
-          case 0: // Top (North)
+        switch (effectiveIndex) {
+          case 0:
             bubbleX = nodeCenterX;
             bubbleY = nodeCenterY - (currentHeight / 2 + totalVisualOffset);
             break;
-          case 1: // Top-Right (North-East)
+          case 1:
             bubbleX = nodeCenterX + (currentWidth / 2 - cornerRadius) + (cornerRadius + totalVisualOffset) * Math.cos(angle);
             bubbleY = nodeCenterY - (currentHeight / 2 - cornerRadius) + (cornerRadius + totalVisualOffset) * Math.sin(angle);
             break;
-          case 2: // Right (East)
+          case 2:
             bubbleX = nodeCenterX + (currentWidth / 2 + totalVisualOffset);
             bubbleY = nodeCenterY;
             break;
-          case 3: // Bottom-Right (South-East)
+          case 3:
             bubbleX = nodeCenterX + (currentWidth / 2 - cornerRadius) + (cornerRadius + totalVisualOffset) * Math.cos(angle);
             bubbleY = nodeCenterY + (currentHeight / 2 - cornerRadius) + (cornerRadius + totalVisualOffset) * Math.sin(angle);
             break;
-          case 4: // Bottom (South)
+          case 4:
             bubbleX = nodeCenterX;
             bubbleY = nodeCenterY + (currentHeight / 2 + totalVisualOffset);
             break;

@@ -103,6 +103,8 @@ function NodeCanvas() {
   const activeGraphName = activeGraphData?.name ?? 'Loading...';
   const activeGraphDescription = activeGraphData?.description ?? '';
 
+  // console.log("[NodeCanvas] Derived activeGraphId:", activeGraphId, "Name:", activeGraphName);
+
   // <<< Initial Graph Creation Logic (Revised) >>>
   useEffect(() => {
       // Check if graph maps are loaded and if there's no active graph AND no open graphs
@@ -262,7 +264,7 @@ function NodeCanvas() {
           label: 'Contract',
           icon: Package,
           action: (nodeId) => {
-            console.log(`[PieMenu Action] Contract clicked for node: ${nodeId}. Starting transition.`);
+            // console.log(`[PieMenu Action] Contract clicked for node: ${nodeId}. Starting transition.`);
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
             // setPreviewingNodeId(null); // This will be set after animation
           }
@@ -272,7 +274,7 @@ function NodeCanvas() {
       // Default buttons: Edit, Delete, Connect, Package (if not previewing THIS node)
       return [
         { id: 'edit', label: 'Edit', icon: Edit3, action: (nodeId) => {
-            console.log(`[PieMenu Action] Edit clicked for node: ${nodeId}. Opening panel tab and enabling inline editing.`);
+            // console.log(`[PieMenu Action] Edit clicked for node: ${nodeId}. Opening panel tab and enabling inline editing.`);
             // Open/create panel tab for the node
             const nodeData = nodes.find(n => n.id === nodeId);
             if (nodeData) {
@@ -290,13 +292,13 @@ function NodeCanvas() {
           setSelectedNodeIds(new Set()); // Deselect after deleting
           setSelectedNodeIdForPieMenu(null); // Ensure pie menu hides
         } },
-        { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => console.log('Connect node:', nodeId) },
+        { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => {} }, // console.log('Connect node:', nodeId)
         {
           id: 'package-preview',
           label: 'Package',
           icon: PackageOpen,
           action: (nodeId) => {
-            console.log(`[PieMenu Action] Package clicked for node: ${nodeId}. Starting transition.`);
+            // console.log(`[PieMenu Action] Package clicked for node: ${nodeId}. Starting transition.`);
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
             // previewingNodeId will be set in onExitAnimationComplete after animation
           }
@@ -306,14 +308,14 @@ function NodeCanvas() {
           label: 'Expand',
           icon: Expand,
           action: (nodeId) => {
-            console.log(`[PieMenu Action] Expand to tab clicked for node: ${nodeId}.`);
+            // console.log(`[PieMenu Action] Expand to tab clicked for node: ${nodeId}.`);
             const nodeData = nodes.find(n => n.id === nodeId);
             if (nodeData && nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
               const graphIdToOpen = nodeData.definitionGraphIds[0]; // Open the first definition
-              console.log(`[PieMenu Expand] Opening definition graph: ${graphIdToOpen} for node: ${nodeId}`);
+              // console.log(`[PieMenu Expand] Opening definition graph: ${graphIdToOpen} for node: ${nodeId}`);
               storeActions.openGraphTabAndBringToTop(graphIdToOpen, nodeId);
             } else {
-              console.warn(`[PieMenu Expand] Node ${nodeId} has no definition graphs to expand.`);
+              // console.warn(`[PieMenu Expand] Node ${nodeId} has no definition graphs to expand.`);
             }
           }
         }
@@ -609,7 +611,6 @@ function NodeCanvas() {
     if (e.deltaMode === 1) { deltaX *= 33; }
     else if (e.deltaMode === 2) { deltaX *= window.innerWidth; } 
 
-    // Analyze input device type
     const deviceType = analyzeInputDevice(deltaX, deltaY);
 
     setDebugData((prev) => ({
@@ -625,118 +626,159 @@ function NodeCanvas() {
       historyLength: deltaHistoryRef.current.length.toString(),
     }));
 
-    // 1. Mac Pinch-to-Zoom (Ctrl key pressed) - always zoom regardless of device
-    if (isMac && e.ctrlKey) {
-        const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
-        const currentZoomForWorker = zoomLevel;
-        const currentPanOffsetForWorker = panOffset;
-        try {
-          const result = await canvasWorker.calculateZoom({
-            deltaY: zoomDelta, 
-            currentZoom: currentZoomForWorker,
-            mousePos: { x: mouseX, y: mouseY },
-            panOffset: currentPanOffsetForWorker, 
-            viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
+    // --- Mac Specific Handling ---
+    if (isMac) {
+      // 1. Mac Pinch-to-Zoom (Ctrl key pressed) - Highest priority
+      if (e.ctrlKey) {
+          const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
+          try {
+            const result = await canvasWorker.calculateZoom({
+              deltaY: zoomDelta, currentZoom: zoomLevel, mousePos: { x: mouseX, y: mouseY },
+              panOffset, viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
+            });
+            setPanOffset(result.panOffset);
+            setZoomLevel(result.zoomLevel);
+            setDebugData((prev) => ({ ...prev, inputDevice: 'Trackpad (Mac)', gesture: 'pinch-zoom (Ctrl-Scroll)', zooming: true, panning: false, sensitivity: TRACKPAD_ZOOM_SENSITIVITY, zoomLevel: result.zoomLevel.toFixed(2), panOffsetX: result.panOffset.x.toFixed(2), panOffsetY: result.panOffset.y.toFixed(2) }));
+          } catch (error) {
+            console.error('Mac pinch zoom calculation failed:', error);
+            setDebugData((prev) => ({ ...prev, info: 'Mac pinch zoom error', error: error.message }));
+          }
+          return; // Processed
+      }
+
+      // 2. Mac Trackpad (No Ctrl Key)
+      if (deviceType === 'trackpad') {
+        if (deltaY !== 0 && Math.abs(deltaX) < 0.5) { // Predominantly VERTICAL scroll -> Vertical PAN
+          const dx = 0; // Force vertical pan
+          const dy = -deltaY * PAN_DRAG_SENSITIVITY;
+          const currentCanvasWidth = canvasSize.width * zoomLevel;
+          const currentCanvasHeight = canvasSize.height * zoomLevel;
+          const minX = viewportSize.width - currentCanvasWidth;
+          const minY = viewportSize.height - currentCanvasHeight;
+          const maxX = 0;
+          const maxY = 0;
+          setPanOffset((prev) => {
+            const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
+            const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
+            setDebugData((pd) => ({ ...pd, inputDevice: 'Trackpad (Mac)', gesture: 'trackpad-vertical-pan', zooming: false, panning: true, sensitivity: PAN_DRAG_SENSITIVITY, deltaX: deltaX.toFixed(2), deltaY: deltaY.toFixed(2), panOffsetX: newX.toFixed(2), panOffsetY: newY.toFixed(2), zoomLevel: zoomLevel.toFixed(2) }));
+            return { x: newX, y: newY };
           });
-          setPanOffset(result.panOffset);
-          setZoomLevel(result.zoomLevel);
-          setDebugData((prev) => ({
-            ...prev,
-            inputDevice: 'Trackpad (Mac)',
-            gesture: 'pinch-zoom',
-            zooming: true,
-            panning: false,
-            sensitivity: TRACKPAD_ZOOM_SENSITIVITY,
-            zoomLevel: result.zoomLevel.toFixed(2),
-            panOffsetX: result.panOffset.x.toFixed(2),
-            panOffsetY: result.panOffset.y.toFixed(2),
-          }));
+          return; // Processed
+        } else if (deltaX !== 0 || deltaY !== 0) { // Horizontal or Diagonal scroll -> Regular PAN
+          const dx = -deltaX * PAN_DRAG_SENSITIVITY;
+          const dy = -deltaY * PAN_DRAG_SENSITIVITY;
+          const currentCanvasWidth = canvasSize.width * zoomLevel;
+          const currentCanvasHeight = canvasSize.height * zoomLevel;
+          const minX = viewportSize.width - currentCanvasWidth;
+          const minY = viewportSize.height - currentCanvasHeight;
+          const maxX = 0;
+          const maxY = 0;
+          setPanOffset((prev) => {
+            const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
+            const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
+            setDebugData((pd) => ({ ...pd, inputDevice: 'Trackpad (Mac)', gesture: 'trackpad-horizontal-diagonal-pan', zooming: false, panning: true, sensitivity: PAN_DRAG_SENSITIVITY, deltaX: deltaX.toFixed(2), deltaY: deltaY.toFixed(2), panOffsetX: newX.toFixed(2), panOffsetY: newY.toFixed(2), zoomLevel: zoomLevel.toFixed(2) }));
+            return { x: newX, y: newY };
+          });
+          return; // Processed
+        }
+      }
+      
+      // 3. Mac Undetermined Device (Fallback for potential flickering)
+      if (deviceType === 'undetermined') {
+        if (deltaY !== 0 && Math.abs(deltaX) < 0.5) { // Undetermined but behaves like vertical trackpad -> Vertical PAN
+          const dx = 0; 
+          const dy = -deltaY * PAN_DRAG_SENSITIVITY;
+          const currentCanvasWidth = canvasSize.width * zoomLevel;
+          const currentCanvasHeight = canvasSize.height * zoomLevel;
+          const minX = viewportSize.width - currentCanvasWidth;
+          const minY = viewportSize.height - currentCanvasHeight;
+          const maxX = 0;
+          const maxY = 0;
+          setPanOffset((prev) => {
+            const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
+            const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
+            setDebugData((pd) => ({ ...pd, inputDevice: 'Undetermined (Mac)', gesture: 'undetermined-mac-vertical-pan', zooming: false, panning: true, sensitivity: PAN_DRAG_SENSITIVITY, deltaX: deltaX.toFixed(2), deltaY: deltaY.toFixed(2), panOffsetX: newX.toFixed(2), panOffsetY: newY.toFixed(2), zoomLevel: zoomLevel.toFixed(2) }));
+            return { x: newX, y: newY };
+          });
+          return; // Processed
+        } else if (deltaX !== 0) { // Undetermined but behaves like horizontal/diagonal trackpad -> Regular PAN
+            const dx = -deltaX * PAN_DRAG_SENSITIVITY;
+            const dy = -deltaY * PAN_DRAG_SENSITIVITY;
+            const currentCanvasWidth = canvasSize.width * zoomLevel;
+            const currentCanvasHeight = canvasSize.height * zoomLevel;
+            const minX = viewportSize.width - currentCanvasWidth;
+            const minY = viewportSize.height - currentCanvasHeight;
+            const maxX = 0;
+            const maxY = 0;
+            setPanOffset((prev) => {
+              const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
+              const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
+              setDebugData((pd) => ({ ...pd, inputDevice: 'Undetermined (Mac)', gesture: 'undetermined-mac-horizontal-pan', zooming: false, panning: true, sensitivity: PAN_DRAG_SENSITIVITY, deltaX: deltaX.toFixed(2), deltaY: deltaY.toFixed(2), panOffsetX: newX.toFixed(2), panOffsetY: newY.toFixed(2), zoomLevel: zoomLevel.toFixed(2) }));
+              return { x: newX, y: newY };
+            });
+            return; // Processed
+        } 
+        // If undetermined Mac and no significant deltaX or deltaY, it might fall through to general unhandled.
+      }
+    } 
+    // --- End Mac Specific Handling ---
+
+    // --- Non-Mac or Unhandled Mac Cases ---
+    // 4. Mouse Wheel Zoom (deviceType === 'mouse' and not Mac, or Mac not handled above)
+    //    OR Undetermined on Non-Mac with vertical scroll.
+    if ((deviceType === 'mouse' && deltaY !== 0) || 
+        (deviceType === 'undetermined' && !isMac && deltaY !== 0)) {
+        const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
+        try {
+            const result = await canvasWorker.calculateZoom({
+                deltaY: zoomDelta, currentZoom: zoomLevel, mousePos: { x: mouseX, y: mouseY },
+                panOffset, viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
+            });
+            setPanOffset(result.panOffset);
+            setZoomLevel(result.zoomLevel);
+            setDebugData((prev) => ({
+                ...prev, inputDevice: deviceType === 'mouse' ? 'Mouse Wheel' : 'Undetermined (Non-Mac Vertical Scroll)',
+                gesture: 'wheel-zoom / undetermined-vertical-to-zoom', zooming: true, panning: false, sensitivity: SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY,
+                deltaY: deltaY.toFixed(2), zoomLevel: result.zoomLevel.toFixed(2), panOffsetX: result.panOffset.x.toFixed(2), panOffsetY: result.panOffset.y.toFixed(2),
+            }));
         } catch (error) {
-          console.error('Mac pinch zoom calculation failed:', error);
-          setDebugData((prev) => ({ ...prev, info: 'Mac pinch zoom error', error: error.message }));
+            console.error(`${deviceType} zoom calculation failed:`, error);
+            setDebugData((prev) => ({ ...prev, info: `${deviceType} zoom error`, error: error.message }));
         }
         return; // Processed
     }
 
-    // 2. Trackpad Two-Finger Pan (based on device detection)
-    if (deviceType === 'trackpad' || (deviceType === 'undetermined' && isMac && Math.abs(deltaX) > 0.1)) {
+    // 5. Trackpad pan for Non-Mac devices (if deviceType === 'trackpad')
+    if (deviceType === 'trackpad' && !isMac && (deltaX !== 0 || deltaY !== 0)) {
         const dx = -deltaX * PAN_DRAG_SENSITIVITY;
         const dy = -deltaY * PAN_DRAG_SENSITIVITY;
-        
         const currentCanvasWidth = canvasSize.width * zoomLevel;
         const currentCanvasHeight = canvasSize.height * zoomLevel;
         const minX = viewportSize.width - currentCanvasWidth;
         const minY = viewportSize.height - currentCanvasHeight;
         const maxX = 0;
         const maxY = 0;
-
         setPanOffset((prev) => {
           const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
           const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
-          setDebugData((prevData) => ({
-            ...prevData,
-            inputDevice: 'Trackpad',
-            gesture: 'two-finger pan',
-            zooming: false,
-            panning: true,
-            sensitivity: PAN_DRAG_SENSITIVITY,
-            deltaX: deltaX.toFixed(2),
-            deltaY: deltaY.toFixed(2),
-            panOffsetX: newX.toFixed(2),
-            panOffsetY: newY.toFixed(2),
-            zoomLevel: zoomLevel.toFixed(2),
-          }));
+          setDebugData((pd) => ({ ...pd, inputDevice: 'Trackpad (Non-Mac)', gesture: 'trackpad-pan', zooming: false, panning: true, sensitivity: PAN_DRAG_SENSITIVITY, deltaX: deltaX.toFixed(2), deltaY: deltaY.toFixed(2), panOffsetX: newX.toFixed(2), panOffsetY: newY.toFixed(2), zoomLevel: zoomLevel.toFixed(2) }));
           return { x: newX, y: newY };
         });
         return; // Processed
     }
 
-    // 3. Mouse Wheel Zoom (based on device detection or fallback)
-    if (deviceType === 'mouse' || (deviceType === 'undetermined' && deltaY !== 0)) {
-        const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
-        const currentZoomForWorker = zoomLevel;
-        const currentPanOffsetForWorker = panOffset;
-        try {
-            const result = await canvasWorker.calculateZoom({
-                deltaY: zoomDelta, 
-                currentZoom: currentZoomForWorker,
-                mousePos: { x: mouseX, y: mouseY },
-                panOffset: currentPanOffsetForWorker, 
-                viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
-            });
-            setPanOffset(result.panOffset);
-            setZoomLevel(result.zoomLevel);
-            setDebugData((prev) => ({
-                ...prev,
-                inputDevice: 'Mouse Wheel',
-                gesture: 'wheel-zoom',
-                zooming: true,
-                panning: false,
-                sensitivity: SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY,
-                deltaY: deltaY.toFixed(2),
-                zoomLevel: result.zoomLevel.toFixed(2),
-                panOffsetX: result.panOffset.x.toFixed(2),
-                panOffsetY: result.panOffset.y.toFixed(2),
-            }));
-        } catch (error) {
-            console.error('Wheel zoom calculation failed:', error);
-            setDebugData((prev) => ({ ...prev, info: 'Wheel zoom error', error: error.message }));
-        }
-        return; // Processed
-    }
-
-    // 4. Fallback for truly unhandled events
+    // 6. Fallback for truly unhandled events (if any movement was detected)
     if (deltaY !== 0 || deltaX !== 0) {
       setDebugData((prev) => ({
         ...prev,
-        inputDevice: 'Unhandled Input',
-        gesture: 'unprocessed',
+        inputDevice: `Unhandled (${deviceType})`,
+        gesture: 'unprocessed wheel event',
         zooming: false,
         panning: false,
         deltaX: deltaX.toFixed(2),
         deltaY: deltaY.toFixed(2),
       }));
-      console.warn('Unhandled wheel event:', { deltaX, deltaY, deviceType, ctrlKey: e.ctrlKey, isMac });
+      // console.warn('Unhandled wheel event:', { deltaX, deltaY, deviceType, ctrlKey: e.ctrlKey, isMac });
     }
   };
 
@@ -765,9 +807,9 @@ function NodeCanvas() {
         setSelectionRect(selectionRes);
         const currentIds = new Set();
         nodes.forEach(nd => {
-          if (!(selectionRes.x > nd.x + NODE_WIDTH ||
+          if (!(selectionRes.x > nd.x + getNodeDimensions(nd, previewingNodeId === nd.id).currentWidth ||
                 selectionRes.x + selectionRes.width < nd.x ||
-                selectionRes.y > nd.y + NODE_HEIGHT ||
+                selectionRes.y > nd.y + getNodeDimensions(nd, previewingNodeId === nd.id).currentHeight ||
                 selectionRes.y + selectionRes.height < nd.y)) {
             currentIds.add(nd.id);
           }
@@ -1279,7 +1321,8 @@ function NodeCanvas() {
 
   const handleToggleLeftPanel = useCallback(() => {
     setLeftPanelExpanded(prev => !prev);
-  }, []);
+    // console.log("[Left Panel Toggle] New state:", !leftPanelExpanded);
+  }, [leftPanelExpanded]);
 
   const handleLeftPanelFocusChange = useCallback((isFocused) => {
     //console.log(`[Left Panel Focus Change] Setting isLeftPanelInputFocused to: ${isFocused}`);
@@ -1318,7 +1361,7 @@ function NodeCanvas() {
         // Use localStoreActions
         storeActions.updateGraph(currentActiveId, draft => { draft.name = newTitle || 'Untitled'; });
     } else {
-        console.warn("handleProjectTitleChange: No active graph ID found in store.");
+        // console.warn("handleProjectTitleChange: No active graph ID found in store.");
     }
   };
 
@@ -1548,17 +1591,17 @@ function NodeCanvas() {
                              }}
                              onAddNodeToDefinition={(nodeId) => {
                                // Create a new alternative definition for the node
-                               console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
+                               // console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
                                storeActions.createAndAssignGraphDefinition(nodeId);
                              }}
                              onDeleteDefinition={(nodeId, graphId) => {
                                // Delete the specific definition graph from the node
-                               console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
+                               // console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
                                storeActions.removeDefinitionFromNode(nodeId, graphId);
                              }}
                              onExpandDefinition={(nodeId, graphId) => {
                                // Open the definition graph in a new tab and bring to top
-                               console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
+                               // console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
                                storeActions.openGraphTabAndBringToTop(graphId, nodeId);
                              }}
                              storeActions={storeActions}
@@ -1581,7 +1624,7 @@ function NodeCanvas() {
                              )
                            )}
                            onExitAnimationComplete={() => {
-                             console.log("[NodeCanvas] PieMenu onExitAnimationComplete: Resetting transition and render state.");
+                             // console.log("[NodeCanvas] PieMenu onExitAnimationComplete: Resetting transition and render state.");
                              setIsPieMenuRendered(false); 
                              setCurrentPieMenuData(null); 
                              const wasTransitioning = isTransitioningPieMenu;
@@ -1636,17 +1679,17 @@ function NodeCanvas() {
                                }}
                                onAddNodeToDefinition={(nodeId) => {
                                  // Create a new alternative definition for the node
-                                 console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
+                                 // console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
                                  storeActions.createAndAssignGraphDefinition(nodeId);
                                }}
                                onDeleteDefinition={(nodeId, graphId) => {
                                  // Delete the specific definition graph from the node
-                                 console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
+                                 // console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
                                  storeActions.removeDefinitionFromNode(nodeId, graphId);
                                }}
                                onExpandDefinition={(nodeId, graphId) => {
                                  // Open the definition graph in a new tab and bring to top
-                                 console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
+                                 // console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
                                  storeActions.openGraphTabAndBringToTop(graphId, nodeId);
                                }}
                                storeActions={storeActions}
@@ -1688,17 +1731,17 @@ function NodeCanvas() {
                                }}
                                onAddNodeToDefinition={(nodeId) => {
                                  // Create a new alternative definition for the node
-                                 console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
+                                 // console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
                                  storeActions.createAndAssignGraphDefinition(nodeId);
                                }}
                                onDeleteDefinition={(nodeId, graphId) => {
                                  // Delete the specific definition graph from the node
-                                 console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
+                                 // console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
                                  storeActions.removeDefinitionFromNode(nodeId, graphId);
                                }}
                                onExpandDefinition={(nodeId, graphId) => {
                                  // Open the definition graph in a new tab and bring to top
-                                 console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
+                                 // console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
                                  storeActions.openGraphTabAndBringToTop(graphId, nodeId);
                                }}
                                storeActions={storeActions}

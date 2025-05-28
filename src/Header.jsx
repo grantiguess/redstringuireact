@@ -339,7 +339,7 @@ const Header = ({
         }}
         onClick={() => {
           // Log the state received via props just before calling the callback
-          console.log('[Header Bookmark Click] bookmarkActive prop:', bookmarkActive);
+          // console.log('[Header Bookmark Click] bookmarkActive prop:', bookmarkActive);
           onBookmarkToggle(); // Call the callback passed from NodeCanvas
         }}
       >
