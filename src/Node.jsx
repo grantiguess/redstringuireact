@@ -10,11 +10,6 @@ import useGraphStore, { getNodesForGraph, getEdgesForGraph } from './store/graph
 
 const PREVIEW_SCALE_FACTOR = 0.3; // How much to shrink the network layout
 
-// Constants for description layout within the preview
-const DESCRIPTION_ALLOCATED_VERTICAL_SPACE = 35; // Total vertical space for the description area
-const DESCRIPTION_TEXT_AREA_INTERNAL_PADDING = 2; // Padding inside the description text div (top/bottom)
-const MIN_INNER_NETWORK_HEIGHT_FOR_PREVIEW = 50; // Min height for the InnerNetwork component itself
-
 // Accept dimensions and other props
 // Expect plain node data object
 const Node = ({
@@ -59,9 +54,6 @@ const Node = ({
   const nodeThumbnailSrc = node.thumbnailSrc ?? null;
 
   // --- Inline Editing State ---
-  // Add console.log for initial props related to previewing
-  // console.log(`[Node ${nodeId}] Initial Props: isPreviewing=${isPreviewing}, innerNetworkWidth=${innerNetworkWidth}, innerNetworkHeight=${innerNetworkHeight}`);
-
   const [tempName, setTempName] = useState(nodeName);
   const inputRef = useRef(null);
 
@@ -145,14 +137,6 @@ const Node = ({
   // Get the store state once and use it for both selectors
   const storeState = useGraphStore();
   
-  // Fetch current graph data for description
-  const currentGraphData = useMemo(() => {
-    if (!currentGraphId) return null;
-    return storeState.graphs.get(currentGraphId);
-  }, [currentGraphId, storeState.graphs]);
-  const currentGraphDescription = currentGraphData?.description;
-  // console.log(`[Node ${nodeId}] currentGraphId=${currentGraphId}, currentGraphDescription=${currentGraphDescription}`);
-  
   // Filter nodes and edges for the current graph definition
   const currentGraphNodes = useMemo(() => {
     if (!currentGraphId) return [];
@@ -179,25 +163,6 @@ const Node = ({
       setShowArrows(false);
     }
   }, [isPreviewing]);
-
-  // Determine if description should be shown and calculate layout
-  let showDescription = false;
-  let descriptionDisplayHeight = 0; // Actual height for the text content box
-  let networkPreviewYOffsetFromContentAreaY = 0; // How much to shift InnerNetwork down
-  let networkPreviewDisplayHeight = innerNetworkHeight; // Height for InnerNetwork component
-
-  if (isPreviewing && hasAnyDefinitions && currentGraphDescription && typeof currentGraphDescription === 'string' && currentGraphDescription.trim() !== "" && innerNetworkWidth > 0 && innerNetworkHeight > 0) {
-    const heightCheckPassed = innerNetworkHeight - DESCRIPTION_ALLOCATED_VERTICAL_SPACE >= MIN_INNER_NETWORK_HEIGHT_FOR_PREVIEW;
-    // console.log(`[Node ${nodeId}] Height check for description: (innerNetworkHeight=${innerNetworkHeight}) - (DESCRIPTION_ALLOCATED_VERTICAL_SPACE=${DESCRIPTION_ALLOCATED_VERTICAL_SPACE}) >= (MIN_INNER_NETWORK_HEIGHT_FOR_PREVIEW=${MIN_INNER_NETWORK_HEIGHT_FOR_PREVIEW}) -> ${heightCheckPassed}`);
-    if (heightCheckPassed) {
-      showDescription = true;
-      descriptionDisplayHeight = DESCRIPTION_ALLOCATED_VERTICAL_SPACE - (2 * DESCRIPTION_TEXT_AREA_INTERNAL_PADDING);
-      networkPreviewYOffsetFromContentAreaY = DESCRIPTION_ALLOCATED_VERTICAL_SPACE;
-      networkPreviewDisplayHeight = innerNetworkHeight - DESCRIPTION_ALLOCATED_VERTICAL_SPACE;
-    }
-  }
-
-  // console.log(`[Node ${nodeId}] Description Layout: showDescription=${showDescription}, descriptionDisplayHeight=${descriptionDisplayHeight}, networkPreviewYOffsetFromContentAreaY=${networkPreviewYOffsetFromContentAreaY}, networkPreviewDisplayHeight=${networkPreviewDisplayHeight}`);
 
   // Navigation functions
   const navigateToPreviousDefinition = () => {
@@ -368,53 +333,12 @@ const Node = ({
                   {hasAnyDefinitions ? (
                       // Show existing graph definition
                       <>
-                          {showDescription && (
-                            <foreignObject
-                              x={nodeX + NODE_PADDING}
-                              y={contentAreaY + DESCRIPTION_TEXT_AREA_INTERNAL_PADDING}
-                              width={innerNetworkWidth}
-                              height={descriptionDisplayHeight}
-                              style={{ pointerEvents: 'none' }} // Non-interactive overlay
-                            >
-                              <div
-                                style={{
-                                  width: '100%',
-                                  height: '100%',
-                                  fontSize: '10px',
-                                  fontWeight: 'normal',
-                                  color: '#a0a0a0', // Dimmer color for description
-                                  textAlign: 'center',
-                                  padding: '0 4px', // Horizontal padding
-                                  boxSizing: 'border-box',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  lineHeight: '1.2',
-                                  overflow: 'hidden', // Hides text that overflows
-                                }}
-                                title={currentGraphDescription} // Show full desc on hover
-                              >
-                                {/* This setup attempts to show 1-2 lines with ellipsis if it overflows */}
-                                <span style={{
-                                  display: '-webkit-box',
-                                  WebkitLineClamp: 2,
-                                  WebkitBoxOrient: 'vertical',
-                                  textOverflow: 'ellipsis',
-                                  overflow: 'hidden',
-                                  wordBreak: 'break-word',
-                                }}>
-                                  {currentGraphDescription}
-                                </span>
-                              </div>
-                            </foreignObject>
-                          )}
-
-                          <g transform={`translate(${nodeX + NODE_PADDING}, ${contentAreaY + networkPreviewYOffsetFromContentAreaY})`}>
+                          <g transform={`translate(${nodeX + NODE_PADDING}, ${contentAreaY})`}>
                               <InnerNetwork
                                   nodes={currentGraphNodes} // Pass filtered node data for current definition
                                   edges={currentGraphEdges} // Pass filtered edge data for current definition
                                   width={innerNetworkWidth}
-                                  height={networkPreviewDisplayHeight}
+                                  height={innerNetworkHeight}
                                   padding={5}
                               />
                           </g>
@@ -477,7 +401,7 @@ const Node = ({
                                   if (onCreateDefinition) {
                                       onCreateDefinition(nodeId);
                                   }
-                                  // console.log(`Creating new definition for node: ${nodeName}`);
+                                  console.log(`Creating new definition for node: ${nodeName}`);
                               }}
                           >
                               <div style={{ fontSize: '48px', marginBottom: '10px' }}>+</div>
@@ -525,7 +449,7 @@ const Node = ({
                   onClick={(e) => {
                     e.stopPropagation();
                     if (onAddNodeToDefinition) {
-                      // console.log(`[Plus Button] Creating alternative definition for node: ${nodeId}`);
+                      console.log(`[Plus Button] Creating alternative definition for node: ${nodeId}`);
                       onAddNodeToDefinition(nodeId);
                     }
                   }}
@@ -562,7 +486,7 @@ const Node = ({
                     onClick={(e) => {
                       e.stopPropagation();
                       if (onDeleteDefinition && currentGraphId) {
-                        // console.log(`[Delete Button] Deleting definition graph: ${currentGraphId} for node: ${nodeId}`);
+                        console.log(`[Delete Button] Deleting definition graph: ${currentGraphId} for node: ${nodeId}`);
                         
                         // Adjust currentDefinitionIndex before deletion
                         const newLength = definitionGraphIds.length - 1; // Length after deletion
@@ -615,7 +539,7 @@ const Node = ({
                     onClick={(e) => {
                       e.stopPropagation();
                       if (onExpandDefinition && currentGraphId) {
-                        // console.log(`[Expand Button] Opening definition graph: ${currentGraphId} for node: ${nodeId}`);
+                        console.log(`[Expand Button] Opening definition graph: ${currentGraphId} for node: ${nodeId}`);
                         onExpandDefinition(nodeId, currentGraphId);
                       }
                     }}
@@ -682,7 +606,7 @@ const Node = ({
                           e.stopPropagation();
                           if (hasMultipleDefinitions) {
                             navigateToPreviousDefinition();
-                            // console.log(`Navigated to previous definition: ${currentDefinitionIndex - 1 >= 0 ? currentDefinitionIndex - 1 : definitionGraphIds.length - 1} of ${definitionGraphIds.length}`);
+                            console.log(`Navigated to previous definition: ${currentDefinitionIndex - 1 >= 0 ? currentDefinitionIndex - 1 : definitionGraphIds.length - 1} of ${definitionGraphIds.length}`);
                           }
                         }}
                         title={hasMultipleDefinitions ? "Previous definition" : "Only one definition"}
@@ -780,7 +704,7 @@ const Node = ({
                           e.stopPropagation();
                           if (hasMultipleDefinitions) {
                             navigateToNextDefinition();
-                            // console.log(`Navigated to next definition: ${currentDefinitionIndex + 1 < definitionGraphIds.length ? currentDefinitionIndex + 1 : 0} of ${definitionGraphIds.length}`);
+                            console.log(`Navigated to next definition: ${currentDefinitionIndex + 1 < definitionGraphIds.length ? currentDefinitionIndex + 1 : 0} of ${definitionGraphIds.length}`);
                           }
                         }}
                         title={hasMultipleDefinitions ? "Next definition" : "Only one definition"}

@@ -48,7 +48,7 @@ const NodeItem = ({ node, onNodeClick, depth = 0 }) => {
     if (node.graphId) {
         onNodeClick(node.graphId, node.id);
     } else {
-        // console.warn('Node clicked has no graphId:', node);
+        console.warn('Node clicked has no graphId:', node);
     }
   };
 
@@ -88,7 +88,7 @@ const GraphBrowserPanel = () => {
   // Memoize hierarchy based on the nodes Map
   // Zustand's default shallow compare should handle the Map reference
   const nodeHierarchy = useMemo(() => {
-    // console.log("[GraphBrowserPanel] Recalculating node hierarchy..."); // Add log
+    console.log("[GraphBrowserPanel] Recalculating node hierarchy..."); // Add log
     // Ensure nodes is treated as a plain object for Object.values if needed by buildHierarchy
     // Or update buildHierarchy to directly accept a Map
     const nodesObject = nodes ? Object.fromEntries(nodes) : {}; // Convert Map to object if necessary
@@ -97,7 +97,7 @@ const GraphBrowserPanel = () => {
   }, [nodes]);
 
   const handleNodeClick = (graphId, nodeId) => {
-    // console.log(`Opening graph ${graphId} from node ${nodeId}`);
+    console.log(`Opening graph ${graphId} from node ${nodeId}`);
     openGraphTab(graphId, nodeId);
   };
 

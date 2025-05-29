@@ -538,8 +538,8 @@ function NodeCanvas() {
     // 1. Fractional delta values (trackpads often produce non-integer deltas)
     const hasFractionalDeltas = deltaYValues.some(d => d % 1 !== 0);
     
-    // 2. Horizontal movement (trackpads support 2D scrolling)
-    const hasHorizontalMovement = Math.abs(deltaX) > 0.1;
+    // 2. Horizontal movement (trackpads support 2D scrolling) - LOWERED threshold
+    const hasHorizontalMovement = Math.abs(deltaX) > 0.05; // Reduced from 0.1
     
     // 3. Small, continuous values (trackpads produce smaller, more frequent events)
     const hasSmallDeltas = deltaYValues.every(d => d < 50);
@@ -583,6 +583,11 @@ function NodeCanvas() {
       return 'trackpad'; // Strong indicator: fractional + small values
     }
     
+    // NEW: On Mac, if deltas are small and not clearly mouse wheel pattern, prefer trackpad
+    if (isMac && hasSmallDeltas && !hasMouseWheelPattern) {
+      return 'trackpad'; // Mac bias: small deltas without wheel pattern = trackpad
+    }
+    
     if (hasMouseWheelPattern && hasLargeDeltas && allIntegerDeltas) {
       return 'mouse'; // Strong indicator: discrete wheel pattern
     }
@@ -611,6 +616,7 @@ function NodeCanvas() {
     if (e.deltaMode === 1) { deltaX *= 33; }
     else if (e.deltaMode === 2) { deltaX *= window.innerWidth; } 
 
+    // Analyze input device type
     const deviceType = analyzeInputDevice(deltaX, deltaY);
 
     setDebugData((prev) => ({
@@ -626,153 +632,112 @@ function NodeCanvas() {
       historyLength: deltaHistoryRef.current.length.toString(),
     }));
 
-    // --- Mac Specific Handling ---
-    if (isMac) {
-      // 1. Mac Pinch-to-Zoom (Ctrl key pressed) - Highest priority
-      if (e.ctrlKey) {
-          const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
-          try {
-            const result = await canvasWorker.calculateZoom({
-              deltaY: zoomDelta, currentZoom: zoomLevel, mousePos: { x: mouseX, y: mouseY },
-              panOffset, viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
-            });
-            setPanOffset(result.panOffset);
-            setZoomLevel(result.zoomLevel);
-            setDebugData((prev) => ({ ...prev, inputDevice: 'Trackpad (Mac)', gesture: 'pinch-zoom (Ctrl-Scroll)', zooming: true, panning: false, sensitivity: TRACKPAD_ZOOM_SENSITIVITY, zoomLevel: result.zoomLevel.toFixed(2), panOffsetX: result.panOffset.x.toFixed(2), panOffsetY: result.panOffset.y.toFixed(2) }));
-          } catch (error) {
-            console.error('Mac pinch zoom calculation failed:', error);
-            setDebugData((prev) => ({ ...prev, info: 'Mac pinch zoom error', error: error.message }));
-          }
-          return; // Processed
-      }
-
-      // 2. Mac Trackpad (No Ctrl Key)
-      if (deviceType === 'trackpad') {
-        if (deltaY !== 0 && Math.abs(deltaX) < 0.5) { // Predominantly VERTICAL scroll -> Vertical PAN
-          const dx = 0; // Force vertical pan
-          const dy = -deltaY * PAN_DRAG_SENSITIVITY;
-          const currentCanvasWidth = canvasSize.width * zoomLevel;
-          const currentCanvasHeight = canvasSize.height * zoomLevel;
-          const minX = viewportSize.width - currentCanvasWidth;
-          const minY = viewportSize.height - currentCanvasHeight;
-          const maxX = 0;
-          const maxY = 0;
-          setPanOffset((prev) => {
-            const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
-            const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
-            setDebugData((pd) => ({ ...pd, inputDevice: 'Trackpad (Mac)', gesture: 'trackpad-vertical-pan', zooming: false, panning: true, sensitivity: PAN_DRAG_SENSITIVITY, deltaX: deltaX.toFixed(2), deltaY: deltaY.toFixed(2), panOffsetX: newX.toFixed(2), panOffsetY: newY.toFixed(2), zoomLevel: zoomLevel.toFixed(2) }));
-            return { x: newX, y: newY };
-          });
-          return; // Processed
-        } else if (deltaX !== 0 || deltaY !== 0) { // Horizontal or Diagonal scroll -> Regular PAN
-          const dx = -deltaX * PAN_DRAG_SENSITIVITY;
-          const dy = -deltaY * PAN_DRAG_SENSITIVITY;
-          const currentCanvasWidth = canvasSize.width * zoomLevel;
-          const currentCanvasHeight = canvasSize.height * zoomLevel;
-          const minX = viewportSize.width - currentCanvasWidth;
-          const minY = viewportSize.height - currentCanvasHeight;
-          const maxX = 0;
-          const maxY = 0;
-          setPanOffset((prev) => {
-            const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
-            const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
-            setDebugData((pd) => ({ ...pd, inputDevice: 'Trackpad (Mac)', gesture: 'trackpad-horizontal-diagonal-pan', zooming: false, panning: true, sensitivity: PAN_DRAG_SENSITIVITY, deltaX: deltaX.toFixed(2), deltaY: deltaY.toFixed(2), panOffsetX: newX.toFixed(2), panOffsetY: newY.toFixed(2), zoomLevel: zoomLevel.toFixed(2) }));
-            return { x: newX, y: newY };
-          });
-          return; // Processed
-        }
-      }
-      
-      // 3. Mac Undetermined Device (Fallback for potential flickering)
-      if (deviceType === 'undetermined') {
-        if (deltaY !== 0 && Math.abs(deltaX) < 0.5) { // Undetermined but behaves like vertical trackpad -> Vertical PAN
-          const dx = 0; 
-          const dy = -deltaY * PAN_DRAG_SENSITIVITY;
-          const currentCanvasWidth = canvasSize.width * zoomLevel;
-          const currentCanvasHeight = canvasSize.height * zoomLevel;
-          const minX = viewportSize.width - currentCanvasWidth;
-          const minY = viewportSize.height - currentCanvasHeight;
-          const maxX = 0;
-          const maxY = 0;
-          setPanOffset((prev) => {
-            const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
-            const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
-            setDebugData((pd) => ({ ...pd, inputDevice: 'Undetermined (Mac)', gesture: 'undetermined-mac-vertical-pan', zooming: false, panning: true, sensitivity: PAN_DRAG_SENSITIVITY, deltaX: deltaX.toFixed(2), deltaY: deltaY.toFixed(2), panOffsetX: newX.toFixed(2), panOffsetY: newY.toFixed(2), zoomLevel: zoomLevel.toFixed(2) }));
-            return { x: newX, y: newY };
-          });
-          return; // Processed
-        } else if (deltaX !== 0) { // Undetermined but behaves like horizontal/diagonal trackpad -> Regular PAN
-            const dx = -deltaX * PAN_DRAG_SENSITIVITY;
-            const dy = -deltaY * PAN_DRAG_SENSITIVITY;
-            const currentCanvasWidth = canvasSize.width * zoomLevel;
-            const currentCanvasHeight = canvasSize.height * zoomLevel;
-            const minX = viewportSize.width - currentCanvasWidth;
-            const minY = viewportSize.height - currentCanvasHeight;
-            const maxX = 0;
-            const maxY = 0;
-            setPanOffset((prev) => {
-              const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
-              const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
-              setDebugData((pd) => ({ ...pd, inputDevice: 'Undetermined (Mac)', gesture: 'undetermined-mac-horizontal-pan', zooming: false, panning: true, sensitivity: PAN_DRAG_SENSITIVITY, deltaX: deltaX.toFixed(2), deltaY: deltaY.toFixed(2), panOffsetX: newX.toFixed(2), panOffsetY: newY.toFixed(2), zoomLevel: zoomLevel.toFixed(2) }));
-              return { x: newX, y: newY };
-            });
-            return; // Processed
-        } 
-        // If undetermined Mac and no significant deltaX or deltaY, it might fall through to general unhandled.
-      }
-    } 
-    // --- End Mac Specific Handling ---
-
-    // --- Non-Mac or Unhandled Mac Cases ---
-    // 4. Mouse Wheel Zoom (deviceType === 'mouse' and not Mac, or Mac not handled above)
-    //    OR Undetermined on Non-Mac with vertical scroll.
-    if ((deviceType === 'mouse' && deltaY !== 0) || 
-        (deviceType === 'undetermined' && !isMac && deltaY !== 0)) {
-        const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
+    // 1. Mac Pinch-to-Zoom (Ctrl key pressed) - always zoom regardless of device
+    if (isMac && e.ctrlKey) {
+        const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
+        const currentZoomForWorker = zoomLevel;
+        const currentPanOffsetForWorker = panOffset;
         try {
-            const result = await canvasWorker.calculateZoom({
-                deltaY: zoomDelta, currentZoom: zoomLevel, mousePos: { x: mouseX, y: mouseY },
-                panOffset, viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
-            });
-            setPanOffset(result.panOffset);
-            setZoomLevel(result.zoomLevel);
-            setDebugData((prev) => ({
-                ...prev, inputDevice: deviceType === 'mouse' ? 'Mouse Wheel' : 'Undetermined (Non-Mac Vertical Scroll)',
-                gesture: 'wheel-zoom / undetermined-vertical-to-zoom', zooming: true, panning: false, sensitivity: SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY,
-                deltaY: deltaY.toFixed(2), zoomLevel: result.zoomLevel.toFixed(2), panOffsetX: result.panOffset.x.toFixed(2), panOffsetY: result.panOffset.y.toFixed(2),
-            }));
+          const result = await canvasWorker.calculateZoom({
+            deltaY: zoomDelta, 
+            currentZoom: currentZoomForWorker,
+            mousePos: { x: mouseX, y: mouseY },
+            panOffset: currentPanOffsetForWorker, 
+            viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
+          });
+          setPanOffset(result.panOffset);
+          setZoomLevel(result.zoomLevel);
+          setDebugData((prev) => ({
+            ...prev,
+            inputDevice: 'Trackpad (Mac)',
+            gesture: 'pinch-zoom',
+            zooming: true,
+            panning: false,
+            sensitivity: TRACKPAD_ZOOM_SENSITIVITY,
+            zoomLevel: result.zoomLevel.toFixed(2),
+            panOffsetX: result.panOffset.x.toFixed(2),
+            panOffsetY: result.panOffset.y.toFixed(2),
+          }));
         } catch (error) {
-            console.error(`${deviceType} zoom calculation failed:`, error);
-            setDebugData((prev) => ({ ...prev, info: `${deviceType} zoom error`, error: error.message }));
+          console.error('Mac pinch zoom calculation failed:', error);
+          setDebugData((prev) => ({ ...prev, info: 'Mac pinch zoom error', error: error.message }));
         }
         return; // Processed
     }
 
-    // 5. Trackpad pan for Non-Mac devices (if deviceType === 'trackpad')
-    if (deviceType === 'trackpad' && !isMac && (deltaX !== 0 || deltaY !== 0)) {
+    // 2. Trackpad Two-Finger Pan (based on device detection)
+    if (deviceType === 'trackpad' || (deviceType === 'undetermined' && isMac && (Math.abs(deltaX) > 0.05 || Math.abs(deltaY) < 30))) {
         const dx = -deltaX * PAN_DRAG_SENSITIVITY;
         const dy = -deltaY * PAN_DRAG_SENSITIVITY;
+        
         const currentCanvasWidth = canvasSize.width * zoomLevel;
         const currentCanvasHeight = canvasSize.height * zoomLevel;
         const minX = viewportSize.width - currentCanvasWidth;
         const minY = viewportSize.height - currentCanvasHeight;
         const maxX = 0;
         const maxY = 0;
+
         setPanOffset((prev) => {
           const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
           const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
-          setDebugData((pd) => ({ ...pd, inputDevice: 'Trackpad (Non-Mac)', gesture: 'trackpad-pan', zooming: false, panning: true, sensitivity: PAN_DRAG_SENSITIVITY, deltaX: deltaX.toFixed(2), deltaY: deltaY.toFixed(2), panOffsetX: newX.toFixed(2), panOffsetY: newY.toFixed(2), zoomLevel: zoomLevel.toFixed(2) }));
+          setDebugData((prevData) => ({
+            ...prevData,
+            inputDevice: 'Trackpad',
+            gesture: 'two-finger pan',
+            zooming: false,
+            panning: true,
+            sensitivity: PAN_DRAG_SENSITIVITY,
+            deltaX: deltaX.toFixed(2),
+            deltaY: deltaY.toFixed(2),
+            panOffsetX: newX.toFixed(2),
+            panOffsetY: newY.toFixed(2),
+            zoomLevel: zoomLevel.toFixed(2),
+          }));
           return { x: newX, y: newY };
         });
         return; // Processed
     }
 
-    // 6. Fallback for truly unhandled events (if any movement was detected)
+    // 3. Mouse Wheel Zoom (based on device detection or fallback)
+    if (deviceType === 'mouse' || (deviceType === 'undetermined' && deltaY !== 0)) {
+        const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
+        const currentZoomForWorker = zoomLevel;
+        const currentPanOffsetForWorker = panOffset;
+        try {
+            const result = await canvasWorker.calculateZoom({
+                deltaY: zoomDelta, 
+                currentZoom: currentZoomForWorker,
+                mousePos: { x: mouseX, y: mouseY },
+                panOffset: currentPanOffsetForWorker, 
+                viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
+            });
+            setPanOffset(result.panOffset);
+            setZoomLevel(result.zoomLevel);
+            setDebugData((prev) => ({
+                ...prev,
+                inputDevice: 'Mouse Wheel',
+                gesture: 'wheel-zoom',
+                zooming: true,
+                panning: false,
+                sensitivity: SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY,
+                deltaY: deltaY.toFixed(2),
+                zoomLevel: result.zoomLevel.toFixed(2),
+                panOffsetX: result.panOffset.x.toFixed(2),
+                panOffsetY: result.panOffset.y.toFixed(2),
+            }));
+        } catch (error) {
+            console.error('Wheel zoom calculation failed:', error);
+            setDebugData((prev) => ({ ...prev, info: 'Wheel zoom error', error: error.message }));
+        }
+        return; // Processed
+    }
+
+    // 4. Fallback for truly unhandled events
     if (deltaY !== 0 || deltaX !== 0) {
       setDebugData((prev) => ({
         ...prev,
-        inputDevice: `Unhandled (${deviceType})`,
-        gesture: 'unprocessed wheel event',
+        inputDevice: 'Unhandled Input',
+        gesture: 'unprocessed',
         zooming: false,
         panning: false,
         deltaX: deltaX.toFixed(2),

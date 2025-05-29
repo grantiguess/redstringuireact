@@ -78,7 +78,7 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
         const destId = edge.destinationId;
 
         if (!sourceId || !destId) {
-            // console.warn(`InnerNetwork edge at index ${idx} missing ID`, edge);
+            console.warn(`InnerNetwork edge at index ${idx} missing ID`, edge);
             return null;
         }
 
@@ -88,7 +88,7 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
 
         if (!sNodeData || !eNodeData) {
              // Use edge.id from data object
-             // console.warn(`InnerNetwork could not find nodes for edge ${edge.id}`, { sourceId, destId });
+             console.warn(`InnerNetwork could not find nodes for edge ${edge.id}`, { sourceId, destId });
              return null;
         }
 
