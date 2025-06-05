@@ -12,9 +12,12 @@ import {
 const PREVIEW_NODE_WIDTH = 600; // Wider for preview
 const PREVIEW_NODE_MIN_HEIGHT = 600; // Taller minimum for preview (Increased from 450)
 const PREVIEW_TEXT_AREA_HEIGHT = 60; // Fixed height for name in preview
+const DESCRIPTION_LINE_HEIGHT = 24; // Height per line for description text
+const DESCRIPTION_MAX_LINES = 3; // Maximum lines to show
+const DESCRIPTION_PADDING = 8; // Padding around description text
 
 // --- getNodeDimensions Utility Function ---
-export const getNodeDimensions = (node, isPreviewing = false) => {
+export const getNodeDimensions = (node, isPreviewing = false, descriptionContent = null) => {
     // Use getters to access node properties
     const nodeName = node.getName ? node.getName() : node.name; // Handle potential plain objects gracefully for now?
     const thumbnailSrc = node.getThumbnailSrc ? node.getThumbnailSrc() : node.thumbnailSrc; // Use getter
@@ -57,7 +60,7 @@ export const getNodeDimensions = (node, isPreviewing = false) => {
     document.body.removeChild(tempSpan);
 
     // --- Calculate Dimensions Based on State ---
-    let currentWidth, currentHeight, textAreaHeight, imageWidth, calculatedImageHeight, innerNetworkWidth, innerNetworkHeight;
+    let currentWidth, currentHeight, textAreaHeight, imageWidth, calculatedImageHeight, innerNetworkWidth, innerNetworkHeight, descriptionAreaHeight;
 
     if (isPreviewing) {
         currentWidth = baseWidth;
@@ -68,14 +71,40 @@ export const getNodeDimensions = (node, isPreviewing = false) => {
         textAreaHeight = Math.max(NODE_HEIGHT, estimatedLines * LINE_HEIGHT_ESTIMATE + 2 * NODE_PADDING);
         
         innerNetworkWidth = currentWidth - 2 * NODE_PADDING;
-        // Calculate network height based on dynamic textAreaHeight and MIN height
-        // Ensure enough space remains after accounting for text area and padding
-        const availableHeightForNetwork = PREVIEW_NODE_MIN_HEIGHT - textAreaHeight - (NODE_PADDING * 2); 
+        
+        // Calculate description area height dynamically based on actual content
+        if (descriptionContent && descriptionContent.trim() && descriptionContent !== 'No description.') {
+            // Measure actual text to determine how many lines we need
+            const tempDiv = document.createElement('div');
+            tempDiv.style.fontSize = '20px';
+            tempDiv.style.fontWeight = 'normal';
+            tempDiv.style.lineHeight = '24px';
+            tempDiv.style.width = `${innerNetworkWidth}px`;
+            tempDiv.style.visibility = 'hidden';
+            tempDiv.style.position = 'absolute';
+            tempDiv.style.wordWrap = 'break-word';
+            tempDiv.style.overflowWrap = 'break-word';
+            tempDiv.textContent = descriptionContent;
+            document.body.appendChild(tempDiv);
+            
+            const actualHeight = tempDiv.offsetHeight;
+            document.body.removeChild(tempDiv);
+            
+            // Cap at maximum 3 lines but use actual height if smaller
+            const maxAllowedHeight = DESCRIPTION_MAX_LINES * DESCRIPTION_LINE_HEIGHT;
+            const contentHeight = Math.min(actualHeight, maxAllowedHeight);
+            descriptionAreaHeight = contentHeight + 8; // Minimal padding (4px top + 4px bottom)
+        } else {
+            // If no description, set height to 0
+            descriptionAreaHeight = 0;
+        }
+        // Calculate network height based on dynamic textAreaHeight and description area, ensuring minimum height
+        const availableHeightForNetwork = PREVIEW_NODE_MIN_HEIGHT - textAreaHeight - descriptionAreaHeight - (NODE_PADDING * 2); 
         const minNetworkHeight = 150; // Set a minimum sensible height for the network view
         innerNetworkHeight = Math.max(minNetworkHeight, availableHeightForNetwork); 
         
-        // Final node height is sum of text area, network area, and ONE bottom padding
-        currentHeight = textAreaHeight + innerNetworkHeight + NODE_PADDING;
+        // Final node height is sum of text area, network area, description area, and ONE bottom padding
+        currentHeight = textAreaHeight + innerNetworkHeight + descriptionAreaHeight + NODE_PADDING;
         
         // Reset image dimensions
         imageWidth = 0;
@@ -103,9 +132,10 @@ export const getNodeDimensions = (node, isPreviewing = false) => {
             calculatedImageHeight = 0; // Handle invalid image data
             currentHeight = textAreaHeight + NODE_PADDING; // Adjusted height calc for no image
         }
-        // Reset network dimensions
+        // Reset network and description dimensions for non-preview modes
         innerNetworkWidth = 0;
         innerNetworkHeight = 0;
+        descriptionAreaHeight = 0;
     } else {
         // --- Node WITHOUT Image --- 
 
@@ -118,11 +148,12 @@ export const getNodeDimensions = (node, isPreviewing = false) => {
         // Total height is the text area height (ensure minimum)
         currentHeight = Math.max(NODE_HEIGHT, textAreaHeight); 
 
-        // Reset image and network dimensions
+        // Reset image, network, and description dimensions for non-preview modes
         imageWidth = 0;
         calculatedImageHeight = 0;
         innerNetworkWidth = 0;
         innerNetworkHeight = 0;
+        descriptionAreaHeight = 0;
     }
 
     // Ensure minimum height (redundant check, but safe)
@@ -136,6 +167,7 @@ export const getNodeDimensions = (node, isPreviewing = false) => {
     calculatedImageHeight = Number(calculatedImageHeight) || 0;
     innerNetworkWidth = Number(innerNetworkWidth) || 0;
     innerNetworkHeight = Number(innerNetworkHeight) || 0;
+    descriptionAreaHeight = Number(descriptionAreaHeight) || 0;
 
     return {
         currentWidth,
@@ -144,7 +176,8 @@ export const getNodeDimensions = (node, isPreviewing = false) => {
         imageWidth,
         calculatedImageHeight, // Return calculated image height
         innerNetworkWidth, // Add inner network dimensions
-        innerNetworkHeight // Add inner network dimensions
+        innerNetworkHeight, // Add inner network dimensions
+        descriptionAreaHeight // Add description area height
     };
 };
 
