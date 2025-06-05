@@ -314,22 +314,20 @@ const Panel = forwardRef(
     */
 
     // Destructure selected state and actions (Use props now)
-    const { 
-        createNewGraph,
-        setActiveGraph,
-        openRightPanelNodeTab,
-        closeRightPanelTab,
-        activateRightPanelTab,
-        moveRightPanelTab,
-        updateNode,
-        updateGraph,
-        closeGraph,
-        toggleGraphExpanded,
-        toggleSavedNode,
-        setActiveDefinitionNode,
-        createAndAssignGraphDefinition,
-        cleanupOrphanedData,
-    } = storeActions || {}; // Use passed actions, provide empty object fallback
+    const createNewGraph = storeActions?.createNewGraph;
+    const setActiveGraph = storeActions?.setActiveGraph;
+    const openRightPanelNodeTab = storeActions?.openRightPanelNodeTab;
+    const closeRightPanelTab = storeActions?.closeRightPanelTab;
+    const activateRightPanelTab = storeActions?.activateRightPanelTab;
+    const moveRightPanelTab = storeActions?.moveRightPanelTab;
+    const updateNode = storeActions?.updateNode;
+    const updateGraph = storeActions?.updateGraph;
+    const closeGraph = storeActions?.closeGraph;
+    const toggleGraphExpanded = storeActions?.toggleGraphExpanded;
+    const toggleSavedNode = storeActions?.toggleSavedNode;
+    const setActiveDefinitionNode = storeActions?.setActiveDefinitionNode;
+    const createAndAssignGraphDefinition = storeActions?.createAndAssignGraphDefinition;
+    const cleanupOrphanedData = storeActions?.cleanupOrphanedData;
     
     // activeGraphId is now directly available as a prop
 
@@ -345,8 +343,8 @@ const Panel = forwardRef(
     const updateGraph = (id, fn) => console.log("Dummy updateGraph", id, fn);
     */
 
-    // Destructure openGraphTab explicitly if not already done (ensure it's available)
-    const { openGraphTab } = storeActions || {}; 
+    // Get openGraphTab explicitly if not already done (ensure it's available)
+    const openGraphTab = storeActions?.openGraphTab; 
 
     // Derive the array needed for the left panel grid (ALL graphs)
     const graphsForGrid = useMemo(() => {

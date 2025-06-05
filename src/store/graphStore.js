@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { produce, enableMapSet } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
-import { NODE_WIDTH, NODE_HEIGHT } from '../constants'; // <<< Import node dimensions
+import { NODE_WIDTH, NODE_HEIGHT, NODE_DEFAULT_COLOR } from '../constants'; // <<< Import node dimensions
+import { initializeFileStorage, saveToFile, getFileStatus, restoreLastSession, clearSession } from './fileStorage.js';
 // No longer importing class instances
 // import Graph from '../core/Graph';
 // import Node from '../core/Node';
@@ -105,6 +106,16 @@ const loadInitialSavedNodes = () => {
   return new Set();
 };
 
+const loadInitialSavedGraphs = () => {
+    const saved = localStorage.getItem('savedGraphIds');
+    if (saved) {
+    // console.log("[Store Init] Loaded savedGraphIds from localStorage:", saved);
+    return deserializeSet(saved);
+  }
+  // console.log("[Store Init] No savedGraphIds in localStorage, starting with empty set.");
+  return new Set();
+};
+
 const loadInitialNodes = () => {
   // console.log('[Store Init] Attempting to load nodes map...');
   const map = deserializeMap(localStorage.getItem('nodesMap'));
@@ -181,157 +192,25 @@ const loadInitialExpandedGraphIds = () => {
   return new Set();
 };
 
+// Create store with async initialization
 const useGraphStore = create((set, get) => {
-  // --- Load Maps First ---
-  const initialNodes = loadInitialNodes();
-  const initialGraphs = loadInitialGraphs();
-
-  // --- Create Default Test Data if Empty ---
-  if (initialNodes.size === 0 && initialGraphs.size === 0) {
-    // console.log('[Store Init] No existing data found. Creating default test data...');
-    
-    // Create a test graph
-    const testGraphId = 'test-graph-1';
-    const testGraphData = {
-      id: testGraphId,
-      name: 'Test Graph',
-      description: 'A test graph for development',
-      picture: '',
-      color: 'maroon',
-      directed: true,
-      nodeIds: [],
-      edgeIds: []
-    };
-    initialGraphs.set(testGraphId, testGraphData);
-
-    // Create a second test graph for multiple definitions
-    const testGraphId2 = 'test-graph-2';
-    const testGraphData2 = {
-      id: testGraphId2,
-      name: 'Second Test Graph',
-      description: 'A second test graph for testing navigation',
-      picture: '',
-      color: 'blue',
-      directed: true,
-      nodeIds: [],
-      edgeIds: []
-    };
-    initialGraphs.set(testGraphId2, testGraphData2);
-
-    // Create a test node with multiple definitions
-    const testNodeId = 'test-node-1';
-    const testNodeData = {
-      id: testNodeId,
-      name: 'Multi-Definition Node',
-      description: 'A test node with multiple graph definitions',
-      picture: '',
-      color: 'maroon',
-      data: null,
-      x: 200,
-      y: 150,
-      scale: 1,
-      imageSrc: null,
-      thumbnailSrc: null,
-      imageAspectRatio: null,
-      parentDefinitionNodeId: null,
-      graphId: testGraphId,
-      definitionGraphIds: [testGraphId, testGraphId2], // This node defines both test graphs
-      edgeIds: []
-    };
-    initialNodes.set(testNodeId, testNodeData);
-    testGraphData.nodeIds.push(testNodeId);
-
-    // console.log('[Store Init] Created default test data:', { graphId: testGraphId, nodeId: testNodeId });
-  }
-
-  // --- Load Saved/Open State ---
-  const initialSavedNodeIds = loadInitialSavedNodes();
-  let initialOpenIds = loadInitialOpenGraphs(); // Use let for potential modification
-
-  // --- Ensure Test Graph is Open if Created ---
-  if (initialGraphs.has('test-graph-1') && !initialOpenIds.includes('test-graph-1')) {
-    // console.log('[Store Init] Adding test graph to open tabs...');
-    initialOpenIds = ['test-graph-1', ...initialOpenIds];
-  }
-
-  // --- Determine Initial Active State --- 
-  let initialActiveGraphId = null;
-  let initialActiveDefinitionNodeId = loadInitialActiveDefinitionNodeId(initialNodes); // Load potential definition node
-
-  if (initialActiveDefinitionNodeId) {
-      const definingNode = initialNodes.get(initialActiveDefinitionNodeId);
-      if (definingNode && Array.isArray(definingNode.definitionGraphIds) && definingNode.definitionGraphIds.length > 0) {
-          const targetGraphId = definingNode.definitionGraphIds[0]; // Prioritize the first definition graph
-          if (initialGraphs.has(targetGraphId)) {
-              // console.log(`[Store Init] Setting active graph based on loaded definition node ${initialActiveDefinitionNodeId}: Graph ${targetGraphId}`);
-              initialActiveGraphId = targetGraphId;
-
-              // Ensure this graph is in the open list
-              if (!initialOpenIds.includes(targetGraphId)) {
-                  // console.log(`[Store Init] Adding definition graph ${targetGraphId} to open tabs.`);
-                  initialOpenIds = [targetGraphId, ...initialOpenIds]; // Add to the start
-              }
-          } else {
-              // console.warn(`[Store Init] Definition node ${initialActiveDefinitionNodeId} points to non-existent graph ${targetGraphId}. Clearing active IDs.`);
-              initialActiveDefinitionNodeId = null; // Invalidate definition node ID if graph is missing
-              initialActiveGraphId = null;
-          }
-      } else {
-          // console.warn(`[Store Init] Loaded definition node ${initialActiveDefinitionNodeId} has no valid definitionGraphIds. Clearing active IDs.`);
-          initialActiveDefinitionNodeId = null; // Invalidate if no definition graphs
-          initialActiveGraphId = null;
-      }
-  }
-
-  // Fallback if no active graph was set via definition node
-  if (initialActiveGraphId === null) {
-      // console.log('[Store Init] No active graph set via definition node. Loading based on persisted open tabs...');
-      initialActiveGraphId = loadInitialActiveGraphId(initialOpenIds); // Original fallback logic
-      // If fallback also results in null activeGraphId, ensure activeDefinitionNodeId is also null
-      // (It should already be null from the checks above, but double-check)
-      if (initialActiveGraphId === null) {
-           // console.log('[Store Init] Fallback also resulted in null active graph. Clearing active definition node.');
-           initialActiveDefinitionNodeId = null;
-      } else {
-          // If we *did* find an active graph via fallback, ensure the definition node is cleared
-          // because we couldn't validate it via the primary path.
-          // console.log(`[Store Init] Fallback found active graph ${initialActiveGraphId}. Clearing potentially invalid active definition node.`);
-          initialActiveDefinitionNodeId = null;
-      }
-  }
-
-  // Final Consistency Check: If we have *both* an active graph and an active definition node,
-  // ensure the node actually defines the graph. This handles edge cases where localStorage
-  // might have inconsistent IDs saved somehow.
-  if (initialActiveGraphId !== null && initialActiveDefinitionNodeId !== null) {
-      const activeNode = initialNodes.get(initialActiveDefinitionNodeId);
-      // Check if the node's definition array includes the determined active graph
-      if (!activeNode || !Array.isArray(activeNode.definitionGraphIds) || !activeNode.definitionGraphIds.includes(initialActiveGraphId)) {
-           // console.warn(`[Store Init] Loaded activeDefinitionNodeId ${initialActiveDefinitionNodeId} does not define the determined activeGraphId ${initialActiveGraphId}. Clearing definition node ID.`);
-           initialActiveDefinitionNodeId = null;
-      }
-  }
-
-  // console.log('[Store Init] Final Initial State:', {
-  //   activeGraphId: initialActiveGraphId,
-  //   activeDefinitionNodeId: initialActiveDefinitionNodeId,
-  //   openGraphIds: initialOpenIds,
-  //   graphsCount: initialGraphs.size,
-  //   nodesCount: initialNodes.size,
-  //   savedNodesCount: initialSavedNodeIds.size
-  // });
-
-  // Return the initial state object
-  return { 
-    graphs: initialGraphs,
-    nodes: initialNodes,
-    edges: new Map(), // Start edges empty
-    openGraphIds: initialOpenIds,
-    activeGraphId: initialActiveGraphId,
-    activeDefinitionNodeId: initialActiveDefinitionNodeId, 
+  // Return both initial state and actions
+  return {
+    // Initialize with empty state - will be loaded from file
+    graphs: new Map(),
+    nodes: new Map(),
+    edges: new Map(),
+    openGraphIds: [],
+    activeGraphId: null,
+    activeDefinitionNodeId: null, 
     rightPanelTabs: [{ type: 'home', isActive: true }], 
-    expandedGraphIds: loadInitialExpandedGraphIds(),
-    savedNodeIds: initialSavedNodeIds,
+    expandedGraphIds: new Set(),
+    savedNodeIds: new Set(),
+    savedGraphIds: new Set(),
+    
+    // File storage state
+    isFileLoaded: false,
+    fileLoadingError: null,
 
   // --- Actions --- (Operating on plain data)
 
@@ -1008,6 +887,65 @@ const useGraphStore = create((set, get) => {
     }
   })),
 
+  // Toggle graph bookmark status by saving/unsaving its defining node
+  toggleSavedGraph: (graphId) => set(produce((draft) => {
+    const graph = draft.graphs.get(graphId);
+    if (!graph) {
+      console.warn(`[Store toggleSavedGraph] Graph ${graphId} not found.`);
+      return;
+    }
+    
+    // Get the defining node ID (the node this graph defines)
+    let definingNodeId = graph.definingNodeIds?.[0];
+    
+    // If no defining node exists, create one to represent this graph
+    if (!definingNodeId) {
+      console.log(`[Store toggleSavedGraph] Graph ${graphId} has no defining node. Creating one.`);
+      
+      // Create a new node to represent this graph
+      definingNodeId = uuidv4();
+      const definingNodeData = {
+        id: definingNodeId,
+        name: graph.name || 'Untitled Graph',
+        description: graph.description || '',
+        picture: '',
+        color: NODE_DEFAULT_COLOR,
+        data: null,
+        x: 0,
+        y: 0,
+        scale: 1,
+        imageSrc: null,
+        thumbnailSrc: null,
+        imageAspectRatio: null,
+        parentDefinitionNodeId: null,
+        edgeIds: [],
+        definitionGraphIds: [graphId] // This node defines the current graph
+      };
+      
+      // Add the defining node to the nodes map
+      draft.nodes.set(definingNodeId, definingNodeData);
+      
+      // Set this node as the defining node for the graph
+      if (!graph.definingNodeIds) {
+        graph.definingNodeIds = [];
+      }
+      graph.definingNodeIds.unshift(definingNodeId); // Add to beginning
+      
+      console.log(`[Store toggleSavedGraph] Created defining node ${definingNodeId} for graph ${graphId}.`);
+    }
+    
+    const wasNodeSaved = draft.savedNodeIds.has(definingNodeId);
+    if (wasNodeSaved) {
+      draft.savedNodeIds.delete(definingNodeId);
+      console.log(`[Store toggleSavedGraph] Removed defining node ${definingNodeId} from saved nodes (bookmarked graph ${graphId}).`);
+    } else {
+      draft.savedNodeIds.add(definingNodeId);
+      console.log(`[Store toggleSavedGraph] Added defining node ${definingNodeId} to saved nodes (bookmarked graph ${graphId}).`);
+    }
+    // Replace with a new Set instance to ensure reference change
+    draft.savedNodeIds = new Set(draft.savedNodeIds);
+  })),
+
   // Explicitly set active definition node (e.g., when switching graphs)
   setActiveDefinitionNode: (nodeId) => {
      console.log(`[Store Action] Explicitly setting activeDefinitionNodeId to: ${nodeId}`);
@@ -1264,8 +1202,89 @@ const useGraphStore = create((set, get) => {
     console.log(`[Store cleanupOrphanedData] Cleanup complete. Removed ${orphanedNodes.length} nodes, ${orphanedGraphs.length} graphs, ${orphanedEdges.length} edges.`);
   })),
 
-  };
-});
+  // Load data from file
+  loadFromFile: async () => {
+    try {
+      const fileData = await initializeFileStorage();
+      if (fileData) {
+        set((state) => ({
+          ...state,
+          ...fileData,
+          isFileLoaded: true,
+          fileLoadingError: null
+        }));
+        console.log('[FileStore] Successfully loaded data from file');
+      } else {
+        // Empty file or new file created
+        set((state) => ({
+          ...state,
+          isFileLoaded: true,
+          fileLoadingError: null
+        }));
+        console.log('[FileStore] Started with empty universe');
+      }
+    } catch (error) {
+      console.error('[FileStore] Error loading from file:', error);
+      set((state) => ({
+        ...state,
+        isFileLoaded: true,
+        fileLoadingError: error.name === 'AbortError' ? 'File selection cancelled' : error.message
+      }));
+    }
+  },
+
+  // Restore from last session (automatic)
+  restoreFromSession: async () => {
+    try {
+      const result = await restoreLastSession();
+      if (result.success) {
+        set((state) => ({
+          ...state,
+          ...result.storeState,
+          isFileLoaded: true,
+          fileLoadingError: null
+        }));
+        console.log('[FileStore] Successfully restored from last session:', result.fileName);
+        return true;
+      } else {
+        console.log('[FileStore] No previous session to restore');
+        return false;
+      }
+    } catch (error) {
+      console.error('[FileStore] Error restoring from session:', error);
+      set((state) => ({
+        ...state,
+        fileLoadingError: error.message
+      }));
+      return false;
+    }
+  },
+
+  // Clear current session
+  clearSession: () => {
+    clearSession();
+    set((state) => ({
+      ...state,
+      graphs: new Map(),
+      nodes: new Map(),
+      edges: new Map(),
+      openGraphIds: [],
+      activeGraphId: null,
+      activeDefinitionNodeId: null,
+      savedNodeIds: new Set(),
+      savedGraphIds: new Set(),
+      expandedGraphIds: new Set(),
+      isFileLoaded: false,
+      fileLoadingError: null
+    }));
+    console.log('[FileStore] Session cleared and state reset');
+  },
+
+  // Get file status
+  getFileStatus: () => getFileStatus(),
+
+  }; // End of returned state and actions object
+}); // End of create function
 
 // --- Selectors --- (Return plain data, add edge selector)
 
@@ -1311,110 +1330,32 @@ export const getActiveGraphId = (state) => state.activeGraphId;
 
 // Selector to check if a node is bookmarked
 export const isNodeSaved = (nodeId) => (state) => state.savedNodeIds.has(nodeId);
+export const isGraphSaved = (graphId) => (state) => state.savedGraphIds.has(graphId);
 
 // Export the store hook
 export default useGraphStore; 
 
-// --- Subscribe to save changes to localStorage --- 
+// --- Subscribe to save changes to file ---
 useGraphStore.subscribe(
   (state, prevState) => {
-    // Check if savedNodeIds specifically has changed
-    const savedNodesChanged = state.savedNodeIds !== prevState.savedNodeIds;
-    if (savedNodesChanged) {
-      console.log('[Store Subscribe] savedNodeIds changed!', { prev: prevState.savedNodeIds, next: state.savedNodeIds });
-      try {
-        const savedIdsArray = Array.from(state.savedNodeIds);
-        localStorage.setItem('savedNodeIds', JSON.stringify(savedIdsArray));
-        console.log('[Store Subscribe] Saved nodes to localStorage:', savedIdsArray);
-      } catch (error) {
-        console.error('[Store Subscribe] Error saving nodes to localStorage:', error);
-      }
-    }
+    // Only auto-save if file has been loaded (to avoid saving empty state on init)
+    if (!state.isFileLoaded) return;
+    
+    // Check if any important data has changed
+    const dataChanged = 
+      state.savedNodeIds !== prevState.savedNodeIds ||
+      state.savedGraphIds !== prevState.savedGraphIds ||
+      state.openGraphIds !== prevState.openGraphIds ||
+      state.nodes !== prevState.nodes ||
+      state.graphs !== prevState.graphs ||
+      state.edges !== prevState.edges ||
+      state.activeGraphId !== prevState.activeGraphId ||
+      state.activeDefinitionNodeId !== prevState.activeDefinitionNodeId ||
+      state.expandedGraphIds !== prevState.expandedGraphIds;
 
-    // Check if openGraphIds specifically has changed
-    const openGraphsChanged = state.openGraphIds !== prevState.openGraphIds;
-    if (openGraphsChanged) {
-      console.log('[Store Subscribe] openGraphIds changed!', { prev: prevState.openGraphIds, next: state.openGraphIds });
-      try {
-        // We store the array directly
-        localStorage.setItem('openGraphIds', JSON.stringify(state.openGraphIds));
-        console.log('[Store Subscribe] Saved open graph IDs to localStorage:', state.openGraphIds);
-      } catch (error) {
-        console.error('[Store Subscribe] Error saving open graph IDs to localStorage:', error);
-      }
+    if (dataChanged) {
+      console.log('[FileStore] Store data changed, auto-saving to file...');
+      saveToFile(state);
     }
-
-    // Nodes Map Persistence
-    const nodesMapChanged = state.nodes !== prevState.nodes;
-    if (nodesMapChanged) {
-      // console.log('[Store Subscribe] nodes map changed!', { prevSize: prevState.nodes.size, nextSize: state.nodes.size });
-      try {
-        localStorage.setItem('nodesMap', serializeMap(state.nodes));
-        // console.log(`[Store Subscribe] Saved ${state.nodes.size} nodes map to localStorage.`);
-      } catch (error) {
-        console.error('[Store Subscribe] Error saving nodes map to localStorage:', error);
-      }
-    }
-
-    // Graphs Map Persistence
-    const graphsMapChanged = state.graphs !== prevState.graphs;
-    if (graphsMapChanged) {
-       console.log('[Store Subscribe] graphs map changed!', { prevSize: prevState.graphs.size, nextSize: state.graphs.size });
-      try {
-        localStorage.setItem('graphsMap', serializeMap(state.graphs));
-        console.log(`[Store Subscribe] Saved ${state.graphs.size} graphs map to localStorage.`);
-      } catch (error) {
-        console.error('[Store Subscribe] Error saving graphs map to localStorage:', error);
-      }
-    }
-
-    // Active Graph ID Persistence
-    const activeGraphChanged = state.activeGraphId !== prevState.activeGraphId;
-    if (activeGraphChanged) {
-      console.log('[Store Subscribe] activeGraphId changed!', { prev: prevState.activeGraphId, next: state.activeGraphId });
-      try {
-        // Store null directly, or the string ID
-        if (state.activeGraphId === null) {
-           localStorage.removeItem('activeGraphId'); // Remove if null
-           console.log('[Store Subscribe] Removed activeGraphId from localStorage.');
-        } else {
-           localStorage.setItem('activeGraphId', state.activeGraphId);
-           console.log('[Store Subscribe] Saved active graph ID to localStorage:', state.activeGraphId);
-        }
-      } catch (error) {
-        console.error('[Store Subscribe] Error saving active graph ID to localStorage:', error);
-      }
-    }
-
-    // Active Definition Node ID Persistence
-    const activeDefinitionNodeChanged = state.activeDefinitionNodeId !== prevState.activeDefinitionNodeId;
-    if (activeDefinitionNodeChanged) {
-        console.log('[Store Subscribe] activeDefinitionNodeId changed!', { prev: prevState.activeDefinitionNodeId, next: state.activeDefinitionNodeId });
-        try {
-            if (state.activeDefinitionNodeId === null) {
-                localStorage.removeItem('activeDefinitionNodeId');
-                console.log('[Store Subscribe] Removed activeDefinitionNodeId from localStorage.');
-            } else {
-                localStorage.setItem('activeDefinitionNodeId', state.activeDefinitionNodeId);
-                console.log('[Store Subscribe] Saved active definition node ID to localStorage:', state.activeDefinitionNodeId);
-            }
-        } catch (error) {
-            console.error('[Store Subscribe] Error saving active definition node ID to localStorage:', error);
-        }
-    }
-
-    // Expanded Graph IDs Persistence
-    const expandedGraphsChanged = state.expandedGraphIds !== prevState.expandedGraphIds;
-    if (expandedGraphsChanged) {
-        console.log('[Store Subscribe] expandedGraphIds changed!', { prevSize: prevState.expandedGraphIds.size, nextSize: state.expandedGraphIds.size });
-        try {
-            localStorage.setItem('expandedGraphIds', serializeSet(state.expandedGraphIds));
-            console.log(`[Store Subscribe] Saved ${state.expandedGraphIds.size} expanded graph IDs to localStorage.`);
-        } catch (error) {
-            console.error('[Store Subscribe] Error saving expanded graph IDs to localStorage:', error);
-        }
-    }
-  },
-  // Optional: Selector to only trigger on savedNodeIds changes (more efficient)
-  // state => state.savedNodeIds 
+  }
 ); 

@@ -58,33 +58,69 @@ function NodeCanvas() {
   const svgRef = useRef(null);
   const wrapperRef = useRef(null);
 
-  // <<< Define storeActions using useMemo >>>
-  const storeActions = useMemo(() => {
-    const state = useGraphStore.getState();
-    return {
-      updateNode: state.updateNode,
-      addEdge: state.addEdge,
-      addNode: state.addNode,
-      removeNode: state.removeNode,
-      updateGraph: state.updateGraph,
-      createNewGraph: state.createNewGraph,
-      setActiveGraph: state.setActiveGraph,
-      setActiveDefinitionNode: state.setActiveDefinitionNode,
-      openRightPanelNodeTab: state.openRightPanelNodeTab,
-      createAndAssignGraphDefinition: state.createAndAssignGraphDefinition,
-      closeRightPanelTab: state.closeRightPanelTab,
-      activateRightPanelTab: state.activateRightPanelTab,
-      openGraphTab: state.openGraphTab,
-      moveRightPanelTab: state.moveRightPanelTab,
-      closeGraph: state.closeGraph,
-      toggleGraphExpanded: state.toggleGraphExpanded,
-      toggleSavedNode: state.toggleSavedNode,
-      updateMultipleNodePositions: state.updateMultipleNodePositions,
-      removeDefinitionFromNode: state.removeDefinitionFromNode,
-      openGraphTabAndBringToTop: state.openGraphTabAndBringToTop,
-      cleanupOrphanedData: state.cleanupOrphanedData,
-    };
-  }, []); // Empty dependency array means actions are stable (typical for Zustand)
+  // <<< Access store actions individually to avoid creating new objects >>>
+  const updateNode = useGraphStore((state) => state.updateNode);
+  const addEdge = useGraphStore((state) => state.addEdge);
+  const addNode = useGraphStore((state) => state.addNode);
+  const removeNode = useGraphStore((state) => state.removeNode);
+  const updateGraph = useGraphStore((state) => state.updateGraph);
+  const createNewGraph = useGraphStore((state) => state.createNewGraph);
+  const setActiveGraph = useGraphStore((state) => state.setActiveGraph);
+  const setActiveDefinitionNode = useGraphStore((state) => state.setActiveDefinitionNode);
+  const openRightPanelNodeTab = useGraphStore((state) => state.openRightPanelNodeTab);
+  const createAndAssignGraphDefinition = useGraphStore((state) => state.createAndAssignGraphDefinition);
+  const closeRightPanelTab = useGraphStore((state) => state.closeRightPanelTab);
+  const activateRightPanelTab = useGraphStore((state) => state.activateRightPanelTab);
+  const openGraphTab = useGraphStore((state) => state.openGraphTab);
+  const moveRightPanelTab = useGraphStore((state) => state.moveRightPanelTab);
+  const closeGraph = useGraphStore((state) => state.closeGraph);
+  const toggleGraphExpanded = useGraphStore((state) => state.toggleGraphExpanded);
+  const toggleSavedNode = useGraphStore((state) => state.toggleSavedNode);
+  const toggleSavedGraph = useGraphStore((state) => state.toggleSavedGraph);
+  const updateMultipleNodePositions = useGraphStore((state) => state.updateMultipleNodePositions);
+  const removeDefinitionFromNode = useGraphStore((state) => state.removeDefinitionFromNode);
+  const openGraphTabAndBringToTop = useGraphStore((state) => state.openGraphTabAndBringToTop);
+  const cleanupOrphanedData = useGraphStore((state) => state.cleanupOrphanedData);
+  const loadFromFile = useGraphStore((state) => state.loadFromFile);
+  const restoreFromSession = useGraphStore((state) => state.restoreFromSession);
+  const clearSession = useGraphStore((state) => state.clearSession);
+
+  // Create a stable actions object only when needed for props
+  const storeActions = useMemo(() => ({
+    updateNode,
+    addEdge,
+    addNode,
+    removeNode,
+    updateGraph,
+    createNewGraph,
+    setActiveGraph,
+    setActiveDefinitionNode,
+    openRightPanelNodeTab,
+    createAndAssignGraphDefinition,
+    closeRightPanelTab,
+    activateRightPanelTab,
+    openGraphTab,
+    moveRightPanelTab,
+    closeGraph,
+    toggleGraphExpanded,
+    toggleSavedNode,
+    toggleSavedGraph,
+    updateMultipleNodePositions,
+    removeDefinitionFromNode,
+    openGraphTabAndBringToTop,
+    cleanupOrphanedData,
+    loadFromFile,
+    restoreFromSession,
+    clearSession,
+  }), [
+    updateNode, addEdge, addNode, removeNode, updateGraph, createNewGraph,
+    setActiveGraph, setActiveDefinitionNode, openRightPanelNodeTab,
+    createAndAssignGraphDefinition, closeRightPanelTab, activateRightPanelTab,
+    openGraphTab, moveRightPanelTab, closeGraph, toggleGraphExpanded,
+    toggleSavedNode, toggleSavedGraph, updateMultipleNodePositions, removeDefinitionFromNode,
+    openGraphTabAndBringToTop, cleanupOrphanedData, loadFromFile,
+    restoreFromSession, clearSession
+  ]);
 
   // <<< SELECT STATE DIRECTLY >>>
   const activeGraphId = useGraphStore(state => state.activeGraphId);
@@ -93,8 +129,12 @@ function NodeCanvas() {
   const nodesMap = useGraphStore(state => state.nodes);
   const edgesMap = useGraphStore(state => state.edges);
   const savedNodeIds = useGraphStore(state => state.savedNodeIds);
+  const savedGraphIds = useGraphStore(state => state.savedGraphIds);
   // Get open graph IDs needed for initial check
   const openGraphIds = useGraphStore(state => state.openGraphIds);
+  // File loading state
+  const isFileLoaded = useGraphStore(state => state.isFileLoaded);
+  const fileLoadingError = useGraphStore(state => state.fileLoadingError);
 
   // <<< Derive active graph data directly >>>
   const activeGraphData = useMemo(() => {
@@ -105,18 +145,38 @@ function NodeCanvas() {
 
   // console.log("[NodeCanvas] Derived activeGraphId:", activeGraphId, "Name:", activeGraphName);
 
+  // <<< Automatic Session Restoration >>>
+  useEffect(() => {
+    const trySessionRestore = async () => {
+      try {
+        console.log('[NodeCanvas] Attempting to restore last session on mount...');
+        const restored = await storeActions.restoreFromSession();
+        if (!restored) {
+          console.log('[NodeCanvas] No session to restore, will show welcome screen');
+        }
+      } catch (error) {
+        console.error('[NodeCanvas] Session restoration failed:', error);
+      }
+    };
+
+    trySessionRestore();
+  }, []); // Run once on mount
+
   // <<< Initial Graph Creation Logic (Revised) >>>
   useEffect(() => {
+      // Only run graph creation logic after file has been loaded
+      if (!isFileLoaded) return;
+      
       // Check if graph maps are loaded and if there's no active graph AND no open graphs
       if (graphsMap.size > 0 && activeGraphId === null && openGraphIds.length === 0) {
-           //console.log('[Effect: Initial Check] No active or open graphs found, creating default "New Thing".');
+           console.log('[Effect: Initial Check] No active or open graphs found, creating default "New Thing".');
            storeActions.createNewGraph({ name: 'New Thing' });
-      } else if (graphsMap.size === 0 && localStorage.getItem('graphsMap') === null) {
-          // Handle the very first load case where localStorage is empty
-          //console.log('[Effect: Initial Check] First load (no persisted graphs), creating default "New Thing".');
+      } else if (graphsMap.size === 0) {
+          // Handle the case where file is loaded but empty
+          console.log('[Effect: Initial Check] File loaded but empty, creating default "New Thing".');
           storeActions.createNewGraph({ name: 'New Thing' });
       }
-  }, [graphsMap, activeGraphId, openGraphIds, storeActions]); // Depend on relevant state
+  }, [graphsMap, activeGraphId, openGraphIds, storeActions, isFileLoaded]); // Include isFileLoaded
 
   // Derive nodes and edges using useMemo (Update dependency array)
   const nodes = useMemo(() => { 
@@ -209,23 +269,28 @@ function NodeCanvas() {
   // Track current definition index for each node per graph context (nodeId-graphId -> index)
   const [nodeDefinitionIndices, setNodeDefinitionIndices] = useState(new Map());
 
-  // --- Saved Nodes Management ---
+  // --- Saved Graphs Management ---
   const bookmarkActive = useMemo(() => {
-    // Directly use activeDefinitionNodeId - store ensures it's set
-    return activeDefinitionNodeId ? savedNodeIds.has(activeDefinitionNodeId) : false;
-  }, [activeDefinitionNodeId, savedNodeIds]);
+    // Check if the current graph's defining node is saved
+    if (!activeGraphId) return false;
+    const activeGraph = graphsMap.get(activeGraphId);
+    const definingNodeId = activeGraph?.definingNodeIds?.[0];
+    const isActive = definingNodeId ? savedNodeIds.has(definingNodeId) : false;
+    console.log('[NodeCanvas bookmarkActive] activeGraphId:', activeGraphId, 'definingNodeId:', definingNodeId, 'savedNodeIds:', Array.from(savedNodeIds), 'isActive:', isActive);
+    return isActive;
+  }, [activeGraphId, graphsMap, savedNodeIds]);
 
   const handleToggleBookmark = useCallback(() => {
     // Get current state for logging
     const currentState = useGraphStore.getState();
-    //console.log('[Bookmark Click State] activeGraphId:', currentState.activeGraphId, 'activeDefinitionNodeId:', currentState.activeDefinitionNodeId);
+    console.log('[NodeCanvas handleToggleBookmark] activeGraphId:', currentState.activeGraphId);
 
-    if (currentState.activeDefinitionNodeId) {
-      // Toggle the active definition node
-      //console.log('[Bookmark] Toggling saved state for active definition node:', currentState.activeDefinitionNodeId);
-      storeActions.toggleSavedNode(currentState.activeDefinitionNodeId);
+    if (currentState.activeGraphId) {
+      // Toggle the current graph
+      console.log('[NodeCanvas handleToggleBookmark] Toggling saved state for current graph:', currentState.activeGraphId);
+      storeActions.toggleSavedGraph(currentState.activeGraphId);
     } else {
-      //console.warn('[Bookmark] No active definition node found. Cannot toggle.');
+      console.warn('[NodeCanvas handleToggleBookmark] No active graph found. Cannot toggle.');
     }
   }, [storeActions]); // Dependency only on storeActions as we read fresh state inside
 
@@ -444,13 +509,21 @@ function NodeCanvas() {
             if (potentialClickNodeRef.current?.id === nodeId && !mouseMoved.current && !isMouseDown.current) {
                 // --- Execute Selection Logic ---
                 const wasSelected = selectedNodeIds.has(nodeId);
+                console.log(`[NodeCanvas handleNodeMouseDown] Executing click for node ${nodeId}, wasSelected: ${wasSelected}, previewingNodeId: ${previewingNodeId}`);
                 setSelectedNodeIds(prev => {
                     const newSelected = new Set(prev);
                     if (wasSelected) {
-                       if (nodeId !== previewingNodeId) { newSelected.delete(nodeId); }
+                       if (nodeId !== previewingNodeId) { 
+                         console.log(`[NodeCanvas handleNodeMouseDown] Deselecting node ${nodeId}`);
+                         newSelected.delete(nodeId); 
+                       } else {
+                         console.log(`[NodeCanvas handleNodeMouseDown] Node ${nodeId} was selected but is previewing, keeping selected`);
+                       }
                     } else {
+                       console.log(`[NodeCanvas handleNodeMouseDown] Selecting node ${nodeId}`);
                        newSelected.add(nodeId);
                     }
+                    console.log(`[NodeCanvas handleNodeMouseDown] New selection: [${Array.from(newSelected).join(', ')}]`);
                     // Update showPieMenu based on selection
                     if (newSelected.size === 1) {
                       // Prepare to show pie menu - will be handled by useEffect on selectedNodeIds
@@ -459,6 +532,8 @@ function NodeCanvas() {
                     }
                     return newSelected;
                 });
+            } else {
+                console.log(`[NodeCanvas handleNodeMouseDown] Click timeout fired but conditions not met. potentialClickNodeRef.id: ${potentialClickNodeRef.current?.id}, nodeId: ${nodeId}, mouseMoved: ${mouseMoved.current}, isMouseDown: ${isMouseDown.current}`);
             }
             clickTimeoutIdRef.current = null;
             potentialClickNodeRef.current = null;
@@ -1360,19 +1435,20 @@ function NodeCanvas() {
 
   // Effect to manage PieMenu visibility and data for animations
   useEffect(() => {
-    //console.log(`[NodeCanvas] useEffect[selectedNodeIds, isTransitioningPieMenu]: Running. selectedNodeIds.size = ${selectedNodeIds.size}, isTransitioningPieMenu = ${isTransitioningPieMenu}`);
+    console.log(`[NodeCanvas] useEffect[selectedNodeIds, isTransitioningPieMenu]: Running. selectedNodeIds.size = ${selectedNodeIds.size}, selectedNodeIds = [${Array.from(selectedNodeIds).join(', ')}], isTransitioningPieMenu = ${isTransitioningPieMenu}`);
     if (selectedNodeIds.size === 1) {
       const nodeId = [...selectedNodeIds][0];
+      
       if (!isTransitioningPieMenu) {
-        //console.log(`[NodeCanvas] Single node selected (${nodeId}), not transitioning. Setting selectedNodeIdForPieMenu.`);
+        console.log(`[NodeCanvas] Single node selected (${nodeId}), not transitioning. Setting selectedNodeIdForPieMenu.`);
         setSelectedNodeIdForPieMenu(nodeId);
       } else {
         // If transitioning, PieMenu's onExitAnimationComplete will handle setting the next selectedNodeIdForPieMenu
-        //console.log(`[NodeCanvas] Single node selected (${nodeId}), but IS transitioning. Waiting for exit animation to potentially set new pie menu target.`);
+        console.log(`[NodeCanvas] Single node selected (${nodeId}), but IS transitioning. Waiting for exit animation to potentially set new pie menu target.`);
       }
     } else {
       // Not a single selection (0 or multiple)
-      //console.log("[NodeCanvas] No single node selected (or multiple). Setting selectedNodeIdForPieMenu to null.");
+      console.log("[NodeCanvas] No single node selected (or multiple). Setting selectedNodeIdForPieMenu to null.");
       setSelectedNodeIdForPieMenu(null);
     }
   }, [selectedNodeIds, isTransitioningPieMenu]); // Dependencies: only selectedNodeIds and isTransitioningPieMenu
@@ -1460,7 +1536,89 @@ function NodeCanvas() {
           onMouseUp={handleMouseUpCanvas}
           onClick={handleCanvasClick}
         >
-          {!activeGraphId ? ( // Check local state
+          {!isFileLoaded ? (
+            // Show file selection UI instead of automatic loading
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#555', padding: '20px' }}>
+              <div style={{ fontSize: '32px', marginBottom: '20px' }}>
+                🧠 Welcome to Redstring
+              </div>
+              {fileLoadingError ? (
+                <div style={{ textAlign: 'center', maxWidth: '500px', marginBottom: '30px' }}>
+                  <div style={{ marginBottom: '10px', color: '#d32f2f', fontSize: '18px' }}>
+                    {fileLoadingError}
+                  </div>
+                  <div style={{ fontSize: '16px', color: '#666', marginBottom: '20px' }}>
+                    You can continue with an empty workspace or try again.
+                  </div>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', maxWidth: '500px', marginBottom: '30px' }}>
+                  <div style={{ fontSize: '18px', marginBottom: '15px' }}>
+                    Your cognitive universe awaits.
+                  </div>
+                  <div style={{ fontSize: '14px', color: '#666' }}>
+                    Each .redstring file is a complete universe of interconnected thoughts and ideas.
+                  </div>
+                </div>
+              )}
+              
+              <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button
+                  onClick={async () => {
+                    try {
+                      console.log('[NodeCanvas] User clicked to load file');
+                      // Clear any existing session first
+                      storeActions.clearSession();
+                      await storeActions.loadFromFile();
+                    } catch (error) {
+                      console.error('[NodeCanvas] Error loading file:', error);
+                    }
+                  }}
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '16px',
+                    backgroundColor: 'maroon',
+                    color: '#bdb5b5',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = '#a00000'}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = 'maroon'}
+                >
+                  📂 Open Existing Universe
+                </button>
+                
+                <button
+                  onClick={() => {
+                    console.log('[NodeCanvas] User chose to start empty workspace');
+                    // Clear any existing session and start fresh
+                    storeActions.clearSession();
+                    useGraphStore.setState(state => ({
+                      ...state,
+                      isFileLoaded: true,
+                      fileLoadingError: null
+                    }));
+                  }}
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '16px',
+                    backgroundColor: '#666',
+                    color: '#bdb5b5',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = '#555'}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = '#666'}
+                >
+                  ✨ Start Empty Universe
+                </button>
+              </div>
+            </div>
+          ) : !activeGraphId ? ( // Check local state
             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
               No graph selected. Open or create a graph from the left panel.
             </div>
