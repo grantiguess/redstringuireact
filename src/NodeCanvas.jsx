@@ -368,6 +368,20 @@ function NodeCanvas() {
     return { x: boundedX, y: boundedY };
   };
 
+  // Helper function to get description content for a node when previewing
+  const getNodeDescriptionContent = (node, isNodePreviewing) => {
+    if (!isNodePreviewing || !node.definitionGraphIds || node.definitionGraphIds.length === 0) {
+      return null;
+    }
+    
+    // Get the first definition graph's description (could be made more sophisticated to handle current definition index)
+    const firstDefinitionGraphId = node.definitionGraphIds[0];
+    if (!firstDefinitionGraphId) return null;
+    
+    const graphData = graphsMap.get(firstDefinitionGraphId);
+    return graphData?.description || null;
+  };
+
   const isInsideNode = (nodeData, clientX, clientY) => {
      if (!containerRef.current || !nodeData) return false;
      const rect = containerRef.current.getBoundingClientRect();
@@ -376,7 +390,7 @@ function NodeCanvas() {
 
      // TODO: Adapt getNodeDimensions or get dimensions directly
      // For now, use fixed size as placeholder
-     const { currentWidth, currentHeight } = getNodeDimensions(nodeData, previewingNodeId === nodeData.id); // Pass NodeData
+     const { currentWidth, currentHeight } = getNodeDimensions(nodeData, previewingNodeId === nodeData.id, null); // Pass NodeData
      // const currentWidth = NODE_WIDTH; // Placeholder
      // const currentHeight = NODE_HEIGHT; // Placeholder
 
@@ -772,9 +786,9 @@ function NodeCanvas() {
         setSelectionRect(selectionRes);
         const currentIds = new Set();
         nodes.forEach(nd => {
-          if (!(selectionRes.x > nd.x + getNodeDimensions(nd, previewingNodeId === nd.id).currentWidth ||
+          if (!(selectionRes.x > nd.x + getNodeDimensions(nd, previewingNodeId === nd.id, null).currentWidth ||
                 selectionRes.x + selectionRes.width < nd.x ||
-                selectionRes.y > nd.y + getNodeDimensions(nd, previewingNodeId === nd.id).currentHeight ||
+                selectionRes.y > nd.y + getNodeDimensions(nd, previewingNodeId === nd.id, null).currentHeight ||
                 selectionRes.y + selectionRes.height < nd.y)) {
             currentIds.add(nd.id);
           }
@@ -809,7 +823,7 @@ function NodeCanvas() {
              if (longPressNodeData && !isInsideNode(longPressNodeData, e.clientX, e.clientY)) {
                  clearTimeout(longPressTimeout.current);
                  mouseInsideNode.current = false;
-                 const startNodeDims = getNodeDimensions(longPressNodeData, previewingNodeId === longPressNodeData.id);
+                 const startNodeDims = getNodeDimensions(longPressNodeData, previewingNodeId === longPressNodeData.id, null);
                  const startPt = { x: longPressNodeData.x + startNodeDims.currentWidth / 2, y: longPressNodeData.y + startNodeDims.currentHeight / 2 };
                  const rect = containerRef.current.getBoundingClientRect();
                  const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
@@ -982,9 +996,9 @@ function NodeCanvas() {
         canvasWorker.calculateSelection({ selectionStart, currentX, currentY })
           .then(selectionRes => {
             const finalSelectedIds = nodes
-              .filter(nd => !(selectionRes.x > nd.x + getNodeDimensions(nd, previewingNodeId === nd.id).currentWidth ||
+              .filter(nd => !(selectionRes.x > nd.x + getNodeDimensions(nd, previewingNodeId === nd.id, null).currentWidth ||
                                 selectionRes.x + selectionRes.width < nd.x ||
-                                selectionRes.y > nd.y + getNodeDimensions(nd, previewingNodeId === nd.id).currentHeight ||
+                                selectionRes.y > nd.y + getNodeDimensions(nd, previewingNodeId === nd.id, null).currentHeight ||
                                 selectionRes.y + selectionRes.height < nd.y))
               .map(nd => nd.id);
             setSelectedNodeIds(prev => new Set([...prev, ...finalSelectedIds]));
@@ -1364,7 +1378,7 @@ function NodeCanvas() {
     if (selectedNodeIdForPieMenu && !isTransitioningPieMenu) {
       const node = nodes.find(n => n.id === selectedNodeIdForPieMenu);
       if (node) {
-        const dimensions = getNodeDimensions(node, previewingNodeId === node.id);
+        const dimensions = getNodeDimensions(node, previewingNodeId === node.id, null);
         //console.log(`[NodeCanvas] Preparing pie menu for node ${selectedNodeIdForPieMenu}. Not transitioning. Buttons:`, targetPieMenuButtons.map(b => b.id));
         setCurrentPieMenuData({ node, buttons: targetPieMenuButtons, nodeDimensions: dimensions });
         setIsPieMenuRendered(true); // Ensure PieMenu is in DOM to animate in
@@ -1468,8 +1482,8 @@ function NodeCanvas() {
                   if (!sourceNode || !destNode) {
                      return null;
                   }
-                  const sNodeDims = getNodeDimensions(sourceNode);
-                  const eNodeDims = getNodeDimensions(destNode);
+                  const sNodeDims = getNodeDimensions(sourceNode, false, null);
+                  const eNodeDims = getNodeDimensions(destNode, false, null);
                   const isSNodePreviewing = previewingNodeId === sourceNode.id;
                   const isENodePreviewing = previewingNodeId === destNode.id;
                   const x1 = sourceNode.x + sNodeDims.currentWidth / 2;
@@ -1528,7 +1542,8 @@ function NodeCanvas() {
                        {/* Render "Other" Nodes first */}                       
                        {otherNodes.map((node) => {
                          const isPreviewing = previewingNodeId === node.id; // Should be false or irrelevant for these nodes
-                         const dimensions = getNodeDimensions(node, isPreviewing);
+                         const descriptionContent = getNodeDescriptionContent(node, isPreviewing);
+                         const dimensions = getNodeDimensions(node, isPreviewing, descriptionContent);
                          return (
                            <Node
                              key={node.id}
@@ -1540,6 +1555,7 @@ function NodeCanvas() {
                              imageHeight={dimensions.calculatedImageHeight}
                              innerNetworkWidth={dimensions.innerNetworkWidth}
                              innerNetworkHeight={dimensions.innerNetworkHeight}
+                             descriptionAreaHeight={dimensions.descriptionAreaHeight}
                              isSelected={selectedNodeIds.has(node.id)}
                              isDragging={false} // These are explicitly not the dragging node
                              onMouseDown={(e) => handleNodeMouseDown(node, e)}
@@ -1616,7 +1632,8 @@ function NodeCanvas() {
                        {activeNodeToRender && (
                          (() => {
                            const isPreviewing = previewingNodeId === activeNodeToRender.id;
-                           const dimensions = getNodeDimensions(activeNodeToRender, isPreviewing);
+                           const descriptionContent = getNodeDescriptionContent(activeNodeToRender, isPreviewing);
+                           const dimensions = getNodeDimensions(activeNodeToRender, isPreviewing, descriptionContent);
                            return (
                              <Node
                                key={activeNodeToRender.id}
@@ -1628,6 +1645,7 @@ function NodeCanvas() {
                                imageHeight={dimensions.calculatedImageHeight}
                                innerNetworkWidth={dimensions.innerNetworkWidth}
                                innerNetworkHeight={dimensions.innerNetworkHeight}
+                               descriptionAreaHeight={dimensions.descriptionAreaHeight}
                                isSelected={selectedNodeIds.has(activeNodeToRender.id)}
                                isDragging={false} // Explicitly not the dragging node if rendered here
                                onMouseDown={(e) => handleNodeMouseDown(activeNodeToRender, e)}
@@ -1668,7 +1686,8 @@ function NodeCanvas() {
                        {draggingNodeToRender && (
                          (() => {
                            const isPreviewing = previewingNodeId === draggingNodeToRender.id;
-                           const dimensions = getNodeDimensions(draggingNodeToRender, isPreviewing);
+                           const descriptionContent = getNodeDescriptionContent(draggingNodeToRender, isPreviewing);
+                           const dimensions = getNodeDimensions(draggingNodeToRender, isPreviewing, descriptionContent);
                            return (
                              <Node
                                key={draggingNodeToRender.id}
@@ -1680,6 +1699,7 @@ function NodeCanvas() {
                                imageHeight={dimensions.calculatedImageHeight}
                                innerNetworkWidth={dimensions.innerNetworkWidth}
                                innerNetworkHeight={dimensions.innerNetworkHeight}
+                               descriptionAreaHeight={dimensions.descriptionAreaHeight}
                                isSelected={selectedNodeIds.has(draggingNodeToRender.id)}
                                isDragging={true} // This is the dragging node
                                onMouseDown={(e) => handleNodeMouseDown(draggingNodeToRender, e)}

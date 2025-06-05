@@ -28,6 +28,7 @@ const Node = ({
   connections, // Expect plain array of edge data
   innerNetworkWidth,
   innerNetworkHeight,
+  descriptionAreaHeight, // Add description area height prop
   idPrefix = '', // Add optional idPrefix prop with default
   // --- Add editing props ---
   isEditingOnCanvas,
@@ -115,6 +116,9 @@ const Node = ({
   // Calculate image position based on dynamic textAreaHeight
   const contentAreaY = nodeY + textAreaHeight;
 
+  // Calculate description area position (below InnerNetwork when previewing) with minimal spacing
+  const descriptionAreaY = contentAreaY + innerNetworkHeight + (isPreviewing ? 8 : 0);
+
   // Define the canvas background color (or import from constants if preferred)
   const canvasBackgroundColor = '#bdb5b5';
 
@@ -147,6 +151,16 @@ const Node = ({
     if (!currentGraphId) return [];
     return getEdgesForGraph(currentGraphId)(storeState);
   }, [currentGraphId, storeState.edges, storeState.graphs]);
+
+  // Get the current definition graph's description
+  const currentGraphDescription = useMemo(() => {
+    if (!currentGraphId) return 'No description.';
+    const graphData = storeState.graphs.get(currentGraphId);
+    return graphData?.description || 'No description.';
+  }, [currentGraphId, storeState.graphs]);
+
+  // Use the passed descriptionAreaHeight which is now calculated dynamically in utils.js
+  const actualDescriptionHeight = descriptionAreaHeight;
 
   // Effect to handle arrow fade-in after expansion
   useEffect(() => {
@@ -412,6 +426,43 @@ const Node = ({
                   )}
               </g>
           </g>
+      )}
+
+      {/* Description Area - Below InnerNetwork when previewing */}
+      {isPreviewing && actualDescriptionHeight > 0 && currentGraphDescription && currentGraphDescription.trim() && currentGraphDescription !== 'No description.' && (
+        <foreignObject
+          x={nodeX + NODE_PADDING}
+          y={descriptionAreaY}
+          width={innerNetworkWidth}
+          height={actualDescriptionHeight}
+          style={{ 
+            pointerEvents: 'none',
+            overflow: 'hidden'
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              padding: '4px 8px',
+              boxSizing: 'border-box',
+              fontSize: '20px',
+              color: '#bdb5b5',
+              fontWeight: 'normal',
+              lineHeight: '24px',
+              textAlign: 'center',
+              wordWrap: 'break-word',
+              overflowWrap: 'break-word',
+              display: '-webkit-box',
+              WebkitLineClamp: 3,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}
+          >
+            {currentGraphDescription}
+          </div>
+        </foreignObject>
       )}
 
             {/* Plus Button and Navigation Arrows - Positioned in title area like a name tag */}

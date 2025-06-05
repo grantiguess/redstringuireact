@@ -25,7 +25,7 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   nodes.forEach(node => {
     // Use dimensions of the original nodes passed in (plain data)
-    const dims = getNodeDimensions(node); // Ensure getNodeDimensions handles plain data
+    const dims = getNodeDimensions(node, false, null); // Ensure getNodeDimensions handles plain data
     minX = Math.min(minX, node.x);
     minY = Math.min(minY, node.y);
     maxX = Math.max(maxX, node.x + dims.currentWidth);
@@ -93,8 +93,8 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
         }
 
         // Get original dimensions for center calculation from plain node data
-        const sNodeDims = getNodeDimensions(sNodeData);
-        const eNodeDims = getNodeDimensions(eNodeData);
+        const sNodeDims = getNodeDimensions(sNodeData, false, null);
+        const eNodeDims = getNodeDimensions(eNodeData, false, null);
 
         // Calculate center points using the *up-to-date* node data from the `nodes` prop
         // Access coordinates directly
@@ -122,7 +122,7 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
       {/* Render Nodes with titles using original coordinates and dimensions (scaled by parent g) */}
       {nodes.map((node) => {
          // Get original dimensions 
-         const dimensions = getNodeDimensions(node);
+         const dimensions = getNodeDimensions(node, false, null);
          const titleHeight = dimensions.textAreaHeight || NODE_HEIGHT * NAME_AREA_FACTOR;
 
          return (

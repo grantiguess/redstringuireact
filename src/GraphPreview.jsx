@@ -16,7 +16,7 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
     // 1. Find bounds of original nodes using getNodeDimensions
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     nodes.forEach(n => {
-      const dims = getNodeDimensions(n);
+      const dims = getNodeDimensions(n, false, null);
       minX = Math.min(minX, n.x);
       minY = Math.min(minY, n.y);
       maxX = Math.max(maxX, n.x + dims.currentWidth);
@@ -26,7 +26,7 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
     // Handle case with only one node or invalid bounds
     if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
         const n = nodes[0] || { x: 0, y: 0 }; // Default if nodes is empty somehow
-        const dims = nodes[0] ? getNodeDimensions(nodes[0]) : { currentWidth: NODE_WIDTH, currentHeight: NODE_HEIGHT }; 
+        const dims = nodes[0] ? getNodeDimensions(nodes[0], false, null) : { currentWidth: NODE_WIDTH, currentHeight: NODE_HEIGHT }; 
         minX = n.x;
         minY = n.y;
         maxX = n.x + dims.currentWidth;
@@ -54,7 +54,7 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
 
     // 4. Scale node positions and dimensions
     const finalScaledNodes = nodes.map(node => {
-        const dims = getNodeDimensions(node);
+        const dims = getNodeDimensions(node, false, null);
         return {
             id: node.id,
             x: node.x * finalScale + offsetX,
