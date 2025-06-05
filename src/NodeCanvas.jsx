@@ -103,6 +103,8 @@ function NodeCanvas() {
   const activeGraphName = activeGraphData?.name ?? 'Loading...';
   const activeGraphDescription = activeGraphData?.description ?? '';
 
+  // console.log("[NodeCanvas] Derived activeGraphId:", activeGraphId, "Name:", activeGraphName);
+
   // <<< Initial Graph Creation Logic (Revised) >>>
   useEffect(() => {
       // Check if graph maps are loaded and if there's no active graph AND no open graphs
@@ -262,7 +264,7 @@ function NodeCanvas() {
           label: 'Contract',
           icon: Package,
           action: (nodeId) => {
-            console.log(`[PieMenu Action] Contract clicked for node: ${nodeId}. Starting transition.`);
+            // console.log(`[PieMenu Action] Contract clicked for node: ${nodeId}. Starting transition.`);
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
             // setPreviewingNodeId(null); // This will be set after animation
           }
@@ -272,7 +274,7 @@ function NodeCanvas() {
       // Default buttons: Edit, Delete, Connect, Package (if not previewing THIS node)
       return [
         { id: 'edit', label: 'Edit', icon: Edit3, action: (nodeId) => {
-            console.log(`[PieMenu Action] Edit clicked for node: ${nodeId}. Opening panel tab and enabling inline editing.`);
+            // console.log(`[PieMenu Action] Edit clicked for node: ${nodeId}. Opening panel tab and enabling inline editing.`);
             // Open/create panel tab for the node
             const nodeData = nodes.find(n => n.id === nodeId);
             if (nodeData) {
@@ -290,13 +292,13 @@ function NodeCanvas() {
           setSelectedNodeIds(new Set()); // Deselect after deleting
           setSelectedNodeIdForPieMenu(null); // Ensure pie menu hides
         } },
-        { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => console.log('Connect node:', nodeId) },
+        { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => {} }, // console.log('Connect node:', nodeId)
         {
           id: 'package-preview',
           label: 'Package',
           icon: PackageOpen,
           action: (nodeId) => {
-            console.log(`[PieMenu Action] Package clicked for node: ${nodeId}. Starting transition.`);
+            // console.log(`[PieMenu Action] Package clicked for node: ${nodeId}. Starting transition.`);
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
             // previewingNodeId will be set in onExitAnimationComplete after animation
           }
@@ -306,14 +308,14 @@ function NodeCanvas() {
           label: 'Expand',
           icon: Expand,
           action: (nodeId) => {
-            console.log(`[PieMenu Action] Expand to tab clicked for node: ${nodeId}.`);
+            // console.log(`[PieMenu Action] Expand to tab clicked for node: ${nodeId}.`);
             const nodeData = nodes.find(n => n.id === nodeId);
             if (nodeData && nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
               const graphIdToOpen = nodeData.definitionGraphIds[0]; // Open the first definition
-              console.log(`[PieMenu Expand] Opening definition graph: ${graphIdToOpen} for node: ${nodeId}`);
+              // console.log(`[PieMenu Expand] Opening definition graph: ${graphIdToOpen} for node: ${nodeId}`);
               storeActions.openGraphTabAndBringToTop(graphIdToOpen, nodeId);
             } else {
-              console.warn(`[PieMenu Expand] Node ${nodeId} has no definition graphs to expand.`);
+              // console.warn(`[PieMenu Expand] Node ${nodeId} has no definition graphs to expand.`);
             }
           }
         }
@@ -536,8 +538,8 @@ function NodeCanvas() {
     // 1. Fractional delta values (trackpads often produce non-integer deltas)
     const hasFractionalDeltas = deltaYValues.some(d => d % 1 !== 0);
     
-    // 2. Horizontal movement (trackpads support 2D scrolling)
-    const hasHorizontalMovement = Math.abs(deltaX) > 0.1;
+    // 2. Horizontal movement (trackpads support 2D scrolling) - LOWERED threshold
+    const hasHorizontalMovement = Math.abs(deltaX) > 0.05; // Reduced from 0.1
     
     // 3. Small, continuous values (trackpads produce smaller, more frequent events)
     const hasSmallDeltas = deltaYValues.every(d => d < 50);
@@ -579,6 +581,11 @@ function NodeCanvas() {
     
     if (hasFractionalDeltas && hasSmallDeltas) {
       return 'trackpad'; // Strong indicator: fractional + small values
+    }
+    
+    // NEW: On Mac, if deltas are small and not clearly mouse wheel pattern, prefer trackpad
+    if (isMac && hasSmallDeltas && !hasMouseWheelPattern) {
+      return 'trackpad'; // Mac bias: small deltas without wheel pattern = trackpad
     }
     
     if (hasMouseWheelPattern && hasLargeDeltas && allIntegerDeltas) {
@@ -659,7 +666,7 @@ function NodeCanvas() {
     }
 
     // 2. Trackpad Two-Finger Pan (based on device detection)
-    if (deviceType === 'trackpad' || (deviceType === 'undetermined' && isMac && Math.abs(deltaX) > 0.1)) {
+    if (deviceType === 'trackpad' || (deviceType === 'undetermined' && isMac && (Math.abs(deltaX) > 0.05 || Math.abs(deltaY) < 30))) {
         const dx = -deltaX * PAN_DRAG_SENSITIVITY;
         const dy = -deltaY * PAN_DRAG_SENSITIVITY;
         
@@ -736,7 +743,7 @@ function NodeCanvas() {
         deltaX: deltaX.toFixed(2),
         deltaY: deltaY.toFixed(2),
       }));
-      console.warn('Unhandled wheel event:', { deltaX, deltaY, deviceType, ctrlKey: e.ctrlKey, isMac });
+      // console.warn('Unhandled wheel event:', { deltaX, deltaY, deviceType, ctrlKey: e.ctrlKey, isMac });
     }
   };
 
@@ -765,9 +772,9 @@ function NodeCanvas() {
         setSelectionRect(selectionRes);
         const currentIds = new Set();
         nodes.forEach(nd => {
-          if (!(selectionRes.x > nd.x + NODE_WIDTH ||
+          if (!(selectionRes.x > nd.x + getNodeDimensions(nd, previewingNodeId === nd.id).currentWidth ||
                 selectionRes.x + selectionRes.width < nd.x ||
-                selectionRes.y > nd.y + NODE_HEIGHT ||
+                selectionRes.y > nd.y + getNodeDimensions(nd, previewingNodeId === nd.id).currentHeight ||
                 selectionRes.y + selectionRes.height < nd.y)) {
             currentIds.add(nd.id);
           }
@@ -1279,7 +1286,8 @@ function NodeCanvas() {
 
   const handleToggleLeftPanel = useCallback(() => {
     setLeftPanelExpanded(prev => !prev);
-  }, []);
+    // console.log("[Left Panel Toggle] New state:", !leftPanelExpanded);
+  }, [leftPanelExpanded]);
 
   const handleLeftPanelFocusChange = useCallback((isFocused) => {
     //console.log(`[Left Panel Focus Change] Setting isLeftPanelInputFocused to: ${isFocused}`);
@@ -1318,7 +1326,7 @@ function NodeCanvas() {
         // Use localStoreActions
         storeActions.updateGraph(currentActiveId, draft => { draft.name = newTitle || 'Untitled'; });
     } else {
-        console.warn("handleProjectTitleChange: No active graph ID found in store.");
+        // console.warn("handleProjectTitleChange: No active graph ID found in store.");
     }
   };
 
@@ -1548,17 +1556,17 @@ function NodeCanvas() {
                              }}
                              onAddNodeToDefinition={(nodeId) => {
                                // Create a new alternative definition for the node
-                               console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
+                               // console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
                                storeActions.createAndAssignGraphDefinition(nodeId);
                              }}
                              onDeleteDefinition={(nodeId, graphId) => {
                                // Delete the specific definition graph from the node
-                               console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
+                               // console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
                                storeActions.removeDefinitionFromNode(nodeId, graphId);
                              }}
                              onExpandDefinition={(nodeId, graphId) => {
                                // Open the definition graph in a new tab and bring to top
-                               console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
+                               // console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
                                storeActions.openGraphTabAndBringToTop(graphId, nodeId);
                              }}
                              storeActions={storeActions}
@@ -1581,7 +1589,7 @@ function NodeCanvas() {
                              )
                            )}
                            onExitAnimationComplete={() => {
-                             console.log("[NodeCanvas] PieMenu onExitAnimationComplete: Resetting transition and render state.");
+                             // console.log("[NodeCanvas] PieMenu onExitAnimationComplete: Resetting transition and render state.");
                              setIsPieMenuRendered(false); 
                              setCurrentPieMenuData(null); 
                              const wasTransitioning = isTransitioningPieMenu;
@@ -1636,17 +1644,17 @@ function NodeCanvas() {
                                }}
                                onAddNodeToDefinition={(nodeId) => {
                                  // Create a new alternative definition for the node
-                                 console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
+                                 // console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
                                  storeActions.createAndAssignGraphDefinition(nodeId);
                                }}
                                onDeleteDefinition={(nodeId, graphId) => {
                                  // Delete the specific definition graph from the node
-                                 console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
+                                 // console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
                                  storeActions.removeDefinitionFromNode(nodeId, graphId);
                                }}
                                onExpandDefinition={(nodeId, graphId) => {
                                  // Open the definition graph in a new tab and bring to top
-                                 console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
+                                 // console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
                                  storeActions.openGraphTabAndBringToTop(graphId, nodeId);
                                }}
                                storeActions={storeActions}
@@ -1688,17 +1696,17 @@ function NodeCanvas() {
                                }}
                                onAddNodeToDefinition={(nodeId) => {
                                  // Create a new alternative definition for the node
-                                 console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
+                                 // console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
                                  storeActions.createAndAssignGraphDefinition(nodeId);
                                }}
                                onDeleteDefinition={(nodeId, graphId) => {
                                  // Delete the specific definition graph from the node
-                                 console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
+                                 // console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
                                  storeActions.removeDefinitionFromNode(nodeId, graphId);
                                }}
                                onExpandDefinition={(nodeId, graphId) => {
                                  // Open the definition graph in a new tab and bring to top
-                                 console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
+                                 // console.log(`[NodeCanvas] Expanding definition graph ${graphId} for node: ${nodeId}`);
                                  storeActions.openGraphTabAndBringToTop(graphId, nodeId);
                                }}
                                storeActions={storeActions}
