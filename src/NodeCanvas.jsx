@@ -206,7 +206,7 @@ function NodeCanvas() {
 
   const [previewingNodeId, setPreviewingNodeId] = useState(null);
   
-  // Track current definition index for each previewing node
+  // Track current definition index for each node per graph context (nodeId-graphId -> index)
   const [nodeDefinitionIndices, setNodeDefinitionIndices] = useState(new Map());
 
   // --- Saved Nodes Management ---
@@ -377,8 +377,9 @@ function NodeCanvas() {
       return null;
     }
     
-    // Get the current definition index for this node, defaulting to 0
-    const currentIndex = nodeDefinitionIndices.get(node.id) || 0;
+    // Create context-specific key for this node in the current graph
+    const contextKey = `${node.id}-${activeGraphId}`;
+    const currentIndex = nodeDefinitionIndices.get(contextKey) || 0;
     const definitionGraphId = node.definitionGraphIds[currentIndex] || node.definitionGraphIds[0];
     if (!definitionGraphId) return null;
     
@@ -1591,9 +1592,10 @@ function NodeCanvas() {
                              }}
                              storeActions={storeActions}
                              connections={edges}
-                             currentDefinitionIndex={nodeDefinitionIndices.get(node.id) || 0}
+                             currentDefinitionIndex={nodeDefinitionIndices.get(`${node.id}-${activeGraphId}`) || 0}
                              onNavigateDefinition={(nodeId, newIndex) => {
-                               setNodeDefinitionIndices(prev => new Map(prev.set(nodeId, newIndex)));
+                               const contextKey = `${nodeId}-${activeGraphId}`;
+                               setNodeDefinitionIndices(prev => new Map(prev.set(contextKey, newIndex)));
                              }}
                            />
                          );
@@ -1685,9 +1687,10 @@ function NodeCanvas() {
                                }}
                                storeActions={storeActions}
                                connections={edges}
-                               currentDefinitionIndex={nodeDefinitionIndices.get(activeNodeToRender.id) || 0}
+                               currentDefinitionIndex={nodeDefinitionIndices.get(`${activeNodeToRender.id}-${activeGraphId}`) || 0}
                                onNavigateDefinition={(nodeId, newIndex) => {
-                                 setNodeDefinitionIndices(prev => new Map(prev.set(nodeId, newIndex)));
+                                 const contextKey = `${nodeId}-${activeGraphId}`;
+                                 setNodeDefinitionIndices(prev => new Map(prev.set(contextKey, newIndex)));
                                }}
                              />
                            );
@@ -1743,9 +1746,10 @@ function NodeCanvas() {
                                }}
                                storeActions={storeActions}
                                connections={edges}
-                               currentDefinitionIndex={nodeDefinitionIndices.get(draggingNodeToRender.id) || 0}
+                               currentDefinitionIndex={nodeDefinitionIndices.get(`${draggingNodeToRender.id}-${activeGraphId}`) || 0}
                                onNavigateDefinition={(nodeId, newIndex) => {
-                                 setNodeDefinitionIndices(prev => new Map(prev.set(nodeId, newIndex)));
+                                 const contextKey = `${nodeId}-${activeGraphId}`;
+                                 setNodeDefinitionIndices(prev => new Map(prev.set(contextKey, newIndex)));
                                }}
                              />
                            );
@@ -1802,6 +1806,7 @@ function NodeCanvas() {
           storeActions={storeActions}
           graphName={activeGraphName}
           graphDescription={activeGraphDescription}
+          nodeDefinitionIndices={nodeDefinitionIndices}
         />
       </div>
       

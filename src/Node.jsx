@@ -130,9 +130,6 @@ const Node = ({
   // State to control arrow fade-in animation
   const [showArrows, setShowArrows] = useState(false);
 
-  // Track if we've already reset the definition index for this preview session
-  const hasResetForPreview = useRef(false);
-
   // Use the currentDefinitionIndex prop passed from NodeCanvas
 
   // Get the node's definition graph IDs
@@ -170,24 +167,16 @@ const Node = ({
   // Effect to handle arrow fade-in after expansion
   useEffect(() => {
     if (isPreviewing) {
-      // Reset to first definition when expanding (only once per preview session)
-      if (onNavigateDefinition && !hasResetForPreview.current) {
-        hasResetForPreview.current = true;
-        if (currentDefinitionIndex !== 0) {
-          onNavigateDefinition(nodeId, 0);
-        }
-      }
       // Small delay to let the expansion animation start, then fade in arrows
       const timer = setTimeout(() => {
         setShowArrows(true);
       }, 200); // 200ms delay after expansion starts
       return () => clearTimeout(timer);
     } else {
-      // Immediately hide arrows when not previewing and reset the flag
+      // Immediately hide arrows when not previewing
       setShowArrows(false);
-      hasResetForPreview.current = false;
     }
-  }, [isPreviewing, nodeId, onNavigateDefinition]); // Removed currentDefinitionIndex from dependencies
+  }, [isPreviewing]);
 
   // Navigation functions
   const navigateToPreviousDefinition = () => {

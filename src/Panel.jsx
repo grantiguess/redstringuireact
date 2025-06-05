@@ -285,7 +285,8 @@ const Panel = forwardRef(
     renderTrigger,
     graphName, 
     graphDescription,
-    activeDefinitionNodeId: propActiveDefinitionNodeId, 
+    activeDefinitionNodeId: propActiveDefinitionNodeId,
+    nodeDefinitionIndices = new Map(), // Context-specific definition indices 
   }, ref) => {
     panelRenderCount++; // Increment counter
     // --- Zustand State and Actions ---
@@ -826,7 +827,27 @@ const Panel = forwardRef(
 
     const handleBioChange = (nodeId, newBio) => {
         if (!activeGraphId) return;
-        // Call store action directly (using prop)
+        
+        // Get the node data to check if it has definitions
+        const nodeData = nodesMap.get(nodeId);
+        
+        // If node has definitions, update the current definition graph's description
+        if (nodeData && nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
+            // Get the context-specific definition index
+            const contextKey = `${nodeId}-${activeGraphId}`;
+            const currentIndex = nodeDefinitionIndices.get(contextKey) || 0;
+            
+            // Get the graph ID for the current definition
+            const currentDefinitionGraphId = nodeData.definitionGraphIds[currentIndex] || nodeData.definitionGraphIds[0];
+            
+            // Update the definition graph's description
+            if (currentDefinitionGraphId) {
+                updateGraph(currentDefinitionGraphId, draft => { draft.description = newBio; });
+                return;
+            }
+        }
+        
+        // Fallback: update the node's own description
         updateNode(nodeId, draft => { draft.description = newBio; });
     };
 
@@ -1422,7 +1443,32 @@ const Panel = forwardRef(
                 );
             } else {
                 // --- Node data found globally - Render the full editable view --- 
-                const displayBio = nodeData.description || '';
+                
+                // Helper to get the current definition description for this node
+                const getCurrentDefinitionDescription = () => {
+                    // Check if node has definitions and we have context tracking
+                    if (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0 && activeGraphId) {
+                        // Get the context-specific definition index
+                        const contextKey = `${nodeId}-${activeGraphId}`;
+                        const currentIndex = nodeDefinitionIndices.get(contextKey) || 0;
+                        
+                        // Get the graph ID for the current definition
+                        const currentDefinitionGraphId = nodeData.definitionGraphIds[currentIndex] || nodeData.definitionGraphIds[0];
+                        
+                        // Get the graph data and return its description
+                        if (currentDefinitionGraphId) {
+                            const definitionGraphData = graphsMap.get(currentDefinitionGraphId);
+                            if (definitionGraphData && definitionGraphData.description) {
+                                return definitionGraphData.description;
+                            }
+                        }
+                    }
+                    
+                    // Fallback to node's own description
+                    return nodeData.description || '';
+                };
+                
+                const displayBio = getCurrentDefinitionDescription();
                 const displayTitle = nodeData.name || 'Untitled';
 
                 // Function to commit the title change (on blur or Enter key)
@@ -1487,9 +1533,13 @@ const Panel = forwardRef(
                                         color="#260000"
                                         style={{ cursor: 'pointer', flexShrink: 0 }}
                                         onClick={() => {
-                                            // Open the first definition graph (same logic as expanded node)
-                                            const graphIdToOpen = nodeData.definitionGraphIds[0];
-                                            console.log(`[Panel Expand Icon] Opening definition graph: ${graphIdToOpen} for node: ${nodeId}`);
+                                            // Get the context-specific definition index
+                                            const contextKey = `${nodeId}-${activeGraphId}`;
+                                            const currentIndex = nodeDefinitionIndices.get(contextKey) || 0;
+                                            
+                                            // Open the current definition graph based on context
+                                            const graphIdToOpen = nodeData.definitionGraphIds[currentIndex] || nodeData.definitionGraphIds[0];
+                                            console.log(`[Panel Expand Icon] Opening current definition graph: ${graphIdToOpen} (index ${currentIndex}) for node: ${nodeId}`);
                                             if (storeActions?.openGraphTabAndBringToTop) {
                                                 storeActions.openGraphTabAndBringToTop(graphIdToOpen, nodeId);
                                             }
