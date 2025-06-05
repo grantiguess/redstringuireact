@@ -98,8 +98,53 @@ Beyond the general guidelines, recent development has focused on more complex UI
     *   Debug information includes detected device type, delta history length, and analysis flags for troubleshooting input detection issues
 
 20. **Inline Node Editing and Panel Integration:**
-    *   The PieMenu's "Edit" button (`targetPieMenuButtons` in `NodeCanvas.jsx`) triggers both inline canvas editing and panel tab creation/activation
-    *   When the edit button is clicked, it: (1) opens/creates a panel tab for the node using `storeActions.openRightPanelNodeTab()`, (2) ensures the right panel is expanded, and (3) enables inline editing on the canvas by setting `editingNodeIdOnCanvas`
-    *   The `Node.jsx` component handles inline editing through `isEditingOnCanvas`, `onCommitCanvasEdit`, and `onCancelCanvasEdit` props, displaying either a text span or an input field based on editing state
-    *   Real-time synchronization between canvas and panel editing is achieved through the Zustand store - both interfaces update the same node data, ensuring changes appear immediately in both locations
-    *   Inline editing supports Enter to commit, Escape to cancel, and blur to commit, with proper focus management and visual styling via the `.node-name-input` CSS class
+   *   The PieMenu's "Edit" button (`targetPieMenuButtons` in `NodeCanvas.jsx`) triggers both inline canvas editing and panel tab creation/activation
+   *   When the edit button is clicked, it: (1) opens/creates a panel tab for the node using `storeActions.openRightPanelNodeTab()`, (2) ensures the right panel is expanded, and (3) enables inline editing on the canvas by setting `editingNodeIdOnCanvas`
+   *   The `Node.jsx` component handles inline editing through `isEditingOnCanvas`, `onCommitCanvasEdit`, and `onCancelCanvasEdit` props, displaying either a text span or an input field based on editing state
+   *   Real-time synchronization between canvas and panel editing is achieved through the Zustand store - both interfaces update the same node data, ensuring changes appear immediately in both locations
+   *   Inline editing supports Enter to commit, Escape to cancel, and blur to commit, with proper focus management and visual styling via the `.node-name-input` CSS class
+
+## Dynamic Description Feature & Context-Aware System:
+
+21. **Dynamic Description Implementation:**
+   *   Successfully implemented a sophisticated dynamic description feature for expanded nodes that includes:
+        - Dynamic height calculation using DOM measurement (createElement/appendChild approach in `utils.js`)
+        - "Chin" expansion effect below InnerNetwork areas that adds visual space for description content
+        - Text wrapping with 3-line limit using CSS properties (`display: -webkit-box`, `WebkitLineClamp: 3`)
+        - Seamless integration with the existing node expansion/preview system
+   *   The description content is sourced from the currently active definition graph's description, making it context-aware
+   *   Height calculations are performed in `getNodeDimensions()` in `utils.js` and passed down to Node components as `descriptionAreaHeight`
+
+22. **Context-Aware Definition System:**
+   *   Implemented a sophisticated context-aware system where nodes remember their preferred definition for specific graph contexts
+   *   Uses `nodeDefinitionIndices` Map in `NodeCanvas.jsx` with `"nodeId-graphId"` formatted keys to track active definition per context
+   *   Example: A "Car" node defaults to "Engine" definition in "Mechanical Systems" graph but "Exterior" definition in "Design Review" graph
+   *   Navigation between definitions is handled via callback system (`onNavigateDefinition`) with index-based tracking
+   *   Panel and canvas synchronization ensures both interfaces always show the same definition content
+
+23. **Race Condition Fixes and State Management:**
+   *   Fixed critical race condition in `Node.jsx` where `useEffect` had `currentDefinitionIndex` in dependencies, causing navigation to reset on every definition change
+   *   Solution: Removed `currentDefinitionIndex` from effect dependencies and used refs (`hasResetForPreview`) to track session state
+   *   **Type Consistency:** Fixed `loadInitialExpandedGraphIds()` in `src/store/graphStore.js` to return `new Set()` instead of `[]` - application expects Set object throughout
+   *   **Content-Specific Expansion:** Removed forced reset logic so nodes expand to show the definition currently active in the panel, not always the first definition
+
+24. **Panel-Canvas Synchronization Architecture:**
+   *   Achieved full synchronization between Panel editing interface and canvas visualization through shared state management
+   *   `Panel.jsx` uses `getCurrentDefinitionDescription()` helper to display current definition's description instead of node's base description
+   *   `handleBioChange` in Panel.jsx updates the current definition graph's description rather than the node's description
+   *   Navigation controls in both panel and expanded nodes use the same context-aware `nodeDefinitionIndices` system
+   *   Expand button opens the currently active definition, maintaining context consistency
+
+25. **Key Technical Patterns and Debugging:**
+   *   **Recursive Architecture Handling:** All data flows respect the "nodes are graphs and graphs are nodes" principle - Entry instances serve dual purposes
+   *   **Dynamic Height with Animation:** Node height animates smoothly when definitions change using CSS transitions on computed dimensions
+   *   **Map-based Context Tracking:** Using Map data structure with composite keys enables efficient O(1) lookups for context-specific state
+   *   **Callback-based Navigation:** Definition navigation uses callback pattern to maintain separation of concerns between NodeCanvas state management and Node display logic
+   *   **Context-Specific Keys:** Pattern of `"nodeId-graphId"` composite keys enables same node to have different states in different graph contexts
+
+26. **Common Pitfalls and Solutions:**
+   *   **useEffect Dependencies:** Be extremely careful with effect dependencies when dealing with state that changes frequently (like `currentDefinitionIndex`)
+   *   **Type Expectations:** Ensure store initialization functions return correct types (Set vs Array) that match application expectations
+   *   **Reset Logic:** Avoid forcing state resets during transitions - preserve user's active context when possible
+   *   **Composite State Keys:** When implementing context-aware features, use composite keys that capture the full context (nodeId + graphId)
+   *   **Synchronization Points:** Identify all places where the same data is displayed and ensure they use the same data source and update mechanisms
