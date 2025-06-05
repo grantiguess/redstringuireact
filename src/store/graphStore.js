@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { produce, enableMapSet } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
 import { NODE_WIDTH, NODE_HEIGHT, NODE_DEFAULT_COLOR } from '../constants'; // <<< Import node dimensions
-import { initializeFileStorage, saveToFile, getFileStatus, restoreLastSession, clearSession } from './fileStorage.js';
+import { getFileStatus, restoreLastSession, clearSession, notifyChanges } from './fileStorage.js';
 // No longer importing class instances
 // import Graph from '../core/Graph';
 // import Node from '../core/Node';
@@ -95,108 +95,44 @@ const graphToData = (graph) => ({
   edgeIds: graph.getEdges().map(e => e.getId()), // Store only Edge IDs
 });
 
-// --- Load Initial State from localStorage --- 
-const loadInitialSavedNodes = () => {
-    const saved = localStorage.getItem('savedNodeIds');
-    if (saved) {
-    // console.log("[Store Init] Loaded savedNodeIds from localStorage:", saved);
-    return deserializeSet(saved);
-  }
-  // console.log("[Store Init] No savedNodeIds in localStorage, starting with empty set.");
-  return new Set();
-};
+// Note: Removed localStorage initialization functions - universe file is now the single source of truth
 
-const loadInitialSavedGraphs = () => {
-    const saved = localStorage.getItem('savedGraphIds');
-    if (saved) {
-    // console.log("[Store Init] Loaded savedGraphIds from localStorage:", saved);
-    return deserializeSet(saved);
-  }
-  // console.log("[Store Init] No savedGraphIds in localStorage, starting with empty set.");
-  return new Set();
-};
-
-const loadInitialNodes = () => {
-  // console.log('[Store Init] Attempting to load nodes map...');
-  const map = deserializeMap(localStorage.getItem('nodesMap'));
-  // console.log(`[Store Init] Loaded ${map.size} nodes.`);
-  return map;
-};
-const loadInitialGraphs = () => {
-  // console.log('[Store Init] Attempting to load graphs map...');
-  const map = deserializeMap(localStorage.getItem('graphsMap'));
-  // console.log(`[Store Init] Loaded ${map.size} graphs.`);
-  return map;
-};
-
-// --- Load Initial Open Graphs from localStorage --- 
-const loadInitialOpenGraphs = () => {
-  const storedOpenGraphs = localStorage.getItem('openGraphIds');
-  if (storedOpenGraphs) {
-    try {
-      const parsed = JSON.parse(storedOpenGraphs);
-      // console.log("[Store Init] Loaded and parsed openGraphIds from localStorage:", parsed);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (e) {
-      // console.error("[Store Init] Error parsing openGraphIds from localStorage:", e);
-      return [];
-  }
-  }
-  // console.log("[Store Init] No openGraphIds in localStorage, starting with an empty array.");
-  return [];
-};
-
-// --- Load Initial Active Graph ID from localStorage --- 
-const loadInitialActiveGraphId = (validOpenGraphIds) => {
-  const storedActiveGraphId = localStorage.getItem('activeGraphId');
-  if (storedActiveGraphId && validOpenGraphIds.includes(storedActiveGraphId)) {
-    // console.log("[Store Init] Loaded activeGraphId from localStorage:", storedActiveGraphId);
-    return storedActiveGraphId;
-  } else if (validOpenGraphIds.length > 0) {
-    // console.log("[Store Init] No valid activeGraphId in localStorage, using first open graph:", validOpenGraphIds[0]);
-    return validOpenGraphIds[0];
-  }
-  // console.log("[Store Init] No activeGraphId and no open graphs, activeGraphId will be null.");
-  return null;
-};
-
-// --- Load Initial Active Definition Node ID from localStorage ---
-const loadInitialActiveDefinitionNodeId = (nodesMap) => {
-  const storedActiveDefinitionNodeId = localStorage.getItem('activeDefinitionNodeId');
-  if (storedActiveDefinitionNodeId) {
-    // Validate if this node ID still exists in the loaded nodesMap
-    if (nodesMap.has(storedActiveDefinitionNodeId)) {
-      // console.log("[Store Init] Loaded and validated activeDefinitionNodeId from localStorage:", storedActiveDefinitionNodeId);
-      return storedActiveDefinitionNodeId;
-    }
-    // console.log("[Store Init] Loaded activeDefinitionNodeId from localStorage but it's no longer valid (not in nodesMap). Resetting.");
-    }
-  // console.log("[Store Init] No activeDefinitionNodeId in localStorage or it was invalid, starting with null.");
-  return null;
-};
-
-// --- Load Initial Expanded Graphs from localStorage ---
-const loadInitialExpandedGraphIds = () => {
-  const storedExpandedGraphIds = localStorage.getItem('expandedGraphIds');
-  if (storedExpandedGraphIds) {
-    try {
-      const parsed = JSON.parse(storedExpandedGraphIds);
-      // console.log("[Store Init] Loaded and parsed expandedGraphIds from localStorage:", parsed);
-      return new Set(Array.isArray(parsed) ? parsed : []); // Return as Set
-    } catch (e) {
-      // console.error("[Store Init] Error parsing expandedGraphIds from localStorage:", e);
-      return new Set();
-    }
-  }
-  // console.log("[Store Init] No expandedGraphIds in localStorage, starting with an empty Set.");
-  return new Set();
+// Middleware to notify auto-save of changes
+const autoSaveMiddleware = (config) => {
+  let notifyTimeout = null;
+  
+  return (set, get, api) =>
+    config(
+      (...args) => {
+        set(...args);
+        
+        // Debounce auto-save notifications to prevent spam during rapid updates (like dragging)
+        if (notifyTimeout) {
+          clearTimeout(notifyTimeout);
+        }
+        
+        notifyTimeout = setTimeout(() => {
+          // Notify auto-save system that changes have been made
+          try {
+            import('./fileStorage.js').then(({ notifyChanges }) => {
+              notifyChanges();
+            });
+          } catch (error) {
+            console.warn('[GraphStore] Failed to notify auto-save of changes:', error);
+          }
+          notifyTimeout = null;
+        }, 100); // 100ms debounce - prevents spam during rapid updates like dragging
+      },
+      get,
+      api
+    );
 };
 
 // Create store with async initialization
-const useGraphStore = create((set, get) => {
+const useGraphStore = create(autoSaveMiddleware((set, get) => {
   // Return both initial state and actions
   return {
-    // Initialize with empty state - will be loaded from file
+    // Initialize with completely empty state - universe file is required
     graphs: new Map(),
     nodes: new Map(),
     edges: new Map(),
@@ -205,12 +141,14 @@ const useGraphStore = create((set, get) => {
     activeDefinitionNodeId: null, 
     rightPanelTabs: [{ type: 'home', isActive: true }], 
     expandedGraphIds: new Set(),
-    savedNodeIds: loadInitialSavedNodes(),
-    savedGraphIds: loadInitialSavedGraphs(),
+    savedNodeIds: new Set(), // Start empty - no localStorage fallback
+    savedGraphIds: new Set(), // Start empty - no localStorage fallback
     
-    // File storage state
-    isFileLoaded: false,
-    fileLoadingError: null,
+    // Universe file state
+    isUniverseLoaded: false,
+    isUniverseLoading: true, // Start in loading state
+    universeLoadingError: null,
+    hasUniverseFile: false,
 
   // --- Actions --- (Operating on plain data)
 
@@ -1202,87 +1140,61 @@ const useGraphStore = create((set, get) => {
     console.log(`[Store cleanupOrphanedData] Cleanup complete. Removed ${orphanedNodes.length} nodes, ${orphanedGraphs.length} graphs, ${orphanedEdges.length} edges.`);
   })),
 
-  // Load data from file
-  loadFromFile: async () => {
-    try {
-      const fileData = await initializeFileStorage();
-      if (fileData) {
-        set(() => ({
-          ...fileData,
-          isFileLoaded: true,
-          fileLoadingError: null
-        }));
-        console.log('[FileStore] Successfully loaded data from file');
-      } else {
-        // Empty file or new file created
-        set((state) => ({
-          ...state,
-          isFileLoaded: true,
-          fileLoadingError: null
-        }));
-        console.log('[FileStore] Started with empty universe');
-      }
-    } catch (error) {
-      console.error('[FileStore] Error loading from file:', error);
-      set((state) => ({
-        ...state,
-        isFileLoaded: true,
-        fileLoadingError: error.name === 'AbortError' ? 'File selection cancelled' : error.message
-      }));
-    }
-  },
-
-  // Restore from last session (automatic)
+  // Restore from last session (automatic) - now only returns universe file data
   restoreFromSession: async () => {
     try {
       const result = await restoreLastSession();
-      if (result.success) {
-        set(() => ({
-          ...result.storeState,
-          isFileLoaded: true,
-          fileLoadingError: null
-        }));
-        console.log('[FileStore] Successfully restored from last session:', result.fileName);
-        return true;
-      } else {
-        console.log('[FileStore] No previous session to restore');
-        return false;
-      }
+      return result; // Return the result object for the component to handle
     } catch (error) {
-      console.error('[FileStore] Error restoring from session:', error);
-      set((state) => ({
-        ...state,
-        fileLoadingError: error.message
-      }));
-      return false;
+      console.error('[Store] Error restoring from session:', error);
+      return { success: false, error: error.message };
     }
-  },
-
-  // Clear current session
-  clearSession: () => {
-    clearSession();
-    set((state) => ({
-      ...state,
-      graphs: new Map(),
-      nodes: new Map(),
-      edges: new Map(),
-      openGraphIds: [],
-      activeGraphId: null,
-      activeDefinitionNodeId: null,
-      savedNodeIds: new Set(),
-      savedGraphIds: new Set(),
-      expandedGraphIds: new Set(),
-      isFileLoaded: false,
-      fileLoadingError: null
-    }));
-    console.log('[FileStore] Session cleared and state reset');
   },
 
   // Get file status
   getFileStatus: () => getFileStatus(),
 
+  // Universe file management actions
+  loadUniverseFromFile: (storeState) => set(() => ({
+    ...storeState,
+    isUniverseLoaded: true,
+    isUniverseLoading: false,
+    universeLoadingError: null,
+    hasUniverseFile: true
+  })),
+
+  setUniverseError: (error) => set(state => ({
+    ...state,
+    isUniverseLoaded: true,
+    isUniverseLoading: false,
+    universeLoadingError: error,
+    hasUniverseFile: false
+  })),
+
+  clearUniverse: () => set(() => ({
+    graphs: new Map(),
+    nodes: new Map(),
+    edges: new Map(),
+    openGraphIds: [],
+    activeGraphId: null,
+    activeDefinitionNodeId: null,
+    rightPanelTabs: [{ type: 'home', isActive: true }],
+    expandedGraphIds: new Set(),
+    savedNodeIds: new Set(),
+    savedGraphIds: new Set(),
+    isUniverseLoaded: false,
+    isUniverseLoading: false,
+    universeLoadingError: null,
+    hasUniverseFile: false
+  })),
+
+  setUniverseConnected: (hasFile = true) => set(state => ({
+    ...state,
+    hasUniverseFile: hasFile
+  })),
+
   }; // End of returned state and actions object
-}); // End of create function
+})); // End of create function with middleware
 
 // --- Selectors --- (Return plain data, add edge selector)
 
@@ -1333,27 +1245,4 @@ export const isGraphSaved = (graphId) => (state) => state.savedGraphIds.has(grap
 // Export the store hook
 export default useGraphStore; 
 
-// --- Subscribe to save changes to file ---
-useGraphStore.subscribe(
-  (state, prevState) => {
-    // Only auto-save if file has been loaded (to avoid saving empty state on init)
-    if (!state.isFileLoaded) return;
-    
-    // Check if any important data has changed
-    const dataChanged = 
-      state.savedNodeIds !== prevState.savedNodeIds ||
-      state.savedGraphIds !== prevState.savedGraphIds ||
-      state.openGraphIds !== prevState.openGraphIds ||
-      state.nodes !== prevState.nodes ||
-      state.graphs !== prevState.graphs ||
-      state.edges !== prevState.edges ||
-      state.activeGraphId !== prevState.activeGraphId ||
-      state.activeDefinitionNodeId !== prevState.activeDefinitionNodeId ||
-      state.expandedGraphIds !== prevState.expandedGraphIds;
-
-    if (dataChanged) {
-      console.log('[FileStore] Store data changed, auto-saving to file...');
-      saveToFile(state);
-    }
-  }
-); 
+// Auto-save is now handled by the fileStorage module directly with enableAutoSave() 

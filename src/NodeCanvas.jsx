@@ -81,9 +81,11 @@ function NodeCanvas() {
   const removeDefinitionFromNode = useGraphStore((state) => state.removeDefinitionFromNode);
   const openGraphTabAndBringToTop = useGraphStore((state) => state.openGraphTabAndBringToTop);
   const cleanupOrphanedData = useGraphStore((state) => state.cleanupOrphanedData);
-  const loadFromFile = useGraphStore((state) => state.loadFromFile);
   const restoreFromSession = useGraphStore((state) => state.restoreFromSession);
-  const clearSession = useGraphStore((state) => state.clearSession);
+  const loadUniverseFromFile = useGraphStore((state) => state.loadUniverseFromFile);
+  const setUniverseError = useGraphStore((state) => state.setUniverseError);
+  const clearUniverse = useGraphStore((state) => state.clearUniverse);
+  const setUniverseConnected = useGraphStore((state) => state.setUniverseConnected);
 
   // Create a stable actions object only when needed for props
   const storeActions = useMemo(() => ({
@@ -109,17 +111,19 @@ function NodeCanvas() {
     removeDefinitionFromNode,
     openGraphTabAndBringToTop,
     cleanupOrphanedData,
-    loadFromFile,
     restoreFromSession,
-    clearSession,
+    loadUniverseFromFile,
+    setUniverseError,
+    clearUniverse,
+    setUniverseConnected,
   }), [
     updateNode, addEdge, addNode, removeNode, updateGraph, createNewGraph,
     setActiveGraph, setActiveDefinitionNode, openRightPanelNodeTab,
     createAndAssignGraphDefinition, closeRightPanelTab, activateRightPanelTab,
     openGraphTab, moveRightPanelTab, closeGraph, toggleGraphExpanded,
     toggleSavedNode, toggleSavedGraph, updateMultipleNodePositions, removeDefinitionFromNode,
-    openGraphTabAndBringToTop, cleanupOrphanedData, loadFromFile,
-    restoreFromSession, clearSession
+    openGraphTabAndBringToTop, cleanupOrphanedData, restoreFromSession,
+    loadUniverseFromFile, setUniverseError, clearUniverse, setUniverseConnected
   ]);
 
   // <<< SELECT STATE DIRECTLY >>>
@@ -132,9 +136,11 @@ function NodeCanvas() {
   const savedGraphIds = useGraphStore(state => state.savedGraphIds);
   // Get open graph IDs needed for initial check
   const openGraphIds = useGraphStore(state => state.openGraphIds);
-  // File loading state
-  const isFileLoaded = useGraphStore(state => state.isFileLoaded);
-  const fileLoadingError = useGraphStore(state => state.fileLoadingError);
+  // Universe file state
+  const isUniverseLoaded = useGraphStore(state => state.isUniverseLoaded);
+  const isUniverseLoading = useGraphStore(state => state.isUniverseLoading);
+  const universeLoadingError = useGraphStore(state => state.universeLoadingError);
+  const hasUniverseFile = useGraphStore(state => state.hasUniverseFile);
 
   // <<< Derive active graph data directly >>>
   const activeGraphData = useMemo(() => {
@@ -145,64 +151,62 @@ function NodeCanvas() {
 
   // console.log("[NodeCanvas] Derived activeGraphId:", activeGraphId, "Name:", activeGraphName);
 
-  // <<< Automatic Session Restoration >>>
+  // <<< Universe File Loading >>>
   useEffect(() => {
-    const trySessionRestore = async () => {
+    const tryUniverseRestore = async () => {
       try {
-        console.log('[NodeCanvas] Attempting to restore last session on mount...');
-        const restored = await storeActions.restoreFromSession();
-        if (!restored) {
-          console.log('[NodeCanvas] No session to restore, will auto-create universe file on first load');
-          // Automatically trigger file creation after a brief delay
-          setTimeout(async () => {
-            try {
-              console.log('[NodeCanvas] Auto-creating default universe file');
-              storeActions.clearSession();
-              
-              const { createDefaultFile } = await import('./store/fileStorage.js');
-              const initialData = await createDefaultFile();
-              
-              if (initialData !== null) {
-                useGraphStore.setState(state => ({
-                  ...state,
-                  ...initialData,
-                  isFileLoaded: true,
-                  fileLoadingError: null
-                }));
-                console.log('[NodeCanvas] Default universe auto-created successfully');
-              }
-            } catch (error) {
-              console.error('[NodeCanvas] Auto-creation failed:', error);
-              useGraphStore.setState(state => ({
-                ...state,
-                fileLoadingError: `Auto-setup failed: ${error.message}. Please use the setup button.`
-              }));
-            }
-          }, 500); // Small delay to let UI render
+        console.log('[NodeCanvas] Attempting universe file restoration...');
+        const result = await storeActions.restoreFromSession();
+        
+        console.log('[NodeCanvas] Universe restoration result:', result);
+        
+        if (result && result.success) {
+          // Load the restored state using new universe actions
+          storeActions.loadUniverseFromFile(result.storeState);
+          
+          // Import auto-save functions
+          const { enableAutoSave } = await import('./store/fileStorage.js');
+          
+          console.log('[NodeCanvas] Universe restore result:', { 
+            autoConnected: result.autoConnected, 
+            hasStoreState: !!result.storeState 
+          });
+          
+          if (result.autoConnected) {
+            // Auto-connected to universe file - enable auto-save
+            enableAutoSave(() => useGraphStore.getState());
+            console.log('[NodeCanvas] Auto-connected to universe file with auto-save enabled');
+          }
+        } else {
+          // No universe file found - set error state
+          const message = result?.message || 'No universe file found. Please create a new universe or open an existing one.';
+          console.log('[NodeCanvas] No universe file found:', message);
+          storeActions.setUniverseError(message);
         }
       } catch (error) {
-        console.error('[NodeCanvas] Session restoration failed:', error);
+        console.error('[NodeCanvas] Universe restoration failed:', error);
+        storeActions.setUniverseError(`Universe restore failed: ${error.message}`);
       }
     };
 
-    trySessionRestore();
+    tryUniverseRestore();
   }, []); // Run once on mount
 
   // <<< Initial Graph Creation Logic (Revised) >>>
   useEffect(() => {
-      // Only run graph creation logic after file has been loaded
-      if (!isFileLoaded) return;
+      // Only run graph creation logic after universe has been loaded and we have a universe file
+      if (!isUniverseLoaded || !hasUniverseFile) return;
       
       // Check if graph maps are loaded and if there's no active graph AND no open graphs
       if (graphsMap.size > 0 && activeGraphId === null && openGraphIds.length === 0) {
            console.log('[Effect: Initial Check] No active or open graphs found, creating default "New Thing".');
            storeActions.createNewGraph({ name: 'New Thing' });
       } else if (graphsMap.size === 0) {
-          // Handle the case where file is loaded but empty
-          console.log('[Effect: Initial Check] File loaded but empty, creating default "New Thing".');
+          // Handle the case where universe is loaded but empty
+          console.log('[Effect: Initial Check] Universe loaded but empty, creating default "New Thing".');
           storeActions.createNewGraph({ name: 'New Thing' });
       }
-  }, [graphsMap, activeGraphId, openGraphIds, storeActions, isFileLoaded]); // Include isFileLoaded
+  }, [graphsMap, activeGraphId, openGraphIds, storeActions, isUniverseLoaded, hasUniverseFile]); // Include universe states
 
   // Derive nodes and edges using useMemo (Update dependency array)
   const nodes = useMemo(() => { 
@@ -1533,46 +1537,61 @@ function NodeCanvas() {
          onNewUniverse={async () => {
            try {
              console.log('[NodeCanvas] Creating new universe from menu');
-             storeActions.clearSession();
+             storeActions.clearUniverse();
              
-             const { createDefaultFile } = await import('./store/fileStorage.js');
-             const initialData = await createDefaultFile();
+             const { createUniverseFile, enableAutoSave } = await import('./store/fileStorage.js');
+             const initialData = await createUniverseFile();
              
              if (initialData !== null) {
-               useGraphStore.setState(state => ({
-                 ...state,
-                 ...initialData,
-                 isFileLoaded: true,
-                 fileLoadingError: null
-               }));
-               console.log('[NodeCanvas] New universe created successfully from menu');
+               storeActions.loadUniverseFromFile(initialData);
+               
+               // Enable auto-save for the new universe
+               enableAutoSave(() => useGraphStore.getState());
+               console.log('[NodeCanvas] New universe created successfully from menu with auto-save enabled');
              }
            } catch (error) {
              console.error('[NodeCanvas] Error creating new universe from menu:', error);
-             useGraphStore.setState(state => ({
-               ...state,
-               fileLoadingError: `Failed to create universe: ${error.message}`
-             }));
+             storeActions.setUniverseError(`Failed to create universe: ${error.message}`);
            }
          }}
          onOpenUniverse={async () => {
            try {
              console.log('[NodeCanvas] Opening universe from menu');
-             storeActions.clearSession();
-             await storeActions.loadFromFile();
+             storeActions.clearUniverse();
+             
+             const { openUniverseFile, enableAutoSave } = await import('./store/fileStorage.js');
+             const loadedData = await openUniverseFile();
+             
+             if (loadedData !== null) {
+               storeActions.loadUniverseFromFile(loadedData);
+               
+               // Enable auto-save for the opened universe
+               enableAutoSave(() => useGraphStore.getState());
+               console.log('[NodeCanvas] Universe opened successfully from menu with auto-save enabled');
+             }
            } catch (error) {
              console.error('[NodeCanvas] Error opening universe from menu:', error);
+             storeActions.setUniverseError(`Failed to open universe: ${error.message}`);
            }
          }}
          onSaveUniverse={async () => {
            try {
-             console.log('[NodeCanvas] Saving universe from menu');
-             const { forceSave } = await import('./store/fileStorage.js');
-             const currentState = useGraphStore.getState();
-             await forceSave(currentState);
-             console.log('[NodeCanvas] Universe saved successfully from menu');
+             console.log('[NodeCanvas] Manual save requested');
+             const { forceSave, canAutoSave } = await import('./store/fileStorage.js');
+             
+             if (canAutoSave()) {
+               const currentState = useGraphStore.getState();
+               await forceSave(currentState);
+               console.log('[NodeCanvas] Manual save completed successfully');
+               // Show a brief success message
+               alert('Universe saved successfully!');
+             } else {
+               console.warn('[NodeCanvas] No file handle available for manual save');
+               alert('No universe file is currently open. Please create or open a universe first.');
+             }
            } catch (error) {
-             console.error('[NodeCanvas] Error saving universe from menu:', error);
+             console.error('[NodeCanvas] Error during manual save:', error);
+             alert(`Failed to save universe: ${error.message}`);
            }
          }}
       />
@@ -1607,28 +1626,55 @@ function NodeCanvas() {
           onMouseUp={handleMouseUpCanvas}
           onClick={handleCanvasClick}
         >
-          {!isFileLoaded ? (
-            // Auto-create default universe on first load
+          {isUniverseLoading ? (
+            // Show loading state while checking for universe file
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {/* Circular loading spinner */}
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  border: '4px solid #bdb5b5', // Canvas color
+                  borderTop: '4px solid #260000', // Maroon color matching header
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }}
+              />
+              <style>
+                {`
+                  @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                  }
+                `}
+              </style>
+            </div>
+          ) : (!isUniverseLoaded || !hasUniverseFile) ? (
+            // Show universe file setup screen
             <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#555', padding: '20px' }}>
               <div style={{ fontSize: '32px', marginBottom: '20px' }}>
-                🧠 Welcome to Redstring
+                Welcome to Redstring
               </div>
-              {fileLoadingError ? (
+              {universeLoadingError ? (
                 <div style={{ textAlign: 'center', maxWidth: '500px', marginBottom: '30px' }}>
                   <div style={{ marginBottom: '10px', color: '#d32f2f', fontSize: '18px' }}>
-                    {fileLoadingError}
+                    {universeLoadingError}
                   </div>
                   <div style={{ fontSize: '16px', color: '#666', marginBottom: '20px' }}>
-                    Click below to locate your universe file or create a new one.
+                    A universe file is required to work with Redstring. Click below to create or open one.
                   </div>
                 </div>
               ) : (
                 <div style={{ textAlign: 'center', maxWidth: '500px', marginBottom: '30px' }}>
-                  <div style={{ fontSize: '18px', marginBottom: '15px' }}>
-                    Your cognitive universe awaits.
+                  <div style={{ fontSize: '20px', marginBottom: '15px' }}>
+                    An open, recursive knowledge graph interface.
+                    <br />
                   </div>
                   <div style={{ fontSize: '14px', color: '#666' }}>
-                    We'll help you create your universe.redstring file. You can place it in a "redstring" folder in your Documents for easy organization.
+                    Create your universe.redstring file once, and it will auto-reconnect on every visit.
+                  </div>
+                  <div style={{ fontSize: '14px', color: '#888', marginTop: '10px' }}>
+                    Save to your Documents folder for easy auto-discovery.
                   </div>
                 </div>
               )}
@@ -1637,39 +1683,31 @@ function NodeCanvas() {
                 <button
                   onClick={async () => {
                     try {
-                      console.log('[NodeCanvas] Creating default universe file');
-                      // Clear any existing session first
-                      storeActions.clearSession();
+                      console.log('[NodeCanvas] Creating universe file');
+                      // Clear any existing universe
+                      storeActions.clearUniverse();
                       
-                      // Import the createDefaultFile function
-                      const { createDefaultFile } = await import('./store/fileStorage.js');
+                      // Import the createUniverseFile function
+                      const { createUniverseFile, enableAutoSave } = await import('./store/fileStorage.js');
                       
-                      // This will prompt for save location and create the default file
-                      const initialData = await createDefaultFile();
+                      // This will prompt for save location and create the universe file
+                      const initialData = await createUniverseFile();
                       
                       if (initialData !== null) {
-                        // Successfully created default file, load the empty state
-                        useGraphStore.setState(state => ({
-                          ...state,
-                          ...initialData,
-                          isFileLoaded: true,
-                          fileLoadingError: null
-                        }));
-                        console.log('[NodeCanvas] Default universe created and saved successfully');
+                        // Successfully created universe file, load the empty state
+                        storeActions.loadUniverseFromFile(initialData);
+                        
+                        // Enable auto-save
+                        enableAutoSave(() => useGraphStore.getState());
+                        console.log('[NodeCanvas] Universe created and saved successfully with auto-save enabled');
                       } else {
                         // User cancelled the file creation dialog
-                        console.log('[NodeCanvas] User cancelled default file creation');
-                        useGraphStore.setState(state => ({
-                          ...state,
-                          fileLoadingError: 'File creation was cancelled. Please try again to set up your universe.'
-                        }));
+                        console.log('[NodeCanvas] User cancelled universe file creation');
+                        storeActions.setUniverseError('File creation was cancelled. Please try again to set up your universe.');
                       }
                     } catch (error) {
-                      console.error('[NodeCanvas] Error creating default universe:', error);
-                      useGraphStore.setState(state => ({
-                        ...state,
-                        fileLoadingError: `Failed to create universe: ${error.message}. Please try again.`
-                      }));
+                      console.error('[NodeCanvas] Error creating universe:', error);
+                      storeActions.setUniverseError(`Failed to create universe: ${error.message}. Please try again.`);
                     }
                   }}
                   style={{
@@ -1685,18 +1723,29 @@ function NodeCanvas() {
                   onMouseEnter={(e) => e.target.style.backgroundColor = '#a00000'}
                   onMouseLeave={(e) => e.target.style.backgroundColor = 'maroon'}
                 >
-                  🌟 Set Up My Universe
+                  Set Up My Universe
                 </button>
                 
                 <button
                   onClick={async () => {
                     try {
                       console.log('[NodeCanvas] User chose to open existing file');
-                      // Clear any existing session first
-                      storeActions.clearSession();
-                      await storeActions.loadFromFile();
+                      // Clear any existing universe
+                      storeActions.clearUniverse();
+                      
+                      const { openUniverseFile, enableAutoSave } = await import('./store/fileStorage.js');
+                      const loadedData = await openUniverseFile();
+                      
+                      if (loadedData !== null) {
+                        storeActions.loadUniverseFromFile(loadedData);
+                        
+                        // Enable auto-save
+                        enableAutoSave(() => useGraphStore.getState());
+                        console.log('[NodeCanvas] Universe opened successfully with auto-save enabled');
+                      }
                     } catch (error) {
                       console.error('[NodeCanvas] Error loading file:', error);
+                      storeActions.setUniverseError(`Failed to open file: ${error.message}`);
                     }
                   }}
                   style={{
@@ -1712,7 +1761,7 @@ function NodeCanvas() {
                   onMouseEnter={(e) => e.target.style.backgroundColor = '#555'}
                   onMouseLeave={(e) => e.target.style.backgroundColor = '#666'}
                 >
-                  📂 Open Existing File
+                  Open Existing File
                 </button>
               </div>
             </div>

@@ -1,519 +1,837 @@
 /**
  * File Storage Module for Redstring
- * Handles automatic persistence to .redstring files using File System Access API
+ * Handles automatic persistence to universe.redstring file using File System Access API
+ * Single universe workflow with auto-save functionality
  */
 
 import { exportToRedstring, importFromRedstring } from '../formats/redstringFormat.js';
 
+// Global state
 let fileHandle = null;
-let isAutoSaving = false;
-let pendingSave = null;
+let autoSaveInterval = null;
+let isAutoSaveEnabled = true;
+let lastSaveTime = 0;
+let lastChangeTime = 0;
+let preferredDirectory = null;
 
-// Keys for localStorage persistence
-const STORAGE_KEYS = {
-  LAST_FILE_DATA: 'redstring_last_file_data',
-  LAST_FILE_NAME: 'redstring_last_file_name',
-  FILE_SESSION_ACTIVE: 'redstring_file_session_active',
-  HAS_DEFAULT_FILE: 'redstring_has_default_file',
-  DEFAULT_FILE_HANDLE: 'redstring_default_file_handle'
+// Constants
+const AUTO_SAVE_INTERVAL = 250; // Auto-save every 250ms (4x per second)
+const DEBOUNCE_DELAY = 150; // Wait 150ms after last change before saving
+const FILE_NAME = 'universe.redstring';
+
+// Default paths for different operating systems
+const DEFAULT_PATHS = {
+  mac: ['Documents', 'Documents/redstring'],
+  windows: ['Documents', 'Documents\\redstring'],
+  linux: ['Documents', 'Documents/redstring']
 };
 
-// Default file path and name
-const DEFAULT_FOLDER_NAME = 'redstring';
-const DEFAULT_FILE_NAME = 'universe.redstring';
+// Storage keys
+const STORAGE_KEYS = {
+  FILE_HANDLE: 'redstring_universe_handle',
+  PREFERRED_DIRECTORY: 'redstring_preferred_directory',
+  LAST_DATA: 'redstring_last_data',
+  SESSION_ACTIVE: 'redstring_session_active'
+};
 
-// Check if File System Access API is supported
+/**
+ * Check if File System Access API is supported
+ */
 export const isFileSystemSupported = () => {
   return 'showSaveFilePicker' in window && 'showOpenFilePicker' in window;
 };
 
 /**
- * Check if we have a default file set up
+ * Detect operating system
  */
-export const hasDefaultFileSetup = () => {
-  return localStorage.getItem(STORAGE_KEYS.HAS_DEFAULT_FILE) === 'true';
+const getOperatingSystem = () => {
+  const userAgent = navigator.userAgent.toLowerCase();
+  if (userAgent.includes('mac')) return 'mac';
+  if (userAgent.includes('win')) return 'windows';
+  return 'linux';
 };
 
 /**
- * Create the default redstring folder and universe.redstring file
+ * Store preferred directory handle in IndexedDB
  */
-export const createDefaultFile = async () => {
+const storePreferredDirectory = async (directoryHandle) => {
+  try {
+    const idbReq = indexedDB.open('redstring-directory', 1);
+    idbReq.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('directories')) {
+        db.createObjectStore('directories');
+      }
+    };
+    
+    return new Promise((resolve, reject) => {
+      idbReq.onsuccess = async () => {
+        try {
+          const db = idbReq.result;
+          
+          // Check if object store exists before creating transaction
+          if (!db.objectStoreNames.contains('directories')) {
+            console.warn('[FileStorage] Object store "directories" does not exist');
+            db.close();
+            return resolve();
+          }
+          
+          const tx = db.transaction('directories', 'readwrite');
+          const store = tx.objectStore('directories');
+          await store.put(directoryHandle, STORAGE_KEYS.PREFERRED_DIRECTORY);
+          preferredDirectory = directoryHandle;
+          db.close();
+          resolve();
+        } catch (error) {
+          console.error('[FileStorage] Error storing directory:', error);
+          reject(error);
+        }
+      };
+      idbReq.onerror = () => reject(idbReq.error);
+    });
+  } catch (error) {
+    console.warn('[FileStorage] Failed to store preferred directory:', error);
+  }
+};
+
+/**
+ * Try to restore preferred directory handle from IndexedDB
+ */
+const tryRestorePreferredDirectory = async () => {
+  try {
+    const idbReq = indexedDB.open('redstring-directory', 1);
+    idbReq.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('directories')) {
+        db.createObjectStore('directories');
+      }
+    };
+    
+    return new Promise((resolve) => {
+      idbReq.onsuccess = async () => {
+        try {
+          const db = idbReq.result;
+          
+          // Check if object store exists
+          if (!db.objectStoreNames.contains('directories')) {
+            console.log('[FileStorage] Object store "directories" does not exist');
+            db.close();
+            return resolve(null);
+          }
+          
+          const tx = db.transaction('directories', 'readonly');
+          const store = tx.objectStore('directories');
+          const getReq = store.get(STORAGE_KEYS.PREFERRED_DIRECTORY);
+          
+          getReq.onsuccess = async () => {
+            if (getReq.result) {
+              // Check if directory handle is still valid
+              const permission = await getReq.result.queryPermission({ mode: 'readwrite' });
+              if (permission === 'granted') {
+                preferredDirectory = getReq.result;
+                console.log('[FileStorage] Restored preferred directory handle');
+              } else {
+                console.log('[FileStorage] Preferred directory handle needs permission re-request');
+              }
+            }
+            db.close();
+            resolve(getReq.result || null);
+          };
+          getReq.onerror = () => {
+            db.close();
+            resolve(null);
+          };
+        } catch (error) {
+          console.warn('[FileStorage] Error restoring preferred directory:', error);
+          resolve(null);
+        }
+      };
+      idbReq.onerror = () => resolve(null);
+    });
+  } catch (error) {
+    console.warn('[FileStorage] Failed to restore preferred directory:', error);
+    return null;
+  }
+};
+
+/**
+ * Try to find universe.redstring in preferred directory
+ */
+const tryFindUniverseInDirectory = async (directoryHandle) => {
+  try {
+    // Check permission first
+    let permission = await directoryHandle.queryPermission({ mode: 'readwrite' });
+    if (permission !== 'granted') {
+      permission = await directoryHandle.requestPermission({ mode: 'readwrite' });
+      if (permission !== 'granted') {
+        console.log('[FileStorage] Permission denied for directory');
+        return null;
+      }
+    }
+
+    // Look for universe.redstring file
+    for await (const [name, handle] of directoryHandle.entries()) {
+      if (name === FILE_NAME && handle.kind === 'file') {
+        console.log('[FileStorage] Found universe.redstring in preferred directory');
+        return handle;
+      }
+    }
+    
+    console.log('[FileStorage] universe.redstring not found in preferred directory');
+    return null;
+  } catch (error) {
+    console.warn('[FileStorage] Error searching directory:', error);
+    return null;
+  }
+};
+
+/**
+ * Store file handle in IndexedDB for persistence across sessions
+ */
+const storeFileHandle = async (handle) => {
+  try {
+    fileHandle = handle;
+    
+    // Store file handle in IndexedDB
+    const idbReq = indexedDB.open('redstring-files', 1);
+    idbReq.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('files')) {
+        db.createObjectStore('files');
+      }
+    };
+    
+    return new Promise((resolve, reject) => {
+      idbReq.onsuccess = async () => {
+        try {
+          const db = idbReq.result;
+          
+          // Check if object store exists before creating transaction
+          if (!db.objectStoreNames.contains('files')) {
+            // If object store doesn't exist, we need to close and recreate with higher version
+            db.close();
+            const upgradeReq = indexedDB.open('redstring-files', 2);
+            upgradeReq.onupgradeneeded = (event) => {
+              const upgradeDb = event.target.result;
+              if (!upgradeDb.objectStoreNames.contains('files')) {
+                upgradeDb.createObjectStore('files');
+              }
+            };
+            upgradeReq.onsuccess = async () => {
+              const upgradeDb = upgradeReq.result;
+              const tx = upgradeDb.transaction('files', 'readwrite');
+              const store = tx.objectStore('files');
+              await store.put(handle, STORAGE_KEYS.FILE_HANDLE);
+              
+              // Also store the directory for future auto-discovery
+              if (handle.parent) {
+                await storePreferredDirectory(handle.parent);
+              }
+              
+              console.log('[FileStorage] File handle stored in IndexedDB (after upgrade)');
+              upgradeDb.close();
+              resolve();
+            };
+            upgradeReq.onerror = () => reject(upgradeReq.error);
+            return;
+          }
+          
+          const tx = db.transaction('files', 'readwrite');
+          const store = tx.objectStore('files');
+          await store.put(handle, STORAGE_KEYS.FILE_HANDLE);
+          
+          // Also store the directory for future auto-discovery
+          if (handle.parent) {
+            await storePreferredDirectory(handle.parent);
+          }
+          
+          console.log('[FileStorage] File handle stored in IndexedDB');
+          db.close();
+          resolve();
+        } catch (error) {
+          console.error('[FileStorage] Error in transaction:', error);
+          reject(error);
+        }
+      };
+      idbReq.onerror = () => reject(idbReq.error);
+    });
+  } catch (error) {
+    console.error('[FileStorage] Failed to store file handle:', error);
+    throw error;
+  }
+};
+
+/**
+ * Try to restore file handle from IndexedDB
+ */
+const tryRestoreFileHandle = async () => {
+  try {
+    const idbReq = indexedDB.open('redstring-files', 1);
+    idbReq.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('files')) {
+        db.createObjectStore('files');
+      }
+    };
+    
+    return new Promise((resolve) => {
+      idbReq.onsuccess = async () => {
+        try {
+          const db = idbReq.result;
+          
+          // Check if object store exists
+          if (!db.objectStoreNames.contains('files')) {
+            console.log('[FileStorage] Object store "files" does not exist');
+            db.close();
+            return resolve(false);
+          }
+          
+          const tx = db.transaction('files', 'readonly');
+          const store = tx.objectStore('files');
+          const getReq = store.get(STORAGE_KEYS.FILE_HANDLE);
+          
+          getReq.onsuccess = async () => {
+            if (getReq.result) {
+              // Check if file handle is still valid and accessible
+              try {
+                const permission = await getReq.result.queryPermission({ mode: 'readwrite' });
+                if (permission === 'granted') {
+                  fileHandle = getReq.result;
+                  console.log('[FileStorage] File handle restored from IndexedDB');
+                  db.close();
+                  return resolve(true);
+                } else {
+                  // Try to re-request permission
+                  const newPermission = await getReq.result.requestPermission({ mode: 'readwrite' });
+                  if (newPermission === 'granted') {
+                    fileHandle = getReq.result;
+                    console.log('[FileStorage] File handle permission re-granted');
+                    db.close();
+                    return resolve(true);
+                  } else {
+                    console.log('[FileStorage] File handle permission denied');
+                    db.close();
+                    return resolve(false);
+                  }
+                }
+              } catch (error) {
+                console.warn('[FileStorage] File handle no longer valid:', error);
+                // Clear file handle and disable auto-save to clean up inconsistent state
+                fileHandle = null;
+                disableAutoSave();
+                db.close();
+                return resolve(false);
+              }
+            } else {
+              console.log('[FileStorage] No stored file handle found');
+              db.close();
+              return resolve(false);
+            }
+          };
+          getReq.onerror = () => {
+            db.close();
+            resolve(false);
+          };
+        } catch (error) {
+          console.warn('[FileStorage] Error restoring file handle:', error);
+          resolve(false);
+        }
+      };
+      idbReq.onerror = () => resolve(false);
+    });
+  } catch (error) {
+    console.log('[FileStorage] Could not restore file handle:', error);
+    return false;
+  }
+};
+
+/**
+ * Setup auto-save functionality
+ */
+const setupAutoSave = (getStoreStateFn) => {
+  if (autoSaveInterval) {
+    clearInterval(autoSaveInterval);
+  }
+  
+  if (isAutoSaveEnabled && fileHandle && getStoreStateFn) {
+    autoSaveInterval = setInterval(async () => {
+      try {
+        const now = Date.now();
+        
+        // Only save if:
+        // 1. There have been changes since last save (lastChangeTime > lastSaveTime)
+        // 2. Enough time has passed since the last change (debounce)
+        if (lastChangeTime <= lastSaveTime) {
+          return; // No changes since last save
+        }
+        
+        if (now - lastChangeTime < DEBOUNCE_DELAY) {
+          return; // Too soon after last change (debounce)
+        }
+        const storeState = getStoreStateFn();
+        const success = await saveToFile(storeState, false); // false = silent auto-save
+        if (!success) {
+          console.warn('[FileStorage] Auto-save failed');
+        }
+      } catch (error) {
+        console.error('[FileStorage] Auto-save failed:', error);
+      }
+    }, AUTO_SAVE_INTERVAL);
+    
+    console.log(`[FileStorage] Auto-save enabled (every ${AUTO_SAVE_INTERVAL}ms)`);
+  }
+};
+
+/**
+ * Create default empty state
+ */
+const createEmptyState = () => ({
+  graphs: new Map(),
+  nodes: new Map(), 
+  edges: new Map(),
+  openGraphIds: [],
+  activeGraphId: null,
+  activeDefinitionNodeId: null,
+  expandedGraphIds: new Set(),
+  rightPanelTabs: [{ type: 'home', isActive: true }],
+  savedNodeIds: new Set(),
+  savedGraphIds: new Set()
+});
+
+/**
+ * Create the universe.redstring file (or let user choose location)
+ */
+export const createUniverseFile = async () => {
   if (!isFileSystemSupported()) {
     throw new Error('File System Access API not supported in this browser');
   }
 
   try {
-    // Try to create/select the default file with better directory suggestion
-    fileHandle = await window.showSaveFilePicker({
-      suggestedName: DEFAULT_FILE_NAME,
-      startIn: 'documents', // Start in Documents folder
+    // Get suggested starting directory based on OS
+    const suggestedLocations = getSuggestedLocations();
+    
+    // Prompt user to save the universe.redstring file
+    const handle = await window.showSaveFilePicker({
+      suggestedName: FILE_NAME,
+      startIn: 'documents',
       types: [{
         description: 'Redstring Universe Files',
         accept: { 'application/json': ['.redstring'] }
       }]
     });
     
-    // Mark that we have a default file set up
-    localStorage.setItem(STORAGE_KEYS.HAS_DEFAULT_FILE, 'true');
-    localStorage.setItem('redstring-file-handle', 'stored');
+    await storeFileHandle(handle);
     
-    // Create empty initial state for new file
-    const initialData = {
-      graphs: new Map(),
-      nodes: new Map(), 
-      edges: new Map(),
-      openGraphIds: [],
-      activeGraphId: null,
-      activeDefinitionNodeId: null,
-      rightPanelTabs: [{ type: 'home', isActive: true }],
-      savedNodeIds: new Set(),
-      savedGraphIds: new Set(),
-      expandedGraphIds: new Set()
-    };
+    // Create initial empty state
+    const initialState = createEmptyState();
     
-    // Write the empty data to the file immediately
-    const redstringData = exportToRedstring(initialData);
+    // Write initial data to file
+    const redstringData = exportToRedstring(initialState);
     const dataString = JSON.stringify(redstringData, null, 2);
     
-    const writable = await fileHandle.createWritable({
-      keepExistingData: false // Explicitly overwrite
+    const writable = await handle.createWritable({
+      keepExistingData: false
     });
     
     await writable.write(dataString);
     await writable.close();
     
-    // Also save to localStorage for session restoration
-    try {
-      localStorage.setItem(STORAGE_KEYS.LAST_FILE_DATA, dataString);
-      localStorage.setItem(STORAGE_KEYS.FILE_SESSION_ACTIVE, 'true');
-      localStorage.setItem(STORAGE_KEYS.LAST_FILE_NAME, fileHandle.name || DEFAULT_FILE_NAME);
-    } catch (storageError) {
-      console.warn('[FileStorage] Failed to save to localStorage after creating default file:', storageError);
-    }
+    // Store session data
+    localStorage.setItem(STORAGE_KEYS.LAST_DATA, dataString);
+    localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
     
-    console.log('[FileStorage] Created default universe file successfully');
-    return initialData;
+    lastSaveTime = Date.now();
+    console.log('[FileStorage] Universe file created successfully');
+    
+    return initialState;
   } catch (error) {
     if (error.name === 'AbortError') {
-      console.log('[FileStorage] User cancelled default file creation');
+      console.log('[FileStorage] User cancelled file creation');
       return null;
     }
-    console.error('[FileStorage] Failed to create default file:', error);
+    console.error('[FileStorage] Failed to create universe file:', error);
     throw error;
   }
 };
 
 /**
- * Check if there's a previous session and restore it automatically
- * If no session exists but we have a default file setup, try to auto-load it
+ * Open existing universe.redstring file
  */
-export const restoreLastSession = async () => {
+export const openUniverseFile = async () => {
+  if (!isFileSystemSupported()) {
+    throw new Error('File System Access API not supported');
+  }
+
   try {
-    const hasActiveSession = localStorage.getItem(STORAGE_KEYS.FILE_SESSION_ACTIVE);
-    const lastFileData = localStorage.getItem(STORAGE_KEYS.LAST_FILE_DATA);
-    const lastFileName = localStorage.getItem(STORAGE_KEYS.LAST_FILE_NAME);
+    // Get suggested starting directory based on OS
+    const suggestedLocations = getSuggestedLocations();
     
-    if (hasActiveSession && lastFileData) {
-      console.log('[FileStorage] Restoring last session:', lastFileName || 'unnamed file');
-      
-      // Parse and return the stored data
-      const jsonData = JSON.parse(lastFileData);
-      const importResult = importFromRedstring(jsonData, null);
-      
-      if (importResult.errors.length > 0) {
-        console.warn('[FileStorage] Restore warnings:', importResult.errors);
-      }
-      
-      return {
-        success: true,
-        storeState: importResult.storeState,
-        fileName: lastFileName
-      };
+    const [handle] = await window.showOpenFilePicker({
+      startIn: 'documents',
+      types: [{
+        description: 'Redstring Universe Files',
+        accept: { 'application/json': ['.redstring'] }
+      }],
+      multiple: false
+    });
+    
+    await storeFileHandle(handle);
+    
+    // Read the file
+    const file = await handle.getFile();
+    const text = await file.text();
+    
+    // Validate file content
+    if (!text || text.trim() === '') {
+      throw new Error('The selected file is empty (0 bytes). This can happen if the file was never saved to or got corrupted. Please create a new universe or choose a different file.');
     }
     
-    // If no session but we have a default file setup, return false so user can set up
-    // The NodeCanvas will handle the initial setup
-    console.log('[FileStorage] No session found. Will show setup screen.');
-    
-    return { success: false };
-  } catch (error) {
-    console.error('[FileStorage] Failed to restore last session:', error);
-    // Clear corrupted data
-    localStorage.removeItem(STORAGE_KEYS.LAST_FILE_DATA);
-    localStorage.removeItem(STORAGE_KEYS.FILE_SESSION_ACTIVE);
-    localStorage.removeItem(STORAGE_KEYS.LAST_FILE_NAME);
-    return { success: false };
-  }
-};
-
-/**
- * Auto-load or create the default file without user prompts
- * This tries to seamlessly handle the default universe file
- */
-export const autoLoadOrCreateDefaultFile = async () => {
-  if (!isFileSystemSupported()) {
-    throw new Error('File System Access API not supported in this browser');
-  }
-
-  // For the automatic case, we'll create the default file only when the user first interacts
-  // This function will be called on the first load attempt
-  return await createDefaultFile();
-};
-
-/**
- * Initialize file storage - either load existing or create new
- * Now requires user gesture to work properly
- */
-export const initializeFileStorage = async () => {
-  if (!isFileSystemSupported()) {
-    console.warn('File System Access API not supported, falling back to localStorage');
-    throw new Error('File System Access API not supported in this browser');
-  }
-
-  try {
-    // Always prompt user to select/create file (no automatic restoration)
-    // This ensures we have a proper user gesture
-    return await promptForFile();
-  } catch (error) {
-    console.error('Failed to initialize file storage:', error);
-    throw error; // Re-throw so the calling code can handle it
-  }
-};
-
-/**
- * Prompt user to select or create a .redstring file
- */
-export const promptForFile = async () => {
-  if (!isFileSystemSupported()) return null;
-
-  try {
-    // First try to open existing file
+    let jsonData;
     try {
-      const [handle] = await window.showOpenFilePicker({
-        types: [{
-          description: 'Redstring files',
-          accept: { 'application/json': ['.redstring'] }
-        }],
-        multiple: false
-      });
-      
-      fileHandle = handle;
-      localStorage.setItem('redstring-file-handle', 'stored');
-      return await loadFromFile();
-    } catch (openError) {
-      // If user cancelled open, try save (create new file)
-      if (openError.name === 'AbortError') {
-        fileHandle = await window.showSaveFilePicker({
-          suggestedName: 'cognitive-space.redstring',
-          types: [{
-            description: 'Redstring files',
-            accept: { 'application/json': ['.redstring'] }
-          }]
-        });
-        
-        localStorage.setItem('redstring-file-handle', 'stored');
-        
-        // Create empty initial state for new file
-        const initialData = {
-          graphs: new Map(),
-          nodes: new Map(), 
-          edges: new Map(),
-          openGraphIds: [],
-          activeGraphId: null,
-          activeDefinitionNodeId: null,
-          rightPanelTabs: [{ type: 'home', isActive: true }],
-          savedNodeIds: new Set(),
-          savedGraphIds: new Set(),
-          expandedGraphIds: new Set()
-        };
-        
-        // Write the empty data to the file immediately
-        const redstringData = exportToRedstring(initialData);
-        const dataString = JSON.stringify(redstringData, null, 2);
-        
-        const writable = await fileHandle.createWritable({
-          keepExistingData: false // Explicitly overwrite
-        });
-        
-        await writable.write(dataString);
-        await writable.close();
-        
-        // Also save to localStorage for session restoration
-        try {
-          localStorage.setItem(STORAGE_KEYS.LAST_FILE_DATA, dataString);
-          localStorage.setItem(STORAGE_KEYS.FILE_SESSION_ACTIVE, 'true');
-          localStorage.setItem(STORAGE_KEYS.LAST_FILE_NAME, fileHandle.name || 'unknown.redstring');
-        } catch (storageError) {
-          console.warn('[FileStorage] Failed to save to localStorage after creating new file:', storageError);
-        }
-        
-        console.log('[FileStorage] Created new empty file successfully');
-        return initialData;
-      }
-      throw openError;
+      jsonData = JSON.parse(text);
+    } catch (parseError) {
+      console.error('[FileStorage] JSON parse error:', parseError);
+      throw new Error(`Invalid JSON in universe file: ${parseError.message}. The file may be corrupted.`);
     }
-  } catch (error) {
-    console.error('File selection cancelled or failed:', error);
-    return null;
-  }
-};
-
-/**
- * Load data from the current file
- */
-export const loadFromFile = async () => {
-  if (!fileHandle) return null;
-
-  try {
-    const file = await fileHandle.getFile();
-    const content = await file.text();
     
-    if (!content.trim()) {
-      // Empty file, return initial state
-      return {
-        graphs: new Map(),
-        nodes: new Map(),
-        edges: new Map(), 
-        openGraphIds: [],
-        activeGraphId: null,
-        activeDefinitionNodeId: null,
-        savedNodeIds: new Set(),
-        savedGraphIds: new Set(),
-        expandedGraphIds: new Set()
-      };
-    }
-
-    const jsonData = JSON.parse(content);
-    console.log('[FileStorage] Loaded data from file:', jsonData['@context'] ? 'JSON-LD format' : 'native format');
+    // Import the data
+    const importResult = importFromRedstring(jsonData);
     
-    // Use the existing import function which returns { storeState, errors }
-    const importResult = importFromRedstring(jsonData, null);
-    
-    if (importResult.errors.length > 0) {
+    if (importResult.errors && importResult.errors.length > 0) {
       console.warn('[FileStorage] Import warnings:', importResult.errors);
     }
     
-    // Save to localStorage for session restoration
-    try {
-      localStorage.setItem(STORAGE_KEYS.LAST_FILE_DATA, content);
-      localStorage.setItem(STORAGE_KEYS.FILE_SESSION_ACTIVE, 'true');
-      localStorage.setItem(STORAGE_KEYS.LAST_FILE_NAME, fileHandle.name || 'unknown.redstring');
-    } catch (storageError) {
-      console.warn('[FileStorage] Failed to save to localStorage after load:', storageError);
-    }
+    // Store session data
+    localStorage.setItem(STORAGE_KEYS.LAST_DATA, text);
+    localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
+    
+    console.log('[FileStorage] Universe file loaded successfully');
     
     return importResult.storeState;
   } catch (error) {
-    console.error('Failed to load from file:', error);
-    return null;
-  }
-};
-
-/**
- * Save data to the current file (with debouncing)
- */
-export const saveToFile = async (storeState) => {
-  if (!fileHandle || isAutoSaving) return;
-
-  // Debounce saves - cancel previous pending save
-  if (pendingSave) {
-    clearTimeout(pendingSave);
-  }
-
-  pendingSave = setTimeout(async () => {
-    let writable = null;
-    try {
-      isAutoSaving = true;
-      
-      // Check if we still have permission to the file
-      const permission = await fileHandle.queryPermission({ mode: 'readwrite' });
-      if (permission !== 'granted') {
-        const newPermission = await fileHandle.requestPermission({ mode: 'readwrite' });
-        if (newPermission !== 'granted') {
-          throw new Error('File permission denied');
-        }
-      }
-      
-      console.log('[FileStorage] Starting save operation...');
-      
-      // Prepare the data
-      const redstringData = exportToRedstring(storeState);
-      const dataString = JSON.stringify(redstringData, null, 2);
-      
-      // Create writable stream with explicit options
-      writable = await fileHandle.createWritable({
-        keepExistingData: false // Explicitly overwrite existing data
-      });
-      
-      // Write data and ensure proper closure
-      await writable.write(dataString);
-      await writable.close();
-      writable = null; // Mark as closed
-      
-      // Also save to localStorage for session restoration
-      try {
-        localStorage.setItem(STORAGE_KEYS.LAST_FILE_DATA, dataString);
-        localStorage.setItem(STORAGE_KEYS.FILE_SESSION_ACTIVE, 'true');
-        localStorage.setItem(STORAGE_KEYS.LAST_FILE_NAME, fileHandle.name || 'unknown.redstring');
-      } catch (storageError) {
-        console.warn('[FileStorage] Failed to save to localStorage:', storageError);
-      }
-      
-      console.log('[FileStorage] Auto-saved to file successfully:', fileHandle.name);
-    } catch (error) {
-      console.error('[FileStorage] Failed to save to file:', error);
-      
-      // Ensure writable is closed if there was an error
-      if (writable) {
-        try {
-          await writable.close();
-        } catch (closeError) {
-          console.error('[FileStorage] Failed to close writable stream:', closeError);
-        }
-      }
-      
-      // If permission was denied, try to re-request file access
-      if (error.name === 'NotAllowedError' || error.message.includes('permission')) {
-        fileHandle = null;
-        localStorage.removeItem('redstring-file-handle');
-        console.log('[FileStorage] File access revoked, will prompt on next save');
-      }
-    } finally {
-      isAutoSaving = false;
-      pendingSave = null;
+    if (error.name === 'AbortError') {
+      console.log('[FileStorage] User cancelled file selection');
+      return null;
     }
-  }, 500); // Debounce for 500ms
+    console.error('[FileStorage] Failed to open universe file:', error);
+    throw error;
+  }
 };
 
 /**
- * Get current file handle status
+ * Smart auto-connect that tries multiple strategies to find universe.redstring
+ */
+export const autoConnectToUniverse = async () => {
+  if (!isFileSystemSupported()) {
+    throw new Error('File System Access API not supported');
+  }
+
+  console.log('[FileStorage] Starting auto-connect to universe...');
+  
+  // Strategy 1: Try to restore the exact file handle
+  const fileRestored = await tryRestoreFileHandle();
+  if (fileRestored && fileHandle) {
+    try {
+      const file = await fileHandle.getFile();
+      const text = await file.text();
+      
+      // Validate file content
+      if (!text || text.trim() === '') {
+        throw new Error('Stored file is empty');
+      }
+      
+      let jsonData;
+      try {
+        jsonData = JSON.parse(text);
+      } catch (parseError) {
+        throw new Error(`Invalid JSON in stored file: ${parseError.message}`);
+      }
+      
+      const importResult = importFromRedstring(jsonData);
+      
+      localStorage.setItem(STORAGE_KEYS.LAST_DATA, text);
+      localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
+      
+      console.log('[FileStorage] Auto-connected using stored file handle');
+      return importResult.storeState;
+    } catch (error) {
+      console.warn('[FileStorage] Stored file handle failed to load:', error);
+      
+      // Clear the corrupted/empty file handle from storage and disable auto-save
+      fileHandle = null;
+      disableAutoSave();
+      try {
+        await clearIndexedDB();
+        console.log('[FileStorage] Cleared corrupted file handle from storage');
+      } catch (clearError) {
+        console.warn('[FileStorage] Failed to clear corrupted storage:', clearError);
+      }
+    }
+  }
+
+  // Strategy 2: Try to find universe.redstring in the preferred directory
+  await tryRestorePreferredDirectory();
+  if (preferredDirectory) {
+    const foundFile = await tryFindUniverseInDirectory(preferredDirectory);
+    if (foundFile) {
+      try {
+        await storeFileHandle(foundFile);
+        const file = await foundFile.getFile();
+        const text = await file.text();
+        
+        // Validate file content
+        if (!text || text.trim() === '') {
+          throw new Error('Found file is empty');
+        }
+        
+        let jsonData;
+        try {
+          jsonData = JSON.parse(text);
+        } catch (parseError) {
+          throw new Error(`Invalid JSON in found file: ${parseError.message}`);
+        }
+        
+        const importResult = importFromRedstring(jsonData);
+        
+        localStorage.setItem(STORAGE_KEYS.LAST_DATA, text);
+        localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
+        
+        console.log('[FileStorage] Auto-connected using preferred directory');
+        return importResult.storeState;
+      } catch (error) {
+        console.warn('[FileStorage] Found file but failed to load:', error);
+      }
+    }
+  }
+
+  console.log('[FileStorage] Auto-connect failed, user intervention required');
+  return null;
+};
+
+/**
+ * Get suggested default locations for universe.redstring
+ */
+export const getSuggestedLocations = () => {
+  const os = getOperatingSystem();
+  return DEFAULT_PATHS[os] || DEFAULT_PATHS.linux;
+};
+
+/**
+ * Try to restore the last session with smart auto-connect
+ */
+export const restoreLastSession = async () => {
+  try {
+    // Only try auto-connect to universe file - no localStorage fallback
+    const autoConnectResult = await autoConnectToUniverse();
+    if (autoConnectResult) {
+      return {
+        success: true,
+        storeState: autoConnectResult,
+        autoConnected: true,
+        hasUniverseFile: true
+      };
+    }
+
+    // No fallback to localStorage - universe file is required
+    console.log('[FileStorage] No universe file found, user must create or open one');
+    return { 
+      success: false, 
+      reason: 'no_universe_file',
+      message: 'No universe file found. Please create a new universe or open an existing one.'
+    };
+  } catch (error) {
+    console.error('[FileStorage] Failed to restore session:', error);
+    return { 
+      success: false, 
+      reason: 'error',
+      message: `Failed to restore session: ${error.message}`
+    };
+  }
+};
+
+/**
+ * Save current state to the universe file
+ */
+export const saveToFile = async (storeState, showSuccess = true) => {
+  if (!fileHandle) {
+    console.warn('[FileStorage] No file handle available for saving');
+    return false;
+  }
+  
+  try {
+    // Check/request permissions
+    let permission = await fileHandle.queryPermission({ mode: 'readwrite' });
+    if (permission !== 'granted') {
+      permission = await fileHandle.requestPermission({ mode: 'readwrite' });
+      if (permission !== 'granted') {
+        throw new Error('File permission denied');
+      }
+    }
+    
+    // Export to redstring format
+    const redstringData = exportToRedstring(storeState);
+    const dataString = JSON.stringify(redstringData, null, 2);
+    
+    // Write to file
+    const writable = await fileHandle.createWritable({
+      keepExistingData: false
+    });
+    
+    await writable.write(dataString);
+    await writable.close();
+    
+    // Update localStorage
+    localStorage.setItem(STORAGE_KEYS.LAST_DATA, dataString);
+    localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
+    
+    lastSaveTime = Date.now();
+    
+    if (showSuccess) {
+      console.log('[FileStorage] File saved successfully');
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('[FileStorage] Failed to save file:', error);
+    
+    // If permission was denied, clear the file handle and disable auto-save
+    if (error.message.includes('permission') || error.name === 'NotAllowedError') {
+      fileHandle = null;
+      disableAutoSave();
+      localStorage.removeItem(STORAGE_KEYS.FILE_HANDLE);
+    }
+    
+    throw error;
+  }
+};
+
+/**
+ * Notify that changes have been made to trigger auto-save
+ */
+export const notifyChanges = () => {
+  lastChangeTime = Date.now();
+};
+
+/**
+ * Enable auto-save with store state getter
+ */
+export const enableAutoSave = (getStoreStateFn) => {
+  isAutoSaveEnabled = true;
+  // Trigger initial change notification so auto-save can start working
+  notifyChanges();
+  setupAutoSave(getStoreStateFn);
+};
+
+/**
+ * Disable auto-save
+ */
+export const disableAutoSave = () => {
+  isAutoSaveEnabled = false;
+  if (autoSaveInterval) {
+    clearInterval(autoSaveInterval);
+    autoSaveInterval = null;
+  }
+};
+
+/**
+ * Check if we have a file handle and can auto-save
+ */
+export const canAutoSave = () => {
+  return !!fileHandle && isAutoSaveEnabled;
+};
+
+/**
+ * Get current file status
  */
 export const getFileStatus = () => {
   return {
-    hasFileHandle: !!fileHandle,
-    isSupported: isFileSystemSupported(),
-    isAutoSaving
+    hasFileHandle: fileHandle !== null,
+    fileName: fileHandle ? (fileHandle.name || FILE_NAME) : null,
+    autoSaveEnabled: isAutoSaveEnabled,
+    autoSaveActive: autoSaveInterval !== null,
+    lastSaveTime: lastSaveTime,
+    lastChangeTime: lastChangeTime
   };
 };
 
 /**
- * Clear the current session data
+ * Clear corrupted IndexedDB databases
  */
-export const clearSession = () => {
-  localStorage.removeItem(STORAGE_KEYS.LAST_FILE_DATA);
-  localStorage.removeItem(STORAGE_KEYS.FILE_SESSION_ACTIVE);
-  localStorage.removeItem(STORAGE_KEYS.LAST_FILE_NAME);
-  localStorage.removeItem(STORAGE_KEYS.HAS_DEFAULT_FILE);
-  localStorage.removeItem('redstring-file-handle');
+export const clearIndexedDB = async () => {
+  try {
+    console.log('[FileStorage] Clearing potentially corrupted IndexedDB databases');
+    
+    // Clear file handles database
+    try {
+      const deleteFileDb = indexedDB.deleteDatabase('redstring-files');
+      await new Promise((resolve, reject) => {
+        deleteFileDb.onsuccess = () => resolve();
+        deleteFileDb.onerror = () => reject(deleteFileDb.error);
+      });
+      console.log('[FileStorage] Cleared redstring-files database');
+    } catch (error) {
+      console.warn('[FileStorage] Could not clear redstring-files database:', error);
+    }
+    
+    // Clear directory database
+    try {
+      const deleteDirDb = indexedDB.deleteDatabase('redstring-directory');
+      await new Promise((resolve, reject) => {
+        deleteDirDb.onsuccess = () => resolve();
+        deleteDirDb.onerror = () => reject(deleteDirDb.error);
+      });
+      console.log('[FileStorage] Cleared redstring-directory database');
+    } catch (error) {
+      console.warn('[FileStorage] Could not clear redstring-directory database:', error);
+    }
+    
+    // Reset global state
+    fileHandle = null;
+    preferredDirectory = null;
+    
+    console.log('[FileStorage] IndexedDB cleared successfully');
+  } catch (error) {
+    console.error('[FileStorage] Error clearing IndexedDB:', error);
+  }
+};
+
+/**
+ * Clear session data
+ */
+export const clearSession = async () => {
+  localStorage.removeItem(STORAGE_KEYS.LAST_DATA);
+  localStorage.removeItem(STORAGE_KEYS.SESSION_ACTIVE);
+  localStorage.removeItem(STORAGE_KEYS.FILE_HANDLE);
   fileHandle = null;
+  disableAutoSave();
+  
+  // Also clear IndexedDB to prevent corruption issues
+  await clearIndexedDB();
+  
   console.log('[FileStorage] Session cleared');
 };
 
 /**
- * Create a new empty universe file
- */
-export const createNewUniverse = async () => {
-  if (!isFileSystemSupported()) {
-    throw new Error('File System Access API not supported in this browser');
-  }
-
-  try {
-    // Prompt for save location for new file
-    fileHandle = await window.showSaveFilePicker({
-      suggestedName: 'cognitive-space.redstring',
-      types: [{
-        description: 'Redstring files',
-        accept: { 'application/json': ['.redstring'] }
-      }]
-    });
-    
-    localStorage.setItem('redstring-file-handle', 'stored');
-    
-    // Create empty initial state for new file
-    const initialData = {
-      graphs: new Map(),
-      nodes: new Map(), 
-      edges: new Map(),
-      openGraphIds: [],
-      activeGraphId: null,
-      activeDefinitionNodeId: null,
-      rightPanelTabs: [{ type: 'home', isActive: true }],
-      savedNodeIds: new Set(),
-      savedGraphIds: new Set(),
-      expandedGraphIds: new Set()
-    };
-    
-    // Write the empty data to the file immediately
-    const redstringData = exportToRedstring(initialData);
-    const dataString = JSON.stringify(redstringData, null, 2);
-    
-    const writable = await fileHandle.createWritable({
-      keepExistingData: false // Explicitly overwrite
-    });
-    
-    await writable.write(dataString);
-    await writable.close();
-    
-    // Also save to localStorage for session restoration
-    try {
-      localStorage.setItem(STORAGE_KEYS.LAST_FILE_DATA, dataString);
-      localStorage.setItem(STORAGE_KEYS.FILE_SESSION_ACTIVE, 'true');
-      localStorage.setItem(STORAGE_KEYS.LAST_FILE_NAME, fileHandle.name || 'unknown.redstring');
-    } catch (storageError) {
-      console.warn('[FileStorage] Failed to save to localStorage after creating new file:', storageError);
-    }
-    
-    console.log('[FileStorage] Created new empty universe file successfully');
-    return initialData;
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      console.log('[FileStorage] User cancelled new file creation');
-      return null;
-    }
-    console.error('[FileStorage] Failed to create new universe:', error);
-    throw error;
-  }
-};
-
-/**
- * Manually trigger save (useful for testing)
+ * Force save (for manual save actions)
  */
 export const forceSave = async (storeState) => {
-  if (pendingSave) {
-    clearTimeout(pendingSave);
-    pendingSave = null;
-  }
-  
   if (!fileHandle) {
-    console.log('[FileStorage] No file handle, prompting for file...');
-    await promptForFile();
+    throw new Error('No file selected. Please create or open a universe file first.');
   }
   
-  if (fileHandle) {
-    isAutoSaving = false; // Allow immediate save
-    await saveToFile(storeState);
-  }
+  return await saveToFile(storeState, true);
 };
 
 /**
- * Reset file system and clear any problematic handles
- * Use this if you encounter .crswrap/.crswap files or other file system issues
+ * Initialize with auto-save capability
  */
-export const resetFileSystem = () => {
-  console.log('[FileStorage] Resetting file system...');
-  
-  // Clear all pending operations
-  if (pendingSave) {
-    clearTimeout(pendingSave);
-    pendingSave = null;
+export const initializeAutoSave = (getStoreStateFn) => {
+  if (fileHandle && isAutoSaveEnabled) {
+    setupAutoSave(getStoreStateFn);
   }
-  
-  // Reset file handle
-  fileHandle = null;
-  isAutoSaving = false;
-  
-  // Clear all localStorage entries
-  clearSession();
-  
-  console.log('[FileStorage] File system reset complete. Please create or open a file again.');
-}; 
+};
+
+// Legacy functions for compatibility
+export const createDefaultFile = createUniverseFile;
+export const loadFromFile = openUniverseFile;
+export const promptForFile = openUniverseFile; 
