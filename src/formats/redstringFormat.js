@@ -85,7 +85,7 @@ export const exportToRedstring = (storeState) => {
       "@type": "Graph",
       ...graph,
       spatial: {
-        expanded: expandedGraphIds.includes(id),
+        expanded: expandedGraphIds.has(id),
         active: id === activeGraphId
       }
     };

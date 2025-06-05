@@ -21,6 +21,10 @@ const Header = ({
   setDebugMode,
   bookmarkActive = false,
   onBookmarkToggle,
+  // File management actions
+  onNewUniverse,
+  onOpenUniverse,
+  onSaveUniverse,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [currentLogoIndex, setCurrentLogoIndex] = useState(0);
@@ -234,7 +238,10 @@ const Header = ({
           <RedstringMenu 
             isOpen={isMenuOpen} 
             debugMode={debugMode} 
-            setDebugMode={setDebugMode} 
+            setDebugMode={setDebugMode}
+            onNewUniverse={onNewUniverse}
+            onOpenUniverse={onOpenUniverse}
+            onSaveUniverse={onSaveUniverse}
           />
       </header>
     );
@@ -276,7 +283,10 @@ const Header = ({
         <RedstringMenu 
           isOpen={isMenuOpen} 
           debugMode={debugMode} 
-          setDebugMode={setDebugMode} 
+          setDebugMode={setDebugMode}
+          onNewUniverse={onNewUniverse}
+          onOpenUniverse={onOpenUniverse}
+          onSaveUniverse={onSaveUniverse}
         />
       </div>
 

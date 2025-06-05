@@ -205,8 +205,8 @@ const useGraphStore = create((set, get) => {
     activeDefinitionNodeId: null, 
     rightPanelTabs: [{ type: 'home', isActive: true }], 
     expandedGraphIds: new Set(),
-    savedNodeIds: new Set(),
-    savedGraphIds: new Set(),
+    savedNodeIds: loadInitialSavedNodes(),
+    savedGraphIds: loadInitialSavedGraphs(),
     
     // File storage state
     isFileLoaded: false,
@@ -1207,8 +1207,7 @@ const useGraphStore = create((set, get) => {
     try {
       const fileData = await initializeFileStorage();
       if (fileData) {
-        set((state) => ({
-          ...state,
+        set(() => ({
           ...fileData,
           isFileLoaded: true,
           fileLoadingError: null
@@ -1238,8 +1237,7 @@ const useGraphStore = create((set, get) => {
     try {
       const result = await restoreLastSession();
       if (result.success) {
-        set((state) => ({
-          ...state,
+        set(() => ({
           ...result.storeState,
           isFileLoaded: true,
           fileLoadingError: null
