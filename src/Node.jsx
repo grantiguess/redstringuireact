@@ -43,7 +43,10 @@ const Node = ({
   // --- Add callback for deleting definition graphs ---
   onDeleteDefinition,
   // --- Add callback for expanding definition graphs ---
-  onExpandDefinition
+  onExpandDefinition,
+  // --- Add navigation props for definition control ---
+  currentDefinitionIndex = 0,
+  onNavigateDefinition
 }) => {
   // Access properties directly from the node data object
   const nodeId = node.id ?? uuidv4(); // Use ID or generate fallback (should have ID from store)
@@ -127,8 +130,10 @@ const Node = ({
   // State to control arrow fade-in animation
   const [showArrows, setShowArrows] = useState(false);
 
-  // State to track which definition graph is currently being shown (index in definitionGraphIds array)
-  const [currentDefinitionIndex, setCurrentDefinitionIndex] = useState(0);
+  // Track if we've already reset the definition index for this preview session
+  const hasResetForPreview = useRef(false);
+
+  // Use the currentDefinitionIndex prop passed from NodeCanvas
 
   // Get the node's definition graph IDs
   const definitionGraphIds = node.definitionGraphIds || [];
@@ -165,32 +170,36 @@ const Node = ({
   // Effect to handle arrow fade-in after expansion
   useEffect(() => {
     if (isPreviewing) {
-      // Reset to first definition when expanding
-      setCurrentDefinitionIndex(0);
+      // Reset to first definition when expanding (only once per preview session)
+      if (onNavigateDefinition && !hasResetForPreview.current) {
+        hasResetForPreview.current = true;
+        if (currentDefinitionIndex !== 0) {
+          onNavigateDefinition(nodeId, 0);
+        }
+      }
       // Small delay to let the expansion animation start, then fade in arrows
       const timer = setTimeout(() => {
         setShowArrows(true);
       }, 200); // 200ms delay after expansion starts
       return () => clearTimeout(timer);
     } else {
-      // Immediately hide arrows when not previewing
+      // Immediately hide arrows when not previewing and reset the flag
       setShowArrows(false);
+      hasResetForPreview.current = false;
     }
-  }, [isPreviewing]);
+  }, [isPreviewing, nodeId, onNavigateDefinition]); // Removed currentDefinitionIndex from dependencies
 
   // Navigation functions
   const navigateToPreviousDefinition = () => {
-    if (!hasMultipleDefinitions) return;
-    setCurrentDefinitionIndex(prev => 
-      prev === 0 ? definitionGraphIds.length - 1 : prev - 1
-    );
+    if (!hasMultipleDefinitions || !onNavigateDefinition) return;
+    const newIndex = currentDefinitionIndex === 0 ? definitionGraphIds.length - 1 : currentDefinitionIndex - 1;
+    onNavigateDefinition(nodeId, newIndex);
   };
 
   const navigateToNextDefinition = () => {
-    if (!hasMultipleDefinitions) return;
-    setCurrentDefinitionIndex(prev => 
-      prev === definitionGraphIds.length - 1 ? 0 : prev + 1
-    );
+    if (!hasMultipleDefinitions || !onNavigateDefinition) return;
+    const newIndex = currentDefinitionIndex === definitionGraphIds.length - 1 ? 0 : currentDefinitionIndex + 1;
+    onNavigateDefinition(nodeId, newIndex);
   };
 
   return (
@@ -539,18 +548,20 @@ const Node = ({
                       if (onDeleteDefinition && currentGraphId) {
                         console.log(`[Delete Button] Deleting definition graph: ${currentGraphId} for node: ${nodeId}`);
                         
-                        // Adjust currentDefinitionIndex before deletion
+                        // Adjust currentDefinitionIndex before deletion using callback
                         const newLength = definitionGraphIds.length - 1; // Length after deletion
-                        if (newLength > 0) {
-                          // If we're deleting the last definition, move to the previous one
-                          if (currentDefinitionIndex >= newLength) {
-                            setCurrentDefinitionIndex(newLength - 1);
+                        if (onNavigateDefinition) {
+                          if (newLength > 0) {
+                            // If we're deleting the last definition, move to the previous one
+                            if (currentDefinitionIndex >= newLength) {
+                              onNavigateDefinition(nodeId, newLength - 1);
+                            }
+                            // If we're deleting from the middle or beginning, keep the same index
+                            // (which will now point to the next definition in the list)
+                          } else {
+                            // If this was the last definition, reset to 0
+                            onNavigateDefinition(nodeId, 0);
                           }
-                          // If we're deleting from the middle or beginning, keep the same index
-                          // (which will now point to the next definition in the list)
-                        } else {
-                          // If this was the last definition, reset to 0
-                          setCurrentDefinitionIndex(0);
                         }
                         
                         onDeleteDefinition(nodeId, currentGraphId);

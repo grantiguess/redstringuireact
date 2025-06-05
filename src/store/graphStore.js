@@ -171,14 +171,14 @@ const loadInitialExpandedGraphIds = () => {
     try {
       const parsed = JSON.parse(storedExpandedGraphIds);
       // console.log("[Store Init] Loaded and parsed expandedGraphIds from localStorage:", parsed);
-      return Array.isArray(parsed) ? parsed : []; // Ensure it's an array
+      return new Set(Array.isArray(parsed) ? parsed : []); // Return as Set
     } catch (e) {
       // console.error("[Store Init] Error parsing expandedGraphIds from localStorage:", e);
-      return [];
+      return new Set();
     }
   }
-  // console.log("[Store Init] No expandedGraphIds in localStorage, starting with an empty array.");
-  return [];
+  // console.log("[Store Init] No expandedGraphIds in localStorage, starting with an empty Set.");
+  return new Set();
 };
 
 const useGraphStore = create((set, get) => {
