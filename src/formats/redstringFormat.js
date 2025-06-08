@@ -211,6 +211,26 @@ export const importFromRedstring = (redstringData, storeActions) => {
     savedGraphIds: new Set(userInterface.savedGraphIds || [])
   };
 
+  const importedTabs = userInterface.rightPanelTabs;
+
+  // If no tabs are loaded or the array is empty, default to the home tab.
+  if (!Array.isArray(importedTabs) || importedTabs.length === 0) {
+    storeState.rightPanelTabs = [{ type: 'home', isActive: true }];
+  } else {
+    // Ensure at least one tab is active
+    const isAnyTabActive = importedTabs.some(tab => tab.isActive);
+    if (!isAnyTabActive && importedTabs.length > 0) {
+      // Find the home tab and make it active, or the first tab as a fallback
+      const homeTabIndex = importedTabs.findIndex(tab => tab.type === 'home');
+      if (homeTabIndex > -1) {
+        importedTabs[homeTabIndex].isActive = true;
+      } else {
+        importedTabs[0].isActive = true;
+      }
+    }
+    storeState.rightPanelTabs = importedTabs;
+  }
+  
   return {
     storeState,
     errors: [] // For now, no error handling

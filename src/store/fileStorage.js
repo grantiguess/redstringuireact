@@ -441,7 +441,11 @@ export const createUniverseFile = async () => {
     localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
     
     lastSaveTime = Date.now();
-    console.log('[FileStorage] Universe file created successfully');
+    
+    // Add to recent files
+    await addToRecentFiles(handle, handle.name || FILE_NAME);
+    
+    console.log(`[FileStorage] Universe file created successfully at: ${handle.name}`);
     
     return initialState;
   } catch (error) {
@@ -505,7 +509,10 @@ export const openUniverseFile = async () => {
     localStorage.setItem(STORAGE_KEYS.LAST_DATA, text);
     localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
     
-    console.log('[FileStorage] Universe file loaded successfully');
+    // Add to recent files
+    await addToRecentFiles(handle, handle.name || FILE_NAME);
+    
+    console.log(`[FileStorage] Universe file loaded successfully from: ${handle.name}`);
     
     return importResult.storeState;
   } catch (error) {
@@ -552,6 +559,9 @@ export const autoConnectToUniverse = async () => {
       localStorage.setItem(STORAGE_KEYS.LAST_DATA, text);
       localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
       
+      // Add to recent files
+      await addToRecentFiles(fileHandle, fileHandle.name || FILE_NAME);
+      
       console.log('[FileStorage] Auto-connected using stored file handle');
       return importResult.storeState;
     } catch (error) {
@@ -595,6 +605,9 @@ export const autoConnectToUniverse = async () => {
         
         localStorage.setItem(STORAGE_KEYS.LAST_DATA, text);
         localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
+        
+        // Add to recent files
+        await addToRecentFiles(foundFile, foundFile.name || FILE_NAME);
         
         console.log('[FileStorage] Auto-connected using preferred directory');
         return importResult.storeState;
@@ -687,7 +700,7 @@ export const saveToFile = async (storeState, showSuccess = true) => {
     lastSaveTime = Date.now();
     
     if (showSuccess) {
-      console.log('[FileStorage] File saved successfully');
+      console.log(`[FileStorage] File saved successfully to: ${fileHandle.name}`);
     }
     
     return true;
@@ -752,6 +765,173 @@ export const getFileStatus = () => {
     lastSaveTime: lastSaveTime,
     lastChangeTime: lastChangeTime
   };
+};
+
+// Recent files management
+const RECENT_FILES_KEY = 'redstring_recent_files';
+const MAX_RECENT_FILES = 10;
+
+const addToRecentFiles = async (fileHandle, fileName) => {
+  try {
+    const recentFiles = await getRecentFiles();
+    
+    // Create new entry
+    const newEntry = {
+      fileName: fileName,
+      lastOpened: Date.now(),
+      handleId: `handle_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    };
+    
+    // Store the file handle separately in IndexedDB with unique ID
+    await storeFileHandleWithId(fileHandle, newEntry.handleId);
+    
+    // Remove any existing entry with the same file name
+    const filteredFiles = recentFiles.filter(file => file.fileName !== fileName);
+    
+    // Add new entry at the beginning
+    const updatedFiles = [newEntry, ...filteredFiles].slice(0, MAX_RECENT_FILES);
+    
+    // Store in localStorage
+    localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(updatedFiles));
+    
+    console.log(`[FileStorage] Added ${fileName} to recent files`);
+  } catch (error) {
+    console.error('[FileStorage] Error adding to recent files:', error);
+  }
+};
+
+const storeFileHandleWithId = async (handle, handleId) => {
+  try {
+    const dbName = 'RedstringRecentFiles';
+    const storeName = 'fileHandles';
+    
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(dbName, 1);
+      
+      request.onerror = () => reject(request.error);
+      
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(storeName)) {
+          db.createObjectStore(storeName, { keyPath: 'id' });
+        }
+      };
+      
+      request.onsuccess = (event) => {
+        const db = event.target.result;
+        const transaction = db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        
+        const putRequest = store.put({ id: handleId, handle: handle });
+        
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+      };
+    });
+  } catch (error) {
+    console.error('[FileStorage] Error storing file handle with ID:', error);
+    throw error;
+  }
+};
+
+export const getRecentFiles = async () => {
+  try {
+    const stored = localStorage.getItem(RECENT_FILES_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch (error) {
+    console.error('[FileStorage] Error getting recent files:', error);
+    return [];
+  }
+};
+
+export const openRecentFile = async (recentFileEntry) => {
+  try {
+    console.log(`[FileStorage] Opening recent file: ${recentFileEntry.fileName}`);
+    
+    // Try to restore the file handle
+    const handle = await tryRestoreFileHandleById(recentFileEntry.handleId);
+    
+    if (!handle) {
+      throw new Error('File handle no longer available. The file may have been moved or deleted.');
+    }
+    
+    // Read the file
+    const file = await handle.getFile();
+    const content = await file.text();
+    const data = JSON.parse(content);
+    
+    // Update current file references
+    fileHandle = handle;
+    
+    // Update the last opened time for this file
+    const recentFiles = await getRecentFiles();
+    const updatedFiles = recentFiles.map(file => 
+      file.handleId === recentFileEntry.handleId 
+        ? { ...file, lastOpened: Date.now() }
+        : file
+    );
+    localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(updatedFiles));
+    
+    // Store the current file handle for auto-save (using original function)
+    await storeFileHandle(handle);
+    
+    console.log(`[FileStorage] Successfully opened recent file: ${recentFileEntry.fileName}`);
+    return data;
+    
+  } catch (error) {
+    console.error(`[FileStorage] Error opening recent file ${recentFileEntry.fileName}:`, error);
+    
+    // Remove the problematic entry from recent files
+    await removeFromRecentFiles(recentFileEntry.handleId);
+    
+    throw error;
+  }
+};
+
+const removeFromRecentFiles = async (handleId) => {
+  try {
+    const recentFiles = await getRecentFiles();
+    const filteredFiles = recentFiles.filter(file => file.handleId !== handleId);
+    localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(filteredFiles));
+    console.log(`[FileStorage] Removed invalid recent file entry`);
+  } catch (error) {
+    console.error('[FileStorage] Error removing from recent files:', error);
+  }
+};
+
+const tryRestoreFileHandleById = async (handleId) => {
+  try {
+    const dbName = 'RedstringRecentFiles';
+    const storeName = 'fileHandles';
+    
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(dbName, 1);
+      
+      request.onerror = () => resolve(null);
+      
+      request.onsuccess = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(storeName)) {
+          resolve(null);
+          return;
+        }
+        
+        const transaction = db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        const getRequest = store.get(handleId);
+        
+        getRequest.onsuccess = () => {
+          const result = getRequest.result;
+          resolve(result ? result.handle : null);
+        };
+        
+        getRequest.onerror = () => resolve(null);
+      };
+    });
+  } catch (error) {
+    console.error('[FileStorage] Error restoring file handle by ID:', error);
+    return null;
+  }
 };
 
 /**

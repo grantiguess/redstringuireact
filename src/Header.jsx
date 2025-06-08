@@ -25,6 +25,7 @@ const Header = ({
   onNewUniverse,
   onOpenUniverse,
   onSaveUniverse,
+  onOpenRecentFile,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [currentLogoIndex, setCurrentLogoIndex] = useState(0);
@@ -242,6 +243,7 @@ const Header = ({
             onNewUniverse={onNewUniverse}
             onOpenUniverse={onOpenUniverse}
             onSaveUniverse={onSaveUniverse}
+            onOpenRecentFile={onOpenRecentFile}
           />
       </header>
     );
@@ -287,6 +289,7 @@ const Header = ({
           onNewUniverse={onNewUniverse}
           onOpenUniverse={onOpenUniverse}
           onSaveUniverse={onSaveUniverse}
+          onOpenRecentFile={onOpenRecentFile}
         />
       </div>
 

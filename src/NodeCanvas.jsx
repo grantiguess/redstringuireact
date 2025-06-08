@@ -1537,7 +1537,7 @@ function NodeCanvas() {
          onNewUniverse={async () => {
            try {
              console.log('[NodeCanvas] Creating new universe from menu');
-             storeActions.clearUniverse();
+             // storeActions.clearUniverse(); // This is redundant
              
              const { createUniverseFile, enableAutoSave } = await import('./store/fileStorage.js');
              const initialData = await createUniverseFile();
@@ -1548,6 +1548,9 @@ function NodeCanvas() {
                // Enable auto-save for the new universe
                enableAutoSave(() => useGraphStore.getState());
                console.log('[NodeCanvas] New universe created successfully from menu with auto-save enabled');
+               
+               // Ensure universe connection is marked as established
+               storeActions.setUniverseConnected(true);
              }
            } catch (error) {
              console.error('[NodeCanvas] Error creating new universe from menu:', error);
@@ -1556,18 +1559,48 @@ function NodeCanvas() {
          }}
          onOpenUniverse={async () => {
            try {
-             console.log('[NodeCanvas] Opening universe from menu');
-             storeActions.clearUniverse();
+             // Check if user has unsaved work
+             const currentState = useGraphStore.getState();
+             const hasGraphs = currentState.graphs.size > 0;
+             const hasNodes = currentState.nodes.size > 0;
              
-             const { openUniverseFile, enableAutoSave } = await import('./store/fileStorage.js');
+             if (hasGraphs || hasNodes) {
+               const confirmed = confirm(
+                 'Opening a different universe file will replace your current work.\n\n' +
+                 'Make sure your current work is saved first.\n\n' +
+                 'Continue with opening a different universe file?'
+               );
+               if (!confirmed) {
+                 console.log('[NodeCanvas] User cancelled universe file opening');
+                 return;
+               }
+             }
+             
+             console.log('[NodeCanvas] Opening universe from menu');
+             // storeActions.clearUniverse(); // This is redundant
+             
+             const { openUniverseFile, enableAutoSave, getFileStatus } = await import('./store/fileStorage.js');
              const loadedData = await openUniverseFile();
              
+             console.log('[NodeCanvas] Loaded data:', loadedData ? 'success' : 'null');
+             
              if (loadedData !== null) {
+               console.log('[NodeCanvas] Loading universe data with', Object.keys(loadedData).length, 'properties');
                storeActions.loadUniverseFromFile(loadedData);
                
                // Enable auto-save for the opened universe
                enableAutoSave(() => useGraphStore.getState());
+               
+               // Debug: check file status after load
+               const fileStatus = getFileStatus();
+               console.log('[NodeCanvas] File status after load:', fileStatus);
+               
                console.log('[NodeCanvas] Universe opened successfully from menu with auto-save enabled');
+               
+               // Ensure universe connection is marked as established
+               storeActions.setUniverseConnected(true);
+             } else {
+               console.log('[NodeCanvas] User cancelled file selection');
              }
            } catch (error) {
              console.error('[NodeCanvas] Error opening universe from menu:', error);
@@ -1577,14 +1610,26 @@ function NodeCanvas() {
          onSaveUniverse={async () => {
            try {
              console.log('[NodeCanvas] Manual save requested');
-             const { forceSave, canAutoSave } = await import('./store/fileStorage.js');
+             const { forceSave, canAutoSave, getFileStatus } = await import('./store/fileStorage.js');
+             
+             // Debug: check file status
+             const fileStatus = getFileStatus();
+             console.log('[NodeCanvas] File status before save:', fileStatus);
              
              if (canAutoSave()) {
                const currentState = useGraphStore.getState();
-               await forceSave(currentState);
-               console.log('[NodeCanvas] Manual save completed successfully');
-               // Show a brief success message
-               alert('Universe saved successfully!');
+               console.log('[NodeCanvas] Saving state with', Object.keys(currentState).length, 'properties');
+               
+               const saveResult = await forceSave(currentState);
+               console.log('[NodeCanvas] Manual save result:', saveResult);
+               
+               if (saveResult) {
+                 console.log('[NodeCanvas] Manual save completed successfully');
+                 alert('Universe saved successfully!');
+               } else {
+                 console.warn('[NodeCanvas] Manual save returned false');
+                 alert('Save failed for unknown reason.');
+               }
              } else {
                console.warn('[NodeCanvas] No file handle available for manual save');
                alert('No universe file is currently open. Please create or open a universe first.');
@@ -1592,6 +1637,57 @@ function NodeCanvas() {
            } catch (error) {
              console.error('[NodeCanvas] Error during manual save:', error);
              alert(`Failed to save universe: ${error.message}`);
+           }
+         }}
+         onOpenRecentFile={async (recentFileEntry) => {
+           try {
+             // Check if user has unsaved work
+             const currentState = useGraphStore.getState();
+             const hasGraphs = currentState.graphs.size > 0;
+             const hasNodes = currentState.nodes.size > 0;
+             
+             if (hasGraphs || hasNodes) {
+               const confirmed = confirm(
+                 `Opening "${recentFileEntry.fileName}" will replace your current work.\n\n` +
+                 'Make sure your current work is saved first.\n\n' +
+                 'Continue?'
+               );
+               if (!confirmed) {
+                 console.log('[NodeCanvas] User cancelled recent file opening');
+                 return;
+               }
+             }
+             
+             console.log('[NodeCanvas] Opening recent file from menu:', recentFileEntry.fileName);
+             // storeActions.clearUniverse(); // This is redundant
+             
+             const { openRecentFile, enableAutoSave, getFileStatus } = await import('./store/fileStorage.js');
+             const loadedData = await openRecentFile(recentFileEntry);
+             
+             console.log('[NodeCanvas] Recent file data loaded:', loadedData ? 'success' : 'null');
+             
+             if (loadedData !== null) {
+               console.log('[NodeCanvas] Loading recent file data with', Object.keys(loadedData).length, 'properties');
+               storeActions.loadUniverseFromFile(loadedData);
+               
+               // Enable auto-save for the opened universe
+               enableAutoSave(() => useGraphStore.getState());
+               
+               // Debug: check file status after load
+               const fileStatus = getFileStatus();
+               console.log('[NodeCanvas] File status after recent file load:', fileStatus);
+               
+               console.log('[NodeCanvas] Recent file opened successfully with auto-save enabled');
+               
+               // Ensure universe connection is marked as established
+               storeActions.setUniverseConnected(true);
+             } else {
+               console.log('[NodeCanvas] Recent file loading returned null');
+             }
+           } catch (error) {
+             console.error('[NodeCanvas] Error opening recent file:', error);
+             storeActions.setUniverseError(`Failed to open recent file: ${error.message}`);
+             alert(`Failed to open "${recentFileEntry.fileName}": ${error.message}`);
            }
          }}
       />
@@ -1685,7 +1781,7 @@ function NodeCanvas() {
                     try {
                       console.log('[NodeCanvas] Creating universe file');
                       // Clear any existing universe
-                      storeActions.clearUniverse();
+                      // storeActions.clearUniverse(); // This is redundant
                       
                       // Import the createUniverseFile function
                       const { createUniverseFile, enableAutoSave } = await import('./store/fileStorage.js');
@@ -1700,6 +1796,9 @@ function NodeCanvas() {
                         // Enable auto-save
                         enableAutoSave(() => useGraphStore.getState());
                         console.log('[NodeCanvas] Universe created and saved successfully with auto-save enabled');
+                        
+                        // Ensure universe connection is marked as established
+                        storeActions.setUniverseConnected(true);
                       } else {
                         // User cancelled the file creation dialog
                         console.log('[NodeCanvas] User cancelled universe file creation');
@@ -1731,7 +1830,7 @@ function NodeCanvas() {
                     try {
                       console.log('[NodeCanvas] User chose to open existing file');
                       // Clear any existing universe
-                      storeActions.clearUniverse();
+                      // storeActions.clearUniverse(); // This is redundant
                       
                       const { openUniverseFile, enableAutoSave } = await import('./store/fileStorage.js');
                       const loadedData = await openUniverseFile();
@@ -1742,6 +1841,9 @@ function NodeCanvas() {
                         // Enable auto-save
                         enableAutoSave(() => useGraphStore.getState());
                         console.log('[NodeCanvas] Universe opened successfully with auto-save enabled');
+                        
+                        // Ensure universe connection is marked as established
+                        storeActions.setUniverseConnected(true);
                       }
                     } catch (error) {
                       console.error('[NodeCanvas] Error loading file:', error);

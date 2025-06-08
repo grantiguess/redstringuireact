@@ -540,15 +540,15 @@ const Node = ({
                         // Adjust currentDefinitionIndex before deletion using callback
                         const newLength = definitionGraphIds.length - 1; // Length after deletion
                         if (onNavigateDefinition) {
-                          if (newLength > 0) {
-                            // If we're deleting the last definition, move to the previous one
-                            if (currentDefinitionIndex >= newLength) {
+                        if (newLength > 0) {
+                          // If we're deleting the last definition, move to the previous one
+                          if (currentDefinitionIndex >= newLength) {
                               onNavigateDefinition(nodeId, newLength - 1);
-                            }
-                            // If we're deleting from the middle or beginning, keep the same index
-                            // (which will now point to the next definition in the list)
-                          } else {
-                            // If this was the last definition, reset to 0
+                          }
+                          // If we're deleting from the middle or beginning, keep the same index
+                          // (which will now point to the next definition in the list)
+                        } else {
+                          // If this was the last definition, reset to 0
                             onNavigateDefinition(nodeId, 0);
                           }
                         }

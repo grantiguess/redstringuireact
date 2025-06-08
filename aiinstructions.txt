@@ -98,11 +98,11 @@ Beyond the general guidelines, recent development has focused on more complex UI
     *   Debug information includes detected device type, delta history length, and analysis flags for troubleshooting input detection issues
 
 20. **Inline Node Editing and Panel Integration:**
-   *   The PieMenu's "Edit" button (`targetPieMenuButtons` in `NodeCanvas.jsx`) triggers both inline canvas editing and panel tab creation/activation
-   *   When the edit button is clicked, it: (1) opens/creates a panel tab for the node using `storeActions.openRightPanelNodeTab()`, (2) ensures the right panel is expanded, and (3) enables inline editing on the canvas by setting `editingNodeIdOnCanvas`
-   *   The `Node.jsx` component handles inline editing through `isEditingOnCanvas`, `onCommitCanvasEdit`, and `onCancelCanvasEdit` props, displaying either a text span or an input field based on editing state
-   *   Real-time synchronization between canvas and panel editing is achieved through the Zustand store - both interfaces update the same node data, ensuring changes appear immediately in both locations
-   *   Inline editing supports Enter to commit, Escape to cancel, and blur to commit, with proper focus management and visual styling via the `.node-name-input` CSS class
+    *   The PieMenu's "Edit" button (`targetPieMenuButtons` in `NodeCanvas.jsx`) triggers both inline canvas editing and panel tab creation/activation
+    *   When the edit button is clicked, it: (1) opens/creates a panel tab for the node using `storeActions.openRightPanelNodeTab()`, (2) ensures the right panel is expanded, and (3) enables inline editing on the canvas by setting `editingNodeIdOnCanvas`
+    *   The `Node.jsx` component handles inline editing through `isEditingOnCanvas`, `onCommitCanvasEdit`, and `onCancelCanvasEdit` props, displaying either a text span or an input field based on editing state
+    *   Real-time synchronization between canvas and panel editing is achieved through the Zustand store - both interfaces update the same node data, ensuring changes appear immediately in both locations
+    *   Inline editing supports Enter to commit, Escape to cancel, and blur to commit, with proper focus management and visual styling via the `.node-name-input` CSS class
 
 ## Dynamic Description Feature & Context-Aware System:
 

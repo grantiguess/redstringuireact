@@ -3,6 +3,7 @@ import { produce, enableMapSet } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
 import { NODE_WIDTH, NODE_HEIGHT, NODE_DEFAULT_COLOR } from '../constants'; // <<< Import node dimensions
 import { getFileStatus, restoreLastSession, clearSession, notifyChanges } from './fileStorage.js';
+import { importFromRedstring } from '../formats/redstringFormat.js';
 // No longer importing class instances
 // import Graph from '../core/Graph';
 // import Node from '../core/Node';
@@ -1155,21 +1156,38 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   getFileStatus: () => getFileStatus(),
 
   // Universe file management actions
-  loadUniverseFromFile: (storeState) => set(() => ({
-    ...storeState,
-    isUniverseLoaded: true,
-    isUniverseLoading: false,
-    universeLoadingError: null,
-    hasUniverseFile: true
-  })),
+  loadUniverseFromFile: (dataToLoad) => {
+    // If dataToLoad already contains Maps (i.e., was returned by importFromRedstring earlier) we can use it directly.
+    const isAlreadyDeserialized = dataToLoad && dataToLoad.graphs instanceof Map;
 
-  setUniverseError: (error) => set(state => ({
-    ...state,
-    isUniverseLoaded: true,
+    let storeState;
+    if (isAlreadyDeserialized) {
+      storeState = dataToLoad;
+    } else {
+      // Use the centralized import function to correctly deserialize the data
+      const { storeState: importedState, errors } = importFromRedstring(dataToLoad);
+      if (errors && errors.length > 0) {
+        console.error("[graphStore] Errors importing from Redstring:", errors);
+        return;
+      }
+      storeState = importedState;
+    }
+
+    set({
+      ...storeState,
+      isUniverseLoaded: true,
+      isUniverseLoading: false,
+      universeLoadingError: null,
+      hasUniverseFile: true,
+    });
+  },
+
+  setUniverseError: (error) => set({ 
+    isUniverseLoaded: true, // Loading is complete, but with an error
     isUniverseLoading: false,
     universeLoadingError: error,
     hasUniverseFile: false
-  })),
+  }),
 
   clearUniverse: () => set(() => ({
     graphs: new Map(),
