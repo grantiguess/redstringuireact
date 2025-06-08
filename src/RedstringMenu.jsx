@@ -147,102 +147,51 @@ const RedstringMenu = ({
                                 <button
                                   className="submenu-item"
                                   onClick={() => {
-                                    // console.log('[RedstringMenu] Open Universe clicked');
-                                    onOpenUniverse?.();
-                                  }}
-                                >
-                                  <FolderOpen size={16} style={{ marginRight: '8px' }} />
-                                  Open Universe
-                                </button>
-                                <button 
-                                  className="submenu-item has-submenu"
-                                  onMouseEnter={() => {
-                                    // console.log('[RedstringMenu Frontend] Hovering over Recent Files');
-                                    handleRecentFilesEnter();
-                                  }}
-                                  onMouseLeave={handleMenuItemLeave}
-                                  style={{ 
-                                    position: 'relative',
-                                    border: 'none',
-                                    background: 'none',
-                                    color: '#BDB6B5',
-                                    padding: '8px 12px',
-                                    textAlign: 'left',
-                                    fontSize: '14px',
-                                    cursor: 'pointer',
-                                    transition: 'background-color 0.2s',
-                                    margin: '4px auto',
-                                    borderRadius: '15px',
-                                    width: 'calc(100% - 20px)',
-                                    display: 'flex',
-                                    justifyContent: 'flex-start',
-                                    alignItems: 'center',
-                                    outline: 'none'
-                                  }}
-                                  onMouseOver={(e) => e.target.style.backgroundColor = '#F00000'}
-                                  onMouseOut={(e) => e.target.style.backgroundColor = 'transparent'}
-                                >
-                                  <Clock size={16} style={{ marginRight: '8px' }} />
-                                  Recent Files
-                                  <ChevronRight size={14} style={{ marginLeft: 'auto', opacity: 0.7 }} />
-                                  
-                                  {openSubmenu === 'RecentFiles' && (
-                                    <div 
-                                      className="recent-files-submenu"
-                                      onMouseEnter={() => {
-                                        // console.log('[RedstringMenu Frontend] Entering recent files submenu');
-                                        handleSubmenuEnter();
-                                      }}
-                                      onMouseLeave={handleMenuItemLeave}
-                                      style={{
-                                        position: 'absolute',
-                                        left: '95%',
-                                        top: '-5px',
-                                        background: '#260000',
-                                        borderRadius: '15px',
-                                        borderTopLeftRadius: '0',
-                                        boxShadow: '2px 2px 10px rgba(0,0,0,0.2)',
-                                        padding: '10px',
-                                        minWidth: '200px',
-                                        maxWidth: '300px',
-                                        zIndex: 1101,
-                                        marginLeft: '-5px',
-                                        // border: '2px solid red' // Debug border removed
-                                      }}
-                                    >
-                                      {recentFiles.length === 0 ? (
-                                        <div className="no-recent-files">No recent files</div>
-                                      ) : (
-                                        recentFiles.map((file, index) => (
-                                          <button
-                                            key={file.handleId || index}
-                                            className="recent-file-item"
-                                            onClick={(e) => {
-                                              // console.log('[RedstringMenu Frontend] Recent file clicked:', file.fileName);
-                                              e.stopPropagation();
-                                              onOpenRecentFile?.(file);
-                                            }}
-                                            title={`${file.fileName}\nLast opened: ${new Date(file.lastOpened).toLocaleString()}`}
-                                          >
-                                            <span className="recent-file-name">{file.fileName}</span>
-                                            <span className="recent-file-time">
-                                              {new Date(file.lastOpened).toLocaleDateString()}
-                                            </span>
-                                          </button>
-                                        ))
-                                      )}
-                                    </div>
-                                  )}
-                                </button>
-                                <button
-                                  className="submenu-item"
-                                  onClick={() => {
                                     // console.log('[RedstringMenu] Save Universe clicked');
                                     onSaveUniverse?.();
                                   }}
                                 >
                                   <Save size={16} style={{ marginRight: '8px' }} />
                                   Save Universe
+                                </button>
+                                <button
+                                    className={`submenu-item has-submenu ${openSubmenu === 'RecentFiles' ? 'active-submenu-parent' : ''}`}
+                                    onClick={() => onOpenUniverse?.()}
+                                    onMouseEnter={handleRecentFilesEnter}
+                                    onMouseLeave={handleMenuItemLeave}
+                                >
+                                    <FolderOpen size={16} style={{ marginRight: '8px' }} />
+                                    Open...
+                                    <ChevronRight size={14} style={{ marginLeft: 'auto', opacity: 0.7 }} />
+
+                                    {openSubmenu === 'RecentFiles' && (
+                                        <div 
+                                            className="recent-files-submenu"
+                                            onMouseEnter={handleSubmenuEnter}
+                                            onMouseLeave={handleMenuItemLeave}
+                                        >
+                                            {recentFiles.length === 0 ? (
+                                                <div className="no-recent-files">No recent files</div>
+                                            ) : (
+                                                recentFiles.map((file, index) => (
+                                                    <button
+                                                        key={file.handleId || index}
+                                                        className="recent-file-item"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onOpenRecentFile?.(file);
+                                                        }}
+                                                        title={`${file.fileName}\nLast opened: ${new Date(file.lastOpened).toLocaleString()}`}
+                                                    >
+                                                        <span className="recent-file-name">{file.fileName}</span>
+                                                        <span className="recent-file-time">
+                                                            {new Date(file.lastOpened).toLocaleDateString()}
+                                                        </span>
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
                                 </button>
                             </div>
                           )}

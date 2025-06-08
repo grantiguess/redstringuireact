@@ -96,22 +96,20 @@ to {
 }
 
 .submenu-item {
-    background: none;
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    margin: 0 auto;
+    width: calc(100% - 20px);
+    border-radius: 15px;
     border: none;
+    background: none;
     color: #BDB6B5;
-    padding: 8px 12px;
-    text-align: left;
     font-size: 14px;
     cursor: pointer;
     transition: background-color 0.2s;
-    margin: 4px 0;
-    display: flex;
-    justify-content: flex-start; /* Change to flex-start for better icon alignment */
-    align-items: center;
+    text-align: left;
     outline: none;
-    border-radius: 15px;
-    width: calc(100% - 20px);
-    margin: 4px auto;
 }
 
 .submenu-item:hover {
@@ -121,39 +119,27 @@ to {
 /* Recent files submenu */
 .submenu-item.has-submenu {
     position: relative;
-    border: none;
-    background: none;
-    font: inherit;
-    cursor: pointer;
-    text-align: left;
-    /* Ensure consistent sizing with other submenu items */
-    padding: 8px 12px;
-    margin: 4px auto;
-    border-radius: 15px;
-    width: calc(100% - 20px);
-    display: flex;
-    justify-content: flex-start;
-    align-items: center;
-    transition: background-color 0.2s;
 }
 
-.submenu-item.has-submenu:hover {
+.submenu-item.has-submenu:hover,
+.submenu-item.has-submenu.active-submenu-parent {
     background-color: #F00000;
+    color: white;
 }
 
 .recent-files-submenu {
     position: absolute;
-    left: 95%; /* More overlap to prevent gaps */
-    top: -5px; /* More overlap at top */
+    left: 100%;
+    top: -5px;
     background-color: #260000;
     border-radius: 15px;
     border-top-left-radius: 0;
     box-shadow: 2px 2px 10px rgba(0,0,0,0.2);
     padding: 10px;
-    min-width: 200px;
-    max-width: 300px;
-    z-index: 1101;
-    margin-left: -5px; /* Ensure no gap */
+    min-width: 250px;
+    max-width: 500px;
+    z-index: 1099;
+    margin-left: 5px; /* Increased from 2px to 5px for more spacing */
 }
 
 .recent-file-item {
@@ -180,6 +166,11 @@ to {
 
 .recent-file-item:hover {
     background-color: #F00000;
+    color: white;
+}
+
+.recent-file-item:hover .recent-file-time {
+    color: white;
 }
 
 .recent-file-name {
@@ -187,13 +178,15 @@ to {
     overflow: hidden;
     text-overflow: ellipsis;
     flex-grow: 1;
+    margin-right: 8px; /* Space between name and time */
+    pointer-events: none; /* Make child element transparent to hover events */
 }
 
 .recent-file-time {
     font-size: 12px;
-    color: #999;
-    margin-left: 8px;
-    flex-shrink: 0;
+    color: #888;
+    flex-shrink: 0; /* Prevent time from shrinking */
+    pointer-events: none; /* Make child element transparent to hover events */
 }
 
 .no-recent-files {
