@@ -1783,13 +1783,14 @@ const Panel = forwardRef(
                                 <div style={{ flexGrow: 1, overflow: 'hidden', position: 'relative', height: '100%' }}>
                                     <div 
                                         ref={tabBarRef} 
+                                        className="hide-scrollbar"
                                         style={{ 
                                             position: 'relative',
                                             height: '100%', 
                                             display: 'flex', 
                                             alignItems: 'stretch', 
-                                            paddingLeft: '10px', 
-                                            paddingRight: '10px',
+                                            paddingLeft: '8px', 
+                                            paddingRight: '42px',
                                             overflowX: 'auto',
                                             overflowY: 'hidden', 
                                         }}

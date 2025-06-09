@@ -148,3 +148,59 @@ Beyond the general guidelines, recent development has focused on more complex UI
    *   **Reset Logic:** Avoid forcing state resets during transitions - preserve user's active context when possible
    *   **Composite State Keys:** When implementing context-aware features, use composite keys that capture the full context (nodeId + graphId)
    *   **Synchronization Points:** Identify all places where the same data is displayed and ensure they use the same data source and update mechanisms
+
+## RedstringMenu System & File Management Architecture:
+
+27. **RedstringMenu Component Architecture:**
+   *   The `RedstringMenu.jsx` component provides the main application menu accessed via the animated header logo
+   *   Features a sophisticated nested submenu system with timeout-based hover logic to prevent menu flicker
+   *   **Key State Management:** Uses `openSubmenu` state to track which submenu is active ('File', 'RecentFiles', 'View', etc.)
+   *   **Hover Logic:** Implements `closeTimeout` system with 200ms delay to handle smooth transitions between nested menus
+   *   **Critical Fix:** Resolved major bug where the File submenu would disappear when hovering over "Recent Files" - fixed by keeping File submenu open when RecentFiles is active using `(openSubmenu === 'File' || openSubmenu === 'RecentFiles')`
+
+28. **File Management and Recent Files System:**
+   *   **Recent Files Submenu:** Dynamically loads recent `.redstring` files using `getRecentFiles()` from `src/store/fileStorage.js`
+   *   **File Operations:** Integrated universe file management (New, Save, Open, Recent) directly into the menu system
+   *   **Async Loading:** Recent files are loaded asynchronously when the menu opens to avoid blocking the UI
+   *   **Error Handling:** Graceful fallback when recent files can't be loaded, with console error logging for debugging
+   *   **Menu Item Ordering:** Optimized order to follow user workflow: New Universe → Save Universe → Open... (with recent files submenu)
+
+29. **Critical File Loading Race Condition Fix:**
+   *   **Root Cause:** `clearUniverse()` calls in `NodeCanvas.jsx` were creating race conditions where loaded file data was immediately overwritten with empty state
+   *   **Solution:** Removed redundant `clearUniverse()` calls from `onNewUniverse`, `onOpenUniverse`, and `onOpenRecentFile` handlers in `NodeCanvas.jsx`
+   *   **Data Serialization Fix:** Fixed `loadUniverseFromFile` in `src/store/graphStore.js` to properly handle both raw JSON and already-deserialized Map data
+   *   **Import Chain:** Fixed data flow through `importFromRedstring` function to ensure proper Map/Set conversion for graphs, nodes, and edges
+   *   **Auto-save Integration:** Ensured file operations properly enable auto-save functionality after successful load/create operations
+
+30. **Nested Menu Positioning and Styling:**
+   *   **Z-Index Management:** Recent Files submenu uses `z-index: 1099` to appear behind parent menus but above canvas elements
+   *   **Dynamic Positioning:** Submenu positioned with `left: 100%` and `margin-left: 5px` for proper spacing without overlap
+   *   **Responsive Width:** Recent Files submenu supports `min-width: 250px` and `max-width: 500px` to accommodate long filenames
+   *   **Hover States:** Unified hover styling where entire recent file items (name + date) highlight as cohesive units
+   *   **Visual Polish:** Recent file items show filename and last-opened date with proper ellipsis for overflow text
+
+31. **Menu Animation and State Lifecycle:**
+   *   **Entry/Exit Animations:** Menu uses CSS keyframe animations (`slideDown`/`slideUp`) with proper state management
+   *   **Component Lifecycle:** `shouldRender` state ensures menu is removed from DOM only after exit animation completes
+   *   **Cleanup Logic:** Proper timeout cleanup prevents memory leaks and state inconsistencies
+   *   **Submenu Coordination:** Parent menu hover states are preserved when child submenus are active
+
+32. **File Management Integration Patterns:**
+   *   **Props-Based Actions:** Menu receives file management functions as props from `NodeCanvas.jsx` (onNewUniverse, onSaveUniverse, etc.)
+   *   **Store Integration:** File operations interact with Zustand store through `loadUniverseFromFile`, `setUniverseError`, etc.
+   *   **Error State Management:** Universe loading/saving errors are properly handled through store state and user feedback
+   *   **Session Persistence:** File handles and recent files are persisted using IndexedDB for reconnection across browser sessions
+   *   **Auto-discovery:** System attempts to auto-connect to universe files in Documents folder for seamless user experience
+
+33. **Menu System Debugging and Maintenance:**
+   *   **State Logging:** Previously included extensive console logging for submenu state changes (since cleaned up)
+   *   **Hover Debugging:** Used to log menu item enter/leave events for debugging hover issues (since removed)
+   *   **File Loading Logs:** Maintained essential file operation logs with filenames for debugging file management issues
+   *   **Performance Considerations:** Recent files loading is async and cached to avoid repeated filesystem access
+   *   **Cross-Platform Testing:** Menu behavior tested across different input devices and operating systems
+
+34. **Combined Open/Recent Button Pattern:**
+   *   **UX Innovation:** Merged separate "Open Universe" and "Recent Files" buttons into single "Open..." button with submenu
+   *   **Standard Practice:** Follows common application patterns where primary action (click) opens file dialog and hover reveals recent files
+   *   **Interaction Design:** Click behavior maintains existing file opening functionality while hover provides quick access to recent files
+   *   **Space Efficiency:** Reduces menu clutter while maintaining full functionality and improving discoverability of recent files feature
