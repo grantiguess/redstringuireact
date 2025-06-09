@@ -387,21 +387,21 @@ function NodeCanvas() {
     const selectedNode = selectedNodeIdForPieMenu ? nodes.find(n => n.id === selectedNodeIdForPieMenu) : null;
 
     if (selectedNode && previewingNodeId === selectedNode.id) {
-      // If the selected node for the pie menu is the one being previewed, show only Contract
+      // If the selected node for the pie menu is the one being previewed, show only Compose
       return [
         {
-          id: 'contract-preview',
-          label: 'Contract',
+          id: 'compose-preview',
+          label: 'Compose',
           icon: Package,
           action: (nodeId) => {
-            // console.log(`[PieMenu Action] Contract clicked for node: ${nodeId}. Starting transition.`);
+            // console.log(`[PieMenu Action] Compose clicked for node: ${nodeId}. Starting transition.`);
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
             // setPreviewingNodeId(null); // This will be set after animation
           }
         }
       ];
     } else {
-      // Default buttons: Edit, Package, Connect, Delete (if not previewing THIS node)
+      // Default buttons: Edit, Decompose, Connect, Delete (if not previewing THIS node)
       return [
         { id: 'edit', label: 'Edit', icon: Edit3, action: (nodeId) => {
             // console.log(`[PieMenu Action] Edit clicked for node: ${nodeId}. Opening panel tab and enabling inline editing.`);
@@ -418,11 +418,11 @@ function NodeCanvas() {
             setEditingNodeIdOnCanvas(nodeId);
         } },
         {
-          id: 'package-preview',
-          label: 'Package',
+          id: 'decompose-preview',
+          label: 'Decompose',
           icon: PackageOpen,
           action: (nodeId) => {
-            // console.log(`[PieMenu Action] Package clicked for node: ${nodeId}. Starting transition.`);
+            // console.log(`[PieMenu Action] Decompose clicked for node: ${nodeId}. Starting transition.`);
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
             // previewingNodeId will be set in onExitAnimationComplete after animation
           }
