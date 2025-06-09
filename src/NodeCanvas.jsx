@@ -401,7 +401,7 @@ function NodeCanvas() {
         }
       ];
     } else {
-      // Default buttons: Edit, Delete, Connect, Package (if not previewing THIS node)
+      // Default buttons: Edit, Package, Connect, Delete (if not previewing THIS node)
       return [
         { id: 'edit', label: 'Edit', icon: Edit3, action: (nodeId) => {
             // console.log(`[PieMenu Action] Edit clicked for node: ${nodeId}. Opening panel tab and enabling inline editing.`);
@@ -417,12 +417,6 @@ function NodeCanvas() {
             // Enable inline editing on canvas
             setEditingNodeIdOnCanvas(nodeId);
         } },
-        { id: 'delete', label: 'Delete', icon: Trash2, action: (nodeId) => {
-          storeActions.removeNode(nodeId);
-          setSelectedNodeIds(new Set()); // Deselect after deleting
-          setSelectedNodeIdForPieMenu(null); // Ensure pie menu hides
-        } },
-        { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => {} }, // console.log('Connect node:', nodeId)
         {
           id: 'package-preview',
           label: 'Package',
@@ -433,6 +427,12 @@ function NodeCanvas() {
             // previewingNodeId will be set in onExitAnimationComplete after animation
           }
         },
+        { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => {} }, // console.log('Connect node:', nodeId)
+        { id: 'delete', label: 'Delete', icon: Trash2, action: (nodeId) => {
+          storeActions.removeNode(nodeId);
+          setSelectedNodeIds(new Set()); // Deselect after deleting
+          setSelectedNodeIdForPieMenu(null); // Ensure pie menu hides
+        } },
         {
           id: 'expand-tab',
           label: 'Expand',
@@ -440,12 +440,28 @@ function NodeCanvas() {
           action: (nodeId) => {
             // console.log(`[PieMenu Action] Expand to tab clicked for node: ${nodeId}.`);
             const nodeData = nodes.find(n => n.id === nodeId);
-            if (nodeData && nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
-              const graphIdToOpen = nodeData.definitionGraphIds[0]; // Open the first definition
-              // console.log(`[PieMenu Expand] Opening definition graph: ${graphIdToOpen} for node: ${nodeId}`);
-              storeActions.openGraphTabAndBringToTop(graphIdToOpen, nodeId);
-            } else {
-              // console.warn(`[PieMenu Expand] Node ${nodeId} has no definition graphs to expand.`);
+            if (nodeData) {
+              if (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
+                // Node has definitions - open the first one
+                const graphIdToOpen = nodeData.definitionGraphIds[0];
+                // console.log(`[PieMenu Expand] Opening existing definition graph: ${graphIdToOpen} for node: ${nodeId}`);
+                storeActions.openGraphTabAndBringToTop(graphIdToOpen, nodeId);
+              } else {
+                // Node has no definitions - create one first, then open it
+                // console.log(`[PieMenu Expand] Node ${nodeId} has no definitions. Creating and opening new definition.`);
+                storeActions.createAndAssignGraphDefinition(nodeId);
+                
+                // After creating the definition, the store should be updated immediately
+                // Get the updated node data to find the newly created definition
+                setTimeout(() => {
+                  const updatedNodeData = nodes.find(n => n.id === nodeId);
+                  if (updatedNodeData && updatedNodeData.definitionGraphIds && updatedNodeData.definitionGraphIds.length > 0) {
+                    const graphIdToOpen = updatedNodeData.definitionGraphIds[0];
+                    // console.log(`[PieMenu Expand] Opening newly created definition graph: ${graphIdToOpen} for node: ${nodeId}`);
+                    storeActions.openGraphTabAndBringToTop(graphIdToOpen, nodeId);
+                  }
+                }, 0); // Use setTimeout to ensure store update has propagated
+              }
             }
           }
         }
