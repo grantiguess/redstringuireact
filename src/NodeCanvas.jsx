@@ -40,7 +40,8 @@ import {
   EDGE_MARGIN,
   TRACKPAD_ZOOM_SENSITIVITY,
   PAN_DRAG_SENSITIVITY,
-  SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY
+  SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY,
+  NODE_DEFAULT_COLOR
 } from './constants';
 
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -148,6 +149,23 @@ function NodeCanvas() {
   }, [activeGraphId, graphsMap]);
   const activeGraphName = activeGraphData?.name ?? 'Loading...';
   const activeGraphDescription = activeGraphData?.description ?? '';
+
+  const headerGraphs = useMemo(() => {
+    return openGraphIds.map(graphId => {
+        const graph = graphsMap.get(graphId);
+        if (!graph) return null;
+
+        const definingNodeId = graph.definingNodeIds?.[0];
+        const definingNode = definingNodeId ? nodesMap.get(definingNodeId) : null;
+
+        return {
+            id: graph.id,
+            name: graph.name || 'Untitled Graph',
+            color: definingNode?.color || NODE_DEFAULT_COLOR || '#800000', // Default color
+            isActive: graph.id === activeGraphId,
+        };
+    }).filter(Boolean);
+  }, [openGraphIds, activeGraphId, graphsMap, nodesMap]);
 
   // console.log("[NodeCanvas] Derived activeGraphId:", activeGraphId, "Name:", activeGraphName);
 
@@ -1527,9 +1545,11 @@ function NodeCanvas() {
       {/* Main content uncommented */}
       
       <Header
-         projectTitle={projectTitle} // Uses local state via variable
-         onTitleChange={handleProjectTitleChange} // Uses local state/actions
+         onTitleChange={handleProjectTitleChange}
          onEditingStateChange={setIsHeaderEditing}
+         headerGraphs={headerGraphs}
+         onSetActiveGraph={storeActions.setActiveGraph}
+         // Receive debug props
          debugMode={debugMode}
          setDebugMode={setDebugMode}
          bookmarkActive={bookmarkActive}

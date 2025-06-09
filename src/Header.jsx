@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { HEADER_HEIGHT } from './constants';
 import RedstringMenu from './RedstringMenu';
 import { Bookmark } from 'lucide-react';
+import HeaderGraphTab from './HeaderGraphTab';
 
 // Import all logo states
 import logo1 from './assets/redstring_button/header_logo_1.svg';
@@ -13,9 +14,10 @@ import logo6 from './assets/redstring_button/header_logo_6.svg';
 import logo7 from './assets/redstring_button/header_logo_7.svg';
 
 const Header = ({ 
-  projectTitle, 
   onTitleChange, 
-  onEditingStateChange, 
+  onEditingStateChange,
+  headerGraphs,
+  onSetActiveGraph,
   // Receive debug props
   debugMode, 
   setDebugMode,
@@ -34,7 +36,21 @@ const Header = ({
 
   // Keep local editing state, but text state is now props
   const [isEditing, setIsEditing] = useState(false);
-  const [tempTitle, setTempTitle] = useState(projectTitle); // Local temp title for editing
+  
+  const activeGraph = headerGraphs.find(g => g.isActive);
+  const otherGraphs = headerGraphs.filter(g => !g.isActive);
+
+  const leftGraphs = [];
+  const rightGraphs = [];
+  otherGraphs.forEach((graph, index) => {
+    if (index % 2 === 0) {
+      leftGraphs.unshift(graph);
+    } else {
+      rightGraphs.push(graph);
+    }
+  });
+
+  const [tempTitle, setTempTitle] = useState(activeGraph ? activeGraph.name : '');
   const inputRef = useRef(null);
 
   const logos = [logo1, logo2, logo3, logo4, logo5, logo6, logo7];
@@ -64,10 +80,10 @@ const Header = ({
 
   // Update temp title if prop changes while not editing
   useEffect(() => {
-    if (!isEditing) {
-      setTempTitle(projectTitle);
+    if (!isEditing && activeGraph) {
+      setTempTitle(activeGraph.name);
     }
-  }, [projectTitle, isEditing]);
+  }, [activeGraph, isEditing]);
 
   // Focus input when editing starts
   useEffect(() => {
@@ -174,9 +190,11 @@ const Header = ({
   };
 
   const handleTitleDoubleClick = () => {
-    setTempTitle(projectTitle); // Start editing with current prop value
-    setIsEditing(true);
-    onEditingStateChange?.(true);
+    if (activeGraph) {
+      setTempTitle(activeGraph.name); // Start editing with current prop value
+      setIsEditing(true);
+      onEditingStateChange?.(true);
+    }
   };
 
   const handleTitleChange = (event) => {
@@ -201,7 +219,9 @@ const Header = ({
     }
     if (event.key === 'Escape') {
       setIsEditing(false); // Discard changes on Escape
-      setTempTitle(projectTitle); // Reset temp title
+      if (activeGraph) {
+        setTempTitle(activeGraph.name); // Reset temp title
+      }
       onEditingStateChange?.(false);
       event.target.blur();
     }
@@ -299,42 +319,85 @@ const Header = ({
         left: '50%',
         top: '50%',
         transform: 'translate(-50%, -50%)',
-        color: '#bdb5b5',
-        fontSize: '18px',
-        userSelect: isEditing ? 'auto' : 'none',
-        textAlign: 'center',
-        padding: '0 5px' // Reduce horizontal padding
+        display: 'grid',
+        gridTemplateColumns: '1fr auto 1fr', // Left area, center area, right area
+        alignItems: 'center',
+        width: 'calc(100% - 120px)',
+        maxWidth: '100%',
+        gap: '10px',
       }}>
-        {isEditing ? (
-          <input
-            ref={inputRef}
-            type="text"
-            className="editable-title-input"
-            value={tempTitle}
-            onChange={handleTitleChange}
-            onBlur={handleTitleBlur}
-            onKeyDown={handleTitleKeyDown}
-            spellCheck="false"
-            style={{
-              color: '#bdb5b5',
-              textAlign: 'center',
-              maxWidth: 'calc(100vw - 200px)',
-              boxSizing: 'border-box'
-            }}
-            autoFocus
-          />
-        ) : (
-          <span 
-            onDoubleClick={handleTitleDoubleClick} 
-            style={{ 
-              cursor: 'pointer', 
-              padding: '2px 5px',
-              fontWeight: 'bold'
-            }}
-          >
-            {projectTitle}
-          </span>
-        )}
+        {/* Left-side (inactive) tabs - right-aligned in left column */}
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          gap: '10px',
+          overflow: 'hidden'
+        }}>
+          {leftGraphs.map((graph, index) => (
+            <HeaderGraphTab
+              key={graph.id}
+              graph={graph}
+              onSelect={onSetActiveGraph}
+              isActive={false}
+            />
+          ))}
+        </div>
+
+        {/* Active Tab - Always centered in center column */}
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {activeGraph && (
+            isEditing ? (
+              <input
+                ref={inputRef}
+                type="text"
+                className="editable-title-input"
+                value={tempTitle}
+                onChange={handleTitleChange}
+                onBlur={handleTitleBlur}
+                onKeyDown={handleTitleKeyDown}
+                spellCheck="false"
+                style={{
+                  color: '#bdb5b5',
+                  textAlign: 'center',
+                  boxSizing: 'border-box',
+                  padding: '7px 17px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  fontWeight: 'bold',
+                  fontSize: '18px',
+                  margin: '0',
+                }}
+                autoFocus
+              />
+            ) : (
+              <HeaderGraphTab
+                graph={activeGraph}
+                onSelect={() => {}}
+                onDoubleClick={handleTitleDoubleClick}
+                isActive={true}
+              />
+            )
+          )}
+        </div>
+        
+        {/* Right-side (inactive) tabs - left-aligned in right column */}
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'flex-start',
+          alignItems: 'center',
+          gap: '10px',
+          overflow: 'hidden'
+        }}>
+          {rightGraphs.map((graph, index) => (
+            <HeaderGraphTab
+              key={graph.id}
+              graph={graph}
+              onSelect={onSetActiveGraph}
+              isActive={false}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Bookmark Icon Button */}
