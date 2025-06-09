@@ -157,11 +157,25 @@ function NodeCanvas() {
 
         const definingNodeId = graph.definingNodeIds?.[0];
         const definingNode = definingNodeId ? nodesMap.get(definingNodeId) : null;
+        
+        // Ensure color is a string
+        let nodeColor = NODE_DEFAULT_COLOR || '#800000'; // Default fallback
+        if (definingNode?.color) {
+          if (typeof definingNode.color === 'string') {
+            nodeColor = definingNode.color;
+          } else if (typeof definingNode.color === 'object' && definingNode.color.hex) {
+            // Handle case where color is an object with hex property
+            nodeColor = definingNode.color.hex;
+          } else if (typeof definingNode.color === 'object' && definingNode.color.toString) {
+            // Try to convert object to string
+            nodeColor = definingNode.color.toString();
+          }
+        }
 
         return {
             id: graph.id,
             name: graph.name || 'Untitled Graph',
-            color: definingNode?.color || NODE_DEFAULT_COLOR || '#800000', // Default color
+            color: nodeColor,
             isActive: graph.id === activeGraphId,
         };
     }).filter(Boolean);

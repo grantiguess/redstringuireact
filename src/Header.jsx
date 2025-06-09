@@ -38,17 +38,11 @@ const Header = ({
   const [isEditing, setIsEditing] = useState(false);
   
   const activeGraph = headerGraphs.find(g => g.isActive);
-  const otherGraphs = headerGraphs.filter(g => !g.isActive);
-
-  const leftGraphs = [];
-  const rightGraphs = [];
-  otherGraphs.forEach((graph, index) => {
-    if (index % 2 === 0) {
-      leftGraphs.unshift(graph);
-    } else {
-      rightGraphs.push(graph);
-    }
-  });
+  
+  // Keep consistent order - split the original array around the active graph
+  const activeIndex = headerGraphs.findIndex(g => g.isActive);
+  const leftGraphs = activeIndex > 0 ? headerGraphs.slice(0, activeIndex) : [];
+  const rightGraphs = activeIndex < headerGraphs.length - 1 ? headerGraphs.slice(activeIndex + 1) : [];
 
   const [tempTitle, setTempTitle] = useState(activeGraph ? activeGraph.name : '');
   const inputRef = useRef(null);
@@ -347,37 +341,53 @@ const Header = ({
         {/* Active Tab - Always centered in center column */}
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
           {activeGraph && (
-            isEditing ? (
-              <input
-                ref={inputRef}
-                type="text"
-                className="editable-title-input"
-                value={tempTitle}
-                onChange={handleTitleChange}
-                onBlur={handleTitleBlur}
-                onKeyDown={handleTitleKeyDown}
-                spellCheck="false"
-                style={{
-                  color: '#bdb5b5',
-                  textAlign: 'center',
-                  boxSizing: 'border-box',
-                  padding: '7px 17px',
-                  borderRadius: '12px',
-                  border: 'none',
-                  fontWeight: 'bold',
-                  fontSize: '18px',
-                  margin: '0',
-                }}
-                autoFocus
-              />
-            ) : (
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              {/* Always render the HeaderGraphTab for the background */}
               <HeaderGraphTab
-                graph={activeGraph}
+                graph={{
+                  ...activeGraph,
+                  name: isEditing ? tempTitle : activeGraph.name // Use temp title when editing for dynamic sizing
+                }}
                 onSelect={() => {}}
                 onDoubleClick={handleTitleDoubleClick}
                 isActive={true}
+                hideText={isEditing} // Hide text when editing to prevent duplicates
               />
-            )
+              {/* Overlay transparent input when editing */}
+              {isEditing && (
+                <input
+                  ref={inputRef}
+                  type="text"
+                  className="editable-title-input"
+                  value={tempTitle}
+                  onChange={handleTitleChange}
+                  onBlur={handleTitleBlur}
+                  onKeyDown={handleTitleKeyDown}
+                  spellCheck="false"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    backgroundColor: 'transparent',
+                    color: '#bdb5b5',
+                    textAlign: 'center',
+                    boxSizing: 'border-box',
+                    padding: '7px 17px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    fontWeight: 'bold',
+                    fontSize: '18px',
+                    margin: '0',
+                    outline: 'none',
+                    textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                    cursor: 'text',
+                  }}
+                  autoFocus
+                />
+              )}
+            </div>
           )}
         </div>
         
