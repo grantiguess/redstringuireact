@@ -367,8 +367,8 @@ const Header = ({
                   style={{
                     position: 'absolute',
                     top: 0,
-                    left: 0,
-                    width: '100%',
+                    left: '5px', // Account for the 5px left margin of HeaderGraphTab
+                    width: 'calc(100% - 10px)', // Account for both left and right 5px margins
                     height: '100%',
                     backgroundColor: 'transparent',
                     color: '#bdb5b5',

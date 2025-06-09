@@ -62,6 +62,7 @@ const HeaderGraphTab = ({ graph, onSelect, onDoubleClick, isActive, hideText = f
     fontSize: '18px',
     boxShadow: isActive ? '0 0 8px rgba(0,0,0,0.0)' : 'none',
     border: 'none',
+    userSelect: 'none',
   };
 
   const handleClick = (e) => {
