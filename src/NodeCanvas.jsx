@@ -2030,6 +2030,7 @@ function NodeCanvas() {
                              }}
                              onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
                              onCreateDefinition={(nodeId) => {
+                               if (mouseMoved.current) return;
                                storeActions.createAndAssignGraphDefinition(nodeId);
                              }}
                              onAddNodeToDefinition={(nodeId) => {
@@ -2125,6 +2126,7 @@ function NodeCanvas() {
                                }}
                                onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
                                onCreateDefinition={(nodeId) => {
+                                 if (mouseMoved.current) return;
                                  storeActions.createAndAssignGraphDefinition(nodeId);
                                }}
                                onAddNodeToDefinition={(nodeId) => {
@@ -2184,6 +2186,7 @@ function NodeCanvas() {
                                }}
                                onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
                                onCreateDefinition={(nodeId) => {
+                                 if (mouseMoved.current) return;
                                  storeActions.createAndAssignGraphDefinition(nodeId);
                                }}
                                onAddNodeToDefinition={(nodeId) => {
