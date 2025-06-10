@@ -66,6 +66,38 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
   const translateX = padding + (availableWidth - scaledNetworkWidth) / 2 - ((minX - BOUNDING_BOX_PADDING) * scale);
   const translateY = padding + (availableHeight - scaledNetworkHeight) / 2 - ((minY - BOUNDING_BOX_PADDING) * scale);
 
+  // Helper function to calculate edge intersection with rectangular nodes (adapted from NodeCanvas)
+  const getNodeEdgeIntersection = (nodeX, nodeY, nodeWidth, nodeHeight, dirX, dirY) => {
+    const centerX = nodeX + nodeWidth / 2;
+    const centerY = nodeY + nodeHeight / 2;
+    const halfWidth = nodeWidth / 2;
+    const halfHeight = nodeHeight / 2;
+    const intersections = [];
+    
+    if (dirX > 0) {
+      const t = halfWidth / dirX;
+      const y = dirY * t;
+      if (Math.abs(y) <= halfHeight) intersections.push({ x: centerX + halfWidth, y: centerY + y, distance: t });
+    }
+    if (dirX < 0) {
+      const t = -halfWidth / dirX;
+      const y = dirY * t;
+      if (Math.abs(y) <= halfHeight) intersections.push({ x: centerX - halfWidth, y: centerY + y, distance: t });
+    }
+    if (dirY > 0) {
+      const t = halfHeight / dirY;
+      const x = dirX * t;
+      if (Math.abs(x) <= halfWidth) intersections.push({ x: centerX + x, y: centerY + halfHeight, distance: t });
+    }
+    if (dirY < 0) {
+      const t = -halfHeight / dirY;
+      const x = dirX * t;
+      if (Math.abs(x) <= halfWidth) intersections.push({ x: centerX + x, y: centerY - halfHeight, distance: t });
+    }
+    
+    return intersections.reduce((closest, current) => 
+      !closest || current.distance < closest.distance ? current : closest, null);
+  };
 
   return (
     // Apply calculated transform to the parent group
@@ -103,19 +135,111 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
         const eCenterX = eNodeData.x + eNodeDims.currentWidth / 2;
         const eCenterY = eNodeData.y + eNodeDims.currentHeight / 2;
 
-        // Use center coordinates for the line
+        // Calculate direction and length for arrow positioning
+        const dx = eCenterX - sCenterX;
+        const dy = eCenterY - sCenterY;
+        const length = Math.sqrt(dx * dx + dy * dy);
+
+        if (length === 0) {
+          return (
+            <line
+              key={`inner-conn-${edge.id || idx}`}
+              x1={sCenterX} 
+              y1={sCenterY}
+              x2={eCenterX}
+              y2={eCenterY}
+              stroke="rgba(0,0,0,0.6)"
+              strokeWidth={Math.max(1, 4 / scale)} 
+            />
+          );
+        }
+
+        // Calculate edge intersections for arrow positioning
+        const sourceIntersection = getNodeEdgeIntersection(
+          sNodeData.x, sNodeData.y, sNodeDims.currentWidth, sNodeDims.currentHeight,
+          dx / length, dy / length
+        );
+        
+        const destIntersection = getNodeEdgeIntersection(
+          eNodeData.x, eNodeData.y, eNodeDims.currentWidth, eNodeDims.currentHeight,
+          -dx / length, -dy / length
+        );
+
+        // Determine if each end should be shortened for arrows
+        // Ensure arrowsToward is a Set (fix for loading from file)
+        const arrowsToward = edge.directionality?.arrowsToward instanceof Set 
+          ? edge.directionality.arrowsToward 
+          : new Set(Array.isArray(edge.directionality?.arrowsToward) ? edge.directionality.arrowsToward : []);
+        
+        const shouldShortenSource = arrowsToward.has(edge.sourceId);
+        const shouldShortenDest = arrowsToward.has(edge.destinationId);
+
+        // Calculate arrow positions and angles if needed
+        let sourceArrowX, sourceArrowY, destArrowX, destArrowY, sourceArrowAngle, destArrowAngle;
+        
+        if (shouldShortenSource || shouldShortenDest) {
+          if (!sourceIntersection || !destIntersection) {
+            // Fallback positioning
+            sourceArrowX = sCenterX + (dx / length) * 15;
+            sourceArrowY = sCenterY + (dy / length) * 15;
+            destArrowX = eCenterX - (dx / length) * 15;
+            destArrowY = eCenterY - (dy / length) * 15;
+            sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
+            destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+          } else {
+            // Precise intersection positioning
+            const arrowLength = 3; // Smaller arrow offset for inner network
+            sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
+            sourceArrowX = sourceIntersection.x + (dx / length) * arrowLength;
+            sourceArrowY = sourceIntersection.y + (dy / length) * arrowLength;
+            destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+            destArrowX = destIntersection.x - (dx / length) * arrowLength;
+            destArrowY = destIntersection.y - (dy / length) * arrowLength;
+          }
+        }
+
         return (
-          <line
-            // Use edge.id for key
-            key={`inner-conn-${edge.id || idx}`}
-            x1={sCenterX} 
-            y1={sCenterY}
-            x2={eCenterX}
-            y2={eCenterY}
-            stroke="rgba(0,0,0,0.6)"
-            // Keep stroke width scaling inversely
-            strokeWidth={Math.max(1, 4 / scale)} 
-          />
+          <g key={`inner-conn-${edge.id || idx}`}>
+            {/* Main edge line */}
+            <line
+              x1={shouldShortenSource ? (sourceIntersection?.x || sCenterX) : sCenterX}
+              y1={shouldShortenSource ? (sourceIntersection?.y || sCenterY) : sCenterY}
+              x2={shouldShortenDest ? (destIntersection?.x || eCenterX) : eCenterX}
+              y2={shouldShortenDest ? (destIntersection?.y || eCenterY) : eCenterY}
+              stroke="rgba(0,0,0,0.6)"
+              strokeWidth={Math.max(1, 4 / scale)} 
+            />
+            
+            {/* Source Arrow */}
+            {arrowsToward.has(edge.sourceId) && (
+              <g transform={`translate(${sourceArrowX}, ${sourceArrowY}) rotate(${sourceArrowAngle + 90})`}>
+                <polygon
+                  points="-8,10 8,10 0,-10"
+                  fill="black"
+                  stroke="black"
+                  strokeWidth={Math.max(0.5, 2 / scale)}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  paintOrder="stroke fill"
+                />
+              </g>
+            )}
+            
+            {/* Destination Arrow */}
+            {arrowsToward.has(edge.destinationId) && (
+              <g transform={`translate(${destArrowX}, ${destArrowY}) rotate(${destArrowAngle + 90})`}>
+                <polygon
+                  points="-8,10 8,10 0,-10"
+                  fill="black"
+                  stroke="black"
+                  strokeWidth={Math.max(0.5, 2 / scale)}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  paintOrder="stroke fill"
+                />
+              </g>
+            )}
+          </g>
         );
       })}
 

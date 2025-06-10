@@ -115,9 +115,18 @@ export const exportToRedstring = (storeState) => {
 
   const edgesObj = {};
   edges.forEach((edge, id) => {
+    // Convert directionality Set to Array for JSON serialization
+    const edgeData = { ...edge };
+    if (edgeData.directionality && edgeData.directionality.arrowsToward instanceof Set) {
+      edgeData.directionality = {
+        ...edgeData.directionality,
+        arrowsToward: Array.from(edgeData.directionality.arrowsToward)
+      };
+    }
+    
     edgesObj[id] = {
       "@type": "Edge",
-      ...edge
+      ...edgeData
     };
   });
 
@@ -191,10 +200,20 @@ export const importFromRedstring = (redstringData, storeActions) => {
 
   const edgesMap = new Map();
   Object.entries(edgesObj).forEach(([id, edge]) => {
-    edgesMap.set(id, {
+    const edgeData = {
       ...edge,
       id // Ensure ID is preserved
-    });
+    };
+    
+    // Convert directionality.arrowsToward from Array back to Set if it exists
+    if (edgeData.directionality && Array.isArray(edgeData.directionality.arrowsToward)) {
+      edgeData.directionality.arrowsToward = new Set(edgeData.directionality.arrowsToward);
+    } else if (!edgeData.directionality) {
+      // Ensure directionality exists for backwards compatibility
+      edgeData.directionality = { arrowsToward: new Set() };
+    }
+    
+    edgesMap.set(id, edgeData);
   });
 
   // Return the converted state for file storage to use

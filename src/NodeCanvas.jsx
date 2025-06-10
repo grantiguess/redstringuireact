@@ -2282,9 +2282,14 @@ function NodeCanvas() {
                     -dx / length, -dy / length
                   );
 
-                  // Determine if each end of the edge should be shortened
-                  const shouldShortenSource = isHovered || edge.directionality?.sourceArrow;
-                  const shouldShortenDest = isHovered || edge.directionality?.destinationArrow;
+                  // Determine if each end of the edge should be shortened for arrows
+                  // Ensure arrowsToward is a Set (fix for loading from file)
+                  const arrowsToward = edge.directionality?.arrowsToward instanceof Set 
+                    ? edge.directionality.arrowsToward 
+                    : new Set(Array.isArray(edge.directionality?.arrowsToward) ? edge.directionality.arrowsToward : []);
+                  
+                  const shouldShortenSource = isHovered || arrowsToward.has(sourceNode.id);
+                  const shouldShortenDest = isHovered || arrowsToward.has(destNode.id);
 
                   return (
                     <g key={`edge-${edge.id}-${idx}`}>
@@ -2301,10 +2306,6 @@ function NodeCanvas() {
                       
                                                                                                                   {/* Smart directional arrows with clickable toggle */}
                        {(() => {
-                         // Check if arrows are permanently enabled in edge data
-                         const sourceArrowEnabled = edge.sourceArrowEnabled || false;
-                         const destArrowEnabled = edge.destArrowEnabled || false;
-                         
                          // Calculate arrow positions (use fallback if intersections fail)
                          let sourceArrowX, sourceArrowY, destArrowX, destArrowY, sourceArrowAngle, destArrowAngle;
                          
@@ -2327,41 +2328,37 @@ function NodeCanvas() {
                            destArrowY = destIntersection.y - (dy / length) * arrowLength;
                          }
                          
-                         const handleArrowClick = (arrowType, e) => {
+                         const handleArrowClick = (nodeId, e) => {
                            e.stopPropagation();
                            
-                           // Toggle the arrow state in the edge data
+                           // Toggle the arrow state for the specific node
                            updateEdge(edge.id, (draft) => {
-                             // Ensure directionality object exists with proper defaults
+                             // Ensure directionality object exists
                              if (!draft.directionality) {
-                               draft.directionality = { sourceArrow: false, destinationArrow: false };
+                               draft.directionality = { arrowsToward: new Set() };
                              }
-                             // Ensure both properties exist
-                             if (draft.directionality.sourceArrow === undefined) {
-                               draft.directionality.sourceArrow = false;
-                             }
-                             if (draft.directionality.destinationArrow === undefined) {
-                               draft.directionality.destinationArrow = false;
+                             // Ensure arrowsToward is a Set
+                             if (!draft.directionality.arrowsToward) {
+                               draft.directionality.arrowsToward = new Set();
                              }
                              
-                             if (arrowType === 'source') {
-                               draft.directionality.sourceArrow = !draft.directionality.sourceArrow;
+                             // Toggle arrow for this specific node
+                             if (draft.directionality.arrowsToward.has(nodeId)) {
+                               draft.directionality.arrowsToward.delete(nodeId);
                              } else {
-                               draft.directionality.destinationArrow = !draft.directionality.destinationArrow;
+                               draft.directionality.arrowsToward.add(nodeId);
                              }
                            });
                          };
                          
                          return (
                            <>
-                             {/* Source Arrow - always visible if permanent */}
-                             {edge.directionality?.sourceArrow && (
+                             {/* Source Arrow - visible if arrow points toward source node */}
+                             {arrowsToward.has(sourceNode.id) && (
                                <g 
                                  transform={`translate(${sourceArrowX}, ${sourceArrowY}) rotate(${sourceArrowAngle + 90})`}
                                  style={{ cursor: 'pointer' }}
-                                                                      onClick={(e) => {
-                                       handleArrowClick('source', e);
-                                     }}
+                                 onClick={(e) => handleArrowClick(sourceNode.id, e)}
                                  onMouseDown={(e) => e.stopPropagation()}
                                >
                                  <polygon
@@ -2376,14 +2373,12 @@ function NodeCanvas() {
                                </g>
                              )}
                              
-                             {/* Destination Arrow - always visible if permanent */}
-                             {edge.directionality?.destinationArrow && (
+                             {/* Destination Arrow - visible if arrow points toward destination node */}
+                             {arrowsToward.has(destNode.id) && (
                                <g 
                                  transform={`translate(${destArrowX}, ${destArrowY}) rotate(${destArrowAngle + 90})`}
                                  style={{ cursor: 'pointer' }}
-                                                                      onClick={(e) => {
-                                       handleArrowClick('dest', e);
-                                     }}
+                                 onClick={(e) => handleArrowClick(destNode.id, e)}
                                  onMouseDown={(e) => e.stopPropagation()}
                                >
                                  <polygon
@@ -2401,8 +2396,8 @@ function NodeCanvas() {
                              {/* Hover Dots - only visible when hovering */}
                              {isHovered && (
                                <>
-                                 {/* Source Dot - only show if not permanently enabled */}
-                                 {!edge.directionality?.sourceArrow && (
+                                 {/* Source Dot - only show if arrow not pointing toward source */}
+                                 {!arrowsToward.has(sourceNode.id) && (
                                    <g>
                                      <circle
                                        cx={sourceArrowX}
@@ -2410,9 +2405,7 @@ function NodeCanvas() {
                                        r="20"
                                        fill="transparent"
                                        style={{ cursor: 'pointer' }}
-                                       onClick={(e) => {
-                                         handleArrowClick('source', e);
-                                       }}
+                                       onClick={(e) => handleArrowClick(sourceNode.id, e)}
                                        onMouseDown={(e) => e.stopPropagation()}
                                      />
                                      <circle
@@ -2425,8 +2418,8 @@ function NodeCanvas() {
                                    </g>
                                  )}
                                  
-                                 {/* Destination Dot - only show if not permanently enabled */}
-                                 {!edge.directionality?.destinationArrow && (
+                                 {/* Destination Dot - only show if arrow not pointing toward destination */}
+                                 {!arrowsToward.has(destNode.id) && (
                                    <g>
                                      <circle
                                        cx={destArrowX}
@@ -2434,9 +2427,7 @@ function NodeCanvas() {
                                        r="20"
                                        fill="transparent"
                                        style={{ cursor: 'pointer' }}
-                                       onClick={(e) => {
-                                         handleArrowClick('dest', e);
-                                       }}
+                                       onClick={(e) => handleArrowClick(destNode.id, e)}
                                        onMouseDown={(e) => e.stopPropagation()}
                                      />
                                      <circle

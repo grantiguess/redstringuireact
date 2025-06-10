@@ -64,13 +64,16 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
         };
     });
 
-    // 5. Scale edge positions (use center of scaled rects)
+    // 5. Scale edge positions and include full edge data for arrows
     const finalScaledEdges = edges.map(edge => {
       const sourceNode = finalScaledNodes.find(n => n.id === edge.sourceId);
       const destNode = finalScaledNodes.find(n => n.id === edge.destinationId);
       if (!sourceNode || !destNode) return null;
       return {
+        ...edge, // Include full edge data for directionality
         key: edge.id,
+        sourceNode,
+        destNode,
         x1: sourceNode.x + sourceNode.width / 2,
         y1: sourceNode.y + sourceNode.height / 2,
         x2: destNode.x + destNode.width / 2,
@@ -83,6 +86,39 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
     return { scaledNodes: finalScaledNodes, scaledEdges: finalScaledEdges, viewBox: vb, scale: finalScale };
 
   }, [nodes, edges, width, height]);
+
+  // Helper function to calculate edge intersection with rectangular nodes (adapted from NodeCanvas)
+  const getNodeEdgeIntersection = (nodeX, nodeY, nodeWidth, nodeHeight, dirX, dirY) => {
+    const centerX = nodeX + nodeWidth / 2;
+    const centerY = nodeY + nodeHeight / 2;
+    const halfWidth = nodeWidth / 2;
+    const halfHeight = nodeHeight / 2;
+    const intersections = [];
+    
+    if (dirX > 0) {
+      const t = halfWidth / dirX;
+      const y = dirY * t;
+      if (Math.abs(y) <= halfHeight) intersections.push({ x: centerX + halfWidth, y: centerY + y, distance: t });
+    }
+    if (dirX < 0) {
+      const t = -halfWidth / dirX;
+      const y = dirY * t;
+      if (Math.abs(y) <= halfHeight) intersections.push({ x: centerX - halfWidth, y: centerY + y, distance: t });
+    }
+    if (dirY > 0) {
+      const t = halfHeight / dirY;
+      const x = dirX * t;
+      if (Math.abs(x) <= halfWidth) intersections.push({ x: centerX + x, y: centerY + halfHeight, distance: t });
+    }
+    if (dirY < 0) {
+      const t = -halfHeight / dirY;
+      const x = dirX * t;
+      if (Math.abs(x) <= halfWidth) intersections.push({ x: centerX + x, y: centerY - halfHeight, distance: t });
+    }
+    
+    return intersections.reduce((closest, current) => 
+      !closest || current.distance < closest.distance ? current : closest, null);
+  };
 
   // Render static SVG
   return (
@@ -106,17 +142,102 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
 
       <g>
         {/* Render Edges First */}
-        {scaledEdges.map(edge => (
-          <line
-            key={edge.key}
-            x1={edge.x1}
-            y1={edge.y1}
-            x2={edge.x2}
-            y2={edge.y2}
-            stroke="black"
-            strokeWidth={Math.min(3.0, Math.max(0.6, 1.6 / scale)) || 0.6}
-          />
-        ))}
+        {scaledEdges.map(edge => {
+          // Calculate direction and length
+          const dx = edge.x2 - edge.x1;
+          const dy = edge.y2 - edge.y1;
+          const length = Math.sqrt(dx * dx + dy * dy);
+          
+          if (length === 0) return null;
+          
+          // Calculate edge intersections for arrow positioning
+          const sourceIntersection = getNodeEdgeIntersection(
+            edge.sourceNode.x, edge.sourceNode.y, edge.sourceNode.width, edge.sourceNode.height,
+            dx / length, dy / length
+          );
+          
+          const destIntersection = getNodeEdgeIntersection(
+            edge.destNode.x, edge.destNode.y, edge.destNode.width, edge.destNode.height,
+            -dx / length, -dy / length
+          );
+
+          // Determine if each end should be shortened for arrows
+          // Ensure arrowsToward is a Set (fix for loading from file)
+          const arrowsToward = edge.directionality?.arrowsToward instanceof Set 
+            ? edge.directionality.arrowsToward 
+            : new Set(Array.isArray(edge.directionality?.arrowsToward) ? edge.directionality.arrowsToward : []);
+          
+          const shouldShortenSource = arrowsToward.has(edge.sourceId);
+          const shouldShortenDest = arrowsToward.has(edge.destinationId);
+
+          // Calculate arrow positions and angles if needed
+          let sourceArrowX, sourceArrowY, destArrowX, destArrowY, sourceArrowAngle, destArrowAngle;
+          
+          if (shouldShortenSource || shouldShortenDest) {
+            if (!sourceIntersection || !destIntersection) {
+              // Fallback positioning
+              sourceArrowX = edge.x1 + (dx / length) * 20 * scale;
+              sourceArrowY = edge.y1 + (dy / length) * 20 * scale;
+              destArrowX = edge.x2 - (dx / length) * 20 * scale;
+              destArrowY = edge.y2 - (dy / length) * 20 * scale;
+              sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
+              destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+            } else {
+              // Precise intersection positioning
+              const arrowLength = 5 * scale;
+              sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
+              sourceArrowX = sourceIntersection.x + (dx / length) * arrowLength;
+              sourceArrowY = sourceIntersection.y + (dy / length) * arrowLength;
+              destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+              destArrowX = destIntersection.x - (dx / length) * arrowLength;
+              destArrowY = destIntersection.y - (dy / length) * arrowLength;
+            }
+          }
+
+          return (
+            <g key={edge.key}>
+              {/* Main edge line */}
+              <line
+                x1={shouldShortenSource ? (sourceIntersection?.x || edge.x1) : edge.x1}
+                y1={shouldShortenSource ? (sourceIntersection?.y || edge.y1) : edge.y1}
+                x2={shouldShortenDest ? (destIntersection?.x || edge.x2) : edge.x2}
+                y2={shouldShortenDest ? (destIntersection?.y || edge.y2) : edge.y2}
+                stroke="black"
+                strokeWidth={Math.min(3.0, Math.max(0.6, 1.6 / scale)) || 0.6}
+              />
+              
+              {/* Source Arrow */}
+              {arrowsToward.has(edge.sourceId) && (
+                <g transform={`translate(${sourceArrowX}, ${sourceArrowY}) rotate(${sourceArrowAngle + 90})`}>
+                  <polygon
+                    points={`${-12 * scale},${15 * scale} ${12 * scale},${15 * scale} 0,${-15 * scale}`}
+                    fill="black"
+                    stroke="black"
+                    strokeWidth={Math.min(3.0, Math.max(0.3, 1.0 / scale)) || 0.3}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    paintOrder="stroke fill"
+                  />
+                </g>
+              )}
+              
+              {/* Destination Arrow */}
+              {arrowsToward.has(edge.destinationId) && (
+                <g transform={`translate(${destArrowX}, ${destArrowY}) rotate(${destArrowAngle + 90})`}>
+                  <polygon
+                    points={`${-12 * scale},${15 * scale} ${12 * scale},${15 * scale} 0,${-15 * scale}`}
+                    fill="black"
+                    stroke="black"
+                    strokeWidth={Math.min(3.0, Math.max(0.3, 1.0 / scale)) || 0.3}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    paintOrder="stroke fill"
+                  />
+                </g>
+              )}
+            </g>
+          );
+        })}
 
         {/* Render Nodes */}
         {scaledNodes.map(node => {

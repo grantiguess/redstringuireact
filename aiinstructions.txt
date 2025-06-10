@@ -204,3 +204,16 @@ Beyond the general guidelines, recent development has focused on more complex UI
    *   **Standard Practice:** Follows common application patterns where primary action (click) opens file dialog and hover reveals recent files
    *   **Interaction Design:** Click behavior maintains existing file opening functionality while hover provides quick access to recent files
    *   **Space Efficiency:** Reduces menu clutter while maintaining full functionality and improving discoverability of recent files feature
+
+35. **Interactive Directional Edges:**
+   *   **Core Concept:** A system for adding persistent, directional arrows to edges directly on the canvas. This is a core feature for representing relationships like inheritance or flow.
+   *   **Data Model:** The `Edge` class in `src/core/Edge.js` includes a `directionality` property: `{ sourceArrow: boolean, destinationArrow: boolean }`. This state is initialized in the constructor and is saved with the universe.
+   *   **Interaction (`NodeCanvas.jsx`):**
+        - Edges have a thick (40px) invisible hitbox for easy hovering.
+        - When hovering over an edge where an arrow is *not* permanently enabled, a black dot with a larger, invisible circular hitbox appears at that end of theedge.
+        - Clicking this dot (or a permanently visible arrow) toggles the corresponding boolean in the `directionality` object in the data model (via the `updateEdge` store action), making the arrow appear or disappear permanently.
+   *   **Rendering (`NodeCanvas.jsx`):**
+        - The rendering logic checks `edge.directionality` to see if an arrow should be permanently displayed.
+        - The hover-only dots are rendered if the arrow is not permanent and the edge is being hovered.
+        - Permanent arrows are rendered as large, black, rounded triangles using a `<polygon>` with `paintOrder="stroke fill"` for a clean look.
+        - When an arrow or dot is shown, the main connection `<line>` is geometrically retracted to touch the base of the arrow/dot, which itself is calculated to touch the rectangular boundary of the node. This is handled by a `getNodeEdgeIntersection` helper function within `NodeCanvas.jsx`.

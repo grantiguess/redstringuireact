@@ -6,7 +6,7 @@ const NodeType = ({ name, color = '#800000', onClick }) => {
     <div 
       className="node-type-item"
       style={{ 
-        backgroundColor: color,
+        backgroundColor: color, 
         color: '#bdb5b5', // Canvas color for text
         borderRadius: '4px', // Less rounded
         width: '60px', // Smaller width

@@ -67,6 +67,25 @@ const nodeToData = (node) => ({
 });
 
 /**
+ * Helper function to normalize edge directionality to ensure arrowsToward is always a Set
+ */
+const normalizeEdgeDirectionality = (directionality) => {
+  if (!directionality) {
+    return { arrowsToward: new Set() };
+  }
+  
+  if (directionality.arrowsToward instanceof Set) {
+    return directionality;
+  }
+  
+  if (Array.isArray(directionality.arrowsToward)) {
+    return { arrowsToward: new Set(directionality.arrowsToward) };
+  }
+  
+  return { arrowsToward: new Set() };
+};
+
+/**
  * Helper function to convert an Edge class instance to plain data.
  */
 const edgeToData = (edge) => ({
@@ -80,6 +99,9 @@ const edgeToData = (edge) => ({
     color: edge.getColor(),
     data: edge.getData(),
     directed: edge.isDirected(), // Assuming Edge might have directed property
+    directionality: {
+      arrowsToward: edge.directionality?.arrowsToward ? Array.from(edge.directionality.arrowsToward) : []
+    },
 });
 
 /**
@@ -329,6 +351,8 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       const destNode = draft.nodes.get(destId);
 
       if (graph && !draft.edges.has(edgeId) && sourceNode && destNode) {
+          // Normalize directionality before adding edge
+          newEdgeData.directionality = normalizeEdgeDirectionality(newEdgeData.directionality);
           // Add edge data to global pool
           draft.edges.set(edgeId, newEdgeData);
           // Add edge ID to graph's edgeIds array
@@ -1206,6 +1230,13 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         return;
       }
       storeState = importedState;
+    }
+
+    // Normalize all edge directionality to ensure arrowsToward is always a Set
+    if (storeState.edges) {
+      for (const [edgeId, edgeData] of storeState.edges.entries()) {
+        edgeData.directionality = normalizeEdgeDirectionality(edgeData.directionality);
+      }
     }
 
     set({

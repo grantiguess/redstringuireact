@@ -47,10 +47,9 @@ class Edge extends Entry {
       this.definitionNodeIds.push(definitionNodeId);
     }
 
-    /** @type {Object} Directionality settings for the edge. */
+    /** @type {Object} Node-relative directionality settings for the edge. */
     this.directionality = {
-      sourceArrow: false, // Whether arrow points toward source node
-      destinationArrow: false // Whether arrow points toward destination node
+      arrowsToward: new Set() // Contains node IDs that have arrows pointing toward them
     };
   }
 
@@ -106,8 +105,10 @@ class Edge extends Entry {
     );
     // Shallow copy the definition ID array
     newEdge.definitionNodeIds = [...this.definitionNodeIds];
-    // Copy the directionality settings
-    newEdge.directionality = { ...this.directionality };
+    // Copy the directionality settings - deep copy the Set
+    newEdge.directionality = { 
+      arrowsToward: new Set(this.directionality.arrowsToward) 
+    };
     return newEdge;
   }
 }
