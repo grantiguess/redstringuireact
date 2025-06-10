@@ -63,13 +63,13 @@ const TypeList = ({ nodes, setSelectedNodes }) => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#bdb5b5',
-          border: 'none',
+          background: '#260000',
+          border: '2px solid #bdb5b5', // Canvas color stroke
           borderRadius: '8px',
           padding: 0,
           cursor: 'pointer',
-          color: '#260000',
-          zIndex: 1001, 
+          color: '#bdb5b5',
+          zIndex: 10001, // Increased to be above panels
           boxShadow: '0 2px 5px rgba(0, 0, 0, 0.2)'
         }}
       >
@@ -88,8 +88,8 @@ const TypeList = ({ nodes, setSelectedNodes }) => {
           right: 0,
           display: 'flex',
           alignItems: 'center',
-          backgroundColor: '#bdb5b5',
-          zIndex: 1000, // Lower zIndex than the button
+          backgroundColor: '#260000',
+          zIndex: 10000, // Above panels, below button
           overflow: 'hidden',
           transition: 'transform 0.3s ease-in-out',
           transform: mode === 'closed' ? 'translateY(100%)' : 'translateY(0)',
@@ -119,7 +119,14 @@ const TypeList = ({ nodes, setSelectedNodes }) => {
             ))
           )}
           {mode === 'connection' && (
-            <div>Connection Types Placeholder</div>
+            <div style={{
+              color: '#bdb5b5',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              padding: '0 15px'
+            }}>
+              Connection Types (Coming Soon)
+            </div>
           )}
         </div>
       </footer>

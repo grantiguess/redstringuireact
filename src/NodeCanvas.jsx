@@ -9,7 +9,7 @@ import PlusSign from './PlusSign.jsx'; // Import the new PlusSign component
 import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
-import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot } from 'lucide-react'; // Icons for PieMenu
+import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle } from 'lucide-react'; // Icons for PieMenu
 
 // Import Zustand store and selectors/actions
 import useGraphStore, {
@@ -46,6 +46,7 @@ import {
 
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import Panel from './Panel'; // This is now used for both sides
+import TypeList from './TypeList'; // Re-add TypeList component
 
 // Check if user's on a Mac using userAgent as platform is deprecated
 const isMac = /Mac/i.test(navigator.userAgent);
@@ -319,6 +320,7 @@ function NodeCanvas() {
   const [currentPieMenuData, setCurrentPieMenuData] = useState(null); // Holds { node, buttons, nodeDimensions }
   const [editingNodeIdOnCanvas, setEditingNodeIdOnCanvas] = useState(null); // For panel-less editing
   const [hasMouseMovedSinceDown, setHasMouseMovedSinceDown] = useState(false);
+  const [hoveredEdgeId, setHoveredEdgeId] = useState(null); // Track hovered edge
 
   // New states for PieMenu transition
   const [selectedNodeIdForPieMenu, setSelectedNodeIdForPieMenu] = useState(null);
@@ -344,6 +346,7 @@ function NodeCanvas() {
     setSelectionRect(null);
     setSelectionStart(null);
     setDrawingConnectionFrom(null);
+    setHoveredEdgeId(null); // Clear edge hover state
     // The pie menu is hidden automatically by an effect watching selectedNodeIds,
     // but we clear its target ID explicitly to be safe.
     setSelectedNodeIdForPieMenu(null);
@@ -569,6 +572,34 @@ function NodeCanvas() {
        scaledY >= nodeY &&
        scaledY <= nodeY + currentHeight
      );
+  };
+
+  // Helper function to check if a point is near a line (for edge hover detection)
+  const isNearEdge = (x1, y1, x2, y2, pointX, pointY, threshold = 20) => {
+    // Calculate distance from point to line segment
+    const A = pointX - x1;
+    const B = pointY - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    
+    if (lenSq === 0) return Math.sqrt(A * A + B * B) <= threshold; // Point-to-point distance
+    
+    let param = dot / lenSq;
+    
+    // Clamp to line segment
+    if (param < 0) param = 0;
+    else if (param > 1) param = 1;
+    
+    const xx = x1 + param * C;
+    const yy = y1 + param * D;
+    
+    const dx = pointX - xx;
+    const dy = pointY - yy;
+    
+    return Math.sqrt(dx * dx + dy * dy) <= threshold;
   };
 
   const handleNodeMouseDown = (nodeData, e) => { // Takes nodeData now
@@ -954,6 +985,42 @@ function NodeCanvas() {
     const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
     const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
 
+    // Edge hover detection (only when not dragging/panning)
+    if (!isMouseDown.current && !draggingNodeInfo && !isPanning) {
+      // Check if mouse is over any node first
+      const hoveredNode = nodes.find(node => isInsideNode(node, e.clientX, e.clientY));
+      
+      if (!hoveredNode) {
+        // Not over a node, check for edge hover
+        let foundHoveredEdge = null;
+        
+        for (const edge of edges) {
+          const sourceNode = nodes.find(n => n.id === edge.sourceId);
+          const destNode = nodes.find(n => n.id === edge.destinationId);
+          
+          if (sourceNode && destNode) {
+            const sNodeDims = getNodeDimensions(sourceNode, false, null);
+            const eNodeDims = getNodeDimensions(destNode, false, null);
+            
+            const x1 = sourceNode.x + sNodeDims.currentWidth / 2;
+            const y1 = sourceNode.y + sNodeDims.currentHeight / 2;
+            const x2 = destNode.x + eNodeDims.currentWidth / 2;
+            const y2 = destNode.y + eNodeDims.currentHeight / 2;
+            
+            if (isNearEdge(x1, y1, x2, y2, currentX, currentY, 15)) {
+              foundHoveredEdge = edge.id;
+              break;
+            }
+          }
+        }
+        
+        setHoveredEdgeId(foundHoveredEdge);
+      } else {
+        // Over a node, clear edge hover
+        setHoveredEdgeId(null);
+      }
+    }
+
     // Selection Box Logic
     if (selectionStart && isMouseDown.current) {
       e.preventDefault();
@@ -1096,6 +1163,7 @@ function NodeCanvas() {
     mouseDownPosition.current = { x: e.clientX, y: e.clientY };
     startedOnNode.current = false;
     mouseMoved.current = false;
+    setHoveredEdgeId(null); // Clear edge hover when starting interaction
     setLastInteractionType('mouse_down');
 
     if ((isMac && e.metaKey) || (!isMac && e.ctrlKey)) {
@@ -2152,16 +2220,49 @@ function NodeCanvas() {
                   const x2 = destNode.x + eNodeDims.currentWidth / 2;
                   const y2 = destNode.y + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
 
+                  const isHovered = hoveredEdgeId === edge.id;
+                  const edgeColor = destNode.color || NODE_DEFAULT_COLOR; // Use destination node color
+                  
+                  // Calculate arrow position and rotation
+                  const dx = x2 - x1;
+                  const dy = y2 - y1;
+                  const length = Math.sqrt(dx * dx + dy * dy);
+                  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                  
+                  // Position arrow 20px from destination node edge
+                  const arrowDistance = 20;
+                  const arrowX = x2 - (dx / length) * arrowDistance;
+                  const arrowY = y2 - (dy / length) * arrowDistance;
+
                   return (
-                    <line
-                      key={`edge-${edge.id}-${idx}`}
-                      x1={x1} 
-                      y1={y1}
-                      x2={x2}
-                      y2={y2}
-                      stroke="black"
-                      strokeWidth="8"
-                    />
+                    <g key={`edge-${edge.id}-${idx}`}>
+                      {/* Main edge line */}
+                      <line
+                        x1={x1} 
+                        y1={y1}
+                        x2={x2}
+                        y2={y2}
+                        stroke={isHovered ? edgeColor : "black"}
+                        strokeWidth={isHovered ? "10" : "8"}
+                        style={{ transition: 'stroke 0.2s ease, stroke-width 0.2s ease' }}
+                      />
+                      
+                      {/* Directional arrow triangle */}
+                      {(isHovered || true) && ( // Show arrows on hover or always (change to just isHovered to show only on hover)
+                        <g transform={`translate(${arrowX}, ${arrowY}) rotate(${angle + 90})`}>
+                          <polygon
+                            points="-6,8 6,8 0,-8" // Triangle pointing up (will be rotated to point toward destination)
+                            fill={edgeColor}
+                            stroke={edgeColor}
+                            strokeWidth="1"
+                            style={{ 
+                              opacity: isHovered ? 1 : 0.7,
+                              transition: 'opacity 0.2s ease'
+                            }}
+                          />
+                        </g>
+                      )}
+                    </g>
                   );
                 })}
                 {drawingConnectionFrom && (
@@ -2541,6 +2642,12 @@ function NodeCanvas() {
           onStartHurtleAnimationFromPanel={startHurtleAnimationFromPanel}
         />
       </div>
+
+      {/* TypeList Component */}
+      <TypeList 
+        nodes={nodes}
+        setSelectedNodes={setSelectedNodeIds}
+      />
       
       {/* <div>NodeCanvas Simplified - Testing Loop</div> */}
     </div>
