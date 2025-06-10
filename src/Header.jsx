@@ -15,7 +15,7 @@ import logo7 from './assets/redstring_button/header_logo_7.svg';
 
 const Header = ({ 
   onTitleChange, 
-  onEditingStateChange,
+  onEditingStateChange, 
   headerGraphs,
   onSetActiveGraph,
   // Receive debug props
@@ -186,8 +186,8 @@ const Header = ({
   const handleTitleDoubleClick = () => {
     if (activeGraph) {
       setTempTitle(activeGraph.name); // Start editing with current prop value
-      setIsEditing(true);
-      onEditingStateChange?.(true);
+    setIsEditing(true);
+    onEditingStateChange?.(true);
     }
   };
 
@@ -355,24 +355,24 @@ const Header = ({
               />
               {/* Overlay transparent input when editing */}
               {isEditing && (
-                <input
-                  ref={inputRef}
-                  type="text"
-                  className="editable-title-input"
-                  value={tempTitle}
-                  onChange={handleTitleChange}
-                  onBlur={handleTitleBlur}
-                  onKeyDown={handleTitleKeyDown}
-                  spellCheck="false"
-                  style={{
+          <input
+            ref={inputRef}
+            type="text"
+            className="editable-title-input"
+            value={tempTitle}
+            onChange={handleTitleChange}
+            onBlur={handleTitleBlur}
+            onKeyDown={handleTitleKeyDown}
+            spellCheck="false"
+            style={{
                     position: 'absolute',
                     top: 0,
                     left: '5px', // Account for the 5px left margin of HeaderGraphTab
                     width: 'calc(100% - 10px)', // Account for both left and right 5px margins
                     height: '100%',
                     backgroundColor: 'transparent',
-                    color: '#bdb5b5',
-                    textAlign: 'center',
+              color: '#bdb5b5',
+              textAlign: 'center',
                     boxSizing: 'border-box',
                     padding: '7px 17px',
                     borderRadius: '12px',
@@ -383,9 +383,9 @@ const Header = ({
                     outline: 'none',
                     textShadow: '0 1px 2px rgba(0,0,0,0.5)',
                     cursor: 'text',
-                  }}
-                  autoFocus
-                />
+            }}
+            autoFocus
+          />
               )}
             </div>
           )}
