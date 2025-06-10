@@ -333,6 +333,22 @@ function NodeCanvas() {
   // Track current definition index for each node per graph context (nodeId-graphId -> index)
   const [nodeDefinitionIndices, setNodeDefinitionIndices] = useState(new Map());
 
+  // --- Graph Change Cleanup ---
+  useEffect(() => {
+    // This effect runs whenever the active graph changes.
+    // We clear any graph-specific UI state to ensure a clean slate.
+    setSelectedNodeIds(new Set());
+    setPreviewingNodeId(null);
+    setEditingNodeIdOnCanvas(null);
+    setPlusSign(null);
+    setSelectionRect(null);
+    setSelectionStart(null);
+    setDrawingConnectionFrom(null);
+    // The pie menu is hidden automatically by an effect watching selectedNodeIds,
+    // but we clear its target ID explicitly to be safe.
+    setSelectedNodeIdForPieMenu(null);
+  }, [activeGraphId]);
+
   // --- Saved Graphs Management ---
   const bookmarkActive = useMemo(() => {
     // Check if the current graph's defining node is saved
