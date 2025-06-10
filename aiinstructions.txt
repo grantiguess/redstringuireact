@@ -205,15 +205,22 @@ Beyond the general guidelines, recent development has focused on more complex UI
    *   **Interaction Design:** Click behavior maintains existing file opening functionality while hover provides quick access to recent files
    *   **Space Efficiency:** Reduces menu clutter while maintaining full functionality and improving discoverability of recent files feature
 
-35. **Interactive Directional Edges:**
-   *   **Core Concept:** A system for adding persistent, directional arrows to edges directly on the canvas. This is a core feature for representing relationships like inheritance or flow.
-   *   **Data Model:** The `Edge` class in `src/core/Edge.js` includes a `directionality` property: `{ sourceArrow: boolean, destinationArrow: boolean }`. This state is initialized in the constructor and is saved with the universe.
-   *   **Interaction (`NodeCanvas.jsx`):**
-        - Edges have a thick (40px) invisible hitbox for easy hovering.
-        - When hovering over an edge where an arrow is *not* permanently enabled, a black dot with a larger, invisible circular hitbox appears at that end of theedge.
-        - Clicking this dot (or a permanently visible arrow) toggles the corresponding boolean in the `directionality` object in the data model (via the `updateEdge` store action), making the arrow appear or disappear permanently.
-   *   **Rendering (`NodeCanvas.jsx`):**
-        - The rendering logic checks `edge.directionality` to see if an arrow should be permanently displayed.
-        - The hover-only dots are rendered if the arrow is not permanent and the edge is being hovered.
-        - Permanent arrows are rendered as large, black, rounded triangles using a `<polygon>` with `paintOrder="stroke fill"` for a clean look.
-        - When an arrow or dot is shown, the main connection `<line>` is geometrically retracted to touch the base of the arrow/dot, which itself is calculated to touch the rectangular boundary of the node. This is handled by a `getNodeEdgeIntersection` helper function within `NodeCanvas.jsx`.
+35. **Node-Relative Directional Edges System:**
+   *   **Core Concept:** A sophisticated system for adding persistent, directional arrows to edges directly on the canvas. This enables representation of complex relationships like inheritance, causality, or flow directions.
+   *   **Undirected Foundation:** The system treats all edges as fundamentally undirected - the arbitrary UI direction used when creating an edge (drag A→B vs B→A) does not affect the semantic meaning of arrows.
+   *   **Data Model:** The `Edge` class in `src/core/Edge.js` includes a `directionality` property: `{ arrowsToward: Set }` where the Set contains node IDs that have arrows pointing toward them. This design ensures arrows are node-relative rather than source/destination relative.
+   *   **Cross-Component Integration:** The arrow system works across all network representations:
+        - **NodeCanvas.jsx:** Main interactive canvas with hover detection and click toggles
+        - **GraphPreview.jsx:** Left panel graph previews show persistent arrows
+        - **InnerNetwork.jsx:** Expanded node previews display arrows consistently
+   *   **Interaction Pattern:**
+        - Edges have a thick (40px) invisible hitbox for easy hovering detection
+        - When hovering over an edge, black dots appear at ends where arrows are not permanently enabled
+        - Clicking dots or existing arrows toggles arrow state via `updateEdge` store action
+        - Visual feedback: hover-only dots (opacity 0.6), permanent arrows (opacity 1.0)
+   *   **Technical Implementation:**
+        - Uses Set-based storage for efficient arrow state management and JSON serialization
+        - Geometric intersection calculations (`getNodeEdgeIntersection`) ensure arrows touch node boundaries precisely
+        - Edge lines are dynamically shortened when arrows are present to prevent visual overlap
+        - Safety checks handle Set/Array conversion during file loading for backwards compatibility
+   *   **File Persistence:** Arrow states are saved to universe files with proper Set-to-Array conversion during export and Array-to-Set restoration during import, ensuring data integrity across sessions.

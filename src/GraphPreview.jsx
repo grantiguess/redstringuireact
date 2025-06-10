@@ -129,9 +129,9 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
         {scaledNodes.map(node => {
           const originalNode = nodes.find(n => n.id === node.id);
           if (!originalNode?.imageSrc) return null; // Only for image nodes
-          // Calculate rx/ry based on scaled node dimensions
-          const clipRx = node.width * 0.15;
-          const clipRy = node.height * 0.15;
+          // Calculate rx/ry based on scaled node dimensions - more rounded
+          const clipRx = node.width * 0.25;
+          const clipRy = node.height * 0.25;
           return (
             <clipPath key={`clip-${node.id}`} id={`clip-${node.id}`}>
               <rect x={node.x} y={node.y} width={node.width} height={node.height} rx={clipRx} ry={clipRy} />
@@ -196,24 +196,24 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
 
           return (
             <g key={edge.key}>
-              {/* Main edge line */}
+              {/* Main edge line - even thinner stroke */}
               <line
                 x1={shouldShortenSource ? (sourceIntersection?.x || edge.x1) : edge.x1}
                 y1={shouldShortenSource ? (sourceIntersection?.y || edge.y1) : edge.y1}
                 x2={shouldShortenDest ? (destIntersection?.x || edge.x2) : edge.x2}
                 y2={shouldShortenDest ? (destIntersection?.y || edge.y2) : edge.y2}
                 stroke="black"
-                strokeWidth={Math.min(3.0, Math.max(0.6, 1.6 / scale)) || 0.6}
+                strokeWidth={Math.min(1.0, Math.max(0.2, 0.5 / scale)) || 0.2}
               />
               
-              {/* Source Arrow */}
+              {/* Source Arrow - slightly bigger size */}
               {arrowsToward.has(edge.sourceId) && (
                 <g transform={`translate(${sourceArrowX}, ${sourceArrowY}) rotate(${sourceArrowAngle + 90})`}>
                   <polygon
-                    points={`${-12 * scale},${15 * scale} ${12 * scale},${15 * scale} 0,${-15 * scale}`}
+                    points={`${-10 * scale},${12 * scale} ${10 * scale},${12 * scale} 0,${-12 * scale}`}
                     fill="black"
                     stroke="black"
-                    strokeWidth={Math.min(3.0, Math.max(0.3, 1.0 / scale)) || 0.3}
+                    strokeWidth={Math.min(2.0, Math.max(0.2, 0.6 / scale)) || 0.2}
                     strokeLinejoin="round"
                     strokeLinecap="round"
                     paintOrder="stroke fill"
@@ -221,14 +221,14 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
                 </g>
               )}
               
-              {/* Destination Arrow */}
+              {/* Destination Arrow - slightly bigger size */}
               {arrowsToward.has(edge.destinationId) && (
                 <g transform={`translate(${destArrowX}, ${destArrowY}) rotate(${destArrowAngle + 90})`}>
                   <polygon
-                    points={`${-12 * scale},${15 * scale} ${12 * scale},${15 * scale} 0,${-15 * scale}`}
+                    points={`${-10 * scale},${12 * scale} ${10 * scale},${12 * scale} 0,${-12 * scale}`}
                     fill="black"
                     stroke="black"
-                    strokeWidth={Math.min(3.0, Math.max(0.3, 1.0 / scale)) || 0.3}
+                    strokeWidth={Math.min(2.0, Math.max(0.2, 0.6 / scale)) || 0.2}
                     strokeLinejoin="round"
                     strokeLinecap="round"
                     paintOrder="stroke fill"
@@ -244,17 +244,22 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
           const originalNode = nodes.find(n => n.id === node.id);
           const imageSrc = originalNode?.imageSrc;
           const nodeColor = originalNode?.color || '#800000'; // Get node color or default
+          const nodeName = originalNode?.name || 'Untitled';
 
           // FIX: Adjust node stroke width calculation - make thicker
           const nodeStrokeWidth = Math.min(3.0, Math.max(0.5, 1.6 / scale)) || 0.5; // Increased base factor and max limit
+
+          // Determine if text should be shown (when node is large enough)
+          const showText = node.width > 40; // Show text when width exceeds 40px (reduced threshold)
+          const fontSize = Math.max(8, Math.min(16, node.width * 0.15)); // Scale font size with node size
 
           if (imageSrc) {
             // Calculate stroke offset and adjusted dimensions/radius for the stroke rect
             const strokeOffset = nodeStrokeWidth / 2;
             const strokeRectWidth = Math.max(0, node.width - nodeStrokeWidth);
             const strokeRectHeight = Math.max(0, node.height - nodeStrokeWidth);
-            const strokeRectRx = strokeRectWidth * 0.15;
-            const strokeRectRy = strokeRectHeight * 0.15;
+            const strokeRectRx = strokeRectWidth * 0.25;
+            const strokeRectRy = strokeRectHeight * 0.25;
             
             return (
               // Remove clipPath from group
@@ -283,6 +288,31 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
                   rx={strokeRectRx} // Adjusted radius
                   ry={strokeRectRy} 
                 />
+                {/* Conditional text for image nodes */}
+                {showText && (
+                  <text
+                    x={node.x + node.width / 2}
+                    y={node.y + node.height - 8} // Position near bottom
+                    textAnchor="middle"
+                    fontSize={fontSize}
+                    fill="#bdb5b5"
+                    fontWeight="bold"
+                    style={{
+                      pointerEvents: 'none',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <tspan
+                      x={node.x + node.width / 2}
+                      style={{
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {nodeName.length > 12 ? nodeName.substring(0, 12) + '...' : nodeName}
+                    </tspan>
+                  </text>
+                )}
               </g>
             );
           } else {
@@ -295,10 +325,36 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
                   width={node.width}
                   height={node.height}
                   fill={nodeColor} // Use node color
-                  // FIX: Slightly increase corner radius
-                  rx={node.width * 0.15} 
-                  ry={node.height * 0.15}
+                  // More rounded corners to match other network representations
+                  rx={node.width * 0.25} 
+                  ry={node.height * 0.25}
                 />
+                {/* Conditional text for rect nodes */}
+                {showText && (
+                  <text
+                    x={node.x + node.width / 2}
+                    y={node.y + node.height / 2}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={fontSize}
+                    fill="#bdb5b5"
+                    fontWeight="bold"
+                    style={{
+                      pointerEvents: 'none',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <tspan
+                      x={node.x + node.width / 2}
+                      style={{
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {nodeName.length > 12 ? nodeName.substring(0, 12) + '...' : nodeName}
+                    </tspan>
+                  </text>
+                )}
               </g>
             );
           }

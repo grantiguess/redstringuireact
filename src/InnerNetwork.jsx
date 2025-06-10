@@ -206,7 +206,7 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
               y1={shouldShortenSource ? (sourceIntersection?.y || sCenterY) : sCenterY}
               x2={shouldShortenDest ? (destIntersection?.x || eCenterX) : eCenterX}
               y2={shouldShortenDest ? (destIntersection?.y || eCenterY) : eCenterY}
-              stroke="rgba(0,0,0,0.6)"
+              stroke="black"
               strokeWidth={Math.max(1, 4 / scale)} 
             />
             
@@ -214,7 +214,7 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
             {arrowsToward.has(edge.sourceId) && (
               <g transform={`translate(${sourceArrowX}, ${sourceArrowY}) rotate(${sourceArrowAngle + 90})`}>
                 <polygon
-                  points="-8,10 8,10 0,-10"
+                  points="-12,15 12,15 0,-15"
                   fill="black"
                   stroke="black"
                   strokeWidth={Math.max(0.5, 2 / scale)}
@@ -229,7 +229,7 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
             {arrowsToward.has(edge.destinationId) && (
               <g transform={`translate(${destArrowX}, ${destArrowY}) rotate(${destArrowAngle + 90})`}>
                 <polygon
-                  points="-8,10 8,10 0,-10"
+                  points="-12,15 12,15 0,-15"
                   fill="black"
                   stroke="black"
                   strokeWidth={Math.max(0.5, 2 / scale)}
