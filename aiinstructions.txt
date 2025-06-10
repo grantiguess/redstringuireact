@@ -204,3 +204,80 @@ Beyond the general guidelines, recent development has focused on more complex UI
    *   **Standard Practice:** Follows common application patterns where primary action (click) opens file dialog and hover reveals recent files
    *   **Interaction Design:** Click behavior maintains existing file opening functionality while hover provides quick access to recent files
    *   **Space Efficiency:** Reduces menu clutter while maintaining full functionality and improving discoverability of recent files feature
+
+## Component Architecture & System Overview:
+
+**Application Architecture:**
+Redstring is a React-based knowledge graph interface with a sophisticated component hierarchy designed around the concept of recursive graph definitions. The application uses Zustand for state management and operates on ".redstring" universe files that contain all graph data.
+
+**Core Data Model (`src/core/`):**
+- **`Entry.js`** - Base class providing common properties (id, name, description, picture, color) for all graph elements
+- **`Node.js`** - Extends Entry; represents graph nodes with position (x,y), scale, edges, and critically can contain `definitionGraphIds` for recursive graph nesting
+- **`Edge.js`** - Extends Entry; represents connections between nodes with source/destination IDs and directional properties
+- **`Graph.js`** - Extends Entry; container for nodes and edges, supports directed/undirected graphs, and includes methods for adding/removing/updating elements
+- **`EdgeDefinition.js`** - Defines edge types and styling (less commonly used)
+
+**Central Orchestration:**
+- **`NodeCanvas.jsx`** (2847 lines) - The heart of the application; manages the main SVG canvas, handles all user interactions (mouse, keyboard, touch), coordinates pan/zoom/drag operations, manages selection states, and orchestrates the relationship between all other components
+
+**State Management:**
+- **`store/graphStore.js`** (1296+ lines) - Massive Zustand store managing all application state including graphs Map, nodes Map, edges Map, activeGraphId, openGraphIds, saved states, panel tabs, and provides actions for all data manipulation
+- **`store/fileStorage.js`** (1000+ lines) - Handles universe file operations, auto-save functionality, recent files, IndexedDB persistence, and File System Access API integration
+
+**Main UI Framework:**
+- **`App.jsx`** - Simple root component that renders NodeCanvas
+- **`Header.jsx`** (442 lines) - Top navigation bar with animated logo/menu, graph tabs, title editing, and bookmark functionality
+- **`Panel.jsx`** (1859 lines) - Highly complex dual-purpose component serving as both left panel (saved nodes, open graphs) and right panel (node editing, graph info) with draggable tabs, resizing, and different view modes
+
+**Canvas & Node Rendering:**
+- **`Node.jsx`** (777 lines) - Individual node component handling rendering, editing, previewing (expansion), definition navigation, and integration with PieMenu and definition management
+- **`PieMenu.jsx`** (275 lines) - Context menu appearing around selected nodes with animated bubbles for actions like Edit, Delete, Connect, Expand, Decompose
+- **`InnerNetwork.jsx`** (165 lines) - Renders miniature graph views inside expanded/previewing nodes, showing the node's definition graph content
+- **`GraphPreview.jsx`** (189 lines) - Generates scaled-down graph visualizations for use in panels and expanded nodes
+
+**Specialized UI Components:**
+- **`GraphBrowserPanel.jsx`** (119 lines) - Hierarchical tree view of nodes with expand/collapse functionality (currently unused but available)
+- **`GraphListItem.jsx`** (162 lines) - Individual graph items in the left panel with preview thumbnails, active states, and expand/collapse animation
+- **`TypeList.jsx`** (137 lines) - Bottom toolbar for node types and connections (currently minimal implementation)
+- **`RedstringMenu.jsx`** (249 lines) - Application menu with nested submenus for file operations, recent files, and debug controls
+- **`ToggleButton.jsx`** (52 lines) - Panel collapse/expand buttons positioned at panel edges
+- **`NodeType.jsx`** (39 lines) - Individual type selector buttons in the TypeList
+
+**Interactive Elements:**
+- **`PlusSign.jsx`** (187 lines) - Animated plus sign for creating new nodes with morphing animation from circle to rectangle
+- **`DebugOverlay.jsx`** (182 lines) - Draggable/resizable debug information panel for development
+- **`HeaderGraphTab.jsx`** (93 lines) - Individual tab components in the header navigation
+
+**Utilities & Processing:**
+- **`utils.js`** (196+ lines) - Critical utility functions including `getNodeDimensions()` for dynamic node sizing, text calculations, and thumbnail generation
+- **`useCanvasWorker.js`** (188+ lines) - React hook for offloading heavy calculations (pan, zoom, selection) to web worker thread
+- **`canvasWorker.js`** (100+ lines) - Web worker for performance-critical canvas calculations
+- **`hooks/useKeyboardShortcuts.js`** - Keyboard input handling for navigation and commands
+- **`hooks/useLongPress.js`** - Touch and mouse long-press detection for drag operations
+
+**Data Format Handlers:**
+- **`formats/redstringFormat.js`** - Native .redstring file import/export with proper serialization of Maps and Sets
+- **`formats/importAdapters.js`** - Import adapters for external formats (Obsidian, Cytoscape, GraphML, JSON-LD)
+
+**Key Data Flow Patterns:**
+1. **Universe Loading:** FileStorage → GraphStore → NodeCanvas → Component rendering
+2. **User Interactions:** NodeCanvas captures events → Updates GraphStore → Triggers re-renders
+3. **Graph Navigation:** User action → GraphStore updates activeGraphId → All components re-render with new graph context
+4. **Node Editing:** Panel or inline editing → GraphStore node updates → Canvas and panel sync automatically
+5. **Definition Management:** Node contains definitionGraphIds → Can navigate between graphs → Recursive structure
+
+**Critical Integration Points:**
+- **Context-Aware Definitions:** Nodes remember different active definitions per graph context using `nodeDefinitionIndices` Map
+- **Panel-Canvas Sync:** Both interfaces edit the same Zustand store data, ensuring real-time synchronization
+- **Animation Coordination:** Complex state management between NodeCanvas and PieMenu for smooth expand/contract animations
+- **File Auto-Save:** Changes to GraphStore automatically trigger universe file saves via FileStorage middleware
+- **Recursive Navigation:** Graph tabs and node expansion create infinite depth navigation through definition graphs
+
+**Performance Considerations:**
+- Web workers handle expensive canvas calculations
+- Selective re-rendering using React.memo and careful state management
+- SVG-based rendering with transform-based pan/zoom for smooth performance
+- Thumbnail generation and caching for graph previews
+- Lazy loading and dynamic dimension calculations for large graphs
+
+This architecture enables Redstring's core philosophy of recursive, networked thinking while maintaining smooth user experience and data consistency across the complex multi-panel interface.
