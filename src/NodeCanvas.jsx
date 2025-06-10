@@ -62,6 +62,7 @@ function NodeCanvas() {
 
   // <<< Access store actions individually to avoid creating new objects >>>
   const updateNode = useGraphStore((state) => state.updateNode);
+  const updateEdge = useGraphStore((state) => state.updateEdge);
   const addEdge = useGraphStore((state) => state.addEdge);
   const addNode = useGraphStore((state) => state.addNode);
   const removeNode = useGraphStore((state) => state.removeNode);
@@ -320,7 +321,7 @@ function NodeCanvas() {
   const [currentPieMenuData, setCurrentPieMenuData] = useState(null); // Holds { node, buttons, nodeDimensions }
   const [editingNodeIdOnCanvas, setEditingNodeIdOnCanvas] = useState(null); // For panel-less editing
   const [hasMouseMovedSinceDown, setHasMouseMovedSinceDown] = useState(false);
-  const [hoveredEdgeId, setHoveredEdgeId] = useState(null); // Track hovered edge
+  const [hoveredEdgeInfo, setHoveredEdgeInfo] = useState(null); // Track hovered edge and which end
 
   // New states for PieMenu transition
   const [selectedNodeIdForPieMenu, setSelectedNodeIdForPieMenu] = useState(null);
@@ -346,7 +347,7 @@ function NodeCanvas() {
     setSelectionRect(null);
     setSelectionStart(null);
     setDrawingConnectionFrom(null);
-    setHoveredEdgeId(null); // Clear edge hover state
+    setHoveredEdgeInfo(null); // Clear edge hover state
     // The pie menu is hidden automatically by an effect watching selectedNodeIds,
     // but we clear its target ID explicitly to be safe.
     setSelectedNodeIdForPieMenu(null);
@@ -526,6 +527,8 @@ function NodeCanvas() {
     // }
     // REMOVE zoomLevel from dependencies to prevent recentering on zoom
   }, [activeGraphId, viewportSize, canvasSize]);
+
+
 
   // --- Utility Functions ---
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -992,7 +995,7 @@ function NodeCanvas() {
       
       if (!hoveredNode) {
         // Not over a node, check for edge hover
-        let foundHoveredEdge = null;
+        let foundHoveredEdgeInfo = null;
         
         for (const edge of edges) {
           const sourceNode = nodes.find(n => n.id === edge.sourceId);
@@ -1002,22 +1005,25 @@ function NodeCanvas() {
             const sNodeDims = getNodeDimensions(sourceNode, false, null);
             const eNodeDims = getNodeDimensions(destNode, false, null);
             
-            const x1 = sourceNode.x + sNodeDims.currentWidth / 2;
-            const y1 = sourceNode.y + sNodeDims.currentHeight / 2;
-            const x2 = destNode.x + eNodeDims.currentWidth / 2;
-            const y2 = destNode.y + eNodeDims.currentHeight / 2;
+            const isSNodePreviewing = previewingNodeId === sourceNode.id;
+            const isENodePreviewing = previewingNodeId === destNode.id;
             
-            if (isNearEdge(x1, y1, x2, y2, currentX, currentY, 15)) {
-              foundHoveredEdge = edge.id;
+            const x1 = sourceNode.x + sNodeDims.currentWidth / 2;
+            const y1 = sourceNode.y + (isSNodePreviewing ? NODE_HEIGHT / 2 : sNodeDims.currentHeight / 2);
+            const x2 = destNode.x + eNodeDims.currentWidth / 2;
+            const y2 = destNode.y + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
+            
+            if (isNearEdge(x1, y1, x2, y2, currentX, currentY, 40)) {
+              foundHoveredEdgeInfo = { edgeId: edge.id };
               break;
             }
           }
         }
         
-        setHoveredEdgeId(foundHoveredEdge);
+        setHoveredEdgeInfo(foundHoveredEdgeInfo);
       } else {
         // Over a node, clear edge hover
-        setHoveredEdgeId(null);
+        setHoveredEdgeInfo(null);
       }
     }
 
@@ -1163,7 +1169,7 @@ function NodeCanvas() {
     mouseDownPosition.current = { x: e.clientX, y: e.clientY };
     startedOnNode.current = false;
     mouseMoved.current = false;
-    setHoveredEdgeId(null); // Clear edge hover when starting interaction
+    setHoveredEdgeInfo(null); // Clear edge hover when starting interaction
     setLastInteractionType('mouse_down');
 
     if ((isMac && e.metaKey) || (!isMac && e.ctrlKey)) {
@@ -2220,48 +2226,233 @@ function NodeCanvas() {
                   const x2 = destNode.x + eNodeDims.currentWidth / 2;
                   const y2 = destNode.y + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
 
-                  const isHovered = hoveredEdgeId === edge.id;
+                  const isHovered = hoveredEdgeInfo?.edgeId === edge.id;
+                  
+
+                  
+
                   const edgeColor = destNode.color || NODE_DEFAULT_COLOR; // Use destination node color
                   
                   // Calculate arrow position and rotation
                   const dx = x2 - x1;
                   const dy = y2 - y1;
                   const length = Math.sqrt(dx * dx + dy * dy);
-                  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
                   
-                  // Position arrow 20px from destination node edge
-                  const arrowDistance = 20;
-                  const arrowX = x2 - (dx / length) * arrowDistance;
-                  const arrowY = y2 - (dy / length) * arrowDistance;
+                  // Helper function to calculate edge intersection with rectangular nodes
+                  const getNodeEdgeIntersection = (nodeX, nodeY, nodeWidth, nodeHeight, dirX, dirY) => {
+                    const centerX = nodeX + nodeWidth / 2;
+                    const centerY = nodeY + nodeHeight / 2;
+                    const halfWidth = nodeWidth / 2;
+                    const halfHeight = nodeHeight / 2;
+                    const intersections = [];
+                    
+                    if (dirX > 0) {
+                      const t = halfWidth / dirX;
+                      const y = dirY * t;
+                      if (Math.abs(y) <= halfHeight) intersections.push({ x: centerX + halfWidth, y: centerY + y, distance: t });
+                    }
+                    if (dirX < 0) {
+                      const t = -halfWidth / dirX;
+                      const y = dirY * t;
+                      if (Math.abs(y) <= halfHeight) intersections.push({ x: centerX - halfWidth, y: centerY + y, distance: t });
+                    }
+                    if (dirY > 0) {
+                      const t = halfHeight / dirY;
+                      const x = dirX * t;
+                      if (Math.abs(x) <= halfWidth) intersections.push({ x: centerX + x, y: centerY + halfHeight, distance: t });
+                    }
+                    if (dirY < 0) {
+                      const t = -halfHeight / dirY;
+                      const x = dirX * t;
+                      if (Math.abs(x) <= halfWidth) intersections.push({ x: centerX + x, y: centerY - halfHeight, distance: t });
+                    }
+                    
+                    return intersections.reduce((closest, current) => 
+                      !closest || current.distance < closest.distance ? current : closest, null);
+                  };
+                  
+                  // Calculate edge intersections
+                  const sourceIntersection = getNodeEdgeIntersection(
+                    sourceNode.x, sourceNode.y, sNodeDims.currentWidth, sNodeDims.currentHeight,
+                    dx / length, dy / length
+                  );
+                  
+                  const destIntersection = getNodeEdgeIntersection(
+                    destNode.x, destNode.y, eNodeDims.currentWidth, eNodeDims.currentHeight,
+                    -dx / length, -dy / length
+                  );
+
+                  // Determine if each end of the edge should be shortened
+                  const shouldShortenSource = isHovered || edge.directionality?.sourceArrow;
+                  const shouldShortenDest = isHovered || edge.directionality?.destinationArrow;
 
                   return (
                     <g key={`edge-${edge.id}-${idx}`}>
-                      {/* Main edge line */}
-                      <line
-                        x1={x1} 
-                        y1={y1}
-                        x2={x2}
-                        y2={y2}
-                        stroke={isHovered ? edgeColor : "black"}
-                        strokeWidth={isHovered ? "10" : "8"}
-                        style={{ transition: 'stroke 0.2s ease, stroke-width 0.2s ease' }}
-                      />
+                                             {/* Main edge line - always same thickness */}
+                    <line
+                         x1={shouldShortenSource ? (sourceIntersection?.x || x1) : x1}
+                         y1={shouldShortenSource ? (sourceIntersection?.y || y1) : y1}
+                         x2={shouldShortenDest ? (destIntersection?.x || x2) : x2}
+                         y2={shouldShortenDest ? (destIntersection?.y || y2) : y2}
+                      stroke="black"
+                         strokeWidth="6"
+                         style={{ transition: 'stroke 0.2s ease' }}
+                       />
                       
-                      {/* Directional arrow triangle */}
-                      {(isHovered || true) && ( // Show arrows on hover or always (change to just isHovered to show only on hover)
-                        <g transform={`translate(${arrowX}, ${arrowY}) rotate(${angle + 90})`}>
-                          <polygon
-                            points="-6,8 6,8 0,-8" // Triangle pointing up (will be rotated to point toward destination)
-                            fill={edgeColor}
-                            stroke={edgeColor}
-                            strokeWidth="1"
-                            style={{ 
-                              opacity: isHovered ? 1 : 0.7,
-                              transition: 'opacity 0.2s ease'
-                            }}
-                          />
-                        </g>
-                      )}
+                                                                                                                  {/* Smart directional arrows with clickable toggle */}
+                       {(() => {
+                         // Check if arrows are permanently enabled in edge data
+                         const sourceArrowEnabled = edge.sourceArrowEnabled || false;
+                         const destArrowEnabled = edge.destArrowEnabled || false;
+                         
+                         // Calculate arrow positions (use fallback if intersections fail)
+                         let sourceArrowX, sourceArrowY, destArrowX, destArrowY, sourceArrowAngle, destArrowAngle;
+                         
+                         if (!sourceIntersection || !destIntersection) {
+                           // Fallback positioning
+                           sourceArrowX = x1 + (dx / length) * 20;
+                           sourceArrowY = y1 + (dy / length) * 20;
+                           destArrowX = x2 - (dx / length) * 20;
+                           destArrowY = y2 - (dy / length) * 20;
+                           sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
+                           destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+                         } else {
+                           // Precise intersection positioning
+                           const arrowLength = 5;
+                           sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
+                           sourceArrowX = sourceIntersection.x + (dx / length) * arrowLength;
+                           sourceArrowY = sourceIntersection.y + (dy / length) * arrowLength;
+                           destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+                           destArrowX = destIntersection.x - (dx / length) * arrowLength;
+                           destArrowY = destIntersection.y - (dy / length) * arrowLength;
+                         }
+                         
+                         const handleArrowClick = (arrowType, e) => {
+                           e.stopPropagation();
+                           
+                           // Toggle the arrow state in the edge data
+                           updateEdge(edge.id, (draft) => {
+                             // Ensure directionality object exists with proper defaults
+                             if (!draft.directionality) {
+                               draft.directionality = { sourceArrow: false, destinationArrow: false };
+                             }
+                             // Ensure both properties exist
+                             if (draft.directionality.sourceArrow === undefined) {
+                               draft.directionality.sourceArrow = false;
+                             }
+                             if (draft.directionality.destinationArrow === undefined) {
+                               draft.directionality.destinationArrow = false;
+                             }
+                             
+                             if (arrowType === 'source') {
+                               draft.directionality.sourceArrow = !draft.directionality.sourceArrow;
+                             } else {
+                               draft.directionality.destinationArrow = !draft.directionality.destinationArrow;
+                             }
+                           });
+                         };
+                         
+                         return (
+                           <>
+                             {/* Source Arrow - always visible if permanent */}
+                             {edge.directionality?.sourceArrow && (
+                               <g 
+                                 transform={`translate(${sourceArrowX}, ${sourceArrowY}) rotate(${sourceArrowAngle + 90})`}
+                                 style={{ cursor: 'pointer' }}
+                                                                      onClick={(e) => {
+                                       handleArrowClick('source', e);
+                                     }}
+                                 onMouseDown={(e) => e.stopPropagation()}
+                               >
+                                 <polygon
+                                   points="-12,15 12,15 0,-15"
+                                   fill="black"
+                                   stroke="black"
+                                   strokeWidth="6"
+                                   strokeLinejoin="round"
+                                   strokeLinecap="round"
+                                   paintOrder="stroke fill"
+                                 />
+                               </g>
+                             )}
+                             
+                             {/* Destination Arrow - always visible if permanent */}
+                             {edge.directionality?.destinationArrow && (
+                               <g 
+                                 transform={`translate(${destArrowX}, ${destArrowY}) rotate(${destArrowAngle + 90})`}
+                                 style={{ cursor: 'pointer' }}
+                                                                      onClick={(e) => {
+                                       handleArrowClick('dest', e);
+                                     }}
+                                 onMouseDown={(e) => e.stopPropagation()}
+                               >
+                                 <polygon
+                                   points="-12,15 12,15 0,-15"
+                                   fill="black"
+                                   stroke="black"
+                                   strokeWidth="6"
+                                   strokeLinejoin="round"
+                                   strokeLinecap="round"
+                                   paintOrder="stroke fill"
+                                 />
+                               </g>
+                             )}
+
+                             {/* Hover Dots - only visible when hovering */}
+                             {isHovered && (
+                               <>
+                                 {/* Source Dot - only show if not permanently enabled */}
+                                 {!edge.directionality?.sourceArrow && (
+                                   <g>
+                                     <circle
+                                       cx={sourceArrowX}
+                                       cy={sourceArrowY}
+                                       r="20"
+                                       fill="transparent"
+                                       style={{ cursor: 'pointer' }}
+                                       onClick={(e) => {
+                                         handleArrowClick('source', e);
+                                       }}
+                                       onMouseDown={(e) => e.stopPropagation()}
+                                     />
+                                     <circle
+                                       cx={sourceArrowX}
+                                       cy={sourceArrowY}
+                                       r="8"
+                                       fill="black"
+                                       style={{ pointerEvents: 'none' }}
+                                     />
+                                   </g>
+                                 )}
+                                 
+                                 {/* Destination Dot - only show if not permanently enabled */}
+                                 {!edge.directionality?.destinationArrow && (
+                                   <g>
+                                     <circle
+                                       cx={destArrowX}
+                                       cy={destArrowY}
+                                       r="20"
+                                       fill="transparent"
+                                       style={{ cursor: 'pointer' }}
+                                       onClick={(e) => {
+                                         handleArrowClick('dest', e);
+                                       }}
+                                       onMouseDown={(e) => e.stopPropagation()}
+                                     />
+                                     <circle
+                                       cx={destArrowX}
+                                       cy={destArrowY}
+                                       r="8"
+                                       fill="black"
+                                       style={{ pointerEvents: 'none' }}
+                                     />
+                                   </g>
+                                 )}
+                               </>
+                             )}
+                           </>
+                         );
+                       })()}
                     </g>
                   );
                 })}

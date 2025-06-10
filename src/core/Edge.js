@@ -46,6 +46,12 @@ class Edge extends Entry {
       }
       this.definitionNodeIds.push(definitionNodeId);
     }
+
+    /** @type {Object} Directionality settings for the edge. */
+    this.directionality = {
+      sourceArrow: false, // Whether arrow points toward source node
+      destinationArrow: false // Whether arrow points toward destination node
+    };
   }
 
   /**
@@ -100,6 +106,8 @@ class Edge extends Entry {
     );
     // Shallow copy the definition ID array
     newEdge.definitionNodeIds = [...this.definitionNodeIds];
+    // Copy the directionality settings
+    newEdge.directionality = { ...this.directionality };
     return newEdge;
   }
 }

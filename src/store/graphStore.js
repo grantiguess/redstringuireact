@@ -346,6 +346,16 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       }
   })),
 
+  // Update an edge's data using Immer's recipe
+  updateEdge: (edgeId, recipe) => set(produce((draft) => {
+    const edge = draft.edges.get(edgeId);
+    if (edge) {
+      recipe(edge); // Apply the Immer updates
+    } else {
+      console.warn(`updateEdge: Edge with id ${edgeId} not found.`);
+    }
+  })),
+
   // Removes a node and its connected edges from global pools and graph references
   removeNode: (nodeId) => set(produce((draft) => {
     const nodeToRemove = draft.nodes.get(nodeId);
