@@ -70,6 +70,7 @@ function NodeCanvas() {
   const setActiveDefinitionNode = useGraphStore((state) => state.setActiveDefinitionNode);
   const openRightPanelNodeTab = useGraphStore((state) => state.openRightPanelNodeTab);
   const createAndAssignGraphDefinition = useGraphStore((state) => state.createAndAssignGraphDefinition);
+  const createAndAssignGraphDefinitionWithoutActivation = useGraphStore((state) => state.createAndAssignGraphDefinitionWithoutActivation);
   const closeRightPanelTab = useGraphStore((state) => state.closeRightPanelTab);
   const activateRightPanelTab = useGraphStore((state) => state.activateRightPanelTab);
   const openGraphTab = useGraphStore((state) => state.openGraphTab);
@@ -100,6 +101,7 @@ function NodeCanvas() {
     setActiveDefinitionNode,
     openRightPanelNodeTab,
     createAndAssignGraphDefinition,
+    createAndAssignGraphDefinitionWithoutActivation,
     closeRightPanelTab,
     activateRightPanelTab,
     openGraphTab,
@@ -120,7 +122,7 @@ function NodeCanvas() {
   }), [
     updateNode, addEdge, addNode, removeNode, updateGraph, createNewGraph,
     setActiveGraph, setActiveDefinitionNode, openRightPanelNodeTab,
-    createAndAssignGraphDefinition, closeRightPanelTab, activateRightPanelTab,
+    createAndAssignGraphDefinition, createAndAssignGraphDefinitionWithoutActivation, closeRightPanelTab, activateRightPanelTab,
     openGraphTab, moveRightPanelTab, closeGraph, toggleGraphExpanded,
     toggleSavedNode, toggleSavedGraph, updateMultipleNodePositions, removeDefinitionFromNode,
     openGraphTabAndBringToTop, cleanupOrphanedData, restoreFromSession,
@@ -418,20 +420,19 @@ function NodeCanvas() {
                 startHurtleAnimation(nodeId, graphIdToOpen, nodeId);
               } else {
                 // Node has no definitions - create one first, then start hurtle animation
-                // console.log(`[PieMenu Expand] Node ${nodeId} has no definitions. Creating and starting hurtle animation to new definition.`);
-                storeActions.createAndAssignGraphDefinition(nodeId);
+                const sourceGraphId = activeGraphId; // Capture current graph before it changes
+                storeActions.createAndAssignGraphDefinitionWithoutActivation(nodeId);
                 
-                // After creating the definition, start the hurtle animation with longer delay for store propagation
                 setTimeout(() => {
-                  // Get fresh store state instead of relying on stale closure
                   const currentState = useGraphStore.getState();
                   const updatedNodeData = currentState.nodes.get(nodeId);
-                  if (updatedNodeData && updatedNodeData.definitionGraphIds && updatedNodeData.definitionGraphIds.length > 0) {
-                    const graphIdToOpen = updatedNodeData.definitionGraphIds[0];
-                    // console.log(`[PieMenu Expand] Starting hurtle animation to newly created definition graph: ${graphIdToOpen} for node: ${nodeId}`);
-                    startHurtleAnimation(nodeId, graphIdToOpen, nodeId);
+                  if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                    const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                    startHurtleAnimation(nodeId, newGraphId, nodeId, sourceGraphId);
+                  } else {
+                    console.error(`[PieMenu Expand] Could not find new definition for node ${nodeId} after creation.`);
                   }
-                }, 50); // Increased delay to ensure store update has fully propagated
+                }, 50);
               }
             }
           }
@@ -1559,18 +1560,80 @@ function NodeCanvas() {
     // The existing menu plays its exit animation, and onExitAnimationComplete handles the next steps.
   }, [selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu]);
 
-  // New state for the hurtle animation - now renders as HTML overlay
+  // --- Hurtle Animation State & Logic ---
   const [hurtleAnimation, setHurtleAnimation] = useState(null);
   const hurtleAnimationRef = useRef(null);
 
-  // Simple Particle Transfer Animation - always use fresh coordinates
-  const startHurtleAnimation = useCallback((nodeId, targetGraphId, definitionNodeId) => {
-    // Get absolutely fresh state to avoid stale values after graph switches
-    const currentState = useGraphStore.getState();
-    const currentNodes = getNodesForGraph(currentState.activeGraphId)(currentState);
-    const nodeData = currentNodes.find(n => n.id === nodeId);
-    if (!nodeData) return;
+  const runHurtleAnimation = useCallback((animationData) => {
+    const animate = (currentTime) => {
+      const elapsed = currentTime - animationData.startTime;
+      const progress = Math.min(elapsed / animationData.duration, 1);
+      
+      // Subtle speed variation - gentle ease-in-out
+      const easedProgress = progress < 0.5 
+        ? 2 * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+      
+      // Calculate current position (screen coordinates)
+      const currentX = Math.round(animationData.startPos.x + (animationData.targetPos.x - animationData.startPos.x) * easedProgress);
+      const currentY = Math.round(animationData.startPos.y + (animationData.targetPos.y - animationData.startPos.y) * easedProgress);
+      
+      // Calculate ballooning and contracting size.
+      // It starts at 1px, "balloons" to a peak size, and "contracts" back to 1px.
+      const peakOrbSize = animationData.orbSize * 1.9; // Keep the dramatic peak size
+      const sineProgress = Math.sin(progress * Math.PI); // This goes from 0 -> 1 -> 0 as progress goes 0 -> 1
+      const currentOrbSize = Math.max(1, Math.round(1 + (peakOrbSize - 1) * sineProgress));
+      
+      // Z-index behavior: stay under node much longer, use positive z-index
+      let currentZIndex;
+      if (progress < 0.45) {
+        currentZIndex = 500; // Positive z-index, will be covered by elevated selected node
+      } else if (progress < 0.85) {
+        currentZIndex = 15000; // Above header for shorter period
+      } else {
+        currentZIndex = 5000; // Below header only at the very end
+      }
+      
+      // Update animation state with dynamic properties
+      setHurtleAnimation(prev => prev ? {
+        ...prev,
+        currentPos: { x: currentX, y: currentY },
+        currentOrbSize,
+        currentZIndex,
+        progress
+      } : null);
 
+      if (progress < 1) {
+        hurtleAnimationRef.current = requestAnimationFrame(animate);
+      } else {
+        // Animation complete - clean up and switch graph
+        storeActions.openGraphTabAndBringToTop(animationData.targetGraphId, animationData.definitionNodeId);
+        setHurtleAnimation(null);
+        if (hurtleAnimationRef.current) {
+          cancelAnimationFrame(hurtleAnimationRef.current);
+          hurtleAnimationRef.current = null;
+        }
+      }
+    };
+
+    hurtleAnimationRef.current = requestAnimationFrame(animate);
+  }, [storeActions]);
+
+  // Simple Particle Transfer Animation - always use fresh coordinates
+  const startHurtleAnimation = useCallback((nodeId, targetGraphId, definitionNodeId, sourceGraphId = null) => {
+    const currentState = useGraphStore.getState();
+    
+    // If a sourceGraphId is provided, look for the node there. Otherwise, use the current active graph.
+    const graphIdToFindNodeIn = sourceGraphId || currentState.activeGraphId;
+    
+    const nodesInSourceGraph = getNodesForGraph(graphIdToFindNodeIn)(currentState);
+    const nodeData = nodesInSourceGraph.find(n => n.id === nodeId);
+    
+    if (!nodeData) {
+        console.error(`[Hurtle Animation] Failed to find node ${nodeId} in source graph ${graphIdToFindNodeIn}.`);
+        return;
+    }
+    
     // Get fresh viewport state
     const containerElement = containerRef.current;
     if (!containerElement) return;
@@ -1604,105 +1667,70 @@ function NodeCanvas() {
     const headerCenterY = Math.round(HEADER_HEIGHT / 2);
     
     // Calculate orb size proportional to current zoom
-    const orbSize = Math.max(12, Math.round(20 * currentZoom));
-
-    console.log('[Particle Animation] Fresh coordinate calculation:', {
-      nodeCanvas: { x: nodeData.x, y: nodeData.y },
-      nodeCenterCanvas: { x: nodeCenterCanvasX, y: nodeCenterCanvasY },
-      currentTransform: { panX: currentPanX, panY: currentPanY, zoom: currentZoom },
-      nodeScreen: { x: nodeScreenX, y: nodeScreenY },
-      headerCenter: { x: headerCenterX, y: headerCenterY },
-      orbSize,
-      nodeColor: nodeData.color
-    });
+    const orbSize = Math.max(12, Math.round(30 * currentZoom));
 
     const animationData = {
       nodeId,
       targetGraphId,
       definitionNodeId,
       startTime: performance.now(),
-      duration: 320, // Faster animation
-      startPos: { x: nodeScreenX, y: nodeScreenY - 15 }, // Start slightly above node center
+      duration: 400, // slower, more satisfying arc
+      startPos: { x: nodeScreenX, y: nodeScreenY - 15 },
       targetPos: { x: headerCenterX, y: headerCenterY },
       nodeColor: nodeData.color || NODE_DEFAULT_COLOR,
       orbSize,
-      graphSwitched: false // Track when we switch graphs mid-flight
     };
 
     setHurtleAnimation(animationData);
     runHurtleAnimation(animationData);
-  }, [containerRef]);
+  }, [containerRef, runHurtleAnimation]);
 
-  const runHurtleAnimation = useCallback((animationData) => {
-    const animate = (currentTime) => {
-      const elapsed = currentTime - animationData.startTime;
-      const progress = Math.min(elapsed / animationData.duration, 1);
-      
-      // Subtle speed variation - gentle ease-in-out
-      const easedProgress = progress < 0.5 
-        ? 2 * progress * progress  // Gentle ease-in for first half
-        : 1 - Math.pow(-2 * progress + 2, 2) / 2; // Gentle ease-out for second half
-      
-      // Calculate current position (screen coordinates)
-      const currentX = Math.round(animationData.startPos.x + (animationData.targetPos.x - animationData.startPos.x) * easedProgress);
-      const currentY = Math.round(animationData.startPos.y + (animationData.targetPos.y - animationData.startPos.y) * easedProgress);
-      
-      // Calculate dynamic size variation starting very small
-      let sizeMultiplier;
-      if (progress < 0.2) {
-        // Start very very small (10% of base size) and grow quickly
-        sizeMultiplier = 0.1 + (progress / 0.2) * 0.9; // 0.1 to 1.0 over first 20%
-      } else if (progress < 0.4) {
-        // Continue growing to peak size
-        sizeMultiplier = 1.0 + ((progress - 0.2) / 0.2) * 0.9; // 1.0 to 1.9 over next 20%
-      } else if (progress < 0.6) {
-        // Peak size (190% of base size) - very dramatic
-        sizeMultiplier = 1.9;
-      } else {
-        // Return to normal size for landing
-        sizeMultiplier = 1.9 - ((progress - 0.6) / 0.4) * 0.9; // 1.9 to 1.0 over last 40%
-      }
-      const currentOrbSize = Math.round(animationData.orbSize * sizeMultiplier);
-      
-      // Z-index behavior: stay under node much longer, use positive z-index
-      let currentZIndex;
-      if (progress < 0.45) {
-        currentZIndex = 500; // Positive z-index, will be covered by elevated selected node
-      } else if (progress < 0.85) {
-        currentZIndex = 15000; // Above header for shorter period
-      } else {
-        currentZIndex = 5000; // Below header only at the very end
-      }
-      
-      // Switch graphs near the end when orb reaches header (85% progress)
-      if (progress >= 0.85 && !animationData.graphSwitched) {
-        animationData.graphSwitched = true;
-        storeActions.openGraphTabAndBringToTop(animationData.targetGraphId, animationData.definitionNodeId);
-      }
+  const startHurtleAnimationFromPanel = useCallback((nodeId, targetGraphId, definitionNodeId, startRect) => {
+    const currentState = useGraphStore.getState();
+    const nodeData = currentState.nodes.get(nodeId);
+    if (!nodeData) {
+      console.error(`[Panel Hurtle] Failed to find node ${nodeId}.`);
+      return;
+    }
 
-      // Update animation state with dynamic properties
-      setHurtleAnimation(prev => prev ? {
-        ...prev,
-        currentPos: { x: currentX, y: currentY },
-        currentOrbSize,
-        currentZIndex,
-        progress
-      } : null);
+    const containerElement = containerRef.current;
+    if (!containerElement) return;
 
-      if (progress < 1) {
-        hurtleAnimationRef.current = requestAnimationFrame(animate);
-      } else {
-        // Animation complete - clean up
-        setHurtleAnimation(null);
-        if (hurtleAnimationRef.current) {
-          cancelAnimationFrame(hurtleAnimationRef.current);
-          hurtleAnimationRef.current = null;
-        }
-      }
+    // Get the current pan/zoom from the actual SVG element to ensure accuracy
+    const svgElement = containerElement.querySelector('.canvas');
+    if (!svgElement) return;
+    
+    const transform = svgElement.style.transform;
+    const scaleMatch = transform.match(/scale\((-?\d+(?:\.\d+)?)\)/);
+    const currentZoom = scaleMatch ? parseFloat(scaleMatch[1]) : 1;
+
+    // Start position is the center of the icon's rect
+    const startX = startRect.left + startRect.width / 2;
+    const startY = startRect.top + startRect.height / 2;
+
+    // Target is header center
+    const screenWidth = containerElement.offsetWidth;
+    const headerCenterX = Math.round(screenWidth / 2);
+    const headerCenterY = Math.round(HEADER_HEIGHT / 2);
+
+    // Calculate orb size proportional to current zoom, same as pie menu animation
+    const orbSize = Math.max(12, Math.round(30 * currentZoom));
+
+    const animationData = {
+      nodeId,
+      targetGraphId,
+      definitionNodeId,
+      startTime: performance.now(),
+      duration: 400, // Slower arc
+      startPos: { x: startX, y: startY },
+      targetPos: { x: headerCenterX, y: headerCenterY },
+      nodeColor: nodeData.color || NODE_DEFAULT_COLOR,
+      orbSize: orbSize, // Use calculated, zoom-dependent size
     };
 
-    hurtleAnimationRef.current = requestAnimationFrame(animate);
-  }, [storeActions]);
+    setHurtleAnimation(animationData);
+    runHurtleAnimation(animationData);
+  }, [containerRef, runHurtleAnimation]);
 
   // Cleanup animation on unmount
   useEffect(() => {
@@ -2199,9 +2227,25 @@ function NodeCanvas() {
                                storeActions.removeDefinitionFromNode(nodeId, graphId);
                              }}
                              onExpandDefinition={(nodeId, graphId) => {
-                               // Start hurtle animation to the definition graph
-                               // console.log(`[NodeCanvas] Starting hurtle animation to definition graph ${graphId} for node: ${nodeId}`);
-                               startHurtleAnimation(nodeId, graphId, nodeId);
+                               if (graphId) {
+                                 // Node has an existing definition to expand
+                                 startHurtleAnimation(nodeId, graphId, nodeId);
+                               } else {
+                                 // Node has no definitions - create one, then animate
+                                 const sourceGraphId = activeGraphId; // Capture current graph before it changes
+                                 storeActions.createAndAssignGraphDefinitionWithoutActivation(nodeId);
+                                 
+                                 setTimeout(() => {
+                                   const currentState = useGraphStore.getState();
+                                   const updatedNodeData = currentState.nodes.get(nodeId);
+                                   if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                                     const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                                     startHurtleAnimation(nodeId, newGraphId, nodeId, sourceGraphId);
+                                   } else {
+                                     console.error(`[PieMenu Expand] Could not find new definition for node ${nodeId} after creation.`);
+                                   }
+                                 }, 50);
+                               }
                              }}
                              storeActions={storeActions}
                              connections={edges}
@@ -2298,9 +2342,25 @@ function NodeCanvas() {
                                  storeActions.removeDefinitionFromNode(nodeId, graphId);
                                }}
                                onExpandDefinition={(nodeId, graphId) => {
-                                 // Start hurtle animation to the definition graph
-                                 // console.log(`[NodeCanvas] Starting hurtle animation to definition graph ${graphId} for node: ${nodeId}`);
-                                 startHurtleAnimation(nodeId, graphId, nodeId);
+                                 if (graphId) {
+                                   // Node has an existing definition to expand
+                                   startHurtleAnimation(nodeId, graphId, nodeId);
+                                 } else {
+                                   // Node has no definitions - create one, then animate
+                                   const sourceGraphId = activeGraphId; // Capture current graph before it changes
+                                   storeActions.createAndAssignGraphDefinitionWithoutActivation(nodeId);
+                                   
+                                   setTimeout(() => {
+                                     const currentState = useGraphStore.getState();
+                                     const updatedNodeData = currentState.nodes.get(nodeId);
+                                     if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                                       const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                                       startHurtleAnimation(nodeId, newGraphId, nodeId, sourceGraphId);
+                                     } else {
+                                       console.error(`[Node OnExpand] Could not find new definition for node ${nodeId} after creation.`);
+                                     }
+                                   }, 50);
+                                 }
                                }}
                                storeActions={storeActions}
                                connections={edges}
@@ -2359,9 +2419,25 @@ function NodeCanvas() {
                                  storeActions.removeDefinitionFromNode(nodeId, graphId);
                                }}
                                onExpandDefinition={(nodeId, graphId) => {
-                                 // Start hurtle animation to the definition graph
-                                 // console.log(`[NodeCanvas] Starting hurtle animation to definition graph ${graphId} for node: ${nodeId}`);
-                                 startHurtleAnimation(nodeId, graphId, nodeId);
+                                 if (graphId) {
+                                   // Node has an existing definition to expand
+                                   startHurtleAnimation(nodeId, graphId, nodeId);
+                                 } else {
+                                   // Node has no definitions - create one, then animate
+                                   const sourceGraphId = activeGraphId; // Capture current graph before it changes
+                                   storeActions.createAndAssignGraphDefinitionWithoutActivation(nodeId);
+                                   
+                                   setTimeout(() => {
+                                     const currentState = useGraphStore.getState();
+                                     const updatedNodeData = currentState.nodes.get(nodeId);
+                                     if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                                       const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                                       startHurtleAnimation(nodeId, newGraphId, nodeId, sourceGraphId);
+                                     } else {
+                                       console.error(`[Node OnExpand] Could not find new definition for node ${nodeId} after creation.`);
+                                     }
+                                   }, 50);
+                                 }
                                }}
                                storeActions={storeActions}
                                connections={edges}
@@ -2446,6 +2522,7 @@ function NodeCanvas() {
           graphName={activeGraphName}
           graphDescription={activeGraphDescription}
           nodeDefinitionIndices={nodeDefinitionIndices}
+          onStartHurtleAnimationFromPanel={startHurtleAnimationFromPanel}
         />
       </div>
       

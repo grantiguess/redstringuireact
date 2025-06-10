@@ -505,51 +505,76 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     console.log('[Store] Created and activated new empty graph:', newGraphId, newGraphName);
   })),
 
-  // Creates a new graph and assigns it as a definition for a given node
+  // Creates a new graph, assigns it as a definition to a node, and makes it active
   createAndAssignGraphDefinition: (nodeId) => set(produce((draft) => {
-    const nodeData = draft.nodes.get(nodeId);
-    if (!nodeData) {
-      console.warn(`[Store createAndAssignGraphDefinition] Node ${nodeId} not found.`);
+    const node = draft.nodes.get(nodeId);
+    if (!node) {
+      console.error(`[Store] Node with ID ${nodeId} not found.`);
       return;
     }
 
-    // Create a new graph, named after the node
     const newGraphId = uuidv4();
-    const newGraphName = nodeData.name || "Untitled Definition";
+    const newGraphName = node.name || 'Untitled Definition';
     const newGraphData = {
       id: newGraphId,
       name: newGraphName,
-      description: '',
+      description: 'A new web of thoughts.',
       picture: null,
-      color: '#ccc',
-      directed: false,
+      color: node.color || NODE_DEFAULT_COLOR,
+      directed: true,
       nodeIds: [],
       edgeIds: [],
-      definingNodeIds: [nodeId] // <<< FIX: Link existing node to new graph >>>
+      definingNodeIds: [nodeId]
     };
     draft.graphs.set(newGraphId, newGraphData);
-    console.log(`[Store createAndAssignGraphDefinition] Created new graph ${newGraphId} for node ${nodeId}`);
-
-    // Assign the new graph ID to the node's definitions
-    if (!Array.isArray(nodeData.definitionGraphIds)) {
-      nodeData.definitionGraphIds = [];
+    
+    // Add graph id to node's definitions
+    if (!Array.isArray(node.definitionGraphIds)) {
+        node.definitionGraphIds = [];
     }
-    // Check if it's already defined (shouldn't happen with new graph, but safe)
-    if (!nodeData.definitionGraphIds.includes(newGraphId)) {
-        nodeData.definitionGraphIds.push(newGraphId);
+    node.definitionGraphIds.push(newGraphId);
+    
+    // Open and activate the new graph
+    if (!draft.openGraphIds.includes(newGraphId)) {
+        draft.openGraphIds.push(newGraphId);
     }
-    console.log(`[Store createAndAssignGraphDefinition] Assigned graph ${newGraphId} to node ${nodeId}`);
-
-    // Make the new graph active and set the defining node
     draft.activeGraphId = newGraphId;
     draft.activeDefinitionNodeId = nodeId;
-    console.log(`[Store createAndAssignGraphDefinition] Set active graph to ${newGraphId} and definition node to ${nodeId}`);
-
-    // Ensure the new graph is in the open list
-    if (!draft.openGraphIds.includes(newGraphId)) {
-      draft.openGraphIds.unshift(newGraphId); // Add to front
+    
+    console.log(`[Store createAndAssignGraphDefinition] Created new graph ${newGraphId} for node ${nodeId}, and set as active.`);
+  })),
+  
+  // Creates a new graph and assigns it as a definition, but does NOT make it active.
+  // This is used for animations that need to complete before the UI switches.
+  createAndAssignGraphDefinitionWithoutActivation: (nodeId) => set(produce((draft) => {
+    const node = draft.nodes.get(nodeId);
+    if (!node) {
+      console.error(`[Store] Node with ID ${nodeId} not found.`);
+      return;
     }
-    draft.expandedGraphIds.add(newGraphId); // Expand it in the list
+
+    const newGraphId = uuidv4();
+    const newGraphName = node.name || 'Untitled Definition';
+    const newGraphData = {
+      id: newGraphId,
+      name: newGraphName,
+      description: 'A new web of thoughts.',
+      picture: null,
+      color: node.color || NODE_DEFAULT_COLOR,
+      directed: true,
+      nodeIds: [],
+      edgeIds: [],
+      definingNodeIds: [nodeId]
+    };
+    draft.graphs.set(newGraphId, newGraphData);
+
+    // Add graph id to node's definitions
+    if (!Array.isArray(node.definitionGraphIds)) {
+        node.definitionGraphIds = [];
+    }
+    node.definitionGraphIds.push(newGraphId);
+    
+    console.log(`[Store createAndAssignGraphDefinitionWithoutActivation] Created new graph ${newGraphId} for node ${nodeId}.`);
   })),
 
   // Sets the currently active graph tab.

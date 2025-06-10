@@ -2,7 +2,7 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, us
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR } from './constants';
-import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, Expand } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot } from 'lucide-react';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
 import ToggleButton from './ToggleButton'; // Import the new component
@@ -287,6 +287,7 @@ const Panel = forwardRef(
     graphDescription,
     activeDefinitionNodeId: propActiveDefinitionNodeId,
     nodeDefinitionIndices = new Map(), // Context-specific definition indices 
+    onStartHurtleAnimationFromPanel, // <<< Add new prop for animation
   }, ref) => {
     panelRenderCount++; // Increment counter
     // --- Zustand State and Actions ---
@@ -1479,6 +1480,14 @@ const Panel = forwardRef(
                     setEditingTitle(false);
                 };
 
+                // --- NEW ---: Determine if the expand icon should be disabled
+                const contextKey = `${nodeId}-${activeGraphId}`;
+                const currentIndex = nodeDefinitionIndices.get(contextKey) || 0;
+                const graphIdToOpen = (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0)
+                  ? (nodeData.definitionGraphIds[currentIndex] || nodeData.definitionGraphIds[0])
+                  : null;
+                const isExpandDisabled = graphIdToOpen === activeGraphId;
+
                 panelContent = (
                     <div className="panel-content-inner node-tab">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -1526,23 +1535,39 @@ const Panel = forwardRef(
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 {/* Expand Icon - Only show if node has definitions */}
                                 {nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0 && (
-                                    <Expand
+                                    <ArrowUpFromDot
                                         size={24}
                                         color="#260000"
-                                        style={{ cursor: 'pointer', flexShrink: 0 }}
-                                        onClick={() => {
+                                        style={{ 
+                                            cursor: isExpandDisabled ? 'not-allowed' : 'pointer', 
+                                            flexShrink: 0,
+                                            opacity: isExpandDisabled ? 0.3 : 1,
+                                            transition: 'opacity 0.2s ease',
+                                        }}
+                                        onClick={(e) => {
+                                            if (isExpandDisabled) return; // Do nothing if disabled
+
                                             // Get the context-specific definition index
                                             const contextKey = `${nodeId}-${activeGraphId}`;
                                             const currentIndex = nodeDefinitionIndices.get(contextKey) || 0;
                                             
-                                            // Open the current definition graph based on context
+                                            // Get the graph ID for the current definition
                                             const graphIdToOpen = nodeData.definitionGraphIds[currentIndex] || nodeData.definitionGraphIds[0];
-                                            console.log(`[Panel Expand Icon] Opening current definition graph: ${graphIdToOpen} (index ${currentIndex}) for node: ${nodeId}`);
-                                            if (storeActions?.openGraphTabAndBringToTop) {
-                                                storeActions.openGraphTabAndBringToTop(graphIdToOpen, nodeId);
+                                            
+                                            // Check if the animation function is provided
+                                            if (onStartHurtleAnimationFromPanel) {
+                                                const iconRect = e.currentTarget.getBoundingClientRect();
+                                                console.log(`[Panel Expand Icon] Starting hurtle animation for graph: ${graphIdToOpen} from node: ${nodeId}`);
+                                                onStartHurtleAnimationFromPanel(nodeId, graphIdToOpen, nodeId, iconRect);
+                                            } else {
+                                                // Fallback to original behavior if animation function isn't passed
+                                                console.log(`[Panel Expand Icon] Opening current definition graph: ${graphIdToOpen} (index ${currentIndex}) for node: ${nodeId}`);
+                                                if (storeActions?.openGraphTabAndBringToTop) {
+                                                    storeActions.openGraphTabAndBringToTop(graphIdToOpen, nodeId);
+                                                }
                                             }
                                         }}
-                                        title="Open definition in new tab"
+                                        title={isExpandDisabled ? "This graph is already open" : "Open definition in new tab"}
                                     />
                                 )}
                                 
