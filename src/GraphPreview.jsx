@@ -61,6 +61,7 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
             y: node.y * finalScale + offsetY,
             width: dims.currentWidth * finalScale,
             height: dims.currentHeight * finalScale,
+            textAreaHeight: dims.textAreaHeight * finalScale,
         };
     });
 
@@ -129,12 +130,16 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
         {scaledNodes.map(node => {
           const originalNode = nodes.find(n => n.id === node.id);
           if (!originalNode?.imageSrc) return null; // Only for image nodes
-          // Calculate rx/ry based on scaled node dimensions - more rounded
-          const clipRx = node.width * 0.25;
-          const clipRy = node.height * 0.25;
+          // Get proper dimensions for this specific node
+          const nodeDimensions = getNodeDimensions(originalNode, false, null);
+          const scaledWidth = nodeDimensions.currentWidth * scale;
+          const scaledHeight = nodeDimensions.currentHeight * scale;
+          // Calculate rx/ry based on proper scaled node dimensions - more rounded
+          const clipRx = scaledWidth * 0.3;
+          const clipRy = scaledHeight * 0.3;
           return (
             <clipPath key={`clip-${node.id}`} id={`clip-${node.id}`}>
-              <rect x={node.x} y={node.y} width={node.width} height={node.height} rx={clipRx} ry={clipRy} />
+              <rect x={node.x} y={node.y} width={scaledWidth} height={scaledHeight} rx={clipRx} ry={clipRy} />
             </clipPath>
           );
         })}
@@ -246,20 +251,26 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
           const nodeColor = originalNode?.color || '#800000'; // Get node color or default
           const nodeName = originalNode?.name || 'Untitled';
 
+          // Get proper dimensions for this specific node (like InnerNetwork does)
+          const nodeDimensions = getNodeDimensions(originalNode, false, null);
+          const scaledWidth = nodeDimensions.currentWidth * scale;
+          const scaledHeight = nodeDimensions.currentHeight * scale;
+          const scaledTextAreaHeight = nodeDimensions.textAreaHeight * scale;
+
           // FIX: Adjust node stroke width calculation - make thicker
           const nodeStrokeWidth = Math.min(3.0, Math.max(0.5, 1.6 / scale)) || 0.5; // Increased base factor and max limit
 
           // Determine if text should be shown (when node is large enough)
-          const showText = node.width > 40; // Show text when width exceeds 40px (reduced threshold)
-          const fontSize = Math.max(8, Math.min(16, node.width * 0.15)); // Scale font size with node size
+          const showText = scaledWidth > 15; // Show text when width exceeds 15px
+          const fontSize = Math.max(4, Math.min(10, scaledWidth * 0.11)); // Slightly larger font relative to node size
 
           if (imageSrc) {
             // Calculate stroke offset and adjusted dimensions/radius for the stroke rect
             const strokeOffset = nodeStrokeWidth / 2;
-            const strokeRectWidth = Math.max(0, node.width - nodeStrokeWidth);
-            const strokeRectHeight = Math.max(0, node.height - nodeStrokeWidth);
-            const strokeRectRx = strokeRectWidth * 0.25;
-            const strokeRectRy = strokeRectHeight * 0.25;
+            const strokeRectWidth = Math.max(0, scaledWidth - nodeStrokeWidth);
+            const strokeRectHeight = Math.max(0, scaledHeight - nodeStrokeWidth);
+            const strokeRectRx = strokeRectWidth * 0.3;
+            const strokeRectRy = strokeRectHeight * 0.3;
             
             return (
               // Remove clipPath from group
@@ -269,8 +280,8 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
                 <image
                   x={node.x} 
                   y={node.y}
-                  width={node.width}
-                  height={node.height}
+                  width={scaledWidth}
+                  height={scaledHeight}
                   href={imageSrc}
                   preserveAspectRatio="xMidYMid slice"
                   // Apply unique clipPath directly to image
@@ -291,9 +302,10 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
                 {/* Conditional text for image nodes */}
                 {showText && (
                   <text
-                    x={node.x + node.width / 2}
-                    y={node.y + node.height - 8} // Position near bottom
+                    x={node.x + scaledWidth / 2}
+                    y={node.y + scaledTextAreaHeight / 2} // Position in text area
                     textAnchor="middle"
+                    dominantBaseline="central"
                     fontSize={fontSize}
                     fill="#bdb5b5"
                     fontWeight="bold"
@@ -303,13 +315,13 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
                     }}
                   >
                     <tspan
-                      x={node.x + node.width / 2}
+                      x={node.x + scaledWidth / 2}
                       style={{
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap'
                       }}
                     >
-                      {nodeName.length > 12 ? nodeName.substring(0, 12) + '...' : nodeName}
+                      {nodeName.length > 6 ? nodeName.substring(0, 6) + '...' : nodeName}
                     </tspan>
                   </text>
                 )}
@@ -322,18 +334,18 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
                 <rect
                   x={node.x}
                   y={node.y}
-                  width={node.width}
-                  height={node.height}
+                  width={scaledWidth}
+                  height={scaledHeight}
                   fill={nodeColor} // Use node color
                   // More rounded corners to match other network representations
-                  rx={node.width * 0.25} 
-                  ry={node.height * 0.25}
+                  rx={scaledWidth * 0.3} 
+                  ry={scaledHeight * 0.3}
                 />
                 {/* Conditional text for rect nodes */}
                 {showText && (
                   <text
-                    x={node.x + node.width / 2}
-                    y={node.y + node.height / 2}
+                    x={node.x + scaledWidth / 2}
+                    y={node.y + scaledTextAreaHeight / 2} // Position in text area
                     textAnchor="middle"
                     dominantBaseline="central"
                     fontSize={fontSize}
@@ -345,13 +357,13 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
                     }}
                   >
                     <tspan
-                      x={node.x + node.width / 2}
+                      x={node.x + scaledWidth / 2}
                       style={{
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap'
                       }}
                     >
-                      {nodeName.length > 12 ? nodeName.substring(0, 12) + '...' : nodeName}
+                      {nodeName.length > 6 ? nodeName.substring(0, 6) + '...' : nodeName}
                     </tspan>
                   </text>
                 )}
