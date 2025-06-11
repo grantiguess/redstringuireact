@@ -552,7 +552,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     const newGraphData = {
       id: newGraphId,
       name: newGraphName,
-      description: 'A new web of thoughts.',
+      description: '',
       picture: null,
       color: node.color || NODE_DEFAULT_COLOR,
       directed: true,
@@ -592,7 +592,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     const newGraphData = {
       id: newGraphId,
       name: newGraphName,
-      description: 'A new web of thoughts.',
+      description: '',
       picture: null,
       color: node.color || NODE_DEFAULT_COLOR,
       directed: true,

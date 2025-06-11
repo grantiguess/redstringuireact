@@ -296,6 +296,53 @@ function NodeCanvas() {
     viewportSize.height / canvasSize.height
   );
 
+  // Store view states per graph (graphId -> {panOffset, zoomLevel})
+  const [graphViewStates, setGraphViewStates] = useState(new Map());
+
+  // Load view states from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('redstring_graph_view_states');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const viewStatesMap = new Map();
+        Object.entries(parsed).forEach(([graphId, state]) => {
+          viewStatesMap.set(graphId, state);
+        });
+        setGraphViewStates(viewStatesMap);
+      }
+    } catch (error) {
+      console.error('Error loading graph view states:', error);
+    }
+  }, []);
+
+  // Save view states to localStorage (debounced)
+  const saveViewStatesToStorage = useCallback((viewStates) => {
+    try {
+      const stateObject = Object.fromEntries(viewStates);
+      localStorage.setItem('redstring_graph_view_states', JSON.stringify(stateObject));
+    } catch (error) {
+      console.error('Error saving graph view states:', error);
+    }
+  }, []);
+
+  // Debounced save to localStorage
+  const debouncedSaveViewStates = useRef(null);
+  useEffect(() => {
+    if (debouncedSaveViewStates.current) {
+      clearTimeout(debouncedSaveViewStates.current);
+    }
+    debouncedSaveViewStates.current = setTimeout(() => {
+      saveViewStatesToStorage(graphViewStates);
+    }, 500); // Save after 500ms of inactivity
+
+    return () => {
+      if (debouncedSaveViewStates.current) {
+        clearTimeout(debouncedSaveViewStates.current);
+      }
+    };
+  }, [graphViewStates, saveViewStatesToStorage]);
+
   const [debugMode, setDebugMode] = useState(false);
   const [debugData, setDebugData] = useState({
     inputDevice: 'Unknown',
@@ -491,44 +538,91 @@ function NodeCanvas() {
     }
   }, [storeActions, setSelectedNodeIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Link]);
 
-  // Effect to center view on graph load/change
+  // Effect to restore view state on graph change or center if no stored state
   useEffect(() => {
     // Ensure we have valid sizes and an active graph
-    if (activeGraphId && viewportSize.width > 0 && viewportSize.height > 0 && canvasSize.width > 0 && canvasSize.height > 0 && zoomLevel > 0) {
+    if (activeGraphId && viewportSize.width > 0 && viewportSize.height > 0 && canvasSize.width > 0 && canvasSize.height > 0) {
 
-      // Target the center of the canvas
-      const targetCanvasX = canvasSize.width / 2;
-      const targetCanvasY = canvasSize.height / 2;
+      // Check if we have a stored view state for this graph
+      const storedViewState = graphViewStates.get(activeGraphId);
+      
+      if (storedViewState) {
+        // Restore the stored view state
+        console.log(`[NodeCanvas] Restoring view state for graph ${activeGraphId}:`, storedViewState);
+        setPanOffset(storedViewState.panOffset);
+        setZoomLevel(storedViewState.zoomLevel);
+      } else {
+        // No stored state, center the view as before
+        console.log(`[NodeCanvas] No stored view state for graph ${activeGraphId}, centering view`);
+        
+        // Target the center of the canvas
+        const targetCanvasX = canvasSize.width / 2;
+        const targetCanvasY = canvasSize.height / 2;
 
-      // Use the CURRENT zoom level state
-      const currentZoom = zoomLevel;
+        // Use default zoom level
+        const defaultZoom = 1;
 
-      // Calculate pan needed to place targetCanvas coords at viewport center
-      const initialPanX = viewportSize.width / 2 - targetCanvasX * currentZoom;
-      const initialPanY = viewportSize.height / 2 - targetCanvasY * currentZoom;
+        // Calculate pan needed to place targetCanvas coords at viewport center
+        const initialPanX = viewportSize.width / 2 - targetCanvasX * defaultZoom;
+        const initialPanY = viewportSize.height / 2 - targetCanvasY * defaultZoom;
 
-      // Clamp the initial pan to valid bounds based on current canvas/viewport/zoom
-      const maxX = 0;
-      const maxY = 0;
-      const minX = viewportSize.width - canvasSize.width * currentZoom;
-      const minY = viewportSize.height - canvasSize.height * currentZoom;
-      const clampedX = Math.min(Math.max(initialPanX, minX), maxX);
-      const clampedY = Math.min(Math.max(initialPanY, minY), maxY);
+        // Clamp the initial pan to valid bounds
+        const maxX = 0;
+        const maxY = 0;
+        const minX = viewportSize.width - canvasSize.width * defaultZoom;
+        const minY = viewportSize.height - canvasSize.height * defaultZoom;
+        const clampedX = Math.min(Math.max(initialPanX, minX), maxX);
+        const clampedY = Math.min(Math.max(initialPanY, minY), maxY);
 
-      // Apply the calculated and clamped pan offset
-      setPanOffset({ x: clampedX, y: clampedY });
-
-      // Avoid resetting zoom here, let user control persist
+        // Apply the calculated view state
+        setPanOffset({ x: clampedX, y: clampedY });
+        setZoomLevel(defaultZoom);
+      }
     }
-    // If activeGraphId becomes null, we might optionally reset pan/zoom
-    // else if (activeGraphId === null) {
-    //   setPanOffset({ x: 0, y: 0 });
-    //   setZoomLevel(1);
-    // }
-    // REMOVE zoomLevel from dependencies to prevent recentering on zoom
-  }, [activeGraphId, viewportSize, canvasSize]);
+     }, [activeGraphId, viewportSize, canvasSize, graphViewStates]);
 
+  // Track when panning/zooming operations are active
+  const isPanningOrZooming = useRef(false);
+  const saveViewStateTimeout = useRef(null);
 
+  // Function to save view state when operations complete
+  const saveCurrentViewState = useCallback(() => {
+    if (activeGraphId && panOffset && zoomLevel) {
+      setGraphViewStates(prev => {
+        const newStates = new Map(prev);
+        const newState = {
+          panOffset: { ...panOffset },
+          zoomLevel: zoomLevel
+        };
+        newStates.set(activeGraphId, newState);
+// console.log(`[NodeCanvas] Saved view state for graph ${activeGraphId}:`, newState);
+        return newStates;
+      });
+    }
+  }, [activeGraphId, panOffset, zoomLevel]);
+
+  // Effect to save view state after panning/zooming stops
+  useEffect(() => {
+    if (activeGraphId && panOffset && zoomLevel) {
+      // Clear any existing timeout
+      if (saveViewStateTimeout.current) {
+        clearTimeout(saveViewStateTimeout.current);
+      }
+      
+      // Set a timeout to save after operations stop
+      saveViewStateTimeout.current = setTimeout(() => {
+        if (!isPanningOrZooming.current) {
+          saveCurrentViewState();
+        }
+      }, 300); // Save 300ms after last pan/zoom change
+    }
+
+    return () => {
+      if (saveViewStateTimeout.current) {
+        clearTimeout(saveViewStateTimeout.current);
+      }
+    };
+  }, [activeGraphId, panOffset, zoomLevel, saveCurrentViewState]);
 
   // --- Utility Functions ---
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -858,6 +952,7 @@ function NodeCanvas() {
 
     // 1. Mac Pinch-to-Zoom (Ctrl key pressed) - always zoom regardless of device
     if (isMac && e.ctrlKey) {
+        isPanningOrZooming.current = true;
         const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
         const currentZoomForWorker = zoomLevel;
         const currentPanOffsetForWorker = panOffset;
@@ -882,15 +977,19 @@ function NodeCanvas() {
             panOffsetX: result.panOffset.x.toFixed(2),
             panOffsetY: result.panOffset.y.toFixed(2),
           }));
+          // Clear the flag after a delay
+          setTimeout(() => { isPanningOrZooming.current = false; }, 100);
         } catch (error) {
           console.error('Mac pinch zoom calculation failed:', error);
           setDebugData((prev) => ({ ...prev, info: 'Mac pinch zoom error', error: error.message }));
+          isPanningOrZooming.current = false;
         }
         return; // Processed
     }
 
     // 2. Trackpad Two-Finger Pan (based on device detection)
     if (deviceType === 'trackpad' || (deviceType === 'undetermined' && isMac && (Math.abs(deltaX) > 0.05 || Math.abs(deltaY) < 30))) {
+        isPanningOrZooming.current = true;
         const dx = -deltaX * PAN_DRAG_SENSITIVITY;
         const dy = -deltaY * PAN_DRAG_SENSITIVITY;
         
@@ -919,11 +1018,14 @@ function NodeCanvas() {
           }));
           return { x: newX, y: newY };
         });
+        // Clear the flag after a delay
+        setTimeout(() => { isPanningOrZooming.current = false; }, 100);
         return; // Processed
     }
 
     // 3. Mouse Wheel Zoom (based on device detection or fallback)
     if (deviceType === 'mouse' || (deviceType === 'undetermined' && deltaY !== 0)) {
+        isPanningOrZooming.current = true;
         const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
         const currentZoomForWorker = zoomLevel;
         const currentPanOffsetForWorker = panOffset;
@@ -949,9 +1051,12 @@ function NodeCanvas() {
                 panOffsetX: result.panOffset.x.toFixed(2),
                 panOffsetY: result.panOffset.y.toFixed(2),
             }));
+            // Clear the flag after a delay
+            setTimeout(() => { isPanningOrZooming.current = false; }, 100);
         } catch (error) {
             console.error('Wheel zoom calculation failed:', error);
             setDebugData((prev) => ({ ...prev, info: 'Wheel zoom error', error: error.message }));
+            isPanningOrZooming.current = false;
         }
         return; // Processed
     }
@@ -1082,6 +1187,7 @@ function NodeCanvas() {
                  setLongPressingNodeId(null); // Clear ID
              }
         } else if (!draggingNodeInfo && !drawingConnectionFrom && !isPanning && !startedOnNode.current) {
+            isPanningOrZooming.current = true;
             setIsPanning(true);
             setPanStart({ x: e.clientX, y: e.clientY });
         }
@@ -1261,6 +1367,7 @@ function NodeCanvas() {
 
     // Finalize panning state
     setIsPanning(false);
+    isPanningOrZooming.current = false; // Clear the flag when panning ends
     isMouseDown.current = false;
     // It's important to reset mouseMoved.current here AFTER all logic that depends on it for this up-event is done.
     // setHasMouseMovedSinceDown is reset on the next mousedown.
@@ -1291,6 +1398,7 @@ function NodeCanvas() {
       setSelectionRect(null);
     }
     setIsPanning(false);
+    isPanningOrZooming.current = false; // Clear the flag when canvas mouse up
     setDraggingNodeInfo(null);
     setDrawingConnectionFrom(null);
     isMouseDown.current = false;
@@ -1408,6 +1516,11 @@ function NodeCanvas() {
       if (keysPressed.current['ArrowRight'] || keysPressed.current['d'] || keysPressed.current['D']) { panDx -= KEYBOARD_PAN_SPEED; }
       if (keysPressed.current['ArrowUp'] || keysPressed.current['w'] || keysPressed.current['W']) { panDy += KEYBOARD_PAN_SPEED; }
       if (keysPressed.current['ArrowDown'] || keysPressed.current['s'] || keysPressed.current['S']) { panDy -= KEYBOARD_PAN_SPEED; }
+      
+      // Set flag if there's keyboard panning
+      if (panDx !== 0 || panDy !== 0) {
+        isPanningOrZooming.current = true;
+      }
 
       // 2. Calculate desired zoom delta
       let zoomDelta = 0;
@@ -1417,6 +1530,7 @@ function NodeCanvas() {
       // 3. Perform Zoom Calculation (if needed)
       let zoomResult = null;
       if (zoomDelta !== 0 && !isKeyboardZooming.current) {
+        isPanningOrZooming.current = true;
         isKeyboardZooming.current = true;
         try {
           const mousePos = { x: viewportSize.width / 2, y: viewportSize.height / 2 };
@@ -1431,6 +1545,8 @@ function NodeCanvas() {
           console.error('Keyboard zoom calculation failed:', error);
         } finally {
           isKeyboardZooming.current = false;
+          // Clear the panning/zooming flag after a delay for keyboard operations
+          setTimeout(() => { isPanningOrZooming.current = false; }, 100);
         }
       }
 
@@ -1483,6 +1599,8 @@ function NodeCanvas() {
       if (panDx !== 0 || panDy !== 0 || zoomDelta !== 0) {
           animationFrameId = requestAnimationFrame(keyboardLoop);
       } else {
+         // Clear the panning/zooming flag when keyboard operations stop
+         setTimeout(() => { isPanningOrZooming.current = false; }, 100);
          // Otherwise, let the effect rest until a dependency changes or keys are pressed again
          // (The useKeyboardShortcuts hook likely handles waking the component)
       }
