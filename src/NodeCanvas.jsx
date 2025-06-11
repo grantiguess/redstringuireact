@@ -356,6 +356,7 @@ function NodeCanvas() {
   });
   const [isPaused, setIsPaused] = useState(false);
   const [lastInteractionType, setLastInteractionType] = useState(null);
+  const [isViewReady, setIsViewReady] = useState(false);
 
   const [plusSign, setPlusSign] = useState(null);
   const [nodeNamePrompt, setNodeNamePrompt] = useState({ visible: false, name: '' });
@@ -540,6 +541,8 @@ function NodeCanvas() {
 
   // Effect to restore view state on graph change or center if no stored state
   useEffect(() => {
+    setIsViewReady(false); // Set to not ready on graph change
+
     // Ensure we have valid sizes and an active graph
     if (activeGraphId && viewportSize.width > 0 && viewportSize.height > 0 && canvasSize.width > 0 && canvasSize.height > 0) {
 
@@ -548,38 +551,44 @@ function NodeCanvas() {
       
       if (storedViewState) {
         // Restore the stored view state
-        console.log(`[NodeCanvas] Restoring view state for graph ${activeGraphId}:`, storedViewState);
+        // console.log(`[NodeCanvas] Restoring view state for graph ${activeGraphId}:`, storedViewState);
         setPanOffset(storedViewState.panOffset);
         setZoomLevel(storedViewState.zoomLevel);
       } else {
         // No stored state, center the view as before
-        console.log(`[NodeCanvas] No stored view state for graph ${activeGraphId}, centering view`);
-        
-        // Target the center of the canvas
-        const targetCanvasX = canvasSize.width / 2;
-        const targetCanvasY = canvasSize.height / 2;
+        // console.log(`[NodeCanvas] No stored view state for graph ${activeGraphId}, centering view`);
+
+      // Target the center of the canvas
+      const targetCanvasX = canvasSize.width / 2;
+      const targetCanvasY = canvasSize.height / 2;
 
         // Use default zoom level
         const defaultZoom = 1;
 
-        // Calculate pan needed to place targetCanvas coords at viewport center
+      // Calculate pan needed to place targetCanvas coords at viewport center
         const initialPanX = viewportSize.width / 2 - targetCanvasX * defaultZoom;
         const initialPanY = viewportSize.height / 2 - targetCanvasY * defaultZoom;
 
         // Clamp the initial pan to valid bounds
-        const maxX = 0;
-        const maxY = 0;
+      const maxX = 0;
+      const maxY = 0;
         const minX = viewportSize.width - canvasSize.width * defaultZoom;
         const minY = viewportSize.height - canvasSize.height * defaultZoom;
-        const clampedX = Math.min(Math.max(initialPanX, minX), maxX);
-        const clampedY = Math.min(Math.max(initialPanY, minY), maxY);
+      const clampedX = Math.min(Math.max(initialPanX, minX), maxX);
+      const clampedY = Math.min(Math.max(initialPanY, minY), maxY);
 
         // Apply the calculated view state
-        setPanOffset({ x: clampedX, y: clampedY });
+      setPanOffset({ x: clampedX, y: clampedY });
         setZoomLevel(defaultZoom);
       }
+      
+      // Defer setting view to ready to prevent flash
+      setTimeout(() => setIsViewReady(true), 0);
+
+    } else if (!activeGraphId) {
+      setIsViewReady(true); // No graph, so "ready" to show nothing
     }
-     }, [activeGraphId, viewportSize, canvasSize, graphViewStates]);
+  }, [activeGraphId, viewportSize, canvasSize]);
 
   // Track when panning/zooming operations are active
   const isPanningOrZooming = useRef(false);
@@ -2326,7 +2335,8 @@ function NodeCanvas() {
               }}
               onMouseUp={handleMouseUp} // Uncommented
             >
-             
+              {isViewReady && (
+                <>
               <g className="base-layer">
                 {edges.map((edge, idx) => {
                   const sourceNode = nodes.find(n => n.id === edge.sourceId);
@@ -2344,225 +2354,225 @@ function NodeCanvas() {
                   const x2 = destNode.x + eNodeDims.currentWidth / 2;
                   const y2 = destNode.y + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
 
-                  const isHovered = hoveredEdgeInfo?.edgeId === edge.id;
-                  
+                      const isHovered = hoveredEdgeInfo?.edgeId === edge.id;
+                      
 
-                  
+                      
 
-                  const edgeColor = destNode.color || NODE_DEFAULT_COLOR; // Use destination node color
-                  
-                  // Calculate arrow position and rotation
-                  const dx = x2 - x1;
-                  const dy = y2 - y1;
-                  const length = Math.sqrt(dx * dx + dy * dy);
-                  
-                  // Helper function to calculate edge intersection with rectangular nodes
-                  const getNodeEdgeIntersection = (nodeX, nodeY, nodeWidth, nodeHeight, dirX, dirY) => {
-                    const centerX = nodeX + nodeWidth / 2;
-                    const centerY = nodeY + nodeHeight / 2;
-                    const halfWidth = nodeWidth / 2;
-                    const halfHeight = nodeHeight / 2;
-                    const intersections = [];
-                    
-                    if (dirX > 0) {
-                      const t = halfWidth / dirX;
-                      const y = dirY * t;
-                      if (Math.abs(y) <= halfHeight) intersections.push({ x: centerX + halfWidth, y: centerY + y, distance: t });
-                    }
-                    if (dirX < 0) {
-                      const t = -halfWidth / dirX;
-                      const y = dirY * t;
-                      if (Math.abs(y) <= halfHeight) intersections.push({ x: centerX - halfWidth, y: centerY + y, distance: t });
-                    }
-                    if (dirY > 0) {
-                      const t = halfHeight / dirY;
-                      const x = dirX * t;
-                      if (Math.abs(x) <= halfWidth) intersections.push({ x: centerX + x, y: centerY + halfHeight, distance: t });
-                    }
-                    if (dirY < 0) {
-                      const t = -halfHeight / dirY;
-                      const x = dirX * t;
-                      if (Math.abs(x) <= halfWidth) intersections.push({ x: centerX + x, y: centerY - halfHeight, distance: t });
-                    }
-                    
-                    return intersections.reduce((closest, current) => 
-                      !closest || current.distance < closest.distance ? current : closest, null);
-                  };
-                  
-                  // Calculate edge intersections
-                  const sourceIntersection = getNodeEdgeIntersection(
-                    sourceNode.x, sourceNode.y, sNodeDims.currentWidth, sNodeDims.currentHeight,
-                    dx / length, dy / length
-                  );
-                  
-                  const destIntersection = getNodeEdgeIntersection(
-                    destNode.x, destNode.y, eNodeDims.currentWidth, eNodeDims.currentHeight,
-                    -dx / length, -dy / length
-                  );
+                      const edgeColor = destNode.color || NODE_DEFAULT_COLOR; // Use destination node color
+                      
+                      // Calculate arrow position and rotation
+                      const dx = x2 - x1;
+                      const dy = y2 - y1;
+                      const length = Math.sqrt(dx * dx + dy * dy);
+                      
+                      // Helper function to calculate edge intersection with rectangular nodes
+                      const getNodeEdgeIntersection = (nodeX, nodeY, nodeWidth, nodeHeight, dirX, dirY) => {
+                        const centerX = nodeX + nodeWidth / 2;
+                        const centerY = nodeY + nodeHeight / 2;
+                        const halfWidth = nodeWidth / 2;
+                        const halfHeight = nodeHeight / 2;
+                        const intersections = [];
+                        
+                        if (dirX > 0) {
+                          const t = halfWidth / dirX;
+                          const y = dirY * t;
+                          if (Math.abs(y) <= halfHeight) intersections.push({ x: centerX + halfWidth, y: centerY + y, distance: t });
+                        }
+                        if (dirX < 0) {
+                          const t = -halfWidth / dirX;
+                          const y = dirY * t;
+                          if (Math.abs(y) <= halfHeight) intersections.push({ x: centerX - halfWidth, y: centerY + y, distance: t });
+                        }
+                        if (dirY > 0) {
+                          const t = halfHeight / dirY;
+                          const x = dirX * t;
+                          if (Math.abs(x) <= halfWidth) intersections.push({ x: centerX + x, y: centerY + halfHeight, distance: t });
+                        }
+                        if (dirY < 0) {
+                          const t = -halfHeight / dirY;
+                          const x = dirX * t;
+                          if (Math.abs(x) <= halfWidth) intersections.push({ x: centerX + x, y: centerY - halfHeight, distance: t });
+                        }
+                        
+                        return intersections.reduce((closest, current) => 
+                          !closest || current.distance < closest.distance ? current : closest, null);
+                      };
+                      
+                      // Calculate edge intersections
+                      const sourceIntersection = getNodeEdgeIntersection(
+                        sourceNode.x, sourceNode.y, sNodeDims.currentWidth, sNodeDims.currentHeight,
+                        dx / length, dy / length
+                      );
+                      
+                      const destIntersection = getNodeEdgeIntersection(
+                        destNode.x, destNode.y, eNodeDims.currentWidth, eNodeDims.currentHeight,
+                        -dx / length, -dy / length
+                      );
 
-                  // Determine if each end of the edge should be shortened for arrows
-                  // Ensure arrowsToward is a Set (fix for loading from file)
-                  const arrowsToward = edge.directionality?.arrowsToward instanceof Set 
-                    ? edge.directionality.arrowsToward 
-                    : new Set(Array.isArray(edge.directionality?.arrowsToward) ? edge.directionality.arrowsToward : []);
-                  
-                  const shouldShortenSource = isHovered || arrowsToward.has(sourceNode.id);
-                  const shouldShortenDest = isHovered || arrowsToward.has(destNode.id);
+                      // Determine if each end of the edge should be shortened for arrows
+                      // Ensure arrowsToward is a Set (fix for loading from file)
+                      const arrowsToward = edge.directionality?.arrowsToward instanceof Set 
+                        ? edge.directionality.arrowsToward 
+                        : new Set(Array.isArray(edge.directionality?.arrowsToward) ? edge.directionality.arrowsToward : []);
+                      
+                      const shouldShortenSource = isHovered || arrowsToward.has(sourceNode.id);
+                      const shouldShortenDest = isHovered || arrowsToward.has(destNode.id);
 
                   return (
-                    <g key={`edge-${edge.id}-${idx}`}>
-                                             {/* Main edge line - always same thickness */}
+                        <g key={`edge-${edge.id}-${idx}`}>
+                                                 {/* Main edge line - always same thickness */}
                     <line
-                         x1={shouldShortenSource ? (sourceIntersection?.x || x1) : x1}
-                         y1={shouldShortenSource ? (sourceIntersection?.y || y1) : y1}
-                         x2={shouldShortenDest ? (destIntersection?.x || x2) : x2}
-                         y2={shouldShortenDest ? (destIntersection?.y || y2) : y2}
+                             x1={shouldShortenSource ? (sourceIntersection?.x || x1) : x1}
+                             y1={shouldShortenSource ? (sourceIntersection?.y || y1) : y1}
+                             x2={shouldShortenDest ? (destIntersection?.x || x2) : x2}
+                             y2={shouldShortenDest ? (destIntersection?.y || y2) : y2}
                       stroke="black"
-                         strokeWidth="6"
-                         style={{ transition: 'stroke 0.2s ease' }}
-                       />
-                      
+                             strokeWidth="6"
+                             style={{ transition: 'stroke 0.2s ease' }}
+                           />
+                          
                                                                                                                   {/* Smart directional arrows with clickable toggle */}
-                       {(() => {
-                         // Calculate arrow positions (use fallback if intersections fail)
-                         let sourceArrowX, sourceArrowY, destArrowX, destArrowY, sourceArrowAngle, destArrowAngle;
-                         
-                         if (!sourceIntersection || !destIntersection) {
-                           // Fallback positioning
-                           sourceArrowX = x1 + (dx / length) * 20;
-                           sourceArrowY = y1 + (dy / length) * 20;
-                           destArrowX = x2 - (dx / length) * 20;
-                           destArrowY = y2 - (dy / length) * 20;
-                           sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
-                           destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
-                         } else {
-                           // Precise intersection positioning
-                           const arrowLength = 5;
-                           sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
-                           sourceArrowX = sourceIntersection.x + (dx / length) * arrowLength;
-                           sourceArrowY = sourceIntersection.y + (dy / length) * arrowLength;
-                           destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
-                           destArrowX = destIntersection.x - (dx / length) * arrowLength;
-                           destArrowY = destIntersection.y - (dy / length) * arrowLength;
-                         }
-                         
-                         const handleArrowClick = (nodeId, e) => {
-                           e.stopPropagation();
-                           
-                           // Toggle the arrow state for the specific node
-                           updateEdge(edge.id, (draft) => {
-                             // Ensure directionality object exists
-                             if (!draft.directionality) {
-                               draft.directionality = { arrowsToward: new Set() };
-                             }
-                             // Ensure arrowsToward is a Set
-                             if (!draft.directionality.arrowsToward) {
-                               draft.directionality.arrowsToward = new Set();
-                             }
+                           {(() => {
+                             // Calculate arrow positions (use fallback if intersections fail)
+                             let sourceArrowX, sourceArrowY, destArrowX, destArrowY, sourceArrowAngle, destArrowAngle;
                              
-                             // Toggle arrow for this specific node
-                             if (draft.directionality.arrowsToward.has(nodeId)) {
-                               draft.directionality.arrowsToward.delete(nodeId);
+                             if (!sourceIntersection || !destIntersection) {
+                               // Fallback positioning
+                               sourceArrowX = x1 + (dx / length) * 20;
+                               sourceArrowY = y1 + (dy / length) * 20;
+                               destArrowX = x2 - (dx / length) * 20;
+                               destArrowY = y2 - (dy / length) * 20;
+                               sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
+                               destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
                              } else {
-                               draft.directionality.arrowsToward.add(nodeId);
+                               // Precise intersection positioning
+                               const arrowLength = 5;
+                               sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
+                               sourceArrowX = sourceIntersection.x + (dx / length) * arrowLength;
+                               sourceArrowY = sourceIntersection.y + (dy / length) * arrowLength;
+                               destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+                               destArrowX = destIntersection.x - (dx / length) * arrowLength;
+                               destArrowY = destIntersection.y - (dy / length) * arrowLength;
                              }
-                           });
-                         };
-                         
-                         return (
-                           <>
-                             {/* Source Arrow - visible if arrow points toward source node */}
-                             {arrowsToward.has(sourceNode.id) && (
-                               <g 
-                                 transform={`translate(${sourceArrowX}, ${sourceArrowY}) rotate(${sourceArrowAngle + 90})`}
-                                 style={{ cursor: 'pointer' }}
-                                 onClick={(e) => handleArrowClick(sourceNode.id, e)}
-                                 onMouseDown={(e) => e.stopPropagation()}
-                               >
-                                 <polygon
-                                   points="-12,15 12,15 0,-15"
-                                   fill="black"
-                                   stroke="black"
-                                   strokeWidth="6"
-                                   strokeLinejoin="round"
-                                   strokeLinecap="round"
-                                   paintOrder="stroke fill"
-                                 />
-                               </g>
-                             )}
                              
-                             {/* Destination Arrow - visible if arrow points toward destination node */}
-                             {arrowsToward.has(destNode.id) && (
-                               <g 
-                                 transform={`translate(${destArrowX}, ${destArrowY}) rotate(${destArrowAngle + 90})`}
-                                 style={{ cursor: 'pointer' }}
-                                 onClick={(e) => handleArrowClick(destNode.id, e)}
-                                 onMouseDown={(e) => e.stopPropagation()}
-                               >
-                                 <polygon
-                                   points="-12,15 12,15 0,-15"
-                                   fill="black"
-                                   stroke="black"
-                                   strokeWidth="6"
-                                   strokeLinejoin="round"
-                                   strokeLinecap="round"
-                                   paintOrder="stroke fill"
-                                 />
-                               </g>
-                             )}
-
-                             {/* Hover Dots - only visible when hovering */}
-                             {isHovered && (
+                             const handleArrowClick = (nodeId, e) => {
+                               e.stopPropagation();
+                               
+                               // Toggle the arrow state for the specific node
+                               updateEdge(edge.id, (draft) => {
+                                 // Ensure directionality object exists
+                                 if (!draft.directionality) {
+                                   draft.directionality = { arrowsToward: new Set() };
+                                 }
+                                 // Ensure arrowsToward is a Set
+                                 if (!draft.directionality.arrowsToward) {
+                                   draft.directionality.arrowsToward = new Set();
+                                 }
+                                 
+                                 // Toggle arrow for this specific node
+                                 if (draft.directionality.arrowsToward.has(nodeId)) {
+                                   draft.directionality.arrowsToward.delete(nodeId);
+                                 } else {
+                                   draft.directionality.arrowsToward.add(nodeId);
+                                 }
+                               });
+                             };
+                             
+                             return (
                                <>
-                                 {/* Source Dot - only show if arrow not pointing toward source */}
-                                 {!arrowsToward.has(sourceNode.id) && (
-                                   <g>
-                                     <circle
-                                       cx={sourceArrowX}
-                                       cy={sourceArrowY}
-                                       r="20"
-                                       fill="transparent"
-                                       style={{ cursor: 'pointer' }}
-                                       onClick={(e) => handleArrowClick(sourceNode.id, e)}
-                                       onMouseDown={(e) => e.stopPropagation()}
-                                     />
-                                     <circle
-                                       cx={sourceArrowX}
-                                       cy={sourceArrowY}
-                                       r="8"
+                                 {/* Source Arrow - visible if arrow points toward source node */}
+                                 {arrowsToward.has(sourceNode.id) && (
+                                   <g 
+                                     transform={`translate(${sourceArrowX}, ${sourceArrowY}) rotate(${sourceArrowAngle + 90})`}
+                                     style={{ cursor: 'pointer' }}
+                                     onClick={(e) => handleArrowClick(sourceNode.id, e)}
+                                     onMouseDown={(e) => e.stopPropagation()}
+                                   >
+                                     <polygon
+                                       points="-12,15 12,15 0,-15"
                                        fill="black"
-                                       style={{ pointerEvents: 'none' }}
+                                       stroke="black"
+                                       strokeWidth="6"
+                                       strokeLinejoin="round"
+                                       strokeLinecap="round"
+                                       paintOrder="stroke fill"
                                      />
                                    </g>
                                  )}
                                  
-                                 {/* Destination Dot - only show if arrow not pointing toward destination */}
-                                 {!arrowsToward.has(destNode.id) && (
-                                   <g>
-                                     <circle
-                                       cx={destArrowX}
-                                       cy={destArrowY}
-                                       r="20"
-                                       fill="transparent"
-                                       style={{ cursor: 'pointer' }}
-                                       onClick={(e) => handleArrowClick(destNode.id, e)}
-                                       onMouseDown={(e) => e.stopPropagation()}
-                                     />
-                                     <circle
-                                       cx={destArrowX}
-                                       cy={destArrowY}
-                                       r="8"
+                                 {/* Destination Arrow - visible if arrow points toward destination node */}
+                                 {arrowsToward.has(destNode.id) && (
+                                   <g 
+                                     transform={`translate(${destArrowX}, ${destArrowY}) rotate(${destArrowAngle + 90})`}
+                                     style={{ cursor: 'pointer' }}
+                                     onClick={(e) => handleArrowClick(destNode.id, e)}
+                                     onMouseDown={(e) => e.stopPropagation()}
+                                   >
+                                     <polygon
+                                       points="-12,15 12,15 0,-15"
                                        fill="black"
-                                       style={{ pointerEvents: 'none' }}
+                                       stroke="black"
+                                       strokeWidth="6"
+                                       strokeLinejoin="round"
+                                       strokeLinecap="round"
+                                       paintOrder="stroke fill"
                                      />
                                    </g>
                                  )}
+
+                                 {/* Hover Dots - only visible when hovering */}
+                                 {isHovered && (
+                                   <>
+                                     {/* Source Dot - only show if arrow not pointing toward source */}
+                                     {!arrowsToward.has(sourceNode.id) && (
+                                       <g>
+                                         <circle
+                                           cx={sourceArrowX}
+                                           cy={sourceArrowY}
+                                           r="20"
+                                           fill="transparent"
+                                           style={{ cursor: 'pointer' }}
+                                           onClick={(e) => handleArrowClick(sourceNode.id, e)}
+                                           onMouseDown={(e) => e.stopPropagation()}
+                                         />
+                                         <circle
+                                           cx={sourceArrowX}
+                                           cy={sourceArrowY}
+                                           r="8"
+                                           fill="black"
+                                           style={{ pointerEvents: 'none' }}
+                                         />
+                                       </g>
+                                     )}
+                                     
+                                     {/* Destination Dot - only show if arrow not pointing toward destination */}
+                                     {!arrowsToward.has(destNode.id) && (
+                                       <g>
+                                         <circle
+                                           cx={destArrowX}
+                                           cy={destArrowY}
+                                           r="20"
+                                           fill="transparent"
+                                           style={{ cursor: 'pointer' }}
+                                           onClick={(e) => handleArrowClick(destNode.id, e)}
+                                           onMouseDown={(e) => e.stopPropagation()}
+                                         />
+                                         <circle
+                                           cx={destArrowX}
+                                           cy={destArrowY}
+                                           r="8"
+                                           fill="black"
+                                           style={{ pointerEvents: 'none' }}
+                                         />
+                                       </g>
+                                     )}
+                                   </>
+                                 )}
                                </>
-                             )}
-                           </>
-                         );
-                       })()}
-                    </g>
+                             );
+                           })()}
+                        </g>
                   );
                 })}
                 {drawingConnectionFrom && (
@@ -2892,6 +2902,8 @@ function NodeCanvas() {
                    onMorphDone={handleMorphDone}
                    onDisappearDone={() => setPlusSign(null)}
                  />
+                   )}
+                </>
                )}
             </svg>
           )}
