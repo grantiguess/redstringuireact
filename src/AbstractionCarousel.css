@@ -1,0 +1,94 @@
+/* AbstractionCarousel.css */
+
+.abstraction-carousel-backdrop {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.abstraction-carousel {
+  overflow: hidden;
+  cursor: grab;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.abstraction-carousel:active {
+  cursor: grabbing;
+}
+
+.abstraction-node {
+  will-change: transform, opacity;
+  transition: all 0.2s ease-out;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.abstraction-node:not(.placeholder):hover {
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+.abstraction-node.current {
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+  border-width: 3px !important;
+}
+
+.abstraction-node.selected {
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+  border-width: 3px !important;
+  z-index: 10 !important;
+}
+
+.abstraction-node.placeholder {
+  transition: all 0.2s ease;
+}
+
+.abstraction-node.placeholder:hover {
+  border-color: #666 !important;
+  background-color: rgba(153, 153, 153, 0.1) !important;
+}
+
+/* Smooth level transition */
+.abstraction-node {
+  transition: all 200ms ease-out, transform 150ms ease-out;
+}
+
+/* Smooth text scaling for different zoom levels */
+.abstraction-node span {
+  transition: font-size 0.1s ease-out;
+}
+
+/* Responsive sizing for different zoom levels */
+@media (max-width: 768px) {
+  .abstraction-node {
+    min-width: 120px;
+    min-height: 60px;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .abstraction-node {
+    border-width: 3px !important;
+  }
+  
+  .abstraction-node.current {
+    border-width: 4px !important;
+  }
+  
+  .abstraction-node.selected {
+    border-width: 4px !important;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .abstraction-node {
+    transition: none;
+  }
+  
+  .abstraction-node:hover {
+    transform: none !important;
+  }
+} 

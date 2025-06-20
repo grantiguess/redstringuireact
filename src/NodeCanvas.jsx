@@ -7,9 +7,10 @@ import { useCanvasWorker } from './useCanvasWorker.js';
 import Node from './Node.jsx';
 import PlusSign from './PlusSign.jsx'; // Import the new PlusSign component
 import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
+import AbstractionCarousel from './AbstractionCarousel.jsx'; // Import the AbstractionCarousel component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
-import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle } from 'lucide-react'; // Icons for PieMenu
+import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers } from 'lucide-react'; // Icons for PieMenu
 
 // Import Zustand store and selectors/actions
 import useGraphStore, {
@@ -375,6 +376,10 @@ function NodeCanvas() {
   const [selectedNodeIdForPieMenu, setSelectedNodeIdForPieMenu] = useState(null);
   const [isTransitioningPieMenu, setIsTransitioningPieMenu] = useState(false);
 
+  // Abstraction Carousel states
+  const [abstractionCarouselVisible, setAbstractionCarouselVisible] = useState(false);
+  const [abstractionCarouselNode, setAbstractionCarouselNode] = useState(null);
+
   // Use the local state values populated by subscribe
   const projectTitle = activeGraphName ?? 'Loading...';
   const projectBio = activeGraphDescription ?? '';
@@ -399,6 +404,9 @@ function NodeCanvas() {
     // The pie menu is hidden automatically by an effect watching selectedNodeIds,
     // but we clear its target ID explicitly to be safe.
     setSelectedNodeIdForPieMenu(null);
+    // Clear abstraction carousel
+    setAbstractionCarouselVisible(false);
+    setAbstractionCarouselNode(null);
   }, [activeGraphId]);
 
   // --- Saved Graphs Management ---
@@ -534,6 +542,14 @@ function NodeCanvas() {
             }
             // Enable inline editing on canvas
             setEditingNodeIdOnCanvas(nodeId);
+        } },
+        { id: 'abstraction', label: 'Abstraction', icon: Layers, action: (nodeId) => {
+            console.log(`[PieMenu Action] Abstraction clicked for node: ${nodeId}.`);
+            const nodeData = nodes.find(n => n.id === nodeId);
+            if (nodeData) {
+              setAbstractionCarouselNode(nodeData);
+              setAbstractionCarouselVisible(true);
+            }
         } }
       ];
     }
@@ -2960,6 +2976,25 @@ function NodeCanvas() {
         nodes={nodes}
         setSelectedNodes={setSelectedNodeIds}
       />
+
+      {/* AbstractionCarousel Component */}
+      {abstractionCarouselVisible && abstractionCarouselNode && (
+        <AbstractionCarousel
+          isVisible={abstractionCarouselVisible}
+          selectedNode={abstractionCarouselNode}
+          panOffset={panOffset}
+          zoomLevel={zoomLevel}
+          containerRef={containerRef}
+          onClose={() => {
+            setAbstractionCarouselVisible(false);
+            setAbstractionCarouselNode(null);
+          }}
+          onReplaceNode={(oldNodeId, newNodeData) => {
+            // TODO: Implement node replacement functionality
+            console.log('Replace node:', oldNodeId, 'with:', newNodeData);
+          }}
+        />
+      )}
       
       {/* <div>NodeCanvas Simplified - Testing Loop</div> */}
     </div>
