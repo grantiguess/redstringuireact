@@ -6,9 +6,9 @@ import './AbstractionCarousel.css';
 
 const LEVEL_SPACING = 80; // Vertical spacing between abstraction levels
 const PHYSICS_DAMPING = 0.92; // Friction coefficient (0.92 = 8% velocity loss per frame)
-const SCROLL_SENSITIVITY = 0.04; // Increased sensitivity for more responsive scrolling
+const SCROLL_SENSITIVITY = 0.035; // Much more sensitive scrolling
 const SNAP_THRESHOLD = 0.5; // Velocity below which snapping starts
-const SNAP_SPRING = 0.15; // Spring strength for snapping (higher = faster snap)
+const SNAP_SPRING = 0.12; // Spring strength for snapping (lower to reduce oscillation)
 const MIN_VELOCITY = 0.01; // Minimum velocity before stopping physics
 const MAX_VELOCITY = 8; // Maximum velocity to prevent excessive scrolling
 
@@ -89,6 +89,8 @@ const AbstractionCarousel = ({
       return;
     }
 
+    let shouldContinue = false;
+
     setVelocity(prevVelocity => {
       const currentVelocity = prevVelocity * PHYSICS_DAMPING;
       
@@ -97,54 +99,63 @@ const AbstractionCarousel = ({
         return 0;
       }
       
+      if (Math.abs(currentVelocity) > MIN_VELOCITY) shouldContinue = true;
       return currentVelocity;
     });
 
-      setScrollPosition(prevPosition => {
-    const newPosition = prevPosition + velocity * 0.016; // Assume ~60fps for consistent physics
-    
-    // Clamp to abstraction chain bounds (-3 to +3)
-    const clampedPosition = Math.max(-3, Math.min(3, newPosition));
-    
-    // Check if we should start snapping
-    if (Math.abs(velocity) < SNAP_THRESHOLD && !isSnapping) {
-      const nearestLevel = Math.round(clampedPosition);
-      const distanceToNearest = nearestLevel - clampedPosition;
+    setScrollPosition(prevPosition => {
+      const newPosition = prevPosition + velocity * 0.016; // Assume ~60fps for consistent physics
       
-      if (Math.abs(distanceToNearest) > 0.01) {
-        setIsSnapping(true);
+      // Clamp position to abstraction chain bounds (-3 to +3)
+      const clampedPosition = Math.max(-3, Math.min(3, newPosition));
+      
+      // Check if we should start snapping
+      if (Math.abs(velocity) < SNAP_THRESHOLD && !isSnapping) {
+        const nearestLevel = Math.round(clampedPosition);
+        const distanceToNearest = Math.abs(nearestLevel - clampedPosition);
         
-        // Start snap animation
-        const snapToLevel = () => {
-          setScrollPosition(current => {
-            const target = Math.max(-3, Math.min(3, Math.round(current))); // Clamp target too
-            const diff = target - current;
-            
-            if (Math.abs(diff) < 0.001) {
-              setIsSnapping(false);
-              return target;
+        // If very close to a whole number, snap immediately
+        if (distanceToNearest < 0.02) {
+          setVelocity(0);
+          return nearestLevel; // Return exact whole number
+        } else if (distanceToNearest > 0.05) {
+          setIsSnapping(true);
+          shouldContinue = true;
+          
+          // More aggressive snapping to ensure we reach whole numbers
+          const snapToLevel = () => {
+            setScrollPosition(current => {
+              const target = Math.max(-3, Math.min(3, Math.round(current)));
+              const diff = target - current;
+              
+              // Much tighter tolerance - snap decisively to whole numbers
+              if (Math.abs(diff) < 0.005) {
+                setIsSnapping(false);
+                setVelocity(0); // Ensure no residual velocity
+                return target;
+              }
+              
+              // Stronger spring force to reach target quickly
+              return current + diff * 0.2;
+            });
+          };
+          
+          const snapAnimation = () => {
+            snapToLevel();
+            if (isSnapping) {
+              requestAnimationFrame(snapAnimation);
             }
-            
-            return current + diff * SNAP_SPRING;
-          });
-        };
-        
-        const snapAnimation = () => {
-          snapToLevel();
-          if (isSnapping) {
-            requestAnimationFrame(snapAnimation);
-          }
-        };
-        
-        requestAnimationFrame(snapAnimation);
+          };
+          
+          requestAnimationFrame(snapAnimation);
+        }
       }
-    }
-    
-    return clampedPosition;
-  });
+      
+      return clampedPosition;
+    });
 
-    // Continue physics loop if there's still velocity or snapping
-    if (Math.abs(velocity) > MIN_VELOCITY || isSnapping) {
+    // Continue physics loop only if needed
+    if (shouldContinue || isSnapping) {
       animationFrameRef.current = requestAnimationFrame(updatePhysics);
     }
   }, [isVisible, velocity, isSnapping]);
@@ -200,8 +211,8 @@ const AbstractionCarousel = ({
   const handleNodeClick = useCallback((item) => {
     if (!isVisible) return;
     
-    // Set target scroll position and animate to it
-    const targetPosition = item.level;
+    // Set target scroll position and animate to it (clamped to bounds)
+    const targetPosition = Math.max(-3, Math.min(3, item.level));
     setIsSnapping(true);
     setVelocity(0); // Stop any current motion
     
@@ -209,12 +220,15 @@ const AbstractionCarousel = ({
       setScrollPosition(current => {
         const diff = targetPosition - current;
         
-        if (Math.abs(diff) < 0.001) {
+        // Much tighter tolerance for decisive snapping to whole numbers
+        if (Math.abs(diff) < 0.005) {
           setIsSnapping(false);
+          setVelocity(0); // Ensure no residual velocity
           return targetPosition;
         }
         
-        return current + diff * (SNAP_SPRING * 1.5); // Slightly faster for click-to-target
+        // Stronger spring force for quick, decisive movement to target
+        return current + diff * 0.25;
       });
     };
     
@@ -288,22 +302,23 @@ const AbstractionCarousel = ({
             const nodeDimensions = getNodeDimensions(item.type === 'current' ? selectedNode : item, false, null);
             const distanceFromMain = Math.abs(item.level - scrollPosition);
             
-            // Dramatically enhanced progressive scaling - much more dramatic falloff
+            // Moderate progressive scaling - noticeable but not extreme
             let scale = 1.0;
             if (distanceFromMain === 0) {
-              // Exactly at focus - maximum size (much larger)
-              scale = 2.5;
+              // Exactly at focus - keep at maximum size (1.2 as requested)
+              scale = 1.2;
             } else if (distanceFromMain < 1) {
-              // Close to focus - steep interpolation from max to small
-              scale = 2.5 - (distanceFromMain * 2.1); // 2.5 to 0.4
+              // Close to focus - moderate drop from 1.2 to 0.8
+              scale = 1.2 - (distanceFromMain * 0.4); // 1.2 to 0.8 - more moderate
             } else {
-              // Further from focus - shrink dramatically to tiny sizes
-              scale = 0.4 - ((distanceFromMain - 1) * 0.15); // Start at 0.4, shrink to 0.1
-              scale = Math.max(0.1, scale); // Minimum scale of 0.1 (very tiny)
+              // Further from focus - shrink gradually
+              scale = 0.8 - ((distanceFromMain - 1) * 0.15); // Start at 0.8, drop more gradually
+              scale = Math.max(0.5, scale); // Minimum scale of 0.5 for readability
             }
             
-            const scaledWidth = Math.round(nodeDimensions.currentWidth * zoomLevel * scale);
-            const scaledHeight = Math.round(nodeDimensions.currentHeight * zoomLevel * scale);
+            // Match Node.jsx rounding exactly - round each component separately
+            const scaledWidth = Math.round(nodeDimensions.currentWidth * scale * zoomLevel);
+            const scaledHeight = Math.round(nodeDimensions.currentHeight * scale * zoomLevel);
             const cornerRadius = Math.round(NODE_CORNER_RADIUS * scale);
             
             return (
@@ -331,24 +346,24 @@ const AbstractionCarousel = ({
             return null;
           }
           
-          // Enhanced progressive scaling - more dramatic growth/shrinkage
+          // Moderate progressive scaling - noticeable but not extreme
           let scale = 1.0;
           if (distanceFromMain === 0) {
-            // Exactly at focus - maximum size
+            // Exactly at focus - keep at maximum size (1.2 as requested)
             scale = 1.2;
           } else if (distanceFromMain < 1) {
-            // Close to focus - interpolate between max and normal
-            scale = 1.2 - (distanceFromMain * 0.2); // 1.2 to 1.0
+            // Close to focus - moderate drop from 1.2 to 0.8
+            scale = 1.2 - (distanceFromMain * 0.4); // 1.2 to 0.8 - more moderate
           } else {
-            // Further from focus - shrink more dramatically  
-            scale = 1.0 - ((distanceFromMain - 1) * 0.25); // Start shrinking after distance 1
-            scale = Math.max(0.3, scale); // Minimum scale of 0.3 instead of 0.4
+            // Further from focus - shrink gradually
+            scale = 0.8 - ((distanceFromMain - 1) * 0.15); // Start at 0.8, drop more gradually
+            scale = Math.max(0.5, scale); // Minimum scale of 0.5 for readability
           }
           
-          // Calculate exact dimensions using proper rounding
-          const scaledWidth = Math.round(nodeDimensions.currentWidth * zoomLevel * scale);
-          const scaledHeight = Math.round(nodeDimensions.currentHeight * zoomLevel * scale);
-          const scaledTextAreaHeight = Math.round(nodeDimensions.textAreaHeight * zoomLevel * scale);
+          // Calculate exact dimensions using same rounding as Node.jsx
+          const scaledWidth = Math.round(nodeDimensions.currentWidth * scale * zoomLevel);
+          const scaledHeight = Math.round(nodeDimensions.currentHeight * scale * zoomLevel);
+          const scaledTextAreaHeight = Math.round(nodeDimensions.textAreaHeight * scale * zoomLevel);
           
           // Calculate opacity: smooth falloff based on distance
           let opacity = 1;
@@ -360,9 +375,9 @@ const AbstractionCarousel = ({
             opacity = 0.5 - ((distanceFromMain - 2) * 0.8); // Fade to invisible beyond 2 levels
           }
           
-          // Position calculation - centered horizontally, spaced vertically
-          const nodeX = Math.round(50 * window.innerWidth / 100);
-          const nodeY = Math.round(50 * window.innerHeight / 100 + (item.level * LEVEL_SPACING * zoomLevel));
+          // Position calculation - centered horizontally, spaced vertically (match Node.jsx style)
+          const nodeX = Math.round(window.innerWidth * 0.5);
+          const nodeY = Math.round(window.innerHeight * 0.5 + (item.level * LEVEL_SPACING * zoomLevel));
           
           // Determine if this is the "main" node (closest to scroll position)
           const isMainNode = distanceFromMain < 0.5;
@@ -381,7 +396,8 @@ const AbstractionCarousel = ({
               style={{
                 opacity: opacity,
                 cursor: 'pointer',
-                pointerEvents: 'auto'
+                pointerEvents: 'auto',
+                zIndex: isMainNode ? 100 : 1 // Higher z-index for focused node
               }}
               onClick={() => handleNodeClick(item)}
             >
@@ -521,7 +537,7 @@ const AbstractionCarousel = ({
           fontSize: `${Math.round(14 * zoomLevel)}px`,
           marginBottom: '8px'
         }}>
-          Level {scrollPosition.toFixed(1)}
+          Level {Math.abs(scrollPosition - Math.round(scrollPosition)) < 0.01 ? Math.round(scrollPosition) : scrollPosition.toFixed(1)}
         </div>
         <div>↓ Specific</div>
         
