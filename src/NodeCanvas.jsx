@@ -379,6 +379,7 @@ function NodeCanvas() {
   // Abstraction Carousel states
   const [abstractionCarouselVisible, setAbstractionCarouselVisible] = useState(false);
   const [abstractionCarouselNode, setAbstractionCarouselNode] = useState(null);
+  const [abstractionCarouselScale, setAbstractionCarouselScale] = useState(1);
 
   // Use the local state values populated by subscribe
   const projectTitle = activeGraphName ?? 'Loading...';
@@ -575,6 +576,7 @@ function NodeCanvas() {
             if (nodeData) {
               setAbstractionCarouselNode(nodeData);
               setAbstractionCarouselVisible(true);
+              setAbstractionCarouselScale(1.2); // Initialize to main node scale
             }
         } }
       ];
@@ -1800,7 +1802,20 @@ function NodeCanvas() {
       if (node) {
         const dimensions = getNodeDimensions(node, previewingNodeId === node.id, null);
         //console.log(`[NodeCanvas] Preparing pie menu for node ${selectedNodeIdForPieMenu}. Not transitioning. Buttons:`, targetPieMenuButtons.map(b => b.id));
-        setCurrentPieMenuData({ node, buttons: targetPieMenuButtons, nodeDimensions: dimensions });
+        
+        // Add carousel scale factor if in carousel mode
+        let carouselScale = 1;
+        if (abstractionCarouselVisible && abstractionCarouselNode && node.id === abstractionCarouselNode.id) {
+          // Use the dynamic scale factor from AbstractionCarousel
+          carouselScale = abstractionCarouselScale;
+        }
+        
+        setCurrentPieMenuData({ 
+          node, 
+          buttons: targetPieMenuButtons, 
+          nodeDimensions: dimensions,
+          carouselScale 
+        });
         setIsPieMenuRendered(true); // Ensure PieMenu is in DOM to animate in
       } else {
         //console.log(`[NodeCanvas] Node ${selectedNodeIdForPieMenu} not found, but was set for pie menu. Hiding.`);
@@ -1817,7 +1832,7 @@ function NodeCanvas() {
     }
     // If isTransitioningPieMenu is true, we don't change currentPieMenuData or isPieMenuRendered here.
     // The existing menu plays its exit animation, and onExitAnimationComplete handles the next steps.
-  }, [selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu]);
+  }, [selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu, abstractionCarouselVisible, abstractionCarouselNode, abstractionCarouselScale]);
 
   // --- Hurtle Animation State & Logic ---
   const [hurtleAnimation, setHurtleAnimation] = useState(null);
@@ -2734,6 +2749,7 @@ function NodeCanvas() {
                            node={currentPieMenuData.node}
                            buttons={currentPieMenuData.buttons}
                            nodeDimensions={currentPieMenuData.nodeDimensions}
+                           carouselScale={currentPieMenuData.carouselScale}
                            isVisible={(
                              currentPieMenuData?.node?.id === selectedNodeIdForPieMenu &&
                              !isTransitioningPieMenu &&
@@ -3014,11 +3030,13 @@ function NodeCanvas() {
           onClose={() => {
             setAbstractionCarouselVisible(false);
             setAbstractionCarouselNode(null);
+            setAbstractionCarouselScale(1); // Reset scale when closing
           }}
           onReplaceNode={(oldNodeId, newNodeData) => {
             // TODO: Implement node replacement functionality
             console.log('Replace node:', oldNodeId, 'with:', newNodeData);
           }}
+          onScaleChange={setAbstractionCarouselScale}
         />
       )}
       

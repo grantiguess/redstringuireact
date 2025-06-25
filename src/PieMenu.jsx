@@ -14,7 +14,7 @@ const SHRINK_ANIMATION_DURATION = 150; // ms, matches CSS (FASTER)
 const STAGGER_DELAY = 40; // ms, slightly reduced
 const EXIT_ANIMATION_BUFFER = 50; // ms, extra buffer for animation to complete visually
 
-const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComplete }) => {
+const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComplete, carouselScale = 1 }) => {
   // animationState can be: null (initial/hidden), 'popping', 'visible_steady', 'shrinking'
   const [animationState, setAnimationState] = useState(null);
 
@@ -168,7 +168,9 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
         
         if (isCarouselMode) {
           // Carousel mode: position buttons dynamically based on node width
-          const nodeHalfWidth = currentWidth / 2;
+          // Apply carousel scale to get the actual visual width
+          const scaledWidth = currentWidth * carouselScale;
+          const nodeHalfWidth = scaledWidth / 2;
           const padding = BUBBLE_PADDING + BUBBLE_SIZE / 2;
           
           if (button.position === 'left') {
