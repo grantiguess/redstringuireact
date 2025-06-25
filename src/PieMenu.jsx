@@ -157,20 +157,43 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
   }
 
   //console.log(`[PieMenu] Render: Rendering PieMenu. isVisible=${isVisible}, animationState=${animationState}`);
+  
+  // Check if this is a carousel mode (buttons have position property)
+  const isCarouselMode = buttons.some(button => button.position);
+  
   return (
     <g className="pie-menu">
       {buttons.map((button, index) => {
-        // Determine the effective index for positioning.
-        // If there's only one button, it should always take the "top-right" slot (index 1).
-        const effectiveIndex = buttons.length === 1 ? 1 : index;
-
-        if (effectiveIndex >= NUM_FIXED_POSITIONS) return null; // Use effectiveIndex for check
-
-        const angle = START_ANGLE_OFFSET + effectiveIndex * FIXED_ANGLE_STEP; // Use effectiveIndex for angle
         let bubbleX, bubbleY;
+        
+        if (isCarouselMode) {
+          // Carousel mode: position buttons dynamically based on node width
+          const nodeHalfWidth = currentWidth / 2;
+          const padding = BUBBLE_PADDING + BUBBLE_SIZE / 2;
+          
+          if (button.position === 'left') {
+            bubbleX = nodeCenterX - nodeHalfWidth - padding;
+            bubbleY = nodeCenterY;
+          } else if (button.position === 'right') {
+            bubbleX = nodeCenterX + nodeHalfWidth + padding;
+            bubbleY = nodeCenterY;
+          } else {
+            // Fallback to center if no position specified
+            bubbleX = nodeCenterX;
+            bubbleY = nodeCenterY;
+          }
+        } else {
+          // Original circular positioning logic
+          // Determine the effective index for positioning.
+          // If there's only one button, it should always take the "top-right" slot (index 1).
+          const effectiveIndex = buttons.length === 1 ? 1 : index;
 
-        // Determine position based on effectiveIndex
-        switch (effectiveIndex) { // Use effectiveIndex for positioning
+          if (effectiveIndex >= NUM_FIXED_POSITIONS) return null; // Use effectiveIndex for check
+
+          const angle = START_ANGLE_OFFSET + effectiveIndex * FIXED_ANGLE_STEP; // Use effectiveIndex for angle
+
+          // Determine position based on effectiveIndex
+          switch (effectiveIndex) { // Use effectiveIndex for positioning
           case 0: // Top (North)
             bubbleX = nodeCenterX;
             bubbleY = nodeCenterY - (currentHeight / 2 + totalVisualOffset);
@@ -207,6 +230,7 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
             // Fallback, though should not happen with NUM_FIXED_POSITIONS
             bubbleX = nodeCenterX + (currentWidth / 2 + totalVisualOffset) * Math.cos(angle);
             bubbleY = nodeCenterY + (currentHeight / 2 + totalVisualOffset) * Math.sin(angle);
+          }
         }
 
         const IconComponent = button.icon;

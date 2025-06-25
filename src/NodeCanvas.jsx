@@ -10,7 +10,7 @@ import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import AbstractionCarousel from './AbstractionCarousel.jsx'; // Import the AbstractionCarousel component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
-import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers } from 'lucide-react'; // Icons for PieMenu
+import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack } from 'lucide-react'; // Icons for PieMenu
 
 // Import Zustand store and selectors/actions
 import useGraphStore, {
@@ -464,7 +464,33 @@ function NodeCanvas() {
   const targetPieMenuButtons = useMemo(() => {
     const selectedNode = selectedNodeIdForPieMenu ? nodes.find(n => n.id === selectedNodeIdForPieMenu) : null;
 
-    if (selectedNode && previewingNodeId === selectedNode.id) {
+    // Check if we're in AbstractionCarousel mode
+    if (selectedNode && abstractionCarouselVisible && abstractionCarouselNode && selectedNode.id === abstractionCarouselNode.id) {
+      // AbstractionCarousel mode: show Back and Swap buttons on left and right
+      return [
+        {
+          id: 'carousel-back',
+          label: 'Back',
+          icon: ArrowLeft,
+          position: 'left',
+          action: (nodeId) => {
+            console.log(`[PieMenu Action] Back clicked for node: ${nodeId}. Closing AbstractionCarousel.`);
+            setAbstractionCarouselVisible(false);
+            setAbstractionCarouselNode(null);
+          }
+        },
+        {
+          id: 'carousel-swap',
+          label: 'Swap',
+          icon: SendToBack,
+          position: 'right',
+          action: (nodeId) => {
+            console.log(`[PieMenu Action] Swap clicked for node: ${nodeId}. TODO: Implement swap functionality.`);
+            // TODO: Implement swap functionality
+          }
+        }
+      ];
+    } else if (selectedNode && previewingNodeId === selectedNode.id) {
       // If the selected node for the pie menu is the one being previewed, show only Compose
       return [
         {
@@ -553,7 +579,7 @@ function NodeCanvas() {
         } }
       ];
     }
-  }, [storeActions, setSelectedNodeIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Link]);
+  }, [storeActions, setSelectedNodeIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, abstractionCarouselVisible, abstractionCarouselNode, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Link, ArrowLeft, SendToBack]);
 
   // Effect to restore view state on graph change or center if no stored state
   useEffect(() => {
