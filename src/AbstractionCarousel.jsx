@@ -1,16 +1,111 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, useReducer } from 'react';
 import { Plus } from 'lucide-react';
 import { NODE_WIDTH, NODE_HEIGHT, NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR } from './constants';
 import { getNodeDimensions } from './utils';
 import './AbstractionCarousel.css';
 
 const LEVEL_SPACING = 80; // Vertical spacing between abstraction levels
-const PHYSICS_DAMPING = 0.92; // Friction coefficient (0.92 = 8% velocity loss per frame)
-const SCROLL_SENSITIVITY = 0.035; // Much more sensitive scrolling
-const SNAP_THRESHOLD = 0.5; // Velocity below which snapping starts
-const SNAP_SPRING = 0.12; // Spring strength for snapping (lower to reduce oscillation)
-const MIN_VELOCITY = 0.01; // Minimum velocity before stopping physics
-const MAX_VELOCITY = 8; // Maximum velocity to prevent excessive scrolling
+const PHYSICS_DAMPING = 0.88; // Balanced damping for smooth feel
+const SCROLL_SENSITIVITY = 0.003; // Much less sensitive for precise control
+const SNAP_THRESHOLD = 0.3; // Balanced threshold for natural snapping
+const SNAP_SPRING = 0.15; // Stronger spring for faster snapping
+const MIN_VELOCITY = 0.01; // Balanced minimum velocity
+const MAX_VELOCITY = 2; // Lower max velocity for better control
+
+// Physics state reducer
+const physicsReducer = (state, action) => {
+  switch (action.type) {
+    case 'UPDATE_PHYSICS': {
+      const { frameMultiplier } = action.payload;
+      const dampedVelocity = state.velocity * Math.pow(PHYSICS_DAMPING, frameMultiplier);
+      
+      let nextVelocity = dampedVelocity;
+      let nextPosition = state.realPosition;
+      let nextIsSnapping = state.isSnapping;
+      let nextTargetPosition = state.targetPosition;
+      
+      if (state.isSnapping) {
+        // Move toward target position
+        const diff = state.targetPosition - state.realPosition;
+        
+        if (Math.abs(diff) < 0.01) {
+          nextIsSnapping = false;
+          nextPosition = state.targetPosition; // Snap exactly to target
+        } else {
+          nextPosition = state.realPosition + diff * SNAP_SPRING * frameMultiplier;
+        }
+      } else {
+        // Normal velocity-based movement
+        nextPosition = state.realPosition + dampedVelocity * frameMultiplier;
+        nextPosition = Math.max(-3, Math.min(3, nextPosition));
+        
+        // Check if we should start snapping
+        if (Math.abs(dampedVelocity) < MIN_VELOCITY && !state.isSnapping && state.hasUserScrolled) {
+          nextIsSnapping = true;
+          nextVelocity = 0;
+          
+          // Calculate target based on the new position and velocity direction
+          const velocityDirection = state.velocity > 0 ? 1 : (state.velocity < 0 ? -1 : 0);
+          
+          // Get nearest integer positions
+          const floor = Math.floor(nextPosition);
+          const ceil = Math.ceil(nextPosition);
+          
+          let newTarget;
+          
+          if (floor === ceil) {
+            // Already at integer
+            newTarget = floor;
+          } else {
+            const distToFloor = nextPosition - floor;
+            const distToCeil = ceil - nextPosition;
+            
+            // Use velocity direction to break ties
+            if (Math.abs(distToFloor - distToCeil) < 0.3) {
+              newTarget = velocityDirection > 0 ? ceil : (velocityDirection < 0 ? floor : Math.round(nextPosition));
+            } else {
+              newTarget = Math.round(nextPosition);
+            }
+          }
+          
+          nextTargetPosition = Math.max(-3, Math.min(3, newTarget));
+        }
+      }
+      
+      return {
+        ...state,
+        velocity: nextVelocity,
+        realPosition: nextPosition,
+        isSnapping: nextIsSnapping,
+        targetPosition: nextTargetPosition
+      };
+    }
+    case 'SET_VELOCITY':
+      return { ...state, velocity: action.payload };
+    case 'SET_USER_SCROLLED':
+      return { ...state, hasUserScrolled: action.payload };
+    case 'INTERRUPT_SNAPPING':
+      return { ...state, isSnapping: false };
+    case 'JUMP_TO_LEVEL':
+      return { 
+        ...state, 
+        realPosition: action.payload, 
+        targetPosition: action.payload, 
+        isSnapping: false,
+        hasUserScrolled: true
+      };
+    case 'RESET':
+      return {
+        realPosition: 0,
+        targetPosition: 0,
+        velocity: 0,
+        isSnapping: false,
+        hasUserScrolled: false
+      };
+    default:
+      return state;
+  }
+};
 
 const AbstractionCarousel = ({
   isVisible,
@@ -23,14 +118,25 @@ const AbstractionCarousel = ({
 }) => {
   const carouselRef = useRef(null);
   
-  // Physics state
-  const [scrollPosition, setScrollPosition] = useState(0); // Continuous position (0 = original node)
-  const [velocity, setVelocity] = useState(0); // Current scroll velocity
-  const [isSnapping, setIsSnapping] = useState(false); // Whether we're snapping to a level
+  // Physics state using reducer
+  const [physicsState, dispatchPhysics] = useReducer(physicsReducer, {
+    realPosition: 0,
+    targetPosition: 0,
+    velocity: 0,
+    isSnapping: false,
+    hasUserScrolled: false
+  });
   
   // Animation refs
   const animationFrameRef = useRef(null);
   const lastFrameTimeRef = useRef(0);
+  const physicsStateRef = useRef(physicsState);
+  const updatePhysicsRef = useRef(null);
+
+  // Update physics state ref whenever state changes
+  useEffect(() => {
+    physicsStateRef.current = physicsState;
+  }, [physicsState]);
 
   // Placeholder abstraction chain data - replace with real data later
   const abstractionChain = useMemo(() => {
@@ -71,16 +177,20 @@ const AbstractionCarousel = ({
     return { x: nodeCenterX, y: nodeCenterY };
   }, [selectedNode, panOffset, zoomLevel]);
 
-  // Calculate the stack offset using continuous scroll position
+  // Calculate the stack offset using real position
   const getStackOffset = useCallback(() => {
-    return Math.round(-scrollPosition * LEVEL_SPACING * zoomLevel);
-  }, [scrollPosition, zoomLevel]);
+    const offset = -physicsState.realPosition * LEVEL_SPACING * zoomLevel;
+    return offset;
+  }, [physicsState.realPosition, zoomLevel]);
 
-  // Physics update loop
+  // Physics update loop using reducer
   const updatePhysics = useCallback((currentTime) => {
-    if (!isVisible) return;
-
-    const deltaTime = currentTime - lastFrameTimeRef.current;
+    if (!isVisible) {
+      animationFrameRef.current = null;
+      return;
+    }
+    
+    const deltaTime = Math.min(currentTime - lastFrameTimeRef.current, 32);
     lastFrameTimeRef.current = currentTime;
 
     // Skip first frame to avoid large deltaTime
@@ -89,77 +199,33 @@ const AbstractionCarousel = ({
       return;
     }
 
-    setVelocity(prevVelocity => {
-      const currentVelocity = prevVelocity * PHYSICS_DAMPING;
-      
-      // Stop physics if velocity is too low
-      if (Math.abs(currentVelocity) < MIN_VELOCITY && !isSnapping) {
-        return 0;
-      }
-      
-      return currentVelocity;
-    });
+    const deltaTimeSeconds = deltaTime / 1000;
+    const frameMultiplier = deltaTimeSeconds * 60;
 
-    setScrollPosition(prevPosition => {
-      const newPosition = prevPosition + velocity * 0.016; // Assume ~60fps for consistent physics
-      
-      // Clamp position to abstraction chain bounds (-3 to +3)
-      const clampedPosition = Math.max(-3, Math.min(3, newPosition));
-      
-      // Check if we should start snapping
-      if (Math.abs(velocity) < SNAP_THRESHOLD && !isSnapping) {
-        const nearestLevel = Math.round(clampedPosition);
-        const distanceToNearest = nearestLevel - clampedPosition;
-        
-        if (Math.abs(distanceToNearest) > 0.05) { // Increased threshold to prevent unnecessary snapping
-          setIsSnapping(true);
-          
-          // Start snap animation with damping
-          const snapToLevel = () => {
-            setScrollPosition(current => {
-              const target = Math.max(-3, Math.min(3, Math.round(current))); // Clamp target too
-              const diff = target - current;
-              
-              // Use higher tolerance to stop sooner and prevent oscillation
-              if (Math.abs(diff) < 0.01) {
-                setIsSnapping(false);
-                return target;
-              }
-              
-              // Apply damping to reduce oscillation
-              const dampedSpring = SNAP_SPRING * (1 - Math.min(0.5, Math.abs(diff) * 0.1));
-              return current + diff * dampedSpring;
-            });
-          };
-          
-          const snapAnimation = () => {
-            snapToLevel();
-            if (isSnapping) {
-              requestAnimationFrame(snapAnimation);
-            }
-          };
-          
-          requestAnimationFrame(snapAnimation);
-        }
-      }
-      
-      return clampedPosition;
-    });
+    // Update physics using reducer
+    dispatchPhysics({ type: 'UPDATE_PHYSICS', payload: { frameMultiplier } });
 
-    // Continue physics loop if there's still velocity or snapping
-    if (Math.abs(velocity) > MIN_VELOCITY || isSnapping) {
+    // Check current state to decide whether to continue
+    const currentState = physicsStateRef.current;
+    if (Math.abs(currentState.velocity) > MIN_VELOCITY || currentState.isSnapping) {
       animationFrameRef.current = requestAnimationFrame(updatePhysics);
+    } else {
+      animationFrameRef.current = null;
     }
-  }, [isVisible, velocity, isSnapping]);
+  }, [isVisible]);
 
   // Start physics loop when component becomes visible
   useEffect(() => {
     if (isVisible && !animationFrameRef.current) {
+      // Reset all state when carousel opens
+      dispatchPhysics({ type: 'RESET' });
       lastFrameTimeRef.current = performance.now();
       animationFrameRef.current = requestAnimationFrame(updatePhysics);
     } else if (!isVisible && animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
+      // Reset all state when closing
+      dispatchPhysics({ type: 'RESET' });
     }
 
     return () => {
@@ -168,7 +234,7 @@ const AbstractionCarousel = ({
         animationFrameRef.current = null;
       }
     };
-  }, [isVisible, updatePhysics]);
+  }, [isVisible]); // Removed updatePhysics dependency
 
   // Handle wheel events for continuous scrolling
   const handleWheel = useCallback((e) => {
@@ -177,61 +243,45 @@ const AbstractionCarousel = ({
     
     if (!isVisible) return;
     
-    // Reset snapping if user scrolls during snap
-    if (isSnapping) {
-      setIsSnapping(false);
-    }
+    // Mark that user has started scrolling
+    dispatchPhysics({ type: 'SET_USER_SCROLLED', payload: true });
+    
+    // Allow new input to interrupt snapping
+    dispatchPhysics({ type: 'INTERRUPT_SNAPPING' });
     
     // Add to velocity based on scroll direction and sensitivity
     const deltaY = e.deltaY;
     const velocityChange = deltaY * SCROLL_SENSITIVITY;
     
-    setVelocity(prevVelocity => {
-      const newVelocity = prevVelocity + velocityChange;
-      // Clamp velocity to prevent excessive scrolling
-      return Math.max(-MAX_VELOCITY, Math.min(MAX_VELOCITY, newVelocity));
-    });
+    // Calculate new velocity using current state from ref
+    const newVelocity = physicsStateRef.current.velocity + velocityChange;
+    const clampedVelocity = Math.max(-MAX_VELOCITY, Math.min(MAX_VELOCITY, newVelocity));
+    dispatchPhysics({ type: 'SET_VELOCITY', payload: clampedVelocity });
     
-    // Start physics loop if not already running
+    // Always start physics loop on wheel input
     if (!animationFrameRef.current) {
       lastFrameTimeRef.current = performance.now();
       animationFrameRef.current = requestAnimationFrame(updatePhysics);
     }
-  }, [isVisible, isSnapping, updatePhysics]);
+  }, [isVisible]); // Remove updatePhysics dependency to avoid frequent recreations
+
+  // Set up non-passive wheel event listener
+  useEffect(() => {
+    const carousel = carouselRef.current;
+    if (carousel && isVisible) {
+      carousel.addEventListener('wheel', handleWheel, { passive: false });
+      return () => {
+        carousel.removeEventListener('wheel', handleWheel, { passive: false });
+      };
+    }
+  }, [isVisible, handleWheel]);
 
   // Handle clicks on abstraction nodes
   const handleNodeClick = useCallback((item) => {
     if (!isVisible) return;
     
-    // Set target scroll position and animate to it (clamped to bounds)
-    const targetPosition = Math.max(-3, Math.min(3, item.level));
-    setIsSnapping(true);
-    setVelocity(0); // Stop any current motion
-    
-    const animateToLevel = () => {
-      setScrollPosition(current => {
-        const diff = targetPosition - current;
-        
-        // Use higher tolerance to stop sooner and prevent oscillation
-        if (Math.abs(diff) < 0.01) {
-          setIsSnapping(false);
-          return targetPosition;
-        }
-        
-        // Apply damping to reduce oscillation, slightly faster for click-to-target
-        const dampedSpring = (SNAP_SPRING * 1.3) * (1 - Math.min(0.5, Math.abs(diff) * 0.1));
-        return current + diff * dampedSpring;
-      });
-    };
-    
-    const clickAnimation = () => {
-      animateToLevel();
-      if (isSnapping) {
-        requestAnimationFrame(clickAnimation);
-      }
-    };
-    
-    requestAnimationFrame(clickAnimation);
+    // Jump to clicked level and set it as target
+    dispatchPhysics({ type: 'JUMP_TO_LEVEL', payload: item.level });
     
     // Handle click actions
     if (item.type === 'add_generic' || item.type === 'add_specific') {
@@ -239,7 +289,7 @@ const AbstractionCarousel = ({
     } else if (item.type !== 'current') {
       console.log(`Replace current node with: ${item.name}`);
     }
-  }, [isVisible, isSnapping]);
+  }, [isVisible]);
 
   // Handle escape key to close
   useEffect(() => {
@@ -272,7 +322,6 @@ const AbstractionCarousel = ({
         pointerEvents: 'auto',
         cursor: 'grab'
       }}
-      onWheel={handleWheel}
       onMouseDown={(e) => e.preventDefault()}
     >
       {/* SVG Container for the abstraction nodes */}
@@ -285,14 +334,14 @@ const AbstractionCarousel = ({
           height: '100vh',
           pointerEvents: 'none',
           transform: `translateY(${stackOffset}px)`,
-          transition: isSnapping ? 'none' : 'none' // No CSS transitions, using JS animation
+          transition: physicsState.isSnapping ? 'none' : 'none' // No CSS transitions, using JS animation
         }}
       >
         <defs>
           {/* Define clip paths for each node */}
           {abstractionChain.map((item) => {
             const nodeDimensions = getNodeDimensions(item.type === 'current' ? selectedNode : item, false, null);
-            const distanceFromMain = Math.abs(item.level - scrollPosition);
+            const distanceFromMain = Math.abs(item.level - physicsState.realPosition);
             
             // Moderate progressive scaling - noticeable but not extreme
             let scale = 1.0;
@@ -308,9 +357,9 @@ const AbstractionCarousel = ({
               scale = Math.max(0.5, scale); // Minimum scale of 0.5 for readability
             }
             
-            const scaledWidth = Math.round(nodeDimensions.currentWidth * zoomLevel * scale);
-            const scaledHeight = Math.round(nodeDimensions.currentHeight * zoomLevel * scale);
-            const cornerRadius = Math.round(NODE_CORNER_RADIUS * scale);
+            const scaledWidth = nodeDimensions.currentWidth * zoomLevel * scale;
+            const scaledHeight = nodeDimensions.currentHeight * zoomLevel * scale;
+            const cornerRadius = NODE_CORNER_RADIUS * zoomLevel * scale;
             
             return (
               <clipPath key={`clip-${item.id}`} id={`abstraction-clip-${item.id}`}>
@@ -330,7 +379,7 @@ const AbstractionCarousel = ({
           const nodeDimensions = getNodeDimensions(item.type === 'current' ? selectedNode : item, false, null);
           const isPlaceholder = item.type === 'add_generic' || item.type === 'add_specific';
           const isCurrent = item.type === 'current';
-          const distanceFromMain = Math.abs(item.level - scrollPosition);
+          const distanceFromMain = Math.abs(item.level - physicsState.realPosition);
           
           // Fog of war: hide nodes beyond the second one in either direction
           if (distanceFromMain > 2.5) {
@@ -351,10 +400,10 @@ const AbstractionCarousel = ({
             scale = Math.max(0.5, scale); // Minimum scale of 0.5 for readability
           }
           
-          // Calculate exact dimensions using proper rounding
-          const scaledWidth = Math.round(nodeDimensions.currentWidth * zoomLevel * scale);
-          const scaledHeight = Math.round(nodeDimensions.currentHeight * zoomLevel * scale);
-          const scaledTextAreaHeight = Math.round(nodeDimensions.textAreaHeight * zoomLevel * scale);
+          // Calculate smooth dimensions (no rounding for animation)
+          const scaledWidth = nodeDimensions.currentWidth * zoomLevel * scale;
+          const scaledHeight = nodeDimensions.currentHeight * zoomLevel * scale;
+          const scaledTextAreaHeight = nodeDimensions.textAreaHeight * zoomLevel * scale;
           
           // Calculate opacity: smooth falloff based on distance
           let opacity = 1;
@@ -366,20 +415,20 @@ const AbstractionCarousel = ({
             opacity = 0.5 - ((distanceFromMain - 2) * 0.8); // Fade to invisible beyond 2 levels
           }
           
-          // Position calculation - centered horizontally, spaced vertically
-          const nodeX = Math.round(50 * window.innerWidth / 100);
-          const nodeY = Math.round(50 * window.innerHeight / 100 + (item.level * LEVEL_SPACING * zoomLevel));
+          // Position calculation - smooth positioning for animation
+          const nodeX = window.innerWidth * 0.5;
+          const nodeY = window.innerHeight * 0.5 + (item.level * LEVEL_SPACING * zoomLevel);
           
           // Determine if this is the "main" node (closest to scroll position)
           const isMainNode = distanceFromMain < 0.5;
           
-          // Enhanced border styling - thicker for main node
-          const borderWidth = isMainNode ? 6 : 2; // Thicker border for main node
+          // Enhanced border styling - scaled proportionally (smooth values)
+          const borderWidth = (isMainNode ? 6 : 2) * zoomLevel * scale;
           const borderColor = isPlaceholder ? '#999' : (isMainNode ? 'black' : '#666');
           const nodeColor = isPlaceholder ? 'transparent' : (item.color || NODE_DEFAULT_COLOR);
           
-          // Corner radius that matches Node.jsx exactly
-          const cornerRadius = Math.round(NODE_CORNER_RADIUS * scale);
+          // Corner radius - smooth scaling
+          const cornerRadius = NODE_CORNER_RADIUS * zoomLevel * scale;
 
           return (
             <g
@@ -392,14 +441,14 @@ const AbstractionCarousel = ({
               }}
               onClick={() => handleNodeClick(item)}
             >
-              {/* Background rect with exact same styling as Node.jsx */}
+              {/* Background rect with smooth positioning */}
               <rect
-                x={Math.round(nodeX - scaledWidth / 2 + 6 * scale)}
-                y={Math.round(nodeY - scaledHeight / 2 + 6 * scale)}
-                width={Math.round(scaledWidth - 12 * scale)}
-                height={Math.round(scaledHeight - 12 * scale)}
-                rx={Math.round(cornerRadius - 6 * scale)}
-                ry={Math.round(cornerRadius - 6 * scale)}
+                x={nodeX - scaledWidth / 2 + 6 * zoomLevel * scale}
+                y={nodeY - scaledHeight / 2 + 6 * zoomLevel * scale}
+                width={scaledWidth - 12 * zoomLevel * scale}
+                height={scaledHeight - 12 * zoomLevel * scale}
+                rx={cornerRadius - 6 * zoomLevel * scale}
+                ry={cornerRadius - 6 * zoomLevel * scale}
                 fill={nodeColor}
                 stroke={borderColor}
                 strokeWidth={borderWidth}
@@ -412,8 +461,8 @@ const AbstractionCarousel = ({
 
               {/* ForeignObject for name text */}
               <foreignObject
-                x={Math.round(nodeX - scaledWidth / 2)}
-                y={Math.round(nodeY - scaledHeight / 2)}
+                x={nodeX - scaledWidth / 2}
+                y={nodeY - scaledHeight / 2}
                 width={scaledWidth}
                 height={scaledTextAreaHeight}
                 style={{
@@ -428,7 +477,7 @@ const AbstractionCarousel = ({
                     justifyContent: 'center',
                     width: '100%',
                     height: '100%',
-                    padding: isPlaceholder ? '0' : `0 ${Math.round(8 * scale)}px`,
+                    padding: isPlaceholder ? '0' : `0 ${8 * scale}px`,
                     boxSizing: 'border-box',
                     userSelect: 'none',
                     minWidth: 0
@@ -440,12 +489,12 @@ const AbstractionCarousel = ({
                       flexDirection: 'column', 
                       alignItems: 'center',
                       color: '#666',
-                      fontSize: `${Math.max(10, Math.round(12 * zoomLevel * scale))}px`,
+                      fontSize: `${Math.max(10, 12 * zoomLevel * scale)}px`,
                       fontWeight: 'bold',
                       textAlign: 'center',
                       lineHeight: '1.2'
                     }}>
-                      <Plus size={Math.max(12, Math.round(20 * zoomLevel * scale))} style={{ marginBottom: '2px' }} />
+                      <Plus size={Math.max(12, 20 * zoomLevel * scale)} style={{ marginBottom: '2px' }} />
                       <span style={{ 
                         maxWidth: '90%',
                         overflow: 'hidden',
@@ -459,7 +508,7 @@ const AbstractionCarousel = ({
                   ) : (
                     <span
                       style={{
-                        fontSize: `${Math.max(12, Math.round(20 * zoomLevel * scale))}px`,
+                        fontSize: `${Math.max(12, 20 * zoomLevel * scale)}px`,
                         fontWeight: isMainNode ? 'bolder' : 'bold', // Extra bold for main node
                         color: '#bdb5b5',
                         whiteSpace: 'nowrap',
@@ -482,18 +531,18 @@ const AbstractionCarousel = ({
               {!isPlaceholder && (
                 <g>
                   <circle
-                    cx={Math.round(nodeX + scaledWidth / 2 - 8 * scale)}
-                    cy={Math.round(nodeY - scaledHeight / 2 + 8 * scale)}
-                    r={Math.max(8, Math.round(12 * scale))}
+                    cx={nodeX + scaledWidth / 2 - 8 * scale}
+                    cy={nodeY - scaledHeight / 2 + 8 * scale}
+                    r={Math.max(8, 12 * scale)}
                     fill={isMainNode ? 'black' : '#666'}
                     stroke="none"
                   />
                   <text
-                    x={Math.round(nodeX + scaledWidth / 2 - 8 * scale)}
-                    y={Math.round(nodeY - scaledHeight / 2 + 8 * scale)}
+                    x={nodeX + scaledWidth / 2 - 8 * scale}
+                    y={nodeY - scaledHeight / 2 + 8 * scale}
                     textAnchor="middle"
                     dominantBaseline="central"
-                    fontSize={Math.max(8, Math.round(10 * zoomLevel * scale))}
+                    fontSize={Math.max(8, 10 * zoomLevel * scale)}
                     fill="#bdb5b5"
                     fontWeight="bold"
                     style={{
@@ -516,7 +565,7 @@ const AbstractionCarousel = ({
         right: '-80px',
         top: `${stackOffset}px`,
         color: '#666',
-        fontSize: `${Math.round(12 * zoomLevel)}px`,
+        fontSize: `${12 * zoomLevel}px`,
         pointerEvents: 'none',
         userSelect: 'none',
         textAlign: 'left'
@@ -525,21 +574,23 @@ const AbstractionCarousel = ({
         <div style={{ 
           color: '#333', 
           fontWeight: 'bold',
-          fontSize: `${Math.round(14 * zoomLevel)}px`,
+          fontSize: `${14 * zoomLevel}px`,
           marginBottom: '8px'
         }}>
-          Level {scrollPosition.toFixed(1)}
+          Level {physicsState.realPosition.toFixed(1)}
         </div>
         <div>↓ Specific</div>
         
         {/* Physics debug info */}
         <div style={{ 
-          fontSize: `${Math.round(10 * zoomLevel)}px`,
+          fontSize: `${10 * zoomLevel}px`,
           color: '#999',
           marginTop: '10px'
         }}>
-          <div>v: {velocity.toFixed(2)}</div>
-          {isSnapping && <div>snapping</div>}
+          <div>real: {physicsState.realPosition.toFixed(2)}</div>
+          <div>target: {physicsState.targetPosition}</div>
+          <div>v: {physicsState.velocity.toFixed(2)}</div>
+          {physicsState.isSnapping && <div>snapping</div>}
         </div>
       </div>
     </div>
