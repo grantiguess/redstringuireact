@@ -214,6 +214,11 @@ const AbstractionCarousel = ({
     }
   }, [isVisible]);
 
+  // Update updatePhysics ref
+  useEffect(() => {
+    updatePhysicsRef.current = updatePhysics;
+  }, [updatePhysics]);
+
   // Start physics loop when component becomes visible
   useEffect(() => {
     if (isVisible && !animationFrameRef.current) {
@@ -261,7 +266,7 @@ const AbstractionCarousel = ({
     // Always start physics loop on wheel input
     if (!animationFrameRef.current) {
       lastFrameTimeRef.current = performance.now();
-      animationFrameRef.current = requestAnimationFrame(updatePhysics);
+      animationFrameRef.current = requestAnimationFrame(updatePhysicsRef.current);
     }
   }, [isVisible]); // Remove updatePhysics dependency to avoid frequent recreations
 
