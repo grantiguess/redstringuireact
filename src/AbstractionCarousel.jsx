@@ -477,8 +477,8 @@ const AbstractionCarousel = ({
           const isCurrent = item.type === 'current';
           const distanceFromMain = Math.abs(item.level - physicsState.realPosition);
           
-          // Fog of war: hide nodes beyond the second one in either direction
-          if (distanceFromMain > 2.5) {
+          // Fog of war: hide nodes beyond a certain distance
+          if (distanceFromMain > 3.5) {
             return null;
           }
           
