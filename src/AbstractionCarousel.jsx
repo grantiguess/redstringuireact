@@ -140,11 +140,11 @@ const AbstractionCarousel = ({
     physicsStateRef.current = physicsState;
   }, [physicsState]);
 
-  // Placeholder abstraction chain data - replace with real data later
-  const abstractionChain = useMemo(() => {
+  // Pre-calculate the abstraction chain and base dimensions for each node
+  const abstractionChainWithDims = useMemo(() => {
     if (!selectedNode) return [];
     
-    return [
+    const chain = [
       // Placeholder nodes for adding more
       { id: 'add_generic', name: 'Add More Generic Thing', type: 'add_generic', level: -3, color: '#999' },
       
@@ -162,6 +162,13 @@ const AbstractionCarousel = ({
       // Placeholder nodes for adding more
       { id: 'add_specific', name: 'Add More Specific Thing', type: 'add_specific', level: 3, color: '#999' }
     ];
+
+    // Pre-calculate base dimensions for each node to use for smooth interpolation later
+    return chain.map(item => {
+      const nodeForDimensions = item.type === 'current' ? selectedNode : item;
+      const baseDimensions = getNodeDimensions(nodeForDimensions, false, null);
+      return { ...item, baseDimensions };
+    });
   }, [selectedNode]);
 
   // Calculate and report scale factor for the focused node (level 0)
@@ -190,39 +197,45 @@ const AbstractionCarousel = ({
 
   // Calculate and report the focused node's actual current dimensions
   useEffect(() => {
-    if (!onFocusedNodeDimensions || !isVisible || !abstractionChain.length) return;
+    if (!onFocusedNodeDimensions || !isVisible || !abstractionChainWithDims.length) return;
+
+    const position = physicsState.realPosition;
+
+    // Find the two nodes to interpolate between based on the current scroll position
+    const floorLevel = Math.floor(position);
+    const ceilLevel = Math.ceil(position);
+
+    const nodeA = abstractionChainWithDims.find(item => item.level === floorLevel);
+    const nodeB = abstractionChainWithDims.find(item => item.level === ceilLevel);
+
+    // Get the base dimensions for the two nodes, handling edge cases where one might be missing
+    const dimA = nodeA?.baseDimensions;
+    const dimB = nodeB?.baseDimensions || dimA;
+
+    if (!dimA || !dimB) return; // Not enough data to proceed
+
+    // Interpolation factor (0 when at floorLevel, 1 when at ceilLevel)
+    const factor = position - floorLevel;
+
+    // Linearly interpolate between the base dimensions of the two nodes
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const interpolatedWidth = lerp(dimA.currentWidth, dimB.currentWidth, factor);
+    const interpolatedHeight = lerp(dimA.currentHeight, dimB.currentHeight, factor);
+    const interpolatedTextAreaHeight = lerp(dimA.textAreaHeight, dimB.textAreaHeight, factor);
+
+    // The scale of the "focused" node (the virtual node at the center) is always 1.0.
+    // The PieMenu, which is attached to this virtual node, should therefore not be scaled down here.
+    // The individual nodes in the carousel visually scale down based on their distance from the focus point,
+    // but the dimensions reported for the PieMenu should be for the non-scaled, interpolated node.
+    const actualCurrentDimensions = {
+      currentWidth: interpolatedWidth,
+      currentHeight: interpolatedHeight,
+      textAreaHeight: interpolatedTextAreaHeight
+    };
     
-    // Find the node that's currently closest to the center (level 0)
-    const currentLevel = Math.round(physicsState.realPosition);
-    const focusedNode = abstractionChain.find(item => item.level === currentLevel) || abstractionChain.find(item => item.level === 0);
-    
-    if (focusedNode) {
-      // Calculate the actual node dimensions (use the real node for 'current' type)
-      const nodeForDimensions = focusedNode.type === 'current' ? selectedNode : focusedNode;
-      const baseDimensions = getNodeDimensions(nodeForDimensions, false, null);
-      
-      // Calculate current scale factor for the focused node (same logic as scale calculation above)
-      const distanceFromFocus = Math.abs(0 - physicsState.realPosition);
-      let currentScale = 1.0;
-      if (distanceFromFocus === 0) {
-        currentScale = 1.0;
-      } else if (distanceFromFocus < 1) {
-        currentScale = 1.0 - (distanceFromFocus * 0.3);
-      } else {
-        currentScale = 0.7 - ((distanceFromFocus - 1) * 0.15);
-        currentScale = Math.max(0.4, currentScale);
-      }
-      
-             // Apply the CURRENT scale to get the actual current size in canvas units
-       const actualCurrentDimensions = {
-         currentWidth: baseDimensions.currentWidth * currentScale,
-         currentHeight: baseDimensions.currentHeight * currentScale,
-         textAreaHeight: baseDimensions.textAreaHeight * currentScale
-       };
-      
-      onFocusedNodeDimensions(actualCurrentDimensions);
-    }
-  }, [physicsState.realPosition, abstractionChain, selectedNode, onFocusedNodeDimensions, isVisible]);
+    onFocusedNodeDimensions(actualCurrentDimensions);
+
+  }, [physicsState.realPosition, abstractionChainWithDims, onFocusedNodeDimensions, isVisible]);
 
   // Calculate the center position where the carousel should be anchored
   const getCarouselPosition = useCallback(() => {
@@ -411,8 +424,8 @@ const AbstractionCarousel = ({
       >
         <defs>
           {/* Define clip paths for each node */}
-          {abstractionChain.map((item) => {
-            const nodeDimensions = getNodeDimensions(item.type === 'current' ? selectedNode : item, false, null);
+          {abstractionChainWithDims.map((item) => {
+            const nodeDimensions = item.baseDimensions; // Use pre-calculated dimensions
             const distanceFromMain = Math.abs(item.level - physicsState.realPosition);
             
             // Moderate progressive scaling - noticeable but not extreme
@@ -447,8 +460,8 @@ const AbstractionCarousel = ({
         </defs>
 
         {/* Render all abstraction levels in a vertical stack */}
-        {abstractionChain.map((item, index) => {
-          const nodeDimensions = getNodeDimensions(item.type === 'current' ? selectedNode : item, false, null);
+        {abstractionChainWithDims.map((item, index) => {
+          const nodeDimensions = item.baseDimensions; // Use pre-calculated dimensions
           const isPlaceholder = item.type === 'add_generic' || item.type === 'add_specific';
           const isCurrent = item.type === 'current';
           const distanceFromMain = Math.abs(item.level - physicsState.realPosition);
