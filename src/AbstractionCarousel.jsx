@@ -114,7 +114,9 @@ const AbstractionCarousel = ({
   zoomLevel,
   containerRef,
   onClose,
-  onReplaceNode
+  onReplaceNode,
+  onScaleChange, // New callback to report the focused node's current scale
+  onFocusedNodeDimensions // New callback to report the focused node's dimensions
 }) => {
   const carouselRef = useRef(null);
   
@@ -162,20 +164,85 @@ const AbstractionCarousel = ({
     ];
   }, [selectedNode]);
 
+  // Calculate and report scale factor for the focused node (level 0)
+  useEffect(() => {
+    if (!onScaleChange || !isVisible) return;
+    
+    // Calculate scale factor for the focused node (current level at realPosition 0)
+    const distanceFromFocus = Math.abs(0 - physicsState.realPosition); // Distance from level 0
+    
+    let scale = 1.0;
+    if (distanceFromFocus === 0) {
+      // Exactly at focus - same size as real node
+      scale = 1.0;
+    } else if (distanceFromFocus < 1) {
+      // Close to focus - moderate drop from 1.0 to 0.7
+      scale = 1.0 - (distanceFromFocus * 0.3);
+    } else {
+      // Further from focus - shrink gradually
+      scale = 0.7 - ((distanceFromFocus - 1) * 0.15);
+      scale = Math.max(0.4, scale); // Minimum scale of 0.4 for visual
+    }
+    
+    // Pass the raw scale for symmetrical PieMenu positioning
+    onScaleChange(scale);
+  }, [physicsState.realPosition, onScaleChange, isVisible]);
+
+  // Calculate and report the focused node's actual current dimensions
+  useEffect(() => {
+    if (!onFocusedNodeDimensions || !isVisible || !abstractionChain.length) return;
+    
+    // Find the node that's currently closest to the center (level 0)
+    const currentLevel = Math.round(physicsState.realPosition);
+    const focusedNode = abstractionChain.find(item => item.level === currentLevel) || abstractionChain.find(item => item.level === 0);
+    
+    if (focusedNode) {
+      // Calculate the actual node dimensions (use the real node for 'current' type)
+      const nodeForDimensions = focusedNode.type === 'current' ? selectedNode : focusedNode;
+      const baseDimensions = getNodeDimensions(nodeForDimensions, false, null);
+      
+      // Calculate current scale factor for the focused node (same logic as scale calculation above)
+      const distanceFromFocus = Math.abs(0 - physicsState.realPosition);
+      let currentScale = 1.0;
+      if (distanceFromFocus === 0) {
+        currentScale = 1.0;
+      } else if (distanceFromFocus < 1) {
+        currentScale = 1.0 - (distanceFromFocus * 0.3);
+      } else {
+        currentScale = 0.7 - ((distanceFromFocus - 1) * 0.15);
+        currentScale = Math.max(0.4, currentScale);
+      }
+      
+             // Apply the CURRENT scale to get the actual current size in canvas units
+       const actualCurrentDimensions = {
+         currentWidth: baseDimensions.currentWidth * currentScale,
+         currentHeight: baseDimensions.currentHeight * currentScale,
+         textAreaHeight: baseDimensions.textAreaHeight * currentScale
+       };
+      
+      onFocusedNodeDimensions(actualCurrentDimensions);
+    }
+  }, [physicsState.realPosition, abstractionChain, selectedNode, onFocusedNodeDimensions, isVisible]);
+
   // Calculate the center position where the carousel should be anchored
   const getCarouselPosition = useCallback(() => {
     if (!selectedNode || !containerRef.current) return { x: 0, y: 0 };
 
+    const containerRect = containerRef.current.getBoundingClientRect();
     const nodeDimensions = getNodeDimensions(selectedNode, false, null);
     
-    // Get the center of the original node's screen coordinates
+    // Get the center of the original node's screen coordinates, relative to the canvas container
     const nodeScreenX = Math.round(selectedNode.x * zoomLevel + panOffset.x);
     const nodeScreenY = Math.round(selectedNode.y * zoomLevel + panOffset.y);
     const nodeCenterX = nodeScreenX + Math.round((nodeDimensions.currentWidth * zoomLevel) / 2);
-    const nodeCenterY = nodeScreenY + Math.round((nodeDimensions.currentHeight * zoomLevel) / 2) + 50;
+    const nodeCenterY = nodeScreenY + Math.round((nodeDimensions.currentHeight * zoomLevel) / 2);
     
-    return { x: nodeCenterX, y: nodeCenterY };
-  }, [selectedNode, panOffset, zoomLevel]);
+    // Adjust for the container's position relative to the viewport
+    return { 
+      x: nodeCenterX + containerRect.left, 
+      y: nodeCenterY + containerRect.top 
+    };
+  }, [selectedNode, panOffset, zoomLevel, containerRef]);
 
   // Calculate the stack offset using real position
   const getStackOffset = useCallback(() => {
@@ -391,18 +458,18 @@ const AbstractionCarousel = ({
             return null;
           }
           
-          // Moderate progressive scaling - noticeable but not extreme
+          // Progressive scaling - center node matches real node size exactly
           let scale = 1.0;
           if (distanceFromMain === 0) {
-            // Exactly at focus - keep at maximum size (1.2 as requested)
-            scale = 1.2;
+            // Exactly at focus - same size as real node
+            scale = 1.0;
           } else if (distanceFromMain < 1) {
-            // Close to focus - moderate drop from 1.2 to 0.8
-            scale = 1.2 - (distanceFromMain * 0.4); // 1.2 to 0.8 - more moderate
+            // Close to focus - moderate drop from 1.0 to 0.7
+            scale = 1.0 - (distanceFromMain * 0.3);
           } else {
             // Further from focus - shrink gradually
-            scale = 0.8 - ((distanceFromMain - 1) * 0.15); // Start at 0.8, drop more gradually
-            scale = Math.max(0.5, scale); // Minimum scale of 0.5 for readability
+            scale = 0.7 - ((distanceFromMain - 1) * 0.15);
+            scale = Math.max(0.4, scale); // Minimum scale of 0.4 for readability
           }
           
           // Calculate smooth dimensions (no rounding for animation)
@@ -420,7 +487,7 @@ const AbstractionCarousel = ({
             opacity = 0.5 - ((distanceFromMain - 2) * 0.8); // Fade to invisible beyond 2 levels
           }
           
-          // Position calculation - smooth positioning for animation
+          // Position calculation - relative to carousel center (which is at 50vw, 50vh in the SVG)
           const nodeX = window.innerWidth * 0.5;
           const nodeY = window.innerHeight * 0.5 + (item.level * LEVEL_SPACING * zoomLevel);
           

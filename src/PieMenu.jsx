@@ -14,7 +14,7 @@ const SHRINK_ANIMATION_DURATION = 150; // ms, matches CSS (FASTER)
 const STAGGER_DELAY = 40; // ms, slightly reduced
 const EXIT_ANIMATION_BUFFER = 50; // ms, extra buffer for animation to complete visually
 
-const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComplete, carouselScale = 1 }) => {
+const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComplete }) => {
   // animationState can be: null (initial/hidden), 'popping', 'visible_steady', 'shrinking'
   const [animationState, setAnimationState] = useState(null);
 
@@ -167,17 +167,16 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
         let bubbleX, bubbleY;
         
         if (isCarouselMode) {
-          // Carousel mode: position buttons dynamically based on node width
-          // Apply carousel scale to get the actual visual width
-          const scaledWidth = currentWidth * carouselScale;
-          const nodeHalfWidth = scaledWidth / 2;
+          // Carousel mode: position buttons based on actual current node dimensions
+          // nodeDimensions now contains the actual current scaled dimensions from AbstractionCarousel
+          const currentNodeHalfWidth = currentWidth / 2;
           const padding = BUBBLE_PADDING + BUBBLE_SIZE / 2;
           
           if (button.position === 'left') {
-            bubbleX = nodeCenterX - nodeHalfWidth - padding;
+            bubbleX = nodeCenterX - currentNodeHalfWidth - padding;
             bubbleY = nodeCenterY;
           } else if (button.position === 'right') {
-            bubbleX = nodeCenterX + nodeHalfWidth + padding;
+            bubbleX = nodeCenterX + currentNodeHalfWidth + padding;
             bubbleY = nodeCenterY;
           } else {
             // Fallback to center if no position specified

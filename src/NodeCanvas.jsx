@@ -379,7 +379,9 @@ function NodeCanvas() {
   // Abstraction Carousel states
   const [abstractionCarouselVisible, setAbstractionCarouselVisible] = useState(false);
   const [abstractionCarouselNode, setAbstractionCarouselNode] = useState(null);
-  const [abstractionCarouselScale, setAbstractionCarouselScale] = useState(1);
+  const [pendingAbstractionNodeId, setPendingAbstractionNodeId] = useState(null);
+  const [carouselFocusedNodeScale, setCarouselFocusedNodeScale] = useState(1.2);
+  const [carouselFocusedNodeDimensions, setCarouselFocusedNodeDimensions] = useState(null);
 
   // Use the local state values populated by subscribe
   const projectTitle = activeGraphName ?? 'Loading...';
@@ -408,6 +410,9 @@ function NodeCanvas() {
     // Clear abstraction carousel
     setAbstractionCarouselVisible(false);
     setAbstractionCarouselNode(null);
+    setPendingAbstractionNodeId(null);
+    setCarouselFocusedNodeScale(1.2);
+    setCarouselFocusedNodeDimensions(null);
   }, [activeGraphId]);
 
   // --- Saved Graphs Management ---
@@ -572,12 +577,9 @@ function NodeCanvas() {
         } },
         { id: 'abstraction', label: 'Abstraction', icon: Layers, action: (nodeId) => {
             console.log(`[PieMenu Action] Abstraction clicked for node: ${nodeId}.`);
-            const nodeData = nodes.find(n => n.id === nodeId);
-            if (nodeData) {
-              setAbstractionCarouselNode(nodeData);
-              setAbstractionCarouselVisible(true);
-              setAbstractionCarouselScale(1.2); // Initialize to main node scale
-            }
+            setPendingAbstractionNodeId(nodeId); // Store the node ID for later
+            setIsTransitioningPieMenu(true); // Start transition, current menu will hide
+            // Abstraction carousel will be set up in onExitAnimationComplete after animation
         } }
       ];
     }
@@ -1800,21 +1802,36 @@ function NodeCanvas() {
     if (selectedNodeIdForPieMenu && !isTransitioningPieMenu) {
       const node = nodes.find(n => n.id === selectedNodeIdForPieMenu);
       if (node) {
-        const dimensions = getNodeDimensions(node, previewingNodeId === node.id, null);
-        //console.log(`[NodeCanvas] Preparing pie menu for node ${selectedNodeIdForPieMenu}. Not transitioning. Buttons:`, targetPieMenuButtons.map(b => b.id));
+        // Check if we're in carousel mode and have dynamic dimensions
+        const isInCarouselMode = abstractionCarouselVisible && abstractionCarouselNode && node.id === abstractionCarouselNode.id;
         
-        // Add carousel scale factor if in carousel mode
-        let carouselScale = 1;
-        if (abstractionCarouselVisible && abstractionCarouselNode && node.id === abstractionCarouselNode.id) {
-          // Use the dynamic scale factor from AbstractionCarousel
-          carouselScale = abstractionCarouselScale;
+        // Use dynamic carousel dimensions if available, otherwise calculate from the actual node
+        const dimensions = isInCarouselMode && carouselFocusedNodeDimensions 
+          ? carouselFocusedNodeDimensions 
+          : getNodeDimensions(node, previewingNodeId === node.id, null);
+        
+        // In carousel mode, create a virtual node positioned at the carousel center
+        let nodeForPieMenu = node;
+        if (isInCarouselMode && abstractionCarouselNode) {
+          // Calculate carousel center position in canvas coordinates
+          const originalNodeDimensions = getNodeDimensions(abstractionCarouselNode, false, null);
+          const carouselCenterX = abstractionCarouselNode.x + originalNodeDimensions.currentWidth / 2;
+          const carouselCenterY = abstractionCarouselNode.y + originalNodeDimensions.currentHeight / 2; // Perfect center alignment
+          
+          // Create virtual node at carousel center
+          nodeForPieMenu = {
+            ...node,
+            x: carouselCenterX - dimensions.currentWidth / 2,
+            y: carouselCenterY - dimensions.currentHeight / 2
+          };
         }
         
+        //console.log(`[NodeCanvas] Preparing pie menu for node ${selectedNodeIdForPieMenu}. Not transitioning. Buttons:`, targetPieMenuButtons.map(b => b.id));
+        
         setCurrentPieMenuData({ 
-          node, 
+          node: nodeForPieMenu, 
           buttons: targetPieMenuButtons, 
-          nodeDimensions: dimensions,
-          carouselScale 
+          nodeDimensions: dimensions
         });
         setIsPieMenuRendered(true); // Ensure PieMenu is in DOM to animate in
       } else {
@@ -1832,7 +1849,7 @@ function NodeCanvas() {
     }
     // If isTransitioningPieMenu is true, we don't change currentPieMenuData or isPieMenuRendered here.
     // The existing menu plays its exit animation, and onExitAnimationComplete handles the next steps.
-  }, [selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu, abstractionCarouselVisible, abstractionCarouselNode, abstractionCarouselScale]);
+  }, [selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu, abstractionCarouselVisible, abstractionCarouselNode, carouselFocusedNodeScale, carouselFocusedNodeDimensions]);
 
   // --- Hurtle Animation State & Logic ---
   const [hurtleAnimation, setHurtleAnimation] = useState(null);
@@ -2749,7 +2766,6 @@ function NodeCanvas() {
                            node={currentPieMenuData.node}
                            buttons={currentPieMenuData.buttons}
                            nodeDimensions={currentPieMenuData.nodeDimensions}
-                           carouselScale={currentPieMenuData.carouselScale}
                            isVisible={(
                              currentPieMenuData?.node?.id === selectedNodeIdForPieMenu &&
                              !isTransitioningPieMenu &&
@@ -2757,27 +2773,37 @@ function NodeCanvas() {
                                (draggingNodeInfo.primaryId === selectedNodeIdForPieMenu || draggingNodeInfo.nodeId === selectedNodeIdForPieMenu)
                              )
                            )}
-                           onExitAnimationComplete={() => {
-                             // console.log("[NodeCanvas] PieMenu onExitAnimationComplete: Resetting transition and render state.");
-                             setIsPieMenuRendered(false); 
-                             setCurrentPieMenuData(null); 
-                             const wasTransitioning = isTransitioningPieMenu;
-                             setIsTransitioningPieMenu(false); 
-                             if (wasTransitioning) {
-                               const currentlySelectedNodeId = [...selectedNodeIds][0]; 
-                               if (currentlySelectedNodeId) {
-                                   const selectedNodeIsPreviewing = previewingNodeId === currentlySelectedNodeId;
-                                   if (selectedNodeIsPreviewing) { 
-                                       setPreviewingNodeId(null);
-                                   } else { 
-                                       setPreviewingNodeId(currentlySelectedNodeId);
-                                   }
-                                   setSelectedNodeIdForPieMenu(currentlySelectedNodeId); 
-                               } else {
-                                    setPreviewingNodeId(null); 
-                               }
-                             }
-                           }}
+                                      onExitAnimationComplete={() => {
+             // console.log("[NodeCanvas] PieMenu onExitAnimationComplete: Resetting transition and render state.");
+             setIsPieMenuRendered(false); 
+             setCurrentPieMenuData(null); 
+             const wasTransitioning = isTransitioningPieMenu;
+             const pendingAbstractionId = pendingAbstractionNodeId;
+             setIsTransitioningPieMenu(false); 
+             setPendingAbstractionNodeId(null);
+             
+             if (wasTransitioning && pendingAbstractionId) {
+               // This was an abstraction transition - set up the carousel
+               const nodeData = nodes.find(n => n.id === pendingAbstractionId);
+               if (nodeData) {
+                 setAbstractionCarouselNode(nodeData);
+                 setAbstractionCarouselVisible(true);
+               }
+             } else if (wasTransitioning) {
+               const currentlySelectedNodeId = [...selectedNodeIds][0]; 
+               if (currentlySelectedNodeId) {
+                   const selectedNodeIsPreviewing = previewingNodeId === currentlySelectedNodeId;
+                   if (selectedNodeIsPreviewing) { 
+                       setPreviewingNodeId(null);
+                   } else { 
+                       setPreviewingNodeId(currentlySelectedNodeId);
+                   }
+                   setSelectedNodeIdForPieMenu(currentlySelectedNodeId); 
+               } else {
+                    setPreviewingNodeId(null); 
+               }
+             }
+           }}
                          />
                        )}
 
@@ -3030,13 +3056,15 @@ function NodeCanvas() {
           onClose={() => {
             setAbstractionCarouselVisible(false);
             setAbstractionCarouselNode(null);
-            setAbstractionCarouselScale(1); // Reset scale when closing
+            setCarouselFocusedNodeScale(1.2);
+            setCarouselFocusedNodeDimensions(null);
           }}
           onReplaceNode={(oldNodeId, newNodeData) => {
             // TODO: Implement node replacement functionality
             console.log('Replace node:', oldNodeId, 'with:', newNodeData);
           }}
-          onScaleChange={setAbstractionCarouselScale}
+          onScaleChange={setCarouselFocusedNodeScale}
+          onFocusedNodeDimensions={setCarouselFocusedNodeDimensions}
         />
       )}
       
