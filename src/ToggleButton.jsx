@@ -30,7 +30,7 @@ const ToggleButton = ({ isExpanded, onClick, side = 'right' }) => {
         border: 'none', // Ensure no border
         padding: 0, // Ensure no padding
         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)', // Optional: subtle shadow
-        zIndex: 9999, // Lower than Header (10000) but same as Panel
+        zIndex: 10001,
         transition: 'background-color 0.2s ease', // Smooth background transition
         // Remove border-radius if you want sharp corners
         // borderRadius: '5px', 

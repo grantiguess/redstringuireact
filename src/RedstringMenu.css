@@ -6,7 +6,7 @@
     background-color: #260000;
     border-bottom-right-radius: 25px;
     box-shadow: 2px 2px 10px rgba(0,0,0,0.2);
-    z-index: 10001; /* Increased to be above panels (z-index: 9999) */
+    z-index: 11001;
     padding: 10px 0;
     transform-origin: top;
 }
@@ -91,7 +91,7 @@ to {
     border-top-left-radius: 0;
     box-shadow: 2px 2px 10px rgba(0,0,0,0.2);
     padding: 10px;
-    z-index: 1100;
+    z-index: 11002;
     width: 150px;
 }
 
@@ -138,7 +138,7 @@ to {
     padding: 10px;
     min-width: 250px;
     max-width: 500px;
-    z-index: 1099;
+    z-index: 11003;
     margin-left: 5px; /* Increased from 2px to 5px for more spacing */
 }
 

@@ -351,13 +351,12 @@ const AbstractionCarousel = ({
     }
   }, [isVisible]); // Remove updatePhysics dependency to avoid frequent recreations
 
-  // Set up non-passive wheel event listener
+  // Set up global, non-passive wheel event listener when carousel is visible
   useEffect(() => {
-    const carousel = carouselRef.current;
-    if (carousel && isVisible) {
-      carousel.addEventListener('wheel', handleWheel, { passive: false });
+    if (isVisible) {
+      document.addEventListener('wheel', handleWheel, { passive: false });
       return () => {
-        carousel.removeEventListener('wheel', handleWheel, { passive: false });
+        document.removeEventListener('wheel', handleWheel, { passive: false });
       };
     }
   }, [isVisible, handleWheel]);
@@ -414,7 +413,7 @@ const AbstractionCarousel = ({
         left: carouselPosition.x,
         top: carouselPosition.y,
         transform: 'translate(-50%, -50%)',
-        zIndex: 15001,
+        zIndex: 1000,
         pointerEvents: 'auto',
         cursor: 'grab'
       }}

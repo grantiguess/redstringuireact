@@ -978,6 +978,8 @@ function NodeCanvas() {
   };
 
   const handleWheel = async (e) => {
+    if (abstractionCarouselVisible) return; // Do not process wheel events for canvas when carousel is active
+
     e.stopPropagation();
     const rect = containerRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
@@ -1298,6 +1300,10 @@ function NodeCanvas() {
         const bounded = clampCoordinates(currentX, currentY);
         setDrawingConnectionFrom(prev => prev && ({ ...prev, currentX: bounded.x, currentY: bounded.y }));
     } else if (isPanning) {
+        if (abstractionCarouselVisible) {
+            setIsPanning(false);
+            return;
+        }
         requestAnimationFrame(() => {
             if (!panStart?.x || !panStart?.y) return;
             const dx = (e.clientX - panStart.x) * PAN_DRAG_SENSITIVITY;
@@ -1319,7 +1325,7 @@ function NodeCanvas() {
   };
 
   const handleMouseDown = (e) => {
-    if (isPaused || !activeGraphId) return;
+    if (isPaused || !activeGraphId || abstractionCarouselVisible) return;
     // Clear any pending single click on a node
     if (clickTimeoutIdRef.current) {
         clearTimeout(clickTimeoutIdRef.current);

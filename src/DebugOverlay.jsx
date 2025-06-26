@@ -98,7 +98,7 @@ const DebugOverlay = ({ debugData, hideOverlay }) => {
         fontFamily: 'monospace',
         fontSize: '12px',
         overflow: 'auto',
-        zIndex: 9999,
+        zIndex: 20000,
         borderRadius: '10px'
       }}
     >

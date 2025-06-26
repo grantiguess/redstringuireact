@@ -273,7 +273,7 @@ const Header = ({
         alignItems: 'center',
         flexShrink: 0,
         position: 'relative',
-        zIndex: 10000,
+        zIndex: 11000,
       }}
     >
       {/* Menu button container with explicit height */}

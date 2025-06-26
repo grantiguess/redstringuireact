@@ -1723,7 +1723,7 @@ const Panel = forwardRef(
                     width: `${panelWidth}px`, // Use state variable for width
                     backgroundColor: '#bdb5b5', // <<< Set back to static color
                     boxShadow: '0 2px 5px rgba(0, 0, 0, 0.2)',
-                    zIndex: 9998, // Lowered to be below ToggleButton (9999)
+                    zIndex: 10000,
                     overflow: 'hidden', // Keep hidden to clip content
                     display: 'flex',
                     flexDirection: 'column',
