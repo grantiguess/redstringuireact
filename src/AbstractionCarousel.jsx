@@ -10,7 +10,7 @@ const SCROLL_SENSITIVITY = 0.003; // Much less sensitive for precise control
 const SNAP_THRESHOLD = 0.3; // Balanced threshold for natural snapping
 const SNAP_SPRING = 0.15; // Stronger spring for faster snapping
 const MIN_VELOCITY = 0.01; // Balanced minimum velocity
-const MAX_VELOCITY = 2; // Lower max velocity for better control
+const MAX_VELOCITY = 1; // Lower max velocity for better control
 
 // Physics state reducer
 const physicsReducer = (state, action) => {
@@ -113,6 +113,7 @@ const AbstractionCarousel = ({
   panOffset,
   zoomLevel,
   containerRef,
+  debugMode,
   onClose,
   onReplaceNode,
   onScaleChange, // New callback to report the focused node's current scale
@@ -376,7 +377,7 @@ const AbstractionCarousel = ({
     }
   }, [isVisible]);
 
-  // Handle escape key to close
+  // Handle escape key and click-away to close
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
@@ -384,9 +385,19 @@ const AbstractionCarousel = ({
       }
     };
 
+    const handleClickAway = (e) => {
+      if (carouselRef.current && !carouselRef.current.contains(e.target)) {
+        onClose();
+      }
+    };
+
     if (isVisible) {
       document.addEventListener('keydown', handleKeyDown);
-      return () => document.removeEventListener('keydown', handleKeyDown);
+      document.addEventListener('mousedown', handleClickAway);
+      return () => {
+        document.removeEventListener('keydown', handleKeyDown);
+        document.removeEventListener('mousedown', handleClickAway);
+      };
     }
   }, [isVisible, onClose]);
 
@@ -486,7 +497,11 @@ const AbstractionCarousel = ({
           }
           
           // Calculate smooth dimensions (no rounding for animation)
-          const scaledWidth = nodeDimensions.currentWidth * zoomLevel * scale;
+          let scaledWidth = nodeDimensions.currentWidth * zoomLevel * scale;
+          if (isPlaceholder) {
+            // Give placeholders a more consistent, smaller width
+            scaledWidth = NODE_WIDTH * 1.2 * zoomLevel * scale;
+          }
           const scaledHeight = nodeDimensions.currentHeight * zoomLevel * scale;
           const scaledTextAreaHeight = nodeDimensions.textAreaHeight * zoomLevel * scale;
           
@@ -510,7 +525,7 @@ const AbstractionCarousel = ({
           // Enhanced border styling - scaled proportionally (smooth values)
           const borderWidth = (isMainNode ? 6 : 2) * zoomLevel * scale;
           const borderColor = isPlaceholder ? '#999' : (isMainNode ? 'black' : '#666');
-          const nodeColor = isPlaceholder ? 'transparent' : (item.color || NODE_DEFAULT_COLOR);
+          const nodeColor = isPlaceholder ? '#bdb5b5' : (item.color || NODE_DEFAULT_COLOR);
           
           // Corner radius - smooth scaling
           const cornerRadius = NODE_CORNER_RADIUS * zoomLevel * scale;
@@ -573,13 +588,13 @@ const AbstractionCarousel = ({
                       display: 'flex', 
                       flexDirection: 'column', 
                       alignItems: 'center',
-                      color: '#666',
-                      fontSize: `${Math.max(10, 12 * zoomLevel * scale)}px`,
+                      color: '#260000',
+                      fontSize: `${12 * zoomLevel * scale}px`,
                       fontWeight: 'bold',
                       textAlign: 'center',
                       lineHeight: '1.2'
                     }}>
-                      <Plus size={Math.max(12, 20 * zoomLevel * scale)} style={{ marginBottom: '2px' }} />
+                      <Plus size={20 * zoomLevel * scale} style={{ marginBottom: '2px' }} />
                       <span style={{ 
                         maxWidth: '90%',
                         overflow: 'hidden',
@@ -593,7 +608,7 @@ const AbstractionCarousel = ({
                   ) : (
                     <span
                       style={{
-                        fontSize: `${Math.max(12, 20 * zoomLevel * scale)}px`,
+                        fontSize: `${(isMainNode ? 22 : 20) * zoomLevel * scale}px`,
                         fontWeight: isMainNode ? 'bolder' : 'bold', // Extra bold for main node
                         color: '#bdb5b5',
                         whiteSpace: 'nowrap',
@@ -613,7 +628,7 @@ const AbstractionCarousel = ({
               </foreignObject>
 
               {/* Level indicator (only for non-placeholder nodes) */}
-              {!isPlaceholder && (
+              {!isPlaceholder && debugMode && (
                 <g>
                   <circle
                     cx={nodeX + scaledWidth / 2 - 8 * scale}
@@ -627,7 +642,7 @@ const AbstractionCarousel = ({
                     y={nodeY - scaledHeight / 2 + 8 * scale}
                     textAnchor="middle"
                     dominantBaseline="central"
-                    fontSize={Math.max(8, 10 * zoomLevel * scale)}
+                    fontSize={12 * zoomLevel * scale}
                     fill="#bdb5b5"
                     fontWeight="bold"
                     style={{
@@ -645,39 +660,41 @@ const AbstractionCarousel = ({
       </svg>
 
       {/* Navigation hints - now shows continuous position */}
-      <div style={{
-        position: 'absolute',
-        right: '-80px',
-        top: `${stackOffset}px`,
-        color: '#666',
-        fontSize: `${12 * zoomLevel}px`,
-        pointerEvents: 'none',
-        userSelect: 'none',
-        textAlign: 'left'
-      }}>
-        <div style={{ marginBottom: '8px' }}>↑ Generic</div>
-        <div style={{ 
-          color: '#333', 
-          fontWeight: 'bold',
-          fontSize: `${14 * zoomLevel}px`,
-          marginBottom: '8px'
+      {debugMode && (
+        <div style={{
+          position: 'absolute',
+          right: '-80px',
+          top: `${stackOffset}px`,
+          color: '#666',
+          fontSize: `${12 * zoomLevel}px`,
+          pointerEvents: 'none',
+          userSelect: 'none',
+          textAlign: 'left'
         }}>
-          Level {physicsState.realPosition.toFixed(1)}
+          <div style={{ marginBottom: '8px' }}>↑ Generic</div>
+          <div style={{ 
+            color: '#333', 
+            fontWeight: 'bold',
+            fontSize: `${14 * zoomLevel}px`,
+            marginBottom: '8px'
+          }}>
+            Level {physicsState.realPosition.toFixed(1)}
+          </div>
+          <div>↓ Specific</div>
+          
+          {/* Physics debug info */}
+          <div style={{ 
+            fontSize: `${10 * zoomLevel}px`,
+            color: '#999',
+            marginTop: '10px'
+          }}>
+            <div>real: {physicsState.realPosition.toFixed(2)}</div>
+            <div>target: {physicsState.targetPosition}</div>
+            <div>v: {physicsState.velocity.toFixed(2)}</div>
+            {physicsState.isSnapping && <div>snapping</div>}
+          </div>
         </div>
-        <div>↓ Specific</div>
-        
-        {/* Physics debug info */}
-        <div style={{ 
-          fontSize: `${10 * zoomLevel}px`,
-          color: '#999',
-          marginTop: '10px'
-        }}>
-          <div>real: {physicsState.realPosition.toFixed(2)}</div>
-          <div>target: {physicsState.targetPosition}</div>
-          <div>v: {physicsState.velocity.toFixed(2)}</div>
-          {physicsState.isSnapping && <div>snapping</div>}
-        </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -481,8 +481,9 @@ function NodeCanvas() {
           position: 'left',
           action: (nodeId) => {
             console.log(`[PieMenu Action] Back clicked for node: ${nodeId}. Closing AbstractionCarousel.`);
-            setAbstractionCarouselVisible(false);
-            setAbstractionCarouselNode(null);
+            // Hide the current menu and start the transition
+            setSelectedNodeIdForPieMenu(null);
+            setIsTransitioningPieMenu(true);
           }
         },
         {
@@ -2690,6 +2691,12 @@ function NodeCanvas() {
                          const isPreviewing = previewingNodeId === node.id; // Should be false or irrelevant for these nodes
                          const descriptionContent = getNodeDescriptionContent(node, isPreviewing);
                          const dimensions = getNodeDimensions(node, isPreviewing, descriptionContent);
+                         
+                         // Do not render the node that the abstraction carousel is open for
+                         if (abstractionCarouselVisible && abstractionCarouselNode?.id === node.id) {
+                           return null;
+                         }
+
                          return (
                            <Node
                              key={node.id}
@@ -2779,6 +2786,11 @@ function NodeCanvas() {
              setCurrentPieMenuData(null); 
              const wasTransitioning = isTransitioningPieMenu;
              const pendingAbstractionId = pendingAbstractionNodeId;
+             const wasInCarousel = abstractionCarouselVisible; // Check if we were in carousel mode before transition
+             
+             // The node that was just active before the pie menu disappeared
+             const lastActiveNodeId = selectedNodeIdForPieMenu; 
+
              setIsTransitioningPieMenu(false); 
              setPendingAbstractionNodeId(null);
              
@@ -2788,7 +2800,17 @@ function NodeCanvas() {
                if (nodeData) {
                  setAbstractionCarouselNode(nodeData);
                  setAbstractionCarouselVisible(true);
+                 // IMPORTANT: Re-select the node to show the new abstraction pie menu
+                 setSelectedNodeIdForPieMenu(pendingAbstractionId);
                }
+             } else if (wasTransitioning && wasInCarousel) {
+                // This was a "back" transition from the carousel
+                setAbstractionCarouselVisible(false);
+                setAbstractionCarouselNode(null);
+                // The selectedNodeIdForPieMenu is ALREADY correct because it wasn't nulled,
+                // so we just need to re-trigger the pie menu for it.
+                // We use the lastActiveNodeId which we captured before nulling it out.
+                setSelectedNodeIdForPieMenu(lastActiveNodeId);
              } else if (wasTransitioning) {
                const currentlySelectedNodeId = [...selectedNodeIds][0]; 
                if (currentlySelectedNodeId) {
@@ -2815,6 +2837,12 @@ function NodeCanvas() {
                            const isPreviewing = previewingNodeId === activeNodeToRender.id;
                            const descriptionContent = getNodeDescriptionContent(activeNodeToRender, isPreviewing);
                            const dimensions = getNodeDimensions(activeNodeToRender, isPreviewing, descriptionContent);
+                           
+                           // Hide if its carousel is open
+                           if (abstractionCarouselVisible && abstractionCarouselNode?.id === activeNodeToRender.id) {
+                             return null;
+                           }
+
                            return (
                              <Node
                                key={activeNodeToRender.id}
@@ -2892,6 +2920,12 @@ function NodeCanvas() {
                            const isPreviewing = previewingNodeId === draggingNodeToRender.id;
                            const descriptionContent = getNodeDescriptionContent(draggingNodeToRender, isPreviewing);
                            const dimensions = getNodeDimensions(draggingNodeToRender, isPreviewing, descriptionContent);
+                           
+                           // Hide if its carousel is open
+                           if (abstractionCarouselVisible && abstractionCarouselNode?.id === draggingNodeToRender.id) {
+                             return null;
+                           }
+
                            return (
                              <Node
                                key={draggingNodeToRender.id}
@@ -3053,11 +3087,11 @@ function NodeCanvas() {
           panOffset={panOffset}
           zoomLevel={zoomLevel}
           containerRef={containerRef}
+          debugMode={debugMode}
           onClose={() => {
-            setAbstractionCarouselVisible(false);
-            setAbstractionCarouselNode(null);
-            setCarouselFocusedNodeScale(1.2);
-            setCarouselFocusedNodeDimensions(null);
+            // Use the same logic as the back button for a smooth transition
+            setSelectedNodeIdForPieMenu(null);
+            setIsTransitioningPieMenu(true);
           }}
           onReplaceNode={(oldNodeId, newNodeData) => {
             // TODO: Implement node replacement functionality
