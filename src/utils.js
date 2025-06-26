@@ -18,6 +18,21 @@ const DESCRIPTION_PADDING = 8; // Padding around description text
 
 // --- getNodeDimensions Utility Function ---
 export const getNodeDimensions = (node, isPreviewing = false, descriptionContent = null) => {
+    // --- ADDED: Handle placeholder nodes from AbstractionCarousel ---
+    if (node && (node.type === 'add_generic' || node.type === 'add_specific')) {
+        const placeholderWidth = NODE_WIDTH * 1.2;
+        return {
+            currentWidth: placeholderWidth,
+            currentHeight: NODE_HEIGHT,
+            textAreaHeight: NODE_HEIGHT,
+            imageWidth: 0,
+            calculatedImageHeight: 0,
+            innerNetworkWidth: 0,
+            innerNetworkHeight: 0,
+            descriptionAreaHeight: 0
+        };
+    }
+
     // Use getters to access node properties
     const nodeName = node.getName ? node.getName() : node.name; // Handle potential plain objects gracefully for now?
     const thumbnailSrc = node.getThumbnailSrc ? node.getThumbnailSrc() : node.thumbnailSrc; // Use getter

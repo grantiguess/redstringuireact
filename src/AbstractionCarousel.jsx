@@ -497,11 +497,7 @@ const AbstractionCarousel = ({
           }
           
           // Calculate smooth dimensions (no rounding for animation)
-          let scaledWidth = nodeDimensions.currentWidth * zoomLevel * scale;
-          if (isPlaceholder) {
-            // Give placeholders a more consistent, smaller width
-            scaledWidth = NODE_WIDTH * 1.2 * zoomLevel * scale;
-          }
+          const scaledWidth = nodeDimensions.currentWidth * zoomLevel * scale;
           const scaledHeight = nodeDimensions.currentHeight * zoomLevel * scale;
           const scaledTextAreaHeight = nodeDimensions.textAreaHeight * zoomLevel * scale;
           

@@ -169,7 +169,7 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
         if (isCarouselMode) {
           // Carousel mode: position buttons based on actual current node dimensions
           // nodeDimensions now contains the actual current scaled dimensions from AbstractionCarousel
-          const currentNodeHalfWidth = currentWidth / 2;
+          const currentNodeHalfWidth = nodeDimensions.currentWidth / 2;
           const padding = BUBBLE_PADDING + BUBBLE_SIZE / 2;
           
           if (button.position === 'left') {
