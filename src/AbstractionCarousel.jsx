@@ -425,9 +425,9 @@ const AbstractionCarousel = ({
         style={{
           position: 'absolute',
           left: '-50vw',
-          top: '-50vh',
+          top: '-200vh',
           width: '100vw',
-          height: '100vh',
+          height: '400vh',
           pointerEvents: 'none',
           transform: `translateY(${stackOffset}px)`,
           transition: physicsState.isSnapping ? 'none' : 'none' // No CSS transitions, using JS animation
@@ -478,7 +478,7 @@ const AbstractionCarousel = ({
           const distanceFromMain = Math.abs(item.level - physicsState.realPosition);
           
           // Fog of war: hide nodes beyond a certain distance
-          if (distanceFromMain > 3.5) {
+          if (distanceFromMain > 4.5) {
             return null;
           }
           
@@ -517,7 +517,7 @@ const AbstractionCarousel = ({
           
           // Position calculation - relative to carousel center (which is at 50vw, 50vh in the SVG)
           const nodeX = window.innerWidth * 0.5;
-          const nodeY = window.innerHeight * 0.5 + (item.level * LEVEL_SPACING * zoomLevel);
+          const nodeY = window.innerHeight * 2 + (item.level * LEVEL_SPACING * zoomLevel);
           
           // Determine if this is the "main" node (closest to scroll position)
           const isMainNode = distanceFromMain < 0.5;
