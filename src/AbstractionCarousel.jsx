@@ -392,6 +392,7 @@ const AbstractionCarousel = ({
 
     if (isVisible) {
       document.addEventListener('keydown', handleKeyDown);
+      // We listen on the document and check if the click was outside the visuals
       document.addEventListener('mousedown', handleClickAway);
       return () => {
         document.removeEventListener('keydown', handleKeyDown);

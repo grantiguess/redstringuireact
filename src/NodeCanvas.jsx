@@ -978,9 +978,6 @@ function NodeCanvas() {
   };
 
   const handleWheel = async (e) => {
-    if (abstractionCarouselVisible) return; // Do not process wheel events for canvas when carousel is active
-
-    e.stopPropagation();
     const rect = containerRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
@@ -1010,6 +1007,7 @@ function NodeCanvas() {
 
     // 1. Mac Pinch-to-Zoom (Ctrl key pressed) - always zoom regardless of device
     if (isMac && e.ctrlKey) {
+        e.stopPropagation();
         isPanningOrZooming.current = true;
         const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
         const currentZoomForWorker = zoomLevel;
@@ -1045,8 +1043,12 @@ function NodeCanvas() {
         return; // Processed
     }
 
+    // If the carousel is visible, block all other wheel events from this point on
+    if (abstractionCarouselVisible) return;
+
     // 2. Trackpad Two-Finger Pan (based on device detection)
     if (deviceType === 'trackpad' || (deviceType === 'undetermined' && isMac && (Math.abs(deltaX) > 0.05 || Math.abs(deltaY) < 30))) {
+        e.stopPropagation();
         isPanningOrZooming.current = true;
         const dx = -deltaX * PAN_DRAG_SENSITIVITY;
         const dy = -deltaY * PAN_DRAG_SENSITIVITY;
@@ -1083,6 +1085,7 @@ function NodeCanvas() {
 
     // 3. Mouse Wheel Zoom (based on device detection or fallback)
     if (deviceType === 'mouse' || (deviceType === 'undetermined' && deltaY !== 0)) {
+        e.stopPropagation();
         isPanningOrZooming.current = true;
         const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
         const currentZoomForWorker = zoomLevel;
