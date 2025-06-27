@@ -89,9 +89,10 @@ const physicsReducer = (state, action) => {
     case 'JUMP_TO_LEVEL':
       return { 
         ...state, 
-        realPosition: action.payload, 
+        // Don't immediately change realPosition - let it animate smoothly
         targetPosition: action.payload, 
-        isSnapping: false,
+        isSnapping: true, // Enable snapping animation to target
+        velocity: 0, // Clear any existing velocity for clean animation
         hasUserScrolled: true
       };
     case 'RESET':
@@ -367,6 +368,12 @@ const AbstractionCarousel = ({
     
     // Jump to clicked level and set it as target
     dispatchPhysics({ type: 'JUMP_TO_LEVEL', payload: item.level });
+    
+    // Start physics loop for smooth animation to target
+    if (!animationFrameRef.current) {
+      lastFrameTimeRef.current = performance.now();
+      animationFrameRef.current = requestAnimationFrame(updatePhysicsRef.current);
+    }
     
     // Handle click actions
     if (item.type === 'add_generic' || item.type === 'add_specific') {
