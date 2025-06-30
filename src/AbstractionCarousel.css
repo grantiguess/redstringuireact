@@ -91,4 +91,35 @@
   .abstraction-node:hover {
     transform: none !important;
   }
+}
+
+/* Animation keyframes for carousel node entrance and exit */
+@keyframes carousel-node-enter {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) translateY(0);
+  }
+  60% {
+    opacity: 0.8;
+    transform: scale(1.05) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes carousel-node-exit {
+  0% {
+    opacity: var(--start-opacity, 1); /* Start from passed opacity or fallback to 1 */
+    transform: scale(1) translateY(0);
+  }
+  40% {
+    opacity: calc(var(--start-opacity, 1) * 0.5); /* Fade to half of starting opacity */
+    transform: scale(0.8) translateY(0);
+  }
+  100% {
+    opacity: 0; /* End at transparent */
+    transform: scale(0.3) translateY(0);
+  }
 } 

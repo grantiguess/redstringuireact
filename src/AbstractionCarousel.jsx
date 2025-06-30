@@ -115,6 +115,9 @@ const AbstractionCarousel = ({
   zoomLevel,
   containerRef,
   debugMode,
+  animationState = 'visible', // 'hidden', 'entering', 'visible', 'exiting'
+  onAnimationStateChange,
+  onExitAnimationComplete,
   onClose,
   onReplaceNode,
   onScaleChange, // New callback to report the focused node's current scale
@@ -141,6 +144,23 @@ const AbstractionCarousel = ({
   useEffect(() => {
     physicsStateRef.current = physicsState;
   }, [physicsState]);
+
+  // Handle animation state transitions
+  useEffect(() => {
+    if (animationState === 'entering') {
+      // Start entrance animation, then transition to visible
+      const timer = setTimeout(() => {
+        onAnimationStateChange?.('visible');
+      }, 200); // Faster animation duration
+      return () => clearTimeout(timer);
+    } else if (animationState === 'exiting') {
+      // Start exit animation, then call completion callback
+      const timer = setTimeout(() => {
+        onExitAnimationComplete?.();
+      }, 200); // Faster animation duration
+      return () => clearTimeout(timer);
+    }
+  }, [animationState, onAnimationStateChange, onExitAnimationComplete]);
 
   // Pre-calculate the abstraction chain and base dimensions for each node
   const abstractionChainWithDims = useMemo(() => {
@@ -488,6 +508,25 @@ const AbstractionCarousel = ({
           if (distanceFromMain > 4.5) {
             return null;
           }
+
+          // Calculate entrance/exit animation properties
+          let animationOpacity = 1;
+          let animationScale = 1;
+          let animationDelay = 0;
+          let useAnimationOpacity = false;
+          
+          if (animationState === 'entering' && !isCurrent) {
+            // Entrance animation: start from center, staggered by distance
+            animationDelay = distanceFromMain * 40; // 40ms per level (faster)
+            animationOpacity = 0;
+            animationScale = 0.3;
+            useAnimationOpacity = true; // Override opacity for entrance
+          } else if (animationState === 'exiting' && !isCurrent) {
+            // Exit animation: shrink to center, reverse stagger
+            animationDelay = (4 - distanceFromMain) * 30; // 30ms reverse stagger (faster)
+            animationScale = 0.3;
+            useAnimationOpacity = false; // Don't override opacity - let CSS animate from current opacity
+          }
           
           // Progressive scaling - center node matches real node size exactly
           let scale = 1.0;
@@ -508,7 +547,7 @@ const AbstractionCarousel = ({
           const scaledHeight = nodeDimensions.currentHeight * zoomLevel * scale;
           const scaledTextAreaHeight = nodeDimensions.textAreaHeight * zoomLevel * scale;
           
-          // Calculate opacity: smooth falloff based on distance
+          // Calculate opacity: smooth falloff based on distance, combined with animation
           let opacity = 1;
           if (distanceFromMain <= 1) {
             opacity = 1.0 - (distanceFromMain * 0.1); // Gentler falloff within 1 level
@@ -517,6 +556,12 @@ const AbstractionCarousel = ({
           } else {
             opacity = 0.5 - ((distanceFromMain - 2) * 0.8); // Fade to invisible beyond 2 levels
           }
+          
+          // Apply animation opacity only when we want to override (entrance animation)
+          if (useAnimationOpacity) {
+            opacity = isCurrent ? opacity : animationOpacity;
+          }
+          // For exit animations, keep the natural calculated opacity so CSS can animate from it
           
           // Position calculation - relative to carousel center (which is at 50vw, 50vh in the SVG)
           const nodeX = window.innerWidth * 0.5;
@@ -533,6 +578,20 @@ const AbstractionCarousel = ({
           // Corner radius - smooth scaling
           const cornerRadius = NODE_CORNER_RADIUS * zoomLevel * scale;
 
+          // Calculate animation transform
+          const animationTransform = !isCurrent && (animationState === 'entering' || animationState === 'exiting') 
+            ? `scale(${animationScale})` 
+            : 'scale(1)';
+          
+          // Calculate CSS animation properties
+          const animationStyles = !isCurrent && (animationState === 'entering' || animationState === 'exiting') ? {
+            animation: animationState === 'entering' 
+              ? `carousel-node-enter 0.2s ease-out ${animationDelay}ms both`
+              : `carousel-node-exit 0.2s ease-in ${animationDelay}ms both`,
+            // For exit animations, pass the current opacity as a CSS variable
+            ...(animationState === 'exiting' ? { '--start-opacity': opacity } : {})
+          } : {};
+
           return (
             <g
               key={item.id}
@@ -540,7 +599,10 @@ const AbstractionCarousel = ({
                 opacity: opacity,
                 cursor: 'pointer',
                 pointerEvents: 'auto',
-                zIndex: isMainNode ? 100 : 1 // Higher z-index for focused node
+                zIndex: isMainNode ? 100 : 1, // Higher z-index for focused node
+                transform: animationTransform,
+                transformOrigin: `${nodeX}px ${nodeY}px`, // Transform from the node center
+                ...animationStyles
               }}
               onClick={() => handleNodeClick(item)}
             >

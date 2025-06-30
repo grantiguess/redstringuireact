@@ -382,6 +382,9 @@ function NodeCanvas() {
   const [pendingAbstractionNodeId, setPendingAbstractionNodeId] = useState(null);
   const [carouselFocusedNodeScale, setCarouselFocusedNodeScale] = useState(1.2);
   const [carouselFocusedNodeDimensions, setCarouselFocusedNodeDimensions] = useState(null);
+  
+  // Animation states for carousel
+  const [carouselAnimationState, setCarouselAnimationState] = useState('hidden'); // 'hidden', 'entering', 'visible', 'exiting'
 
   // Use the local state values populated by subscribe
   const projectTitle = activeGraphName ?? 'Loading...';
@@ -413,6 +416,7 @@ function NodeCanvas() {
     setPendingAbstractionNodeId(null);
     setCarouselFocusedNodeScale(1.2);
     setCarouselFocusedNodeDimensions(null);
+    setCarouselAnimationState('hidden');
   }, [activeGraphId]);
 
   // --- Saved Graphs Management ---
@@ -481,7 +485,7 @@ function NodeCanvas() {
           position: 'left',
           action: (nodeId) => {
             console.log(`[PieMenu Action] Back clicked for node: ${nodeId}. Closing AbstractionCarousel.`);
-            // Hide the current menu and start the transition
+            // Just trigger pie menu exit - carousel exit will be handled in onExitAnimationComplete
             setSelectedNodeIdForPieMenu(null);
             setIsTransitioningPieMenu(true);
           }
@@ -1799,11 +1803,17 @@ function NodeCanvas() {
         // If transitioning, PieMenu's onExitAnimationComplete will handle setting the next selectedNodeIdForPieMenu
         console.log(`[NodeCanvas] Single node selected (${nodeId}), but IS transitioning. Waiting for exit animation to potentially set new pie menu target.`);
       }
-    } else {
-      // Not a single selection (0 or multiple)
-      console.log("[NodeCanvas] No single node selected (or multiple). Setting selectedNodeIdForPieMenu to null.");
-      setSelectedNodeIdForPieMenu(null);
+      } else {
+    // Not a single selection (0 or multiple)
+    console.log("[NodeCanvas] No single node selected (or multiple). Setting selectedNodeIdForPieMenu to null.");
+    
+    // If we're currently in carousel mode and losing selection, treat it as a transition
+    if (abstractionCarouselVisible && selectedNodeIdForPieMenu) {
+      setIsTransitioningPieMenu(true);
     }
+    
+    setSelectedNodeIdForPieMenu(null);
+  }
   }, [selectedNodeIds, isTransitioningPieMenu]); // Dependencies: only selectedNodeIds and isTransitioningPieMenu
 
   // Effect to prepare and render PieMenu when selectedNodeIdForPieMenu changes and not transitioning
@@ -2800,27 +2810,26 @@ function NodeCanvas() {
              // The node that was just active before the pie menu disappeared
              const lastActiveNodeId = selectedNodeIdForPieMenu; 
 
-             setIsTransitioningPieMenu(false); 
              setPendingAbstractionNodeId(null);
              
              if (wasTransitioning && pendingAbstractionId) {
-               // This was an abstraction transition - set up the carousel
+               // This was an abstraction transition - set up the carousel with entrance animation
+               setIsTransitioningPieMenu(false); 
                const nodeData = nodes.find(n => n.id === pendingAbstractionId);
                if (nodeData) {
                  setAbstractionCarouselNode(nodeData);
+                 setCarouselAnimationState('entering');
                  setAbstractionCarouselVisible(true);
                  // IMPORTANT: Re-select the node to show the new abstraction pie menu
                  setSelectedNodeIdForPieMenu(pendingAbstractionId);
                }
              } else if (wasTransitioning && wasInCarousel) {
-                // This was a "back" transition from the carousel
-                setAbstractionCarouselVisible(false);
-                setAbstractionCarouselNode(null);
-                // The selectedNodeIdForPieMenu is ALREADY correct because it wasn't nulled,
-                // so we just need to re-trigger the pie menu for it.
-                // We use the lastActiveNodeId which we captured before nulling it out.
-                setSelectedNodeIdForPieMenu(lastActiveNodeId);
+                // This was a "back" transition from the carousel - start exit animation now
+                setCarouselAnimationState('exiting');
+                // DON'T set isTransitioningPieMenu(false) yet - wait for carousel to finish
+                // The carousel's onExitAnimationComplete will show the regular pie menu
              } else if (wasTransitioning) {
+               setIsTransitioningPieMenu(false); 
                const currentlySelectedNodeId = [...selectedNodeIds][0]; 
                if (currentlySelectedNodeId) {
                    const selectedNodeIsPreviewing = previewingNodeId === currentlySelectedNodeId;
@@ -2833,6 +2842,9 @@ function NodeCanvas() {
                } else {
                     setPreviewingNodeId(null); 
                }
+             } else {
+               // Not transitioning, just clean exit
+               setIsTransitioningPieMenu(false);
              }
            }}
                          />
@@ -3097,6 +3109,8 @@ function NodeCanvas() {
           zoomLevel={zoomLevel}
           containerRef={containerRef}
           debugMode={debugMode}
+          animationState={carouselAnimationState}
+          onAnimationStateChange={setCarouselAnimationState}
           onClose={() => {
             // Use the same logic as the back button for a smooth transition
             setSelectedNodeIdForPieMenu(null);
@@ -3108,6 +3122,21 @@ function NodeCanvas() {
           }}
           onScaleChange={setCarouselFocusedNodeScale}
           onFocusedNodeDimensions={setCarouselFocusedNodeDimensions}
+          onExitAnimationComplete={() => {
+            // Capture the node ID before cleaning up
+            const nodeIdToShowPieMenu = abstractionCarouselNode?.id;
+            
+            // Clean up after exit animation completes
+            setAbstractionCarouselVisible(false);
+            setAbstractionCarouselNode(null);
+            setCarouselAnimationState('hidden');
+            setIsTransitioningPieMenu(false); // Now safe to end transition
+            
+            // Now show the regular pie menu for the node that was in the carousel
+            if (nodeIdToShowPieMenu) {
+              setSelectedNodeIdForPieMenu(nodeIdToShowPieMenu);
+            }
+          }}
         />
       )}
       
