@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { getNodeDimensions } from './utils.js';
-import { NODE_HEIGHT, NODE_WIDTH } from './constants';
+import { NODE_HEIGHT, NODE_WIDTH, NODE_CORNER_RADIUS } from './constants';
 
 const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
 
@@ -62,6 +62,8 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
             width: dims.currentWidth * finalScale,
             height: dims.currentHeight * finalScale,
             textAreaHeight: dims.textAreaHeight * finalScale,
+            imageWidth: dims.imageWidth,
+            calculatedImageHeight: dims.calculatedImageHeight,
         };
     });
 
@@ -132,14 +134,15 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
           if (!originalNode?.imageSrc) return null; // Only for image nodes
           // Get proper dimensions for this specific node
           const nodeDimensions = getNodeDimensions(originalNode, false, null);
-          const scaledWidth = nodeDimensions.currentWidth * scale;
-          const scaledHeight = nodeDimensions.currentHeight * scale;
-          // Calculate rx/ry based on proper scaled node dimensions - more rounded
-          const clipRx = scaledWidth * 0.3;
-          const clipRy = scaledHeight * 0.3;
+          const scaledWidth = node.width;
+          const scaledHeight = node.height;
+          
+          // Use scaled corner radius to match Node.jsx
+          const imageCornerRadius = NODE_CORNER_RADIUS * scale;
+
           return (
             <clipPath key={`clip-${node.id}`} id={`clip-${node.id}`}>
-              <rect x={node.x} y={node.y} width={scaledWidth} height={scaledHeight} rx={clipRx} ry={clipRy} />
+              <rect x={node.x} y={node.y} width={scaledWidth} height={scaledHeight} rx={imageCornerRadius} ry={imageCornerRadius} />
             </clipPath>
           );
         })}
@@ -269,8 +272,11 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
             const strokeOffset = nodeStrokeWidth / 2;
             const strokeRectWidth = Math.max(0, scaledWidth - nodeStrokeWidth);
             const strokeRectHeight = Math.max(0, scaledHeight - nodeStrokeWidth);
-            const strokeRectRx = strokeRectWidth * 0.3;
-            const strokeRectRy = strokeRectHeight * 0.3;
+            
+            // Use same logic as clipPath for consistency
+            const imageCornerRadius = NODE_CORNER_RADIUS * scale;
+            const strokeRectRx = Math.max(0, imageCornerRadius - strokeOffset);
+            const strokeRectRy = Math.max(0, imageCornerRadius - strokeOffset);
             
             return (
               // Remove clipPath from group
@@ -338,8 +344,8 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
                   height={scaledHeight}
                   fill={nodeColor} // Use node color
                   // More rounded corners to match other network representations
-                  rx={scaledWidth * 0.3} 
-                  ry={scaledHeight * 0.3}
+                  rx={NODE_CORNER_RADIUS * scale} 
+                  ry={NODE_CORNER_RADIUS * scale}
                 />
                 {/* Conditional text for rect nodes */}
                 {showText && (

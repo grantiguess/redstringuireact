@@ -4,13 +4,16 @@ import { NODE_WIDTH, NODE_HEIGHT, NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR, NODE_P
 import { getNodeDimensions } from './utils';
 import './AbstractionCarousel.css';
 
-const LEVEL_SPACING = 80; // Vertical spacing between abstraction levels
-const PHYSICS_DAMPING = 0.88; // Balanced damping for smooth feel
-const SCROLL_SENSITIVITY = 0.002; // Reduced sensitivity for more control
-const SNAP_THRESHOLD = 0.3; // Balanced threshold for natural snapping
-const SNAP_SPRING = 0.15; // Stronger spring for faster snapping
-const MIN_VELOCITY = 0.01; // Balanced minimum velocity
-const MAX_VELOCITY = 1; // Lower max velocity for better control
+const LEVEL_SPACING = -5; // Much tighter spacing for vertical carousel with dynamic content
+const PHYSICS_DAMPING = 0.75; // Much lower damping for less friction/stickiness
+const BASE_SCROLL_SENSITIVITY = 0.0003; // Reduced from 0.0008 for less sensitive quick scrolls
+const PRECISION_SCROLL_SENSITIVITY = 0.0008; // Increased from 0.0010 for better slow start gain
+const SNAP_THRESHOLD = 0.25; // Higher threshold to prevent premature snapping
+const SNAP_SPRING = 0.35; // Stronger spring for faster snapping
+const MIN_VELOCITY = 0.003; // Lower minimum to allow smaller movements
+const MAX_VELOCITY = 0.8; // Slightly lower max velocity for better control
+const VELOCITY_HISTORY_SIZE = 5; // Number of recent velocity samples to track
+const CONTINUOUS_SCROLL_THRESHOLD = 0.12; // Lowered threshold to detect continuous scrolling sooner
 
 // Physics state reducer
 const physicsReducer = (state, action) => {
@@ -39,7 +42,7 @@ const physicsReducer = (state, action) => {
         nextPosition = state.realPosition + dampedVelocity * frameMultiplier;
         nextPosition = Math.max(-3, Math.min(3, nextPosition));
         
-        // Check if we should start snapping
+        // Check if we should start snapping (with enhanced "stuck" detection)
         if (Math.abs(dampedVelocity) < MIN_VELOCITY && !state.isSnapping && state.hasUserScrolled) {
           nextIsSnapping = true;
           nextVelocity = 0;
@@ -60,11 +63,30 @@ const physicsReducer = (state, action) => {
             const distToFloor = nextPosition - floor;
             const distToCeil = ceil - nextPosition;
             
-            // Use velocity direction to break ties
-            if (Math.abs(distToFloor - distToCeil) < 0.3) {
-              newTarget = velocityDirection > 0 ? ceil : (velocityDirection < 0 ? floor : Math.round(nextPosition));
+            // Enhanced snapping: if we're very close to a node (within 0.1), snap immediately
+            const STUCK_THRESHOLD = 0.1; // Much smaller threshold for "stuck" detection
+            
+            if (distToFloor < STUCK_THRESHOLD) {
+              // Very close to floor, snap immediately
+              newTarget = floor;
+            } else if (distToCeil < STUCK_THRESHOLD) {
+              // Very close to ceiling, snap immediately  
+              newTarget = ceil;
+            } else if (distToFloor < SNAP_THRESHOLD) {
+              // Close to floor, snap to floor
+              newTarget = floor;
+            } else if (distToCeil < SNAP_THRESHOLD) {
+              // Close to ceiling, snap to ceiling
+              newTarget = ceil;
             } else {
-              newTarget = Math.round(nextPosition);
+              // In the middle, use velocity direction to decide
+              if (velocityDirection > 0) {
+                newTarget = ceil; // Moving forward, snap to next
+              } else if (velocityDirection < 0) {
+                newTarget = floor; // Moving backward, snap to previous
+              } else {
+                newTarget = Math.round(nextPosition); // No velocity, snap to nearest
+              }
             }
           }
           
@@ -82,6 +104,16 @@ const physicsReducer = (state, action) => {
     }
     case 'SET_VELOCITY':
       return { ...state, velocity: action.payload };
+    case 'SET_VELOCITY_WITH_HISTORY':
+      const { velocity, deltaY } = action.payload;
+      const newHistory = [...(state.velocityHistory || []), Math.abs(velocity)];
+      // Keep only the most recent samples
+      const trimmedHistory = newHistory.slice(-VELOCITY_HISTORY_SIZE);
+      return { 
+        ...state, 
+        velocity, 
+        velocityHistory: trimmedHistory 
+      };
     case 'SET_USER_SCROLLED':
       return { ...state, hasUserScrolled: action.payload };
     case 'INTERRUPT_SNAPPING':
@@ -101,7 +133,8 @@ const physicsReducer = (state, action) => {
         targetPosition: 0,
         velocity: 0,
         isSnapping: false,
-        hasUserScrolled: false
+        hasUserScrolled: false,
+        velocityHistory: []
       };
     default:
       return state;
@@ -131,7 +164,8 @@ const AbstractionCarousel = ({
     targetPosition: 0,
     velocity: 0,
     isSnapping: false,
-    hasUserScrolled: false
+    hasUserScrolled: false,
+    velocityHistory: []
   });
   
   // Animation refs
@@ -174,7 +208,7 @@ const AbstractionCarousel = ({
       { id: `${selectedNode.id}_generic_2`, name: 'Entity', type: 'generic', level: -2, color: '#4A90E2' },
       { id: `${selectedNode.id}_generic_1`, name: 'Physical Object', type: 'generic', level: -1, color: '#5BA0F2' },
       
-      // Current node (level 0)
+      // Current node (level 0) - use actual selectedNode data including thumbnail
       { ...selectedNode, type: 'current', level: 0 },
       
       // More specific levels (positive indices)
@@ -192,6 +226,41 @@ const AbstractionCarousel = ({
       return { ...item, baseDimensions };
     });
   }, [selectedNode]);
+
+  // Pre-calculate the y-offset for each level based on dynamic heights
+  const levelOffsets = useMemo(() => {
+    const offsets = { 0: 0 };
+    if (!abstractionChainWithDims.length) return offsets;
+
+    // Calculate upwards from 0
+    let upY = 0;
+    for (let i = -1; i >= -3; i--) {
+      const nodeCurrent = abstractionChainWithDims.find(n => n.level === i);
+      const nodeAbove = abstractionChainWithDims.find(n => n.level === i + 1);
+      if (!nodeCurrent || !nodeAbove) break;
+      
+      const hCurrent = nodeCurrent.baseDimensions.currentHeight;
+      const hAbove = nodeAbove.baseDimensions.currentHeight;
+      
+      upY -= ((hAbove / 2) + (hCurrent / 2) + LEVEL_SPACING);
+      offsets[i] = upY;
+    }
+
+    // Calculate downwards from 0
+    let downY = 0;
+    for (let i = 1; i <= 3; i++) {
+      const nodeCurrent = abstractionChainWithDims.find(n => n.level === i);
+      const nodeBelow = abstractionChainWithDims.find(n => n.level === i - 1);
+      if (!nodeCurrent || !nodeBelow) break;
+
+      const hCurrent = nodeCurrent.baseDimensions.currentHeight;
+      const hBelow = nodeBelow.baseDimensions.currentHeight;
+
+      downY += ((hBelow / 2) + (hCurrent / 2) + LEVEL_SPACING);
+      offsets[i] = downY;
+    }
+    return offsets;
+  }, [abstractionChainWithDims]);
 
   // Calculate the center position where the carousel should be anchored
   const getCarouselPosition = useCallback(() => {
@@ -213,11 +282,25 @@ const AbstractionCarousel = ({
     };
   }, [selectedNode, panOffset, zoomLevel, containerRef]);
 
-  // Calculate the stack offset using real position
+  // Calculate the stack offset using real position and dynamic offsets
   const getStackOffset = useCallback(() => {
-    const offset = -physicsState.realPosition * LEVEL_SPACING * zoomLevel;
-    return offset;
-  }, [physicsState.realPosition, zoomLevel]);
+    const position = physicsState.realPosition;
+    const floorLevel = Math.floor(position);
+    const ceilLevel = Math.ceil(position);
+
+    const offsetA = levelOffsets[floorLevel];
+    const offsetB = levelOffsets[ceilLevel];
+
+    if (offsetA === undefined || offsetB === undefined) {
+      // Fallback for out-of-bounds levels during animation
+      return -position * (NODE_HEIGHT + LEVEL_SPACING) * zoomLevel;
+    }
+
+    const factor = position - floorLevel;
+    const interpolatedOffset = offsetA + (offsetB - offsetA) * factor;
+
+    return -interpolatedOffset * zoomLevel;
+  }, [physicsState.realPosition, zoomLevel, levelOffsets]);
 
   // Physics update loop using reducer
   const updatePhysics = useCallback((currentTime) => {
@@ -333,14 +416,51 @@ const AbstractionCarousel = ({
     // Allow new input to interrupt snapping
     dispatchPhysics({ type: 'INTERRUPT_SNAPPING' });
     
-    // Add to velocity based on scroll direction and sensitivity
+    // Get current state for adaptive sensitivity calculation
+    const currentState = physicsStateRef.current;
+    const velocityHistory = currentState.velocityHistory || [];
+    
+    // Calculate if we're in continuous scrolling mode
+    // Look at recent velocity magnitudes to detect sustained scrolling
+    const recentVelocities = velocityHistory.slice(-3); // Last 3 samples
+    const hasRecentActivity = recentVelocities.length >= 2;
+    const avgRecentVelocity = hasRecentActivity 
+      ? recentVelocities.reduce((sum, v) => sum + Math.abs(v), 0) / recentVelocities.length 
+      : 0;
+    
+    // Determine if we're in continuous scrolling mode
+    const isContinuousScrolling = hasRecentActivity && avgRecentVelocity > CONTINUOUS_SCROLL_THRESHOLD;
+    
+    // Use adaptive sensitivity based on scrolling context
+    const baseSensitivity = isContinuousScrolling ? BASE_SCROLL_SENSITIVITY : PRECISION_SCROLL_SENSITIVITY;
+    
+    // Add scroll curve enhancement for easier slow starts
     const deltaY = e.deltaY;
-    const velocityChange = deltaY * SCROLL_SENSITIVITY;
+    const absDeltaY = Math.abs(deltaY);
+    
+    // Progressive sensitivity curve: lower values get boosted more
+    let sensitivityMultiplier = 1.0;
+    if (absDeltaY < 10) {
+      // Small movements get significant boost for easier starts
+      sensitivityMultiplier = 2.5;
+    } else if (absDeltaY < 25) {
+      // Medium movements get moderate boost
+      sensitivityMultiplier = 1.8;
+    } else if (absDeltaY < 50) {
+      // Larger movements get small boost
+      sensitivityMultiplier = 1.2;
+    }
+    // Very large movements (>50) use base sensitivity (1.0)
+    
+    const adjustedSensitivity = baseSensitivity * sensitivityMultiplier;
+    const velocityChange = deltaY * adjustedSensitivity;
     
     // Calculate new velocity using current state from ref
-    const newVelocity = physicsStateRef.current.velocity + velocityChange;
+    const newVelocity = currentState.velocity + velocityChange;
     const clampedVelocity = Math.max(-MAX_VELOCITY, Math.min(MAX_VELOCITY, newVelocity));
-    dispatchPhysics({ type: 'SET_VELOCITY', payload: clampedVelocity });
+    
+    // Update velocity and add to history
+    dispatchPhysics({ type: 'SET_VELOCITY_WITH_HISTORY', payload: { velocity: clampedVelocity, deltaY } });
     
     // Always start physics loop on wheel input
     if (!animationFrameRef.current) {
@@ -438,36 +558,28 @@ const AbstractionCarousel = ({
         }}
       >
         <defs>
-          {/* Define clip paths for each node */}
+          {/* Define clip paths for each node's image */}
           {abstractionChainWithDims.map((item) => {
-            const nodeDimensions = item.baseDimensions; // Use pre-calculated dimensions
-            const distanceFromMain = Math.abs(item.level - physicsState.realPosition);
+            // Check if this node has a thumbnail (current node uses selectedNode data)
+            const hasThumbnail = Boolean(item.thumbnailSrc);
+            if (!hasThumbnail) return null; // Only for nodes with images
+
+            const nodeDimensions = item.baseDimensions;
+            const { currentWidth, currentHeight, textAreaHeight, imageWidth, calculatedImageHeight } = nodeDimensions;
             
-            // Moderate progressive scaling - noticeable but not extreme
-            let scale = 1.0;
-            if (distanceFromMain === 0) {
-              // Exactly at focus - keep at maximum size (1.2 as requested)
-              scale = 1.14; // Slightly reduced from 1.2
-            } else if (distanceFromMain < 1) {
-              // Close to focus - moderate drop from 1.14 to 0.74
-              scale = 1.14 - (distanceFromMain * 0.4);
-            } else {
-              // Further from focus - shrink gradually
-              scale = 0.74 - ((distanceFromMain - 1) * 0.15); // Start at 0.74, drop more gradually
-              scale = Math.max(0.5, scale); // Minimum scale of 0.5 for readability
-            }
-            
-            const scaledWidth = nodeDimensions.currentWidth * zoomLevel * scale;
-            const scaledHeight = nodeDimensions.currentHeight * zoomLevel * scale;
-            const cornerRadius = NODE_CORNER_RADIUS * zoomLevel * scale;
-            
+            // Use simple corner radius to match Node.jsx
+            const imageCornerRadius = NODE_CORNER_RADIUS;
+
             return (
-              <clipPath key={`clip-${item.id}`} id={`abstraction-clip-${item.id}`}>
+              <clipPath key={`clip-image-${item.id}`} id={`carousel-image-clip-${item.id}`}>
                 <rect
-                  width={scaledWidth}
-                  height={scaledHeight}
-                  rx={cornerRadius}
-                  ry={cornerRadius}
+                  // These coordinates are relative to the center of the node group's transform
+                  x={-currentWidth / 2 + NODE_PADDING}
+                  y={-currentHeight / 2 + textAreaHeight}
+                  width={imageWidth}
+                  height={calculatedImageHeight}
+                  rx={imageCornerRadius}
+                  ry={imageCornerRadius}
                 />
               </clipPath>
             );
@@ -479,12 +591,15 @@ const AbstractionCarousel = ({
           .sort((a, b) => {
             const distA = Math.abs(a.level - physicsState.realPosition);
             const distB = Math.abs(b.level - physicsState.realPosition);
+
             const isMainA = distA < 0.5;
             const isMainB = distB < 0.5;
 
-            if (isMainA && !isMainB) return 1; // a (main) comes after b
-            if (!isMainA && isMainB) return -1; // a comes before b (main)
-            return 0; // maintain original order otherwise
+            if (isMainA) return 1; // Main node always last (on top)
+            if (isMainB) return -1;
+
+            // Sort by distance descending, so farther nodes are rendered first (underneath)
+            return distB - distA;
           })
           .map((item, index) => {
           const nodeDimensions = item.baseDimensions; // Use pre-calculated dimensions
@@ -522,18 +637,13 @@ const AbstractionCarousel = ({
             // Exactly at focus - should match the real node size
             scale = 1.0;
           } else if (distanceFromMain < 1) {
-            // Close to focus - moderate drop from 1.0 to 0.7
-            scale = 1.0 - (distanceFromMain * 0.3);
+            // Close to focus - gentler drop from 1.0 to 0.8
+            scale = 1.0 - (distanceFromMain * 0.2);
           } else {
-            // Further from focus - shrink gradually
-            scale = 0.7 - ((distanceFromMain - 1) * 0.15);
-            scale = Math.max(0.4, scale); // Minimum scale of 0.4 for readability
+            // Further from focus - shrink more gradually
+            scale = 0.8 - ((distanceFromMain - 1) * 0.1);
+            scale = Math.max(0.5, scale); // Minimum scale of 0.5 for readability
           }
-          
-          // Calculate smooth dimensions (no rounding for animation)
-          const scaledWidth = nodeDimensions.currentWidth * zoomLevel * scale;
-          const scaledHeight = nodeDimensions.currentHeight * zoomLevel * scale;
-          const scaledTextAreaHeight = nodeDimensions.textAreaHeight * zoomLevel * scale;
           
           // Calculate opacity: smooth falloff based on distance, combined with animation
           let opacity = 1;
@@ -551,16 +661,22 @@ const AbstractionCarousel = ({
           }
           // For exit animations, keep the natural calculated opacity so CSS can animate from it
           
-          // Position calculation - relative to carousel center (which is at 50vw, 50vh in the SVG)
+          // Position calculation - uses dynamic offsets now
           const nodeX = window.innerWidth * 0.5;
-          const nodeY = window.innerHeight * 2 + (item.level * LEVEL_SPACING * zoomLevel);
+          const nodeY = window.innerHeight * 2 + (levelOffsets[item.level] * zoomLevel);
           
           // Determine if this is the "main" node (closest to scroll position)
           const isMainNode = distanceFromMain < 0.5;
           
-          // --- Refactored for Stable Scaling ---
-          const unscaledWidth = nodeDimensions.currentWidth;
-          const unscaledHeight = nodeDimensions.currentHeight;
+          // --- Refactored for Stable Scaling & Image Support ---
+          const {
+            currentWidth: unscaledWidth,
+            currentHeight: unscaledHeight,
+            textAreaHeight: unscaledTextAreaHeight,
+            imageWidth: unscaledImageWidth,
+            calculatedImageHeight: unscaledImageHeight
+          } = item.baseDimensions;
+          const hasThumbnail = Boolean(item.thumbnailSrc);
 
           // Unscaled border and corner radius
           const borderWidth = (isMainNode ? 8 : 4);
@@ -614,13 +730,26 @@ const AbstractionCarousel = ({
                       : 'drop-shadow(0px 4px 8px rgba(0, 0, 0, 0.2))'
                   }}
                 />
+                
+                {/* Image (if available) - positioned relative to center */}
+                {hasThumbnail && (
+                    <image
+                        x={-unscaledWidth / 2 + NODE_PADDING}
+                        y={-unscaledHeight / 2 + unscaledTextAreaHeight}
+                        width={unscaledImageWidth}
+                        height={unscaledImageHeight}
+                        href={item.thumbnailSrc}
+                        preserveAspectRatio="xMidYMid slice"
+                        clipPath={`url(#carousel-image-clip-${item.id})`}
+                    />
+                )}
 
                 {/* ForeignObject for name text - uses unscaled dimensions */}
                 <foreignObject
                   x={-unscaledWidth / 2}
                   y={-unscaledHeight / 2}
                   width={unscaledWidth}
-                  height={unscaledHeight}
+                  height={hasThumbnail ? unscaledTextAreaHeight : unscaledHeight}
                   style={{
                     overflow: 'hidden',
                     pointerEvents: 'none'
