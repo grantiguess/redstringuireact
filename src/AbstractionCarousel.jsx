@@ -193,72 +193,6 @@ const AbstractionCarousel = ({
     });
   }, [selectedNode]);
 
-  // Calculate and report scale factor for the focused node (level 0)
-  useEffect(() => {
-    if (!onScaleChange || !isVisible) return;
-    
-    // Calculate scale factor for the focused node (current level at realPosition 0)
-    const distanceFromFocus = Math.abs(0 - physicsState.realPosition); // Distance from level 0
-    
-    let scale = 1.0;
-    if (distanceFromFocus === 0) {
-      // Exactly at focus - same size as real node
-      scale = 1.0;
-    } else if (distanceFromFocus < 1) {
-      // Close to focus - moderate drop from 1.0 to 0.7
-      scale = 1.0 - (distanceFromFocus * 0.3);
-    } else {
-      // Further from focus - shrink gradually
-      scale = 0.7 - ((distanceFromFocus - 1) * 0.15);
-      scale = Math.max(0.4, scale); // Minimum scale of 0.4 for visual
-    }
-    
-    // Pass the raw scale for symmetrical PieMenu positioning
-    onScaleChange(scale);
-  }, [physicsState.realPosition, onScaleChange, isVisible]);
-
-  // Calculate and report the focused node's actual current dimensions
-  useEffect(() => {
-    if (!onFocusedNodeDimensions || !isVisible || !abstractionChainWithDims.length) return;
-
-    const position = physicsState.realPosition;
-
-    // Find the two nodes to interpolate between based on the current scroll position
-    const floorLevel = Math.floor(position);
-    const ceilLevel = Math.ceil(position);
-
-    const nodeA = abstractionChainWithDims.find(item => item.level === floorLevel);
-    const nodeB = abstractionChainWithDims.find(item => item.level === ceilLevel);
-
-    // Get the base dimensions for the two nodes, handling edge cases where one might be missing
-    const dimA = nodeA?.baseDimensions;
-    const dimB = nodeB?.baseDimensions || dimA;
-
-    if (!dimA || !dimB) return; // Not enough data to proceed
-
-    // Interpolation factor (0 when at floorLevel, 1 when at ceilLevel)
-    const factor = position - floorLevel;
-
-    // Linearly interpolate between the base dimensions of the two nodes
-    const lerp = (a, b, t) => a + (b - a) * t;
-    const interpolatedWidth = lerp(dimA.currentWidth, dimB.currentWidth, factor);
-    const interpolatedHeight = lerp(dimA.currentHeight, dimB.currentHeight, factor);
-    const interpolatedTextAreaHeight = lerp(dimA.textAreaHeight, dimB.textAreaHeight, factor);
-
-    // The scale of the "focused" node (the virtual node at the center) is always 1.0.
-    // The PieMenu, which is attached to this virtual node, should therefore not be scaled down here.
-    // The individual nodes in the carousel visually scale down based on their distance from the focus point,
-    // but the dimensions reported for the PieMenu should be for the non-scaled, interpolated node.
-    const actualCurrentDimensions = {
-      currentWidth: interpolatedWidth,
-      currentHeight: interpolatedHeight,
-      textAreaHeight: interpolatedTextAreaHeight
-    };
-    
-    onFocusedNodeDimensions(actualCurrentDimensions);
-
-  }, [physicsState.realPosition, abstractionChainWithDims, onFocusedNodeDimensions, isVisible]);
-
   // Calculate the center position where the carousel should be anchored
   const getCarouselPosition = useCallback(() => {
     if (!selectedNode || !containerRef.current) return { x: 0, y: 0 };
@@ -297,7 +231,7 @@ const AbstractionCarousel = ({
 
     // Skip first frame to avoid large deltaTime
     if (deltaTime > 100) {
-      animationFrameRef.current = requestAnimationFrame(updatePhysics);
+      animationFrameRef.current = requestAnimationFrame(updatePhysicsRef.current);
       return;
     }
 
@@ -307,14 +241,57 @@ const AbstractionCarousel = ({
     // Update physics using reducer
     dispatchPhysics({ type: 'UPDATE_PHYSICS', payload: { frameMultiplier } });
 
-    // Check current state to decide whether to continue
+    // After physics update, get the latest position from the state ref
+    // This avoids adding physicsState as a dependency to this callback
+    const position = physicsStateRef.current.realPosition;
+
+    // Calculate and report scale factor for the focused node
+    if (onScaleChange) {
+      const distanceFromFocus = Math.abs(0 - position);
+      let scale = 1.0;
+      if (distanceFromFocus === 0) {
+        scale = 1.0;
+      } else if (distanceFromFocus < 1) {
+        scale = 1.0 - (distanceFromFocus * 0.3);
+      } else {
+        scale = 0.7 - ((distanceFromFocus - 1) * 0.15);
+        scale = Math.max(0.4, scale);
+      }
+      onScaleChange(scale);
+    }
+    
+    // Calculate and report the focused node's actual current dimensions
+    if (onFocusedNodeDimensions && abstractionChainWithDims.length > 0) {
+      const floorLevel = Math.floor(position);
+      const ceilLevel = Math.ceil(position);
+      const nodeA = abstractionChainWithDims.find(item => item.level === floorLevel);
+      const nodeB = abstractionChainWithDims.find(item => item.level === ceilLevel);
+      const dimA = nodeA?.baseDimensions;
+      const dimB = nodeB?.baseDimensions || dimA;
+
+      if (dimA && dimB) {
+        const factor = position - floorLevel;
+        const lerp = (a, b, t) => a + (b - a) * t;
+        const interpolatedWidth = lerp(dimA.currentWidth, dimB.currentWidth, factor);
+        const interpolatedHeight = lerp(dimA.currentHeight, dimB.currentHeight, factor);
+        const interpolatedTextAreaHeight = lerp(dimA.textAreaHeight, dimB.textAreaHeight, factor);
+        const actualCurrentDimensions = {
+          currentWidth: interpolatedWidth,
+          currentHeight: interpolatedHeight,
+          textAreaHeight: interpolatedTextAreaHeight
+        };
+        onFocusedNodeDimensions(actualCurrentDimensions);
+      }
+    }
+
+    // Check current state to decide whether to continue the animation loop
     const currentState = physicsStateRef.current;
     if (Math.abs(currentState.velocity) > MIN_VELOCITY || currentState.isSnapping) {
-      animationFrameRef.current = requestAnimationFrame(updatePhysics);
+      animationFrameRef.current = requestAnimationFrame(updatePhysicsRef.current);
     } else {
       animationFrameRef.current = null;
     }
-  }, [isVisible]);
+  }, [isVisible, abstractionChainWithDims, onScaleChange, onFocusedNodeDimensions]);
 
   // Update updatePhysics ref
   useEffect(() => {
@@ -327,7 +304,7 @@ const AbstractionCarousel = ({
       // Reset all state when carousel opens
       dispatchPhysics({ type: 'RESET' });
       lastFrameTimeRef.current = performance.now();
-      animationFrameRef.current = requestAnimationFrame(updatePhysics);
+      animationFrameRef.current = requestAnimationFrame(updatePhysicsRef.current);
     } else if (!isVisible && animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
@@ -380,7 +357,7 @@ const AbstractionCarousel = ({
         document.removeEventListener('wheel', handleWheel, { passive: false });
       };
     }
-  }, [isVisible, handleWheel]);
+  }, [isVisible]); // Removed handleWheel from dependencies to prevent infinite loop
 
   // Handle clicks on abstraction nodes
   const handleNodeClick = useCallback((item) => {

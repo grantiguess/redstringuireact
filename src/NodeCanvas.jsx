@@ -386,6 +386,38 @@ function NodeCanvas() {
   // Animation states for carousel
   const [carouselAnimationState, setCarouselAnimationState] = useState('hidden'); // 'hidden', 'entering', 'visible', 'exiting'
 
+  // Define carousel callbacks outside conditional rendering to avoid hook violations
+  const onCarouselAnimationStateChange = useCallback((newState) => {
+    setCarouselAnimationState(newState);
+  }, []);
+
+  const onCarouselClose = useCallback(() => {
+    // Use the same logic as the back button for a smooth transition
+    setSelectedNodeIdForPieMenu(null);
+    setIsTransitioningPieMenu(true);
+  }, []);
+
+  const onCarouselReplaceNode = useCallback((oldNodeId, newNodeData) => {
+    // TODO: Implement node replacement functionality
+    console.log('Replace node:', oldNodeId, 'with:', newNodeData);
+  }, []);
+
+  const onCarouselExitAnimationComplete = useCallback(() => {
+    // Capture the node ID before cleaning up
+    const nodeIdToShowPieMenu = abstractionCarouselNode?.id;
+    
+    // Clean up after exit animation completes
+    setAbstractionCarouselVisible(false);
+    setAbstractionCarouselNode(null);
+    setCarouselAnimationState('hidden');
+    setIsTransitioningPieMenu(false); // Now safe to end transition
+    
+    // Now show the regular pie menu for the node that was in the carousel
+    if (nodeIdToShowPieMenu) {
+      setSelectedNodeIdForPieMenu(nodeIdToShowPieMenu);
+    }
+  }, [abstractionCarouselNode?.id]);
+
   // Use the local state values populated by subscribe
   const projectTitle = activeGraphName ?? 'Loading...';
   const projectBio = activeGraphDescription ?? '';
@@ -3110,33 +3142,12 @@ function NodeCanvas() {
           containerRef={containerRef}
           debugMode={debugMode}
           animationState={carouselAnimationState}
-          onAnimationStateChange={setCarouselAnimationState}
-          onClose={() => {
-            // Use the same logic as the back button for a smooth transition
-            setSelectedNodeIdForPieMenu(null);
-            setIsTransitioningPieMenu(true);
-          }}
-          onReplaceNode={(oldNodeId, newNodeData) => {
-            // TODO: Implement node replacement functionality
-            console.log('Replace node:', oldNodeId, 'with:', newNodeData);
-          }}
+          onAnimationStateChange={onCarouselAnimationStateChange}
+          onClose={onCarouselClose}
+          onReplaceNode={onCarouselReplaceNode}
           onScaleChange={setCarouselFocusedNodeScale}
           onFocusedNodeDimensions={setCarouselFocusedNodeDimensions}
-          onExitAnimationComplete={() => {
-            // Capture the node ID before cleaning up
-            const nodeIdToShowPieMenu = abstractionCarouselNode?.id;
-            
-            // Clean up after exit animation completes
-            setAbstractionCarouselVisible(false);
-            setAbstractionCarouselNode(null);
-            setCarouselAnimationState('hidden');
-            setIsTransitioningPieMenu(false); // Now safe to end transition
-            
-            // Now show the regular pie menu for the node that was in the carousel
-            if (nodeIdToShowPieMenu) {
-              setSelectedNodeIdForPieMenu(nodeIdToShowPieMenu);
-            }
-          }}
+          onExitAnimationComplete={onCarouselExitAnimationComplete}
         />
       )}
       
