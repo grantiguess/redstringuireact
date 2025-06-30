@@ -447,13 +447,13 @@ const AbstractionCarousel = ({
             let scale = 1.0;
             if (distanceFromMain === 0) {
               // Exactly at focus - keep at maximum size (1.2 as requested)
-              scale = 1.2;
+              scale = 1.14; // Slightly reduced from 1.2
             } else if (distanceFromMain < 1) {
-              // Close to focus - moderate drop from 1.2 to 0.8
-              scale = 1.2 - (distanceFromMain * 0.4); // 1.2 to 0.8 - more moderate
+              // Close to focus - moderate drop from 1.14 to 0.74
+              scale = 1.14 - (distanceFromMain * 0.4);
             } else {
               // Further from focus - shrink gradually
-              scale = 0.8 - ((distanceFromMain - 1) * 0.15); // Start at 0.8, drop more gradually
+              scale = 0.74 - ((distanceFromMain - 1) * 0.15); // Start at 0.74, drop more gradually
               scale = Math.max(0.5, scale); // Minimum scale of 0.5 for readability
             }
             
@@ -508,14 +508,14 @@ const AbstractionCarousel = ({
           // Progressive scaling - center node matches real node size exactly
           let scale = 1.0;
           if (distanceFromMain === 0) {
-            // Exactly at focus - same size as real node
-            scale = 1.0;
+            // Exactly at focus - slightly smaller than the real node
+            scale = 0.99;
           } else if (distanceFromMain < 1) {
-            // Close to focus - moderate drop from 1.0 to 0.7
-            scale = 1.0 - (distanceFromMain * 0.3);
+            // Close to focus - moderate drop from 0.99 to 0.69
+            scale = 0.99 - (distanceFromMain * 0.3);
           } else {
             // Further from focus - shrink gradually
-            scale = 0.7 - ((distanceFromMain - 1) * 0.15);
+            scale = 0.69 - ((distanceFromMain - 1) * 0.15);
             scale = Math.max(0.4, scale); // Minimum scale of 0.4 for readability
           }
           
@@ -548,7 +548,7 @@ const AbstractionCarousel = ({
           const isMainNode = distanceFromMain < 0.5;
           
           // Enhanced border styling - scaled proportionally (smooth values)
-          const borderWidth = (isMainNode ? 6 : 2) * zoomLevel * scale;
+          const borderWidth = (isMainNode ? 8 : 4) * zoomLevel * scale; // Increased from 6:2 to 8:4
           const borderColor = isPlaceholder ? '#999' : (isMainNode ? 'black' : '#666');
           const nodeColor = isPlaceholder ? '#bdb5b5' : (item.color || NODE_DEFAULT_COLOR);
           
@@ -650,7 +650,7 @@ const AbstractionCarousel = ({
                   ) : (
                     <span
                       style={{
-                        fontSize: `${(isMainNode ? 22 : 20) * zoomLevel * scale}px`,
+                        fontSize: `${(isMainNode ? 20 : 18) * zoomLevel * scale}px`, // Reduced from 22:20
                         fontWeight: isMainNode ? 'bolder' : 'bold', // Extra bold for main node
                         color: '#bdb5b5',
                         whiteSpace: 'nowrap',
