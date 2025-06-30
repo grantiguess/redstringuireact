@@ -299,8 +299,8 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
                   rx={strokeRectRx} // Adjusted radius
                   ry={strokeRectRy} 
                 />
-                {/* Conditional text for image nodes */}
-                {showText && (
+                {/* Conditional text for image nodes - hidden when there's an image */}
+                {showText && !imageSrc && (
                   <text
                     x={node.x + scaledWidth / 2}
                     y={node.y + scaledTextAreaHeight / 2} // Position in text area
