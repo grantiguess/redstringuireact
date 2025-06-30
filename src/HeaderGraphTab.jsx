@@ -63,6 +63,10 @@ const HeaderGraphTab = ({ graph, onSelect, onDoubleClick, isActive, hideText = f
     boxShadow: isActive ? '0 0 8px rgba(0,0,0,0.0)' : 'none',
     border: 'none',
     userSelect: 'none',
+    maxWidth: '220px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    flexShrink: 0,
   };
 
   const handleClick = (e) => {
@@ -84,7 +88,14 @@ const HeaderGraphTab = ({ graph, onSelect, onDoubleClick, isActive, hideText = f
       onDoubleClick={handleDoubleClick}
       title={graph.name}
     >
-      <span style={{ opacity: hideText ? 0 : 1 }}>
+      <span style={{ 
+        opacity: hideText ? 0 : 1,
+        display: 'inline-block',
+        verticalAlign: 'middle', // Better vertical alignment
+        maxWidth: '100%',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis'
+      }}>
         {graph.name}
       </span>
     </div>

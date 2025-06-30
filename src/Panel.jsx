@@ -914,8 +914,8 @@ const Panel = forwardRef(
                                     ref={thingContentRef} // <<< Assign ref here
                                     style={{
                                         display: 'grid',
-                                        gridTemplateColumns: '1fr 1fr',
-                                        gap: '8px',
+                                        gridTemplateColumns: panelWidth > 250 ? '1fr 1fr' : '1fr',
+                                        gap: panelWidth > 250 ? '8px' : '0px',
                                         marginTop: '8px',
                                         paddingBottom: '8px', // Add some padding below grid
                                     }}
@@ -981,6 +981,7 @@ const Panel = forwardRef(
                                                     cursor: 'pointer',
                                                     textOverflow: 'ellipsis',
                                                     whiteSpace: 'nowrap',
+                                                    overflow: 'hidden',
                                                     userSelect: 'none',
                                                     borderWidth: '4px',
                                                     borderStyle: 'solid',
@@ -988,6 +989,7 @@ const Panel = forwardRef(
                                                     boxSizing: 'border-box',
                                                     transition: 'opacity 0.3s ease, border-color 0.2s ease',
                                                     margin: '4px',
+                                                    minWidth: '100px'
                                                 }}
                                             >
                                                 {node.name || 'Unnamed'}

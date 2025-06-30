@@ -74,6 +74,9 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
     const textWidth = tempSpan.offsetWidth;
     document.body.removeChild(tempSpan);
 
+    // --- Shared Constant ---
+    const TEXT_V_PADDING = 10; // Consistent vertical padding
+
     // --- Calculate Dimensions Based on State ---
     let currentWidth, currentHeight, textAreaHeight, imageWidth, calculatedImageHeight, innerNetworkWidth, innerNetworkHeight, descriptionAreaHeight;
 
@@ -126,11 +129,10 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
         calculatedImageHeight = 0;
     } else if (hasImage) {
         currentWidth = baseWidth;
-        // Calculate text lines based on expanded width
-        let estimatedLines = 1;
-        if (textWidth > textWidthTarget * 2) { estimatedLines = 3; }
-        else if (textWidth > textWidthTarget) { estimatedLines = 2; }
-        textAreaHeight = Math.max(NODE_HEIGHT, estimatedLines * LINE_HEIGHT_ESTIMATE + 2 * NODE_PADDING);
+        // Calculate text block height based on expanded width
+        const textBlockHeight = calculateTextAreaHeight(nodeName, textWidthTarget);
+        // Text area height is text height + vertical padding, with a minimum.
+        textAreaHeight = Math.max(NODE_HEIGHT, textBlockHeight + 2 * TEXT_V_PADDING);
 
         // Calculate image dimensions
         imageWidth = currentWidth - 2 * NODE_PADDING;
@@ -142,10 +144,11 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
             calculatedImageHeight = aspectRatio ? imageWidth * aspectRatio : 0;
 
             // Adjust overall node height to accommodate image
-            currentHeight = textAreaHeight + calculatedImageHeight + NODE_PADDING; // Text + Image + Bottom Padding
+            // Height = Text Area + Image Area + Bottom Padding
+            currentHeight = textAreaHeight + calculatedImageHeight + NODE_PADDING; 
         } else {
             calculatedImageHeight = 0; // Handle invalid image data
-            currentHeight = textAreaHeight + NODE_PADDING; // Adjusted height calc for no image
+            currentHeight = textAreaHeight; // Just the text area height
         }
         // Reset network and description dimensions for non-preview modes
         innerNetworkWidth = 0;
@@ -153,15 +156,25 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
         descriptionAreaHeight = 0;
     } else {
         // --- Node WITHOUT Image --- 
+        const isSingleWord = !nodeName.includes(' ');
 
         // Determine width based on text length, clamped between NODE_WIDTH and EXPANDED_NODE_WIDTH
         currentWidth = Math.max(NODE_WIDTH, Math.min(textWidth + 2 * NODE_PADDING, EXPANDED_NODE_WIDTH));
 
-        // Calculate text area height needed for the determined width
-        textAreaHeight = calculateTextAreaHeight(nodeName, currentWidth - 2 * NODE_PADDING);
+        let textBlockHeight;
+        // If it's a single word and not at max width, don't let it wrap.
+        if (isSingleWord && currentWidth < EXPANDED_NODE_WIDTH) {
+            textBlockHeight = LINE_HEIGHT_ESTIMATE;
+        } else {
+            // Otherwise, calculate wrapping based on the node's current width.
+            textBlockHeight = calculateTextAreaHeight(nodeName, currentWidth - 2 * NODE_PADDING);
+        }
+        
+        // Total height is the text block height plus padding, with a minimum of NODE_HEIGHT
+        currentHeight = Math.max(NODE_HEIGHT, textBlockHeight + 2 * TEXT_V_PADDING);
 
-        // Total height is the text area height (ensure minimum)
-        currentHeight = Math.max(NODE_HEIGHT, textAreaHeight); 
+        // The text area itself now effectively is the full height to allow vertical centering.
+        textAreaHeight = currentHeight;
 
         // Reset image, network, and description dimensions for non-preview modes
         imageWidth = 0;
@@ -199,7 +212,49 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
 // Add other utility functions here if needed 
 
 export const calculateTextAreaHeight = (name, width) => {
-    // ... existing code ...
+  const textWidth = width - NODE_PADDING * 2;
+  if (textWidth <= 0) {
+    return LINE_HEIGHT_ESTIMATE;
+  }
+  const charsPerLine = Math.floor(textWidth / AVERAGE_CHAR_WIDTH);
+
+  if (!name || charsPerLine <= 0) {
+    return LINE_HEIGHT_ESTIMATE;
+  }
+
+  const words = name.split(' ');
+  let lineCount = 1;
+  let currentLineChars = 0;
+
+  for (const word of words) {
+    const wordLength = word.length;
+
+    // Word is longer than a whole line and must be broken up.
+    if (wordLength > charsPerLine) {
+      // If there's something on the current line, the long word goes to the next.
+      if (currentLineChars > 0) {
+        lineCount++;
+      }
+      // Add the number of lines this long word will take up.
+      lineCount += Math.ceil(wordLength / charsPerLine) - 1;
+      // The line is now empty for the next word.
+      currentLineChars = 0;
+      continue;
+    }
+
+    // If there is content, check if the new word (plus a space) fits.
+    if (currentLineChars > 0 && (currentLineChars + 1 + wordLength) > charsPerLine) {
+      // It doesn't fit, so move to the next line.
+      lineCount++;
+      currentLineChars = wordLength;
+    } else {
+      // It fits, so add it to the current line.
+      // Add a space if it's not the first word on the line.
+      currentLineChars += (currentLineChars > 0 ? 1 : 0) + wordLength;
+    }
+  }
+
+  return lineCount * LINE_HEIGHT_ESTIMATE;
 };
 
 /**

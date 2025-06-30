@@ -249,7 +249,7 @@ const Node = ({
         x={nodeX} // Use absolute nodeX
         y={nodeY} // Use absolute nodeY
         width={currentWidth}
-        height={textAreaHeight}
+        height={hasThumbnail ? textAreaHeight : currentHeight}
         style={{
             transition: 'width 0.3s ease, height 0.3s ease',
             overflow: 'hidden'
@@ -259,13 +259,14 @@ const Node = ({
           className="node-name-container"
           style={{
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             width: '100%',
             height: '100%',
             padding: isPreviewing 
-              ? `0 ${hasAnyDefinitions ? 110 : 60}px 0 ${hasAnyDefinitions ? 110 : 60}px` // Balanced padding: left accounts for 3 buttons (~117px), right accounts for arrows (~110px) - arrows take same space regardless of count
-              : `0 ${NODE_PADDING}px`,
+              ? `0 ${hasAnyDefinitions ? 110 : 60}px 0 ${hasAnyDefinitions ? 110 : 60}px` 
+              : `10px ${NODE_PADDING}px`,
             boxSizing: 'border-box',
             pointerEvents: isEditingOnCanvas ? 'auto' : 'none',
             userSelect: 'none',
@@ -289,16 +290,16 @@ const Node = ({
                 fontSize: '20px',
                 fontWeight: 'bold',
                 color: '#bdb5b5',
-                whiteSpace: 'nowrap',
-                maxWidth: '100%',
+                whiteSpace: 'normal',
+                wordWrap: 'break-word',
                 textAlign: 'center',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
                 minWidth: 0,
                 display: 'inline-block',
                 width: '100%',
-                transition: 'color 0.3s ease' 
+                transition: 'color 0.3s ease',
+                hyphens: 'auto',
               }}
+              lang="en"
             >
               {nodeName}
             </span>

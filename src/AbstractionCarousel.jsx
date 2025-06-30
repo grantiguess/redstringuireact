@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useReducer } from 'react';
 import { Plus } from 'lucide-react';
-import { NODE_WIDTH, NODE_HEIGHT, NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR } from './constants';
+import { NODE_WIDTH, NODE_HEIGHT, NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR, NODE_PADDING } from './constants';
 import { getNodeDimensions } from './utils';
 import './AbstractionCarousel.css';
 
 const LEVEL_SPACING = 80; // Vertical spacing between abstraction levels
 const PHYSICS_DAMPING = 0.88; // Balanced damping for smooth feel
-const SCROLL_SENSITIVITY = 0.003; // Much less sensitive for precise control
+const SCROLL_SENSITIVITY = 0.002; // Reduced sensitivity for more control
 const SNAP_THRESHOLD = 0.3; // Balanced threshold for natural snapping
 const SNAP_SPRING = 0.15; // Stronger spring for faster snapping
 const MIN_VELOCITY = 0.01; // Balanced minimum velocity
@@ -475,7 +475,18 @@ const AbstractionCarousel = ({
         </defs>
 
         {/* Render all abstraction levels in a vertical stack */}
-        {abstractionChainWithDims.map((item, index) => {
+        {[...abstractionChainWithDims]
+          .sort((a, b) => {
+            const distA = Math.abs(a.level - physicsState.realPosition);
+            const distB = Math.abs(b.level - physicsState.realPosition);
+            const isMainA = distA < 0.5;
+            const isMainB = distB < 0.5;
+
+            if (isMainA && !isMainB) return 1; // a (main) comes after b
+            if (!isMainA && isMainB) return -1; // a comes before b (main)
+            return 0; // maintain original order otherwise
+          })
+          .map((item, index) => {
           const nodeDimensions = item.baseDimensions; // Use pre-calculated dimensions
           const isPlaceholder = item.type === 'add_generic' || item.type === 'add_specific';
           const isCurrent = item.type === 'current';
@@ -508,14 +519,14 @@ const AbstractionCarousel = ({
           // Progressive scaling - center node matches real node size exactly
           let scale = 1.0;
           if (distanceFromMain === 0) {
-            // Exactly at focus - slightly smaller than the real node
-            scale = 0.99;
+            // Exactly at focus - should match the real node size
+            scale = 1.0;
           } else if (distanceFromMain < 1) {
-            // Close to focus - moderate drop from 0.99 to 0.69
-            scale = 0.99 - (distanceFromMain * 0.3);
+            // Close to focus - moderate drop from 1.0 to 0.7
+            scale = 1.0 - (distanceFromMain * 0.3);
           } else {
             // Further from focus - shrink gradually
-            scale = 0.69 - ((distanceFromMain - 1) * 0.15);
+            scale = 0.7 - ((distanceFromMain - 1) * 0.15);
             scale = Math.max(0.4, scale); // Minimum scale of 0.4 for readability
           }
           
@@ -547,20 +558,22 @@ const AbstractionCarousel = ({
           // Determine if this is the "main" node (closest to scroll position)
           const isMainNode = distanceFromMain < 0.5;
           
-          // Enhanced border styling - scaled proportionally (smooth values)
-          const borderWidth = (isMainNode ? 8 : 4) * zoomLevel * scale; // Increased from 6:2 to 8:4
+          // --- Refactored for Stable Scaling ---
+          const unscaledWidth = nodeDimensions.currentWidth;
+          const unscaledHeight = nodeDimensions.currentHeight;
+
+          // Unscaled border and corner radius
+          const borderWidth = (isMainNode ? 8 : 4);
+          const cornerRadius = NODE_CORNER_RADIUS;
+          
           const borderColor = isPlaceholder ? '#999' : (isMainNode ? 'black' : '#666');
           const nodeColor = isPlaceholder ? '#bdb5b5' : (item.color || NODE_DEFAULT_COLOR);
           
-          // Corner radius - smooth scaling
-          const cornerRadius = NODE_CORNER_RADIUS * zoomLevel * scale;
-
-          // Calculate animation transform
+          // Calculate animation transform for enter/exit
           const animationTransform = !isCurrent && (animationState === 'entering' || animationState === 'exiting') 
             ? `scale(${animationScale})` 
             : 'scale(1)';
           
-          // Calculate CSS animation properties
           const animationStyles = !isCurrent && (animationState === 'entering' || animationState === 'exiting') ? {
             animation: animationState === 'entering' 
               ? `carousel-node-enter 0.2s ease-out ${animationDelay}ms both`
@@ -576,126 +589,128 @@ const AbstractionCarousel = ({
                 opacity: opacity,
                 cursor: 'pointer',
                 pointerEvents: 'auto',
-                zIndex: isMainNode ? 100 : 1, // Higher z-index for focused node
                 transform: animationTransform,
-                transformOrigin: `${nodeX}px ${nodeY}px`, // Transform from the node center
+                transformOrigin: `${nodeX}px ${nodeY}px`,
                 ...animationStyles
               }}
               onClick={() => handleNodeClick(item)}
             >
-              {/* Background rect with smooth positioning */}
-              <rect
-                x={nodeX - scaledWidth / 2 + 6 * zoomLevel * scale}
-                y={nodeY - scaledHeight / 2 + 6 * zoomLevel * scale}
-                width={scaledWidth - 12 * zoomLevel * scale}
-                height={scaledHeight - 12 * zoomLevel * scale}
-                rx={cornerRadius - 6 * zoomLevel * scale}
-                ry={cornerRadius - 6 * zoomLevel * scale}
-                fill={nodeColor}
-                stroke={borderColor}
-                strokeWidth={borderWidth}
-                style={{
-                  filter: isMainNode 
-                    ? 'drop-shadow(0px 0px 20px rgba(0, 0, 0, 0.5))' // Stronger shadow for main node
-                    : 'drop-shadow(0px 4px 8px rgba(0, 0, 0, 0.2))'
-                }}
-              />
-
-              {/* ForeignObject for name text */}
-              <foreignObject
-                x={nodeX - scaledWidth / 2}
-                y={nodeY - scaledHeight / 2}
-                width={scaledWidth}
-                height={scaledTextAreaHeight}
-                style={{
-                  overflow: 'hidden',
-                  pointerEvents: 'none'
-                }}
-              >
-                <div
+              {/* This group handles positioning and dynamic scaling, keeping contents stable */}
+              <g transform={`translate(${nodeX}, ${nodeY}) scale(${zoomLevel * scale})`}>
+                {/* Background rect - uses unscaled dimensions */}
+                <rect
+                  x={-unscaledWidth / 2 + 6}
+                  y={-unscaledHeight / 2 + 6}
+                  width={unscaledWidth - 12}
+                  height={unscaledHeight - 12}
+                  rx={cornerRadius - 6}
+                  ry={cornerRadius - 6}
+                  fill={nodeColor}
+                  stroke={borderColor}
+                  strokeWidth={borderWidth / scale} // Counter-scale border based on carousel scale only
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '100%',
-                    height: '100%',
-                    padding: isPlaceholder ? '0' : `0 ${8 * scale}px`,
-                    boxSizing: 'border-box',
-                    userSelect: 'none',
-                    minWidth: 0
+                    filter: isMainNode 
+                      ? 'drop-shadow(0px 0px 20px rgba(0, 0, 0, 0.5))'
+                      : 'drop-shadow(0px 4px 8px rgba(0, 0, 0, 0.2))'
+                  }}
+                />
+
+                {/* ForeignObject for name text - uses unscaled dimensions */}
+                <foreignObject
+                  x={-unscaledWidth / 2}
+                  y={-unscaledHeight / 2}
+                  width={unscaledWidth}
+                  height={unscaledHeight}
+                  style={{
+                    overflow: 'hidden',
+                    pointerEvents: 'none'
                   }}
                 >
-                  {isPlaceholder ? (
-                    <div style={{ 
-                      display: 'flex', 
-                      flexDirection: 'column', 
-                      alignItems: 'center',
-                      color: '#260000',
-                      fontSize: `${12 * zoomLevel * scale}px`,
-                      fontWeight: 'bold',
-                      textAlign: 'center',
-                      lineHeight: '1.2'
-                    }}>
-                      <Plus size={20 * zoomLevel * scale} style={{ marginBottom: '2px' }} />
-                      <span style={{ 
-                        maxWidth: '90%',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'normal',
-                        wordBreak: 'break-word'
-                      }}>
-                        {item.name}
-                      </span>
-                    </div>
-                  ) : (
-                    <span
-                      style={{
-                        fontSize: `${(isMainNode ? 20 : 18) * zoomLevel * scale}px`, // Reduced from 22:20
-                        fontWeight: isMainNode ? 'bolder' : 'bold', // Extra bold for main node
-                        color: '#bdb5b5',
-                        whiteSpace: 'nowrap',
-                        maxWidth: '100%',
-                        textAlign: 'center',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        minWidth: 0,
-                        display: 'inline-block',
-                        width: '100%'
-                      }}
-                    >
-                      {item.name}
-                    </span>
-                  )}
-                </div>
-              </foreignObject>
-
-              {/* Level indicator (only for non-placeholder nodes) */}
-              {!isPlaceholder && debugMode && (
-                <g>
-                  <circle
-                    cx={nodeX + scaledWidth / 2 - 8 * scale}
-                    cy={nodeY - scaledHeight / 2 + 8 * scale}
-                    r={Math.max(8, 12 * scale)}
-                    fill={isMainNode ? 'black' : '#666'}
-                    stroke="none"
-                  />
-                  <text
-                    x={nodeX + scaledWidth / 2 - 8 * scale}
-                    y={nodeY - scaledHeight / 2 + 8 * scale}
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    fontSize={12 * zoomLevel * scale}
-                    fill="#bdb5b5"
-                    fontWeight="bold"
+                  <div
                     style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '100%',
+                      height: '100%',
+                      padding: isPlaceholder ? '0' : `10px ${NODE_PADDING}px`, // Use constant padding
+                      boxSizing: 'border-box',
                       userSelect: 'none',
-                      pointerEvents: 'none'
+                      minWidth: 0
                     }}
                   >
-                    {item.level}
-                  </text>
-                </g>
-              )}
+                    {isPlaceholder ? (
+                      <div style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        alignItems: 'center',
+                        color: '#260000',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        textAlign: 'center',
+                        lineHeight: '1.2'
+                      }}>
+                        <Plus size={20} style={{ marginBottom: '2px' }} />
+                        <span style={{ 
+                          maxWidth: '90%',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'normal',
+                          wordBreak: 'break-word'
+                        }}>
+                          {item.name}
+                        </span>
+                      </div>
+                    ) : (
+                      <span
+                        style={{
+                          fontSize: '20px', // Match Node.jsx
+                          fontWeight: 'bold', // Match Node.jsx
+                          color: '#bdb5b5',
+                          whiteSpace: 'normal',
+                          wordWrap: 'break-word',
+                          textAlign: 'center',
+                          minWidth: 0,
+                          width: `${nodeDimensions.currentWidth - NODE_PADDING * 2}px`,
+                          hyphens: 'auto'
+                        }}
+                        lang="en"
+                      >
+                        {item.name}
+                      </span>
+                    )}
+                  </div>
+                </foreignObject>
+
+                {/* Level indicator - positioned inside the transformed group */}
+                {!isPlaceholder && debugMode && (
+                  <g>
+                    <circle
+                      cx={unscaledWidth / 2 - 8}
+                      cy={-unscaledHeight / 2 + 8}
+                      r={12}
+                      fill={isMainNode ? 'black' : '#666'}
+                      stroke="none"
+                    />
+                    <text
+                      x={unscaledWidth / 2 - 8}
+                      y={-unscaledHeight / 2 + 8}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fontSize={12}
+                      fill="#bdb5b5"
+                      fontWeight="bold"
+                      style={{
+                        userSelect: 'none',
+                        pointerEvents: 'none'
+                      }}
+                    >
+                      {item.level}
+                    </text>
+                  </g>
+                )}
+              </g>
             </g>
           );
         })}
