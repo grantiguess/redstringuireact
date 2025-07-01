@@ -2,7 +2,11 @@ import React, { useState, useCallback, useMemo, useEffect, forwardRef } from 're
 import { NODE_HEIGHT } from './constants'; // Assuming we use this height
 import GraphPreview from './GraphPreview'; // <<< Import GraphPreview
 import { XCircle } from 'lucide-react'; // <<< Import XCircle
+import { useDrag } from 'react-dnd';
+import { getEmptyImage } from 'react-dnd-html5-backend';
 // import './GraphListItem.css'; // We'll create this later
+
+const SPAWNABLE_NODE = 'spawnable_node';
 
 const GraphListItem = forwardRef(({
   graphData,
@@ -14,6 +18,23 @@ const GraphListItem = forwardRef(({
   isExpanded, // <<< Receive isExpanded prop
   onToggleExpand // <<< Receive onToggleExpand prop
 }, ref) => {
+  const [{ isDragging }, drag, preview] = useDrag(() => ({
+    type: SPAWNABLE_NODE,
+    item: { nodeId: graphData.definingNodeIds?.[0] },
+    canDrag: () => {
+      const canDrag = !!graphData.definingNodeIds?.[0];
+      console.log('[GraphListItem] canDrag check for', graphData.name, 'definingNodeId:', graphData.definingNodeIds?.[0], 'canDrag:', canDrag);
+      return canDrag;
+    },
+    collect: (monitor) => ({
+      isDragging: !!monitor.isDragging(),
+    }),
+  }), [graphData.id, graphData.definingNodeIds]);
+
+  useEffect(() => {
+    preview(getEmptyImage(), { captureDraggingState: true });
+  }, [preview]);
+
   // <<< Remove Log for isActive/isExpanded prop >>>
   // useEffect(() => {
   //   console.log(`[GraphListItem ${graphData.id}] Received isActive: ${isActive}, isExpanded: ${isExpanded}`);
@@ -67,6 +88,7 @@ const GraphListItem = forwardRef(({
     paddingRight: isExpanded ? '10px' : '0',
     paddingBottom: isExpanded ? '15px' : '0', // Add more bottom padding for "chin"
     position: 'relative', // <<< Add relative position for absolute close button
+    opacity: isDragging ? 0.5 : 1,
   };
 
   // Style for the preview container - Apply animation directly here
@@ -90,7 +112,14 @@ const GraphListItem = forwardRef(({
 
   return (
     <div
-      ref={ref}
+      ref={(node) => {
+        drag(node);
+        if (typeof ref === 'function') {
+          ref(node);
+        } else if (ref) {
+          ref.current = node;
+        }
+      }}
       style={itemStyle}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}

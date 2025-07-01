@@ -11,6 +11,7 @@ import AbstractionCarousel from './AbstractionCarousel.jsx'; // Import the Abstr
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
 import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack } from 'lucide-react'; // Icons for PieMenu
+import { useDrop } from 'react-dnd';
 
 // Import Zustand store and selectors/actions
 import useGraphStore, {
@@ -48,6 +49,8 @@ import {
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import Panel from './Panel'; // This is now used for both sides
 import TypeList from './TypeList'; // Re-add TypeList component
+
+const SPAWNABLE_NODE = 'spawnable_node';
 
 // Check if user's on a Mac using userAgent as platform is deprecated
 const isMac = /Mac/i.test(navigator.userAgent);
@@ -182,6 +185,7 @@ function NodeCanvas() {
             name: graph.name || 'Untitled Graph',
             color: nodeColor,
             isActive: graph.id === activeGraphId,
+            definingNodeId,
         };
     }).filter(Boolean);
   }, [openGraphIds, activeGraphId, graphsMap, nodesMap]);
@@ -439,9 +443,13 @@ function NodeCanvas() {
     setSelectionStart(null);
     setDrawingConnectionFrom(null);
     setHoveredEdgeInfo(null); // Clear edge hover state
-    // The pie menu is hidden automatically by an effect watching selectedNodeIds,
-    // but we clear its target ID explicitly to be safe.
+    
+    // --- Force-close the pie menu ---
     setSelectedNodeIdForPieMenu(null);
+    setCurrentPieMenuData(null);
+    setIsPieMenuRendered(false);
+    setIsTransitioningPieMenu(false); // Reset any pending transition
+
     // Clear abstraction carousel
     setAbstractionCarouselVisible(false);
     setAbstractionCarouselNode(null);
@@ -478,6 +486,74 @@ function NodeCanvas() {
 
   // --- Refs (Keep these) ---
   const containerRef = useRef(null);
+  const [, drop] = useDrop(() => ({
+    accept: SPAWNABLE_NODE,
+    drop: (item, monitor) => {
+        if (!activeGraphId) return;
+
+        const originalNode = nodesMap.get(item.nodeId);
+        if (!originalNode) return;
+
+        const offset = monitor.getClientOffset();
+        const rect = containerRef.current.getBoundingClientRect();
+
+        // Convert drop position to canvas SVG coordinates
+        const x = (offset.x - rect.left - panOffset.x) / zoomLevel;
+        const y = (offset.y - rect.top - panOffset.y) / zoomLevel;
+        
+        const dimensions = getNodeDimensions(originalNode, false, null);
+
+        // Check if the node already exists in the current graph
+        const currentGraph = graphsMap.get(activeGraphId);
+        const nodeExistsInGraph = currentGraph?.nodeIds?.includes(item.nodeId);
+
+        // Special case: Check if this is a defining node being dropped into its own definition graph
+        const isDefiningNodeInOwnGraph = currentGraph?.definingNodeIds?.includes(item.nodeId);
+
+        if (nodeExistsInGraph && !isDefiningNodeInOwnGraph) {
+            // Node already exists in this graph and it's not the defining node - just move it to the new position
+            storeActions.updateNode(item.nodeId, draft => {
+                draft.x = x - (dimensions.currentWidth / 2);
+                draft.y = y - (dimensions.currentHeight / 2);
+            });
+        } else if (isDefiningNodeInOwnGraph || !nodeExistsInGraph) {
+            // Either: 1) Defining node being dropped into its own graph (create instance)
+            //     or: 2) Node doesn't exist in this graph at all
+            
+            if (isDefiningNodeInOwnGraph) {
+                // Create a new instance with a new ID but same properties
+                const newNodeId = uuidv4();
+                const nodeDataForGraph = {
+                    ...originalNode,
+                    id: newNodeId, // New ID for the instance
+                    x: x - (dimensions.currentWidth / 2),
+                    y: y - (dimensions.currentHeight / 2),
+                    parentDefinitionNodeId: item.nodeId, // Set the original as parent
+                    edgeIds: [], // Reset edge connections for new instance
+                    definitionGraphIds: [], // Reset definitions for new instance
+                };
+                addNode(activeGraphId, nodeDataForGraph);
+            } else {
+                // Node doesn't exist in this graph - add the existing node (not a copy)
+                const nodeDataForGraph = {
+                    ...originalNode,
+                    x: x - (dimensions.currentWidth / 2),
+                    y: y - (dimensions.currentHeight / 2),
+                    // Keep the original node's ID and all its properties including definitions
+                    // This ensures consistency across graphs
+                };
+                
+                addNode(activeGraphId, nodeDataForGraph);
+            }
+        }
+    },
+  }), [activeGraphId, panOffset, zoomLevel, nodesMap, addNode, graphsMap, storeActions]);
+
+  const setCanvasAreaRef = useCallback(node => {
+      containerRef.current = node;
+      drop(node);
+  }, [drop]);
+
   const isMouseDown = useRef(false);
   const ignoreCanvasClick = useRef(false);
   const mouseDownPosition = useRef({ x: 0, y: 0 });
@@ -2283,7 +2359,7 @@ function NodeCanvas() {
         />
 
         <div
-          ref={containerRef}
+          ref={setCanvasAreaRef}
           className="canvas-area"
           style={{
             flexGrow: 1,

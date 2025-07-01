@@ -17,6 +17,7 @@ import GraphListItem from './GraphListItem'; // <<< Import the new component
 // Define Item Type for react-dnd
 const ItemTypes = {
   TAB: 'tab',
+  SPAWNABLE_NODE: 'spawnable_node'
 };
 
 // --- Custom Drag Layer --- A component to render the preview
@@ -109,8 +110,87 @@ const CustomDragLayer = ({ tabBarRef }) => {
     </div>
   );
 };
-// --- End Custom Drag Layer ---
 
+const SavedNodeItem = ({ node, onClick, onDoubleClick, onUnsave, isActive }) => {
+  const [{ isDragging }, drag, preview] = useDrag(() => ({
+    type: ItemTypes.SPAWNABLE_NODE,
+    item: { nodeId: node.id },
+    collect: (monitor) => ({
+      isDragging: !!monitor.isDragging(),
+    }),
+  }), [node.id]);
+
+  useEffect(() => {
+    preview(getEmptyImage(), { captureDraggingState: true });
+  }, [preview]);
+
+  return (
+    <div
+      ref={drag}
+      key={node.id}
+      title={node.name}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      style={{
+        position: 'relative',
+        backgroundColor: node.color || NODE_DEFAULT_COLOR,
+        color: '#bdb5b5',
+        borderRadius: '10px',
+        padding: '4px 6px',
+        fontSize: '0.8rem',
+        fontWeight: 'bold',
+        textAlign: 'center',
+        cursor: 'pointer',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        userSelect: 'none',
+        borderWidth: '4px',
+        borderStyle: 'solid',
+        borderColor: isActive ? 'black' : 'transparent',
+        boxSizing: 'border-box',
+        transition: 'opacity 0.3s ease, border-color 0.2s ease',
+        margin: '4px',
+        minWidth: '100px',
+        opacity: isDragging ? 0.5 : 1,
+      }}
+    >
+      {node.name || 'Unnamed'}
+      {isActive && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '-6px',
+            right: '-6px',
+            cursor: 'pointer',
+            zIndex: 10,
+            backgroundColor: '#000000', 
+            borderRadius: '50%',
+            padding: '2px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onUnsave(node.id);
+          }}
+          title="Unsave this item"
+        >
+          <XCircle 
+            size={16}
+            style={{
+              color: '#999999',
+              transition: 'color 0.2s ease',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.color = '#ffffff'}
+            onMouseLeave={(e) => e.currentTarget.style.color = '#999999'}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
 
 // Draggable Tab Component
 const DraggableTab = ({ tab, index, displayTitle, dragItemTitle, moveTabAction, activateTabAction, closeTabAction }) => {
@@ -946,94 +1026,19 @@ const Panel = forwardRef(
                                             openRightPanelNodeTab(node.id);
                                         };
 
+                                        const handleUnsave = () => {
+                                            toggleSavedNode(node.id);
+                                        };
+
                                         return (
-                                            <div
-                                                key={node.id}
-                                                title={node.name}
-                                                onClick={() => {
-                                                    console.log(`[Saved Node Click] Node: ${node.name} (${node.id})`);
-                                                    const hasDefinition = node.definitionGraphIds && node.definitionGraphIds.length > 0;
-                                                    console.log(`   - Has Definitions: ${!!hasDefinition}`);
-                                                    if (hasDefinition) {
-                                                        const graphIdToOpen = node.definitionGraphIds[0]; // Assume first one
-                                                        console.log(`   - Definition Graph ID: ${graphIdToOpen}`);
-                                                        console.log(`   -> Calling openGraphTab(${graphIdToOpen}, ${node.id})`);
-                                                        openGraphTab(graphIdToOpen, node.id); // Pass node ID as definitionNodeId
-                                                    } else {
-                                                        console.log(`   - Node has no definition graph.`);
-                                                        console.log(`   -> Calling createAndAssignGraphDefinition(${node.id})`);
-                                                        createAndAssignGraphDefinition(node.id);
-                                                    }
-                                                }}
-                                                onDoubleClick={() => {
-                                                    console.log(`Double clicked saved node: ${node.name} (${node.id}). Opening right panel tab.`);
-                                                    openRightPanelNodeTab(node.id);
-                                                }}
-                                                style={{
-                                                    position: 'relative',
-                                                    backgroundColor: node.color || NODE_DEFAULT_COLOR, // Use node color or default
-                                                    color: '#bdb5b5', // Set text color for contrast
-                                                    borderRadius: '10px', // Keep rounded corners
-                                                    padding: '4px 6px',
-                                                    fontSize: '0.8rem',
-                                                    fontWeight: 'bold',
-                                                    textAlign: 'center',
-                                                    cursor: 'pointer',
-                                                    textOverflow: 'ellipsis',
-                                                    whiteSpace: 'nowrap',
-                                                    overflow: 'hidden',
-                                                    userSelect: 'none',
-                                                    borderWidth: '4px',
-                                                    borderStyle: 'solid',
-                                                    borderColor: node.id === activeDefinitionNodeId ? 'black' : 'transparent',
-                                                    boxSizing: 'border-box',
-                                                    transition: 'opacity 0.3s ease, border-color 0.2s ease',
-                                                    margin: '4px',
-                                                    minWidth: '100px'
-                                                }}
-                                            >
-                                                {node.name || 'Unnamed'}
-                                                {/* Add Unsave Button - Conditionally Rendered */}
-                                                {node.id === activeDefinitionNodeId && (
-                                                    <div
-                                                        style={{
-                                                            position: 'absolute',
-                                                            top: '-6px',       // Adjust for visual overlap
-                                                            right: '-6px',      // Adjust for visual overlap
-                                                            cursor: 'pointer',
-                                                            zIndex: 10,       // Ensure it's above the node item
-                                                            // Use fully opaque black background
-                                                            backgroundColor: '#000000', 
-                                                            borderRadius: '50%',
-                                                            padding: '2px',   // Small padding around icon
-                                                            display: 'flex', // Center icon
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center',
-                                                            // No background transition needed
-                                                        }}
-                                                        onClick={(e) => {
-                                                            e.stopPropagation(); // Prevent parent click
-                                                            console.log(`[Unsave Click] Toggling saved state for ${node.id}`);
-                                                            toggleSavedNode(node.id); // Call store action
-                                                        }}
-                                                        // Remove background hover, use icon hover below
-                                                        // onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.9)'}
-                                                        // onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.6)'}
-                                                        title="Unsave this item"
-                                                    >
-                                                        <XCircle 
-                                                            size={16}         // Adjust size as needed
-                                                            // Style icon color and hover effect
-                                                            style={{
-                                                                color: '#999999', // Grey color normally
-                                                                transition: 'color 0.2s ease', // Transition color
-                                                            }}
-                                                            onMouseEnter={(e) => e.currentTarget.style.color = '#ffffff'} // White on hover
-                                                            onMouseLeave={(e) => e.currentTarget.style.color = '#999999'} // Back to grey
-                                                        />
-                                                    </div>
-                                                )}
-                                            </div>
+                                          <SavedNodeItem
+                                            key={node.id}
+                                            node={node}
+                                            onClick={handleSingleClick}
+                                            onDoubleClick={handleDoubleClick}
+                                            onUnsave={handleUnsave}
+                                            isActive={node.id === activeDefinitionNodeId}
+                                          />
                                         );
                                     })}
                                 </div>

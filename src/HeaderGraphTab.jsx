@@ -1,4 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useDrag } from 'react-dnd';
+import { getEmptyImage } from 'react-dnd-html5-backend';
+
+const SPAWNABLE_NODE = 'spawnable_node';
 
 // Helper to convert any color (hex or CSS name) to RGBA
 const colorToRgba = (color, alpha) => {
@@ -48,6 +52,19 @@ const colorToRgba = (color, alpha) => {
 };
 
 const HeaderGraphTab = ({ graph, onSelect, onDoubleClick, isActive, hideText = false }) => {
+  const [{ isDragging }, drag, preview] = useDrag(() => ({
+    type: SPAWNABLE_NODE,
+    item: () => ({ nodeId: graph.definingNodeId }),
+    canDrag: () => !!graph.definingNodeId,
+    collect: (monitor) => ({
+      isDragging: !!monitor.isDragging(),
+    }),
+  }), [graph]);
+
+  useEffect(() => {
+    preview(getEmptyImage(), { captureDraggingState: true });
+  }, [preview]);
+  
   const tabStyle = {
     padding: '7px 17px',
     backgroundColor: isActive ? graph.color : colorToRgba(graph.color, 0.333),
@@ -67,6 +84,7 @@ const HeaderGraphTab = ({ graph, onSelect, onDoubleClick, isActive, hideText = f
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     flexShrink: 0,
+    opacity: isDragging ? 0.5 : 1,
   };
 
   const handleClick = (e) => {
@@ -83,6 +101,7 @@ const HeaderGraphTab = ({ graph, onSelect, onDoubleClick, isActive, hideText = f
 
   return (
     <div
+      ref={drag}
       style={tabStyle}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}

@@ -11,6 +11,50 @@ import { importFromRedstring } from '../formats/redstringFormat.js';
 // Enable Immer Map/Set plugin support
 enableMapSet();
 
+const _createAndAssignGraphDefinition = (draft, nodeId) => {
+    const node = draft.nodes.get(nodeId);
+    if (!node) {
+        console.error(`[Store Helper] Node with ID ${nodeId} not found.`);
+        return null;
+    }
+
+    const newGraphId = uuidv4();
+    const newGraphName = node.name || 'Untitled Definition';
+
+    const innerNodeId = uuidv4();
+    const innerNodeData = {
+        ...node,
+        id: innerNodeId,
+        x: NODE_WIDTH * 2,
+        y: NODE_HEIGHT * 2,
+        parentDefinitionNodeId: nodeId,
+        definitionGraphIds: [],
+        edgeIds: [],
+        scale: 1,
+    };
+    draft.nodes.set(innerNodeId, innerNodeData);
+
+    const newGraphData = {
+        id: newGraphId,
+        name: newGraphName,
+        description: '',
+        picture: null,
+        color: node.color || NODE_DEFAULT_COLOR,
+        directed: true,
+        nodeIds: [innerNodeId],
+        edgeIds: [],
+        definingNodeIds: [nodeId],
+    };
+    draft.graphs.set(newGraphId, newGraphData);
+
+    if (!Array.isArray(node.definitionGraphIds)) {
+        node.definitionGraphIds = [];
+    }
+    node.definitionGraphIds.push(newGraphId);
+
+    return newGraphId;
+};
+
 // --- Serialization Helpers ---
 const serializeMap = (map) => JSON.stringify(Array.from(map.entries()));
 const deserializeMap = (jsonString) => {
@@ -212,29 +256,18 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     const graph = draft.graphs.get(graphId);
     const nodeId = newNodeData.id;
 
-    if (!nodeId) {
-        // console.error("addNode: newNodeData must have an id.");
+    if (!nodeId || !graph) {
+        console.error(`[addNode] Invalid graphId (${graphId}) or nodeId (${nodeId})`);
         return;
     }
+    
+    // Always update or set the node data in the global map.
+    // This handles both adding a brand new node and updating an existing one's position when dropped.
+    draft.nodes.set(nodeId, newNodeData);
 
-    if (graph && !draft.nodes.has(nodeId)) {
-      // Check if this graph is a definition graph (has definingNodeIds)
-      if (graph.definingNodeIds && graph.definingNodeIds.length > 0) {
-        // Set the parentDefinitionNodeId to the first defining node
-        const definingNodeId = graph.definingNodeIds[0];
-        // console.log(`[Store addNode] Setting parentDefinitionNodeId to ${definingNodeId} for node ${nodeId} in definition graph ${graphId}`);
-        newNodeData.parentDefinitionNodeId = definingNodeId;
-      }
-      
-      // Add node data to global pool
-      draft.nodes.set(nodeId, newNodeData);
-      // Add node ID to graph's nodeIds array
-      graph.nodeIds.push(nodeId);
-      // console.log(`[Store addNode] Successfully added node ${nodeId} to graph ${graphId}`); // Log success
-    } else if (!graph) {
-      // console.warn(`addNode: Graph with id ${graphId} not found.`);
-    } else {
-      // console.warn(`addNode: Node with id ${nodeId} already exists in global pool.`);
+    // If the node is not yet in the graph, add its ID.
+    if (!graph.nodeIds.includes(nodeId)) {
+        graph.nodeIds.push(nodeId);
     }
   })),
 
@@ -512,6 +545,28 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     const newGraphId = uuidv4();
     const newGraphName = initialData.name || "New Thing";
 
+    // Create a new node that will define this graph.
+    const definingNodeId = uuidv4();
+    const definingNodeData = {
+        id: definingNodeId,
+        name: newGraphName,
+        description: initialData.description || '',
+        picture: '', // empty picture
+        color: initialData.color || NODE_DEFAULT_COLOR,
+        data: null,
+        x: 0, // Default position, doesn't matter as it's not on a canvas yet
+        y: 0,
+        scale: 1,
+        imageSrc: null,
+        thumbnailSrc: null,
+        imageAspectRatio: null,
+        parentDefinitionNodeId: null,
+        edgeIds: [],
+        definitionGraphIds: [newGraphId] // This node defines the new graph
+    };
+    draft.nodes.set(definingNodeId, definingNodeData);
+
+
     // Create a new empty graph (no circular references)
     const newGraphData = {
         id: newGraphId,
@@ -522,13 +577,13 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         directed: initialData.directed !== undefined ? initialData.directed : false, // Default undirected
         nodeIds: [],
         edgeIds: [],
-        definingNodeIds: [] // Empty - this graph is not defined by any node initially
+        definingNodeIds: [definingNodeId] // This graph is defined by the new node
     };
     draft.graphs.set(newGraphId, newGraphData);
 
     // Set active state (no definition node since this is just an empty graph)
     draft.activeGraphId = newGraphId;
-    draft.activeDefinitionNodeId = null; // Clear definition node since this is not a definition graph
+    draft.activeDefinitionNodeId = definingNodeId; // This graph is defined by this node
 
     // Manage open/expanded lists
     if (!draft.openGraphIds.includes(newGraphId)) {
@@ -536,38 +591,14 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     }
     draft.expandedGraphIds.add(newGraphId);
     
-    console.log('[Store] Created and activated new empty graph:', newGraphId, newGraphName);
+    console.log(`[Store] Created and activated new empty graph: ${newGraphId} ('${newGraphName}') defined by node ${definingNodeId}.`);
   })),
 
   // Creates a new graph, assigns it as a definition to a node, and makes it active
   createAndAssignGraphDefinition: (nodeId) => set(produce((draft) => {
-    const node = draft.nodes.get(nodeId);
-    if (!node) {
-      console.error(`[Store] Node with ID ${nodeId} not found.`);
-      return;
-    }
+    const newGraphId = _createAndAssignGraphDefinition(draft, nodeId);
+    if (!newGraphId) return;
 
-    const newGraphId = uuidv4();
-    const newGraphName = node.name || 'Untitled Definition';
-    const newGraphData = {
-      id: newGraphId,
-      name: newGraphName,
-      description: '',
-      picture: null,
-      color: node.color || NODE_DEFAULT_COLOR,
-      directed: true,
-      nodeIds: [],
-      edgeIds: [],
-      definingNodeIds: [nodeId]
-    };
-    draft.graphs.set(newGraphId, newGraphData);
-    
-    // Add graph id to node's definitions
-    if (!Array.isArray(node.definitionGraphIds)) {
-        node.definitionGraphIds = [];
-    }
-    node.definitionGraphIds.push(newGraphId);
-    
     // Open and activate the new graph
     if (!draft.openGraphIds.includes(newGraphId)) {
         draft.openGraphIds.push(newGraphId);
@@ -581,32 +612,8 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   // Creates a new graph and assigns it as a definition, but does NOT make it active.
   // This is used for animations that need to complete before the UI switches.
   createAndAssignGraphDefinitionWithoutActivation: (nodeId) => set(produce((draft) => {
-    const node = draft.nodes.get(nodeId);
-    if (!node) {
-      console.error(`[Store] Node with ID ${nodeId} not found.`);
-      return;
-    }
-
-    const newGraphId = uuidv4();
-    const newGraphName = node.name || 'Untitled Definition';
-    const newGraphData = {
-      id: newGraphId,
-      name: newGraphName,
-      description: '',
-      picture: null,
-      color: node.color || NODE_DEFAULT_COLOR,
-      directed: true,
-      nodeIds: [],
-      edgeIds: [],
-      definingNodeIds: [nodeId]
-    };
-    draft.graphs.set(newGraphId, newGraphData);
-
-    // Add graph id to node's definitions
-    if (!Array.isArray(node.definitionGraphIds)) {
-        node.definitionGraphIds = [];
-    }
-    node.definitionGraphIds.push(newGraphId);
+    const newGraphId = _createAndAssignGraphDefinition(draft, nodeId);
+    if (!newGraphId) return;
     
     console.log(`[Store createAndAssignGraphDefinitionWithoutActivation] Created new graph ${newGraphId} for node ${nodeId}.`);
   })),
