@@ -69,7 +69,7 @@ const TypeList = ({ nodes, setSelectedNodes }) => {
           padding: 0,
           cursor: 'pointer',
           color: '#bdb5b5',
-          zIndex: 9999,
+          zIndex: 10002,
           boxShadow: '0 2px 5px rgba(0, 0, 0, 0.2)'
         }}
       >
@@ -89,7 +89,7 @@ const TypeList = ({ nodes, setSelectedNodes }) => {
           display: 'flex',
           alignItems: 'center',
           backgroundColor: '#260000',
-          zIndex: 9998,
+          zIndex: 10001,
           overflow: 'hidden',
           transition: 'transform 0.3s ease-in-out',
           transform: mode === 'closed' ? 'translateY(100%)' : 'translateY(0)',
