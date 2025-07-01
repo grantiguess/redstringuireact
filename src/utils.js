@@ -78,7 +78,7 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
     document.body.removeChild(tempSpan);
 
     // --- Shared Constant ---
-    const TEXT_V_PADDING = 10; // Consistent vertical padding
+    const TEXT_V_PADDING = 15; // Consistent vertical padding
 
     // --- Calculate Dimensions Based on State ---
     let currentWidth, currentHeight, textAreaHeight, imageWidth, calculatedImageHeight, innerNetworkWidth, innerNetworkHeight, descriptionAreaHeight;
