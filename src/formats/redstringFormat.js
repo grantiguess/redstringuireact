@@ -67,7 +67,7 @@ export const REDSTRING_CONTEXT = {
 export const exportToRedstring = (storeState) => {
   const {
     graphs,
-    nodes,
+    nodePrototypes,
     edges,
     openGraphIds,
     activeGraphId,
@@ -81,9 +81,17 @@ export const exportToRedstring = (storeState) => {
   // Convert Maps to objects for serialization
   const graphsObj = {};
   graphs.forEach((graph, id) => {
+    // Also serialize the instances Map
+    const instancesObj = {};
+    if (graph.instances) {
+        graph.instances.forEach((instance, instanceId) => {
+            instancesObj[instanceId] = instance;
+        });
+    }
     graphsObj[id] = {
       "@type": "Graph",
       ...graph,
+      instances: instancesObj,
       spatial: {
         expanded: expandedGraphIds.has(id),
         active: id === activeGraphId
@@ -92,7 +100,7 @@ export const exportToRedstring = (storeState) => {
   });
 
   const nodesObj = {};
-  nodes.forEach((node, id) => {
+  nodePrototypes.forEach((node, id) => {
     nodesObj[id] = {
       "@type": "Node",
       ...node,
@@ -147,7 +155,7 @@ export const exportToRedstring = (storeState) => {
     },
     
     "graphs": graphsObj,
-    "nodes": nodesObj,  
+    "nodePrototypes": nodesObj,
     "edges": edgesObj,
     
     "userInterface": {
@@ -168,7 +176,7 @@ export const exportToRedstring = (storeState) => {
 export const importFromRedstring = (redstringData, storeActions) => {
   const {
     graphs: graphsObj = {},
-    nodes: nodesObj = {},
+    nodePrototypes: nodesObj = {},
     edges: edgesObj = {},
     userInterface = {}
   } = redstringData;
@@ -176,10 +184,20 @@ export const importFromRedstring = (redstringData, storeActions) => {
   // Convert objects back to Maps and import to store
   const graphsMap = new Map();
   Object.entries(graphsObj).forEach(([id, graph]) => {
-    const { spatial, ...graphData } = graph;
+    const { spatial, instances: instancesObj, ...graphData } = graph;
+    
+    // Convert instances object back to a Map
+    const instancesMap = new Map();
+    if (instancesObj) {
+        Object.entries(instancesObj).forEach(([instanceId, instance]) => {
+            instancesMap.set(instanceId, instance);
+        });
+    }
+
     graphsMap.set(id, {
       ...graphData,
-      id // Ensure ID is preserved
+      id, // Ensure ID is preserved
+      instances: instancesMap // Use the reconstructed Map
     });
   });
 
@@ -219,7 +237,7 @@ export const importFromRedstring = (redstringData, storeActions) => {
   // Return the converted state for file storage to use
   const storeState = {
     graphs: graphsMap,
-    nodes: nodesMap,
+    nodePrototypes: nodesMap,
     edges: edgesMap,
     openGraphIds: userInterface.openGraphIds || [],
     activeGraphId: userInterface.activeGraphId,

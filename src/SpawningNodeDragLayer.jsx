@@ -33,10 +33,10 @@ const SpawningNodeDragLayer = () => {
         item: monitor.getItem(),
         itemType: monitor.getItemType(),
         isDragging: monitor.isDragging(),
-        currentOffset: monitor.getSourceClientOffset(),
+        currentOffset: monitor.getClientOffset(),
     }));
 
-    const node = useGraphStore(state => (item?.nodeId ? state.nodes.get(item.nodeId) : null));
+    const node = useGraphStore(state => (item?.prototypeId ? state.nodePrototypes.get(item.prototypeId) : null));
 
     if (!isDragging || itemType !== SPAWNABLE_NODE || !currentOffset || !node) {
         return null;

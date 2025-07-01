@@ -16,8 +16,9 @@ import { useDrop } from 'react-dnd';
 // Import Zustand store and selectors/actions
 import useGraphStore, {
     getActiveGraphId,
-    getNodesForGraph,
+    getHydratedNodesForGraph, // New selector
     getEdgesForGraph,
+    getNodePrototypeById, // New selector for prototypes
 } from './store/graphStore.js';
 import { shallow } from 'zustand/shallow';
 
@@ -65,11 +66,13 @@ function NodeCanvas() {
   const wrapperRef = useRef(null);
 
   // <<< Access store actions individually to avoid creating new objects >>>
-  const updateNode = useGraphStore((state) => state.updateNode);
+  const updateNodePrototype = useGraphStore((state) => state.updateNodePrototype);
+  const updateNodeInstance = useGraphStore((state) => state.updateNodeInstance);
   const updateEdge = useGraphStore((state) => state.updateEdge);
   const addEdge = useGraphStore((state) => state.addEdge);
-  const addNode = useGraphStore((state) => state.addNode);
-  const removeNode = useGraphStore((state) => state.removeNode);
+  const addNodePrototype = useGraphStore((state) => state.addNodePrototype);
+  const addNodeInstance = useGraphStore((state) => state.addNodeInstance);
+  const removeNodeInstance = useGraphStore((state) => state.removeNodeInstance);
   const updateGraph = useGraphStore((state) => state.updateGraph);
   const createNewGraph = useGraphStore((state) => state.createNewGraph);
   const setActiveGraph = useGraphStore((state) => state.setActiveGraph);
@@ -85,7 +88,7 @@ function NodeCanvas() {
   const toggleGraphExpanded = useGraphStore((state) => state.toggleGraphExpanded);
   const toggleSavedNode = useGraphStore((state) => state.toggleSavedNode);
   const toggleSavedGraph = useGraphStore((state) => state.toggleSavedGraph);
-  const updateMultipleNodePositions = useGraphStore((state) => state.updateMultipleNodePositions);
+  const updateMultipleNodeInstancePositions = useGraphStore((state) => state.updateMultipleNodeInstancePositions);
   const removeDefinitionFromNode = useGraphStore((state) => state.removeDefinitionFromNode);
   const openGraphTabAndBringToTop = useGraphStore((state) => state.openGraphTabAndBringToTop);
   const cleanupOrphanedData = useGraphStore((state) => state.cleanupOrphanedData);
@@ -97,10 +100,12 @@ function NodeCanvas() {
 
   // Create a stable actions object only when needed for props
   const storeActions = useMemo(() => ({
-    updateNode,
+    updateNodePrototype,
+    updateNodeInstance,
     addEdge,
-    addNode,
-    removeNode,
+    addNodePrototype,
+    addNodeInstance,
+    removeNodeInstance,
     updateGraph,
     createNewGraph,
     setActiveGraph,
@@ -116,7 +121,7 @@ function NodeCanvas() {
     toggleGraphExpanded,
     toggleSavedNode,
     toggleSavedGraph,
-    updateMultipleNodePositions,
+    updateMultipleNodeInstancePositions,
     removeDefinitionFromNode,
     openGraphTabAndBringToTop,
     cleanupOrphanedData,
@@ -126,11 +131,11 @@ function NodeCanvas() {
     clearUniverse,
     setUniverseConnected,
   }), [
-    updateNode, addEdge, addNode, removeNode, updateGraph, createNewGraph,
+    updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance, updateGraph, createNewGraph,
     setActiveGraph, setActiveDefinitionNode, openRightPanelNodeTab,
     createAndAssignGraphDefinition, createAndAssignGraphDefinitionWithoutActivation, closeRightPanelTab, activateRightPanelTab,
     openGraphTab, moveRightPanelTab, closeGraph, toggleGraphExpanded,
-    toggleSavedNode, toggleSavedGraph, updateMultipleNodePositions, removeDefinitionFromNode,
+    toggleSavedNode, toggleSavedGraph, updateMultipleNodeInstancePositions, removeDefinitionFromNode,
     openGraphTabAndBringToTop, cleanupOrphanedData, restoreFromSession,
     loadUniverseFromFile, setUniverseError, clearUniverse, setUniverseConnected
   ]);
@@ -139,7 +144,7 @@ function NodeCanvas() {
   const activeGraphId = useGraphStore(state => state.activeGraphId);
   const activeDefinitionNodeId = useGraphStore(state => state.activeDefinitionNodeId);
   const graphsMap = useGraphStore(state => state.graphs);
-  const nodesMap = useGraphStore(state => state.nodes);
+  const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
   const edgesMap = useGraphStore(state => state.edges);
   const savedNodeIds = useGraphStore(state => state.savedNodeIds);
   const savedGraphIds = useGraphStore(state => state.savedGraphIds);
@@ -164,7 +169,7 @@ function NodeCanvas() {
         if (!graph) return null;
 
         const definingNodeId = graph.definingNodeIds?.[0];
-        const definingNode = definingNodeId ? nodesMap.get(definingNodeId) : null;
+        const definingNode = definingNodeId ? nodePrototypesMap.get(definingNodeId) : null;
         
         // Ensure color is a string
         let nodeColor = NODE_DEFAULT_COLOR || '#800000'; // Default fallback
@@ -188,7 +193,7 @@ function NodeCanvas() {
             definingNodeId,
         };
     }).filter(Boolean);
-  }, [openGraphIds, activeGraphId, graphsMap, nodesMap]);
+  }, [openGraphIds, activeGraphId, graphsMap, nodePrototypesMap]);
 
   // console.log("[NodeCanvas] Derived activeGraphId:", activeGraphId, "Name:", activeGraphName);
 
@@ -249,34 +254,32 @@ function NodeCanvas() {
       }
   }, [graphsMap, activeGraphId, openGraphIds, storeActions, isUniverseLoaded, hasUniverseFile]); // Include universe states
 
-  // Derive nodes and edges using useMemo (Update dependency array)
-  const nodes = useMemo(() => { 
-    if (!activeGraphId) return [];
-    // const state = useGraphStore.getState(); // No longer need getState
-    const currentGraphData = activeGraphId ? graphsMap.get(activeGraphId) : null; // Use selected map
-    const nodeIds = currentGraphData?.nodeIds;
-    if (!nodeIds) return [];
-    // const currentNodesMap = state.nodes; // Use selected map
-    const derivedNodes = nodeIds.map(id => nodesMap.get(id)).filter(Boolean);
-    return derivedNodes;
-  // }, [localActiveGraphId, renderTrigger]); // Depend on local state AND renderTrigger
-  }, [activeGraphId, graphsMap, nodesMap]); // <<< UPDATE DEPENDENCIES
+  // Get raw data from store for memoization
+  const instances = useGraphStore(useCallback(state => state.graphs.get(activeGraphId)?.instances, [activeGraphId]));
+  const graphEdgeIds = useGraphStore(useCallback(state => state.graphs.get(activeGraphId)?.edgeIds, [activeGraphId]));
 
-  const edges = useMemo(() => { 
-    if (!activeGraphId) return [];
-    // const state = useGraphStore.getState(); // No longer need getState
-    const currentGraphData = activeGraphId ? graphsMap.get(activeGraphId) : null; // Use selected map
-    const edgeIds = currentGraphData?.edgeIds;
-    if (!edgeIds) return [];
-    // const currentEdgesMap = state.edges; // Use selected map
-    return edgeIds.map(id => edgesMap.get(id)).filter(Boolean);
-  // }, [localActiveGraphId, renderTrigger]); // Depend on local state AND renderTrigger
-  }, [activeGraphId, graphsMap, edgesMap]); // <<< UPDATE DEPENDENCIES
+  // Derive nodes and edges using useMemo for stable references
+  const nodes = useMemo(() => {
+    if (!instances || !nodePrototypesMap) return [];
+    return Array.from(instances.values()).map(instance => {
+        const prototype = nodePrototypesMap.get(instance.prototypeId);
+        if (!prototype) return null;
+        return {
+            ...prototype,
+            ...instance,
+        };
+    }).filter(Boolean);
+  }, [instances, nodePrototypesMap]);
+
+  const edges = useMemo(() => {
+    if (!graphEdgeIds || !edgesMap) return [];
+    return graphEdgeIds.map(id => edgesMap.get(id)).filter(Boolean);
+  }, [graphEdgeIds, edgesMap]);
 
   // --- Local UI State (Keep these) ---
-  const [selectedNodeIds, setSelectedNodeIds] = useState(new Set());
+  const [selectedInstanceIds, setSelectedInstanceIds] = useState(new Set());
   const [draggingNodeInfo, setDraggingNodeInfo] = useState(null); // Renamed, structure might change
-  const [longPressingNodeId, setLongPressingNodeId] = useState(null); // Store ID
+  const [longPressingInstanceId, setLongPressingInstanceId] = useState(null); // Store ID
   const [drawingConnectionFrom, setDrawingConnectionFrom] = useState(null); // Structure might change (store source ID)
 
   const [isPanning, setIsPanning] = useState(false);
@@ -435,7 +438,7 @@ function NodeCanvas() {
   useEffect(() => {
     // This effect runs whenever the active graph changes.
     // We clear any graph-specific UI state to ensure a clean slate.
-    setSelectedNodeIds(new Set());
+    setSelectedInstanceIds(new Set());
     setPreviewingNodeId(null);
     setEditingNodeIdOnCanvas(null);
     setPlusSign(null);
@@ -491,63 +494,38 @@ function NodeCanvas() {
     drop: (item, monitor) => {
         if (!activeGraphId) return;
 
-        const originalNode = nodesMap.get(item.nodeId);
-        if (!originalNode) return;
+        // The 'item' from the drag source now contains the prototypeId
+        const { prototypeId } = item;
+        if (!prototypeId) {
+            console.error("Dropped item is missing prototypeId", item);
+            return;
+        };
 
         const offset = monitor.getClientOffset();
+        if (!offset || !containerRef.current) return;
+        
         const rect = containerRef.current.getBoundingClientRect();
 
         // Convert drop position to canvas SVG coordinates
         const x = (offset.x - rect.left - panOffset.x) / zoomLevel;
         const y = (offset.y - rect.top - panOffset.y) / zoomLevel;
         
-        const dimensions = getNodeDimensions(originalNode, false, null);
-
-        // Check if the node already exists in the current graph
-        const currentGraph = graphsMap.get(activeGraphId);
-        const nodeExistsInGraph = currentGraph?.nodeIds?.includes(item.nodeId);
-
-        // Special case: Check if this is a defining node being dropped into its own definition graph
-        const isDefiningNodeInOwnGraph = currentGraph?.definingNodeIds?.includes(item.nodeId);
-
-        if (nodeExistsInGraph && !isDefiningNodeInOwnGraph) {
-            // Node already exists in this graph and it's not the defining node - just move it to the new position
-            storeActions.updateNode(item.nodeId, draft => {
-                draft.x = x - (dimensions.currentWidth / 2);
-                draft.y = y - (dimensions.currentHeight / 2);
-            });
-        } else if (isDefiningNodeInOwnGraph || !nodeExistsInGraph) {
-            // Either: 1) Defining node being dropped into its own graph (create instance)
-            //     or: 2) Node doesn't exist in this graph at all
-            
-            if (isDefiningNodeInOwnGraph) {
-                // Create a new instance with a new ID but same properties
-                const newNodeId = uuidv4();
-                const nodeDataForGraph = {
-                    ...originalNode,
-                    id: newNodeId, // New ID for the instance
-                    x: x - (dimensions.currentWidth / 2),
-                    y: y - (dimensions.currentHeight / 2),
-                    parentDefinitionNodeId: item.nodeId, // Set the original as parent
-                    edgeIds: [], // Reset edge connections for new instance
-                    definitionGraphIds: [], // Reset definitions for new instance
-                };
-                addNode(activeGraphId, nodeDataForGraph);
-            } else {
-                // Node doesn't exist in this graph - add the existing node (not a copy)
-                const nodeDataForGraph = {
-                    ...originalNode,
-                    x: x - (dimensions.currentWidth / 2),
-                    y: y - (dimensions.currentHeight / 2),
-                    // Keep the original node's ID and all its properties including definitions
-                    // This ensures consistency across graphs
-                };
-                
-                addNode(activeGraphId, nodeDataForGraph);
-            }
+        const prototype = nodePrototypesMap.get(prototypeId);
+        if (!prototype) {
+             console.error(`Dropped prototype with ID ${prototypeId} not found in nodePrototypesMap.`);
+             return;
         }
+        
+        const dimensions = getNodeDimensions(prototype, false, null);
+
+        // With the new model, we ALWAYS create a new instance.
+        const position = {
+            x: x - (dimensions.currentWidth / 2),
+            y: y - (dimensions.currentHeight / 2)
+        };
+        storeActions.addNodeInstance(activeGraphId, prototypeId, position);
     },
-  }), [activeGraphId, panOffset, zoomLevel, nodesMap, addNode, graphsMap, storeActions]);
+  }), [activeGraphId, panOffset, zoomLevel, nodePrototypesMap, storeActions]);
 
   const setCanvasAreaRef = useCallback(node => {
       containerRef.current = node;
@@ -630,28 +608,27 @@ function NodeCanvas() {
           id: 'expand-tab',
           label: 'Expand',
           icon: ArrowUpFromDot,
-          action: (nodeId) => {
-            // console.log(`[PieMenu Action] Expand to tab clicked for node: ${nodeId}.`);
-            const nodeData = nodes.find(n => n.id === nodeId);
+          action: (instanceId) => {
+            const nodeData = nodes.find(n => n.id === instanceId);
             if (nodeData) {
+              const prototypeId = nodeData.prototypeId;
               if (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
                 // Node has definitions - start hurtle animation to first one
                 const graphIdToOpen = nodeData.definitionGraphIds[0];
-                // console.log(`[PieMenu Expand] Starting hurtle animation to existing definition graph: ${graphIdToOpen} for node: ${nodeId}`);
-                startHurtleAnimation(nodeId, graphIdToOpen, nodeId);
+                startHurtleAnimation(instanceId, graphIdToOpen, prototypeId);
               } else {
                 // Node has no definitions - create one first, then start hurtle animation
                 const sourceGraphId = activeGraphId; // Capture current graph before it changes
-                storeActions.createAndAssignGraphDefinitionWithoutActivation(nodeId);
+                storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
                 
                 setTimeout(() => {
                   const currentState = useGraphStore.getState();
-                  const updatedNodeData = currentState.nodes.get(nodeId);
+                  const updatedNodeData = currentState.nodePrototypes.get(prototypeId);
                   if (updatedNodeData?.definitionGraphIds?.length > 0) {
                     const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
-                    startHurtleAnimation(nodeId, newGraphId, nodeId, sourceGraphId);
+                    startHurtleAnimation(instanceId, newGraphId, prototypeId, sourceGraphId);
                   } else {
-                    console.error(`[PieMenu Expand] Could not find new definition for node ${nodeId} after creation.`);
+                    console.error(`[PieMenu Expand] Could not find new definition for node ${prototypeId} after creation.`);
                   }
                 }, 50);
               }
@@ -662,41 +639,40 @@ function NodeCanvas() {
           id: 'decompose-preview',
           label: 'Decompose',
           icon: PackageOpen,
-          action: (nodeId) => {
-            // console.log(`[PieMenu Action] Decompose clicked for node: ${nodeId}. Starting transition.`);
+          action: (instanceId) => {
+            console.log(`[PieMenu Action] Decompose clicked for instance: ${instanceId}. Starting transition.`);
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
-            // previewingNodeId will be set in onExitAnimationComplete after animation
+            // previewingNodeId (which is an instanceId) will be set in onExitAnimationComplete after animation
           }
         },
-        { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => {} }, // console.log('Connect node:', nodeId)
-        { id: 'delete', label: 'Delete', icon: Trash2, action: (nodeId) => {
-          storeActions.removeNode(nodeId);
-          setSelectedNodeIds(new Set()); // Deselect after deleting
+        { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => {} }, // nodeId is instanceId
+        { id: 'delete', label: 'Delete', icon: Trash2, action: (instanceId) => {
+          storeActions.removeNodeInstance(activeGraphId, instanceId);
+          setSelectedInstanceIds(new Set()); // Deselect after deleting
           setSelectedNodeIdForPieMenu(null); // Ensure pie menu hides
         } },
-        { id: 'edit', label: 'Edit', icon: Edit3, action: (nodeId) => {
-            // console.log(`[PieMenu Action] Edit clicked for node: ${nodeId}. Opening panel tab and enabling inline editing.`);
-            // Open/create panel tab for the node
-            const nodeData = nodes.find(n => n.id === nodeId);
-            if (nodeData) {
-              storeActions.openRightPanelNodeTab(nodeId, nodeData.name);
+        { id: 'edit', label: 'Edit', icon: Edit3, action: (instanceId) => {
+            const instance = nodes.find(n => n.id === instanceId);
+            if (instance) {
+                // Open panel tab using the PROTOTYPE ID
+                storeActions.openRightPanelNodeTab(instance.prototypeId, instance.name);
+                // Ensure right panel is expanded
+                if (!rightPanelExpanded) {
+                    setRightPanelExpanded(true);
+                }
+                // Enable inline editing on canvas using the INSTANCE ID
+                setEditingNodeIdOnCanvas(instanceId);
             }
-            // Ensure right panel is expanded
-            if (!rightPanelExpanded) {
-              setRightPanelExpanded(true);
-            }
-            // Enable inline editing on canvas
-            setEditingNodeIdOnCanvas(nodeId);
         } },
-        { id: 'abstraction', label: 'Abstraction', icon: Layers, action: (nodeId) => {
-            console.log(`[PieMenu Action] Abstraction clicked for node: ${nodeId}.`);
-            setPendingAbstractionNodeId(nodeId); // Store the node ID for later
+        { id: 'abstraction', label: 'Abstraction', icon: Layers, action: (instanceId) => {
+            console.log(`[PieMenu Action] Abstraction clicked for node: ${instanceId}.`);
+            setPendingAbstractionNodeId(instanceId); // Store the instance ID for later
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
             // Abstraction carousel will be set up in onExitAnimationComplete after animation
         } }
       ];
     }
-  }, [storeActions, setSelectedNodeIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, abstractionCarouselVisible, abstractionCarouselNode, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Link, ArrowLeft, SendToBack]);
+  }, [storeActions, setSelectedInstanceIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, activeGraphId, abstractionCarouselVisible, abstractionCarouselNode, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Link, ArrowLeft, SendToBack]);
 
   // Effect to restore view state on graph change or center if no stored state
   useEffect(() => {
@@ -807,7 +783,7 @@ function NodeCanvas() {
     }
     
     // Create context-specific key for this node in the current graph
-    const contextKey = `${node.id}-${activeGraphId}`;
+    const contextKey = `${node.prototypeId}-${activeGraphId}`; // Use prototypeId for context
     const currentIndex = nodeDefinitionIndices.get(contextKey) || 0;
     const definitionGraphId = node.definitionGraphIds[currentIndex] || node.definitionGraphIds[0];
     if (!definitionGraphId) return null;
@@ -867,21 +843,21 @@ function NodeCanvas() {
     return Math.sqrt(dx * dx + dy * dy) <= threshold;
   };
 
-  const handleNodeMouseDown = (nodeData, e) => { // Takes nodeData now
+  const handleNodeMouseDown = (nodeData, e) => { // nodeData is now a hydrated node (instance + prototype)
     e.stopPropagation();
-    if (isPaused || !activeGraphId) return; // Check local state
+    if (isPaused || !activeGraphId) return;
 
-    const nodeId = nodeData.id;
-    setHasMouseMovedSinceDown(false); // Reset mouse moved state
+    const instanceId = nodeData.id; // This is the instance ID
+    const prototypeId = nodeData.prototypeId;
+    setHasMouseMovedSinceDown(false);
 
     // --- Double-click ---
     if (e.detail === 2) {
       e.preventDefault();
       if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); clickTimeoutIdRef.current = null; }
       potentialClickNodeRef.current = null;
-      // Open node tab in the right panel
-      // console.log(`Double-click on node ${nodeId}. Opening in panel.`);
-      storeActions.openRightPanelNodeTab(nodeId, nodeData.name);
+      // Open panel tab using the PROTOTYPE ID
+      storeActions.openRightPanelNodeTab(prototypeId, nodeData.name);
       return;
     }
 
@@ -895,37 +871,23 @@ function NodeCanvas() {
 
         // --- Handle Click vs Double Click Timing ---
         if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); }
-        potentialClickNodeRef.current = nodeData; // Store nodeData
+        potentialClickNodeRef.current = nodeData;
 
         clickTimeoutIdRef.current = setTimeout(() => {
-            if (potentialClickNodeRef.current?.id === nodeId && !mouseMoved.current && !isMouseDown.current) {
+            if (potentialClickNodeRef.current?.id === instanceId && !mouseMoved.current && !isMouseDown.current) {
                 // --- Execute Selection Logic ---
-                const wasSelected = selectedNodeIds.has(nodeId);
-                console.log(`[NodeCanvas handleNodeMouseDown] Executing click for node ${nodeId}, wasSelected: ${wasSelected}, previewingNodeId: ${previewingNodeId}`);
-                setSelectedNodeIds(prev => {
+                const wasSelected = selectedInstanceIds.has(instanceId);
+                setSelectedInstanceIds(prev => {
                     const newSelected = new Set(prev);
                     if (wasSelected) {
-                       if (nodeId !== previewingNodeId) { 
-                         console.log(`[NodeCanvas handleNodeMouseDown] Deselecting node ${nodeId}`);
-                         newSelected.delete(nodeId); 
-                       } else {
-                         console.log(`[NodeCanvas handleNodeMouseDown] Node ${nodeId} was selected but is previewing, keeping selected`);
+                       if (instanceId !== previewingNodeId) { // previewingNodeId also needs to be an instanceId
+                         newSelected.delete(instanceId); 
                        }
                     } else {
-                       console.log(`[NodeCanvas handleNodeMouseDown] Selecting node ${nodeId}`);
-                       newSelected.add(nodeId);
-                    }
-                    console.log(`[NodeCanvas handleNodeMouseDown] New selection: [${Array.from(newSelected).join(', ')}]`);
-                    // Update showPieMenu based on selection
-                    if (newSelected.size === 1) {
-                      // Prepare to show pie menu - will be handled by useEffect on selectedNodeIds
-                    } else if (newSelected.size !== 1 && isPieMenuRendered) {
-                      // If deselecting all or selecting multiple, PieMenu will be told to hide via its isVisible prop
+                       newSelected.add(instanceId);
                     }
                     return newSelected;
                 });
-            } else {
-                console.log(`[NodeCanvas handleNodeMouseDown] Click timeout fired but conditions not met. potentialClickNodeRef.id: ${potentialClickNodeRef.current?.id}, nodeId: ${nodeId}, mouseMoved: ${mouseMoved.current}, isMouseDown: ${isMouseDown.current}`);
             }
             clickTimeoutIdRef.current = null;
             potentialClickNodeRef.current = null;
@@ -933,60 +895,50 @@ function NodeCanvas() {
 
         // --- Setup Long Press for Drag/Connection ---
         clearTimeout(longPressTimeout.current);
-        setLongPressingNodeId(nodeId); // Store ID
+        setLongPressingInstanceId(instanceId);
         longPressTimeout.current = setTimeout(() => {
             if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); clickTimeoutIdRef.current = null; }
             potentialClickNodeRef.current = null;
 
-            // FIX: Compare against the nodeId captured in the closure, not the state variable
-            if (mouseInsideNode.current && !mouseMoved.current /* && longPressingNodeId === nodeId */) { 
-                const canvasRect = containerRef.current.getBoundingClientRect();
-                const adjustedX = (e.clientX - canvasRect.left - panOffset.x) / zoomLevel;
-                const adjustedY = (e.clientY - canvasRect.top - panOffset.y) / zoomLevel;
-
-                if (selectedNodeIds.has(nodeId)) {
+            if (mouseInsideNode.current && !mouseMoved.current) { 
+                if (selectedInstanceIds.has(instanceId)) {
                     // Multi-node drag setup
                     const initialPositions = {};
-                    const primaryNodeData = nodes.find(n => n.id === nodeId);
+                    const primaryNodeData = nodes.find(n => n.id === instanceId);
                     if (!primaryNodeData) return;
                     const initialPrimaryPos = { x: primaryNodeData.x, y: primaryNodeData.y };
 
                     nodes.forEach(n => {
-                        if (selectedNodeIds.has(n.id) && n.id !== nodeId) {
+                        if (selectedInstanceIds.has(n.id) && n.id !== instanceId) {
                             initialPositions[n.id] = { offsetX: n.x - initialPrimaryPos.x, offsetY: n.y - initialPrimaryPos.y };
                         }
                     });
-                    //console.log("[handleNodeMouseDown] Setting up multi-node drag:", { primaryId: nodeId, offsets: initialPositions }); // ADD Log
                     setDraggingNodeInfo({
                         initialMouse: { x: e.clientX, y: e.clientY },
                         initialPrimaryPos,
                         relativeOffsets: initialPositions,
-                        primaryId: nodeId
+                        primaryId: instanceId
                     });
-                    // Use localStoreActions
-                    selectedNodeIds.forEach(id => {
-                        storeActions.updateNode(id, draft => { draft.scale = 1.1; });
+                    selectedInstanceIds.forEach(id => {
+                        storeActions.updateNodeInstance(activeGraphId, id, draft => { draft.scale = 1.1; });
                     });
 
                 } else {
                     // Single node drag setup
                     const offset = { x: e.clientX - nodeData.x * zoomLevel - panOffset.x, y: e.clientY - nodeData.y * zoomLevel - panOffset.y };
-                    //console.log("[handleNodeMouseDown] Setting up single-node drag:", { nodeId, offset }); // ADD Log
-                    setDraggingNodeInfo({ nodeId: nodeId, offset });
-                    // Use localStoreActions
-                    storeActions.updateNode(nodeId, draft => { draft.scale = 1.1; });
+                    setDraggingNodeInfo({ instanceId: instanceId, offset });
+                    storeActions.updateNodeInstance(activeGraphId, instanceId, draft => { draft.scale = 1.1; });
                 }
             }
-            setLongPressingNodeId(null); // Clear after processing
+            setLongPressingInstanceId(null); // Clear after processing
         }, LONG_PRESS_DURATION);
     }
   };
 
-  const handleSaveNodeData = (nodeId, newData) => {
-    if (!activeGraphId) return; // Check local state
-    // Use localStoreActions
-    storeActions.updateNode(nodeId, draft => {
-        Object.assign(draft, newData); // Simple merge for now
+  const handleSaveNodeData = (prototypeId, newData) => { // Operates on prototype
+    if (!activeGraphId) return;
+    storeActions.updateNodePrototype(prototypeId, draft => {
+        Object.assign(draft, newData);
     });
   };
 
@@ -1327,7 +1279,7 @@ function NodeCanvas() {
             else finalSelection.delete(nd.id);
           }
         });
-        setSelectedNodeIds(finalSelection);
+        setSelectedInstanceIds(finalSelection);
       } catch (error) {
         console.error("Selection calc failed:", error);
       }
@@ -1345,8 +1297,8 @@ function NodeCanvas() {
         // REMOVED: setSelectedNodeIdForPieMenu(null); 
 
         // Start drawing connection
-        if (longPressingNodeId && !draggingNodeInfo) { // Check longPressingNodeId
-             const longPressNodeData = nodes.find(n => n.id === longPressingNodeId); // Get data
+        if (longPressingInstanceId && !draggingNodeInfo) { // Check longPressingInstanceId
+             const longPressNodeData = nodes.find(n => n.id === longPressingInstanceId); // Get data
              if (longPressNodeData && !isInsideNode(longPressNodeData, e.clientX, e.clientY)) {
                  clearTimeout(longPressTimeout.current);
                  mouseInsideNode.current = false;
@@ -1356,8 +1308,8 @@ function NodeCanvas() {
                  const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
                  const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
                  const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
-                 setDrawingConnectionFrom({ sourceNodeId: longPressingNodeId, startX: startPt.x, startY: startPt.y, currentX, currentY });
-                 setLongPressingNodeId(null); // Clear ID
+                 setDrawingConnectionFrom({ sourceInstanceId: longPressingInstanceId, startX: startPt.x, startY: startPt.y, currentX, currentY });
+                 setLongPressingInstanceId(null); // Clear ID
              }
         } else if (!draggingNodeInfo && !drawingConnectionFrom && !isPanning && !startedOnNode.current) {
             isPanningOrZooming.current = true;
@@ -1372,40 +1324,34 @@ function NodeCanvas() {
         requestAnimationFrame(() => { // Keep RAF
             // Multi-node drag
             if (draggingNodeInfo.relativeOffsets) {
-                const primaryNodeId = draggingNodeInfo.primaryId;
+                const primaryInstanceId = draggingNodeInfo.primaryId;
                 const dx = (e.clientX - draggingNodeInfo.initialMouse.x) / zoomLevel;
                 const dy = (e.clientY - draggingNodeInfo.initialMouse.y) / zoomLevel;
                 const newPrimaryX = draggingNodeInfo.initialPrimaryPos.x + dx;
                 const newPrimaryY = draggingNodeInfo.initialPrimaryPos.y + dy;
 
-                // --- BATCH UPDATE --- 
                 const positionUpdates = [];
+                positionUpdates.push({ instanceId: primaryInstanceId, x: newPrimaryX, y: newPrimaryY });
 
-                // Add primary node update
-                positionUpdates.push({ nodeId: primaryNodeId, x: newPrimaryX, y: newPrimaryY });
-
-                // Add other selected nodes relative to primary
-                Object.keys(draggingNodeInfo.relativeOffsets).forEach(nodeId => {
-                    const relativeOffset = draggingNodeInfo.relativeOffsets[nodeId];
+                Object.keys(draggingNodeInfo.relativeOffsets).forEach(instanceId => {
+                    const relativeOffset = draggingNodeInfo.relativeOffsets[instanceId];
                     positionUpdates.push({
-                        nodeId: nodeId,
+                        instanceId: instanceId,
                         x: newPrimaryX + relativeOffset.offsetX,
                         y: newPrimaryY + relativeOffset.offsetY
                     });
                 });
 
-                // Dispatch single batch update action
-                storeActions.updateMultipleNodePositions(positionUpdates);
-                // --- END BATCH UPDATE ---
+                storeActions.updateMultipleNodeInstancePositions(activeGraphId, positionUpdates);
 
             } else {
                 // Single node drag
-                const { nodeId, offset } = draggingNodeInfo;
+                const { instanceId, offset } = draggingNodeInfo;
                 const currentAdjustedX = (e.clientX - panOffset.x) / zoomLevel;
                 const currentAdjustedY = (e.clientY - panOffset.y) / zoomLevel;
                 const newX = currentAdjustedX - (offset.x / zoomLevel);
                 const newY = currentAdjustedY - (offset.y / zoomLevel);
-                storeActions.updateNode(nodeId, draft => {
+                storeActions.updateNodeInstance(activeGraphId, instanceId, draft => {
                     draft.x = newX;
                     draft.y = newY;
                 });
@@ -1463,7 +1409,7 @@ function NodeCanvas() {
       const startY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
       setSelectionStart({ x: startX, y: startY });
       setSelectionRect({ x: startX, y: startY, width: 0, height: 0 });
-      selectionBaseRef.current = new Set([...selectedNodeIds]);
+      selectionBaseRef.current = new Set([...selectedInstanceIds]);
       return;
     }
     setPanStart({ x: e.clientX, y: e.clientY });
@@ -1473,28 +1419,26 @@ function NodeCanvas() {
   const handleMouseUp = (e) => {
     if (isPaused || !activeGraphId) return;
     clearTimeout(longPressTimeout.current);
-    setLongPressingNodeId(null); // Clear ID
+    setLongPressingInstanceId(null); // Clear ID
     mouseInsideNode.current = false;
 
     // Finalize drawing connection
     if (drawingConnectionFrom) {
-        const targetNodeData = nodes.find(n => isInsideNode(n, e.clientX, e.clientY)); // Use nodes from store
+        const targetNodeData = nodes.find(n => isInsideNode(n, e.clientX, e.clientY));
 
-        if (targetNodeData && targetNodeData.id !== drawingConnectionFrom.sourceNodeId) {
-            const sourceId = drawingConnectionFrom.sourceNodeId;
+        if (targetNodeData && targetNodeData.id !== drawingConnectionFrom.sourceInstanceId) {
+            const sourceId = drawingConnectionFrom.sourceInstanceId;
             const destId = targetNodeData.id;
 
             // Check for existing edge in store's edges
-            const exists = edges.some(edge => // Use edges from store
+            const exists = edges.some(edge =>
                 (edge.sourceId === sourceId && edge.destinationId === destId) ||
                 (edge.sourceId === destId && edge.destinationId === sourceId)
             );
 
             if (!exists) {
-                // Create new edge data and add via store action
                 const newEdgeId = uuidv4();
                 const newEdgeData = { id: newEdgeId, sourceId, destinationId: destId };
-                 // Use localStoreActions
                 storeActions.addEdge(activeGraphId, newEdgeData);
             }
         }
@@ -1503,18 +1447,17 @@ function NodeCanvas() {
 
     // Reset scale for dragged nodes
     if (draggingNodeInfo) {
-        const nodeIdsToReset = new Set();
+        const instanceIdsToReset = new Set();
         if (draggingNodeInfo.relativeOffsets) {
-            nodeIdsToReset.add(draggingNodeInfo.primaryId);
-            Object.keys(draggingNodeInfo.relativeOffsets).forEach(id => nodeIdsToReset.add(id));
-        } else if (draggingNodeInfo.nodeId) {
-            nodeIdsToReset.add(draggingNodeInfo.nodeId);
+            instanceIdsToReset.add(draggingNodeInfo.primaryId);
+            Object.keys(draggingNodeInfo.relativeOffsets).forEach(id => instanceIdsToReset.add(id));
+        } else if (draggingNodeInfo.instanceId) {
+            instanceIdsToReset.add(draggingNodeInfo.instanceId);
         }
-        nodeIdsToReset.forEach(id => {
-            const nodeExists = nodes.some(n => n.id === id); // nodes uses localActiveGraphId
+        instanceIdsToReset.forEach(id => {
+            const nodeExists = nodes.some(n => n.id === id);
             if(nodeExists) {
-                 // Use localStoreActions
-                storeActions.updateNode(id, draft => { draft.scale = 1; });
+                storeActions.updateNodeInstance(activeGraphId, id, draft => { draft.scale = 1; });
             }
         });
         setDraggingNodeInfo(null);
@@ -1534,7 +1477,7 @@ function NodeCanvas() {
                                 selectionRes.y > nd.y + getNodeDimensions(nd, previewingNodeId === nd.id, null).currentHeight ||
                                 selectionRes.y + selectionRes.height < nd.y))
               .map(nd => nd.id);
-            setSelectedNodeIds(prev => new Set([...prev, ...finalSelectedIds]));
+            setSelectedInstanceIds(prev => new Set([...prev, ...finalSelectedIds]));
           })
           .catch(error => console.error("Final selection calc failed:", error));
         ignoreCanvasClick.current = true;
@@ -1595,9 +1538,9 @@ function NodeCanvas() {
       }
       if (ignoreCanvasClick.current) { ignoreCanvasClick.current = false; return; }
 
-      if (selectedNodeIds.size > 0) {
-          setSelectedNodeIds(new Set());
-          // Pie menu will be handled by useEffect on selectedNodeIds, no direct setShowPieMenu here
+      if (selectedInstanceIds.size > 0) {
+          setSelectedInstanceIds(new Set());
+          // Pie menu will be handled by useEffect on selectedInstanceIds, no direct setShowPieMenu here
           return;
       }
 
@@ -1605,7 +1548,7 @@ function NodeCanvas() {
       const mouseX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
       const mouseY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
       // Prevent plus sign if pie menu is active or about to become active
-      if (!plusSign && selectedNodeIds.size === 0) {
+      if (!plusSign && selectedInstanceIds.size === 0) {
           setPlusSign({ x: mouseX, y: mouseY, mode: 'appear', tempName: '' });
           setLastInteractionType('plus_sign_shown');
       } else {
@@ -1640,27 +1583,27 @@ function NodeCanvas() {
 
   const handleMorphDone = () => {
       if (!plusSign || !plusSign.tempName || !activeGraphId) return;
+      
       const name = plusSign.tempName;
-      const newNodeId = uuidv4();
-      const newNodeData = {
-          id: newNodeId,
+      const newPrototypeId = uuidv4();
+      
+      // 1. Create the new prototype
+      const newPrototypeData = {
+          id: newPrototypeId,
           name: name,
           description: '',
-          picture: null,
-          color: 'maroon', // Default color?
-          data: null,
-          x: plusSign.x - NODE_WIDTH / 2,
-          y: plusSign.y - NODE_HEIGHT / 2,
-          scale: 1,
-          imageSrc: null,
-          thumbnailSrc: null,
-          imageAspectRatio: null,
-          parentDefinitionNodeId: null,
-          edgeIds: [],
+          color: 'maroon', // Default color
           definitionGraphIds: [],
       };
-      //console.log(`[handleMorphDone] About to add node:`, { graphId: activeGraphId, nodeData: newNodeData }); // Log before action
-      storeActions.addNode(activeGraphId, newNodeData);
+      storeActions.addNodePrototype(newPrototypeData);
+
+      // 2. Create the first instance of this prototype on the canvas
+      const position = {
+          x: plusSign.x - NODE_WIDTH / 2,
+          y: plusSign.y - NODE_HEIGHT / 2,
+      };
+      storeActions.addNodeInstance(activeGraphId, newPrototypeId, position);
+
       setPlusSign(null);
   };
 
@@ -1859,24 +1802,24 @@ function NodeCanvas() {
       if (isInputActive || !activeGraphId) { return; }
 
       const isDeleteKey = e.key === 'Delete' || e.key === 'Backspace';
-      const nodesSelected = selectedNodeIds.size > 0;
+      const nodesSelected = selectedInstanceIds.size > 0;
 
       if (isDeleteKey && nodesSelected) {
         e.preventDefault();
-        const idsToDelete = new Set(selectedNodeIds); // Use local selection state
+        const idsToDelete = new Set(selectedInstanceIds); // Use local selection state
 
-        // Call removeNode action for each selected ID (Use localStoreActions)
+        // Call removeNodeInstance action for each selected ID
         idsToDelete.forEach(id => {
-            storeActions.removeNode(id);
+            storeActions.removeNodeInstance(activeGraphId, id);
         });
 
         // Clear local selection state AFTER dispatching actions
-        setSelectedNodeIds(new Set());
+        setSelectedInstanceIds(new Set());
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeIds, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible, activeGraphId, storeActions.removeNode]);
+  }, [selectedInstanceIds, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible, activeGraphId, storeActions.removeNodeInstance]);
 
   const handleProjectTitleChange = (newTitle) => {
     // Get CURRENT activeGraphId directly from store
@@ -1900,16 +1843,16 @@ function NodeCanvas() {
 
   // Effect to manage PieMenu visibility and data for animations
   useEffect(() => {
-    console.log(`[NodeCanvas] useEffect[selectedNodeIds, isTransitioningPieMenu]: Running. selectedNodeIds.size = ${selectedNodeIds.size}, selectedNodeIds = [${Array.from(selectedNodeIds).join(', ')}], isTransitioningPieMenu = ${isTransitioningPieMenu}`);
-    if (selectedNodeIds.size === 1) {
-      const nodeId = [...selectedNodeIds][0];
+    console.log(`[NodeCanvas] useEffect[selectedInstanceIds, isTransitioningPieMenu]: Running. selectedInstanceIds.size = ${selectedInstanceIds.size}, selectedInstanceIds = [${Array.from(selectedInstanceIds).join(', ')}], isTransitioningPieMenu = ${isTransitioningPieMenu}`);
+    if (selectedInstanceIds.size === 1) {
+      const instanceId = [...selectedInstanceIds][0];
       
       if (!isTransitioningPieMenu) {
-        console.log(`[NodeCanvas] Single node selected (${nodeId}), not transitioning. Setting selectedNodeIdForPieMenu.`);
-        setSelectedNodeIdForPieMenu(nodeId);
+        console.log(`[NodeCanvas] Single node selected (${instanceId}), not transitioning. Setting selectedNodeIdForPieMenu.`);
+        setSelectedNodeIdForPieMenu(instanceId);
       } else {
         // If transitioning, PieMenu's onExitAnimationComplete will handle setting the next selectedNodeIdForPieMenu
-        console.log(`[NodeCanvas] Single node selected (${nodeId}), but IS transitioning. Waiting for exit animation to potentially set new pie menu target.`);
+        console.log(`[NodeCanvas] Single node selected (${instanceId}), but IS transitioning. Waiting for exit animation to potentially set new pie menu target.`);
       }
       } else {
     // Not a single selection (0 or multiple)
@@ -1922,7 +1865,7 @@ function NodeCanvas() {
     
     setSelectedNodeIdForPieMenu(null);
   }
-  }, [selectedNodeIds, isTransitioningPieMenu]); // Dependencies: only selectedNodeIds and isTransitioningPieMenu
+  }, [selectedInstanceIds, isTransitioningPieMenu]); // Dependencies: only selectedInstanceIds and isTransitioningPieMenu
 
   // Effect to prepare and render PieMenu when selectedNodeIdForPieMenu changes and not transitioning
   useEffect(() => {
@@ -2045,7 +1988,7 @@ function NodeCanvas() {
     // If a sourceGraphId is provided, look for the node there. Otherwise, use the current active graph.
     const graphIdToFindNodeIn = sourceGraphId || currentState.activeGraphId;
     
-    const nodesInSourceGraph = getNodesForGraph(graphIdToFindNodeIn)(currentState);
+    const nodesInSourceGraph = getHydratedNodesForGraph(graphIdToFindNodeIn)(currentState);
     const nodeData = nodesInSourceGraph.find(n => n.id === nodeId);
     
     if (!nodeData) {
@@ -2106,7 +2049,7 @@ function NodeCanvas() {
 
   const startHurtleAnimationFromPanel = useCallback((nodeId, targetGraphId, definitionNodeId, startRect) => {
     const currentState = useGraphStore.getState();
-    const nodeData = currentState.nodes.get(nodeId);
+    const nodeData = currentState.nodePrototypes.get(nodeId);
     if (!nodeData) {
       console.error(`[Panel Hurtle] Failed to find node ${nodeId}.`);
       return;
@@ -2789,7 +2732,7 @@ function NodeCanvas() {
                 )}
 
                 {(() => {
-                   const draggingNodeId = draggingNodeInfo?.primaryId || draggingNodeInfo?.nodeId;
+                   const draggingNodeId = draggingNodeInfo?.primaryId || draggingNodeInfo?.instanceId;
 
                    // Determine which node should be treated as "active" for stacking, 
                    // giving priority to previewing, then the node whose PieMenu is currently active/animating.
@@ -2836,57 +2779,55 @@ function NodeCanvas() {
                              innerNetworkWidth={dimensions.innerNetworkWidth}
                              innerNetworkHeight={dimensions.innerNetworkHeight}
                              descriptionAreaHeight={dimensions.descriptionAreaHeight}
-                             isSelected={selectedNodeIds.has(node.id)}
+                             isSelected={selectedInstanceIds.has(node.id)}
                              isDragging={false} // These are explicitly not the dragging node
                              onMouseDown={(e) => handleNodeMouseDown(node, e)}
                              isPreviewing={isPreviewing}
                              allNodes={nodes}
                              isEditingOnCanvas={node.id === editingNodeIdOnCanvas}
-                             onCommitCanvasEdit={(nodeId, newName, isRealTime = false) => { 
-                               storeActions.updateNode(nodeId, draft => { draft.name = newName; }); 
+                             onCommitCanvasEdit={(instanceId, newName, isRealTime = false) => { 
+                               storeActions.updateNodePrototype(node.prototypeId, draft => { draft.name = newName; }); 
                                if (!isRealTime) setEditingNodeIdOnCanvas(null); 
                              }}
                              onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
-                             onCreateDefinition={(nodeId) => {
+                             onCreateDefinition={(prototypeId) => {
                                if (mouseMoved.current) return;
-                               storeActions.createAndAssignGraphDefinition(nodeId);
+                               storeActions.createAndAssignGraphDefinition(prototypeId);
                              }}
-                             onAddNodeToDefinition={(nodeId) => {
+                             onAddNodeToDefinition={(prototypeId) => {
                                // Create a new alternative definition for the node
-                               // console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
-                               storeActions.createAndAssignGraphDefinition(nodeId);
+                               storeActions.createAndAssignGraphDefinition(prototypeId);
                              }}
-                             onDeleteDefinition={(nodeId, graphId) => {
+                             onDeleteDefinition={(prototypeId, graphId) => {
                                // Delete the specific definition graph from the node
-                               // console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
-                               storeActions.removeDefinitionFromNode(nodeId, graphId);
+                               storeActions.removeDefinitionFromNode(prototypeId, graphId);
                              }}
-                             onExpandDefinition={(nodeId, graphId) => {
+                             onExpandDefinition={(instanceId, prototypeId, graphId) => {
                                if (graphId) {
                                  // Node has an existing definition to expand
-                                 startHurtleAnimation(nodeId, graphId, nodeId);
+                                 startHurtleAnimation(instanceId, graphId, prototypeId);
                                } else {
                                  // Node has no definitions - create one, then animate
                                  const sourceGraphId = activeGraphId; // Capture current graph before it changes
-                                 storeActions.createAndAssignGraphDefinitionWithoutActivation(nodeId);
+                                 storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
                                  
                                  setTimeout(() => {
                                    const currentState = useGraphStore.getState();
-                                   const updatedNodeData = currentState.nodes.get(nodeId);
+                                   const updatedNodeData = currentState.nodePrototypes.get(prototypeId);
                                    if (updatedNodeData?.definitionGraphIds?.length > 0) {
                                      const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
-                                     startHurtleAnimation(nodeId, newGraphId, nodeId, sourceGraphId);
+                                     startHurtleAnimation(instanceId, newGraphId, prototypeId, sourceGraphId);
                                    } else {
-                                     console.error(`[PieMenu Expand] Could not find new definition for node ${nodeId} after creation.`);
+                                     console.error(`[PieMenu Expand] Could not find new definition for node ${prototypeId} after creation.`);
                                    }
                                  }, 50);
                                }
                              }}
                              storeActions={storeActions}
                              connections={edges}
-                             currentDefinitionIndex={nodeDefinitionIndices.get(`${node.id}-${activeGraphId}`) || 0}
-                             onNavigateDefinition={(nodeId, newIndex) => {
-                               const contextKey = `${nodeId}-${activeGraphId}`;
+                             currentDefinitionIndex={nodeDefinitionIndices.get(`${node.prototypeId}-${activeGraphId}`) || 0}
+                             onNavigateDefinition={(prototypeId, newIndex) => {
+                               const contextKey = `${prototypeId}-${activeGraphId}`;
                                setNodeDefinitionIndices(prev => new Map(prev.set(contextKey, newIndex)));
                              }}
 
@@ -2904,7 +2845,7 @@ function NodeCanvas() {
                              currentPieMenuData?.node?.id === selectedNodeIdForPieMenu &&
                              !isTransitioningPieMenu &&
                              !(draggingNodeInfo && 
-                               (draggingNodeInfo.primaryId === selectedNodeIdForPieMenu || draggingNodeInfo.nodeId === selectedNodeIdForPieMenu)
+                               (draggingNodeInfo.primaryId === selectedNodeIdForPieMenu || draggingNodeInfo.instanceId === selectedNodeIdForPieMenu)
                              )
                            )}
                                       onExitAnimationComplete={() => {
@@ -2938,7 +2879,7 @@ function NodeCanvas() {
                 // The carousel's onExitAnimationComplete will show the regular pie menu
              } else if (wasTransitioning) {
                setIsTransitioningPieMenu(false); 
-               const currentlySelectedNodeId = [...selectedNodeIds][0]; 
+               const currentlySelectedNodeId = [...selectedInstanceIds][0]; 
                if (currentlySelectedNodeId) {
                    const selectedNodeIsPreviewing = previewingNodeId === currentlySelectedNodeId;
                    if (selectedNodeIsPreviewing) { 
@@ -2984,57 +2925,55 @@ function NodeCanvas() {
                                innerNetworkWidth={dimensions.innerNetworkWidth}
                                innerNetworkHeight={dimensions.innerNetworkHeight}
                                descriptionAreaHeight={dimensions.descriptionAreaHeight}
-                               isSelected={selectedNodeIds.has(activeNodeToRender.id)}
+                               isSelected={selectedInstanceIds.has(activeNodeToRender.id)}
                                isDragging={false} // Explicitly not the dragging node if rendered here
                                onMouseDown={(e) => handleNodeMouseDown(activeNodeToRender, e)}
                                isPreviewing={isPreviewing}
                                allNodes={nodes}
                                isEditingOnCanvas={activeNodeToRender.id === editingNodeIdOnCanvas}
-                               onCommitCanvasEdit={(nodeId, newName, isRealTime = false) => { 
-                                 storeActions.updateNode(nodeId, draft => { draft.name = newName; }); 
+                               onCommitCanvasEdit={(instanceId, newName, isRealTime = false) => { 
+                                 storeActions.updateNodePrototype(activeNodeToRender.prototypeId, draft => { draft.name = newName; }); 
                                  if (!isRealTime) setEditingNodeIdOnCanvas(null); 
                                }}
                                onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
-                               onCreateDefinition={(nodeId) => {
+                               onCreateDefinition={(prototypeId) => {
                                  if (mouseMoved.current) return;
-                                 storeActions.createAndAssignGraphDefinition(nodeId);
+                                 storeActions.createAndAssignGraphDefinition(prototypeId);
                                }}
-                               onAddNodeToDefinition={(nodeId) => {
+                               onAddNodeToDefinition={(prototypeId) => {
                                  // Create a new alternative definition for the node
-                                 // console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
-                                 storeActions.createAndAssignGraphDefinition(nodeId);
+                                 storeActions.createAndAssignGraphDefinition(prototypeId);
                                }}
-                               onDeleteDefinition={(nodeId, graphId) => {
+                               onDeleteDefinition={(prototypeId, graphId) => {
                                  // Delete the specific definition graph from the node
-                                 // console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
-                                 storeActions.removeDefinitionFromNode(nodeId, graphId);
+                                 storeActions.removeDefinitionFromNode(prototypeId, graphId);
                                }}
-                               onExpandDefinition={(nodeId, graphId) => {
+                               onExpandDefinition={(instanceId, prototypeId, graphId) => {
                                  if (graphId) {
                                    // Node has an existing definition to expand
-                                   startHurtleAnimation(nodeId, graphId, nodeId);
+                                   startHurtleAnimation(instanceId, graphId, prototypeId);
                                  } else {
                                    // Node has no definitions - create one, then animate
                                    const sourceGraphId = activeGraphId; // Capture current graph before it changes
-                                   storeActions.createAndAssignGraphDefinitionWithoutActivation(nodeId);
+                                   storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
                                    
                                    setTimeout(() => {
                                      const currentState = useGraphStore.getState();
-                                     const updatedNodeData = currentState.nodes.get(nodeId);
+                                     const updatedNodeData = currentState.nodePrototypes.get(prototypeId);
                                      if (updatedNodeData?.definitionGraphIds?.length > 0) {
                                        const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
-                                       startHurtleAnimation(nodeId, newGraphId, nodeId, sourceGraphId);
+                                       startHurtleAnimation(instanceId, newGraphId, prototypeId, sourceGraphId);
                                      } else {
-                                       console.error(`[Node OnExpand] Could not find new definition for node ${nodeId} after creation.`);
+                                       console.error(`[PieMenu Expand] Could not find new definition for node ${prototypeId} after creation.`);
                                      }
                                    }, 50);
                                  }
                                }}
                                storeActions={storeActions}
                                connections={edges}
-                               currentDefinitionIndex={nodeDefinitionIndices.get(`${activeNodeToRender.id}-${activeGraphId}`) || 0}
-                               onNavigateDefinition={(nodeId, newIndex) => {
-                                 const contextKey = `${nodeId}-${activeGraphId}`;
+                               currentDefinitionIndex={nodeDefinitionIndices.get(`${activeNodeToRender.prototypeId}-${activeGraphId}`) || 0}
+                               onNavigateDefinition={(prototypeId, newIndex) => {
+                                 const contextKey = `${prototypeId}-${activeGraphId}`;
                                  setNodeDefinitionIndices(prev => new Map(prev.set(contextKey, newIndex)));
                                }}
 
@@ -3067,57 +3006,55 @@ function NodeCanvas() {
                                innerNetworkWidth={dimensions.innerNetworkWidth}
                                innerNetworkHeight={dimensions.innerNetworkHeight}
                                descriptionAreaHeight={dimensions.descriptionAreaHeight}
-                               isSelected={selectedNodeIds.has(draggingNodeToRender.id)}
+                               isSelected={selectedInstanceIds.has(draggingNodeToRender.id)}
                                isDragging={true} // This is the dragging node
                                onMouseDown={(e) => handleNodeMouseDown(draggingNodeToRender, e)}
                                isPreviewing={isPreviewing}
                                allNodes={nodes}
                                isEditingOnCanvas={draggingNodeToRender.id === editingNodeIdOnCanvas}
-                               onCommitCanvasEdit={(nodeId, newName, isRealTime = false) => { 
-                                 storeActions.updateNode(nodeId, draft => { draft.name = newName; }); 
+                               onCommitCanvasEdit={(instanceId, newName, isRealTime = false) => { 
+                                 storeActions.updateNodePrototype(draggingNodeToRender.prototypeId, draft => { draft.name = newName; }); 
                                  if (!isRealTime) setEditingNodeIdOnCanvas(null); 
                                }}
                                onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
-                               onCreateDefinition={(nodeId) => {
+                               onCreateDefinition={(prototypeId) => {
                                  if (mouseMoved.current) return;
-                                 storeActions.createAndAssignGraphDefinition(nodeId);
+                                 storeActions.createAndAssignGraphDefinition(prototypeId);
                                }}
-                               onAddNodeToDefinition={(nodeId) => {
+                               onAddNodeToDefinition={(prototypeId) => {
                                  // Create a new alternative definition for the node
-                                 // console.log(`[NodeCanvas] Creating alternative definition for node: ${nodeId}`);
-                                 storeActions.createAndAssignGraphDefinition(nodeId);
+                                 storeActions.createAndAssignGraphDefinition(prototypeId);
                                }}
-                               onDeleteDefinition={(nodeId, graphId) => {
+                               onDeleteDefinition={(prototypeId, graphId) => {
                                  // Delete the specific definition graph from the node
-                                 // console.log(`[NodeCanvas] Deleting definition graph ${graphId} from node: ${nodeId}`);
-                                 storeActions.removeDefinitionFromNode(nodeId, graphId);
+                                 storeActions.removeDefinitionFromNode(prototypeId, graphId);
                                }}
-                               onExpandDefinition={(nodeId, graphId) => {
+                               onExpandDefinition={(instanceId, prototypeId, graphId) => {
                                  if (graphId) {
                                    // Node has an existing definition to expand
-                                   startHurtleAnimation(nodeId, graphId, nodeId);
+                                   startHurtleAnimation(instanceId, graphId, prototypeId);
                                  } else {
                                    // Node has no definitions - create one, then animate
                                    const sourceGraphId = activeGraphId; // Capture current graph before it changes
-                                   storeActions.createAndAssignGraphDefinitionWithoutActivation(nodeId);
+                                   storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
                                    
                                    setTimeout(() => {
                                      const currentState = useGraphStore.getState();
-                                     const updatedNodeData = currentState.nodes.get(nodeId);
+                                     const updatedNodeData = currentState.nodePrototypes.get(prototypeId);
                                      if (updatedNodeData?.definitionGraphIds?.length > 0) {
                                        const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
-                                       startHurtleAnimation(nodeId, newGraphId, nodeId, sourceGraphId);
+                                       startHurtleAnimation(instanceId, newGraphId, prototypeId, sourceGraphId);
                                      } else {
-                                       console.error(`[Node OnExpand] Could not find new definition for node ${nodeId} after creation.`);
+                                       console.error(`[Node OnExpand] Could not find new definition for node ${prototypeId} after creation.`);
                                      }
                                    }, 50);
                                  }
                                }}
                                storeActions={storeActions}
                                connections={edges}
-                               currentDefinitionIndex={nodeDefinitionIndices.get(`${draggingNodeToRender.id}-${activeGraphId}`) || 0}
-                               onNavigateDefinition={(nodeId, newIndex) => {
-                                 const contextKey = `${nodeId}-${activeGraphId}`;
+                               currentDefinitionIndex={nodeDefinitionIndices.get(`${draggingNodeToRender.prototypeId}-${activeGraphId}`) || 0}
+                               onNavigateDefinition={(prototypeId, newIndex) => {
+                                 const contextKey = `${prototypeId}-${activeGraphId}`;
                                  setNodeDefinitionIndices(prev => new Map(prev.set(contextKey, newIndex)));
                                }}
 
@@ -3205,7 +3142,7 @@ function NodeCanvas() {
       {/* TypeList Component */}
       <TypeList 
         nodes={nodes}
-        setSelectedNodes={setSelectedNodeIds}
+        setSelectedNodes={setSelectedInstanceIds}
       />
 
       {/* AbstractionCarousel Component */}

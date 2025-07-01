@@ -20,7 +20,7 @@ const GraphListItem = forwardRef(({
 }, ref) => {
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: SPAWNABLE_NODE,
-    item: { nodeId: graphData.definingNodeIds?.[0] },
+    item: { prototypeId: graphData.definingNodeIds?.[0] },
     canDrag: () => {
       const canDrag = !!graphData.definingNodeIds?.[0];
       console.log('[GraphListItem] canDrag check for', graphData.name, 'definingNodeId:', graphData.definingNodeIds?.[0], 'canDrag:', canDrag);

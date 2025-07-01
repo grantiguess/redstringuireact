@@ -6,7 +6,7 @@ import InnerNetwork from './InnerNetwork.jsx'; // Import InnerNetwork
 import { getNodeDimensions } from './utils.js'; // Import needed for node dims
 import { v4 as uuidv4 } from 'uuid';
 import { ChevronLeft, ChevronRight, Trash2, Expand, ArrowUpFromDot } from 'lucide-react'; // Import navigation icons, trash, and expand
-import useGraphStore, { getNodesForGraph, getEdgesForGraph } from './store/graphStore.js'; // Import store selectors
+import useGraphStore, { getHydratedNodesForGraph, getEdgesForGraph } from './store/graphStore.js'; // Import store selectors
 
 const PREVIEW_SCALE_FACTOR = 0.3; // How much to shrink the network layout
 
@@ -48,14 +48,18 @@ const Node = ({
   currentDefinitionIndex = 0,
   onNavigateDefinition
 }) => {
-  // Access properties directly from the node data object
-  const nodeId = node.id ?? uuidv4(); // Use ID or generate fallback (should have ID from store)
-  const nodeX = node.x ?? 0; // Use provided x or default to 0
-  const nodeY = node.y ?? 0; // Use provided y or default to 0
-  const nodeScale = node.scale ?? 1; // Use provided scale or default to 1
-  const nodeName = node.name ?? 'Untitled'; // Use provided name or default
-  // Access thumbnailSrc directly if it exists
+  // Destructure properties from the hydrated node object
+  // Instance-specific properties
+  const instanceId = node.id;
+  const nodeX = node.x ?? 0;
+  const nodeY = node.y ?? 0;
+  const nodeScale = node.scale ?? 1;
+  const prototypeId = node.prototypeId;
+
+  // Prototype properties
+  const nodeName = node.name ?? 'Untitled';
   const nodeThumbnailSrc = node.thumbnailSrc ?? null;
+  const definitionGraphIds = node.definitionGraphIds || [];
 
   // --- Inline Editing State ---
   const [tempName, setTempName] = useState(nodeName);
@@ -78,7 +82,7 @@ const Node = ({
   const handleCommitEdit = () => {
     const newName = tempName.trim();
     if (newName && newName !== nodeName) {
-      onCommitCanvasEdit?.(nodeId, newName);
+      onCommitCanvasEdit?.(instanceId, newName);
     } else {
       onCancelCanvasEdit?.();
     }
@@ -106,15 +110,15 @@ const Node = ({
     setTempName(newValue);
     // Trigger real-time update to the store for dynamic resizing
     if (onCommitCanvasEdit && newValue.trim()) {
-      onCommitCanvasEdit(nodeId, newValue, true); // Add 'true' flag for real-time update
+      onCommitCanvasEdit(instanceId, newValue, true);
     }
   };
 
   const hasThumbnail = Boolean(nodeThumbnailSrc);
 
-  // Unique ID for the clip path - incorporate prefix
-  const clipPathId = `${idPrefix}node-clip-${nodeId}`;
-  const innerClipPathId = `${idPrefix}node-inner-clip-${nodeId}`;
+  // Unique ID for the clip path - incorporate prefix and INSTANCE ID
+  const clipPathId = `${idPrefix}node-clip-${instanceId}`;
+  const innerClipPathId = `${idPrefix}node-inner-clip-${instanceId}`;
 
   // Calculate image position based on dynamic textAreaHeight
   const contentAreaY = nodeY + textAreaHeight;
@@ -132,8 +136,7 @@ const Node = ({
 
   // Use the currentDefinitionIndex prop passed from NodeCanvas
 
-  // Get the node's definition graph IDs
-  const definitionGraphIds = node.definitionGraphIds || [];
+  // Get the node's definition graph IDs from the prototype
   const hasMultipleDefinitions = definitionGraphIds.length > 1;
   const hasAnyDefinitions = definitionGraphIds.length > 0;
 
@@ -146,8 +149,8 @@ const Node = ({
   // Filter nodes and edges for the current graph definition
   const currentGraphNodes = useMemo(() => {
     if (!currentGraphId) return [];
-    return getNodesForGraph(currentGraphId)(storeState);
-  }, [currentGraphId, storeState.nodes, storeState.graphs]);
+    return getHydratedNodesForGraph(currentGraphId)(storeState);
+  }, [currentGraphId, storeState.graphs, storeState.nodePrototypes]);
 
   const currentGraphEdges = useMemo(() => {
     if (!currentGraphId) return [];
@@ -182,13 +185,13 @@ const Node = ({
   const navigateToPreviousDefinition = () => {
     if (!hasMultipleDefinitions || !onNavigateDefinition) return;
     const newIndex = currentDefinitionIndex === 0 ? definitionGraphIds.length - 1 : currentDefinitionIndex - 1;
-    onNavigateDefinition(nodeId, newIndex);
+    onNavigateDefinition(prototypeId, newIndex);
   };
 
   const navigateToNextDefinition = () => {
     if (!hasMultipleDefinitions || !onNavigateDefinition) return;
     const newIndex = currentDefinitionIndex === definitionGraphIds.length - 1 ? 0 : currentDefinitionIndex + 1;
-    onNavigateDefinition(nodeId, newIndex);
+    onNavigateDefinition(prototypeId, newIndex);
   };
 
   return (
@@ -249,7 +252,7 @@ const Node = ({
         x={nodeX} // Use absolute nodeX
         y={nodeY} // Use absolute nodeY
         width={currentWidth}
-        height={hasThumbnail ? textAreaHeight : currentHeight}
+        height={textAreaHeight}
         style={{
             transition: 'width 0.3s ease, height 0.3s ease',
             overflow: 'hidden'
@@ -270,7 +273,8 @@ const Node = ({
             boxSizing: 'border-box',
             pointerEvents: isEditingOnCanvas ? 'auto' : 'none',
             userSelect: 'none',
-            minWidth: 0
+            minWidth: 0,
+            transition: 'padding 0.3s ease',
           }}
         >
           {isEditingOnCanvas ? (
@@ -412,7 +416,7 @@ const Node = ({
                               onClick={(e) => {
                                   e.stopPropagation();
                                   if (onCreateDefinition) {
-                                      onCreateDefinition(nodeId);
+                                      onCreateDefinition(prototypeId);
                                   }
                                   console.log(`Creating new definition for node: ${nodeName}`);
                               }}
@@ -499,8 +503,8 @@ const Node = ({
                   onClick={(e) => {
                     e.stopPropagation();
                     if (onAddNodeToDefinition) {
-                      console.log(`[Plus Button] Creating alternative definition for node: ${nodeId}`);
-                      onAddNodeToDefinition(nodeId);
+                      console.log(`[Plus Button] Creating alternative definition for node: ${prototypeId}`);
+                      onAddNodeToDefinition(prototypeId);
                     }
                   }}
                   title="Create alternative definition"
@@ -536,7 +540,7 @@ const Node = ({
                     onClick={(e) => {
                       e.stopPropagation();
                       if (onDeleteDefinition && currentGraphId) {
-                        console.log(`[Delete Button] Deleting definition graph: ${currentGraphId} for node: ${nodeId}`);
+                        console.log(`[Delete Button] Deleting definition graph: ${currentGraphId} for node: ${prototypeId}`);
                         
                         // Adjust currentDefinitionIndex before deletion using callback
                         const newLength = definitionGraphIds.length - 1; // Length after deletion
@@ -544,17 +548,17 @@ const Node = ({
                         if (newLength > 0) {
                           // If we're deleting the last definition, move to the previous one
                           if (currentDefinitionIndex >= newLength) {
-                              onNavigateDefinition(nodeId, newLength - 1);
+                              onNavigateDefinition(prototypeId, newLength - 1);
                           }
                           // If we're deleting from the middle or beginning, keep the same index
                           // (which will now point to the next definition in the list)
                         } else {
                           // If this was the last definition, reset to 0
-                            onNavigateDefinition(nodeId, 0);
+                            onNavigateDefinition(prototypeId, 0);
                           }
                         }
                         
-                        onDeleteDefinition(nodeId, currentGraphId);
+                        onDeleteDefinition(prototypeId, currentGraphId);
                       }
                     }}
                     title="Delete current definition"
@@ -591,8 +595,8 @@ const Node = ({
                     onClick={(e) => {
                       e.stopPropagation();
                       if (onExpandDefinition && currentGraphId) {
-                        console.log(`[Expand Button] Opening definition graph: ${currentGraphId} for node: ${nodeId}`);
-                        onExpandDefinition(nodeId, currentGraphId);
+                        console.log(`[Expand Button] Opening definition graph: ${currentGraphId} for node: ${prototypeId}`);
+                        onExpandDefinition(instanceId, prototypeId, currentGraphId);
                       }
                     }}
                     title="Open definition in new tab"

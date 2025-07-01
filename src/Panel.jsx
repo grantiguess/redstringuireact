@@ -8,8 +8,10 @@ import { generateThumbnail } from './utils'; // Import thumbnail generator
 import ToggleButton from './ToggleButton'; // Import the new component
 import useGraphStore, {
     getActiveGraphId,
-    getNodesForGraph,
+    getHydratedNodesForGraph,
     getActiveGraphData,
+    getEdgesForGraph,
+    getNodePrototypeById,
 } from './store/graphStore';
 import { shallow } from 'zustand/shallow';
 import GraphListItem from './GraphListItem'; // <<< Import the new component
@@ -114,7 +116,7 @@ const CustomDragLayer = ({ tabBarRef }) => {
 const SavedNodeItem = ({ node, onClick, onDoubleClick, onUnsave, isActive }) => {
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: ItemTypes.SPAWNABLE_NODE,
-    item: { nodeId: node.id },
+    item: { prototypeId: node.id },
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
     }),
@@ -447,7 +449,7 @@ const Panel = forwardRef(
     const graphsMap = useGraphStore(state => state.graphs);
 
     // <<< ADD: Select nodes and edges maps reactively >>>
-    const nodesMap = useGraphStore(state => state.nodes);
+    const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
     const edgesMap = useGraphStore(state => state.edges);
     const savedNodeIds = useGraphStore(state => state.savedNodeIds);
     // <<< ADD: Read activeDefinitionNodeId directly from the store >>>
@@ -457,8 +459,8 @@ const Panel = forwardRef(
 
     // Derive saved nodes array reactively
     const savedNodes = useMemo(() => {
-        return Array.from(savedNodeIds).map(id => nodesMap.get(id)).filter(Boolean);
-    }, [savedNodeIds, nodesMap]);
+        return Array.from(savedNodeIds).map(id => nodePrototypesMap.get(id)).filter(Boolean);
+    }, [savedNodeIds, nodePrototypesMap]);
 
     // <<< ADD Ref for the scrollable list container >>>
     const listContainerRef = useRef(null);
@@ -472,13 +474,18 @@ const Panel = forwardRef(
             const graphData = graphsMap.get(id); // Use reactive graphsMap
             if (!graphData) return null; // Handle case where graph might not be found
             // Fetch nodes and edges using the REACTIVE maps
-            const nodeIds = graphData.nodeIds || [];
+            const instances = graphData.instances ? Array.from(graphData.instances.values()) : [];
             const edgeIds = graphData.edgeIds || [];
-            const nodes = nodeIds.map(nodeId => nodesMap.get(nodeId)).filter(Boolean); // Use nodesMap
+            
+            const nodes = instances.map(instance => {
+                const prototype = nodePrototypesMap.get(instance.prototypeId);
+                return { ...prototype, ...instance };
+            }).filter(Boolean);
+
             const edges = edgeIds.map(edgeId => edgesMap.get(edgeId)).filter(Boolean); // Use edgesMap
             return { ...graphData, nodes, edges }; // Combine graph data with its nodes/edges
         }).filter(Boolean); // Filter out any nulls
-    }, [openGraphIds, graphsMap, nodesMap, edgesMap]); // Add nodesMap and edgesMap to dependencies
+    }, [openGraphIds, graphsMap, nodePrototypesMap, edgesMap]); // Add nodePrototypesMap
 
     // Left panel view state and collapsed sections
     const [leftViewActive, setLeftViewActive] = useState('library'); // 'library' or 'grid'
@@ -857,11 +864,9 @@ const Panel = forwardRef(
     // Derive nodes for active graph on right side (Calculate on every render)
     const activeGraphNodes = useMemo(() => {
         if (side !== 'right' || !activeGraphId) return [];
-        // Use the reactively selected maps directly
-        const graphData = graphsMap.get(activeGraphId); 
-        if (!graphData || !graphData.nodeIds) return []; 
-        return graphData.nodeIds.map(id => nodesMap.get(id)).filter(Boolean);
-    }, [activeGraphId, side, graphsMap, nodesMap]); // <<< ADD graphsMap and nodesMap to dependencies
+        // Use the new hydrated selector which is more efficient
+        return getHydratedNodesForGraph(activeGraphId)(useGraphStore.getState());
+    }, [activeGraphId, side]); // Removed unnecessary dependencies
 
     // --- Action Handlers defined earlier --- 
     const handleAddImage = (nodeId) => {
@@ -881,9 +886,9 @@ const Panel = forwardRef(
               const aspectRatio = (img.naturalHeight > 0 && img.naturalWidth > 0) ? img.naturalHeight / img.naturalWidth : 1;
               const thumbSrc = await generateThumbnail(fullImageSrc, THUMBNAIL_MAX_DIMENSION);
               const nodeDataToSave = { imageSrc: fullImageSrc, thumbnailSrc: thumbSrc, imageAspectRatio: aspectRatio };
-              console.log('Calling store updateNode with image data:', nodeId, nodeDataToSave); // Keep log for this one
+              console.log('Calling store updateNodePrototype with image data:', nodeId, nodeDataToSave); // Keep log for this one
               // Call store action directly (using prop)
-              updateNode(nodeId, draft => { Object.assign(draft, nodeDataToSave); });
+              storeActions.updateNodePrototype(nodeId, draft => { Object.assign(draft, nodeDataToSave); });
             } catch (error) {
               // console.error("Thumbnail/save failed:", error);
               // Handle error appropriately, e.g., show a message to the user
@@ -908,7 +913,7 @@ const Panel = forwardRef(
         if (!activeGraphId) return;
         
         // Get the node data to check if it has definitions
-        const nodeData = nodesMap.get(nodeId);
+        const nodeData = nodePrototypesMap.get(nodeId);
         
         // If node has definitions, update the current definition graph's description
         if (nodeData && nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
@@ -927,7 +932,7 @@ const Panel = forwardRef(
         }
         
         // Fallback: update the node's own description
-        updateNode(nodeId, draft => { draft.description = newBio; });
+        storeActions.updateNodePrototype(nodeId, draft => { draft.description = newBio; });
     };
 
     const commitProjectTitleChange = () => {
@@ -1254,7 +1259,7 @@ const Panel = forwardRef(
                         if (!activeGraphId) return null;
                         
                         // Find nodes from OTHER graphs that define this current graph
-                        const componentOfNodes = Array.from(nodesMap.values()).filter(node => 
+                        const componentOfNodes = Array.from(nodePrototypesMap.values()).filter(node => 
                             Array.isArray(node.definitionGraphIds) && 
                             node.definitionGraphIds.includes(activeGraphId)
                         );
@@ -1333,7 +1338,7 @@ const Panel = forwardRef(
                         if (!currentGraph || !currentGraph.definingNodeIds) return null;
                         
                         const definitionNodes = currentGraph.definingNodeIds
-                            .map(nodeId => nodesMap.get(nodeId))
+                            .map(nodeId => nodePrototypesMap.get(nodeId))
                             .filter(Boolean); // Remove any null/undefined nodes
 
                         if (definitionNodes.length === 0) return null;
@@ -1440,7 +1445,7 @@ const Panel = forwardRef(
         } else if (activeRightPanelTab.type === 'node') {
             const nodeId = activeRightPanelTab.nodeId;
             // --- Fetch node data globally using the tab's nodeId ---
-            const nodeData = useGraphStore.getState().nodes.get(nodeId);
+            const nodeData = useGraphStore.getState().nodePrototypes.get(nodeId);
 
             if (!nodeData) {
                 // Node data doesn't exist globally - error case
@@ -1482,7 +1487,7 @@ const Panel = forwardRef(
                     const newName = tempTitle.trim();
                     if (newName && newName !== activeRightPanelTab.title) {
                         // Update the node data
-                        updateNode(nodeId, draft => { draft.name = newName; });
+                        storeActions.updateNodePrototype(nodeId, draft => { draft.name = newName; });
                     }
                     setEditingTitle(false);
                 };
@@ -1829,7 +1834,7 @@ const Panel = forwardRef(
                                     >
                                         {/* Map ONLY node tabs (index > 0) - get tabs non-reactively */}
                                         {rightPanelTabs.slice(1).map((tab, i) => { // Use different index variable like `i`
-                                            const nodeCurrentName = nodesMap.get(tab.nodeId)?.name || tab.title; // Get current name for display and drag
+                                            const nodeCurrentName = nodePrototypesMap.get(tab.nodeId)?.name || tab.title; // Get current name for display and drag
                                             return (
                                                 <DraggableTab
                                                     key={tab.nodeId} // Use nodeId as key

@@ -54,7 +54,7 @@ const colorToRgba = (color, alpha) => {
 const HeaderGraphTab = ({ graph, onSelect, onDoubleClick, isActive, hideText = false }) => {
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: SPAWNABLE_NODE,
-    item: () => ({ nodeId: graph.definingNodeId }),
+    item: () => ({ prototypeId: graph.definingNodeId }),
     canDrag: () => !!graph.definingNodeId,
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),

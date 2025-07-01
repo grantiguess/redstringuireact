@@ -51,7 +51,10 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
     if (isPreviewing) {
         baseWidth = PREVIEW_NODE_WIDTH;
         baseHeight = PREVIEW_NODE_MIN_HEIGHT;
-        textWidthTarget = baseWidth - 2 * NODE_PADDING;
+        // Account for the actual padding used in preview mode (110px on each side for nodes with definitions, 60px for those without)
+        // We'll use the larger padding to be safe, or we could pass this information as a parameter
+        const previewHorizontalPadding = 110; // This matches the padding in Node.jsx for nodes with definitions
+        textWidthTarget = baseWidth - 2 * previewHorizontalPadding;
     } else if (hasImage) {
         baseWidth = EXPANDED_NODE_WIDTH;
         baseHeight = NODE_HEIGHT; // Start with base, image adds later
@@ -82,11 +85,9 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
 
     if (isPreviewing) {
         currentWidth = baseWidth;
-        // Calculate textAreaHeight dynamically based on preview width
-        let estimatedLines = 1;
-        if (textWidth > textWidthTarget * 2) { estimatedLines = 3; }
-        else if (textWidth > textWidthTarget) { estimatedLines = 2; }
-        textAreaHeight = Math.max(NODE_HEIGHT, estimatedLines * LINE_HEIGHT_ESTIMATE + 2 * NODE_PADDING);
+        // Calculate textAreaHeight dynamically based on actual text wrapping with correct width
+        const textBlockHeight = calculateTextAreaHeight(nodeName, textWidthTarget);
+        textAreaHeight = Math.max(NODE_HEIGHT, textBlockHeight + 2 * TEXT_V_PADDING);
         
         innerNetworkWidth = currentWidth - 2 * NODE_PADDING;
         
@@ -166,8 +167,9 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
         if (isSingleWord && currentWidth < EXPANDED_NODE_WIDTH) {
             textBlockHeight = LINE_HEIGHT_ESTIMATE;
         } else {
-            // Otherwise, calculate wrapping based on the node's current width.
-            textBlockHeight = calculateTextAreaHeight(nodeName, currentWidth - 2 * NODE_PADDING);
+            // Otherwise, calculate wrapping based on the node's actual current width.
+            const actualTextWidth = currentWidth - 2 * NODE_PADDING;
+            textBlockHeight = calculateTextAreaHeight(nodeName, actualTextWidth);
         }
         
         // Total height is the text block height plus padding, with a minimum of NODE_HEIGHT
@@ -212,7 +214,8 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
 // Add other utility functions here if needed 
 
 export const calculateTextAreaHeight = (name, width) => {
-  const textWidth = width - NODE_PADDING * 2;
+  // The width parameter should already be the available text width
+  const textWidth = width;
   if (textWidth <= 0) {
     return LINE_HEIGHT_ESTIMATE;
   }

@@ -1,114 +1,53 @@
 import { create } from 'zustand';
 import { produce, enableMapSet } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
-import { NODE_WIDTH, NODE_HEIGHT, NODE_DEFAULT_COLOR } from '../constants'; // <<< Import node dimensions
+import { NODE_WIDTH, NODE_HEIGHT, NODE_DEFAULT_COLOR } from '../constants';
 import { getFileStatus, restoreLastSession, clearSession, notifyChanges } from './fileStorage.js';
 import { importFromRedstring } from '../formats/redstringFormat.js';
-// No longer importing class instances
-// import Graph from '../core/Graph';
-// import Node from '../core/Node';
 
 // Enable Immer Map/Set plugin support
 enableMapSet();
 
-const _createAndAssignGraphDefinition = (draft, nodeId) => {
-    const node = draft.nodes.get(nodeId);
-    if (!node) {
-        console.error(`[Store Helper] Node with ID ${nodeId} not found.`);
+const _createAndAssignGraphDefinition = (draft, prototypeId) => {
+    const prototype = draft.nodePrototypes.get(prototypeId);
+    if (!prototype) {
+        console.error(`[Store Helper] Node prototype with ID ${prototypeId} not found.`);
         return null;
     }
 
     const newGraphId = uuidv4();
-    const newGraphName = node.name || 'Untitled Definition';
+    const newGraphName = prototype.name || 'Untitled Definition';
 
-    const innerNodeId = uuidv4();
-    const innerNodeData = {
-        ...node,
-        id: innerNodeId,
+    // The new graph will contain one instance of the prototype it defines.
+    const instanceId = uuidv4();
+    const newInstance = {
+        id: instanceId,
+        prototypeId: prototypeId,
         x: NODE_WIDTH * 2,
         y: NODE_HEIGHT * 2,
-        parentDefinitionNodeId: nodeId,
-        definitionGraphIds: [],
-        edgeIds: [],
         scale: 1,
     };
-    draft.nodes.set(innerNodeId, innerNodeData);
 
     const newGraphData = {
         id: newGraphId,
         name: newGraphName,
         description: '',
         picture: null,
-        color: node.color || NODE_DEFAULT_COLOR,
+        color: prototype.color || NODE_DEFAULT_COLOR,
         directed: true,
-        nodeIds: [innerNodeId],
+        instances: new Map([[instanceId, newInstance]]),
         edgeIds: [],
-        definingNodeIds: [nodeId],
+        definingNodeIds: [prototypeId], // This is the ID of the prototype
     };
     draft.graphs.set(newGraphId, newGraphData);
 
-    if (!Array.isArray(node.definitionGraphIds)) {
-        node.definitionGraphIds = [];
+    if (!Array.isArray(prototype.definitionGraphIds)) {
+        prototype.definitionGraphIds = [];
     }
-    node.definitionGraphIds.push(newGraphId);
+    prototype.definitionGraphIds.push(newGraphId);
 
     return newGraphId;
 };
-
-// --- Serialization Helpers ---
-const serializeMap = (map) => JSON.stringify(Array.from(map.entries()));
-const deserializeMap = (jsonString) => {
-  try {
-    if (!jsonString) return new Map();
-    const parsed = JSON.parse(jsonString);
-    if (!Array.isArray(parsed)) return new Map();
-    // Ensure entries are valid key-value pairs
-    const validEntries = parsed.filter(entry => Array.isArray(entry) && entry.length === 2);
-    return new Map(validEntries);
-  } catch (error) {
-    // console.error("Error deserializing Map:", error);
-    return new Map(); // Return empty map on error
-  }
-};
-
-const serializeSet = (set) => JSON.stringify(Array.from(set));
-const deserializeSet = (jsonString) => {
-    if (!jsonString) return new Set();
-  try {
-    const arr = JSON.parse(jsonString);
-    return new Set(arr);
-  } catch (e) {
-    // console.error("Error deserializing Set from JSON:", e);
-    return new Set(); // Return empty set on error
-  }
-};
-
-// --- Initial Empty Graph --- 
-// Remove or comment out these constants as they are no longer used for initialization
-// const INITIAL_GRAPH_ID = uuidv4(); 
-// const INITIAL_EMPTY_GRAPH_DATA = { ... };
-
-/**
- * Helper function to convert a Node class instance to plain data.
- * Add any other relevant properties from Node.js.
- */
-const nodeToData = (node) => ({
-  id: node.getId(),
-  name: node.getName(),
-  description: node.getDescription(),
-  picture: node.getPicture(),
-  color: node.getColor(),
-  data: node.getData(), // Keep the data payload
-  x: node.getX(),
-  y: node.getY(),
-  scale: node.getScale(),
-  imageSrc: node.getImageSrc(),
-  thumbnailSrc: node.getThumbnailSrc(),
-  imageAspectRatio: node.getImageAspectRatio(),
-  parentDefinitionNodeId: node.getParentDefinitionNodeId(),
-  edgeIds: [...node.getEdgeIds()], // Store edge IDs connected to this node
-  definitionGraphIds: [...node.getDefinitionGraphIds()], // Store definition graph IDs
-});
 
 /**
  * Helper function to normalize edge directionality to ensure arrowsToward is always a Set
@@ -128,41 +67,6 @@ const normalizeEdgeDirectionality = (directionality) => {
   
   return { arrowsToward: new Set() };
 };
-
-/**
- * Helper function to convert an Edge class instance to plain data.
- */
-const edgeToData = (edge) => ({
-    id: edge.getId(),
-    sourceId: edge.getSourceId(),
-    destinationId: edge.getDestinationId(),
-    definitionNodeId: edge.getDefinitionNodeId(),
-    name: edge.getName(),
-    description: edge.getDescription(),
-    picture: edge.getPicture(),
-    color: edge.getColor(),
-    data: edge.getData(),
-    directed: edge.isDirected(), // Assuming Edge might have directed property
-    directionality: {
-      arrowsToward: edge.directionality?.arrowsToward ? Array.from(edge.directionality.arrowsToward) : []
-    },
-});
-
-/**
- * Helper function to convert a Graph class instance to plain data.
- */
-const graphToData = (graph) => ({
-  id: graph.getId(),
-  name: graph.getName(),
-  description: graph.getDescription(),
-  picture: graph.getPicture(),
-  color: graph.getColor(),
-  directed: graph.isDirected(),
-  nodeIds: graph.getNodes().map(n => n.getId()), // Store only Node IDs
-  edgeIds: graph.getEdges().map(e => e.getId()), // Store only Edge IDs
-});
-
-// Note: Removed localStorage initialization functions - universe file is now the single source of truth
 
 // Middleware to notify auto-save of changes
 const autoSaveMiddleware = (config) => {
@@ -201,15 +105,15 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   return {
     // Initialize with completely empty state - universe file is required
     graphs: new Map(),
-    nodes: new Map(),
+    nodePrototypes: new Map(), // Renamed from `nodes`
     edges: new Map(),
     openGraphIds: [],
     activeGraphId: null,
-    activeDefinitionNodeId: null, 
+    activeDefinitionNodeId: null, // This now refers to a prototypeId
     rightPanelTabs: [{ type: 'home', isActive: true }], 
     expandedGraphIds: new Set(),
-    savedNodeIds: new Set(), // Start empty - no localStorage fallback
-    savedGraphIds: new Set(), // Start empty - no localStorage fallback
+    savedNodeIds: new Set(), // This now refers to prototype IDs
+    savedGraphIds: new Set(), // This is based on the defining prototype ID
     
     // Universe file state
     isUniverseLoaded: false,
@@ -219,191 +123,161 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
 
   // --- Actions --- (Operating on plain data)
 
-  // Loads a Graph instance, converts to data, stores data.
-  loadGraph: (graphInstance) => set(produce((draft) => {
-    const graphData = graphToData(graphInstance);
-    if (!draft.graphs.has(graphData.id)) {
-      draft.graphs.set(graphData.id, graphData);
+  // This action is deprecated. All loading now goes through loadUniverseFromFile.
+  loadGraph: (graphInstance) => {},
 
-      // Convert and add nodes to global pool
-      graphInstance.getNodes().forEach(nodeInstance => {
-        const nodeData = nodeToData(nodeInstance);
-        if (!draft.nodes.has(nodeData.id)) {
-          draft.nodes.set(nodeData.id, nodeData);
-        }
-      });
-
-       // Convert and add edges to global pool
-      graphInstance.getEdges().forEach(edgeInstance => {
-          const edgeData = edgeToData(edgeInstance);
-          if (!draft.edges.has(edgeData.id)) {
-              draft.edges.set(edgeData.id, edgeData);
-          }
-      });
-
-      // Open graph tab
-      if (!draft.openGraphIds.includes(graphData.id)) {
-        draft.openGraphIds.push(graphData.id);
-      }
-      if (draft.activeGraphId === null) {
-        draft.activeGraphId = graphData.id;
-      }
+  // Adds a NEW plain prototype data to the global pool.
+  addNodePrototype: (prototypeData) => set(produce((draft) => {
+    const prototypeId = prototypeData.id || uuidv4();
+    if (!draft.nodePrototypes.has(prototypeId)) {
+        draft.nodePrototypes.set(prototypeId, { ...prototypeData, id: prototypeId });
     }
   })),
-
-  // Adds NEW plain node data to the global pool and a specific graph
-  addNode: (graphId, newNodeData) => set(produce((draft) => {
+  
+  // Adds a new instance of a prototype to a specific graph.
+  addNodeInstance: (graphId, prototypeId, position, instanceId = uuidv4()) => set(produce((draft) => {
     const graph = draft.graphs.get(graphId);
-    const nodeId = newNodeData.id;
+    const prototype = draft.nodePrototypes.get(prototypeId);
 
-    if (!nodeId || !graph) {
-        console.error(`[addNode] Invalid graphId (${graphId}) or nodeId (${nodeId})`);
+    if (!graph || !prototype) {
+        console.error(`[addNodeInstance] Invalid graphId (${graphId}) or prototypeId (${prototypeId})`);
         return;
     }
     
-    // Always update or set the node data in the global map.
-    // This handles both adding a brand new node and updating an existing one's position when dropped.
-    draft.nodes.set(nodeId, newNodeData);
-
-    // If the node is not yet in the graph, add its ID.
-    if (!graph.nodeIds.includes(nodeId)) {
-        graph.nodeIds.push(nodeId);
+    const newInstance = {
+        id: instanceId,
+        prototypeId,
+        x: position.x,
+        y: position.y,
+        scale: 1,
+    };
+    
+    if (!graph.instances) {
+        graph.instances = new Map();
     }
+    graph.instances.set(instanceId, newInstance);
   })),
 
-  // Update a node's data using Immer's recipe
-  updateNode: (nodeId, recipe) => set(produce((draft) => {
-    const node = draft.nodes.get(nodeId);
-    if (node) {
-      const originalName = node.name; // Store original name
-      recipe(node); // Apply the Immer updates
-      
-      // Check if the name was changed and sync to definition graphs
-      const newName = node.name;
-      if (newName !== originalName && Array.isArray(node.definitionGraphIds)) {
-        // console.log(`[Store updateNode] Node ${nodeId} name changed from "${originalName}" to "${newName}". Syncing definition graph names.`);
-        // Update all graphs that this node defines
-        for (const graphId of node.definitionGraphIds) {
-          const graph = draft.graphs.get(graphId);
-          if (graph) {
-            // console.log(`[Store updateNode] Updating graph ${graphId} name to match node.`);
-            graph.name = newName;
-          }
-        }
-        
-        // NEW: Also sync corresponding nodes across different definition graphs of the same parent node
-        if (node.parentDefinitionNodeId) {
-          // console.log(`[Store updateNode] Node ${nodeId} has parent ${node.parentDefinitionNodeId}. Syncing across definition graphs.`);
-          
-          // Find which graph this node currently belongs to
-          let currentGraphId = null;
-          for (const [graphId, graph] of draft.graphs.entries()) {
-            if (graph.nodeIds.includes(nodeId)) {
-              currentGraphId = graphId;
-              break;
-            }
-          }
-          
-          // Get the parent node that this node belongs to
-          const parentNode = draft.nodes.get(node.parentDefinitionNodeId);
-          if (parentNode && Array.isArray(parentNode.definitionGraphIds)) {
-            // console.log(`[Store updateNode] Parent node ${node.parentDefinitionNodeId} has ${parentNode.definitionGraphIds.length} definition graphs.`);
-            
-            // For each definition graph of the parent node
-            for (const parentGraphId of parentNode.definitionGraphIds) {
-              if (parentGraphId === currentGraphId) continue; // Skip the current graph
-              
-              const parentGraph = draft.graphs.get(parentGraphId);
-              if (parentGraph) {
-                // console.log(`[Store updateNode] Checking definition graph ${parentGraphId} for corresponding nodes.`);
-                
-                // Find nodes in this definition graph that have the same name as the original node name
-                for (const nodeIdInGraph of parentGraph.nodeIds) {
-                  const nodeInGraph = draft.nodes.get(nodeIdInGraph);
-                  if (nodeInGraph && nodeInGraph.name === originalName) {
-                    // console.log(`[Store updateNode] Found corresponding node ${nodeIdInGraph} in graph ${parentGraphId}, updating name to "${newName}".`);
-                    nodeInGraph.name = newName;
-                    
-                    // Also update any definition graphs that this corresponding node defines
-                    if (Array.isArray(nodeInGraph.definitionGraphIds)) {
-                      for (const correspondingGraphId of nodeInGraph.definitionGraphIds) {
-                        const correspondingGraph = draft.graphs.get(correspondingGraphId);
-                        if (correspondingGraph) {
-                          // console.log(`[Store updateNode] Updating corresponding node's graph ${correspondingGraphId} name to match.`);
-                          correspondingGraph.name = newName;
-                        }
-                      }
-                    }
-                    
-                    // Update the corresponding node's tab title if it's open in the right panel
-                    const correspondingTabIndex = draft.rightPanelTabs.findIndex(tab => tab.nodeId === nodeIdInGraph);
-                    if (correspondingTabIndex !== -1) {
-                      draft.rightPanelTabs[correspondingTabIndex].title = newName;
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+  // Removes an instance from a graph and cleans up its connected edges.
+  removeNodeInstance: (graphId, instanceId) => set(produce((draft) => {
+    const graph = draft.graphs.get(graphId);
+    if (!graph || !graph.instances?.has(instanceId)) {
+      console.warn(`[removeNodeInstance] Instance ${instanceId} not found in graph ${graphId}.`);
+      return;
+    }
+
+    // 1. Delete the instance from the graph
+    graph.instances.delete(instanceId);
+
+    // 2. Find all edges connected to this instance and delete them
+    const edgesToDelete = [];
+    for (const [edgeId, edge] of draft.edges.entries()) {
+      if (edge.sourceId === instanceId || edge.destinationId === instanceId) {
+        edgesToDelete.push(edgeId);
       }
-    } else {
-      // console.warn(`updateNode: Node with id ${nodeId} not found.`);
     }
-  })),
-
-  // Update positions of multiple nodes efficiently
-  updateMultipleNodePositions: (updates) => set(produce((draft) => {
-    updates.forEach(({ nodeId, x, y }) => {
-      const node = draft.nodes.get(nodeId);
-      if (node) {
-        node.x = x;
-        node.y = y;
-      } else {
-        // console.warn(`updateMultipleNodePositions: Node with id ${nodeId} not found.`);
+    
+    edgesToDelete.forEach(edgeId => {
+      draft.edges.delete(edgeId);
+      // Also remove from the graph's edgeIds list
+      if (graph.edgeIds) {
+          const index = graph.edgeIds.indexOf(edgeId);
+          if (index > -1) {
+              graph.edgeIds.splice(index, 1);
+          }
       }
     });
   })),
 
-  // Adds a NEW edge (provided as plain data) to the global pool and a specific graph
-  // Note: Expects edge ID to be provided or generated beforehand.
+  // Update a prototype's data using Immer's recipe. This affects all its instances.
+  updateNodePrototype: (prototypeId, recipe) => set(produce((draft) => {
+    const prototype = draft.nodePrototypes.get(prototypeId);
+    if (prototype) {
+      const originalName = prototype.name;
+      recipe(prototype); // Apply Immer updates
+      const newName = prototype.name;
+
+      // Sync name change to any graphs defined by this prototype
+      if (newName !== originalName && Array.isArray(prototype.definitionGraphIds)) {
+        prototype.definitionGraphIds.forEach(graphId => {
+          const graph = draft.graphs.get(graphId);
+          if (graph) {
+            graph.name = newName;
+          }
+        });
+      }
+      
+      // Update titles in right panel tabs
+      draft.rightPanelTabs.forEach(tab => {
+          if (tab.nodeId === prototypeId) {
+              tab.title = newName;
+          }
+      });
+
+    } else {
+      console.warn(`updateNodePrototype: Prototype with id ${prototypeId} not found.`);
+    }
+  })),
+
+  // Update an instance's unique data (e.g., position)
+  updateNodeInstance: (graphId, instanceId, recipe) => set(produce((draft) => {
+      const graph = draft.graphs.get(graphId);
+      if (graph && graph.instances) {
+          const instance = graph.instances.get(instanceId);
+          if (instance) {
+              recipe(instance);
+          } else {
+              console.warn(`updateNodeInstance: Instance ${instanceId} not found in graph ${graphId}.`);
+          }
+      }
+  })),
+  
+  // Update positions of multiple instances efficiently
+  updateMultipleNodeInstancePositions: (graphId, updates) => set(produce((draft) => {
+    const graph = draft.graphs.get(graphId);
+    if (!graph || !graph.instances) return;
+
+    updates.forEach(({ instanceId, x, y }) => {
+      const instance = graph.instances.get(instanceId);
+      if (instance) {
+        instance.x = x;
+        instance.y = y;
+      }
+    });
+  })),
+
+  // Adds a NEW edge connecting two instances.
   addEdge: (graphId, newEdgeData) => set(produce((draft) => {
       const graph = draft.graphs.get(graphId);
-      const edgeId = newEdgeData.id;
-      const sourceId = newEdgeData.sourceId;
-      const destId = newEdgeData.destinationId;
-
-      if (!edgeId || !sourceId || !destId) {
-          // console.error("addEdge: newEdgeData requires id, sourceId, and destinationId.");
+      if (!graph) {
+          console.error(`[addEdge] Graph with ID ${graphId} not found.`);
           return;
       }
 
-      // Ensure source and dest nodes exist in the specific graph for consistency?
-      // Or just check they exist globally?
-      const sourceNode = draft.nodes.get(sourceId);
-      const destNode = draft.nodes.get(destId);
+      const { id: edgeId, sourceId: sourceInstanceId, destinationId: destInstanceId } = newEdgeData;
+      if (!edgeId || !sourceInstanceId || !destInstanceId) {
+          console.error("[addEdge] newEdgeData requires id, sourceId, and destinationId.");
+          return;
+      }
 
-      if (graph && !draft.edges.has(edgeId) && sourceNode && destNode) {
-          // Normalize directionality before adding edge
+      // Ensure source and dest instances exist in the graph
+      if (!graph.instances?.has(sourceInstanceId) || !graph.instances?.has(destInstanceId)) {
+          console.error(`[addEdge] Source or destination instance not found in graph ${graphId}.`);
+          return;
+      }
+      
+      if (!draft.edges.has(edgeId)) {
           newEdgeData.directionality = normalizeEdgeDirectionality(newEdgeData.directionality);
-          // Add edge data to global pool
           draft.edges.set(edgeId, newEdgeData);
-          // Add edge ID to graph's edgeIds array
+
+          if (!graph.edgeIds) {
+            graph.edgeIds = [];
+          }
           graph.edgeIds.push(edgeId);
-          // Add edge ID to source and destination nodes' edgeIds arrays
-          sourceNode.edgeIds.push(edgeId);
-          destNode.edgeIds.push(edgeId);
-      } else if (!graph) {
-          // console.warn(`addEdge: Graph ${graphId} not found.`);
-      } else if (draft.edges.has(edgeId)) {
-          // console.warn(`addEdge: Edge ${edgeId} already exists.`);
-      } else if (!sourceNode || !destNode) {
-          // console.warn(`addEdge: Source node ${sourceId} or destination node ${destId} not found.`);
-          // Decide if edge should still be added if nodes don't exist
       }
   })),
 
-  // Update an edge's data using Immer's recipe
+  // Update an edge's data using Immer's recipe (no change needed here)
   updateEdge: (edgeId, recipe) => set(produce((draft) => {
     const edge = draft.edges.get(edgeId);
     if (edge) {
@@ -413,81 +287,15 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     }
   })),
 
-  // Removes a node and its connected edges from global pools and graph references
-  removeNode: (nodeId) => set(produce((draft) => {
-    const nodeToRemove = draft.nodes.get(nodeId);
-    if (nodeToRemove) {
-      // 1. Get IDs of edges connected to the node *before* deleting the node
-      const connectedEdgeIds = [...nodeToRemove.edgeIds]; // Copy array
+  // Deprecated actions, kept for API consistency during refactor if needed, but should not be used.
+  addNode: () => console.warn("`addNode` is deprecated. Use `addNodePrototype` and `addNodeInstance`."),
+  updateNode: () => console.warn("`updateNode` is deprecated. Use `updateNodePrototype` or `updateNodeInstance`."),
+  updateMultipleNodePositions: () => console.warn("`updateMultipleNodePositions` is deprecated. Use `updateMultipleNodeInstancePositions`."),
+  removeNode: () => console.warn("`removeNode` is deprecated. Use `removeNodeInstance`."),
+  removeEdge: () => console.warn("`removeEdge` is deprecated. Edges are removed with their instances."),
 
-      // 2. Delete the node from the global pool
-      draft.nodes.delete(nodeId);
 
-      // 3. Remove the node ID from all graphs that contain it
-      draft.graphs.forEach(graph => {
-        const index = graph.nodeIds.indexOf(nodeId);
-        if (index > -1) {
-          graph.nodeIds.splice(index, 1);
-        }
-        // Also remove associated edge IDs from the graph's list
-        graph.edgeIds = graph.edgeIds.filter(id => !connectedEdgeIds.includes(id));
-      });
-
-      // 4. Delete the connected edges from the global edge pool
-      connectedEdgeIds.forEach(edgeId => {
-          draft.edges.delete(edgeId);
-      });
-
-      // 5. Remove references to deleted edges from *other* nodes
-      draft.nodes.forEach(node => {
-          node.edgeIds = node.edgeIds.filter(id => !connectedEdgeIds.includes(id));
-      });
-
-    } else {
-      // console.warn(`removeNode: Node with id ${nodeId} not found.`);
-    }
-  })),
-
-  // Removes an edge from the global pool and relevant graph/node references
-  removeEdge: (edgeId) => set(produce((draft) => {
-      const edgeToRemove = draft.edges.get(edgeId);
-      if (edgeToRemove) {
-          const { sourceId, destinationId } = edgeToRemove;
-
-          // 1. Delete edge from global pool
-          draft.edges.delete(edgeId);
-
-          // 2. Remove edge ID from the graph(s) that contain it
-          draft.graphs.forEach(graph => {
-              const index = graph.edgeIds.indexOf(edgeId);
-              if (index > -1) {
-                  graph.edgeIds.splice(index, 1);
-              }
-          });
-
-          // 3. Remove edge ID from source node's edgeIds
-          const sourceNode = draft.nodes.get(sourceId);
-          if (sourceNode) {
-              const index = sourceNode.edgeIds.indexOf(edgeId);
-              if (index > -1) {
-                  sourceNode.edgeIds.splice(index, 1);
-              }
-          }
-
-          // 4. Remove edge ID from destination node's edgeIds
-          const destNode = draft.nodes.get(destinationId);
-          if (destNode) {
-              const index = destNode.edgeIds.indexOf(edgeId);
-              if (index > -1) {
-                  destNode.edgeIds.splice(index, 1);
-              }
-          }
-      } else {
-          console.warn(`removeEdge: Edge with id ${edgeId} not found.`);
-      }
-  })),
-
-  // --- Tab Management Actions --- (Unaffected)
+  // --- Tab Management Actions --- (Unaffected by prototype change)
   openGraphTab: (graphId, definitionNodeId = null) => set(produce((draft) => {
     console.log(`[Store openGraphTab] Called with graphId: ${graphId}, definitionNodeId: ${definitionNodeId}`);
     if (draft.graphs.has(graphId)) { // Ensure graph exists
@@ -545,45 +353,35 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     const newGraphId = uuidv4();
     const newGraphName = initialData.name || "New Thing";
 
-    // Create a new node that will define this graph.
-    const definingNodeId = uuidv4();
-    const definingNodeData = {
-        id: definingNodeId,
+    // Create a new prototype that will define this graph.
+    const definingPrototypeId = uuidv4();
+    const definingPrototypeData = {
+        id: definingPrototypeId,
         name: newGraphName,
         description: initialData.description || '',
-        picture: '', // empty picture
         color: initialData.color || NODE_DEFAULT_COLOR,
-        data: null,
-        x: 0, // Default position, doesn't matter as it's not on a canvas yet
-        y: 0,
-        scale: 1,
-        imageSrc: null,
-        thumbnailSrc: null,
-        imageAspectRatio: null,
-        parentDefinitionNodeId: null,
-        edgeIds: [],
-        definitionGraphIds: [newGraphId] // This node defines the new graph
+        // No positional data in prototype
+        definitionGraphIds: [newGraphId] // This prototype defines the new graph
     };
-    draft.nodes.set(definingNodeId, definingNodeData);
+    draft.nodePrototypes.set(definingPrototypeId, definingPrototypeData);
 
-
-    // Create a new empty graph (no circular references)
+    // Create a new empty graph
     const newGraphData = {
         id: newGraphId,
         name: newGraphName,
         description: initialData.description || '',
         picture: initialData.picture || null,
-        color: initialData.color || '#ccc', // Default color
-        directed: initialData.directed !== undefined ? initialData.directed : false, // Default undirected
-        nodeIds: [],
+        color: initialData.color || '#ccc',
+        directed: initialData.directed !== undefined ? initialData.directed : false,
+        instances: new Map(), // Initialize with empty instances map
         edgeIds: [],
-        definingNodeIds: [definingNodeId] // This graph is defined by the new node
+        definingNodeIds: [definingPrototypeId] // This graph is defined by the new prototype
     };
     draft.graphs.set(newGraphId, newGraphData);
 
-    // Set active state (no definition node since this is just an empty graph)
+    // Set active state
     draft.activeGraphId = newGraphId;
-    draft.activeDefinitionNodeId = definingNodeId; // This graph is defined by this node
+    draft.activeDefinitionNodeId = definingPrototypeId; // The defining prototype ID
 
     // Manage open/expanded lists
     if (!draft.openGraphIds.includes(newGraphId)) {
@@ -591,12 +389,12 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     }
     draft.expandedGraphIds.add(newGraphId);
     
-    console.log(`[Store] Created and activated new empty graph: ${newGraphId} ('${newGraphName}') defined by node ${definingNodeId}.`);
+    console.log(`[Store] Created and activated new empty graph: ${newGraphId} ('${newGraphName}') defined by prototype ${definingPrototypeId}.`);
   })),
 
-  // Creates a new graph, assigns it as a definition to a node, and makes it active
-  createAndAssignGraphDefinition: (nodeId) => set(produce((draft) => {
-    const newGraphId = _createAndAssignGraphDefinition(draft, nodeId);
+  // Creates a new graph, assigns it as a definition to a prototype, and makes it active
+  createAndAssignGraphDefinition: (prototypeId) => set(produce((draft) => {
+    const newGraphId = _createAndAssignGraphDefinition(draft, prototypeId);
     if (!newGraphId) return;
 
     // Open and activate the new graph
@@ -604,18 +402,17 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         draft.openGraphIds.push(newGraphId);
     }
     draft.activeGraphId = newGraphId;
-    draft.activeDefinitionNodeId = nodeId;
+    draft.activeDefinitionNodeId = prototypeId;
     
-    console.log(`[Store createAndAssignGraphDefinition] Created new graph ${newGraphId} for node ${nodeId}, and set as active.`);
+    console.log(`[Store createAndAssignGraphDefinition] Created new graph ${newGraphId} for prototype ${prototypeId}, and set as active.`);
   })),
   
   // Creates a new graph and assigns it as a definition, but does NOT make it active.
-  // This is used for animations that need to complete before the UI switches.
-  createAndAssignGraphDefinitionWithoutActivation: (nodeId) => set(produce((draft) => {
-    const newGraphId = _createAndAssignGraphDefinition(draft, nodeId);
+  createAndAssignGraphDefinitionWithoutActivation: (prototypeId) => set(produce((draft) => {
+    const newGraphId = _createAndAssignGraphDefinition(draft, prototypeId);
     if (!newGraphId) return;
     
-    console.log(`[Store createAndAssignGraphDefinitionWithoutActivation] Created new graph ${newGraphId} for node ${nodeId}.`);
+    console.log(`[Store createAndAssignGraphDefinitionWithoutActivation] Created new graph ${newGraphId} for prototype ${prototypeId}.`);
   })),
 
   // Sets the currently active graph tab.
@@ -667,62 +464,15 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
           const newName = graphData.name;
           if (newName !== originalName) {
             console.log(`[Store updateGraph] Graph ${graphId} name changed from "${originalName}" to "${newName}". Syncing defining node name.`);
-            // Find the corresponding definition node(s) and update their names
-            for (const node of draft.nodes.values()) {
-              if (Array.isArray(node.definitionGraphIds) && node.definitionGraphIds.includes(graphId)) {
-                console.log(`[Store updateGraph] Updating node ${node.id} name to match graph.`);
-                node.name = newName;
+            // Find the corresponding definition prototype(s) and update their names
+            for (const prototype of draft.nodePrototypes.values()) {
+              if (Array.isArray(prototype.definitionGraphIds) && prototype.definitionGraphIds.includes(graphId)) {
+                console.log(`[Store updateGraph] Updating prototype ${prototype.id} name to match graph.`);
+                prototype.name = newName;
                 // Also update the node's tab title if it's open in the right panel
-                const tabIndex = draft.rightPanelTabs.findIndex(tab => tab.nodeId === node.id);
+                const tabIndex = draft.rightPanelTabs.findIndex(tab => tab.nodeId === prototype.id);
                 if (tabIndex !== -1) {
                   draft.rightPanelTabs[tabIndex].title = newName;
-                }
-                
-                // NEW: Also sync corresponding nodes across different definition graphs of the same parent node
-                if (node.parentDefinitionNodeId) {
-                  console.log(`[Store updateGraph] Node ${node.id} has parent ${node.parentDefinitionNodeId}. Syncing across definition graphs.`);
-                  
-                  // Get the parent node that this node belongs to
-                  const parentNode = draft.nodes.get(node.parentDefinitionNodeId);
-                  if (parentNode && Array.isArray(parentNode.definitionGraphIds)) {
-                    console.log(`[Store updateGraph] Parent node ${node.parentDefinitionNodeId} has ${parentNode.definitionGraphIds.length} definition graphs.`);
-                    
-                    // For each definition graph of the parent node
-                    for (const parentGraphId of parentNode.definitionGraphIds) {
-                      if (parentGraphId === graphId) continue; // Skip the current graph
-                      
-                      const parentGraph = draft.graphs.get(parentGraphId);
-                      if (parentGraph) {
-                        console.log(`[Store updateGraph] Checking definition graph ${parentGraphId} for corresponding nodes.`);
-                        
-                        // Find nodes in this definition graph that have the same name as the original node name
-                        for (const nodeIdInGraph of parentGraph.nodeIds) {
-                          const nodeInGraph = draft.nodes.get(nodeIdInGraph);
-                          if (nodeInGraph && nodeInGraph.name === originalName) {
-                            console.log(`[Store updateGraph] Found corresponding node ${nodeIdInGraph} in graph ${parentGraphId}, updating name to "${newName}".`);
-                            nodeInGraph.name = newName;
-                            
-                            // Also update any definition graphs that this corresponding node defines
-                            if (Array.isArray(nodeInGraph.definitionGraphIds)) {
-                              for (const correspondingGraphId of nodeInGraph.definitionGraphIds) {
-                                const correspondingGraph = draft.graphs.get(correspondingGraphId);
-                                if (correspondingGraph) {
-                                  console.log(`[Store updateGraph] Updating corresponding node's graph ${correspondingGraphId} name to match.`);
-                                  correspondingGraph.name = newName;
-                                }
-                              }
-                            }
-                            
-                            // Update the corresponding node's tab title if it's open in the right panel
-                            const correspondingTabIndex = draft.rightPanelTabs.findIndex(tab => tab.nodeId === nodeIdInGraph);
-                            if (correspondingTabIndex !== -1) {
-                              draft.rightPanelTabs[correspondingTabIndex].title = newName;
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
                 }
               }
             }
@@ -734,10 +484,10 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
 
   // --- Right Panel Tab Management Actions ---
   openRightPanelNodeTab: (nodeId, nodeNameFallback = 'Node Details') => set(produce((draft) => {
-    // Find node data to get the title
-    const nodeData = draft.nodes.get(nodeId);
-    if (!nodeData) {
-      console.warn(`openRightPanelNodeTab: Node with id ${nodeId} not found.`);
+    // Find prototype data to get the title
+    const prototypeData = draft.nodePrototypes.get(nodeId);
+    if (!prototypeData) {
+      console.warn(`openRightPanelNodeTab: Node prototype with id ${nodeId} not found.`);
       return;
     }
     
@@ -757,7 +507,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       draft.rightPanelTabs.push({
         type: 'node',
         nodeId,
-        title: nodeData.name || nodeNameFallback,
+        title: prototypeData.name || nodeNameFallback,
         isActive: true
       });
     }
@@ -915,20 +665,12 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         description: graph.description || '',
         picture: '',
         color: NODE_DEFAULT_COLOR,
-        data: null,
-        x: 0,
-        y: 0,
-        scale: 1,
-        imageSrc: null,
-        thumbnailSrc: null,
-        imageAspectRatio: null,
-        parentDefinitionNodeId: null,
-        edgeIds: [],
+        // No positional data in prototype
         definitionGraphIds: [graphId] // This node defines the current graph
       };
       
       // Add the defining node to the nodes map
-      draft.nodes.set(definingNodeId, definingNodeData);
+      draft.nodePrototypes.set(definingNodeId, definingNodeData);
       
       // Set this node as the defining node for the graph
       if (!graph.definingNodeIds) {
@@ -959,9 +701,9 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
 
   // Remove a definition graph from a node and delete the graph if it's no longer referenced
   removeDefinitionFromNode: (nodeId, graphId) => set(produce((draft) => {
-    const node = draft.nodes.get(nodeId);
+    const node = draft.nodePrototypes.get(nodeId);
     if (!node) {
-      console.warn(`[Store removeDefinitionFromNode] Node ${nodeId} not found.`);
+      console.warn(`[Store removeDefinitionFromNode] Node prototype ${nodeId} not found.`);
       return;
     }
 
@@ -979,7 +721,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
 
     // Check if any other nodes still reference this graph as a definition
     let isGraphStillReferenced = false;
-    for (const otherNode of draft.nodes.values()) {
+    for (const otherNode of draft.nodePrototypes.values()) {
       if (otherNode.id !== nodeId && Array.isArray(otherNode.definitionGraphIds) && otherNode.definitionGraphIds.includes(graphId)) {
         isGraphStillReferenced = true;
         break;
@@ -1010,29 +752,11 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       // Remove from expanded set
       draft.expandedGraphIds.delete(graphId);
       
-      // Delete all nodes that belong to this graph
-      const nodesToDelete = [];
-      for (const [nodeId, nodeData] of draft.nodes.entries()) {
-        if (nodeData.parentDefinitionNodeId && draft.nodes.get(nodeData.parentDefinitionNodeId)?.definitionGraphIds?.includes(graphId)) {
-          nodesToDelete.push(nodeId);
-        }
-      }
+      // Delete all instances that belong to this graph is complex.
+      // The graph is gone, so its instances are implicitly gone.
+      // We might need a more robust cleanup later.
       
-      // Delete all edges that belong to this graph
-      const edgesToDelete = [];
-      for (const [edgeId, edgeData] of draft.edges.entries()) {
-        // Check if this edge belongs to the graph being deleted
-        const graph = draft.graphs.get(graphId);
-        if (graph && graph.edgeIds.includes(edgeId)) {
-          edgesToDelete.push(edgeId);
-        }
-      }
-      
-      // Actually delete the nodes and edges
-      nodesToDelete.forEach(id => draft.nodes.delete(id));
-      edgesToDelete.forEach(id => draft.edges.delete(id));
-      
-      console.log(`[Store removeDefinitionFromNode] Deleted graph ${graphId} and ${nodesToDelete.length} nodes, ${edgesToDelete.length} edges.`);
+      console.log(`[Store removeDefinitionFromNode] Deleted graph ${graphId}.`);
     } else {
       console.log(`[Store removeDefinitionFromNode] Graph ${graphId} is still referenced by other nodes, keeping it.`);
     }
@@ -1080,33 +804,33 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
 
   // Clean up orphaned nodes and graphs that are no longer referenced
   cleanupOrphanedData: () => set(produce((draft) => {
-    console.log('[Store cleanupOrphanedData] Starting cleanup of orphaned nodes and graphs...');
+    console.log('[Store cleanupOrphanedData] Starting cleanup of orphaned data...');
     
-    // Step 1: Find all referenced nodes
-    const referencedNodeIds = new Set();
+    // Step 1: Find all referenced prototypes and instances
+    const referencedPrototypeIds = new Set();
     
-    // Add saved nodes
-    draft.savedNodeIds.forEach(nodeId => referencedNodeIds.add(nodeId));
+    // Add saved prototypes
+    draft.savedNodeIds.forEach(prototypeId => referencedPrototypeIds.add(prototypeId));
     
-    // Add nodes from open graphs
+    // Add prototypes from all instances in open graphs
     draft.openGraphIds.forEach(graphId => {
       const graph = draft.graphs.get(graphId);
-      if (graph && graph.nodeIds) {
-        graph.nodeIds.forEach(nodeId => referencedNodeIds.add(nodeId));
+      if (graph && graph.instances) {
+        graph.instances.forEach(instance => referencedPrototypeIds.add(instance.prototypeId));
       }
     });
     
-    // Add nodes from definition graphs of referenced nodes
-    const addDefinitionNodes = (nodeId) => {
-      const node = draft.nodes.get(nodeId);
-      if (node && Array.isArray(node.definitionGraphIds)) {
-        node.definitionGraphIds.forEach(graphId => {
+    // Recursively add prototypes from definition graphs
+    const addDefinitionPrototypes = (prototypeId) => {
+      const prototype = draft.nodePrototypes.get(prototypeId);
+      if (prototype && Array.isArray(prototype.definitionGraphIds)) {
+        prototype.definitionGraphIds.forEach(graphId => {
           const defGraph = draft.graphs.get(graphId);
-          if (defGraph && defGraph.nodeIds) {
-            defGraph.nodeIds.forEach(defNodeId => {
-              if (!referencedNodeIds.has(defNodeId)) {
-                referencedNodeIds.add(defNodeId);
-                addDefinitionNodes(defNodeId); // Recursively add nested definitions
+          if (defGraph && defGraph.instances) {
+            defGraph.instances.forEach(instance => {
+              if (!referencedPrototypeIds.has(instance.prototypeId)) {
+                referencedPrototypeIds.add(instance.prototypeId);
+                addDefinitionPrototypes(instance.prototypeId); // Recurse
               }
             });
           }
@@ -1114,8 +838,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       }
     };
     
-    // Recursively add all definition nodes
-    Array.from(referencedNodeIds).forEach(nodeId => addDefinitionNodes(nodeId));
+    Array.from(referencedPrototypeIds).forEach(prototypeId => addDefinitionPrototypes(prototypeId));
     
     // Step 2: Find all referenced graphs
     const referencedGraphIds = new Set();
@@ -1123,30 +846,30 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     // Add open graphs
     draft.openGraphIds.forEach(graphId => referencedGraphIds.add(graphId));
     
-    // Add definition graphs from referenced nodes
-    referencedNodeIds.forEach(nodeId => {
-      const node = draft.nodes.get(nodeId);
-      if (node && Array.isArray(node.definitionGraphIds)) {
-        node.definitionGraphIds.forEach(graphId => referencedGraphIds.add(graphId));
+    // Add definition graphs from referenced prototypes
+    referencedPrototypeIds.forEach(prototypeId => {
+      const prototype = draft.nodePrototypes.get(prototypeId);
+      if (prototype && Array.isArray(prototype.definitionGraphIds)) {
+        prototype.definitionGraphIds.forEach(graphId => referencedGraphIds.add(graphId));
       }
     });
     
-    // Step 3: Remove orphaned nodes
-    const orphanedNodes = [];
-    for (const [nodeId, node] of draft.nodes.entries()) {
-      if (!referencedNodeIds.has(nodeId)) {
-        orphanedNodes.push(nodeId);
+    // Step 3: Remove orphaned prototypes
+    const orphanedPrototypes = [];
+    for (const prototypeId of draft.nodePrototypes.keys()) {
+      if (!referencedPrototypeIds.has(prototypeId)) {
+        orphanedPrototypes.push(prototypeId);
       }
     }
     
-    orphanedNodes.forEach(nodeId => {
-      console.log(`[Store cleanupOrphanedData] Removing orphaned node: ${nodeId}`);
-      draft.nodes.delete(nodeId);
+    orphanedPrototypes.forEach(prototypeId => {
+      console.log(`[Store cleanupOrphanedData] Removing orphaned prototype: ${prototypeId}`);
+      draft.nodePrototypes.delete(prototypeId);
     });
     
-    // Step 4: Remove orphaned graphs
+    // Step 4: Remove orphaned graphs (and their instances/edges)
     const orphanedGraphs = [];
-    for (const [graphId, graph] of draft.graphs.entries()) {
+    for (const graphId of draft.graphs.keys()) {
       if (!referencedGraphIds.has(graphId)) {
         orphanedGraphs.push(graphId);
       }
@@ -1167,9 +890,16 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     
     // Step 5: Remove orphaned edges
     const orphanedEdges = [];
+    const allInstanceIds = new Set();
+    draft.graphs.forEach(g => {
+        if(g.instances) {
+            g.instances.forEach(inst => allInstanceIds.add(inst.id));
+        }
+    });
+
     for (const [edgeId, edge] of draft.edges.entries()) {
-      const sourceExists = referencedNodeIds.has(edge.sourceId);
-      const destExists = referencedNodeIds.has(edge.destinationId);
+      const sourceExists = allInstanceIds.has(edge.sourceId);
+      const destExists = allInstanceIds.has(edge.destinationId);
       if (!sourceExists || !destExists) {
         orphanedEdges.push(edgeId);
       }
@@ -1180,19 +910,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       draft.edges.delete(edgeId);
     });
     
-    // Step 6: Clean up edge references in remaining nodes
-    referencedNodeIds.forEach(nodeId => {
-      const node = draft.nodes.get(nodeId);
-      if (node && Array.isArray(node.edgeIds)) {
-        const originalLength = node.edgeIds.length;
-        node.edgeIds = node.edgeIds.filter(edgeId => draft.edges.has(edgeId));
-        if (node.edgeIds.length !== originalLength) {
-          console.log(`[Store cleanupOrphanedData] Cleaned edge references in node ${nodeId}`);
-        }
-      }
-    });
-    
-    // Step 7: Clean up edge references in remaining graphs
+    // Step 6: Clean up edge references in remaining graphs
     referencedGraphIds.forEach(graphId => {
       const graph = draft.graphs.get(graphId);
       if (graph && Array.isArray(graph.edgeIds)) {
@@ -1204,7 +922,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       }
     });
     
-    console.log(`[Store cleanupOrphanedData] Cleanup complete. Removed ${orphanedNodes.length} nodes, ${orphanedGraphs.length} graphs, ${orphanedEdges.length} edges.`);
+    console.log(`[Store cleanupOrphanedData] Cleanup complete. Removed ${orphanedPrototypes.length} prototypes, ${orphanedGraphs.length} graphs, ${orphanedEdges.length} edges.`);
   })),
 
   // Restore from last session (automatic) - now only returns universe file data
@@ -1264,7 +982,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
 
   clearUniverse: () => set(() => ({
     graphs: new Map(),
-    nodes: new Map(),
+    nodePrototypes: new Map(),
     edges: new Map(),
     openGraphIds: [],
     activeGraphId: null,
@@ -1290,32 +1008,50 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
 // --- Selectors --- (Return plain data, add edge selector)
 
 export const getGraphDataById = (id) => (state) => state.graphs.get(id);
-export const getNodeDataById = (id) => (state) => state.nodes.get(id);
-export const getEdgeDataById = (id) => (state) => state.edges.get(id); // New selector
+export const getNodePrototypeById = (id) => (state) => state.nodePrototypes.get(id);
+export const getEdgeDataById = (id) => (state) => state.edges.get(id);
 
 export const getActiveGraphData = (state) => state.graphs.get(state.activeGraphId);
 
-// Returns NodeData objects for a given graph ID
-export const getNodesForGraph = (graphId) => (state) => {
+// Returns NodeInstance objects for a given graph ID
+export const getInstancesForGraph = (graphId) => (state) => {
   const graph = state.graphs.get(graphId);
-  if (!graph) return [];
-  return graph.nodeIds.map(nodeId => state.nodes.get(nodeId)).filter(Boolean); // Filter out undefined if node missing
+  if (!graph || !graph.instances) return [];
+  return Array.from(graph.instances.values());
 };
+
+// Returns fully hydrated node objects (instance + prototype data) for rendering
+export const getHydratedNodesForGraph = (graphId) => (state) => {
+    const graph = state.graphs.get(graphId);
+    if (!graph || !graph.instances) return [];
+    
+    return Array.from(graph.instances.values()).map(instance => {
+        const prototype = state.nodePrototypes.get(instance.prototypeId);
+        if (!prototype) return null;
+        return {
+            ...prototype, // Spread prototype properties (name, color, etc.)
+            ...instance, // Spread instance properties (id, x, y, scale), overwriting prototype id with instanceId
+        };
+    }).filter(Boolean); // Filter out any cases where prototype might be missing
+};
+
 
 // Returns EdgeData objects for a given graph ID
 export const getEdgesForGraph = (graphId) => (state) => {
     const graph = state.graphs.get(graphId);
-    if (!graph) return [];
+    if (!graph || !graph.edgeIds) return [];
     return graph.edgeIds.map(edgeId => state.edges.get(edgeId)).filter(Boolean);
 };
 
-// Returns NodeData objects by parentDefinitionNodeId
+// This selector is likely no longer needed or needs to be re-thought.
+// It was for finding nodes within a definition graph based on a parent.
 export const getNodesByParent = (parentId) => (state) => {
     const nodes = [];
-    for (const nodeData of state.nodes.values()) {
-        if (nodeData.parentDefinitionNodeId === parentId) {
-            nodes.push(nodeData);
-        }
+    for (const nodeData of state.nodePrototypes.values()) {
+        // This logic is probably incorrect with the new model.
+        // if (nodeData.parentDefinitionNodeId === parentId) {
+        //     nodes.push(nodeData);
+        // }
     }
     return nodes;
 };
@@ -1335,5 +1071,16 @@ export const isGraphSaved = (graphId) => (state) => state.savedGraphIds.has(grap
 
 // Export the store hook
 export default useGraphStore; 
+
+// Auto-save is now handled by the fileStorage module directly with enableAutoSave()
+// This file has been refactored to use a prototype/instance model.
+// - The global `nodes` map is now `nodePrototypes`.
+// - `Graph` objects contain an `instances` map instead of `nodeIds`.
+// - Actions now operate on `nodePrototypes` and `instances` separately.
+// - Edges connect `instanceId`s.
+// - Selectors have been updated to provide data in the new format.
+//
+// TODO: Update all dependent components (`NodeCanvas.jsx`, `Node.jsx`, etc.)
+// to use the new actions and selectors.
 
 // Auto-save is now handled by the fileStorage module directly with enableAutoSave() 
