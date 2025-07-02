@@ -99,8 +99,8 @@ const getTextColor = (backgroundColor) => {
     // Create a dark color with the same hue but very low lightness for better contrast
     return hslToHex(h, Math.min(s, 50), 12); // Darker text (12% instead of 15%) with slightly higher saturation
   } else {
-    // Use lighter text for dark backgrounds - improved from gray to near-white
-    return '#e5e5e5';
+    // Use light text for dark backgrounds
+    return '#bdb5b5';
   }
 };
 

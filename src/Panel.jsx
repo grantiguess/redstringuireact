@@ -475,6 +475,12 @@ const Panel = forwardRef(
         return openGraphIds.map(id => {
             const graphData = graphsMap.get(id); // Use reactive graphsMap
             if (!graphData) return null; // Handle case where graph might not be found
+            
+            // Derive color from the defining node
+            const definingNodeId = graphData.definingNodeIds?.[0];
+            const definingNode = definingNodeId ? nodePrototypesMap.get(definingNodeId) : null;
+            const graphColor = definingNode?.color || graphData.color || NODE_DEFAULT_COLOR;
+            
             // Fetch nodes and edges using the REACTIVE maps
             const instances = graphData.instances ? Array.from(graphData.instances.values()) : [];
             const edgeIds = graphData.edgeIds || [];
@@ -485,7 +491,7 @@ const Panel = forwardRef(
             }).filter(Boolean);
 
             const edges = edgeIds.map(edgeId => edgesMap.get(edgeId)).filter(Boolean); // Use edgesMap
-            return { ...graphData, nodes, edges }; // Combine graph data with its nodes/edges
+            return { ...graphData, color: graphColor, nodes, edges }; // Combine graph data with its nodes/edges
         }).filter(Boolean); // Filter out any nulls
     }, [openGraphIds, graphsMap, nodePrototypesMap, edgesMap]); // Add nodePrototypesMap
 

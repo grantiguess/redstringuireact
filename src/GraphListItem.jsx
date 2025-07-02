@@ -64,7 +64,7 @@ const GraphListItem = forwardRef(({
     height: isExpanded ? currentItemWidth : NODE_HEIGHT,
     // aspectRatio: isExpanded ? '1 / 1' : undefined, // REMOVE aspect-ratio
     // FIX: Set static background/color, only border changes
-    backgroundColor: 'maroon', // Always maroon
+    backgroundColor: graphData.color || 'maroon', // Always maroon
     color: '#bdb5b5', // Always light text
     // FIX: Use margin for spacing, remove marginBottom
     // marginBottom: '10px',
