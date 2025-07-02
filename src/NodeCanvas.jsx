@@ -1603,47 +1603,56 @@ function NodeCanvas() {
   const handleNodeSelection = (nodePrototype) => {
     if (!plusSign || !activeGraphId) return;
     
-    // Create an instance of the selected node prototype at the plus sign position
-    const position = {
-      x: plusSign.x - NODE_WIDTH / 2,
-      y: plusSign.y - NODE_HEIGHT / 2,
-    };
-    
-    storeActions.addNodeInstance(activeGraphId, nodePrototype.id, position);
+    // Trigger the morph animation with the selected prototype
+    setPlusSign(ps => ps && { 
+      ...ps, 
+      mode: 'morph', 
+      tempName: nodePrototype.name,
+      selectedPrototype: nodePrototype // Store the selected prototype for morphDone
+    });
     
     // Clean up UI state
-    setPlusSign(null);
     setNodeNamePrompt({ visible: false, name: '' });
     setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
   };
 
   const handleNodeSelectionGridClose = () => {
+    // Close the grid and trigger disappear animation like hitting X
+    setNodeNamePrompt({ visible: false, name: '' });
     setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
+    setPlusSign(ps => ps && { ...ps, mode: 'disappear' });
   };
 
   const handleMorphDone = () => {
-      if (!plusSign || !plusSign.tempName || !activeGraphId) return;
+      if (!plusSign || !activeGraphId) return;
       
-      const name = plusSign.tempName;
-      const newPrototypeId = uuidv4();
-      
-      // 1. Create the new prototype
-      const newPrototypeData = {
-          id: newPrototypeId,
-          name: name,
-          description: '',
-          color: 'maroon', // Default color
-          definitionGraphIds: [],
-          typeNodeId: 'base-thing-prototype', // Type all new nodes as "Thing"
-      };
-      storeActions.addNodePrototype(newPrototypeData);
-
-      // 2. Create the first instance of this prototype on the canvas
       const position = {
           x: plusSign.x - NODE_WIDTH / 2,
           y: plusSign.y - NODE_HEIGHT / 2,
       };
-      storeActions.addNodeInstance(activeGraphId, newPrototypeId, position);
+
+      if (plusSign.selectedPrototype) {
+          // A prototype was selected from the grid - create instance of existing prototype
+          storeActions.addNodeInstance(activeGraphId, plusSign.selectedPrototype.id, position);
+      } else if (plusSign.tempName) {
+          // A custom name was entered - create new prototype
+          const name = plusSign.tempName;
+          const newPrototypeId = uuidv4();
+          
+          // 1. Create the new prototype
+          const newPrototypeData = {
+              id: newPrototypeId,
+              name: name,
+              description: '',
+              color: 'maroon', // Default color
+              definitionGraphIds: [],
+              typeNodeId: 'base-thing-prototype', // Type all new nodes as "Thing"
+          };
+          storeActions.addNodePrototype(newPrototypeData);
+
+          // 2. Create the first instance of this prototype on the canvas
+          storeActions.addNodeInstance(activeGraphId, newPrototypeId, position);
+      }
 
       setPlusSign(null);
   };

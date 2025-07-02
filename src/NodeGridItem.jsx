@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NODE_CORNER_RADIUS } from './constants';
 
 const NodeGridItem = ({ 
@@ -9,12 +9,20 @@ const NodeGridItem = ({
 }) => {
   const nodeColor = nodePrototype.color || '#800000';
   const nodeName = nodePrototype.name || 'Untitled';
+  const [isSelecting, setIsSelecting] = useState(false);
+
+  const handleClick = () => {
+    setIsSelecting(true);
+    onClick(nodePrototype);
+    // Reset the animation state after animation completes
+    setTimeout(() => setIsSelecting(false), 300);
+  };
 
   return (
     <div
-      className="node-grid-item"
+      className={`node-grid-item ${isSelecting ? 'selecting' : ''}`}
       title={`Create instance of: ${nodeName}`} // Tooltip for clarity
-      onClick={() => onClick(nodePrototype)}
+      onClick={handleClick}
       style={{
         width: `${width}px`,
         height: `${height}px`,
