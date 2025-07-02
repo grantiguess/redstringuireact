@@ -1451,35 +1451,36 @@ const Panel = forwardRef(
                     />
                     </div>
 
-                    {/* Divider below bio */}
-                    <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
-
                     {/* Show image if the defining node has one */}
                     {definingNodeData?.imageSrc && (
-                        <div
-                            style={{
-                                marginTop: '8px',
-                                position: 'relative',
-                                width: '100%',
-                                maxWidth: '100%',
-                                overflow: 'hidden',
-                            }}
-                        >
-                            <img
-                                src={definingNodeData.imageSrc}
-                                alt="Graph"
+                        <>
+                            {/* Divider above image */}
+                            <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
+                            <div
                                 style={{
-                                    display: 'block',
+                                    marginTop: '8px',
+                                    position: 'relative',
                                     width: '100%',
-                                    height: 'auto',
-                                    objectFit: 'contain',
-                                    borderRadius: '6px'
+                                    maxWidth: '100%',
+                                    overflow: 'hidden',
                                 }}
-                            />
-                        </div>
+                            >
+                                <img
+                                    src={definingNodeData.imageSrc}
+                                    alt="Graph"
+                                    style={{
+                                        display: 'block',
+                                        width: '100%',
+                                        height: 'auto',
+                                        objectFit: 'contain',
+                                        borderRadius: '6px'
+                                    }}
+                                />
+                            </div>
+                        </>
                     )}
 
-                    {/* Divider Line */}
+                    {/* Divider Line - always present below bio/image */}
                     <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
 
                     {/* Components section */}
@@ -1987,34 +1988,38 @@ const Panel = forwardRef(
                             />
                         </div>
 
-                        {/* Divider below bio */}
-                        <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
-
                         {/* --- Rest of the content (image, Components, etc.) --- */}
                         <div style={{ padding: '0 0 0 0' }}>
                             {nodeData.imageSrc && (
-                                <div
-                                    style={{
-                                        marginTop: '8px',
-                                        position: 'relative',
-                                        width: '100%',
-                                        maxWidth: '100%',
-                                        overflow: 'hidden',
-                                    }}
-                                >
-                                    <img
-                                        src={nodeData.imageSrc}
-                                        alt="Node"
+                                <>
+                                    {/* Divider above image */}
+                                    <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
+                                    <div
                                         style={{
-                                            display: 'block',
+                                            marginTop: '8px',
+                                            position: 'relative',
                                             width: '100%',
-                                            height: 'auto',
-                                            objectFit: 'contain',
-                                            borderRadius: '6px'
+                                            maxWidth: '100%',
+                                            overflow: 'hidden',
                                         }}
-                                    />
-                                </div>
+                                    >
+                                        <img
+                                            src={nodeData.imageSrc}
+                                            alt="Node"
+                                            style={{
+                                                display: 'block',
+                                                width: '100%',
+                                                height: 'auto',
+                                                objectFit: 'contain',
+                                                borderRadius: '6px'
+                                            }}
+                                        />
+                                    </div>
+                                </>
                             )}
+                            
+                            {/* Divider Line - always present below bio/image */}
+                            <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
                             {/* ... existing code ... */}
                         </div>
                     </div>
