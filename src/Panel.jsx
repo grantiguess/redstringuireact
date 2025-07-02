@@ -1286,14 +1286,22 @@ const Panel = forwardRef(
                                 style={{}}
                             />
                         ) : (
-                            <h3
+                            <div
                                 style={{
-                                    margin: 0,
-                                    color: '#260000',
+                                    backgroundColor: definingNodeData?.color || NODE_DEFAULT_COLOR,
+                                    borderRadius: '8px',
+                                    padding: '5px 10px',
                                     cursor: 'pointer',
                                     overflow: 'hidden',
                                     userSelect: 'none',
-                                    fontSize: '1.1rem'
+                                    fontSize: '1.1rem',
+                                    fontWeight: 'bold',
+                                    color: '#bdb5b5',
+                                    margin: 0,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    minHeight: '32px', // Match the height that the input would have
+                                    boxSizing: 'border-box'
                                 }}
                                 onDoubleClick={() => {
                                     setEditingProjectTitle(true);
@@ -1309,7 +1317,7 @@ const Panel = forwardRef(
                                 }}>
                                     {graphName ?? 'Loading...'}
                                 </span>
-                            </h3>
+                            </div>
                         )}
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1804,14 +1812,22 @@ const Panel = forwardRef(
                                         style={{}}
                                     />
                                 ) : (
-                                    <h3
+                                    <div
                                         style={{
-                                            margin: 0,
-                                            color: '#260000',
+                                            backgroundColor: nodeData?.color || NODE_DEFAULT_COLOR,
+                                            borderRadius: '8px',
+                                            padding: '5px 10px',
                                             cursor: 'pointer',
                                             overflow: 'hidden',
                                             userSelect: 'none',
-                                            fontSize: '1.1rem'
+                                            fontSize: '1.1rem',
+                                            fontWeight: 'bold',
+                                            color: '#bdb5b5',
+                                            margin: 0,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            minHeight: '32px', // Match the height that the input would have
+                                            boxSizing: 'border-box'
                                         }}
                                         onDoubleClick={() => {
                                             setEditingTitle(true);
@@ -1827,7 +1843,7 @@ const Panel = forwardRef(
                                         }}>
                                             {displayTitle}
                                         </span>
-                                    </h3>
+                                    </div>
                                 )}
 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

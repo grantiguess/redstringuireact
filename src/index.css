@@ -17,10 +17,18 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'Salma Pro';
+  src: url('./assets/fonts/salma_pro/SalmaPro-MediumNarrow.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Apply base font */
 body {
   margin: 0;
-  font-family: 'EmOne', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  font-family: 'EmOne', 'Salma Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -29,7 +37,7 @@ body {
 }
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  /* font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif; */ /* This was overriding the body font */
   line-height: 1.5;
   font-weight: 400;
 
