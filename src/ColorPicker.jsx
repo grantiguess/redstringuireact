@@ -222,7 +222,7 @@ const ColorPicker = ({
           }}
         />
         <span style={{ color: '#260000', fontWeight: 'bold', fontSize: '14px' }}>
-          Node Color
+          Color Your Thing
         </span>
       </div>
 
