@@ -56,7 +56,7 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
         storeActions.addNodePrototype({
           id: 'base-thing-prototype',
           name: 'Thing',
-          description: 'Base type for all entities',
+          description: 'The base type for all things. Things are nodes, ideas, nouns, concepts, objects, whatever you want them to be. They will always be at the bottom of the abstraction stack. They are the "atoms" of your Redstring universe.',
           color: '#8B0000', // maroon
           typeNodeId: null, // No parent type - this is the base type
           definitionGraphIds: []

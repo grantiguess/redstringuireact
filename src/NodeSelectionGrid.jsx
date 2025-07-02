@@ -8,8 +8,8 @@ const NodeSelectionGrid = ({
   onNodeSelect, 
   onClose,
   position = { x: 0, y: 0 },
-  maxHeight = 300,
-  width = 280
+  width = 280,
+  bottomOffset = 20
 }) => {
   // Get all node prototypes from the store
   const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
@@ -206,8 +206,8 @@ const NodeSelectionGrid = ({
           position: 'fixed',
           left: position.x,
           top: position.y,
+          bottom: `${bottomOffset}px`,
           width: `${width}px`,
-          maxHeight: `${maxHeight}px`,
           zIndex: 1002, // Above dialog (1001) and overlay (1000)
           overflow: 'hidden', // Hide default scrollbars
           pointerEvents: 'auto'

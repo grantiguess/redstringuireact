@@ -112,7 +112,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       nodePrototypes.set(thingId, {
         id: thingId,
         name: 'Thing',
-        description: 'Base type for all things',
+        description: 'The base type for all things. Things are nodes, ideas, nouns, concepts, objects, whatever you want them to be. They will always be at the bottom of the abstraction stack. They are the "atoms" of your Redstring universe.',
         color: '#8B0000', // Dark red/maroon
         typeNodeId: null, // No parent type - this is the most basic type
         definitionGraphIds: []

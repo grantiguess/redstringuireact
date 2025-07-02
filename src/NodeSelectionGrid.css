@@ -3,7 +3,6 @@
 /* Fade-in animation for the grid */
 .node-selection-grid-container {
   animation: nodeGridFadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  backdrop-filter: blur(2px);
 }
 
 @keyframes nodeGridFadeIn {

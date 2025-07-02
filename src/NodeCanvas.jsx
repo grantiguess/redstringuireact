@@ -1784,24 +1784,29 @@ function NodeCanvas() {
     return () => cancelAnimationFrame(animationFrameId);
   }, [viewportSize, canvasSize, zoomLevel, panOffset, canvasWorker, nodeNamePrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused]);
 
-  const renderCustomPrompt = () => {
+    const renderCustomPrompt = () => {
     if (!nodeNamePrompt.visible) return null;
     return (
       <>
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 1000 }} />
+        <div 
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 1000 }} 
+          onClick={handleClosePrompt} // Close when clicking backdrop
+        />
         <div
           style={{
             position: 'fixed',
             top: HEADER_HEIGHT + 25,
             left: '50%',
             transform: 'translateX(-50%)',
-                      backgroundColor: '#bdb5b5',
-          padding: '20px',
-          borderRadius: '10px',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
-          zIndex: 1001, // Higher than node selection grid (998)
-          width: '300px',
+            backgroundColor: '#bdb5b5',
+            padding: '20px',
+            borderRadius: '10px',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+            zIndex: 1001, // Higher than node selection grid (998)
+            width: '300px',
           }}
+          onClick={(e) => e.stopPropagation()} // Prevent clicks within dialog from closing it
+          onMouseDown={(e) => e.stopPropagation()} // Also stop mousedown to prevent grid from closing
         >
           <div style={{ position: 'absolute', top: '10px', right: '10px', cursor: 'pointer' }}>
             <X size={20} color="#999" onClick={handleClosePrompt} />
@@ -3158,7 +3163,6 @@ function NodeCanvas() {
             onNodeSelect={handleNodeSelection}
             onClose={handleNodeSelectionGridClose}
             position={nodeSelectionGrid.position}
-            maxHeight={400}
             width={300}
           />
           
