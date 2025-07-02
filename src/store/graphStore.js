@@ -424,7 +424,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         name: newGraphName,
         description: initialData.description || '',
         picture: initialData.picture || null,
-        color: initialData.color || '#ccc',
+        color: initialData.color || NODE_DEFAULT_COLOR,
         directed: initialData.directed !== undefined ? initialData.directed : false,
         instances: new Map(), // Initialize with empty instances map
         edgeIds: [],
