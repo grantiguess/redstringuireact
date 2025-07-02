@@ -102,6 +102,24 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
   return (
     // Apply calculated transform to the parent group
     <g transform={`translate(${translateX}, ${translateY}) scale(${scale})`} pointerEvents="none">
+      <defs>
+        {nodes.map(node => {
+          if (!node.thumbnailSrc) return null;
+          const dimensions = getNodeDimensions(node, false, null);
+          return (
+            <clipPath key={`inner-node-clip-${node.id}`} id={`inner-node-clip-${node.id}`}>
+              <rect
+                x={node.x + NODE_PADDING}
+                y={node.y + dimensions.textAreaHeight}
+                width={dimensions.imageWidth}
+                height={dimensions.calculatedImageHeight}
+                rx={NODE_CORNER_RADIUS}
+                ry={NODE_CORNER_RADIUS}
+              />
+            </clipPath>
+          );
+        })}
+      </defs>
       {/* Render Edges using original coordinates (scaled by parent g) */}
       {/* Iterate over edges */}
       {edges.map((edge, idx) => {
@@ -248,6 +266,7 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
          // Get original dimensions 
          const dimensions = getNodeDimensions(node, false, null);
          const titleHeight = dimensions.textAreaHeight || NODE_HEIGHT * NAME_AREA_FACTOR;
+         const hasThumbnail = Boolean(node.thumbnailSrc);
 
          return (
            <g key={`inner-node-${node.id}`}>
@@ -264,6 +283,18 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
                strokeWidth={Math.max(0.5, 1 / scale)}
              />
              
+             {hasThumbnail && (
+                <image
+                    href={node.thumbnailSrc}
+                    x={node.x + NODE_PADDING}
+                    y={node.y + dimensions.textAreaHeight}
+                    width={dimensions.imageWidth}
+                    height={dimensions.calculatedImageHeight}
+                    preserveAspectRatio="xMidYMid slice"
+                    clipPath={`url(#inner-node-clip-${node.id})`}
+                />
+             )}
+
              {/* Node title text */}
              <text
                x={node.x + dimensions.currentWidth / 2}
