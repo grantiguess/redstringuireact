@@ -241,10 +241,10 @@ const Node = ({
         ry={NODE_CORNER_RADIUS - 6}
         width={currentWidth - 12}
         height={currentHeight - 12}
-        fill="maroon"
+        fill={node.color || 'maroon'}
         stroke={isSelected ? 'black' : 'none'}
         strokeWidth={12}
-        style={{ transition: 'width 0.3s ease, height 0.3s ease' }}
+        style={{ transition: 'width 0.3s ease, height 0.3s ease, fill 0.2s ease' }}
       />
 
       {/* ForeignObject for Name - Use absolute coords */}

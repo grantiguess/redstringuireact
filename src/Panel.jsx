@@ -2,10 +2,12 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, us
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR } from './constants';
-import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
 import ToggleButton from './ToggleButton'; // Import the new component
+import ColorPicker from './ColorPicker'; // Import the new ColorPicker component
 import useGraphStore, {
     getActiveGraphId,
     getHydratedNodesForGraph,
@@ -505,6 +507,12 @@ const Panel = forwardRef(
     const [sectionCollapsed, setSectionCollapsed] = useState({ Thing: false });
     const [thingMaxHeight, setThingMaxHeight] = useState('0px');
 
+    // Color picker state
+    const [colorPickerVisible, setColorPickerVisible] = useState(false);
+    const [colorPickerPosition, setColorPickerPosition] = useState({ x: 0, y: 0 });
+    const [colorPickerNodeId, setColorPickerNodeId] = useState(null);
+    const [colorPickerJustClosed, setColorPickerJustClosed] = useState(false);
+
     // Refs
     const isResizing = useRef(false);
     const panelRef = useRef(null);
@@ -966,6 +974,50 @@ const Panel = forwardRef(
       setEditingProjectTitle(false);
     };
 
+    // Handle color picker change
+    const handleColorChange = (newColor) => {
+      if (colorPickerNodeId && storeActions?.updateNodePrototype) {
+        storeActions.updateNodePrototype(colorPickerNodeId, draft => {
+          draft.color = newColor;
+        });
+      }
+    };
+
+    // Handle opening color picker with toggle behavior
+    const handleOpenColorPicker = (nodeId, iconElement, event) => {
+      event.stopPropagation();
+      
+      // If color picker was just closed, don't immediately reopen
+      if (colorPickerJustClosed) {
+        return;
+      }
+      
+      // If already open for the same node, close it (toggle behavior)
+      if (colorPickerVisible && colorPickerNodeId === nodeId) {
+        setColorPickerVisible(false);
+        setColorPickerNodeId(null);
+        setColorPickerJustClosed(true);
+        // Reset the flag after a longer delay
+        setTimeout(() => setColorPickerJustClosed(false), 200);
+        return;
+      }
+      
+      // Open color picker - align right edges
+      const rect = iconElement.getBoundingClientRect();
+      setColorPickerPosition({ x: rect.right, y: rect.bottom });
+      setColorPickerNodeId(nodeId);
+      setColorPickerVisible(true);
+    };
+
+    // Handle closing color picker
+    const handleCloseColorPicker = () => {
+      setColorPickerVisible(false);
+      setColorPickerNodeId(null);
+      setColorPickerJustClosed(true);
+      // Reset the flag after a longer delay to prevent immediate reopening
+      setTimeout(() => setColorPickerJustClosed(false), 500);
+    };
+
     // Auto-resize textarea helper function
     const autoResizeTextarea = (textareaRef) => {
       if (textareaRef.current) {
@@ -1158,8 +1210,37 @@ const Panel = forwardRef(
         } else if (activeRightPanelTab.type === 'home') {
             // Get the defining node for the current graph to show its data
             const currentGraph = graphsMap.get(activeGraphId);
-            const definingNodeId = currentGraph?.definingNodeIds?.[0];
-            const definingNodeData = definingNodeId ? nodePrototypesMap.get(definingNodeId) : null;
+            let definingNodeId = currentGraph?.definingNodeIds?.[0];
+            let definingNodeData = definingNodeId ? nodePrototypesMap.get(definingNodeId) : null;
+            
+            // If no defining node exists, create one to represent this graph
+            if (!definingNodeData && currentGraph) {
+                console.log(`[Panel] Graph ${activeGraphId} has no defining node. Creating one.`);
+                
+                definingNodeId = uuidv4();
+                const newDefiningNodeData = {
+                    id: definingNodeId,
+                    name: currentGraph.name || 'Untitled Graph',
+                    description: currentGraph.description || '',
+                    color: currentGraph.color || NODE_DEFAULT_COLOR,
+                    typeNodeId: null,
+                    definitionGraphIds: [activeGraphId]
+                };
+                
+                // Update the store with the new defining node
+                storeActions.addNodePrototype(newDefiningNodeData);
+                storeActions.updateGraph(activeGraphId, draft => {
+                    if (!draft.definingNodeIds) {
+                        draft.definingNodeIds = [];
+                    }
+                    if (!draft.definingNodeIds.includes(definingNodeId)) {
+                        draft.definingNodeIds.unshift(definingNodeId);
+                    }
+                });
+                
+                definingNodeData = newDefiningNodeData;
+                console.log(`[Panel] Created defining node ${definingNodeId} for graph ${activeGraphId}.`);
+            }
 
             // Get type information for the defining node
             const getTypeInfo = () => {
@@ -1226,6 +1307,18 @@ const Panel = forwardRef(
                         )}
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {/* Color Picker Icon */}
+                            <Palette
+                                size={20}
+                                color="#260000"
+                                style={{ cursor: 'pointer', flexShrink: 0 }}
+                                onClick={(e) => {
+                                    if (definingNodeId) {
+                                        handleOpenColorPicker(definingNodeId, e.currentTarget, e);
+                                    }
+                                }}
+                                title="Change color"
+                            />
                             {/* Expand Icon - Unified logic: always show, handle both cases */}
                             <ArrowUpFromDot
                                 size={20}
@@ -1731,6 +1824,14 @@ const Panel = forwardRef(
                                 )}
 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    {/* Color Picker Icon */}
+                                    <Palette
+                                        size={20}
+                                        color="#260000"
+                                        style={{ cursor: 'pointer', flexShrink: 0 }}
+                                        onClick={(e) => handleOpenColorPicker(nodeId, e.currentTarget, e)}
+                                        title="Change color"
+                                    />
                                     {/* Expand Icon - Always show, behavior depends on whether definitions exist */}
                                     <ArrowUpFromDot
                                         size={20}
@@ -2127,6 +2228,18 @@ const Panel = forwardRef(
                     {panelContent}
                 </div>
             </div>
+
+            {/* Color Picker Component */}
+            {colorPickerVisible && (
+                <ColorPicker
+                    isVisible={colorPickerVisible}
+                    onClose={handleCloseColorPicker}
+                    onColorChange={handleColorChange}
+                    currentColor={colorPickerNodeId ? nodePrototypesMap.get(colorPickerNodeId)?.color || '#8B0000' : '#8B0000'}
+                    position={colorPickerPosition}
+                    direction="down-left"
+                />
+            )}
         </>
     );
 }

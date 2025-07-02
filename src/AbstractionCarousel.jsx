@@ -4,6 +4,106 @@ import { NODE_WIDTH, NODE_HEIGHT, NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR, NODE_P
 import { getNodeDimensions } from './utils';
 import './AbstractionCarousel.css';
 
+// Color utility functions for hue-based progression
+const hexToHsl = (hex) => {
+  // Remove # if present
+  hex = hex.replace('#', '');
+  
+  // Convert to RGB
+  const r = parseInt(hex.substr(0, 2), 16) / 255;
+  const g = parseInt(hex.substr(2, 2), 16) / 255;
+  const b = parseInt(hex.substr(4, 2), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h, s, l;
+
+  l = (max + min) / 2;
+
+  if (max === min) {
+    h = s = 0; // achromatic
+  } else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+
+  return { h: h * 360, s: s * 100, l: l * 100 };
+};
+
+const hslToHex = (h, s, l) => {
+  h = h % 360;
+  s = s / 100;
+  l = l / 100;
+
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+
+  if (0 <= h && h < 60) {
+    r = c; g = x; b = 0;
+  } else if (60 <= h && h < 120) {
+    r = x; g = c; b = 0;
+  } else if (120 <= h && h < 180) {
+    r = 0; g = c; b = x;
+  } else if (180 <= h && h < 240) {
+    r = 0; g = x; b = c;
+  } else if (240 <= h && h < 300) {
+    r = x; g = 0; b = c;
+  } else if (300 <= h && h < 360) {
+    r = c; g = 0; b = x;
+  }
+
+  r = Math.round((r + m) * 255);
+  g = Math.round((g + m) * 255);
+  b = Math.round((b + m) * 255);
+
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+};
+
+const generateProgressiveColor = (baseColor, level) => {
+  if (level === 0) return baseColor; // Center node stays the same
+  
+  const { h, s, l } = hexToHsl(baseColor);
+  
+  // For generic levels (negative), make progressively lighter
+  // For specific levels (positive), make progressively darker
+  let newLightness = l;
+  
+  if (level < 0) {
+    // Generic levels: lighter
+    const lighteningFactor = Math.abs(level) * 18; // 18% lighter per level (increased from 15%)
+    newLightness = Math.min(90, l + lighteningFactor);
+  } else if (level > 0) {
+    // Specific levels: darker with gentler progression
+    const darkeningFactor = level * 8; // 8% darker per level (reduced from 15%)
+    newLightness = Math.max(15, l - darkeningFactor); // Minimum lightness of 15% (raised from 10%)
+  }
+  
+  return hslToHex(h, s, newLightness);
+};
+
+const getTextColor = (backgroundColor) => {
+  const { h, s, l } = hexToHsl(backgroundColor);
+  
+  // If background is bright (lightness > 35), use dark text with same hue
+  // Lowered threshold from 42% to 35% for better contrast
+  if (l > 35) {
+    // Create a dark color with the same hue but very low lightness for better contrast
+    return hslToHex(h, Math.min(s, 50), 12); // Darker text (12% instead of 15%) with slightly higher saturation
+  } else {
+    // Use lighter text for dark backgrounds - improved from gray to near-white
+    return '#e5e5e5';
+  }
+};
+
 const LEVEL_SPACING = -5; // Much tighter spacing for vertical carousel with dynamic content
 const PHYSICS_DAMPING = 0.75; // Much lower damping for less friction/stickiness
 const BASE_SCROLL_SENSITIVITY = 0.0003; // Reduced from 0.0008 for less sensitive quick scrolls
@@ -40,7 +140,7 @@ const physicsReducer = (state, action) => {
       } else {
         // Normal velocity-based movement
         nextPosition = state.realPosition + dampedVelocity * frameMultiplier;
-        nextPosition = Math.max(-3, Math.min(3, nextPosition));
+        nextPosition = Math.max(-6, Math.min(6, nextPosition));
         
         // Check if we should start snapping (with enhanced "stuck" detection)
         if (Math.abs(dampedVelocity) < MIN_VELOCITY && !state.isSnapping && state.hasUserScrolled) {
@@ -90,7 +190,7 @@ const physicsReducer = (state, action) => {
             }
           }
           
-          nextTargetPosition = Math.max(-3, Math.min(3, newTarget));
+          nextTargetPosition = Math.max(-6, Math.min(6, newTarget));
         }
       }
       
@@ -200,23 +300,31 @@ const AbstractionCarousel = ({
   const abstractionChainWithDims = useMemo(() => {
     if (!selectedNode) return [];
     
+    const baseColor = selectedNode.color || NODE_DEFAULT_COLOR;
+    
     const chain = [
       // Placeholder nodes for adding more
-      { id: 'add_generic', name: 'Add More Generic Thing', type: 'add_generic', level: -3, color: '#999' },
+      { id: 'add_generic', name: 'Add More Generic Thing', type: 'add_generic', level: -6, color: '#999' },
       
-      // More generic levels (negative indices)
-      { id: `${selectedNode.id}_generic_2`, name: 'Entity', type: 'generic', level: -2, color: '#4A90E2' },
-      { id: `${selectedNode.id}_generic_1`, name: 'Physical Object', type: 'generic', level: -1, color: '#5BA0F2' },
+      // More generic levels (negative indices) - progressively lighter
+      { id: `${selectedNode.id}_generic_5`, name: 'Existence', type: 'generic', level: -5, color: generateProgressiveColor(baseColor, -5) },
+      { id: `${selectedNode.id}_generic_4`, name: 'Concept', type: 'generic', level: -4, color: generateProgressiveColor(baseColor, -4) },
+      { id: `${selectedNode.id}_generic_3`, name: 'Thing', type: 'generic', level: -3, color: generateProgressiveColor(baseColor, -3) },
+      { id: `${selectedNode.id}_generic_2`, name: 'Entity', type: 'generic', level: -2, color: generateProgressiveColor(baseColor, -2) },
+      { id: `${selectedNode.id}_generic_1`, name: 'Physical Object', type: 'generic', level: -1, color: generateProgressiveColor(baseColor, -1) },
       
       // Current node (level 0) - use actual selectedNode data including thumbnail
       { ...selectedNode, type: 'current', level: 0 },
       
-      // More specific levels (positive indices)
-      { id: `${selectedNode.id}_specific_1`, name: `Specific ${selectedNode.name}`, type: 'specific', level: 1, color: '#E24A4A' },
-      { id: `${selectedNode.id}_specific_2`, name: `Very Specific ${selectedNode.name}`, type: 'specific', level: 2, color: '#F25A5A' },
+      // More specific levels (positive indices) - progressively darker
+      { id: `${selectedNode.id}_specific_1`, name: `Specific ${selectedNode.name}`, type: 'specific', level: 1, color: generateProgressiveColor(baseColor, 1) },
+      { id: `${selectedNode.id}_specific_2`, name: `Very Specific ${selectedNode.name}`, type: 'specific', level: 2, color: generateProgressiveColor(baseColor, 2) },
+      { id: `${selectedNode.id}_specific_3`, name: `${selectedNode.name} Instance`, type: 'specific', level: 3, color: generateProgressiveColor(baseColor, 3) },
+      { id: `${selectedNode.id}_specific_4`, name: `Individual ${selectedNode.name}`, type: 'specific', level: 4, color: generateProgressiveColor(baseColor, 4) },
+      { id: `${selectedNode.id}_specific_5`, name: `Unique ${selectedNode.name}`, type: 'specific', level: 5, color: generateProgressiveColor(baseColor, 5) },
       
       // Placeholder nodes for adding more
-      { id: 'add_specific', name: 'Add More Specific Thing', type: 'add_specific', level: 3, color: '#999' }
+      { id: 'add_specific', name: 'Add More Specific Thing', type: 'add_specific', level: 6, color: '#999' }
     ];
 
     // Pre-calculate base dimensions for each node to use for smooth interpolation later
@@ -234,7 +342,7 @@ const AbstractionCarousel = ({
 
     // Calculate upwards from 0
     let upY = 0;
-    for (let i = -1; i >= -3; i--) {
+    for (let i = -1; i >= -6; i--) {
       const nodeCurrent = abstractionChainWithDims.find(n => n.level === i);
       const nodeAbove = abstractionChainWithDims.find(n => n.level === i + 1);
       if (!nodeCurrent || !nodeAbove) break;
@@ -248,7 +356,7 @@ const AbstractionCarousel = ({
 
     // Calculate downwards from 0
     let downY = 0;
-    for (let i = 1; i <= 3; i++) {
+    for (let i = 1; i <= 6; i++) {
       const nodeCurrent = abstractionChainWithDims.find(n => n.level === i);
       const nodeBelow = abstractionChainWithDims.find(n => n.level === i - 1);
       if (!nodeCurrent || !nodeBelow) break;
@@ -608,7 +716,7 @@ const AbstractionCarousel = ({
           const distanceFromMain = Math.abs(item.level - physicsState.realPosition);
           
           // Fog of war: hide nodes beyond a certain distance
-          if (distanceFromMain > 4.5) {
+          if (distanceFromMain > 7.5) {
             return null;
           }
 
@@ -796,7 +904,7 @@ const AbstractionCarousel = ({
                         style={{
                           fontSize: '20px', // Match Node.jsx
                           fontWeight: 'bold', // Match Node.jsx
-                          color: '#bdb5b5',
+                          color: getTextColor(nodeColor),
                           whiteSpace: 'normal',
                           wordWrap: 'break-word',
                           textAlign: 'center',

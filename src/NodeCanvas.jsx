@@ -10,7 +10,8 @@ import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import AbstractionCarousel from './AbstractionCarousel.jsx'; // Import the AbstractionCarousel component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
-import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack } from 'lucide-react'; // Icons for PieMenu
+import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette } from 'lucide-react'; // Icons for PieMenu
+import ColorPicker from './ColorPicker';
 import { useDrop } from 'react-dnd';
 
 // Import Zustand store and selectors/actions
@@ -368,7 +369,12 @@ function NodeCanvas() {
   const [isViewReady, setIsViewReady] = useState(false);
 
   const [plusSign, setPlusSign] = useState(null);
-  const [nodeNamePrompt, setNodeNamePrompt] = useState({ visible: false, name: '' });
+  const [nodeNamePrompt, setNodeNamePrompt] = useState({ visible: false, name: '', color: null });
+  
+  // Dialog color picker state
+  const [dialogColorPickerVisible, setDialogColorPickerVisible] = useState(false);
+  const [dialogColorPickerPosition, setDialogColorPickerPosition] = useState({ x: 0, y: 0 });
+  const [dialogColorPickerJustClosed, setDialogColorPickerJustClosed] = useState(false);
   const [nodeSelectionGrid, setNodeSelectionGrid] = useState({ visible: false, position: { x: 0, y: 0 } });
   const [rightPanelExpanded, setRightPanelExpanded] = useState(true); // Default to open?
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
@@ -1585,19 +1591,23 @@ function NodeCanvas() {
     if (!nodeNamePrompt.name.trim()) {
       setPlusSign(ps => ps && { ...ps, mode: 'disappear' });
     }
-    setNodeNamePrompt({ visible: false, name: '' });
+    setNodeNamePrompt({ visible: false, name: '', color: null });
     setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
+    setDialogColorPickerVisible(false); // Close color picker when closing prompt
+    setDialogColorPickerJustClosed(false); // Reset flag when dialog closes
   };
 
   const handlePromptSubmit = () => {
     const name = nodeNamePrompt.name.trim();
     if (name && plusSign) {
-      setPlusSign(ps => ps && { ...ps, mode: 'morph', tempName: name });
+      setPlusSign(ps => ps && { ...ps, mode: 'morph', tempName: name, selectedColor: nodeNamePrompt.color });
     } else {
       setPlusSign(ps => ps && { ...ps, mode: 'disappear' });
     }
-    setNodeNamePrompt({ visible: false, name: '' });
+    setNodeNamePrompt({ visible: false, name: '', color: null });
     setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
+    setDialogColorPickerVisible(false); // Close color picker when submitting
+    setDialogColorPickerJustClosed(false); // Reset flag when dialog closes
   };
 
   const handleNodeSelection = (nodePrototype) => {
@@ -1644,7 +1654,7 @@ function NodeCanvas() {
               id: newPrototypeId,
               name: name,
               description: '',
-              color: 'maroon', // Default color
+              color: plusSign.selectedColor || 'maroon', // Use selected color or default
               definitionGraphIds: [],
               typeNodeId: 'base-thing-prototype', // Type all new nodes as "Thing"
           };
@@ -1655,6 +1665,26 @@ function NodeCanvas() {
       }
 
       setPlusSign(null);
+  };
+
+  // Dialog color picker handlers
+  const handleDialogColorPickerOpen = (iconElement, event) => {
+    event.stopPropagation(); // Prevent event from bubbling to backdrop
+    const rect = iconElement.getBoundingClientRect();
+    setDialogColorPickerPosition({ x: rect.right, y: rect.bottom });
+    setDialogColorPickerVisible(true);
+    setDialogColorPickerJustClosed(false); // Reset flag when opening
+  };
+
+  const handleDialogColorPickerClose = () => {
+    setDialogColorPickerVisible(false);
+    setDialogColorPickerJustClosed(true);
+    // Reset the flag after a delay to prevent immediate dialog closure
+    setTimeout(() => setDialogColorPickerJustClosed(false), 200);
+  };
+
+  const handleDialogColorChange = (color) => {
+    setNodeNamePrompt(prev => ({ ...prev, color }));
   };
 
   const keysPressed = useKeyboardShortcuts();
@@ -1784,15 +1814,25 @@ function NodeCanvas() {
     return () => cancelAnimationFrame(animationFrameId);
   }, [viewportSize, canvasSize, zoomLevel, panOffset, canvasWorker, nodeNamePrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused]);
 
-    const renderCustomPrompt = () => {
+    // Add ref for dialog container
+  const dialogContainerRef = useRef(null);
+
+  const renderCustomPrompt = () => {
     if (!nodeNamePrompt.visible) return null;
     return (
       <>
         <div 
           style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 1000 }} 
-          onClick={handleClosePrompt} // Close when clicking backdrop
+          onClick={(e) => {
+            // Only close if clicking directly on the backdrop, not on child elements
+            // Also don't close if color picker was just closed
+            if (e.target === e.currentTarget && !dialogColorPickerJustClosed) {
+              handleClosePrompt();
+            }
+          }}
         />
         <div
+          ref={dialogContainerRef}
           style={{
             position: 'fixed',
             top: HEADER_HEIGHT + 25,
@@ -1827,10 +1867,31 @@ function NodeCanvas() {
             />
             <button
               onClick={handlePromptSubmit}
-              style={{ padding: '10px 20px', backgroundColor: 'maroon', color: '#bdb5b5', border: 'none', borderRadius: '5px', cursor: 'pointer' }}
+              style={{ 
+                padding: '10px', 
+                backgroundColor: nodeNamePrompt.color || 'maroon', 
+                color: '#bdb5b5', 
+                border: 'none', 
+                borderRadius: '5px', 
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: '50px',
+                minHeight: '44px',
+                marginRight: '8px'
+              }}
+              title="Create node"
             >
-              Enter
+              <ArrowBigRightDash size={16} color="#bdb5b5" />
             </button>
+            <Palette
+              size={20}
+              color="#260000"
+              style={{ cursor: 'pointer', flexShrink: 0 }}
+              onClick={(e) => handleDialogColorPickerOpen(e.currentTarget, e)}
+              title="Change color"
+            />
           </div>
         </div>
       </>
@@ -3238,6 +3299,19 @@ function NodeCanvas() {
         />
       )}
       
+      {/* Dialog Color Picker Component */}
+      {dialogColorPickerVisible && (
+        <ColorPicker
+          isVisible={dialogColorPickerVisible}
+          onClose={handleDialogColorPickerClose}
+          onColorChange={handleDialogColorChange}
+          currentColor={nodeNamePrompt.color || 'maroon'}
+          position={dialogColorPickerPosition}
+          direction="down-left"
+          parentContainerRef={dialogContainerRef}
+        />
+      )}
+
       {/* <div>NodeCanvas Simplified - Testing Loop</div> */}
     </div>
   );
