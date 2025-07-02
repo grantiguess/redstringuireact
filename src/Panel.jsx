@@ -871,37 +871,18 @@ const Panel = forwardRef(
         return getHydratedNodesForGraph(activeGraphId)(useGraphStore.getState());
     }, [activeGraphId, side]); // Removed unnecessary dependencies
 
-    // Auto-resize project bio textarea when content changes
-    useEffect(() => {
+    // Auto-resize project bio textarea when content changes or tab becomes active
+    React.useLayoutEffect(() => {
       if (side === 'right' && activeRightPanelTab?.type === 'home') {
         autoResizeTextarea(projectBioTextareaRef);
       }
     }, [side, activeRightPanelTab?.type, graphDescription]);
 
-    // Auto-resize node bio textarea when content changes
-    useEffect(() => {
+    // Auto-resize node bio textarea when content changes or tab becomes active
+    React.useLayoutEffect(() => {
       if (side === 'right' && activeRightPanelTab?.type === 'node') {
-        // For node tabs, we need to get the current bio content
-        const nodeId = activeRightPanelTab.nodeId;
-        const nodeData = useGraphStore.getState().nodePrototypes.get(nodeId);
-        if (nodeData) {
-          // Get current definition description similar to the component logic
-          let displayBio = '';
-          if (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0 && activeGraphId) {
-            const contextKey = `${nodeId}-${activeGraphId}`;
-            const currentIndex = nodeDefinitionIndices.get(contextKey) || 0;
-            const currentDefinitionGraphId = nodeData.definitionGraphIds[currentIndex] || nodeData.definitionGraphIds[0];
-            if (currentDefinitionGraphId) {
-              const definitionGraphData = graphsMap.get(currentDefinitionGraphId);
-              displayBio = definitionGraphData?.description || nodeData.description || '';
-            }
-          } else {
-            displayBio = nodeData.description || '';
-          }
-          
-          // Trigger auto-resize after a short delay to ensure content is rendered
-          setTimeout(() => autoResizeTextarea(nodeBioTextareaRef), 50);
-        }
+        // Trigger auto-resize immediately without delay
+        autoResizeTextarea(nodeBioTextareaRef);
       }
     }, [side, activeRightPanelTab?.type, activeRightPanelTab?.nodeId, activeGraphId, nodeDefinitionIndices, graphsMap]);
 
@@ -1326,7 +1307,13 @@ const Panel = forwardRef(
                     {/* --- Bio Section --- */}
                     <div style={{ padding: '0 0 0 0' }}>
                     <textarea
-                        ref={projectBioTextareaRef}
+                        ref={(el) => {
+                          projectBioTextareaRef.current = el;
+                          if (el) {
+                            // Auto-resize immediately when element is created
+                            requestAnimationFrame(() => autoResizeTextarea(projectBioTextareaRef));
+                          }
+                        }}
                         placeholder="Add a bio..."
                         id="project-bio-textarea"
                         name="projectBioTextarea"
@@ -1849,7 +1836,13 @@ const Panel = forwardRef(
                         {/* --- Bio Section --- */}
                         <div style={{ padding: '0 0 0 0' }}>
                             <textarea
-                                ref={nodeBioTextareaRef}
+                                ref={(el) => {
+                                  nodeBioTextareaRef.current = el;
+                                  if (el) {
+                                    // Auto-resize immediately when element is created
+                                    requestAnimationFrame(() => autoResizeTextarea(nodeBioTextareaRef));
+                                  }
+                                }}
                                 placeholder="Add a bio..."
                                 id={`node-bio-textarea-${nodeId}`}
                                 name={`nodeBioTextarea-${nodeId}`}
