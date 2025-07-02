@@ -585,6 +585,9 @@ const Panel = forwardRef(
     // Refs for resizing drag state:
     const resizeStartX = useRef(0);
     const resizeStartWidth = useRef(0);
+    // Bio textarea refs for auto-resizing
+    const projectBioTextareaRef = useRef(null);
+    const nodeBioTextareaRef = useRef(null);
 
     useEffect(() => {
       // Load initial widths from localStorage ONCE on mount
@@ -868,6 +871,40 @@ const Panel = forwardRef(
         return getHydratedNodesForGraph(activeGraphId)(useGraphStore.getState());
     }, [activeGraphId, side]); // Removed unnecessary dependencies
 
+    // Auto-resize project bio textarea when content changes
+    useEffect(() => {
+      if (side === 'right' && activeRightPanelTab?.type === 'home') {
+        autoResizeTextarea(projectBioTextareaRef);
+      }
+    }, [side, activeRightPanelTab?.type, graphDescription]);
+
+    // Auto-resize node bio textarea when content changes
+    useEffect(() => {
+      if (side === 'right' && activeRightPanelTab?.type === 'node') {
+        // For node tabs, we need to get the current bio content
+        const nodeId = activeRightPanelTab.nodeId;
+        const nodeData = useGraphStore.getState().nodePrototypes.get(nodeId);
+        if (nodeData) {
+          // Get current definition description similar to the component logic
+          let displayBio = '';
+          if (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0 && activeGraphId) {
+            const contextKey = `${nodeId}-${activeGraphId}`;
+            const currentIndex = nodeDefinitionIndices.get(contextKey) || 0;
+            const currentDefinitionGraphId = nodeData.definitionGraphIds[currentIndex] || nodeData.definitionGraphIds[0];
+            if (currentDefinitionGraphId) {
+              const definitionGraphData = graphsMap.get(currentDefinitionGraphId);
+              displayBio = definitionGraphData?.description || nodeData.description || '';
+            }
+          } else {
+            displayBio = nodeData.description || '';
+          }
+          
+          // Trigger auto-resize after a short delay to ensure content is rendered
+          setTimeout(() => autoResizeTextarea(nodeBioTextareaRef), 50);
+        }
+      }
+    }, [side, activeRightPanelTab?.type, activeRightPanelTab?.nodeId, activeGraphId, nodeDefinitionIndices, graphsMap]);
+
     // --- Action Handlers defined earlier --- 
     const handleAddImage = (nodeId) => {
       const input = document.createElement('input');
@@ -947,6 +984,20 @@ const Panel = forwardRef(
       // Call store action directly (using prop and current ID)
       updateGraph(currentActiveId, draft => { draft.name = newName; });
       setEditingProjectTitle(false);
+    };
+
+    // Auto-resize textarea helper function
+    const autoResizeTextarea = (textareaRef) => {
+      if (textareaRef.current) {
+        const textarea = textareaRef.current;
+        // Reset height to auto to get the scrollHeight
+        textarea.style.height = 'auto';
+        // Set height to scrollHeight (content height) with min and max bounds
+        const minHeight = 60; // Minimum height in pixels
+        const maxHeight = 300; // Maximum height in pixels
+        const newHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight);
+        textarea.style.height = `${newHeight}px`;
+      }
     };
 
     // --- Generate Content based on Side ---
@@ -1275,6 +1326,7 @@ const Panel = forwardRef(
                     {/* --- Bio Section --- */}
                     <div style={{ padding: '0 0 0 0' }}>
                     <textarea
+                        ref={projectBioTextareaRef}
                         placeholder="Add a bio..."
                         id="project-bio-textarea"
                         name="projectBioTextarea"
@@ -1285,6 +1337,7 @@ const Panel = forwardRef(
                             boxSizing: 'border-box',
                             resize: 'vertical',
                             minHeight: '60px',
+                            maxHeight: '300px',
                             color: '#260000',
                             border: '1px solid #ccc',
                             borderRadius: '4px',
@@ -1293,6 +1346,7 @@ const Panel = forwardRef(
                             fontSize: '14px',
                             lineHeight: '1.4',
                             fontFamily: 'inherit',
+                            overflow: 'auto',
                         }}
                         value={graphDescription}
                         onFocus={() => onFocusChange?.(true)}
@@ -1301,6 +1355,8 @@ const Panel = forwardRef(
                             if (activeGraphId && storeActions?.updateGraph) {
                                 storeActions.updateGraph(activeGraphId, draft => { draft.description = e.target.value; });
                             }
+                            // Auto-resize on input
+                            autoResizeTextarea(projectBioTextareaRef);
                         }}
                         onKeyDown={(e) => {
                             if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
@@ -1793,6 +1849,7 @@ const Panel = forwardRef(
                         {/* --- Bio Section --- */}
                         <div style={{ padding: '0 0 0 0' }}>
                             <textarea
+                                ref={nodeBioTextareaRef}
                                 placeholder="Add a bio..."
                                 id={`node-bio-textarea-${nodeId}`}
                                 name={`nodeBioTextarea-${nodeId}`}
@@ -1803,6 +1860,7 @@ const Panel = forwardRef(
                                     boxSizing: 'border-box',
                                     resize: 'vertical',
                                     minHeight: '60px',
+                                    maxHeight: '300px',
                                     color: '#260000',
                                     border: '1px solid #ccc',
                                     borderRadius: '4px',
@@ -1811,12 +1869,17 @@ const Panel = forwardRef(
                                     fontSize: '14px',
                                     lineHeight: '1.4',
                                     fontFamily: 'inherit',
-                                    userSelect: 'text'
+                                    userSelect: 'text',
+                                    overflow: 'auto',
                                 }}
                                 value={displayBio}
                                 onFocus={() => onFocusChange?.(true)}
                                 onBlur={() => onFocusChange?.(false)}
-                                onChange={(e) => handleBioChange(nodeId, e.target.value)}
+                                onChange={(e) => {
+                                    handleBioChange(nodeId, e.target.value);
+                                    // Auto-resize on input
+                                    autoResizeTextarea(nodeBioTextareaRef);
+                                }}
                                 onKeyDown={(e) => {
                                     if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
                                         e.stopPropagation();
