@@ -20,6 +20,7 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
   
   // Get the type nodes available for the current active graph
   const availableTypeNodes = useMemo(() => {
+    
     const usedTypeIds = new Set();
     
     // If there's an active graph with instances, collect types being used
@@ -27,7 +28,6 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
       const activeGraph = graphsMap.get(activeGraphId);
       if (activeGraph && activeGraph.instances) {
         const instances = Array.from(activeGraph.instances.values());
-        
         // For each instance, get its prototype and collect the types being used
         instances.forEach(instance => {
           const prototype = nodePrototypesMap.get(instance.prototypeId);
@@ -45,6 +45,24 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
       
     // If no specific types are used (or no active graph), include base types
     if (typeNodes.length === 0) {
+      // Check if base "Thing" prototype exists
+      const hasBaseThingPrototype = Array.from(nodePrototypesMap.values())
+        .some(prototype => prototype.id === 'base-thing-prototype');
+      
+      if (!hasBaseThingPrototype) {
+        console.log(`[TypeList] Base "Thing" prototype missing, creating it...`);
+        // Create the missing base "Thing" prototype
+        const storeActions = useGraphStore.getState();
+        storeActions.addNodePrototype({
+          id: 'base-thing-prototype',
+          name: 'Thing',
+          description: 'Base type for all entities',
+          color: '#8B0000', // maroon
+          typeNodeId: null, // No parent type - this is the base type
+          definitionGraphIds: []
+        });
+      }
+      
       typeNodes = Array.from(nodePrototypesMap.values())
         .filter(prototype => {
           // A prototype is a valid type node if:
@@ -55,17 +73,8 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
           const isBaseThingPrototype = prototype.id === 'base-thing-prototype';
           const isGraphDefining = prototype.definitionGraphIds && prototype.definitionGraphIds.length > 0;
           
-          const isValidTypeNode = isUntyped && (isBaseThingPrototype || !isGraphDefining);
-          
-          // Debug logging to verify the fix
-          if (isUntyped) {
-            console.log(`[TypeList] Prototype "${prototype.name}": baseThingPrototype=${isBaseThingPrototype}, graphDefining=${isGraphDefining}, included=${isValidTypeNode}`);
-          }
-          
-          return isValidTypeNode;
+          return isUntyped && (isBaseThingPrototype || !isGraphDefining);
         });
-      
-      console.log(`[TypeList] Available type nodes: ${typeNodes.map(n => n.name).join(', ')}`);
     }
     
     return typeNodes;

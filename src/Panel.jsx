@@ -1265,7 +1265,7 @@ const Panel = forwardRef(
                         alignItems: 'center',
                         gap: '8px'
                     }}>
-                        <span>Type:</span>
+                        <span>Is a </span>
                         <span style={{
                             backgroundColor: typeColor,
                             color: '#bdb5b5',
@@ -1780,7 +1780,7 @@ const Panel = forwardRef(
                                     alignItems: 'center',
                                     gap: '8px'
                                 }}>
-                                    <span>Type:</span>
+                                    <span>Is a </span>
                                     <span style={{
                                         backgroundColor: typeColor,
                                         color: '#bdb5b5',

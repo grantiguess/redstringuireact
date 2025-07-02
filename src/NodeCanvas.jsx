@@ -1594,6 +1594,7 @@ function NodeCanvas() {
           description: '',
           color: 'maroon', // Default color
           definitionGraphIds: [],
+          typeNodeId: 'base-thing-prototype', // Type all new nodes as "Thing"
       };
       storeActions.addNodePrototype(newPrototypeData);
 
