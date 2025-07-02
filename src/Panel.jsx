@@ -487,14 +487,36 @@ const Panel = forwardRef(
         }).filter(Boolean); // Filter out any nulls
     }, [openGraphIds, graphsMap, nodePrototypesMap, edgesMap]); // Add nodePrototypesMap
 
+    // ALL STATE DECLARATIONS - MOVED TO TOP TO AVOID INITIALIZATION ERRORS
+    // Panel width state
+    const [panelWidth, setPanelWidth] = useState(INITIAL_PANEL_WIDTH);
+    const [lastCustomWidth, setLastCustomWidth] = useState(INITIAL_PANEL_WIDTH);
+    const [isWidthInitialized, setIsWidthInitialized] = useState(false);
+    const [isAnimatingWidth, setIsAnimatingWidth] = useState(false);
+    
+    // Editing state
+    const [editingTitle, setEditingTitle] = useState(false); // Used by right panel node tabs
+    const [tempTitle, setTempTitle] = useState(''); // Used by right panel node tabs
+    const [editingProjectTitle, setEditingProjectTitle] = useState(false); // Used by right panel home tab
+    const [tempProjectTitle, setTempProjectTitle] = useState(''); // Used by right panel home tab
+
     // Left panel view state and collapsed sections
     const [leftViewActive, setLeftViewActive] = useState('library'); // 'library' or 'grid'
     const [sectionCollapsed, setSectionCollapsed] = useState({ Thing: false });
-
-    // Ref for the content div inside the collapsible section
-    const thingContentRef = useRef(null);
-    // State to hold the dynamic max-height
     const [thingMaxHeight, setThingMaxHeight] = useState('0px');
+
+    // Refs
+    const isResizing = useRef(false);
+    const panelRef = useRef(null);
+    const titleInputRef = useRef(null); // Used by right panel
+    const projectTitleInputRef = useRef(null); // Used by right panel
+    const tabBarRef = useRef(null); // Used by right panel
+    const initialWidthsSet = useRef(false); // Ref to track initialization
+    const resizeStartX = useRef(0);
+    const resizeStartWidth = useRef(0);
+    const projectBioTextareaRef = useRef(null);
+    const nodeBioTextareaRef = useRef(null);
+    const thingContentRef = useRef(null);
 
     const toggleSection = (name) => {
         // Simply toggle the collapsed state
@@ -531,6 +553,11 @@ const Panel = forwardRef(
 
     // Effect to update maxHeight when content changes or visibility toggles
     useEffect(() => {
+        // Don't run if panelWidth hasn't been initialized yet
+        if (!isWidthInitialized) {
+            return;
+        }
+
         let newMaxHeight = '0px'; // Default to collapsed height
 
         // Calculate the potential open height based on content
@@ -558,36 +585,7 @@ const Panel = forwardRef(
         // Set the state
         setThingMaxHeight(newMaxHeight);
 
-    }, [savedNodes, sectionCollapsed]); // Rerun when savedNodes or collapsed state changes
-
-    // Shared state
-    // Initialize with defaults, load from localStorage in useEffect
-    const [panelWidth, setPanelWidth] = useState(INITIAL_PANEL_WIDTH);
-    const [lastCustomWidth, setLastCustomWidth] = useState(INITIAL_PANEL_WIDTH);
-    // console.log(`[Panel ${side}] Initializing isAnimatingWidth state`);
-    const [isAnimatingWidth, setIsAnimatingWidth] = useState(false);
-    // console.log(`[Panel ${side}] Initializing editingTitle state`);
-    const [editingTitle, setEditingTitle] = useState(false); // Used by right panel node tabs
-    // console.log(`[Panel ${side}] Initializing tempTitle state`);
-    const [tempTitle, setTempTitle] = useState(''); // Used by right panel node tabs
-    // console.log(`[Panel ${side}] Initializing editingProjectTitle state`);
-    const [editingProjectTitle, setEditingProjectTitle] = useState(false); // Used by right panel home tab
-    // console.log(`[Panel ${side}] Initializing tempProjectTitle state`);
-    const [tempProjectTitle, setTempProjectTitle] = useState(''); // Used by right panel home tab
-
-    // Refs
-    const isResizing = useRef(false);
-    const panelRef = useRef(null);
-    const titleInputRef = useRef(null); // Used by right panel
-    const projectTitleInputRef = useRef(null); // Used by right panel
-    const tabBarRef = useRef(null); // Used by right panel
-    const initialWidthsSet = useRef(false); // Ref to track initialization
-    // Refs for resizing drag state:
-    const resizeStartX = useRef(0);
-    const resizeStartWidth = useRef(0);
-    // Bio textarea refs for auto-resizing
-    const projectBioTextareaRef = useRef(null);
-    const nodeBioTextareaRef = useRef(null);
+    }, [savedNodes, sectionCollapsed, panelWidth, isWidthInitialized]); // Rerun when savedNodes, collapsed state, or panel width changes
 
     useEffect(() => {
       // Load initial widths from localStorage ONCE on mount
@@ -596,6 +594,7 @@ const Panel = forwardRef(
           const initialLastCustom = getInitialLastCustomWidth(side, INITIAL_PANEL_WIDTH);
           setPanelWidth(initialWidth);
           setLastCustomWidth(initialLastCustom);
+          setIsWidthInitialized(true);
           initialWidthsSet.current = true; // Mark as set
           // console.log(`[Panel ${side} Mount Effect] Loaded initial widths:`, { initialWidth, initialLastCustom });
       }
