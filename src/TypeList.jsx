@@ -1,31 +1,100 @@
-import React, { useState } from 'react';
+import { useState, useMemo } from 'react';
+import PropTypes from 'prop-types';
 import './TypeList.css';
 import { HEADER_HEIGHT } from './constants';
 import NodeType from './NodeType'; // Import NodeType
+import useGraphStore from './store/graphStore';
 // Placeholder icons (replace with actual icons later)
 import { ChevronUp, Square, Share2 } from 'lucide-react'; // Replaced RoundedRectangle with Square
 
-const TypeList = ({ nodes, setSelectedNodes }) => {
+const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
   // Modes: 'closed', 'node', 'connection'
   const [mode, setMode] = useState('closed'); 
-  const [isAnimating, setIsAnimating] = useState(false); // Basic animation lock
+  // const [isAnimating, setIsAnimating] = useState(false); // Basic animation lock
 
-  // Hardcoded node types for now
-  const nodeTypes = [
-    { id: 'base', name: 'Thing', color: 'maroon' } // Change color to maroon
-  ];
+  // Get store data for finding type nodes
+  const activeGraphId = useGraphStore((state) => state.activeGraphId);
+  const graphsMap = useGraphStore((state) => state.graphs);
+  const nodePrototypesMap = useGraphStore((state) => state.nodePrototypes);
+  const setNodeTypeAction = useGraphStore((state) => state.setNodeType);
+  
+  // Get the type nodes available for the current active graph
+  const availableTypeNodes = useMemo(() => {
+    const usedTypeIds = new Set();
+    
+    // If there's an active graph with instances, collect types being used
+    if (activeGraphId) {
+      const activeGraph = graphsMap.get(activeGraphId);
+      if (activeGraph && activeGraph.instances) {
+        const instances = Array.from(activeGraph.instances.values());
+        
+        // For each instance, get its prototype and collect the types being used
+        instances.forEach(instance => {
+          const prototype = nodePrototypesMap.get(instance.prototypeId);
+          if (prototype && prototype.typeNodeId) {
+            usedTypeIds.add(prototype.typeNodeId);
+          }
+        });
+      }
+    }
+    
+    // Get the actual prototype objects for the used types
+    let typeNodes = Array.from(usedTypeIds)
+      .map(id => nodePrototypesMap.get(id))
+      .filter(Boolean);
+      
+    // If no specific types are used (or no active graph), include base types
+    if (typeNodes.length === 0) {
+      typeNodes = Array.from(nodePrototypesMap.values())
+        .filter(prototype => {
+          // A prototype is a valid type node if:
+          // 1. It has no parent type (typeNodeId is null), AND
+          // 2. It's not a graph-defining prototype (doesn't define any graphs)
+          //    OR it's the special base "Thing" prototype
+          const isUntyped = !prototype.typeNodeId;
+          const isBaseThingPrototype = prototype.id === 'base-thing-prototype';
+          const isGraphDefining = prototype.definitionGraphIds && prototype.definitionGraphIds.length > 0;
+          
+          const isValidTypeNode = isUntyped && (isBaseThingPrototype || !isGraphDefining);
+          
+          // Debug logging to verify the fix
+          if (isUntyped) {
+            console.log(`[TypeList] Prototype "${prototype.name}": baseThingPrototype=${isBaseThingPrototype}, graphDefining=${isGraphDefining}, included=${isValidTypeNode}`);
+          }
+          
+          return isValidTypeNode;
+        });
+      
+      console.log(`[TypeList] Available type nodes: ${typeNodes.map(n => n.name).join(', ')}`);
+    }
+    
+    return typeNodes;
+  }, [activeGraphId, graphsMap, nodePrototypesMap]);
 
   const handleNodeTypeClick = (nodeType) => {
-    // For now, select all nodes when any type is clicked
-    // Later, this could filter based on nodeType.id or similar
-    const allNodeIds = nodes.map(node => node.id);
-    setSelectedNodes(new Set(allNodeIds));
-    console.log(`Selected all nodes because ${nodeType.name} was clicked.`);
+    // If there are selected nodes, set their type to the clicked node type
+    if (selectedNodes.size > 0) {
+      selectedNodes.forEach(nodeId => {
+        // Don't allow a node to be typed by itself
+        if (nodeId !== nodeType.id) {
+          setNodeTypeAction(nodeId, nodeType.id);
+        }
+      });
+      console.log(`Set type of ${selectedNodes.size} nodes to ${nodeType.name}`);
+    } else {
+      // If no nodes are selected, select all nodes of this type
+      const nodesOfType = nodes.filter(node => {
+        // Find the prototype for this node instance
+        const prototype = nodePrototypesMap.get(node.prototypeId);
+        return prototype?.typeNodeId === nodeType.id;
+      });
+      const nodeIds = nodesOfType.map(node => node.id);
+      setSelectedNodes(new Set(nodeIds));
+      console.log(`Selected ${nodeIds.length} nodes of type ${nodeType.name}`);
+    }
   };
 
   const cycleMode = () => {
-    if (isAnimating) return; // Prevent clicking during transition (if any)
-    
     // Restore cycle: closed -> node -> connection -> closed
     setMode(currentMode => {
         if (currentMode === 'closed') return 'node';
@@ -69,7 +138,7 @@ const TypeList = ({ nodes, setSelectedNodes }) => {
           padding: 0,
           cursor: 'pointer',
           color: '#bdb5b5',
-          zIndex: 10002,
+          zIndex: 20000, // Higher than panels (10000)
           boxShadow: '0 2px 5px rgba(0, 0, 0, 0.2)'
         }}
       >
@@ -89,7 +158,7 @@ const TypeList = ({ nodes, setSelectedNodes }) => {
           display: 'flex',
           alignItems: 'center',
           backgroundColor: '#260000',
-          zIndex: 10001,
+          zIndex: 19999, // Higher than panels but lower than toggle button
           overflow: 'hidden',
           transition: 'transform 0.3s ease-in-out',
           transform: mode === 'closed' ? 'translateY(100%)' : 'translateY(0)',
@@ -109,14 +178,17 @@ const TypeList = ({ nodes, setSelectedNodes }) => {
           }}
         >
           {mode === 'node' && (
-            nodeTypes.map(type => (
-              <NodeType 
-                key={type.id} 
-                name={type.name} 
-                color={type.color} 
-                onClick={() => handleNodeTypeClick(type)} 
-              />
-            ))
+            <>
+              {/* Show available type nodes for the current graph */}
+              {availableTypeNodes.map(prototype => (
+                <NodeType 
+                  key={prototype.id} 
+                  name={prototype.name} 
+                  color={prototype.color} 
+                  onClick={() => handleNodeTypeClick(prototype)} 
+                />
+              ))}
+            </>
           )}
           {mode === 'connection' && (
             <div style={{
@@ -132,6 +204,12 @@ const TypeList = ({ nodes, setSelectedNodes }) => {
       </footer>
     </>
   );
+};
+
+TypeList.propTypes = {
+  nodes: PropTypes.array.isRequired,
+  setSelectedNodes: PropTypes.func.isRequired,
+  selectedNodes: PropTypes.instanceOf(Set)
 };
 
 export default TypeList;

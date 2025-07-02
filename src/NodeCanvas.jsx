@@ -2056,11 +2056,17 @@ function NodeCanvas() {
     }
 
     const containerElement = containerRef.current;
-    if (!containerElement) return;
+    if (!containerElement) {
+      console.error(`[Panel Hurtle] containerRef.current is null`);
+      return;
+    }
 
     // Get the current pan/zoom from the actual SVG element to ensure accuracy
     const svgElement = containerElement.querySelector('.canvas');
-    if (!svgElement) return;
+    if (!svgElement) {
+      console.error(`[Panel Hurtle] Could not find .canvas element`);
+      return;
+    }
     
     const transform = svgElement.style.transform;
     const scaleMatch = transform.match(/scale\((-?\d+(?:\.\d+)?)\)/);
@@ -2299,6 +2305,8 @@ function NodeCanvas() {
           storeActions={storeActions}
           graphName={activeGraphName}
           graphDescription={activeGraphDescription}
+          nodeDefinitionIndices={nodeDefinitionIndices}
+          onStartHurtleAnimationFromPanel={startHurtleAnimationFromPanel}
         />
 
         <div
@@ -3143,6 +3151,7 @@ function NodeCanvas() {
       <TypeList 
         nodes={nodes}
         setSelectedNodes={setSelectedInstanceIds}
+        selectedNodes={selectedInstanceIds}
       />
 
       {/* AbstractionCarousel Component */}

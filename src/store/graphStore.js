@@ -105,7 +105,20 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   return {
     // Initialize with completely empty state - universe file is required
     graphs: new Map(),
-    nodePrototypes: new Map(), // Renamed from `nodes`
+    nodePrototypes: (() => {
+      // Initialize with base "Thing" type
+      const thingId = 'base-thing-prototype';
+      const nodePrototypes = new Map();
+      nodePrototypes.set(thingId, {
+        id: thingId,
+        name: 'Thing',
+        description: 'Base type for all things',
+        color: '#8B0000', // Dark red/maroon
+        typeNodeId: null, // No parent type - this is the most basic type
+        definitionGraphIds: []
+      });
+      return nodePrototypes;
+    })(),
     edges: new Map(),
     openGraphIds: [],
     activeGraphId: null,
@@ -287,6 +300,45 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     }
   })),
 
+  // Set the type of a node (the node that serves as this node's type in the abstraction hierarchy)
+  setNodeType: (nodeId, typeNodeId) => set(produce((draft) => {
+    const node = draft.nodePrototypes.get(nodeId);
+    if (!node) {
+      console.warn(`setNodeType: Node prototype ${nodeId} not found.`);
+      return;
+    }
+    
+    // Validate that the type node exists (if not null)
+    if (typeNodeId !== null && !draft.nodePrototypes.has(typeNodeId)) {
+      console.warn(`setNodeType: Type node ${typeNodeId} not found.`);
+      return;
+    }
+    
+    // Prevent circular typing (a node cannot be typed by itself or by a node it already types)
+    if (typeNodeId === nodeId) {
+      console.warn(`setNodeType: Node ${nodeId} cannot be typed by itself.`);
+      return;
+    }
+    
+    // Check for indirect circular typing by traversing the type chain
+    if (typeNodeId !== null) {
+      let currentTypeId = typeNodeId;
+      const visited = new Set();
+      while (currentTypeId && !visited.has(currentTypeId)) {
+        visited.add(currentTypeId);
+        const currentTypeNode = draft.nodePrototypes.get(currentTypeId);
+        if (currentTypeNode?.typeNodeId === nodeId) {
+          console.warn(`setNodeType: Circular typing detected. Node ${nodeId} cannot be typed by ${typeNodeId}.`);
+          return;
+        }
+        currentTypeId = currentTypeNode?.typeNodeId;
+      }
+    }
+    
+    node.typeNodeId = typeNodeId;
+    console.log(`setNodeType: Set type of node ${nodeId} to ${typeNodeId || 'null'}.`);
+  })),
+
   // Deprecated actions, kept for API consistency during refactor if needed, but should not be used.
   addNode: () => console.warn("`addNode` is deprecated. Use `addNodePrototype` and `addNodeInstance`."),
   updateNode: () => console.warn("`updateNode` is deprecated. Use `updateNodePrototype` or `updateNodeInstance`."),
@@ -360,6 +412,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         name: newGraphName,
         description: initialData.description || '',
         color: initialData.color || NODE_DEFAULT_COLOR,
+        typeNodeId: initialData.typeNodeId || null, // Node that serves as this node's type
         // No positional data in prototype
         definitionGraphIds: [newGraphId] // This prototype defines the new graph
     };
@@ -393,27 +446,35 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   })),
 
   // Creates a new graph, assigns it as a definition to a prototype, and makes it active
-  createAndAssignGraphDefinition: (prototypeId) => set(produce((draft) => {
-    const newGraphId = _createAndAssignGraphDefinition(draft, prototypeId);
-    if (!newGraphId) return;
+  createAndAssignGraphDefinition: (prototypeId) => {
+    let newGraphId = null;
+    set(produce((draft) => {
+      newGraphId = _createAndAssignGraphDefinition(draft, prototypeId);
+      if (!newGraphId) return;
 
-    // Open and activate the new graph
-    if (!draft.openGraphIds.includes(newGraphId)) {
-        draft.openGraphIds.push(newGraphId);
-    }
-    draft.activeGraphId = newGraphId;
-    draft.activeDefinitionNodeId = prototypeId;
-    
-    console.log(`[Store createAndAssignGraphDefinition] Created new graph ${newGraphId} for prototype ${prototypeId}, and set as active.`);
-  })),
+      // Open and activate the new graph
+      if (!draft.openGraphIds.includes(newGraphId)) {
+          draft.openGraphIds.push(newGraphId);
+      }
+      draft.activeGraphId = newGraphId;
+      draft.activeDefinitionNodeId = prototypeId;
+      
+      console.log(`[Store createAndAssignGraphDefinition] Created new graph ${newGraphId} for prototype ${prototypeId}, and set as active.`);
+    }));
+    return newGraphId;
+  },
   
   // Creates a new graph and assigns it as a definition, but does NOT make it active.
-  createAndAssignGraphDefinitionWithoutActivation: (prototypeId) => set(produce((draft) => {
-    const newGraphId = _createAndAssignGraphDefinition(draft, prototypeId);
-    if (!newGraphId) return;
-    
-    console.log(`[Store createAndAssignGraphDefinitionWithoutActivation] Created new graph ${newGraphId} for prototype ${prototypeId}.`);
-  })),
+  createAndAssignGraphDefinitionWithoutActivation: (prototypeId) => {
+    let newGraphId = null;
+    set(produce((draft) => {
+      newGraphId = _createAndAssignGraphDefinition(draft, prototypeId);
+      if (!newGraphId) return;
+      
+      console.log(`[Store createAndAssignGraphDefinitionWithoutActivation] Created new graph ${newGraphId} for prototype ${prototypeId}.`);
+    }));
+    return newGraphId;
+  },
 
   // Sets the currently active graph tab.
   setActiveGraph: (graphId) => {
@@ -1068,6 +1129,24 @@ export const getActiveGraphId = (state) => state.activeGraphId;
 // Selector to check if a node is bookmarked
 export const isNodeSaved = (nodeId) => (state) => state.savedNodeIds.has(nodeId);
 export const isGraphSaved = (graphId) => (state) => state.savedGraphIds.has(graphId);
+export const getNodeTypesInHierarchy = (nodeId) => (state) => {
+  const types = [];
+  let currentId = nodeId;
+  const visited = new Set();
+  
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const node = state.nodePrototypes.get(currentId);
+    if (node) {
+      types.push(node);
+      currentId = node.typeNodeId;
+    } else {
+      break;
+    }
+  }
+  
+  return types;
+};
 
 // Export the store hook
 export default useGraphStore; 

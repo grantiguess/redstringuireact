@@ -1125,10 +1125,34 @@ const Panel = forwardRef(
         if (!activeRightPanelTab) {
             panelContent = <div className="panel-content-inner">No tab selected...</div>;
         } else if (activeRightPanelTab.type === 'home') {
+            // Get the defining node for the current graph to show its data
+            const currentGraph = graphsMap.get(activeGraphId);
+            const definingNodeId = currentGraph?.definingNodeIds?.[0];
+            const definingNodeData = definingNodeId ? nodePrototypesMap.get(definingNodeId) : null;
+
+            // Get type information for the defining node
+            const getTypeInfo = () => {
+                if (!definingNodeData || !definingNodeData.typeNodeId) {
+                    return { typeName: 'Thing', typeColor: '#8B0000' }; // Default to Thing
+                }
+                const typeNode = nodePrototypesMap.get(definingNodeData.typeNodeId);
+                return {
+                    typeName: typeNode?.name || 'Unknown Type',
+                    typeColor: typeNode?.color || NODE_DEFAULT_COLOR
+                };
+            };
+
+            const { typeName, typeColor } = getTypeInfo();
+
+            // Check if expand button should be disabled (can't expand to current graph)
+            const hasDefinitions = definingNodeData?.definitionGraphIds?.length > 0;
+            const firstDefinitionGraphId = definingNodeData?.definitionGraphIds?.[0];
+            const isExpandDisabled = firstDefinitionGraphId === activeGraphId;
+
             panelContent = (
-                <div className="panel-content-inner home-tab" >
-                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px', flexWrap: 'nowrap' }}>
-                        {/* Project Title - Use locally derived name */}
+                <div className="panel-content-inner home-tab">
+                    {/* Header with title and buttons - same layout as node tabs */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                         {editingProjectTitle ? (
                             <input
                                 ref={projectTitleInputRef}
@@ -1144,9 +1168,9 @@ const Panel = forwardRef(
                                 style={{}}
                             />
                         ) : (
-                            <h2
+                            <h3
                                 style={{
-                                    margin: '0 10px 0 0', 
+                                    margin: 0,
                                     color: '#260000',
                                     cursor: 'pointer',
                                     overflow: 'hidden',
@@ -1158,10 +1182,102 @@ const Panel = forwardRef(
                                     setTempProjectTitle(graphName);
                                 }}
                             >
-                                {graphName ?? 'Loading...'}
-                            </h2>
+                                <span style={{
+                                    display: 'inline-block',
+                                    maxWidth: '210px',
+                                    whiteSpace: 'normal',
+                                    overflowWrap: 'break-word',
+                                    verticalAlign: 'bottom'
+                                }}>
+                                    {graphName ?? 'Loading...'}
+                                </span>
+                            </h3>
                         )}
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {/* Expand Icon - Unified logic: always show, handle both cases */}
+                            <ArrowUpFromDot
+                                size={20}
+                                color="#260000"
+                                style={{ 
+                                    cursor: isExpandDisabled ? 'not-allowed' : 'pointer', 
+                                    flexShrink: 0,
+                                    opacity: isExpandDisabled ? 0.3 : 1,
+                                    transition: 'opacity 0.2s ease',
+                                }}
+                                onClick={(e) => {
+                                    if (isExpandDisabled || !definingNodeId) return;
+
+                                    if (hasDefinitions) {
+                                        // Has definitions - animate to existing definition
+                                        if (onStartHurtleAnimationFromPanel && firstDefinitionGraphId) {
+                                            const iconRect = e.currentTarget.getBoundingClientRect();
+                                            console.log(`[Panel Home Expand] Starting hurtle animation for graph: ${firstDefinitionGraphId} from node: ${definingNodeId}`);
+                                            onStartHurtleAnimationFromPanel(definingNodeId, firstDefinitionGraphId, definingNodeId, iconRect);
+                                        } else if (storeActions?.openGraphTabAndBringToTop && firstDefinitionGraphId) {
+                                            storeActions.openGraphTabAndBringToTop(firstDefinitionGraphId, definingNodeId);
+                                        }
+                                                            } else {
+                            // No definitions - create one first, then animate (with delay like node tab)
+                            console.log(`[Panel Home Expand] Creating definition for node: ${definingNodeId}`);
+                            
+                            // IMPORTANT: Capture the button rect BEFORE the async operation
+                            const iconRect = e.currentTarget.getBoundingClientRect();
+                            storeActions.createAndAssignGraphDefinitionWithoutActivation(definingNodeId);
+                            
+                            setTimeout(() => {
+                                const currentState = useGraphStore.getState();
+                                const updatedNodeData = currentState.nodePrototypes.get(definingNodeId);
+                                if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                                    const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                                    console.log(`[Panel Home Expand] Starting hurtle animation for new graph: ${newGraphId} from node: ${definingNodeId}`);
+                                    onStartHurtleAnimationFromPanel(definingNodeId, newGraphId, definingNodeId, iconRect);
+                                } else {
+                                    console.error(`[Panel Home Expand] Could not find new definition for node ${definingNodeId} after creation.`);
+                                }
+                            }, 150); // Increased delay for more noticeable pause
+                        }
+                                }}
+                                title={
+                                    isExpandDisabled 
+                                        ? "This graph is already open" 
+                                        : hasDefinitions 
+                                            ? "Open definition in new tab"
+                                            : "Create new definition"
+                                }
+                            />
+                            
+                            <ImagePlus
+                                size={20}
+                                color="#260000"
+                                style={{ cursor: 'pointer', flexShrink: 0 }}
+                                onClick={() => definingNodeId && handleAddImage(definingNodeId)}
+                            />
+                        </div>
                     </div>
+
+                    {/* Type information */}
+                    <div style={{ 
+                        marginBottom: '8px', 
+                        fontSize: '0.9rem', 
+                        color: '#555',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                    }}>
+                        <span>Type:</span>
+                        <span style={{
+                            backgroundColor: typeColor,
+                            color: '#bdb5b5',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.8rem',
+                            fontWeight: 'bold'
+                        }}>
+                            {typeName}
+                        </span>
+                    </div>
+
                     <textarea
                         placeholder="Add a bio..."
                         id="project-bio-textarea"
@@ -1196,10 +1312,36 @@ const Panel = forwardRef(
                             }
                         }}
                     />
+
+                    {/* Show image if the defining node has one */}
+                    {definingNodeData?.imageSrc && (
+                        <div
+                            style={{
+                                marginTop: '8px',
+                                position: 'relative',
+                                width: '100%',
+                                maxWidth: '100%',
+                                overflow: 'hidden',
+                            }}
+                        >
+                            <img
+                                src={definingNodeData.imageSrc}
+                                alt="Graph"
+                                style={{
+                                    display: 'block',
+                                    width: '100%',
+                                    height: 'auto',
+                                    objectFit: 'contain',
+                                    borderRadius: '6px'
+                                }}
+                            />
+                        </div>
+                    )}
+
                     {/* Divider Line */}
                     <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
 
-                    {/* 3. "Components" Header with count */}
+                    {/* Components section */}
                     <h3 style={{ 
                         marginTop: 0, 
                         marginBottom: '10px', 
@@ -1219,7 +1361,7 @@ const Panel = forwardRef(
                             overflowY: 'auto',
                         }}
                     >
-                        {activeGraphNodes.map((node) => ( // Uses dummy activeGraphId (null) -> empty array
+                        {activeGraphNodes.map((node) => (
                             <div
                                 key={node.id}
                                 style={{
@@ -1234,7 +1376,7 @@ const Panel = forwardRef(
                                     overflow: 'hidden'
                                 }}
                                 title={node.name}
-                                onClick={() => openNodeTab(node.id)} // Uses dummy action
+                                onClick={() => openNodeTab(node.id)}
                             >
                                 <span style={{
                                     color: '#bdb5b5',
@@ -1545,52 +1687,113 @@ const Panel = forwardRef(
                             )}
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                {/* Expand Icon - Only show if node has definitions */}
-                                {nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0 && (
-                                    <ArrowUpFromDot
-                                        size={24}
-                                        color="#260000"
-                                        style={{ 
-                                            cursor: isExpandDisabled ? 'not-allowed' : 'pointer', 
-                                            flexShrink: 0,
-                                            opacity: isExpandDisabled ? 0.3 : 1,
-                                            transition: 'opacity 0.2s ease',
-                                        }}
-                                        onClick={(e) => {
-                                            if (isExpandDisabled) return; // Do nothing if disabled
+                                {/* Expand Icon - Always show, behavior depends on whether definitions exist */}
+                                <ArrowUpFromDot
+                                    size={20}
+                                    color="#260000"
+                                    style={{ 
+                                        cursor: isExpandDisabled ? 'not-allowed' : 'pointer', 
+                                        flexShrink: 0,
+                                        opacity: isExpandDisabled ? 0.3 : 1, // Consistent opacity - same as other buttons
+                                        transition: 'opacity 0.2s ease',
+                                    }}
+                                    onClick={(e) => {
+                                        if (isExpandDisabled) return; // Do nothing if disabled
 
-                                            // Get the context-specific definition index
+                                        if (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
+                                            // Node has definitions - open existing definition
                                             const contextKey = `${nodeId}-${activeGraphId}`;
                                             const currentIndex = nodeDefinitionIndices.get(contextKey) || 0;
-                                            
-                                            // Get the graph ID for the current definition
                                             const graphIdToOpen = nodeData.definitionGraphIds[currentIndex] || nodeData.definitionGraphIds[0];
                                             
-                                            // Check if the animation function is provided
                                             if (onStartHurtleAnimationFromPanel) {
                                                 const iconRect = e.currentTarget.getBoundingClientRect();
                                                 console.log(`[Panel Expand Icon] Starting hurtle animation for graph: ${graphIdToOpen} from node: ${nodeId}`);
                                                 onStartHurtleAnimationFromPanel(nodeId, graphIdToOpen, nodeId, iconRect);
                                             } else {
-                                                // Fallback to original behavior if animation function isn't passed
                                                 console.log(`[Panel Expand Icon] Opening current definition graph: ${graphIdToOpen} (index ${currentIndex}) for node: ${nodeId}`);
                                                 if (storeActions?.openGraphTabAndBringToTop) {
                                                     storeActions.openGraphTabAndBringToTop(graphIdToOpen, nodeId);
                                                 }
                                             }
-                                        }}
-                                        title={isExpandDisabled ? "This graph is already open" : "Open definition in new tab"}
-                                    />
-                                )}
+                                                                                                    } else {
+                        // Node has no definitions - create new definition first, then open it
+                        console.log(`[Panel Node Expand] Creating definition for node: ${nodeId}`);
+                        
+                        // IMPORTANT: Capture the button rect BEFORE the async operation
+                        const iconRect = e.currentTarget.getBoundingClientRect();
+                        storeActions.createAndAssignGraphDefinitionWithoutActivation(nodeId);
+                        
+                        setTimeout(() => {
+                            const currentState = useGraphStore.getState();
+                            const updatedNodeData = currentState.nodePrototypes.get(nodeId);
+                            if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                                const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                                console.log(`[Panel Node Expand] Starting hurtle animation for new graph: ${newGraphId} from node: ${nodeId}`);
+                                onStartHurtleAnimationFromPanel(nodeId, newGraphId, nodeId, iconRect);
+                            } else {
+                                console.error(`[Panel Node Expand] Could not find new definition for node ${nodeId} after creation.`);
+                            }
+                        }, 150); // Same delay as home tab for consistent behavior
+                    }
+                                    }}
+                                    title={
+                                        isExpandDisabled 
+                                            ? "This graph is already open" 
+                                            : (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0)
+                                                ? "Open definition in new tab"
+                                                : "Create new definition"
+                                    }
+                                />
                                 
                                 <ImagePlus
-                                    size={24}
+                                    size={20}
                                     color="#260000"
                                     style={{ cursor: 'pointer', flexShrink: 0 }}
                                     onClick={() => handleAddImage(nodeId)}
                                 />
                             </div>
                         </div>
+
+                        {/* Type information for node tabs */}
+                        {(() => {
+                            // Get type information for this node
+                            const getNodeTypeInfo = () => {
+                                if (!nodeData.typeNodeId) {
+                                    return { typeName: 'Thing', typeColor: '#8B0000' }; // Default to Thing
+                                }
+                                const typeNode = nodePrototypesMap.get(nodeData.typeNodeId);
+                                return {
+                                    typeName: typeNode?.name || 'Unknown Type',
+                                    typeColor: typeNode?.color || NODE_DEFAULT_COLOR
+                                };
+                            };
+
+                            const { typeName, typeColor } = getNodeTypeInfo();
+
+                            return (
+                                <div style={{ 
+                                    marginBottom: '8px', 
+                                    fontSize: '0.9rem', 
+                                    color: '#555',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px'
+                                }}>
+                                    <span>Type:</span>
+                                    <span style={{
+                                        backgroundColor: typeColor,
+                                        color: '#bdb5b5',
+                                        padding: '2px 8px',
+                                        borderRadius: '4px',
+                                        fontSize: '0.8rem',
+                                        fontWeight: 'bold'
+                                    }}>
+                                        {typeName}
+                                    </span>
+                                </div>
+                            );
+                        })()}
 
                         <textarea
                             placeholder="Add a bio..."

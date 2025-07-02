@@ -18,6 +18,7 @@ let preferredDirectory = null;
 const AUTO_SAVE_INTERVAL = 250; // Auto-save every 250ms (4x per second)
 const DEBOUNCE_DELAY = 150; // Wait 150ms after last change before saving
 const FILE_NAME = 'universe.redstring';
+const MAX_LOCALSTORAGE_SIZE = 4 * 1024 * 1024; // 4MB limit for localStorage to stay well under browser limits
 
 // Default paths for different operating systems
 const DEFAULT_PATHS = {
@@ -39,6 +40,65 @@ const STORAGE_KEYS = {
  */
 export const isFileSystemSupported = () => {
   return 'showSaveFilePicker' in window && 'showOpenFilePicker' in window;
+};
+
+/**
+ * Safely store data to localStorage with size checking
+ */
+const safeLocalStorageSetItem = (key, value) => {
+  try {
+    // Check if the value size exceeds our limit
+    const valueSize = new Blob([value]).size;
+    if (valueSize > MAX_LOCALSTORAGE_SIZE) {
+      console.warn(`[FileStorage] Data too large for localStorage (${(valueSize / 1024 / 1024).toFixed(1)}MB), skipping localStorage backup`);
+      // Store a metadata object instead of the full data
+      const metadata = {
+        timestamp: Date.now(),
+        size: valueSize,
+        dataTooBig: true,
+        message: 'Data exceeded localStorage size limit'
+      };
+      localStorage.setItem(key + '_meta', JSON.stringify(metadata));
+      return false;
+    }
+    
+    localStorage.setItem(key, value);
+    // Clear any existing metadata since we successfully stored the data
+    localStorage.removeItem(key + '_meta');
+    return true;
+  } catch (error) {
+    console.warn(`[FileStorage] Failed to store data in localStorage (${error.message}), continuing without localStorage backup`);
+    
+    // If it's a quota exceeded error, try to clean up and retry once
+    if (error.name === 'QuotaExceededError' || error.message.includes('quota')) {
+      console.log('[FileStorage] Quota exceeded, attempting cleanup and retry...');
+      const cleanupResult = checkAndCleanLocalStorage();
+      
+      if (cleanupResult.cleaned) {
+        try {
+          // Retry after cleanup
+          localStorage.setItem(key, value);
+          console.log('[FileStorage] Successfully stored data after cleanup');
+          return true;
+        } catch (retryError) {
+          console.warn('[FileStorage] Still failed after cleanup:', retryError.message);
+        }
+      }
+    }
+    
+    // Store error metadata
+    const errorMeta = {
+      timestamp: Date.now(),
+      error: error.message,
+      storageFailure: true
+    };
+    try {
+      localStorage.setItem(key + '_meta', JSON.stringify(errorMeta));
+    } catch (metaError) {
+      console.warn('[FileStorage] Even metadata storage failed:', metaError.message);
+    }
+    return false;
+  }
 };
 
 /**
@@ -385,18 +445,40 @@ const setupAutoSave = (getStoreStateFn) => {
 /**
  * Create default empty state
  */
-const createEmptyState = () => ({
-  graphs: new Map(),
-  nodes: new Map(), 
-  edges: new Map(),
-  openGraphIds: [],
-  activeGraphId: null,
-  activeDefinitionNodeId: null,
-  expandedGraphIds: new Set(),
-  rightPanelTabs: [{ type: 'home', isActive: true }],
-  savedNodeIds: new Set(),
-  savedGraphIds: new Set()
-});
+const createEmptyState = () => {
+  // Initialize with base "Thing" type
+  const thingId = 'base-thing-prototype';
+  const thingPrototype = {
+    id: thingId,
+    name: 'Thing',
+    description: 'Base type for all entities',
+    color: '#8B0000', // maroon
+    typeNodeId: null, // No parent type - this is the base type
+    definitionGraphIds: []
+  };
+  
+  const prototypeMap = new Map();
+  prototypeMap.set(thingId, thingPrototype);
+  
+  return {
+    graphs: new Map(),
+    nodePrototypes: prototypeMap, // Fixed: was "nodes", now "nodePrototypes" 
+    edges: new Map(),
+    openGraphIds: [],
+    activeGraphId: null,
+    activeDefinitionNodeId: null,
+    expandedGraphIds: new Set(),
+    rightPanelTabs: [{ type: 'home', isActive: true }],
+    savedNodeIds: new Set(),
+    savedGraphIds: new Set(),
+    
+    // Universe file state
+    isUniverseLoaded: true, // Mark as loaded since we're creating it
+    isUniverseLoading: false,
+    universeLoadingError: null,
+    hasUniverseFile: true
+  };
+};
 
 /**
  * Create the universe.redstring file (or let user choose location)
@@ -437,7 +519,7 @@ export const createUniverseFile = async () => {
     await writable.close();
     
     // Store session data
-    localStorage.setItem(STORAGE_KEYS.LAST_DATA, dataString);
+    safeLocalStorageSetItem(STORAGE_KEYS.LAST_DATA, dataString);
     localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
     
     lastSaveTime = Date.now();
@@ -506,7 +588,7 @@ export const openUniverseFile = async () => {
     }
     
     // Store session data
-    localStorage.setItem(STORAGE_KEYS.LAST_DATA, text);
+    safeLocalStorageSetItem(STORAGE_KEYS.LAST_DATA, text);
     localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
     
     // Add to recent files
@@ -535,6 +617,9 @@ export const autoConnectToUniverse = async () => {
 
   console.log('[FileStorage] Starting auto-connect to universe...');
   
+  // Clean up localStorage if it's getting full
+  checkAndCleanLocalStorage();
+  
   // Strategy 1: Try to restore the exact file handle
   const fileRestored = await tryRestoreFileHandle();
   if (fileRestored && fileHandle) {
@@ -556,7 +641,7 @@ export const autoConnectToUniverse = async () => {
       
       const importResult = importFromRedstring(jsonData);
       
-      localStorage.setItem(STORAGE_KEYS.LAST_DATA, text);
+      safeLocalStorageSetItem(STORAGE_KEYS.LAST_DATA, text);
       localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
       
       // Add to recent files
@@ -603,7 +688,7 @@ export const autoConnectToUniverse = async () => {
         
         const importResult = importFromRedstring(jsonData);
         
-        localStorage.setItem(STORAGE_KEYS.LAST_DATA, text);
+        safeLocalStorageSetItem(STORAGE_KEYS.LAST_DATA, text);
         localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
         
         // Add to recent files
@@ -643,6 +728,21 @@ export const restoreLastSession = async () => {
         autoConnected: true,
         hasUniverseFile: true
       };
+    }
+
+    // Check if we have metadata indicating localStorage storage issues
+    try {
+      const metadata = localStorage.getItem(STORAGE_KEYS.LAST_DATA + '_meta');
+      if (metadata) {
+        const metaData = JSON.parse(metadata);
+        if (metaData.dataTooBig) {
+          console.log('[FileStorage] Previous session data was too large for localStorage, but file auto-connect failed');
+        } else if (metaData.storageFailure) {
+          console.log('[FileStorage] Previous localStorage storage failed:', metaData.error);
+        }
+      }
+    } catch (metaError) {
+      console.warn('[FileStorage] Could not read metadata:', metaError);
     }
 
     // No fallback to localStorage - universe file is required
@@ -694,7 +794,7 @@ export const saveToFile = async (storeState, showSuccess = true) => {
     await writable.close();
     
     // Update localStorage
-    localStorage.setItem(STORAGE_KEYS.LAST_DATA, dataString);
+    safeLocalStorageSetItem(STORAGE_KEYS.LAST_DATA, dataString);
     localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
     
     lastSaveTime = Date.now();
@@ -980,6 +1080,7 @@ export const clearIndexedDB = async () => {
  */
 export const clearSession = async () => {
   localStorage.removeItem(STORAGE_KEYS.LAST_DATA);
+  localStorage.removeItem(STORAGE_KEYS.LAST_DATA + '_meta'); // Also clear metadata
   localStorage.removeItem(STORAGE_KEYS.SESSION_ACTIVE);
   localStorage.removeItem(STORAGE_KEYS.FILE_HANDLE);
   fileHandle = null;
@@ -989,6 +1090,44 @@ export const clearSession = async () => {
   await clearIndexedDB();
   
   console.log('[FileStorage] Session cleared');
+};
+
+/**
+ * Check localStorage usage and clean up if needed
+ */
+export const checkAndCleanLocalStorage = () => {
+  try {
+    // Estimate current localStorage usage
+    let totalSize = 0;
+    for (let key in localStorage) {
+      if (localStorage.hasOwnProperty(key)) {
+        totalSize += localStorage[key].length + key.length;
+      }
+    }
+    
+    console.log(`[FileStorage] LocalStorage usage: ${(totalSize / 1024).toFixed(1)}KB`);
+    
+    // If we're using a lot of space, clean up old redstring data
+    if (totalSize > MAX_LOCALSTORAGE_SIZE * 0.8) { // 80% of our limit
+      console.warn('[FileStorage] LocalStorage usage high, clearing old redstring data');
+      localStorage.removeItem(STORAGE_KEYS.LAST_DATA);
+      localStorage.removeItem(STORAGE_KEYS.LAST_DATA + '_meta');
+      
+      // Recalculate after cleanup
+      totalSize = 0;
+      for (let key in localStorage) {
+        if (localStorage.hasOwnProperty(key)) {
+          totalSize += localStorage[key].length + key.length;
+        }
+      }
+      console.log(`[FileStorage] LocalStorage usage after cleanup: ${(totalSize / 1024).toFixed(1)}KB`);
+    }
+    
+    return { totalSize, cleaned: totalSize > MAX_LOCALSTORAGE_SIZE * 0.8 };
+  } catch (error) {
+    console.warn('[FileStorage] Error checking localStorage usage:', error);
+    return { totalSize: -1, cleaned: false, error: error.message };
+  }
 };
 
 /**
