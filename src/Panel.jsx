@@ -1212,31 +1212,23 @@ const Panel = forwardRef(
                                         // Has definitions - animate to existing definition
                                         if (onStartHurtleAnimationFromPanel && firstDefinitionGraphId) {
                                             const iconRect = e.currentTarget.getBoundingClientRect();
-                                            console.log(`[Panel Home Expand] Starting hurtle animation for graph: ${firstDefinitionGraphId} from node: ${definingNodeId}`);
                                             onStartHurtleAnimationFromPanel(definingNodeId, firstDefinitionGraphId, definingNodeId, iconRect);
                                         } else if (storeActions?.openGraphTabAndBringToTop && firstDefinitionGraphId) {
                                             storeActions.openGraphTabAndBringToTop(firstDefinitionGraphId, definingNodeId);
                                         }
-                                                            } else {
-                            // No definitions - create one first, then animate (with delay like node tab)
-                            console.log(`[Panel Home Expand] Creating definition for node: ${definingNodeId}`);
-                            
-                            // IMPORTANT: Capture the button rect BEFORE the async operation
-                            const iconRect = e.currentTarget.getBoundingClientRect();
-                            storeActions.createAndAssignGraphDefinitionWithoutActivation(definingNodeId);
-                            
-                            setTimeout(() => {
-                                const currentState = useGraphStore.getState();
-                                const updatedNodeData = currentState.nodePrototypes.get(definingNodeId);
-                                if (updatedNodeData?.definitionGraphIds?.length > 0) {
-                                    const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
-                                    console.log(`[Panel Home Expand] Starting hurtle animation for new graph: ${newGraphId} from node: ${definingNodeId}`);
-                                    onStartHurtleAnimationFromPanel(definingNodeId, newGraphId, definingNodeId, iconRect);
-                                } else {
-                                    console.error(`[Panel Home Expand] Could not find new definition for node ${definingNodeId} after creation.`);
-                                }
-                            }, 150); // Increased delay for more noticeable pause
-                        }
+                                    } else {
+                                        // No definitions - create one first, then animate (with delay like node tab)
+                                        const iconRect = e.currentTarget.getBoundingClientRect();
+                                        storeActions.createAndAssignGraphDefinitionWithoutActivation(definingNodeId);
+                                        setTimeout(() => {
+                                            const currentState = useGraphStore.getState();
+                                            const updatedNodeData = currentState.nodePrototypes.get(definingNodeId);
+                                            if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                                                const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                                                onStartHurtleAnimationFromPanel(definingNodeId, newGraphId, definingNodeId, iconRect);
+                                            }
+                                        }, 150);
+                                    }
                                 }}
                                 title={
                                     isExpandDisabled 
@@ -1246,7 +1238,6 @@ const Panel = forwardRef(
                                             : "Create new definition"
                                 }
                             />
-                            
                             <ImagePlus
                                 size={20}
                                 color="#260000"
@@ -1278,6 +1269,11 @@ const Panel = forwardRef(
                         </span>
                     </div>
 
+                    {/* Divider above bio */}
+                    <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
+
+                    {/* --- Bio Section --- */}
+                    <div style={{ padding: '0 0 0 0' }}>
                     <textarea
                         placeholder="Add a bio..."
                         id="project-bio-textarea"
@@ -1312,6 +1308,10 @@ const Panel = forwardRef(
                             }
                         }}
                     />
+                    </div>
+
+                    {/* Divider below bio */}
+                    <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
 
                     {/* Show image if the defining node has one */}
                     {definingNodeData?.imageSrc && (
@@ -1644,212 +1644,217 @@ const Panel = forwardRef(
 
                 panelContent = (
                     <div className="panel-content-inner node-tab">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                            {editingTitle ? (
-                                <input
-                                    ref={titleInputRef}
-                                    type="text"
-                                    id={`node-title-input-${nodeId}`}
-                                    name={`nodeTitleInput-${nodeId}`}
-                                    className="editable-title-input"
-                                    value={tempTitle}
-                                    onChange={(e) => setTempTitle(e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter') commitTitleChange(); }}
-                                    onBlur={commitTitleChange}
-                                    onFocus={() => onFocusChange?.(true)}
-                                    style={{}}
-                                />
-                            ) : (
-                                <h3
-                                    style={{
-                                        margin: 0,
-                                        color: '#260000',
-                                        cursor: 'pointer',
-                                        overflow: 'hidden',
-                                        userSelect: 'none',
-                                        fontSize: '1.1rem'
-                                    }}
-                                    onDoubleClick={() => {
-                                        setEditingTitle(true);
-                                        setTempTitle(displayTitle);
-                                    }}
-                                >
-                                    <span style={{
-                                        display: 'inline-block',
-                                        maxWidth: '210px',
-                                        whiteSpace: 'normal',
-                                        overflowWrap: 'break-word',
-                                        verticalAlign: 'bottom'
-                                    }}>
-                                        {displayTitle}
-                                    </span>
-                                </h3>
-                            )}
+                        {/* --- Top Section: Title, Type, Buttons --- */}
+                        <div style={{ padding: '0 0 0 0' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                {editingTitle ? (
+                                    <input
+                                        ref={titleInputRef}
+                                        type="text"
+                                        id={`node-title-input-${nodeId}`}
+                                        name={`nodeTitleInput-${nodeId}`}
+                                        className="editable-title-input"
+                                        value={tempTitle}
+                                        onChange={(e) => setTempTitle(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') commitTitleChange(); }}
+                                        onBlur={commitTitleChange}
+                                        onFocus={() => onFocusChange?.(true)}
+                                        style={{}}
+                                    />
+                                ) : (
+                                    <h3
+                                        style={{
+                                            margin: 0,
+                                            color: '#260000',
+                                            cursor: 'pointer',
+                                            overflow: 'hidden',
+                                            userSelect: 'none',
+                                            fontSize: '1.1rem'
+                                        }}
+                                        onDoubleClick={() => {
+                                            setEditingTitle(true);
+                                            setTempTitle(displayTitle);
+                                        }}
+                                    >
+                                        <span style={{
+                                            display: 'inline-block',
+                                            maxWidth: '210px',
+                                            whiteSpace: 'normal',
+                                            overflowWrap: 'break-word',
+                                            verticalAlign: 'bottom'
+                                        }}>
+                                            {displayTitle}
+                                        </span>
+                                    </h3>
+                                )}
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                {/* Expand Icon - Always show, behavior depends on whether definitions exist */}
-                                <ArrowUpFromDot
-                                    size={20}
-                                    color="#260000"
-                                    style={{ 
-                                        cursor: isExpandDisabled ? 'not-allowed' : 'pointer', 
-                                        flexShrink: 0,
-                                        opacity: isExpandDisabled ? 0.3 : 1, // Consistent opacity - same as other buttons
-                                        transition: 'opacity 0.2s ease',
-                                    }}
-                                    onClick={(e) => {
-                                        if (isExpandDisabled) return; // Do nothing if disabled
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    {/* Expand Icon - Always show, behavior depends on whether definitions exist */}
+                                    <ArrowUpFromDot
+                                        size={20}
+                                        color="#260000"
+                                        style={{ 
+                                            cursor: isExpandDisabled ? 'not-allowed' : 'pointer', 
+                                            flexShrink: 0,
+                                            opacity: isExpandDisabled ? 0.3 : 1, // Consistent opacity - same as other buttons
+                                            transition: 'opacity 0.2s ease',
+                                        }}
+                                        onClick={(e) => {
+                                            if (isExpandDisabled) return; // Do nothing if disabled
 
-                                        if (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
-                                            // Node has definitions - open existing definition
-                                            const contextKey = `${nodeId}-${activeGraphId}`;
-                                            const currentIndex = nodeDefinitionIndices.get(contextKey) || 0;
-                                            const graphIdToOpen = nodeData.definitionGraphIds[currentIndex] || nodeData.definitionGraphIds[0];
-                                            
-                                            if (onStartHurtleAnimationFromPanel) {
-                                                const iconRect = e.currentTarget.getBoundingClientRect();
-                                                console.log(`[Panel Expand Icon] Starting hurtle animation for graph: ${graphIdToOpen} from node: ${nodeId}`);
-                                                onStartHurtleAnimationFromPanel(nodeId, graphIdToOpen, nodeId, iconRect);
-                                            } else {
-                                                console.log(`[Panel Expand Icon] Opening current definition graph: ${graphIdToOpen} (index ${currentIndex}) for node: ${nodeId}`);
-                                                if (storeActions?.openGraphTabAndBringToTop) {
-                                                    storeActions.openGraphTabAndBringToTop(graphIdToOpen, nodeId);
+                                            if (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
+                                                // Node has definitions - open existing definition
+                                                const contextKey = `${nodeId}-${activeGraphId}`;
+                                                const currentIndex = nodeDefinitionIndices.get(contextKey) || 0;
+                                                const graphIdToOpen = nodeData.definitionGraphIds[currentIndex] || nodeData.definitionGraphIds[0];
+                                                
+                                                if (onStartHurtleAnimationFromPanel) {
+                                                    const iconRect = e.currentTarget.getBoundingClientRect();
+                                                    onStartHurtleAnimationFromPanel(nodeId, graphIdToOpen, nodeId, iconRect);
+                                                } else {
+                                                    if (storeActions?.openGraphTabAndBringToTop) {
+                                                        storeActions.openGraphTabAndBringToTop(graphIdToOpen, nodeId);
+                                                    }
                                                 }
+                                            } else {
+                                                // Node has no definitions - create new definition first, then open it
+                                                const iconRect = e.currentTarget.getBoundingClientRect();
+                                                storeActions.createAndAssignGraphDefinitionWithoutActivation(nodeId);
+                                                setTimeout(() => {
+                                                    const currentState = useGraphStore.getState();
+                                                    const updatedNodeData = currentState.nodePrototypes.get(nodeId);
+                                                    if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                                                        const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                                                        onStartHurtleAnimationFromPanel(nodeId, newGraphId, nodeId, iconRect);
+                                                    }
+                                                }, 150);
                                             }
-                                                                                                    } else {
-                        // Node has no definitions - create new definition first, then open it
-                        console.log(`[Panel Node Expand] Creating definition for node: ${nodeId}`);
-                        
-                        // IMPORTANT: Capture the button rect BEFORE the async operation
-                        const iconRect = e.currentTarget.getBoundingClientRect();
-                        storeActions.createAndAssignGraphDefinitionWithoutActivation(nodeId);
-                        
-                        setTimeout(() => {
-                            const currentState = useGraphStore.getState();
-                            const updatedNodeData = currentState.nodePrototypes.get(nodeId);
-                            if (updatedNodeData?.definitionGraphIds?.length > 0) {
-                                const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
-                                console.log(`[Panel Node Expand] Starting hurtle animation for new graph: ${newGraphId} from node: ${nodeId}`);
-                                onStartHurtleAnimationFromPanel(nodeId, newGraphId, nodeId, iconRect);
-                            } else {
-                                console.error(`[Panel Node Expand] Could not find new definition for node ${nodeId} after creation.`);
-                            }
-                        }, 150); // Same delay as home tab for consistent behavior
-                    }
-                                    }}
-                                    title={
-                                        isExpandDisabled 
-                                            ? "This graph is already open" 
-                                            : (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0)
-                                                ? "Open definition in new tab"
-                                                : "Create new definition"
-                                    }
-                                />
-                                
-                                <ImagePlus
-                                    size={20}
-                                    color="#260000"
-                                    style={{ cursor: 'pointer', flexShrink: 0 }}
-                                    onClick={() => handleAddImage(nodeId)}
-                                />
+                                        }}
+                                        title={
+                                            isExpandDisabled 
+                                                ? "This graph is already open" 
+                                                : (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0)
+                                                    ? "Open definition in new tab"
+                                                    : "Create new definition"
+                                        }
+                                    />
+                                    <ImagePlus
+                                        size={20}
+                                        color="#260000"
+                                        style={{ cursor: 'pointer', flexShrink: 0 }}
+                                        onClick={() => handleAddImage(nodeId)}
+                                    />
+                                </div>
                             </div>
+                            {/* Type information for node tabs */}
+                            {(() => {
+                                // Get type information for this node
+                                const getNodeTypeInfo = () => {
+                                    if (!nodeData.typeNodeId) {
+                                        return { typeName: 'Thing', typeColor: '#8B0000' }; // Default to Thing
+                                    }
+                                    const typeNode = nodePrototypesMap.get(nodeData.typeNodeId);
+                                    return {
+                                        typeName: typeNode?.name || 'Unknown Type',
+                                        typeColor: typeNode?.color || NODE_DEFAULT_COLOR
+                                    };
+                                };
+
+                                const { typeName, typeColor } = getNodeTypeInfo();
+
+                                return (
+                                    <div style={{ 
+                                        marginBottom: '8px', 
+                                        fontSize: '0.9rem', 
+                                        color: '#555',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px'
+                                    }}>
+                                        <span>Is a </span>
+                                        <span style={{
+                                            backgroundColor: typeColor,
+                                            color: '#bdb5b5',
+                                            padding: '2px 8px',
+                                            borderRadius: '4px',
+                                            fontSize: '0.8rem',
+                                            fontWeight: 'bold'
+                                        }}>
+                                            {typeName}
+                                        </span>
+                                    </div>
+                                );
+                            })()}
                         </div>
 
-                        {/* Type information for node tabs */}
-                        {(() => {
-                            // Get type information for this node
-                            const getNodeTypeInfo = () => {
-                                if (!nodeData.typeNodeId) {
-                                    return { typeName: 'Thing', typeColor: '#8B0000' }; // Default to Thing
-                                }
-                                const typeNode = nodePrototypesMap.get(nodeData.typeNodeId);
-                                return {
-                                    typeName: typeNode?.name || 'Unknown Type',
-                                    typeColor: typeNode?.color || NODE_DEFAULT_COLOR
-                                };
-                            };
+                        {/* Divider above bio */}
+                        <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
 
-                            const { typeName, typeColor } = getNodeTypeInfo();
-
-                            return (
-                                <div style={{ 
-                                    marginBottom: '8px', 
-                                    fontSize: '0.9rem', 
-                                    color: '#555',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '8px'
-                                }}>
-                                    <span>Is a </span>
-                                    <span style={{
-                                        backgroundColor: typeColor,
-                                        color: '#bdb5b5',
-                                        padding: '2px 8px',
-                                        borderRadius: '4px',
-                                        fontSize: '0.8rem',
-                                        fontWeight: 'bold'
-                                    }}>
-                                        {typeName}
-                                    </span>
-                                </div>
-                            );
-                        })()}
-
-                        <textarea
-                            placeholder="Add a bio..."
-                            id={`node-bio-textarea-${nodeId}`}
-                            name={`nodeBioTextarea-${nodeId}`}
-                            className="panel-bio-textarea"
-                            style={{
-                                width: '100%',
-                                maxWidth: '100%',
-                                boxSizing: 'border-box',
-                                resize: 'vertical',
-                                minHeight: '60px',
-                                color: '#260000',
-                                border: '1px solid #ccc',
-                                borderRadius: '4px',
-                                padding: '0.5rem',
-                                backgroundColor: '#bdb5b5',
-                                fontSize: '14px',
-                                lineHeight: '1.4',
-                                fontFamily: 'inherit',
-                                userSelect: 'text'
-                            }}
-                            value={displayBio}
-                            onFocus={() => onFocusChange?.(true)}
-                            onBlur={() => onFocusChange?.(false)}
-                            onChange={(e) => handleBioChange(nodeId, e.target.value)}
-                            onKeyDown={(e) => {
-                                if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
-                                    e.stopPropagation();
-                                }
-                            }}
-                        />
-
-                        {nodeData.imageSrc && (
-                            <div
+                        {/* --- Bio Section --- */}
+                        <div style={{ padding: '0 0 0 0' }}>
+                            <textarea
+                                placeholder="Add a bio..."
+                                id={`node-bio-textarea-${nodeId}`}
+                                name={`nodeBioTextarea-${nodeId}`}
+                                className="panel-bio-textarea"
                                 style={{
-                                    marginTop: '8px',
-                                    position: 'relative',
                                     width: '100%',
                                     maxWidth: '100%',
-                                    overflow: 'hidden',
+                                    boxSizing: 'border-box',
+                                    resize: 'vertical',
+                                    minHeight: '60px',
+                                    color: '#260000',
+                                    border: '1px solid #ccc',
+                                    borderRadius: '4px',
+                                    padding: '0.5rem',
+                                    backgroundColor: '#bdb5b5',
+                                    fontSize: '14px',
+                                    lineHeight: '1.4',
+                                    fontFamily: 'inherit',
+                                    userSelect: 'text'
                                 }}
-                            >
-                                <img
-                                    src={nodeData.imageSrc}
-                                    alt="Node"
+                                value={displayBio}
+                                onFocus={() => onFocusChange?.(true)}
+                                onBlur={() => onFocusChange?.(false)}
+                                onChange={(e) => handleBioChange(nodeId, e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Shift"].includes(e.key)) {
+                                        e.stopPropagation();
+                                    }
+                                }}
+                            />
+                        </div>
+
+                        {/* Divider below bio */}
+                        <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
+
+                        {/* --- Rest of the content (image, Components, etc.) --- */}
+                        <div style={{ padding: '0 0 0 0' }}>
+                            {nodeData.imageSrc && (
+                                <div
                                     style={{
-                                        display: 'block',
+                                        marginTop: '8px',
+                                        position: 'relative',
                                         width: '100%',
-                                        height: 'auto',
-                                        objectFit: 'contain',
-                                        borderRadius: '6px'
+                                        maxWidth: '100%',
+                                        overflow: 'hidden',
                                     }}
-                                />
-                            </div>
-                        )}
+                                >
+                                    <img
+                                        src={nodeData.imageSrc}
+                                        alt="Node"
+                                        style={{
+                                            display: 'block',
+                                            width: '100%',
+                                            height: 'auto',
+                                            objectFit: 'contain',
+                                            borderRadius: '6px'
+                                        }}
+                                    />
+                                </div>
+                            )}
+                            {/* ... existing code ... */}
+                        </div>
                     </div>
                 );
             }
@@ -1965,7 +1970,7 @@ const Panel = forwardRef(
                     }}
                     onDoubleClick={handleHeaderDoubleClick} // Uncommented
                 >
-                    {/* === Conditional Header Content === */} 
+                    {/* === Conditional Header Content === */}
                     {side === 'left' ? (
                         // --- Left Panel Header --- 
                         <div style={{ flexGrow: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'stretch' }}>
@@ -2056,7 +2061,7 @@ const Panel = forwardRef(
                             )}
                         </>
                     )}
-                    {/* === End Conditional Header Content === */} 
+                    {/* === End Conditional Header Content === */}
                 </div>
 
                 {/* Content Area */} 
