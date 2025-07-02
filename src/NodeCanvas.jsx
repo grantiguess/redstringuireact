@@ -50,6 +50,7 @@ import {
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import Panel from './Panel'; // This is now used for both sides
 import TypeList from './TypeList'; // Re-add TypeList component
+import NodeSelectionGrid from './NodeSelectionGrid'; // Import the new node selection grid
 
 const SPAWNABLE_NODE = 'spawnable_node';
 
@@ -368,6 +369,7 @@ function NodeCanvas() {
 
   const [plusSign, setPlusSign] = useState(null);
   const [nodeNamePrompt, setNodeNamePrompt] = useState({ visible: false, name: '' });
+  const [nodeSelectionGrid, setNodeSelectionGrid] = useState({ visible: false, position: { x: 0, y: 0 } });
   const [rightPanelExpanded, setRightPanelExpanded] = useState(true); // Default to open?
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
   const [isRightPanelInputFocused, setIsRightPanelInputFocused] = useState(false);
@@ -442,6 +444,8 @@ function NodeCanvas() {
     setPreviewingNodeId(null);
     setEditingNodeIdOnCanvas(null);
     setPlusSign(null);
+    setNodeNamePrompt({ visible: false, name: '' });
+    setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
     setSelectionRect(null);
     setSelectionStart(null);
     setDrawingConnectionFrom(null);
@@ -1561,7 +1565,20 @@ function NodeCanvas() {
   const handlePlusSignClick = () => {
     if (!plusSign) return;
     if (plusSign.mode === 'morph') return;
+    
     setNodeNamePrompt({ visible: true, name: '' });
+    
+    // Calculate position for the node selection grid (below the dialog)
+    const dialogTop = HEADER_HEIGHT + 25;
+    const dialogHeight = 120; // Approximate height of the dialog
+    const gridTop = dialogTop + dialogHeight + 10; // 10px spacing below dialog
+    const dialogWidth = 300; // Match dialog width
+    const gridLeft = window.innerWidth / 2 - dialogWidth / 2; // Center to match dialog
+    
+    setNodeSelectionGrid({ 
+      visible: true, 
+      position: { x: gridLeft, y: gridTop } 
+    });
   };
 
   const handleClosePrompt = () => {
@@ -1569,6 +1586,7 @@ function NodeCanvas() {
       setPlusSign(ps => ps && { ...ps, mode: 'disappear' });
     }
     setNodeNamePrompt({ visible: false, name: '' });
+    setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
   };
 
   const handlePromptSubmit = () => {
@@ -1579,6 +1597,28 @@ function NodeCanvas() {
       setPlusSign(ps => ps && { ...ps, mode: 'disappear' });
     }
     setNodeNamePrompt({ visible: false, name: '' });
+    setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
+  };
+
+  const handleNodeSelection = (nodePrototype) => {
+    if (!plusSign || !activeGraphId) return;
+    
+    // Create an instance of the selected node prototype at the plus sign position
+    const position = {
+      x: plusSign.x - NODE_WIDTH / 2,
+      y: plusSign.y - NODE_HEIGHT / 2,
+    };
+    
+    storeActions.addNodeInstance(activeGraphId, nodePrototype.id, position);
+    
+    // Clean up UI state
+    setPlusSign(null);
+    setNodeNamePrompt({ visible: false, name: '' });
+    setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
+  };
+
+  const handleNodeSelectionGridClose = () => {
+    setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
   };
 
   const handleMorphDone = () => {
@@ -1739,19 +1779,19 @@ function NodeCanvas() {
     if (!nodeNamePrompt.visible) return null;
     return (
       <>
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 999 }} />
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 1000 }} />
         <div
           style={{
             position: 'fixed',
             top: HEADER_HEIGHT + 25,
             left: '50%',
             transform: 'translateX(-50%)',
-            backgroundColor: '#bdb5b5',
-            padding: '20px',
-            borderRadius: '10px',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
-            zIndex: 1000,
-            width: '300px',
+                      backgroundColor: '#bdb5b5',
+          padding: '20px',
+          borderRadius: '10px',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+          zIndex: 1001, // Higher than node selection grid (998)
+          width: '300px',
           }}
         >
           <div style={{ position: 'absolute', top: '10px', right: '10px', cursor: 'pointer' }}>
@@ -3102,6 +3142,17 @@ function NodeCanvas() {
           )}
 
           {renderCustomPrompt()}
+          
+          {/* Node Selection Grid */}
+          <NodeSelectionGrid
+            isVisible={nodeSelectionGrid.visible}
+            onNodeSelect={handleNodeSelection}
+            onClose={handleNodeSelectionGridClose}
+            position={nodeSelectionGrid.position}
+            maxHeight={400}
+            width={300}
+          />
+          
           {debugMode && (
             <DebugOverlay 
               debugData={debugData}
