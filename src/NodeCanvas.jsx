@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import './NodeCanvas.css';
 import { X } from 'lucide-react';
 import Header from './Header.jsx';
@@ -679,7 +679,7 @@ function NodeCanvas() {
   }, [storeActions, setSelectedInstanceIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, activeGraphId, abstractionCarouselVisible, abstractionCarouselNode, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Link, ArrowLeft, SendToBack]);
 
   // Effect to restore view state on graph change or center if no stored state
-  useEffect(() => {
+  useLayoutEffect(() => {
     setIsViewReady(false); // Set to not ready on graph change
 
     // Ensure we have valid sizes and an active graph
@@ -689,7 +689,7 @@ function NodeCanvas() {
       const storedViewState = graphViewStates.get(activeGraphId);
       
       if (storedViewState) {
-        // Restore the stored view state
+        // Restore the stored view state immediately
         // console.log(`[NodeCanvas] Restoring view state for graph ${activeGraphId}:`, storedViewState);
         setPanOffset(storedViewState.panOffset);
         setZoomLevel(storedViewState.zoomLevel);
@@ -716,13 +716,13 @@ function NodeCanvas() {
       const clampedX = Math.min(Math.max(initialPanX, minX), maxX);
       const clampedY = Math.min(Math.max(initialPanY, minY), maxY);
 
-        // Apply the calculated view state
+        // Apply the calculated view state immediately
       setPanOffset({ x: clampedX, y: clampedY });
         setZoomLevel(defaultZoom);
       }
       
-      // Defer setting view to ready to prevent flash
-      setTimeout(() => setIsViewReady(true), 0);
+      // Set view to ready immediately - no delay
+      setIsViewReady(true);
 
     } else if (!activeGraphId) {
       setIsViewReady(true); // No graph, so "ready" to show nothing
