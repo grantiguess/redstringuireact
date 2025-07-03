@@ -10,7 +10,7 @@ import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import AbstractionCarousel from './AbstractionCarousel.jsx'; // Import the AbstractionCarousel component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
-import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette } from 'lucide-react'; // Icons for PieMenu
+import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal } from 'lucide-react'; // Icons for PieMenu
 import ColorPicker from './ColorPicker';
 import { useDrop } from 'react-dnd';
 
@@ -377,6 +377,11 @@ function NodeCanvas() {
   const [dialogColorPickerVisible, setDialogColorPickerVisible] = useState(false);
   const [dialogColorPickerPosition, setDialogColorPickerPosition] = useState({ x: 0, y: 0 });
   const [dialogColorPickerJustClosed, setDialogColorPickerJustClosed] = useState(false);
+  
+  // Pie menu color picker state
+  const [pieMenuColorPickerVisible, setPieMenuColorPickerVisible] = useState(false);
+  const [pieMenuColorPickerPosition, setPieMenuColorPickerPosition] = useState({ x: 0, y: 0 });
+  const [activePieMenuColorNodeId, setActivePieMenuColorNodeId] = useState(null);
   const [nodeSelectionGrid, setNodeSelectionGrid] = useState({ visible: false, position: { x: 0, y: 0 } });
   const [rightPanelExpanded, setRightPanelExpanded] = useState(true); // Default to open?
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
@@ -464,6 +469,10 @@ function NodeCanvas() {
     setCurrentPieMenuData(null);
     setIsPieMenuRendered(false);
     setIsTransitioningPieMenu(false); // Reset any pending transition
+
+    // Clear pie menu color picker state
+    setPieMenuColorPickerVisible(false);
+    setActivePieMenuColorNodeId(null);
 
     // Clear abstraction carousel
     setAbstractionCarouselVisible(false);
@@ -567,6 +576,29 @@ function NodeCanvas() {
 
   // Ref to track initial mount completion
   const isMountedRef = useRef(false);
+
+  // Pie menu color picker handlers
+  const handlePieMenuColorPickerOpen = useCallback((nodeId, position) => {
+    setPieMenuColorPickerPosition(position);
+    setPieMenuColorPickerVisible(true);
+    setActivePieMenuColorNodeId(nodeId);
+  }, []);
+
+  const handlePieMenuColorPickerClose = useCallback(() => {
+    setPieMenuColorPickerVisible(false);
+    setActivePieMenuColorNodeId(null);
+  }, []);
+
+  const handlePieMenuColorChange = useCallback((color) => {
+    if (activePieMenuColorNodeId) {
+      const node = nodes.find(n => n.id === activePieMenuColorNodeId);
+      if (node) {
+        storeActions.updateNodePrototype(node.prototypeId, draft => {
+          draft.color = color;
+        });
+      }
+    }
+  }, [activePieMenuColorNodeId, nodes, storeActions]);
 
   // Pie Menu Button Configuration - now targetPieMenuButtons and dynamic
   const targetPieMenuButtons = useMemo(() => {
@@ -681,10 +713,42 @@ function NodeCanvas() {
             setPendingAbstractionNodeId(instanceId); // Store the instance ID for later
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
             // Abstraction carousel will be set up in onExitAnimationComplete after animation
+        } },
+        { id: 'palette', label: 'Palette', icon: Palette, action: (instanceId) => {
+            const node = nodes.find(n => n.id === instanceId);
+            if (node) {
+              // Get the current pie menu data at execution time to avoid circular dependency
+              const pieMenuData = selectedNodeIdForPieMenu ? {
+                node: nodes.find(n => n.id === selectedNodeIdForPieMenu),
+                nodeDimensions: getNodeDimensions(node, previewingNodeId === node.id, null)
+              } : null;
+              
+              if (pieMenuData) {
+                // Calculate position for color picker relative to the palette button
+                // We'll position it near the pie menu node
+                const nodeCenter = {
+                  x: pieMenuData.node.x + pieMenuData.nodeDimensions.currentWidth / 2,
+                  y: pieMenuData.node.y + pieMenuData.nodeDimensions.currentHeight / 2
+                };
+                
+                // Convert canvas coordinates to screen coordinates
+                const rect = containerRef.current?.getBoundingClientRect();
+                if (rect) {
+                  const screenX = nodeCenter.x * zoomLevel + panOffset.x + rect.left;
+                  const screenY = nodeCenter.y * zoomLevel + panOffset.y + rect.top;
+                  
+                  handlePieMenuColorPickerOpen(instanceId, { x: screenX, y: screenY });
+                }
+              }
+            }
+        } },
+        { id: 'more', label: 'More', icon: MoreHorizontal, action: (instanceId) => {
+            console.log(`[PieMenu Action] More options clicked for node: ${instanceId}. Future: show additional menu.`);
+            // TODO: Implement additional options menu/submenu
         } }
       ];
     }
-  }, [storeActions, setSelectedInstanceIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, activeGraphId, abstractionCarouselVisible, abstractionCarouselNode, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Link, ArrowLeft, SendToBack]);
+  }, [storeActions, setSelectedInstanceIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, activeGraphId, abstractionCarouselVisible, abstractionCarouselNode, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Link, ArrowLeft, SendToBack, Palette, MoreHorizontal, zoomLevel, panOffset, containerRef, handlePieMenuColorPickerOpen]);
 
   // Effect to restore view state on graph change or center if no stored state
   useLayoutEffect(() => {
@@ -3312,6 +3376,21 @@ function NodeCanvas() {
           position={dialogColorPickerPosition}
           direction="down-left"
           parentContainerRef={dialogContainerRef}
+        />
+      )}
+
+      {/* Pie Menu Color Picker Component */}
+      {pieMenuColorPickerVisible && activePieMenuColorNodeId && (
+        <ColorPicker
+          isVisible={pieMenuColorPickerVisible}
+          onClose={handlePieMenuColorPickerClose}
+          onColorChange={handlePieMenuColorChange}
+          currentColor={(() => {
+            const node = nodes.find(n => n.id === activePieMenuColorNodeId);
+            return node?.color || 'maroon';
+          })()}
+          position={pieMenuColorPickerPosition}
+          direction="down-left"
         />
       )}
 
