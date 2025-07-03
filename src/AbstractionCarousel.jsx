@@ -127,8 +127,8 @@ const generateProgressiveColor = (baseColor, level) => {
   
   const { h, s, l } = hexToHsl(baseColor);
   
-  // Increase saturation for more vibrant colors
-  const enhancedSaturation = Math.min(100, s + 15); // Boost saturation by 15%
+  // Reduce saturation significantly for less gaudy colors
+  const reducedSaturation = Math.max(0, s - 25); // Reduce saturation by 25%
   
   // For generic levels (negative), make progressively lighter
   // For specific levels (positive), make progressively darker
@@ -137,11 +137,11 @@ const generateProgressiveColor = (baseColor, level) => {
   if (level < 0) {
     // Generic levels: lighter with bigger first jump for better contrast
     if (level === -1) {
-      // First level above center gets a bigger jump for better contrast
-      newLightness = Math.min(90, l + 25); // 25% lighter for first step
+      // First level above center gets an even bigger jump for better contrast
+      newLightness = Math.min(90, l + 40); // 40% lighter for first step (increased from 25%)
     } else {
       // Subsequent levels use normal progression
-      const lighteningFactor = 25 + (Math.abs(level) - 1) * 15; // Start from 25%, then 15% per level
+      const lighteningFactor = 40 + (Math.abs(level) - 1) * 15; // Start from 40%, then 15% per level
       newLightness = Math.min(90, l + lighteningFactor);
     }
   } else if (level > 0) {
@@ -150,7 +150,7 @@ const generateProgressiveColor = (baseColor, level) => {
     newLightness = Math.max(15, l - darkeningFactor); // Minimum lightness of 15% (raised from 10%)
   }
   
-  return hslToHex(h, enhancedSaturation, newLightness);
+  return hslToHex(h, reducedSaturation, newLightness);
 };
 
 const getTextColor = (backgroundColor) => {
