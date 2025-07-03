@@ -11,7 +11,8 @@ const NodeSelectionGrid = ({
   width = 280,
   bottomOffset = 20,
   onCreateNew,
-  showCreateNewOption = false
+  showCreateNewOption = false,
+  searchTerm = ''
 }) => {
   // Get all node prototypes from the store
   const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
@@ -19,8 +20,16 @@ const NodeSelectionGrid = ({
   // Convert to array and sort by name
   const availablePrototypes = useMemo(() => {
     const prototypes = Array.from(nodePrototypesMap.values());
-    return prototypes.sort((a, b) => a.name.localeCompare(b.name));
-  }, [nodePrototypesMap]);
+    const sorted = prototypes.sort((a, b) => a.name.localeCompare(b.name));
+
+    if (!searchTerm?.trim()) {
+        return sorted;
+    }
+    // Perform case-insensitive search
+    return sorted.filter(p => 
+        p.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [nodePrototypesMap, searchTerm]);
 
   // Custom scrolling state
   const [scrollY, setScrollY] = useState(0);

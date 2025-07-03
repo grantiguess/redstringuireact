@@ -2433,19 +2433,6 @@ const Panel = forwardRef(
                   <div style={{ textAlign: 'center', marginBottom: '8px', color: 'black' }}>
                     <strong style={{ fontSize: '18px' }}>Name Your Thing</strong>
                   </div>
-                  <div style={{ 
-                    textAlign: 'center', 
-                    marginBottom: '15px', 
-                    color: '#555', 
-                    fontSize: '13px',
-                    lineHeight: '1.3',
-                    maxWidth: '280px',
-                    margin: '0 auto 15px auto',
-                    wordWrap: 'break-word',
-                    hyphens: 'auto'
-                  }}>
-                    a more generic way to refer to {typeNamePrompt.targetNodeName}, also known as a superclass
-                  </div>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <input
                       type="text"
@@ -2458,7 +2445,6 @@ const Panel = forwardRef(
                         e.stopPropagation();
                       }}
                       style={{ flex: 1, padding: '10px', borderRadius: '5px', border: '1px solid #ccc', marginRight: '10px' }}
-                      placeholder="Type name..."
                       autoFocus
                     />
                     <button
@@ -2514,6 +2500,7 @@ const Panel = forwardRef(
                 position={nodeSelectionGrid.position}
                 width={300}
                 bottomOffset={20}
+                searchTerm={typeNamePrompt.name}
               />
             )}
         </>

@@ -3227,6 +3227,7 @@ function NodeCanvas() {
             onClose={handleNodeSelectionGridClose}
             position={nodeSelectionGrid.position}
             width={300}
+            searchTerm={nodeNamePrompt.name}
           />
           
           {debugMode && (
