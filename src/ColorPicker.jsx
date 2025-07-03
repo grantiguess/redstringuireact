@@ -115,8 +115,9 @@ const ColorPicker = ({
     };
 
     if (isVisible) {
-      document.addEventListener('mousedown', handleClickAway);
-      return () => document.removeEventListener('mousedown', handleClickAway);
+      // Use 'click' instead of 'mousedown' to avoid conflicts with palette button handlers
+      document.addEventListener('click', handleClickAway);
+      return () => document.removeEventListener('click', handleClickAway);
     }
   }, [isVisible, onClose]);
 
@@ -195,6 +196,7 @@ const ColorPicker = ({
       ref={pickerRef}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
+      onMouseUp={(e) => e.stopPropagation()}
       style={{
         ...getPositionStyle(),
         backgroundColor: '#bdb5b5',

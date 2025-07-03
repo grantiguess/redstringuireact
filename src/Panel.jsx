@@ -525,13 +525,11 @@ const Panel = forwardRef(
     const [colorPickerVisible, setColorPickerVisible] = useState(false);
     const [colorPickerPosition, setColorPickerPosition] = useState({ x: 0, y: 0 });
     const [colorPickerNodeId, setColorPickerNodeId] = useState(null);
-    const [colorPickerJustClosed, setColorPickerJustClosed] = useState(false);
 
     // Add new state for type creation dialog
     const [typeNamePrompt, setTypeNamePrompt] = useState({ visible: false, name: '', color: null, targetNodeId: null, targetNodeName: '' });
     const [typeDialogColorPickerVisible, setTypeDialogColorPickerVisible] = useState(false);
     const [typeDialogColorPickerPosition, setTypeDialogColorPickerPosition] = useState({ x: 0, y: 0 });
-    const [typeDialogColorPickerJustClosed, setTypeDialogColorPickerJustClosed] = useState(false);
     const [nodeSelectionGrid, setNodeSelectionGrid] = useState({ visible: false, position: { x: 0, y: 0 } });
 
     // Refs
@@ -615,6 +613,21 @@ const Panel = forwardRef(
         setThingMaxHeight(newMaxHeight);
 
     }, [savedNodes, sectionCollapsed, panelWidth, isWidthInitialized]); // Rerun when savedNodes, collapsed state, or panel width changes
+
+    // Effect to close color pickers when type dialog closes
+    useEffect(() => {
+        if (!typeNamePrompt.visible) {
+            setTypeDialogColorPickerVisible(false);
+        }
+    }, [typeNamePrompt.visible]);
+
+    // Effect to close color pickers when switching between views/contexts
+    useEffect(() => {
+        // Close any open color pickers when panel side or context changes
+        setColorPickerVisible(false);
+        setColorPickerNodeId(null);
+        setTypeDialogColorPickerVisible(false);
+    }, [leftViewActive]); // Close when switching left panel views
 
     useEffect(() => {
       // Load initial widths from localStorage ONCE on mount
@@ -1008,18 +1021,10 @@ const Panel = forwardRef(
     const handleOpenColorPicker = (nodeId, iconElement, event) => {
       event.stopPropagation();
       
-      // If color picker was just closed, don't immediately reopen
-      if (colorPickerJustClosed) {
-        return;
-      }
-      
       // If already open for the same node, close it (toggle behavior)
       if (colorPickerVisible && colorPickerNodeId === nodeId) {
         setColorPickerVisible(false);
         setColorPickerNodeId(null);
-        setColorPickerJustClosed(true);
-        // Reset the flag after a longer delay
-        setTimeout(() => setColorPickerJustClosed(false), 200);
         return;
       }
       
@@ -1034,9 +1039,6 @@ const Panel = forwardRef(
     const handleCloseColorPicker = () => {
       setColorPickerVisible(false);
       setColorPickerNodeId(null);
-      setColorPickerJustClosed(true);
-      // Reset the flag after a longer delay to prevent immediate reopening
-      setTimeout(() => setColorPickerJustClosed(false), 500);
     };
 
     // Auto-resize textarea helper function
@@ -1084,7 +1086,6 @@ const Panel = forwardRef(
     const handleCloseTypePrompt = () => {
       setTypeNamePrompt({ visible: false, name: '', color: null, targetNodeId: null, targetNodeName: '' });
       setTypeDialogColorPickerVisible(false);
-      setTypeDialogColorPickerJustClosed(false);
       setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
     };
 
@@ -1122,13 +1123,10 @@ const Panel = forwardRef(
       const rect = iconElement.getBoundingClientRect();
       setTypeDialogColorPickerPosition({ x: rect.right, y: rect.bottom });
       setTypeDialogColorPickerVisible(true);
-      setTypeDialogColorPickerJustClosed(false);
     };
 
     const handleTypeDialogColorPickerClose = () => {
       setTypeDialogColorPickerVisible(false);
-      setTypeDialogColorPickerJustClosed(true);
-      setTimeout(() => setTypeDialogColorPickerJustClosed(false), 200);
     };
 
     const handleTypeDialogColorChange = (color) => {
@@ -1434,7 +1432,9 @@ const Panel = forwardRef(
                                 size={20}
                                 color="#260000"
                                 style={{ cursor: 'pointer', flexShrink: 0 }}
+                                onMouseDown={(e) => e.stopPropagation()}
                                 onClick={(e) => {
+                                    e.stopPropagation();
                                     if (definingNodeId) {
                                         handleOpenColorPicker(definingNodeId, e.currentTarget, e);
                                     }
@@ -1972,7 +1972,11 @@ const Panel = forwardRef(
                                         size={20}
                                         color="#260000"
                                         style={{ cursor: 'pointer', flexShrink: 0 }}
-                                        onClick={(e) => handleOpenColorPicker(nodeId, e.currentTarget, e)}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenColorPicker(nodeId, e.currentTarget, e);
+                                        }}
                                         title="Change color"
                                     />
                                     {/* Expand Icon - Always show, behavior depends on whether definitions exist */}
@@ -2406,7 +2410,7 @@ const Panel = forwardRef(
                 <div 
                   style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 1000 }} 
                   onClick={(e) => {
-                    if (e.target === e.currentTarget && !typeDialogColorPickerJustClosed) {
+                    if (e.target === e.currentTarget) {
                       handleCloseTypePrompt();
                     }
                   }}
@@ -2430,51 +2434,67 @@ const Panel = forwardRef(
                   <div style={{ position: 'absolute', top: '10px', right: '10px', cursor: 'pointer' }}>
                     <X size={20} color="#999" onClick={handleCloseTypePrompt} />
                   </div>
-                  <div style={{ textAlign: 'center', marginBottom: '8px', color: 'black' }}>
-                    <strong style={{ fontSize: '18px' }}>Name Your Thing</strong>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <input
-                      type="text"
-                      value={typeNamePrompt.name}
-                      onChange={(e) => setTypeNamePrompt({ ...typeNamePrompt, name: e.target.value })}
-                      onKeyDown={(e) => { 
-                        if (e.key === 'Enter') handleTypePromptSubmit();
-                        if (e.key === 'Escape') handleCloseTypePrompt();
-                        // Stop propagation to prevent canvas shortcuts
-                        e.stopPropagation();
-                      }}
-                      style={{ flex: 1, padding: '10px', borderRadius: '5px', border: '1px solid #ccc', marginRight: '10px' }}
-                      autoFocus
-                    />
-                    <button
-                      onClick={handleTypePromptSubmit}
-                      style={{ 
-                        padding: '10px', 
-                        backgroundColor: typeNamePrompt.color || '#8B0000', 
-                        color: '#bdb5b5', 
-                        border: 'none', 
-                        borderRadius: '5px', 
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        minWidth: '50px',
-                        minHeight: '44px',
-                        marginRight: '8px'
-                      }}
-                      title="Create type"
-                    >
-                      <ArrowBigRightDash size={16} color="#bdb5b5" />
-                    </button>
-                    <Palette
-                      size={20}
-                      color="#260000"
-                      style={{ cursor: 'pointer', flexShrink: 0 }}
-                      onClick={(e) => handleTypeDialogColorPickerOpen(e.currentTarget, e)}
-                      title="Change color"
-                    />
-                  </div>
+                        <div style={{ textAlign: 'center', marginBottom: '8px', color: 'black' }}>
+        <strong style={{ fontSize: '18px' }}>Name Your Thing</strong>
+      </div>
+      <div style={{ 
+        textAlign: 'center', 
+        marginBottom: '15px', 
+        color: '#555', 
+        fontSize: '13px',
+        lineHeight: '1.4',
+        maxWidth: '280px',
+        margin: '0 auto 15px auto',
+        wordWrap: 'break-word',
+        hyphens: 'auto'
+      }}>
+        a more generic way to refer to {typeNamePrompt.targetNodeName},<br/>also known as a superclass
+      </div>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+            <Palette
+              size={20}
+              color="#260000"
+              style={{ cursor: 'pointer', flexShrink: 0, marginRight: '8px' }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleTypeDialogColorPickerOpen(e.currentTarget, e);
+              }}
+              title="Change color"
+            />
+            <input
+              type="text"
+              value={typeNamePrompt.name}
+              onChange={(e) => setTypeNamePrompt({ ...typeNamePrompt, name: e.target.value })}
+              onKeyDown={(e) => { 
+                if (e.key === 'Enter') handleTypePromptSubmit();
+                if (e.key === 'Escape') handleCloseTypePrompt();
+                // Stop propagation to prevent canvas shortcuts
+                e.stopPropagation();
+              }}
+              style={{ flex: 1, padding: '10px', borderRadius: '5px', border: '1px solid #ccc', marginRight: '10px' }}
+              autoFocus
+            />
+            <button
+              onClick={handleTypePromptSubmit}
+              style={{ 
+                padding: '10px', 
+                backgroundColor: typeNamePrompt.color || '#8B0000', 
+                color: '#bdb5b5', 
+                border: 'none', 
+                borderRadius: '5px', 
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: '50px',
+                minHeight: '44px'
+              }}
+              title="Create type"
+            >
+              <ArrowBigRightDash size={16} color="#bdb5b5" />
+            </button>
+          </div>
                 </div>
               </>
             )}

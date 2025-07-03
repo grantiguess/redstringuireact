@@ -376,7 +376,6 @@ function NodeCanvas() {
   // Dialog color picker state
   const [dialogColorPickerVisible, setDialogColorPickerVisible] = useState(false);
   const [dialogColorPickerPosition, setDialogColorPickerPosition] = useState({ x: 0, y: 0 });
-  const [dialogColorPickerJustClosed, setDialogColorPickerJustClosed] = useState(false);
   
   // Pie menu color picker state
   const [pieMenuColorPickerVisible, setPieMenuColorPickerVisible] = useState(false);
@@ -579,10 +578,17 @@ function NodeCanvas() {
 
   // Pie menu color picker handlers
   const handlePieMenuColorPickerOpen = useCallback((nodeId, position) => {
+    // If already open for the same node, close it (toggle behavior)
+    if (pieMenuColorPickerVisible && activePieMenuColorNodeId === nodeId) {
+      setPieMenuColorPickerVisible(false);
+      setActivePieMenuColorNodeId(null);
+      return;
+    }
+    
     setPieMenuColorPickerPosition(position);
     setPieMenuColorPickerVisible(true);
     setActivePieMenuColorNodeId(nodeId);
-  }, []);
+  }, [pieMenuColorPickerVisible, activePieMenuColorNodeId]);
 
   const handlePieMenuColorPickerClose = useCallback(() => {
     setPieMenuColorPickerVisible(false);
@@ -1660,7 +1666,6 @@ function NodeCanvas() {
     setNodeNamePrompt({ visible: false, name: '', color: null });
     setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
     setDialogColorPickerVisible(false); // Close color picker when closing prompt
-    setDialogColorPickerJustClosed(false); // Reset flag when dialog closes
   };
 
   const handlePromptSubmit = () => {
@@ -1673,7 +1678,6 @@ function NodeCanvas() {
     setNodeNamePrompt({ visible: false, name: '', color: null });
     setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
     setDialogColorPickerVisible(false); // Close color picker when submitting
-    setDialogColorPickerJustClosed(false); // Reset flag when dialog closes
   };
 
   const handleNodeSelection = (nodePrototype) => {
@@ -1736,17 +1740,20 @@ function NodeCanvas() {
   // Dialog color picker handlers
   const handleDialogColorPickerOpen = (iconElement, event) => {
     event.stopPropagation(); // Prevent event from bubbling to backdrop
+    
+    // If already open, close it (toggle behavior)
+    if (dialogColorPickerVisible) {
+      setDialogColorPickerVisible(false);
+      return;
+    }
+    
     const rect = iconElement.getBoundingClientRect();
     setDialogColorPickerPosition({ x: rect.right, y: rect.bottom });
     setDialogColorPickerVisible(true);
-    setDialogColorPickerJustClosed(false); // Reset flag when opening
   };
 
   const handleDialogColorPickerClose = () => {
     setDialogColorPickerVisible(false);
-    setDialogColorPickerJustClosed(true);
-    // Reset the flag after a delay to prevent immediate dialog closure
-    setTimeout(() => setDialogColorPickerJustClosed(false), 200);
   };
 
   const handleDialogColorChange = (color) => {
@@ -1759,6 +1766,22 @@ function NodeCanvas() {
   useEffect(() => {
     isMountedRef.current = true;
   }, []); // Runs once after initial mount
+
+  // Effect to close color pickers when their parent contexts disappear
+  useEffect(() => {
+    // Close dialog color picker when node name prompt closes
+    if (!nodeNamePrompt.visible) {
+      setDialogColorPickerVisible(false);
+    }
+  }, [nodeNamePrompt.visible]);
+
+  useEffect(() => {
+    // Close pie menu color picker when pie menu disappears
+    if (!currentPieMenuData || !selectedNodeIdForPieMenu) {
+      setPieMenuColorPickerVisible(false);
+      setActivePieMenuColorNodeId(null);
+    }
+  }, [currentPieMenuData, selectedNodeIdForPieMenu]);
 
   useEffect(() => {
     // Restore effect body
@@ -1891,8 +1914,7 @@ function NodeCanvas() {
           style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 1000 }} 
           onClick={(e) => {
             // Only close if clicking directly on the backdrop, not on child elements
-            // Also don't close if color picker was just closed
-            if (e.target === e.currentTarget && !dialogColorPickerJustClosed) {
+            if (e.target === e.currentTarget) {
               handleClosePrompt();
             }
           }}
@@ -1921,6 +1943,17 @@ function NodeCanvas() {
             <strong style={{ fontSize: '18px' }}>Name Your Thing</strong>
           </div>
           <div style={{ display: 'flex', alignItems: 'center' }}>
+            <Palette
+              size={20}
+              color="#260000"
+              style={{ cursor: 'pointer', flexShrink: 0, marginRight: '8px' }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDialogColorPickerOpen(e.currentTarget, e);
+              }}
+              title="Change color"
+            />
             <input
               type="text"
               id="node-name-prompt-input" // Add id
@@ -1944,20 +1977,12 @@ function NodeCanvas() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 minWidth: '50px',
-                minHeight: '44px',
-                marginRight: '8px'
+                minHeight: '44px'
               }}
               title="Create node"
             >
               <ArrowBigRightDash size={16} color="#bdb5b5" />
             </button>
-            <Palette
-              size={20}
-              color="#260000"
-              style={{ cursor: 'pointer', flexShrink: 0 }}
-              onClick={(e) => handleDialogColorPickerOpen(e.currentTarget, e)}
-              title="Change color"
-            />
           </div>
         </div>
       </>
