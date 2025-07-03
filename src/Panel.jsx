@@ -19,6 +19,13 @@ import useGraphStore, {
 import { shallow } from 'zustand/shallow';
 import GraphListItem from './GraphListItem'; // <<< Import the new component
 
+// Helper function to determine the correct article ("a" or "an")
+const getArticleFor = (word) => {
+  if (!word) return 'a';
+  const firstLetter = word.trim()[0].toLowerCase();
+  return ['a', 'e', 'i', 'o', 'u'].includes(firstLetter) ? 'an' : 'a';
+};
+
 // Define Item Type for react-dnd
 const ItemTypes = {
   TAB: 'tab',
@@ -1495,7 +1502,7 @@ const Panel = forwardRef(
                         alignItems: 'center',
                         gap: '8px'
                     }}>
-                        <span>Is a </span>
+                        <span>Is {getArticleFor(typeName)} </span>
                         <span 
                           style={{
                             backgroundColor: typeColor,
@@ -2050,7 +2057,7 @@ const Panel = forwardRef(
                                         alignItems: 'center',
                                         gap: '8px'
                                     }}>
-                                        <span>Is a </span>
+                                        <span>Is {getArticleFor(typeName)} </span>
                                         <span 
                                           style={{
                                             backgroundColor: typeColor,
