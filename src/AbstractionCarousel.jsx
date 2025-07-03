@@ -5,7 +5,61 @@ import { getNodeDimensions } from './utils';
 import './AbstractionCarousel.css';
 
 // Color utility functions for hue-based progression
+
+// Helper function to convert CSS color names to hex
+const cssColorToHex = (color) => {
+  // If it's already a hex color, return as-is
+  if (typeof color === 'string' && color.startsWith('#')) {
+    return color;
+  }
+  
+  // Create a temporary element to get the computed color
+  if (typeof document !== 'undefined') {
+    const tempElement = document.createElement('div');
+    tempElement.style.color = color;
+    document.body.appendChild(tempElement);
+    
+    const computedColor = getComputedStyle(tempElement).color;
+    document.body.removeChild(tempElement);
+    
+    // Parse rgb(r, g, b) format
+    const rgbMatch = computedColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+    if (rgbMatch) {
+      const r = parseInt(rgbMatch[1]).toString(16).padStart(2, '0');
+      const g = parseInt(rgbMatch[2]).toString(16).padStart(2, '0');
+      const b = parseInt(rgbMatch[3]).toString(16).padStart(2, '0');
+      return `#${r}${g}${b}`;
+    }
+  }
+  
+  // Fallback for common CSS colors
+  const colorMap = {
+    'maroon': '#800000',
+    'red': '#ff0000',
+    'orange': '#ffa500',
+    'yellow': '#ffff00',
+    'olive': '#808000',
+    'lime': '#00ff00',
+    'green': '#008000',
+    'aqua': '#00ffff',
+    'teal': '#008080',
+    'blue': '#0000ff',
+    'navy': '#000080',
+    'fuchsia': '#ff00ff',
+    'purple': '#800080',
+    'black': '#000000',
+    'gray': '#808080',
+    'silver': '#c0c0c0',
+    'white': '#ffffff'
+  };
+  
+  return colorMap[color.toLowerCase()] || '#800000'; // Default to maroon if unknown
+};
+
 const hexToHsl = (hex) => {
+  // Convert CSS color names to hex first
+  hex = cssColorToHex(hex);
+  
   // Remove # if present
   hex = hex.replace('#', '');
   
@@ -301,6 +355,7 @@ const AbstractionCarousel = ({
     if (!selectedNode) return [];
     
     const baseColor = selectedNode.color || NODE_DEFAULT_COLOR;
+    console.log('[AbstractionCarousel] Base color:', baseColor, 'from selectedNode.color:', selectedNode.color);
     
     const chain = [
       // Placeholder nodes for adding more
@@ -326,6 +381,13 @@ const AbstractionCarousel = ({
       // Placeholder nodes for adding more
       { id: 'add_specific', name: 'Add More Specific Thing', type: 'add_specific', level: 6, color: '#999' }
     ];
+
+    // Log the generated colors
+    chain.forEach(item => {
+      if (item.level !== 0) {
+        console.log(`[AbstractionCarousel] Level ${item.level}: ${item.name} -> Color: ${item.color}`);
+      }
+    });
 
     // Pre-calculate base dimensions for each node to use for smooth interpolation later
     return chain.map(item => {
@@ -725,14 +787,20 @@ const AbstractionCarousel = ({
           let animationScale = 1;
           let animationDelay = 0;
           let useAnimationOpacity = false;
+          let opacityTransitionDelay = 0;
           
-          if (animationState === 'entering' && !isCurrent) {
+          // Only animate nodes within 2 levels of the center
+          const shouldAnimate = distanceFromMain <= 2;
+          
+          if (animationState === 'entering' && !isCurrent && shouldAnimate) {
             // Entrance animation: start from center, staggered by distance
             animationDelay = distanceFromMain * 40; // 40ms per level (faster)
             animationOpacity = 0;
             animationScale = 0.3;
             useAnimationOpacity = true; // Override opacity for entrance
-          } else if (animationState === 'exiting' && !isCurrent) {
+            // Add additional delay for opacity transition after entrance completes
+            opacityTransitionDelay = animationDelay + 200; // 200ms entrance duration + stagger delay
+          } else if (animationState === 'exiting' && !isCurrent && shouldAnimate) {
             // Exit animation: shrink to center, reverse stagger
             animationDelay = (4 - distanceFromMain) * 30; // 30ms reverse stagger (faster)
             animationScale = 0.3;
@@ -787,18 +855,23 @@ const AbstractionCarousel = ({
           const hasThumbnail = Boolean(item.thumbnailSrc);
 
           // Unscaled border and corner radius
-          const borderWidth = (isMainNode ? 8 : 4);
+          const borderWidth = (isMainNode ? 4 : 2); // Reduced border width to let colors show through better
           const cornerRadius = NODE_CORNER_RADIUS;
           
-          const borderColor = isPlaceholder ? '#999' : (isMainNode ? 'black' : '#666');
+          const borderColor = isPlaceholder ? '#999' : (isMainNode ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.3)'); // Use semi-transparent borders
           const nodeColor = isPlaceholder ? '#bdb5b5' : (item.color || NODE_DEFAULT_COLOR);
           
+          // Debug logging
+          if (!isPlaceholder) {
+            console.log(`[AbstractionCarousel Render] Level ${item.level}: ${item.name} -> item.color: ${item.color}, final nodeColor: ${nodeColor}`);
+          }
+          
           // Calculate animation transform for enter/exit
-          const animationTransform = !isCurrent && (animationState === 'entering' || animationState === 'exiting') 
+          const animationTransform = !isCurrent && shouldAnimate && (animationState === 'entering' || animationState === 'exiting') 
             ? `scale(${animationScale})` 
             : 'scale(1)';
           
-          const animationStyles = !isCurrent && (animationState === 'entering' || animationState === 'exiting') ? {
+          const animationStyles = !isCurrent && shouldAnimate && (animationState === 'entering' || animationState === 'exiting') ? {
             animation: animationState === 'entering' 
               ? `carousel-node-enter 0.2s ease-out ${animationDelay}ms both`
               : `carousel-node-exit 0.2s ease-in ${animationDelay}ms both`,
@@ -806,11 +879,22 @@ const AbstractionCarousel = ({
             ...(animationState === 'exiting' ? { '--start-opacity': opacity } : {})
           } : {};
 
+          // Calculate final opacity with transition
+          const finalOpacity = useAnimationOpacity ? animationOpacity : opacity;
+          const opacityStyle = animationState === 'entering' && shouldAnimate && !isCurrent ? {
+            opacity: 1, // Start at full opacity after entrance
+            animation: `carousel-opacity-transition 0.4s ease ${opacityTransitionDelay}ms forwards`,
+            // Set CSS custom property for the final target opacity
+            '--target-opacity': opacity
+          } : {
+            opacity: finalOpacity
+          };
+
           return (
             <g
               key={item.id}
               style={{
-                opacity: opacity,
+                ...opacityStyle,
                 cursor: 'pointer',
                 pointerEvents: 'auto',
                 transform: animationTransform,

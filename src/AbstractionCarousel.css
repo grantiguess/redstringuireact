@@ -122,4 +122,14 @@
     opacity: 0; /* End at transparent */
     transform: scale(0.3) translateY(0);
   }
+}
+
+/* Animation for opacity transition after entrance */
+@keyframes carousel-opacity-transition {
+  0% {
+    opacity: 1; /* Start at full opacity after entrance */
+  }
+  100% {
+    opacity: var(--target-opacity, 1); /* End at calculated opacity */
+  }
 } 
