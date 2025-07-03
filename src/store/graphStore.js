@@ -338,16 +338,20 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
 
 
   // --- Tab Management Actions --- (Unaffected by prototype change)
-  openGraphTab: (graphId, definitionNodeId = null) => set(produce((draft) => {
+    openGraphTab: (graphId, definitionNodeId = null) => set(produce((draft) => {
     console.log(`[Store openGraphTab] Called with graphId: ${graphId}, definitionNodeId: ${definitionNodeId}`);
     if (draft.graphs.has(graphId)) { // Ensure graph exists
-      // Add to open list if not already there
+      // Add to open list if not already there (add to TOP of list)
       if (!draft.openGraphIds.includes(graphId)) {
-      draft.openGraphIds.push(graphId);
+        draft.openGraphIds.unshift(graphId);
       }
       // Set this graph as the active one
       draft.activeGraphId = graphId;
-      console.log(`[Store openGraphTab] Set activeGraphId to: ${graphId}`);
+      
+      // Auto-expand the newly opened graph in the "Open Things" list
+      draft.expandedGraphIds.add(graphId);
+      
+      console.log(`[Store openGraphTab] Set activeGraphId to: ${graphId} and auto-expanded.`);
 
       // Set the definition node ID if provided
       if (definitionNodeId) {
@@ -442,14 +446,17 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       newGraphId = _createAndAssignGraphDefinition(draft, prototypeId);
       if (!newGraphId) return;
 
-      // Open and activate the new graph
+      // Open and activate the new graph (add to TOP of list)
       if (!draft.openGraphIds.includes(newGraphId)) {
-          draft.openGraphIds.push(newGraphId);
+          draft.openGraphIds.unshift(newGraphId);
       }
       draft.activeGraphId = newGraphId;
       draft.activeDefinitionNodeId = prototypeId;
       
-      console.log(`[Store createAndAssignGraphDefinition] Created new graph ${newGraphId} for prototype ${prototypeId}, and set as active.`);
+      // Auto-expand the new graph in the "Open Things" list
+      draft.expandedGraphIds.add(newGraphId);
+      
+      console.log(`[Store createAndAssignGraphDefinition] Created new graph ${newGraphId} for prototype ${prototypeId}, set as active, and auto-expanded.`);
     }));
     return newGraphId;
   },

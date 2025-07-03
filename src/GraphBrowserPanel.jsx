@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import useGraphStore from './store/graphStore';
 import './GraphBrowserPanel.css';
 
@@ -31,24 +31,22 @@ const buildHierarchy = (nodesMap) => {
 };
 
 // Recursive component to render a node and its children
-const NodeItem = ({ node, onNodeClick, depth = 0 }) => {
-  const [isExpanded, setIsExpanded] = useState(true); // Default to expanded
-
+const NodeItem = ({ node, onNodeClick, depth = 0, expandedNodes, onToggleExpand }) => {
+  const isExpanded = expandedNodes.has(node.id);
   const hasChildren = node.children && node.children.length > 0;
 
   const handleToggleExpand = (e) => {
     e.stopPropagation(); // Prevent node click when toggling
-    setIsExpanded(!isExpanded);
+    onToggleExpand(node.id);
   };
 
   const handleNodeClick = (e) => {
     e.stopPropagation();
-    // Only trigger click for actual definition nodes, not containers?
-    // Or maybe always trigger? Let's assume always trigger for now.
-    if (node.graphId) {
-        onNodeClick(node.graphId, node.id);
+    // For prototypes, use the first definition graph if available
+    if (node.definitionGraphIds && node.definitionGraphIds.length > 0) {
+        onNodeClick(node.definitionGraphIds[0], node.id);
     } else {
-        console.warn('Node clicked has no graphId:', node);
+        console.warn('Node clicked has no definition graphs:', node);
     }
   };
 
@@ -72,7 +70,7 @@ const NodeItem = ({ node, onNodeClick, depth = 0 }) => {
       {hasChildren && isExpanded && (
         <div className="node-children">
           {node.children.map(child => (
-            <NodeItem key={child.id} node={child} onNodeClick={onNodeClick} depth={depth + 1} />
+            <NodeItem key={child.id} node={child} onNodeClick={onNodeClick} depth={depth + 1} expandedNodes={expandedNodes} onToggleExpand={onToggleExpand} />
           ))}
         </div>
       )}
@@ -81,27 +79,61 @@ const NodeItem = ({ node, onNodeClick, depth = 0 }) => {
 };
 
 const GraphBrowserPanel = () => {
-  // Select state slices individually
-  const nodes = useGraphStore(state => state.nodes);
+  // Select node prototypes instead of instances
+  const nodePrototypes = useGraphStore(state => state.nodePrototypes);
   const openGraphTab = useGraphStore(state => state.openGraphTab);
 
-  // Memoize hierarchy based on the nodes Map
-  // Zustand's default shallow compare should handle the Map reference
+  // Persistent expansion state management
+  const [expandedNodes, setExpandedNodes] = useState(new Set());
+
+  // Memoize hierarchy based on the nodePrototypes Map
   const nodeHierarchy = useMemo(() => {
     console.log("[GraphBrowserPanel] Recalculating node hierarchy..."); // Add log
-    // Ensure nodes is treated as a plain object for Object.values if needed by buildHierarchy
-    // Or update buildHierarchy to directly accept a Map
-    const nodesObject = nodes ? Object.fromEntries(nodes) : {}; // Convert Map to object if necessary
-    // return buildHierarchy(nodes || {}); // Original line if buildHierarchy handles Maps
-    return buildHierarchy(nodesObject); // Pass the plain object
-  }, [nodes]);
+    // Convert Map to object for buildHierarchy
+    const prototypesObject = nodePrototypes ? Object.fromEntries(nodePrototypes) : {};
+    return buildHierarchy(prototypesObject);
+  }, [nodePrototypes]);
+
+  // Auto-expand new node prototypes and ensure all nodes are expanded by default
+  useEffect(() => {
+    if (nodePrototypes && nodePrototypes.size > 0) {
+      setExpandedNodes(prev => {
+        const newExpanded = new Set(prev);
+        let hasNewNodes = false;
+        
+        // Add all node prototype IDs to expanded set (default expanded behavior)
+        nodePrototypes.forEach((node, nodeId) => {
+          if (!newExpanded.has(nodeId)) {
+            newExpanded.add(nodeId);
+            hasNewNodes = true;
+          }
+        });
+        
+        // Only update state if we actually added new nodes
+        return hasNewNodes ? newExpanded : prev;
+      });
+    }
+  }, [nodePrototypes]);
+
+  // Handle toggling expansion state
+  const handleToggleExpand = useCallback((nodeId) => {
+    setExpandedNodes(prev => {
+      const newExpanded = new Set(prev);
+      if (newExpanded.has(nodeId)) {
+        newExpanded.delete(nodeId);
+      } else {
+        newExpanded.add(nodeId);
+      }
+      return newExpanded;
+    });
+  }, []);
 
   const handleNodeClick = (graphId, nodeId) => {
     console.log(`Opening graph ${graphId} from node ${nodeId}`);
     openGraphTab(graphId, nodeId);
   };
 
-  if (!nodes || Object.keys(nodes).length === 0) {
+  if (!nodePrototypes || Object.keys(nodePrototypes).length === 0) {
     return <div className="graph-browser-panel empty">No nodes loaded.</div>;
   }
 
@@ -110,7 +142,7 @@ const GraphBrowserPanel = () => {
       <div className="panel-header">Graph Browser</div>
       <div className="panel-content">
         {nodeHierarchy.map(rootNode => (
-          <NodeItem key={rootNode.id} node={rootNode} onNodeClick={handleNodeClick} />
+          <NodeItem key={rootNode.id} node={rootNode} onNodeClick={handleNodeClick} expandedNodes={expandedNodes} onToggleExpand={handleToggleExpand} />
         ))}
       </div>
     </div>

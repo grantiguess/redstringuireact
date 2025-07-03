@@ -689,7 +689,12 @@ function NodeCanvas() {
             // previewingNodeId (which is an instanceId) will be set in onExitAnimationComplete after animation
           }
         },
-        { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => {} }, // nodeId is instanceId
+        { id: 'abstraction', label: 'Abstraction', icon: Layers, action: (instanceId) => {
+            console.log(`[PieMenu Action] Abstraction clicked for node: ${instanceId}.`);
+            setPendingAbstractionNodeId(instanceId); // Store the instance ID for later
+            setIsTransitioningPieMenu(true); // Start transition, current menu will hide
+            // Abstraction carousel will be set up in onExitAnimationComplete after animation
+        } },
         { id: 'delete', label: 'Delete', icon: Trash2, action: (instanceId) => {
           storeActions.removeNodeInstance(activeGraphId, instanceId);
           setSelectedInstanceIds(new Set()); // Deselect after deleting
@@ -708,12 +713,7 @@ function NodeCanvas() {
                 setEditingNodeIdOnCanvas(instanceId);
             }
         } },
-        { id: 'abstraction', label: 'Abstraction', icon: Layers, action: (instanceId) => {
-            console.log(`[PieMenu Action] Abstraction clicked for node: ${instanceId}.`);
-            setPendingAbstractionNodeId(instanceId); // Store the instance ID for later
-            setIsTransitioningPieMenu(true); // Start transition, current menu will hide
-            // Abstraction carousel will be set up in onExitAnimationComplete after animation
-        } },
+        { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => {} },
         { id: 'palette', label: 'Palette', icon: Palette, action: (instanceId) => {
             const node = nodes.find(n => n.id === instanceId);
             if (node) {
