@@ -140,14 +140,19 @@ const generateProgressiveColor = (baseColor, level) => {
       // First level above center gets an even bigger jump for better contrast
       newLightness = Math.min(90, l + 40); // 40% lighter for first step (increased from 25%)
     } else {
-      // Subsequent levels use normal progression
-      const lighteningFactor = 40 + (Math.abs(level) - 1) * 15; // Start from 40%, then 15% per level
+      // More linear progression after the first jump
+      // Use a gentler curve that starts slower and increases gradually
+      const stepsFromFirst = Math.abs(level) - 1; // Steps beyond the first (-1)
+      const linearBase = 40; // Start from the first jump
+      const linearIncrement = 8; // Smaller, more linear increments (was 15)
+      const lighteningFactor = linearBase + (stepsFromFirst * linearIncrement);
       newLightness = Math.min(90, l + lighteningFactor);
     }
   } else if (level > 0) {
-    // Specific levels: darker with gentler progression
-    const darkeningFactor = level * 8; // 8% darker per level (reduced from 15%)
-    newLightness = Math.max(15, l - darkeningFactor); // Minimum lightness of 15% (raised from 10%)
+    // Specific levels: darker with more linear progression
+    // Make the darkening more gradual and linear too
+    const linearDarkeningFactor = level * 6; // Even gentler than before (was 8)
+    newLightness = Math.max(10, l - linearDarkeningFactor);
   }
   
   return hslToHex(h, reducedSaturation, newLightness);

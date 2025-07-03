@@ -9,7 +9,9 @@ const NodeSelectionGrid = ({
   onClose,
   position = { x: 0, y: 0 },
   width = 280,
-  bottomOffset = 20
+  bottomOffset = 20,
+  onCreateNew,
+  showCreateNewOption = false
 }) => {
   // Get all node prototypes from the store
   const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
@@ -226,6 +228,39 @@ const NodeSelectionGrid = ({
             alignContent: 'start'
           }}
         >
+          {/* Create New Option */}
+          {showCreateNewOption && (
+            <div
+              onClick={() => onCreateNew && onCreateNew()}
+              style={{
+                gridColumn: '1 / -1', // Span full width
+                height: '50px',
+                backgroundColor: '#716C6C',
+                border: '2px solid #260000',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                marginBottom: '8px',
+                fontWeight: 'bold',
+                color: '#bdb5b5',
+                fontSize: '16px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#5c5858';
+                e.currentTarget.style.borderColor = '#000000';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#716C6C';
+                e.currentTarget.style.borderColor = '#260000';
+              }}
+            >
+              + Create New Type
+            </div>
+          )}
+          
           {availablePrototypes.length === 0 ? null : (
             availablePrototypes.map((prototype) => (
               <NodeGridItem

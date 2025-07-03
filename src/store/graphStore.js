@@ -18,16 +18,6 @@ const _createAndAssignGraphDefinition = (draft, prototypeId) => {
     const newGraphId = uuidv4();
     const newGraphName = prototype.name || 'Untitled Definition';
 
-    // The new graph will contain one instance of the prototype it defines.
-    const instanceId = uuidv4();
-    const newInstance = {
-        id: instanceId,
-        prototypeId: prototypeId,
-        x: NODE_WIDTH * 2,
-        y: NODE_HEIGHT * 2,
-        scale: 1,
-    };
-
     const newGraphData = {
         id: newGraphId,
         name: newGraphName,
@@ -35,7 +25,7 @@ const _createAndAssignGraphDefinition = (draft, prototypeId) => {
         picture: null,
         color: prototype.color || NODE_DEFAULT_COLOR,
         directed: true,
-        instances: new Map([[instanceId, newInstance]]),
+        instances: new Map(), // Initialize with empty instances map
         edgeIds: [],
         definingNodeIds: [prototypeId], // This is the ID of the prototype
     };
@@ -759,6 +749,17 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
      console.log(`[Store Action] Explicitly setting activeDefinitionNodeId to: ${nodeId}`);
      set({ activeDefinitionNodeId: nodeId });
   },
+
+  // Set the type of a node prototype
+  setNodeType: (nodeId, typeNodeId) => set(produce((draft) => {
+    const nodePrototype = draft.nodePrototypes.get(nodeId);
+    if (nodePrototype) {
+      nodePrototype.typeNodeId = typeNodeId;
+      console.log(`[Store] Set type of node ${nodeId} to ${typeNodeId}`);
+    } else {
+      console.error(`[Store] Could not find node prototype ${nodeId} to set type`);
+    }
+  })),
 
   // Remove a definition graph from a node and delete the graph if it's no longer referenced
   removeDefinitionFromNode: (nodeId, graphId) => set(produce((draft) => {

@@ -2,12 +2,13 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, us
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR } from './constants';
-import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
 import ToggleButton from './ToggleButton'; // Import the new component
 import ColorPicker from './ColorPicker'; // Import the new ColorPicker component
+import NodeSelectionGrid from './NodeSelectionGrid'; // Import NodeSelectionGrid for type selection
 import useGraphStore, {
     getActiveGraphId,
     getHydratedNodesForGraph,
@@ -518,6 +519,13 @@ const Panel = forwardRef(
     const [colorPickerPosition, setColorPickerPosition] = useState({ x: 0, y: 0 });
     const [colorPickerNodeId, setColorPickerNodeId] = useState(null);
     const [colorPickerJustClosed, setColorPickerJustClosed] = useState(false);
+
+    // Add new state for type creation dialog
+    const [typeNamePrompt, setTypeNamePrompt] = useState({ visible: false, name: '', color: null, targetNodeId: null, targetNodeName: '' });
+    const [typeDialogColorPickerVisible, setTypeDialogColorPickerVisible] = useState(false);
+    const [typeDialogColorPickerPosition, setTypeDialogColorPickerPosition] = useState({ x: 0, y: 0 });
+    const [typeDialogColorPickerJustClosed, setTypeDialogColorPickerJustClosed] = useState(false);
+    const [nodeSelectionGrid, setNodeSelectionGrid] = useState({ visible: false, position: { x: 0, y: 0 } });
 
     // Refs
     const isResizing = useRef(false);
@@ -1038,6 +1046,99 @@ const Panel = forwardRef(
       }
     };
 
+    // Add new handler for type creation
+    const handleOpenTypeDialog = (nodeId, clickEvent) => {
+      const nodeName = nodePrototypesMap.get(nodeId)?.name || 'this thing';
+      // Truncate long node names to keep dialog manageable
+      const truncatedNodeName = nodeName.length > 20 ? nodeName.substring(0, 20) + '...' : nodeName;
+      
+      setTypeNamePrompt({ 
+        visible: true, 
+        name: '', 
+        color: null, 
+        targetNodeId: nodeId,
+        targetNodeName: truncatedNodeName
+      });
+      
+      // Calculate position for the node selection grid - dynamic based on dialog content
+      const dialogTop = HEADER_HEIGHT + 25;
+      // More accurate height estimate for larger dialog with explanatory text
+      const dialogHeight = 160; // Increased from 120 to account for explanatory text
+      const gridTop = dialogTop + dialogHeight + 10; // 10px spacing below dialog
+      const dialogWidth = 300; // Match dialog width
+      const gridLeft = window.innerWidth / 2 - dialogWidth / 2; // Center to match dialog
+      
+      setNodeSelectionGrid({ 
+        visible: true, 
+        position: { x: gridLeft, y: gridTop } 
+      });
+    };
+
+    const handleCloseTypePrompt = () => {
+      setTypeNamePrompt({ visible: false, name: '', color: null, targetNodeId: null, targetNodeName: '' });
+      setTypeDialogColorPickerVisible(false);
+      setTypeDialogColorPickerJustClosed(false);
+      setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
+    };
+
+    const handleTypePromptSubmit = () => {
+      const name = typeNamePrompt.name.trim();
+      const targetNodeId = typeNamePrompt.targetNodeId;
+      
+      if (name && targetNodeId) {
+        // Create new type prototype
+        const newTypeId = uuidv4();
+        const newTypeData = {
+          id: newTypeId,
+          name: name,
+          description: `A type representing ${name}`,
+          color: typeNamePrompt.color || '#8B0000', // Default to maroon
+          definitionGraphIds: [],
+          typeNodeId: null, // Types have no parent type
+        };
+        
+        // Add the prototype to the store
+        storeActions.addNodePrototype(newTypeData);
+        
+        // Set this node's type to the new type
+        storeActions.setNodeType(targetNodeId, newTypeId);
+        
+        console.log(`Created new type "${name}" and assigned to node ${targetNodeId}`);
+      }
+      
+      handleCloseTypePrompt();
+    };
+
+    // Type dialog color picker handlers
+    const handleTypeDialogColorPickerOpen = (iconElement, event) => {
+      event.stopPropagation();
+      const rect = iconElement.getBoundingClientRect();
+      setTypeDialogColorPickerPosition({ x: rect.right, y: rect.bottom });
+      setTypeDialogColorPickerVisible(true);
+      setTypeDialogColorPickerJustClosed(false);
+    };
+
+    const handleTypeDialogColorPickerClose = () => {
+      setTypeDialogColorPickerVisible(false);
+      setTypeDialogColorPickerJustClosed(true);
+      setTimeout(() => setTypeDialogColorPickerJustClosed(false), 200);
+    };
+
+    const handleTypeDialogColorChange = (color) => {
+      setTypeNamePrompt(prev => ({ ...prev, color }));
+    };
+
+    // Handle selecting an existing node as a type
+    const handleNodeSelectionForType = (selectedPrototype) => {
+      const targetNodeId = typeNamePrompt.targetNodeId;
+      if (targetNodeId && selectedPrototype) {
+        // Set the selected prototype as the type for the target node
+        storeActions.setNodeType(targetNodeId, selectedPrototype.id);
+        console.log(`Set type of node ${targetNodeId} to existing type: ${selectedPrototype.name}`);
+      }
+      handleCloseTypePrompt();
+    };
+
     // --- Generate Content based on Side ---
     let panelContent = null;
     if (side === 'left') {
@@ -1395,14 +1496,26 @@ const Panel = forwardRef(
                         gap: '8px'
                     }}>
                         <span>Is a </span>
-                        <span style={{
+                        <span 
+                          style={{
                             backgroundColor: typeColor,
                             color: '#bdb5b5',
                             padding: '2px 8px',
                             borderRadius: '4px',
                             fontSize: '0.8rem',
-                            fontWeight: 'bold'
-                        }}>
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            transition: 'opacity 0.2s ease',
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
+                          onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                          onClick={(e) => {
+                            if (definingNodeId) {
+                              handleOpenTypeDialog(definingNodeId, e);
+                            }
+                          }}
+                          title="Click to change type"
+                        >
                             {typeName}
                         </span>
                     </div>
@@ -1938,14 +2051,24 @@ const Panel = forwardRef(
                                         gap: '8px'
                                     }}>
                                         <span>Is a </span>
-                                        <span style={{
+                                        <span 
+                                          style={{
                                             backgroundColor: typeColor,
                                             color: '#bdb5b5',
                                             padding: '2px 8px',
                                             borderRadius: '4px',
                                             fontSize: '0.8rem',
-                                            fontWeight: 'bold'
-                                        }}>
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer',
+                                            transition: 'opacity 0.2s ease',
+                                          }}
+                                          onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
+                                          onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                                          onClick={(e) => {
+                                            handleOpenTypeDialog(nodeId, e);
+                                          }}
+                                          title="Click to change type"
+                                        >
                                             {typeName}
                                         </span>
                                     </div>
@@ -2266,6 +2389,125 @@ const Panel = forwardRef(
                     position={colorPickerPosition}
                     direction="down-left"
                 />
+            )}
+
+            
+
+            {/* Type Creation Dialog - simplified "Name Your Thing" for types */}
+            {typeNamePrompt.visible && (
+              <>
+                <div 
+                  style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 1000 }} 
+                  onClick={(e) => {
+                    if (e.target === e.currentTarget && !typeDialogColorPickerJustClosed) {
+                      handleCloseTypePrompt();
+                    }
+                  }}
+                />
+                <div
+                  style={{
+                    position: 'fixed',
+                    top: HEADER_HEIGHT + 25,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    backgroundColor: '#bdb5b5',
+                    padding: '20px',
+                    borderRadius: '10px',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+                    zIndex: 1001,
+                    width: '300px',
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <div style={{ position: 'absolute', top: '10px', right: '10px', cursor: 'pointer' }}>
+                    <X size={20} color="#999" onClick={handleCloseTypePrompt} />
+                  </div>
+                  <div style={{ textAlign: 'center', marginBottom: '8px', color: 'black' }}>
+                    <strong style={{ fontSize: '18px' }}>Name Your Thing</strong>
+                  </div>
+                  <div style={{ 
+                    textAlign: 'center', 
+                    marginBottom: '15px', 
+                    color: '#555', 
+                    fontSize: '13px',
+                    lineHeight: '1.3',
+                    maxWidth: '280px',
+                    margin: '0 auto 15px auto',
+                    wordWrap: 'break-word',
+                    hyphens: 'auto'
+                  }}>
+                    a more generic way to refer to {typeNamePrompt.targetNodeName}, also known as a superclass
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      value={typeNamePrompt.name}
+                      onChange={(e) => setTypeNamePrompt({ ...typeNamePrompt, name: e.target.value })}
+                      onKeyDown={(e) => { 
+                        if (e.key === 'Enter') handleTypePromptSubmit();
+                        if (e.key === 'Escape') handleCloseTypePrompt();
+                        // Stop propagation to prevent canvas shortcuts
+                        e.stopPropagation();
+                      }}
+                      style={{ flex: 1, padding: '10px', borderRadius: '5px', border: '1px solid #ccc', marginRight: '10px' }}
+                      placeholder="Type name..."
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleTypePromptSubmit}
+                      style={{ 
+                        padding: '10px', 
+                        backgroundColor: typeNamePrompt.color || '#8B0000', 
+                        color: '#bdb5b5', 
+                        border: 'none', 
+                        borderRadius: '5px', 
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minWidth: '50px',
+                        minHeight: '44px',
+                        marginRight: '8px'
+                      }}
+                      title="Create type"
+                    >
+                      <ArrowBigRightDash size={16} color="#bdb5b5" />
+                    </button>
+                    <Palette
+                      size={20}
+                      color="#260000"
+                      style={{ cursor: 'pointer', flexShrink: 0 }}
+                      onClick={(e) => handleTypeDialogColorPickerOpen(e.currentTarget, e)}
+                      title="Change color"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Type Dialog Color Picker Component */}
+            {typeDialogColorPickerVisible && (
+              <ColorPicker
+                isVisible={typeDialogColorPickerVisible}
+                onClose={handleTypeDialogColorPickerClose}
+                onColorChange={handleTypeDialogColorChange}
+                currentColor={typeNamePrompt.color || '#8B0000'}
+                position={typeDialogColorPickerPosition}
+                direction="down-left"
+              />
+            )}
+
+            {/* NodeSelectionGrid for type creation */}
+            {nodeSelectionGrid.visible && (
+              <NodeSelectionGrid
+                isVisible={nodeSelectionGrid.visible}
+                onNodeSelect={handleNodeSelectionForType}
+                onClose={handleCloseTypePrompt}
+                position={nodeSelectionGrid.position}
+                width={300}
+                bottomOffset={20}
+              />
             )}
         </>
     );

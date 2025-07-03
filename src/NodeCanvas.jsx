@@ -79,6 +79,7 @@ function NodeCanvas() {
   const createNewGraph = useGraphStore((state) => state.createNewGraph);
   const setActiveGraph = useGraphStore((state) => state.setActiveGraph);
   const setActiveDefinitionNode = useGraphStore((state) => state.setActiveDefinitionNode);
+  const setNodeType = useGraphStore((state) => state.setNodeType);
   const openRightPanelNodeTab = useGraphStore((state) => state.openRightPanelNodeTab);
   const createAndAssignGraphDefinition = useGraphStore((state) => state.createAndAssignGraphDefinition);
   const createAndAssignGraphDefinitionWithoutActivation = useGraphStore((state) => state.createAndAssignGraphDefinitionWithoutActivation);
@@ -112,6 +113,7 @@ function NodeCanvas() {
     createNewGraph,
     setActiveGraph,
     setActiveDefinitionNode,
+    setNodeType,
     openRightPanelNodeTab,
     createAndAssignGraphDefinition,
     createAndAssignGraphDefinitionWithoutActivation,
@@ -134,7 +136,7 @@ function NodeCanvas() {
     setUniverseConnected,
   }), [
     updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance, updateGraph, createNewGraph,
-    setActiveGraph, setActiveDefinitionNode, openRightPanelNodeTab,
+    setActiveGraph, setActiveDefinitionNode, setNodeType, openRightPanelNodeTab,
     createAndAssignGraphDefinition, createAndAssignGraphDefinitionWithoutActivation, closeRightPanelTab, activateRightPanelTab,
     openGraphTab, moveRightPanelTab, closeGraph, toggleGraphExpanded,
     toggleSavedNode, toggleSavedGraph, updateMultipleNodeInstancePositions, removeDefinitionFromNode,
