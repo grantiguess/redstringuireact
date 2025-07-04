@@ -1626,6 +1626,16 @@ const Panel = forwardRef(
                     <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
 
                     {/* --- Bio Section --- */}
+                    <h3 style={{ 
+                        marginTop: 0, 
+                        marginBottom: '10px', 
+                        color: '#333', 
+                        fontSize: '1.1rem',
+                        fontWeight: 'bold',
+                        userSelect: 'none'
+                    }}>
+                        Bio
+                    </h3>
                     <div style={{ padding: '0 0 0 0' }}>
                     <textarea
                         ref={(el) => {
@@ -1672,6 +1682,280 @@ const Panel = forwardRef(
                             }
                         }}
                     />
+                    </div>
+
+                    {/* Divider above forms */}
+                    <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
+
+                    {/* --- Forms Section --- */}
+                    <h3 style={{ 
+                        marginTop: 0, 
+                        marginBottom: '15px', 
+                        color: '#333', 
+                        fontSize: '1.1rem',
+                        fontWeight: 'bold',
+                        userSelect: 'none'
+                    }}>
+                        Forms
+                    </h3>
+                    <div style={{ padding: '0 0 0 0' }}>
+                        {definingNodeData ? (
+                            <>
+                                {/* As a Thing Subsection */}
+                                <h4 style={{ 
+                                    marginTop: 0, 
+                                    marginBottom: '8px', 
+                                    color: '#555', 
+                                    fontSize: '0.9rem',
+                                    fontWeight: 'normal',
+                                    userSelect: 'none'
+                                }}>
+                                    As a Thing
+                                </h4>
+                                
+                                {/* Thing Name (styled like title) */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <div
+                                        style={{
+                                            backgroundColor: definingNodeData?.color || NODE_DEFAULT_COLOR,
+                                            borderRadius: '8px',
+                                            padding: '8px 12px',
+                                            overflow: 'hidden',
+                                            userSelect: 'none',
+                                            fontSize: '14px',
+                                            fontWeight: 'bold',
+                                            color: '#bdb5b5',
+                                            margin: 0,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            minHeight: '32px',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    >
+                                        {definingNodeData.name || 'Untitled'}
+                                    </div>
+                                </div>
+
+                                {/* Plural */}
+                                <div style={{ marginBottom: '16px' }}>
+                                    <label style={{ 
+                                        fontSize: '12px', 
+                                        color: '#666', 
+                                        display: 'block', 
+                                        marginBottom: '3px',
+                                        userSelect: 'none'
+                                    }}>
+                                        Plural
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g., cars, people, ideas"
+                                        value={definingNodeData.conjugations?.plural || ''}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            const capitalizedValue = value.charAt(0).toUpperCase() + value.slice(1);
+                                            storeActions.updateNodePrototype(definingNodeData.id, draft => {
+                                                if (!draft.conjugations) draft.conjugations = {};
+                                                draft.conjugations.plural = capitalizedValue;
+                                            });
+                                        }}
+                                        style={{
+                                            width: '100%',
+                                            boxSizing: 'border-box',
+                                            padding: '6px 8px',
+                                            fontSize: '14px',
+                                            border: '1px solid #ccc',
+                                            borderRadius: '4px',
+                                            backgroundColor: '#bdb5b5',
+                                            color: '#260000'
+                                        }}
+                                        onFocus={() => onFocusChange?.(true)}
+                                        onBlur={() => onFocusChange?.(false)}
+                                    />
+                                </div>
+
+                                {/* As a Connection Subsection */}
+                                <h4 style={{ 
+                                    marginTop: 0, 
+                                    marginBottom: '8px', 
+                                    color: '#555', 
+                                    fontSize: '0.9rem',
+                                    fontWeight: 'normal',
+                                    userSelect: 'none'
+                                }}>
+                                    As a Connection
+                                </h4>
+
+                                {/* Verb Forms in 2-column layout */}
+                                <div style={{ 
+                                    display: 'grid', 
+                                    gridTemplateColumns: '1fr 1fr', 
+                                    gap: '8px',
+                                    marginBottom: '8px'
+                                }}>
+                                    {/* Present Singular */}
+                                    <div>
+                                        <label style={{ 
+                                            fontSize: '12px', 
+                                            color: '#666', 
+                                            display: 'block', 
+                                            marginBottom: '3px',
+                                            userSelect: 'none'
+                                        }}>
+                                            Present Singular
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="is"
+                                            value={definingNodeData.conjugations?.presentSingular || ''}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                const capitalizedValue = value.charAt(0).toUpperCase() + value.slice(1);
+                                                storeActions.updateNodePrototype(definingNodeData.id, draft => {
+                                                    if (!draft.conjugations) draft.conjugations = {};
+                                                    draft.conjugations.presentSingular = capitalizedValue;
+                                                });
+                                            }}
+                                            style={{
+                                                width: '100%',
+                                                boxSizing: 'border-box',
+                                                padding: '6px 8px',
+                                                fontSize: '14px',
+                                                border: '1px solid #ccc',
+                                                borderRadius: '4px',
+                                                backgroundColor: '#bdb5b5',
+                                                color: '#260000'
+                                            }}
+                                            onFocus={() => onFocusChange?.(true)}
+                                            onBlur={() => onFocusChange?.(false)}
+                                        />
+                                    </div>
+
+                                    {/* Present Plural */}
+                                    <div>
+                                        <label style={{ 
+                                            fontSize: '12px', 
+                                            color: '#666', 
+                                            display: 'block', 
+                                            marginBottom: '3px',
+                                            userSelect: 'none'
+                                        }}>
+                                            Present Plural
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="are"
+                                            value={definingNodeData.conjugations?.presentPlural || ''}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                const capitalizedValue = value.charAt(0).toUpperCase() + value.slice(1);
+                                                storeActions.updateNodePrototype(definingNodeData.id, draft => {
+                                                    if (!draft.conjugations) draft.conjugations = {};
+                                                    draft.conjugations.presentPlural = capitalizedValue;
+                                                });
+                                            }}
+                                            style={{
+                                                width: '100%',
+                                                boxSizing: 'border-box',
+                                                padding: '6px 8px',
+                                                fontSize: '14px',
+                                                border: '1px solid #ccc',
+                                                borderRadius: '4px',
+                                                backgroundColor: '#bdb5b5',
+                                                color: '#260000'
+                                            }}
+                                            onFocus={() => onFocusChange?.(true)}
+                                            onBlur={() => onFocusChange?.(false)}
+                                        />
+                                    </div>
+
+                                    {/* Past Singular */}
+                                    <div>
+                                        <label style={{ 
+                                            fontSize: '12px', 
+                                            color: '#666', 
+                                            display: 'block', 
+                                            marginBottom: '3px',
+                                            userSelect: 'none'
+                                        }}>
+                                            Past Singular
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="was"
+                                            value={definingNodeData.conjugations?.pastSingular || ''}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                const capitalizedValue = value.charAt(0).toUpperCase() + value.slice(1);
+                                                storeActions.updateNodePrototype(definingNodeData.id, draft => {
+                                                    if (!draft.conjugations) draft.conjugations = {};
+                                                    draft.conjugations.pastSingular = capitalizedValue;
+                                                });
+                                            }}
+                                            style={{
+                                                width: '100%',
+                                                boxSizing: 'border-box',
+                                                padding: '6px 8px',
+                                                fontSize: '14px',
+                                                border: '1px solid #ccc',
+                                                borderRadius: '4px',
+                                                backgroundColor: '#bdb5b5',
+                                                color: '#260000'
+                                            }}
+                                            onFocus={() => onFocusChange?.(true)}
+                                            onBlur={() => onFocusChange?.(false)}
+                                        />
+                                    </div>
+
+                                    {/* Past Plural */}
+                                    <div>
+                                        <label style={{ 
+                                            fontSize: '12px', 
+                                            color: '#666', 
+                                            display: 'block', 
+                                            marginBottom: '3px',
+                                            userSelect: 'none'
+                                        }}>
+                                            Past Plural
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="were"
+                                            value={definingNodeData.conjugations?.pastPlural || ''}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                const capitalizedValue = value.charAt(0).toUpperCase() + value.slice(1);
+                                                storeActions.updateNodePrototype(definingNodeData.id, draft => {
+                                                    if (!draft.conjugations) draft.conjugations = {};
+                                                    draft.conjugations.pastPlural = capitalizedValue;
+                                                });
+                                            }}
+                                            style={{
+                                                width: '100%',
+                                                boxSizing: 'border-box',
+                                                padding: '6px 8px',
+                                                fontSize: '14px',
+                                                border: '1px solid #ccc',
+                                                borderRadius: '4px',
+                                                backgroundColor: '#bdb5b5',
+                                                color: '#260000'
+                                            }}
+                                            onFocus={() => onFocusChange?.(true)}
+                                            onBlur={() => onFocusChange?.(false)}
+                                        />
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <div style={{ 
+                                padding: '10px', 
+                                color: '#999', 
+                                fontStyle: 'italic',
+                                fontSize: '14px'
+                            }}>
+                                No defining node found for this graph.
+                            </div>
+                        )}
                     </div>
 
                     {/* Show image if the defining node has one */}
@@ -2197,6 +2481,16 @@ const Panel = forwardRef(
                         <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
 
                         {/* --- Bio Section --- */}
+                        <h3 style={{ 
+                            marginTop: 0, 
+                            marginBottom: '10px', 
+                            color: '#333', 
+                            fontSize: '1.1rem',
+                            fontWeight: 'bold',
+                            userSelect: 'none'
+                        }}>
+                            Bio
+                        </h3>
                         <div style={{ padding: '0 0 0 0' }}>
                             <textarea
                                 ref={(el) => {
@@ -2242,6 +2536,267 @@ const Panel = forwardRef(
                                     }
                                 }}
                             />
+                        </div>
+
+                        {/* Divider above forms */}
+                        <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
+
+                        {/* --- Forms Section --- */}
+                        <h3 style={{ 
+                            marginTop: 0, 
+                            marginBottom: '15px', 
+                            color: '#333', 
+                            fontSize: '1.1rem',
+                            fontWeight: 'bold',
+                            userSelect: 'none'
+                        }}>
+                            Forms
+                        </h3>
+                        <div style={{ padding: '0 0 0 0' }}>
+                            {/* As a Thing Subsection */}
+                            <h4 style={{ 
+                                marginTop: 0, 
+                                marginBottom: '8px', 
+                                color: '#555', 
+                                fontSize: '0.9rem',
+                                fontWeight: 'normal',
+                                userSelect: 'none'
+                            }}>
+                                As a Thing
+                            </h4>
+                            
+                            {/* Thing Name (styled like title) */}
+                            <div style={{ marginBottom: '8px' }}>
+                                <div
+                                    style={{
+                                        backgroundColor: nodeData?.color || NODE_DEFAULT_COLOR,
+                                        borderRadius: '8px',
+                                        padding: '8px 12px',
+                                        overflow: 'hidden',
+                                        userSelect: 'none',
+                                        fontSize: '14px',
+                                        fontWeight: 'bold',
+                                        color: '#bdb5b5',
+                                        margin: 0,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        minHeight: '32px',
+                                        boxSizing: 'border-box'
+                                    }}
+                                >
+                                    {nodeData.name || 'Untitled'}
+                                </div>
+                            </div>
+
+                            {/* Plural */}
+                            <div style={{ marginBottom: '16px' }}>
+                                <label style={{ 
+                                    fontSize: '12px', 
+                                    color: '#666', 
+                                    display: 'block', 
+                                    marginBottom: '3px',
+                                    userSelect: 'none'
+                                }}>
+                                    Plural
+                                </label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g., cars, people, ideas"
+                                    value={nodeData.conjugations?.plural || ''}
+                                    onChange={(e) => {
+                                        const value = e.target.value;
+                                        const capitalizedValue = value.charAt(0).toUpperCase() + value.slice(1);
+                                        storeActions.updateNodePrototype(nodeId, draft => {
+                                            if (!draft.conjugations) draft.conjugations = {};
+                                            draft.conjugations.plural = capitalizedValue;
+                                        });
+                                    }}
+                                    style={{
+                                        width: '100%',
+                                        boxSizing: 'border-box',
+                                        padding: '6px 8px',
+                                        fontSize: '14px',
+                                        border: '1px solid #ccc',
+                                        borderRadius: '4px',
+                                        backgroundColor: '#bdb5b5',
+                                        color: '#260000'
+                                    }}
+                                    onFocus={() => onFocusChange?.(true)}
+                                    onBlur={() => onFocusChange?.(false)}
+                                />
+                            </div>
+
+                            {/* As a Connection Subsection */}
+                            <h4 style={{ 
+                                marginTop: 0, 
+                                marginBottom: '8px', 
+                                color: '#555', 
+                                fontSize: '0.9rem',
+                                fontWeight: 'normal',
+                                userSelect: 'none'
+                            }}>
+                                As a Connection
+                            </h4>
+
+                            {/* Verb Forms in 2-column layout */}
+                            <div style={{ 
+                                display: 'grid', 
+                                gridTemplateColumns: '1fr 1fr', 
+                                gap: '8px',
+                                marginBottom: '8px'
+                            }}>
+                                {/* Present Singular */}
+                                <div>
+                                    <label style={{ 
+                                        fontSize: '12px', 
+                                        color: '#666', 
+                                        display: 'block', 
+                                        marginBottom: '3px',
+                                        userSelect: 'none'
+                                    }}>
+                                        Present Singular
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="is"
+                                        value={nodeData.conjugations?.presentSingular || ''}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            const capitalizedValue = value.charAt(0).toUpperCase() + value.slice(1);
+                                            storeActions.updateNodePrototype(nodeId, draft => {
+                                                if (!draft.conjugations) draft.conjugations = {};
+                                                draft.conjugations.presentSingular = capitalizedValue;
+                                            });
+                                        }}
+                                        style={{
+                                            width: '100%',
+                                            boxSizing: 'border-box',
+                                            padding: '6px 8px',
+                                            fontSize: '14px',
+                                            border: '1px solid #ccc',
+                                            borderRadius: '4px',
+                                            backgroundColor: '#bdb5b5',
+                                            color: '#260000'
+                                        }}
+                                        onFocus={() => onFocusChange?.(true)}
+                                        onBlur={() => onFocusChange?.(false)}
+                                    />
+                                </div>
+
+                                {/* Present Plural */}
+                                <div>
+                                    <label style={{ 
+                                        fontSize: '12px', 
+                                        color: '#666', 
+                                        display: 'block', 
+                                        marginBottom: '3px',
+                                        userSelect: 'none'
+                                    }}>
+                                        Present Plural
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="are"
+                                        value={nodeData.conjugations?.presentPlural || ''}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            const capitalizedValue = value.charAt(0).toUpperCase() + value.slice(1);
+                                            storeActions.updateNodePrototype(nodeId, draft => {
+                                                if (!draft.conjugations) draft.conjugations = {};
+                                                draft.conjugations.presentPlural = capitalizedValue;
+                                            });
+                                        }}
+                                        style={{
+                                            width: '100%',
+                                            boxSizing: 'border-box',
+                                            padding: '6px 8px',
+                                            fontSize: '14px',
+                                            border: '1px solid #ccc',
+                                            borderRadius: '4px',
+                                            backgroundColor: '#bdb5b5',
+                                            color: '#260000'
+                                        }}
+                                        onFocus={() => onFocusChange?.(true)}
+                                        onBlur={() => onFocusChange?.(false)}
+                                    />
+                                </div>
+
+                                {/* Past Singular */}
+                                <div>
+                                    <label style={{ 
+                                        fontSize: '12px', 
+                                        color: '#666', 
+                                        display: 'block', 
+                                        marginBottom: '3px',
+                                        userSelect: 'none'
+                                    }}>
+                                        Past Singular
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="was"
+                                        value={nodeData.conjugations?.pastSingular || ''}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            const capitalizedValue = value.charAt(0).toUpperCase() + value.slice(1);
+                                            storeActions.updateNodePrototype(nodeId, draft => {
+                                                if (!draft.conjugations) draft.conjugations = {};
+                                                draft.conjugations.pastSingular = capitalizedValue;
+                                            });
+                                        }}
+                                        style={{
+                                            width: '100%',
+                                            boxSizing: 'border-box',
+                                            padding: '6px 8px',
+                                            fontSize: '14px',
+                                            border: '1px solid #ccc',
+                                            borderRadius: '4px',
+                                            backgroundColor: '#bdb5b5',
+                                            color: '#260000'
+                                        }}
+                                        onFocus={() => onFocusChange?.(true)}
+                                        onBlur={() => onFocusChange?.(false)}
+                                    />
+                                </div>
+
+                                {/* Past Plural */}
+                                <div>
+                                    <label style={{ 
+                                        fontSize: '12px', 
+                                        color: '#666', 
+                                        display: 'block', 
+                                        marginBottom: '3px',
+                                        userSelect: 'none'
+                                    }}>
+                                        Past Plural
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="were"
+                                        value={nodeData.conjugations?.pastPlural || ''}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            const capitalizedValue = value.charAt(0).toUpperCase() + value.slice(1);
+                                            storeActions.updateNodePrototype(nodeId, draft => {
+                                                if (!draft.conjugations) draft.conjugations = {};
+                                                draft.conjugations.pastPlural = capitalizedValue;
+                                            });
+                                        }}
+                                        style={{
+                                            width: '100%',
+                                            boxSizing: 'border-box',
+                                            padding: '6px 8px',
+                                            fontSize: '14px',
+                                            border: '1px solid #ccc',
+                                            borderRadius: '4px',
+                                            backgroundColor: '#bdb5b5',
+                                            color: '#260000'
+                                        }}
+                                        onFocus={() => onFocusChange?.(true)}
+                                        onBlur={() => onFocusChange?.(false)}
+                                    />
+                                </div>
+                            </div>
                         </div>
 
                         {/* --- Rest of the content (image, Components, etc.) --- */}
