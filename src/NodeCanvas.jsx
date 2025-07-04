@@ -242,6 +242,67 @@ function NodeCanvas() {
     tryUniverseRestore();
   }, []); // Run once on mount
 
+  // <<< Prevent Page Zoom >>>
+  useEffect(() => {
+    const preventPageZoom = (e) => {
+      // Detect zoom keyboard shortcuts
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+      const isZoomKey = e.key === '+' || e.key === '=' || e.key === '-' || e.key === '0';
+      const isNumpadZoom = e.key === 'Add' || e.key === 'Subtract';
+      
+      // Prevent keyboard zoom shortcuts
+      if (isCtrlOrCmd && (isZoomKey || isNumpadZoom)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+      
+      // Prevent F11 fullscreen (can interfere with zoom perception)
+      if (e.key === 'F11') {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+
+    const preventWheelZoom = (e) => {
+      // Prevent Ctrl+wheel zoom (both Mac and Windows)
+      if (e.ctrlKey || e.metaKey) {
+        // Only prevent if this wheel event is NOT over our canvas
+        const isOverCanvas = e.target.closest('.canvas-area') || e.target.closest('.canvas');
+        if (!isOverCanvas) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+      }
+    };
+
+    const preventGestureZoom = (e) => {
+      // Prevent gesture-based zoom on touch devices
+      if (e.scale && e.scale !== 1) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+
+    // Add global event listeners
+    document.addEventListener('keydown', preventPageZoom, { passive: false, capture: true });
+    document.addEventListener('wheel', preventWheelZoom, { passive: false, capture: true });
+    document.addEventListener('gesturestart', preventGestureZoom, { passive: false, capture: true });
+    document.addEventListener('gesturechange', preventGestureZoom, { passive: false, capture: true });
+    document.addEventListener('gestureend', preventGestureZoom, { passive: false, capture: true });
+
+    return () => {
+      document.removeEventListener('keydown', preventPageZoom, { capture: true });
+      document.removeEventListener('wheel', preventWheelZoom, { capture: true });
+      document.removeEventListener('gesturestart', preventGestureZoom, { capture: true });
+      document.removeEventListener('gesturechange', preventGestureZoom, { capture: true });
+      document.removeEventListener('gestureend', preventGestureZoom, { capture: true });
+    };
+  }, []); // Run once on mount
+
   // <<< Initial Graph Creation Logic (Revised) >>>
   useEffect(() => {
       // Only run graph creation logic after universe has been loaded and we have a universe file

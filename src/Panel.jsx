@@ -634,20 +634,20 @@ const Panel = forwardRef(
 
             if (sectionRef) {
                 const currentScrollHeight = sectionRef.scrollHeight;
-                const potentialOpenHeight = `${currentScrollHeight}px`;
+            const potentialOpenHeight = `${currentScrollHeight}px`; 
 
-                // Decide whether to use the calculated height or 0px
+            // Decide whether to use the calculated height or 0px
                 if (!sectionCollapsed[typeId]) {
-                    // Section is OPEN, use the calculated height
+                // Section is OPEN, use the calculated height
                     maxHeight = potentialOpenHeight;
-                } else {
-                    // Section is CLOSED, maxHeight remains '0px'
-                    maxHeight = '0px';
-                }
             } else {
-                // Fallback if ref isn't ready (might happen on initial render)
-                maxHeight = sectionCollapsed[typeId] ? '0px' : '500px';
+                // Section is CLOSED, maxHeight remains '0px'
+                    maxHeight = '0px';
             }
+        } else {
+            // Fallback if ref isn't ready (might happen on initial render)
+                maxHeight = sectionCollapsed[typeId] ? '0px' : '500px';
+        }
 
             newMaxHeights[typeId] = maxHeight;
         });
@@ -1213,20 +1213,20 @@ const Panel = forwardRef(
 
                             return (
                                 <div key={typeId}>
-                                    <div style={{ marginBottom: '10px' }}>
+                    <div style={{ marginBottom: '10px' }}>
                                         {/* Section Header with rounded corners and type color */}
-                                        <div
+                        <div
                                             onClick={() => toggleSection(typeId)}
-                                            style={{
+                            style={{
                                                 backgroundColor: typeInfo.color,
                                                 padding: '8px 12px',
-                                                cursor: 'pointer',
+                                cursor: 'pointer',
                                                 color: '#bdb5b5',
-                                                fontWeight: 'bold',
-                                                userSelect: 'none',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'space-between',
+                                fontWeight: 'bold',
+                                userSelect: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
                                                 borderRadius: '12px', // Rounded corners
                                                 transition: 'all 0.2s ease',
                                                 boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
@@ -1238,26 +1238,26 @@ const Panel = forwardRef(
                                             onMouseLeave={(e) => {
                                                 e.currentTarget.style.filter = 'brightness(1)';
                                                 e.currentTarget.style.transform = 'translateY(0px)';
-                                            }}
-                                        >
+                            }}
+                        >
                                             <span>{typeInfo.name} ({nodes.length})</span>
-                                            <span style={{
+                            <span style={{
                                                 display: 'inline-block',
                                                 transition: 'transform 0.2s ease',
                                                 transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
                                                 fontSize: '14px',
-                                            }}>▶</span>
-                                        </div>
+                            }}>▶</span>
+                        </div>
 
-                                        {/* Section Content */}
+                        {/* Section Content */}
                                         {!isCollapsed && (
-                                            <div // Outer container for overflow
-                                                style={{
-                                                    overflow: 'hidden',
+                            <div // Outer container for overflow
+                                style={{
+                                    overflow: 'hidden',
                                                     transition: 'max-height 0.2s ease-out',
                                                     maxHeight: maxHeight,
-                                                }}
-                                            >
+                                }}
+                            >
                                                 <div // Inner container for content
                                                     ref={(el) => {
                                                         if (el) {
@@ -1266,56 +1266,56 @@ const Panel = forwardRef(
                                                             sectionContentRefs.current.delete(typeId);
                                                         }
                                                     }}
-                                                    style={{
-                                                        display: 'grid',
-                                                        gridTemplateColumns: panelWidth > 250 ? '1fr 1fr' : '1fr',
-                                                        gap: panelWidth > 250 ? '8px' : '0px',
-                                                        marginTop: '8px',
+                                    style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: panelWidth > 250 ? '1fr 1fr' : '1fr',
+                                        gap: panelWidth > 250 ? '8px' : '0px',
+                                        marginTop: '8px',
                                                         paddingBottom: '8px',
-                                                    }}
-                                                >
+                                    }}
+                                >
                                                     {nodes.map(node => {
-                                                        // Single click opens the graph definition OR creates one
-                                                        const handleSingleClick = () => {
-                                                            // Use openGraphTab to handle opening and setting definition node
-                                                            if (node.definitionGraphIds && node.definitionGraphIds.length > 0) {
-                                                                const graphIdToOpen = node.definitionGraphIds[0]; // Open the first definition
-                                                                console.log(`[Panel Saved Node Click] Opening existing graph ${graphIdToOpen} defined by node ${node.id}`);
-                                                                openGraphTab(graphIdToOpen, node.id); // Pass both graph and node ID
-                                                            } else if (createAndAssignGraphDefinition) {
-                                                                // Node has no definitions, create one
-                                                                console.warn(`[Panel Saved Node Click] Node ${node.id} has no graph definitions. Creating one.`);
-                                                                createAndAssignGraphDefinition(node.id);
-                                                            } else {
-                                                                console.error('[Panel Saved Node Click] Missing required actions (openGraphTab or createAndAssignGraphDefinition)');
-                                                            }
-                                                        };
+                                        // Single click opens the graph definition OR creates one
+                                        const handleSingleClick = () => {
+                                            // Use openGraphTab to handle opening and setting definition node
+                                            if (node.definitionGraphIds && node.definitionGraphIds.length > 0) {
+                                                const graphIdToOpen = node.definitionGraphIds[0]; // Open the first definition
+                                                console.log(`[Panel Saved Node Click] Opening existing graph ${graphIdToOpen} defined by node ${node.id}`);
+                                                openGraphTab(graphIdToOpen, node.id); // Pass both graph and node ID
+                                            } else if (createAndAssignGraphDefinition) {
+                                                // Node has no definitions, create one
+                                                console.warn(`[Panel Saved Node Click] Node ${node.id} has no graph definitions. Creating one.`);
+                                                createAndAssignGraphDefinition(node.id);
+                                            } else {
+                                                console.error('[Panel Saved Node Click] Missing required actions (openGraphTab or createAndAssignGraphDefinition)');
+                                            }
+                                        };
 
-                                                        // Double click opens the node tab
-                                                        const handleDoubleClick = () => {
-                                                            console.log(`[Panel Saved Node DblClick] Opening node tab for ${node.id}`);
-                                                            openRightPanelNodeTab(node.id);
-                                                        };
+                                        // Double click opens the node tab
+                                        const handleDoubleClick = () => {
+                                            console.log(`[Panel Saved Node DblClick] Opening node tab for ${node.id}`);
+                                            openRightPanelNodeTab(node.id);
+                                        };
 
-                                                        const handleUnsave = () => {
-                                                            toggleSavedNode(node.id);
-                                                        };
+                                        const handleUnsave = () => {
+                                            toggleSavedNode(node.id);
+                                        };
 
-                                                        return (
-                                                          <SavedNodeItem
-                                                            key={node.id}
-                                                            node={node}
-                                                            onClick={handleSingleClick}
-                                                            onDoubleClick={handleDoubleClick}
-                                                            onUnsave={handleUnsave}
-                                                            isActive={node.id === activeDefinitionNodeId}
-                                                          />
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div> // Close outer container
-                                        )}
-                                    </div>
+                                        return (
+                                          <SavedNodeItem
+                                            key={node.id}
+                                            node={node}
+                                            onClick={handleSingleClick}
+                                            onDoubleClick={handleDoubleClick}
+                                            onUnsave={handleUnsave}
+                                            isActive={node.id === activeDefinitionNodeId}
+                                          />
+                                        );
+                                    })}
+                                </div>
+                            </div> // Close outer container
+                        )}
+                    </div>
                                     
                                     {/* Divider between sections - only show if not the last section */}
                                     {!isLastSection && (
