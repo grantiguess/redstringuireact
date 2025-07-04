@@ -1,10 +1,9 @@
 import React from 'react';
-import './NodeType.css';
 
-const NodeType = ({ name, color = '#800000', onClick }) => {
+const EdgeType = ({ name, color = '#800000', onClick }) => {
   return (
     <div 
-      className="node-type-item"
+      className="edge-type-item"
       style={{ 
         backgroundColor: color, 
         color: '#bdb5b5', // Canvas color for text
@@ -21,6 +20,7 @@ const NodeType = ({ name, color = '#800000', onClick }) => {
         border: '2px solid transparent',
         userSelect: 'none',
         padding: '0 8px', // Add horizontal padding
+        position: 'relative',
         overflow: 'hidden'
       }}
       onClick={onClick}
@@ -33,12 +33,28 @@ const NodeType = ({ name, color = '#800000', onClick }) => {
         e.currentTarget.style.transform = 'translateY(0px)';
       }}
     >
+      {/* Diagonal line to distinguish from nodes */}
+      <div
+        style={{
+          position: 'absolute',
+          left: '4px',
+          top: '4px',
+          bottom: '4px',
+          width: '2px',
+          background: 'linear-gradient(45deg, #bdb5b5 0%, transparent 100%)',
+          transform: 'skew(-45deg)',
+          opacity: 0.7
+        }}
+      />
+      
+      {/* Text with proper truncation */}
       <span
         style={{
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          maxWidth: '100%'
+          maxWidth: '100%',
+          paddingLeft: '8px' // Space for the diagonal line
         }}
       >
         {name}
@@ -47,4 +63,4 @@ const NodeType = ({ name, color = '#800000', onClick }) => {
   );
 };
 
-export default NodeType;
+export default EdgeType;

@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import './TypeList.css';
 import { HEADER_HEIGHT } from './constants';
 import NodeType from './NodeType'; // Import NodeType
+import EdgeType from './EdgeType'; // Import EdgeType
 import useGraphStore from './store/graphStore';
 // Placeholder icons (replace with actual icons later)
 import { ChevronUp, Square, Share2 } from 'lucide-react'; // Replaced RoundedRectangle with Square
@@ -12,11 +13,14 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
   const [mode, setMode] = useState('closed'); 
   // const [isAnimating, setIsAnimating] = useState(false); // Basic animation lock
 
-  // Get store data for finding type nodes
+  // Get store data for finding type nodes and edges
   const activeGraphId = useGraphStore((state) => state.activeGraphId);
   const graphsMap = useGraphStore((state) => state.graphs);
   const nodePrototypesMap = useGraphStore((state) => state.nodePrototypes);
+  const edgePrototypesMap = useGraphStore((state) => state.edgePrototypes);
+  const edgesMap = useGraphStore((state) => state.edges);
   const setNodeTypeAction = useGraphStore((state) => state.setNodeType);
+  const setEdgeTypeAction = useGraphStore((state) => state.setEdgeType);
   
   // Get the type nodes available for the current active graph
   const availableTypeNodes = useMemo(() => {
@@ -80,6 +84,44 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
     return typeNodes;
   }, [activeGraphId, graphsMap, nodePrototypesMap]);
 
+  // Get the edge types available for the current active graph
+  const availableEdgeTypes = useMemo(() => {
+    const usedEdgeTypeIds = new Set();
+    
+    // If there's an active graph with edges, collect edge types being used
+    if (activeGraphId) {
+      const activeGraph = graphsMap.get(activeGraphId);
+      if (activeGraph && activeGraph.edgeIds) {
+        activeGraph.edgeIds.forEach(edgeId => {
+          const edge = edgesMap.get(edgeId);
+          if (edge && edge.typeNodeId) {
+            usedEdgeTypeIds.add(edge.typeNodeId);
+          }
+        });
+      }
+    }
+    
+    // Get the actual edge prototype objects for the used types
+    let edgeTypes = Array.from(usedEdgeTypeIds)
+      .map(id => edgePrototypesMap.get(id))
+      .filter(Boolean);
+      
+    // If no specific edge types are used, include base types
+    if (edgeTypes.length === 0) {
+      edgeTypes = Array.from(edgePrototypesMap.values())
+        .filter(prototype => {
+          // A prototype is a valid edge type if it has no parent type
+          const isUntyped = !prototype.typeNodeId;
+          const isBaseConnectionPrototype = prototype.id === 'base-connection-prototype';
+          const isGraphDefining = prototype.definitionGraphIds && prototype.definitionGraphIds.length > 0;
+          
+          return isUntyped && (isBaseConnectionPrototype || !isGraphDefining);
+        });
+    }
+    
+    return edgeTypes;
+  }, [activeGraphId, graphsMap, edgePrototypesMap, edgesMap]);
+
   const handleNodeTypeClick = (nodeType) => {
     // If there are selected nodes, set their type to the clicked node type
     if (selectedNodes.size > 0) {
@@ -101,6 +143,13 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
       setSelectedNodes(new Set(nodeIds));
       console.log(`Selected ${nodeIds.length} nodes of type ${nodeType.name}`);
     }
+  };
+
+  const handleEdgeTypeClick = (edgeType) => {
+    // For now, just log the edge type selection
+    // In the future, this could set edge types for selected edges
+    console.log(`Edge type ${edgeType.name} clicked`);
+    // TODO: Implement edge selection and typing when edge selection is available
   };
 
   const cycleMode = () => {
@@ -200,14 +249,17 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
             </>
           )}
           {mode === 'connection' && (
-            <div style={{
-              color: '#bdb5b5',
-              fontSize: '14px',
-              fontWeight: 'bold',
-              padding: '0 15px'
-            }}>
-              Connection Types (Coming Soon)
-            </div>
+            <>
+              {/* Show available edge types for the current graph */}
+              {availableEdgeTypes.map(prototype => (
+                <EdgeType 
+                  key={prototype.id} 
+                  name={prototype.name} 
+                  color={prototype.color} 
+                  onClick={() => handleEdgeTypeClick(prototype)} 
+                />
+              ))}
+            </>
           )}
         </div>
       </footer>

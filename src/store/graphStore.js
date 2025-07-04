@@ -109,6 +109,20 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       });
       return nodePrototypes;
     })(),
+    edgePrototypes: (() => {
+      // Initialize with base "Connection" type
+      const connectionId = 'base-connection-prototype';
+      const edgePrototypes = new Map();
+      edgePrototypes.set(connectionId, {
+        id: connectionId,
+        name: 'Connection',
+        description: 'The base type for all connections. Connections are edges, relationships, verbs, actions, whatever you want them to be. They will always be at the bottom of the connection abstraction stack.',
+        color: '#4A5568', // Dark gray
+        typeNodeId: null, // No parent type - this is the most basic connection type
+        definitionGraphIds: []
+      });
+      return edgePrototypes;
+    })(),
     edges: new Map(),
     openGraphIds: [],
     activeGraphId: null,
@@ -271,6 +285,10 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       
       if (!draft.edges.has(edgeId)) {
           newEdgeData.directionality = normalizeEdgeDirectionality(newEdgeData.directionality);
+          // Assign default edge type if not specified
+          if (!newEdgeData.typeNodeId) {
+            newEdgeData.typeNodeId = 'base-connection-prototype';
+          }
           draft.edges.set(edgeId, newEdgeData);
 
           if (!graph.edgeIds) {
@@ -333,6 +351,48 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     
     node.typeNodeId = typeNodeId;
     console.log(`setNodeType: Set type of node ${nodeId} to ${typeNodeId || 'null'}.`);
+  })),
+
+  // Edge prototype management
+  addEdgePrototype: (prototypeData) => set(produce((draft) => {
+    const prototypeId = prototypeData.id || uuidv4();
+    if (!draft.edgePrototypes.has(prototypeId)) {
+        draft.edgePrototypes.set(prototypeId, { ...prototypeData, id: prototypeId });
+    }
+  })),
+
+  updateEdgePrototype: (prototypeId, recipe) => set(produce((draft) => {
+    const prototype = draft.edgePrototypes.get(prototypeId);
+    if (prototype) {
+      const originalTypeNodeId = prototype.typeNodeId;
+      recipe(prototype); // Apply Immer updates
+      
+      // Prevent the base "Connection" type from being changed
+      if (prototypeId === 'base-connection-prototype' && prototype.typeNodeId !== originalTypeNodeId) {
+        console.warn(`updateEdgePrototype: Cannot change the type of the base "Connection" prototype. Attempted to change from ${originalTypeNodeId} to ${prototype.typeNodeId}`);
+        prototype.typeNodeId = originalTypeNodeId; // Restore original value
+      }
+    } else {
+      console.warn(`updateEdgePrototype: Edge prototype with id ${prototypeId} not found.`);
+    }
+  })),
+
+  // Set the type of an edge
+  setEdgeType: (edgeId, typeNodeId) => set(produce((draft) => {
+    const edge = draft.edges.get(edgeId);
+    if (!edge) {
+      console.warn(`setEdgeType: Edge ${edgeId} not found.`);
+      return;
+    }
+    
+    // Validate that the type node exists (if not null)
+    if (typeNodeId !== null && !draft.edgePrototypes.has(typeNodeId)) {
+      console.warn(`setEdgeType: Edge type ${typeNodeId} not found.`);
+      return;
+    }
+    
+    edge.typeNodeId = typeNodeId;
+    console.log(`setEdgeType: Set type of edge ${edgeId} to ${typeNodeId || 'null'}.`);
   })),
 
   // Deprecated actions, kept for API consistency during refactor if needed, but should not be used.

@@ -305,6 +305,7 @@ const ColorPicker = ({
           onChange={handleHexInputChange}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
           placeholder="#8B0000"
           style={{
             width: '100%',
