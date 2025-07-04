@@ -10,7 +10,7 @@ import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import AbstractionCarousel from './AbstractionCarousel.jsx'; // Import the AbstractionCarousel component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
-import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal } from 'lucide-react'; // Icons for PieMenu
+import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal, Bookmark } from 'lucide-react'; // Icons for PieMenu
 import ColorPicker from './ColorPicker';
 import { useDrop } from 'react-dnd';
 
@@ -780,7 +780,24 @@ function NodeCanvas() {
                 setEditingNodeIdOnCanvas(instanceId);
             }
         } },
-        { id: 'connect', label: 'Connect', icon: Link, action: (nodeId) => {} },
+        { 
+          id: 'save', 
+          label: (() => {
+            const node = nodes.find(n => n.id === selectedNodeIdForPieMenu);
+            return node && savedNodeIds.has(node.prototypeId) ? 'Unsave' : 'Save';
+          })(), 
+          icon: Bookmark,
+          fill: (() => {
+            const node = nodes.find(n => n.id === selectedNodeIdForPieMenu);
+            return node && savedNodeIds.has(node.prototypeId) ? 'maroon' : 'none';
+          })(),
+          action: (instanceId) => {
+            const node = nodes.find(n => n.id === instanceId);
+            if (node) {
+              storeActions.toggleSavedNode(node.prototypeId);
+            }
+          }
+        },
         { id: 'palette', label: 'Palette', icon: Palette, action: (instanceId) => {
             const node = nodes.find(n => n.id === instanceId);
             if (node) {
@@ -815,7 +832,7 @@ function NodeCanvas() {
         } }
       ];
     }
-  }, [storeActions, setSelectedInstanceIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, activeGraphId, abstractionCarouselVisible, abstractionCarouselNode, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Link, ArrowLeft, SendToBack, Palette, MoreHorizontal, zoomLevel, panOffset, containerRef, handlePieMenuColorPickerOpen]);
+  }, [storeActions, setSelectedInstanceIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, activeGraphId, abstractionCarouselVisible, abstractionCarouselNode, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Bookmark, ArrowLeft, SendToBack, Palette, MoreHorizontal, zoomLevel, panOffset, containerRef, handlePieMenuColorPickerOpen, savedNodeIds]);
 
   // Effect to restore view state on graph change or center if no stored state
   useLayoutEffect(() => {

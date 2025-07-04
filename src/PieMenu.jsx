@@ -288,6 +288,7 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
                   width={ICON_SIZE}
                   height={ICON_SIZE}
                   color="maroon"
+                  fill={button.fill || 'none'}
                 />
               )}
             </g>
