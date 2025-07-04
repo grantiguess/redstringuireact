@@ -472,6 +472,46 @@ const Panel = forwardRef(
         return Array.from(savedNodeIds).map(id => nodePrototypesMap.get(id)).filter(Boolean);
     }, [savedNodeIds, nodePrototypesMap]);
 
+    // Group saved nodes by their types
+    const savedNodesByType = useMemo(() => {
+        const groups = new Map();
+        
+        savedNodes.forEach(node => {
+            // Get the type info for this node
+            let typeId = node.typeNodeId;
+            let typeInfo = null;
+            
+            if (typeId && nodePrototypesMap.has(typeId)) {
+                // Node has a specific type
+                const typeNode = nodePrototypesMap.get(typeId);
+                typeInfo = {
+                    id: typeId,
+                    name: typeNode.name || 'Unknown Type',
+                    color: typeNode.color || NODE_DEFAULT_COLOR
+                };
+            } else {
+                // Node has no type or invalid type, use default "Thing"
+                typeId = 'default-thing';
+                typeInfo = {
+                    id: 'default-thing', 
+                    name: 'Thing',
+                    color: '#8B0000' // Default maroon color for untyped nodes
+                };
+            }
+            
+            if (!groups.has(typeId)) {
+                groups.set(typeId, {
+                    typeInfo,
+                    nodes: []
+                });
+            }
+            
+            groups.get(typeId).nodes.push(node);
+        });
+        
+        return groups;
+    }, [savedNodes, nodePrototypesMap]);
+
     // <<< ADD Ref for the scrollable list container >>>
     const listContainerRef = useRef(null);
 
@@ -518,8 +558,8 @@ const Panel = forwardRef(
 
     // Left panel view state and collapsed sections
     const [leftViewActive, setLeftViewActive] = useState('library'); // 'library' or 'grid'
-    const [sectionCollapsed, setSectionCollapsed] = useState({ Thing: false });
-    const [thingMaxHeight, setThingMaxHeight] = useState('0px');
+    const [sectionCollapsed, setSectionCollapsed] = useState({});
+    const [sectionMaxHeights, setSectionMaxHeights] = useState({});
 
     // Color picker state
     const [colorPickerVisible, setColorPickerVisible] = useState(false);
@@ -543,7 +583,7 @@ const Panel = forwardRef(
     const resizeStartWidth = useRef(0);
     const projectBioTextareaRef = useRef(null);
     const nodeBioTextareaRef = useRef(null);
-    const thingContentRef = useRef(null);
+    const sectionContentRefs = useRef(new Map());
 
     const toggleSection = (name) => {
         // Simply toggle the collapsed state
@@ -578,41 +618,44 @@ const Panel = forwardRef(
     // Run when openGraphIds array reference changes OR side changes
     }, [openGraphIds, side]); 
 
-    // Effect to update maxHeight when content changes or visibility toggles
+    // Effect to update maxHeights for all sections when content changes or visibility toggles
     useEffect(() => {
         // Don't run if panelWidth hasn't been initialized yet
         if (!isWidthInitialized) {
             return;
         }
 
-        let newMaxHeight = '0px'; // Default to collapsed height
+        const newMaxHeights = {};
+        
+        // Calculate heights for each type section
+        savedNodesByType.forEach((group, typeId) => {
+            const sectionRef = sectionContentRefs.current.get(typeId);
+            let maxHeight = '0px'; // Default to collapsed height
 
-        // Calculate the potential open height based on content
-        if (thingContentRef.current) {
-            const currentScrollHeight = thingContentRef.current.scrollHeight;
-            // Add a small buffer (e.g., 10px) if needed, or use scrollHeight directly
-            const potentialOpenHeight = `${currentScrollHeight}px`; 
-            //console.log(`[useEffect] Calculated potential open height: ${potentialOpenHeight}`);
+            if (sectionRef) {
+                const currentScrollHeight = sectionRef.scrollHeight;
+                const potentialOpenHeight = `${currentScrollHeight}px`;
 
-            // Decide whether to use the calculated height or 0px
-            if (!sectionCollapsed['Thing']) {
-                // Section is OPEN, use the calculated height
-                newMaxHeight = potentialOpenHeight;
-                //console.log(`[useEffect] Section open, setting maxHeight: ${newMaxHeight}`);
+                // Decide whether to use the calculated height or 0px
+                if (!sectionCollapsed[typeId]) {
+                    // Section is OPEN, use the calculated height
+                    maxHeight = potentialOpenHeight;
+                } else {
+                    // Section is CLOSED, maxHeight remains '0px'
+                    maxHeight = '0px';
+                }
             } else {
-                // Section is CLOSED, maxHeight remains '0px'
-                //console.log(`[useEffect] Section closed, setting maxHeight: 0px`);
+                // Fallback if ref isn't ready (might happen on initial render)
+                maxHeight = sectionCollapsed[typeId] ? '0px' : '500px';
             }
-        } else {
-            //console.log("[useEffect] Ref not available, defaulting maxHeight based on collapsed state.");
-            // Fallback if ref isn't ready (might happen on initial render)
-            newMaxHeight = sectionCollapsed['Thing'] ? '0px' : '500px'; // Use 0 or a default open height
-        }
+
+            newMaxHeights[typeId] = maxHeight;
+        });
 
         // Set the state
-        setThingMaxHeight(newMaxHeight);
+        setSectionMaxHeights(newMaxHeights);
 
-    }, [savedNodes, sectionCollapsed, panelWidth, isWidthInitialized]); // Rerun when savedNodes, collapsed state, or panel width changes
+    }, [savedNodesByType, sectionCollapsed, panelWidth, isWidthInitialized]); // Rerun when savedNodesByType, collapsed state, or panel width changes
 
     // Effect to close color pickers when type dialog closes
     useEffect(() => {
@@ -1156,95 +1199,132 @@ const Panel = forwardRef(
                         </h2>
                     </div>
 
-                    {/* --- Thing Section --- */}
-                    <div style={{ marginBottom: '10px' }}>
-                        {/* Section Header */}
-                        <div
-                            onClick={() => toggleSection('Thing')}
-                            style={{
-                                backgroundColor: '#979090',
-                                padding: '6px 8px',
-                                cursor: 'pointer',
-                                color: '#260000',
-                                fontWeight: 'bold',
-                                userSelect: 'none',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                            }}
-                        >
-                            <span>Thing ({savedNodes.length})</span>
-                            <span style={{
-                                display: 'inline-block', // Needed for transform
-                                transition: 'transform 0.2s ease', // Faster
-                                transform: sectionCollapsed['Thing'] ? 'rotate(0deg)' : 'rotate(90deg)',
-                            }}>▶</span>
+                    {/* --- Type Sections --- */}
+                    {savedNodesByType.size === 0 ? (
+                        <div style={{ color: '#666', fontSize: '0.9rem', textAlign: 'center', marginTop: '20px' }}>
+                            No saved nodes.
                         </div>
+                    ) : (
+                        Array.from(savedNodesByType.entries()).map(([typeId, group], index, array) => {
+                            const { typeInfo, nodes } = group;
+                            const isCollapsed = sectionCollapsed[typeId] ?? false; // Default to expanded
+                            const maxHeight = sectionMaxHeights[typeId] || '0px';
+                            const isLastSection = index === array.length - 1;
 
-                        {/* Section Content */}
-                        {!sectionCollapsed['Thing'] && (
-                            <div // Outer container for overflow
-                                style={{
-                                    overflow: 'hidden',
-                                    transition: 'max-height 0.2s ease-out', // Faster
-                                    maxHeight: thingMaxHeight, // Use state variable for max-height
-                                }}
-                            >
-                                <div // Inner container for content & opacity transition
-                                    ref={thingContentRef} // <<< Assign ref here
-                                    style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: panelWidth > 250 ? '1fr 1fr' : '1fr',
-                                        gap: panelWidth > 250 ? '8px' : '0px',
-                                        marginTop: '8px',
-                                        paddingBottom: '8px', // Add some padding below grid
-                                    }}
-                                >
-                                    {savedNodes.length === 0 && (
-                                        <div style={{ gridColumn: 'span 2', color: '#666', fontSize: '0.9rem' }}>No saved nodes.</div>
+                            return (
+                                <div key={typeId}>
+                                    <div style={{ marginBottom: '10px' }}>
+                                        {/* Section Header with rounded corners and type color */}
+                                        <div
+                                            onClick={() => toggleSection(typeId)}
+                                            style={{
+                                                backgroundColor: typeInfo.color,
+                                                padding: '8px 12px',
+                                                cursor: 'pointer',
+                                                color: '#bdb5b5',
+                                                fontWeight: 'bold',
+                                                userSelect: 'none',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                borderRadius: '12px', // Rounded corners
+                                                transition: 'all 0.2s ease',
+                                                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.filter = 'brightness(1.1)';
+                                                e.currentTarget.style.transform = 'translateY(-1px)';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.filter = 'brightness(1)';
+                                                e.currentTarget.style.transform = 'translateY(0px)';
+                                            }}
+                                        >
+                                            <span>{typeInfo.name} ({nodes.length})</span>
+                                            <span style={{
+                                                display: 'inline-block',
+                                                transition: 'transform 0.2s ease',
+                                                transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+                                                fontSize: '14px',
+                                            }}>▶</span>
+                                        </div>
+
+                                        {/* Section Content */}
+                                        {!isCollapsed && (
+                                            <div // Outer container for overflow
+                                                style={{
+                                                    overflow: 'hidden',
+                                                    transition: 'max-height 0.2s ease-out',
+                                                    maxHeight: maxHeight,
+                                                }}
+                                            >
+                                                <div // Inner container for content
+                                                    ref={(el) => {
+                                                        if (el) {
+                                                            sectionContentRefs.current.set(typeId, el);
+                                                        } else {
+                                                            sectionContentRefs.current.delete(typeId);
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        display: 'grid',
+                                                        gridTemplateColumns: panelWidth > 250 ? '1fr 1fr' : '1fr',
+                                                        gap: panelWidth > 250 ? '8px' : '0px',
+                                                        marginTop: '8px',
+                                                        paddingBottom: '8px',
+                                                    }}
+                                                >
+                                                    {nodes.map(node => {
+                                                        // Single click opens the graph definition OR creates one
+                                                        const handleSingleClick = () => {
+                                                            // Use openGraphTab to handle opening and setting definition node
+                                                            if (node.definitionGraphIds && node.definitionGraphIds.length > 0) {
+                                                                const graphIdToOpen = node.definitionGraphIds[0]; // Open the first definition
+                                                                console.log(`[Panel Saved Node Click] Opening existing graph ${graphIdToOpen} defined by node ${node.id}`);
+                                                                openGraphTab(graphIdToOpen, node.id); // Pass both graph and node ID
+                                                            } else if (createAndAssignGraphDefinition) {
+                                                                // Node has no definitions, create one
+                                                                console.warn(`[Panel Saved Node Click] Node ${node.id} has no graph definitions. Creating one.`);
+                                                                createAndAssignGraphDefinition(node.id);
+                                                            } else {
+                                                                console.error('[Panel Saved Node Click] Missing required actions (openGraphTab or createAndAssignGraphDefinition)');
+                                                            }
+                                                        };
+
+                                                        // Double click opens the node tab
+                                                        const handleDoubleClick = () => {
+                                                            console.log(`[Panel Saved Node DblClick] Opening node tab for ${node.id}`);
+                                                            openRightPanelNodeTab(node.id);
+                                                        };
+
+                                                        const handleUnsave = () => {
+                                                            toggleSavedNode(node.id);
+                                                        };
+
+                                                        return (
+                                                          <SavedNodeItem
+                                                            key={node.id}
+                                                            node={node}
+                                                            onClick={handleSingleClick}
+                                                            onDoubleClick={handleDoubleClick}
+                                                            onUnsave={handleUnsave}
+                                                            isActive={node.id === activeDefinitionNodeId}
+                                                          />
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div> // Close outer container
+                                        )}
+                                    </div>
+                                    
+                                    {/* Divider between sections - only show if not the last section */}
+                                    {!isLastSection && (
+                                        <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
                                     )}
-                                    {savedNodes.map(node => {
-                                        // Single click opens the graph definition OR creates one
-                                        const handleSingleClick = () => {
-                                            // Use openGraphTab to handle opening and setting definition node
-                                            if (node.definitionGraphIds && node.definitionGraphIds.length > 0) {
-                                                const graphIdToOpen = node.definitionGraphIds[0]; // Open the first definition
-                                                console.log(`[Panel Saved Node Click] Opening existing graph ${graphIdToOpen} defined by node ${node.id}`);
-                                                openGraphTab(graphIdToOpen, node.id); // Pass both graph and node ID
-                                            } else if (createAndAssignGraphDefinition) {
-                                                // Node has no definitions, create one
-                                                console.warn(`[Panel Saved Node Click] Node ${node.id} has no graph definitions. Creating one.`);
-                                                createAndAssignGraphDefinition(node.id);
-                                            } else {
-                                                console.error('[Panel Saved Node Click] Missing required actions (openGraphTab or createAndAssignGraphDefinition)');
-                                            }
-                                        };
-
-                                        // Double click opens the node tab
-                                        const handleDoubleClick = () => {
-                                            console.log(`[Panel Saved Node DblClick] Opening node tab for ${node.id}`);
-                                            openRightPanelNodeTab(node.id);
-                                        };
-
-                                        const handleUnsave = () => {
-                                            toggleSavedNode(node.id);
-                                        };
-
-                                        return (
-                                          <SavedNodeItem
-                                            key={node.id}
-                                            node={node}
-                                            onClick={handleSingleClick}
-                                            onDoubleClick={handleDoubleClick}
-                                            onUnsave={handleUnsave}
-                                            isActive={node.id === activeDefinitionNodeId}
-                                          />
-                                        );
-                                    })}
                                 </div>
-                            </div> // Close outer container
-                        )}
-                    </div>
+                            );
+                        })
+                    )}
                 </div>
             );
         } else if (leftViewActive === 'grid') {
