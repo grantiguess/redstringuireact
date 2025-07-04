@@ -5,8 +5,8 @@ const EdgeType = ({ name, color = '#800000', onClick }) => {
     <div 
       className="edge-type-item"
       style={{ 
-        backgroundColor: color, 
-        color: '#bdb5b5', // Canvas color for text
+        backgroundColor: '#bdb5b5', // Canvas color background
+        color: '#260000', // Dark text for contrast
         borderRadius: '4px',
         minWidth: '60px', // Changed to minWidth for better scaling
         height: '32px',
@@ -25,7 +25,7 @@ const EdgeType = ({ name, color = '#800000', onClick }) => {
       }}
       onClick={onClick}
       onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = '#bdb5b5';
+        e.currentTarget.style.borderColor = '#260000';
         e.currentTarget.style.transform = 'translateY(-2px)';
       }}
       onMouseLeave={(e) => {
@@ -33,17 +33,16 @@ const EdgeType = ({ name, color = '#800000', onClick }) => {
         e.currentTarget.style.transform = 'translateY(0px)';
       }}
     >
-      {/* Diagonal line to distinguish from nodes */}
+      {/* Vertical line to distinguish from nodes */}
       <div
         style={{
           position: 'absolute',
-          left: '4px',
-          top: '4px',
-          bottom: '4px',
-          width: '2px',
-          background: 'linear-gradient(45deg, #bdb5b5 0%, transparent 100%)',
-          transform: 'skew(-45deg)',
-          opacity: 0.7
+          left: '0',
+          top: '0',
+          bottom: '0',
+          width: '12px',
+          backgroundColor: color,
+          opacity: 1
         }}
       />
       
@@ -54,7 +53,7 @@ const EdgeType = ({ name, color = '#800000', onClick }) => {
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           maxWidth: '100%',
-          paddingLeft: '8px' // Space for the diagonal line
+          paddingLeft: '14px' // Space for the wider vertical line
         }}
       >
         {name}
