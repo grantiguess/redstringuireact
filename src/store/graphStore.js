@@ -298,6 +298,12 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       return;
     }
     
+    // Prevent the base "Thing" type from being assigned a type
+    if (nodeId === 'base-thing-prototype' && typeNodeId !== null) {
+      console.warn(`setNodeType: The base "Thing" type cannot be assigned a type. It must remain the fundamental type.`);
+      return;
+    }
+    
     // Validate that the type node exists (if not null)
     if (typeNodeId !== null && !draft.nodePrototypes.has(typeNodeId)) {
       console.warn(`setNodeType: Type node ${typeNodeId} not found.`);
@@ -888,6 +894,13 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         graph.instances.forEach(instance => referencedPrototypeIds.add(instance.prototypeId));
       }
     });
+    
+    // Add prototypes that are being used as types by other prototypes
+    for (const prototype of draft.nodePrototypes.values()) {
+      if (prototype.typeNodeId) {
+        referencedPrototypeIds.add(prototype.typeNodeId);
+      }
+    }
     
     // Recursively add prototypes from definition graphs
     const addDefinitionPrototypes = (prototypeId) => {

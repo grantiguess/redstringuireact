@@ -486,8 +486,8 @@ const Panel = forwardRef(
                 const typeNode = nodePrototypesMap.get(typeId);
                 typeInfo = {
                     id: typeId,
-                    name: typeNode.name || 'Unknown Type',
-                    color: typeNode.color || NODE_DEFAULT_COLOR
+                    name: typeNode.name || 'Thing',
+                    color: typeNode.color || '#8B0000'
                 };
             } else {
                 // Node has no type or invalid type, use default "Thing"
@@ -1100,6 +1100,12 @@ const Panel = forwardRef(
 
     // Add new handler for type creation
     const handleOpenTypeDialog = (nodeId, clickEvent) => {
+      // Prevent opening type dialog for the base "Thing" type
+      if (nodeId === 'base-thing-prototype') {
+        console.log(`Cannot change type of base "Thing" - it must remain the fundamental type.`);
+        return;
+      }
+      
       const nodeName = nodePrototypesMap.get(nodeId)?.name || 'this thing';
       // Truncate long node names to keep dialog manageable
       const truncatedNodeName = nodeName.length > 20 ? nodeName.substring(0, 20) + '...' : nodeName;
@@ -1441,8 +1447,8 @@ const Panel = forwardRef(
                 }
                 const typeNode = nodePrototypesMap.get(definingNodeData.typeNodeId);
                 return {
-                    typeName: typeNode?.name || 'Unknown Type',
-                    typeColor: typeNode?.color || NODE_DEFAULT_COLOR
+                    typeName: typeNode?.name || 'Thing',
+                    typeColor: typeNode?.color || '#8B0000'
                 };
             };
 
@@ -1591,17 +1597,26 @@ const Panel = forwardRef(
                             borderRadius: '4px',
                             fontSize: '0.8rem',
                             fontWeight: 'bold',
-                            cursor: 'pointer',
+                            cursor: definingNodeId === 'base-thing-prototype' ? 'default' : 'pointer',
                             transition: 'opacity 0.2s ease',
+                            opacity: definingNodeId === 'base-thing-prototype' ? 0.7 : 1,
                           }}
-                          onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
-                          onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                          onMouseEnter={(e) => {
+                            if (definingNodeId !== 'base-thing-prototype') {
+                              e.currentTarget.style.opacity = '0.8';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (definingNodeId !== 'base-thing-prototype') {
+                              e.currentTarget.style.opacity = '1';
+                            }
+                          }}
                           onClick={(e) => {
-                            if (definingNodeId) {
+                            if (definingNodeId && definingNodeId !== 'base-thing-prototype') {
                               handleOpenTypeDialog(definingNodeId, e);
                             }
                           }}
-                          title="Click to change type"
+                          title={definingNodeId === 'base-thing-prototype' ? "Thing is the base type and cannot be changed" : "Click to change type"}
                         >
                             {typeName}
                         </span>
@@ -2125,8 +2140,8 @@ const Panel = forwardRef(
                                     }
                                     const typeNode = nodePrototypesMap.get(nodeData.typeNodeId);
                                     return {
-                                        typeName: typeNode?.name || 'Unknown Type',
-                                        typeColor: typeNode?.color || NODE_DEFAULT_COLOR
+                                        typeName: typeNode?.name || 'Thing',
+                                        typeColor: typeNode?.color || '#8B0000'
                                     };
                                 };
 
@@ -2150,15 +2165,26 @@ const Panel = forwardRef(
                                             borderRadius: '4px',
                                             fontSize: '0.8rem',
                                             fontWeight: 'bold',
-                                            cursor: 'pointer',
+                                            cursor: nodeId === 'base-thing-prototype' ? 'default' : 'pointer',
                                             transition: 'opacity 0.2s ease',
+                                            opacity: nodeId === 'base-thing-prototype' ? 0.7 : 1,
                                           }}
-                                          onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
-                                          onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                                          onMouseEnter={(e) => {
+                                            if (nodeId !== 'base-thing-prototype') {
+                                              e.currentTarget.style.opacity = '0.8';
+                                            }
+                                          }}
+                                          onMouseLeave={(e) => {
+                                            if (nodeId !== 'base-thing-prototype') {
+                                              e.currentTarget.style.opacity = '1';
+                                            }
+                                          }}
                                           onClick={(e) => {
-                                            handleOpenTypeDialog(nodeId, e);
+                                            if (nodeId !== 'base-thing-prototype') {
+                                              handleOpenTypeDialog(nodeId, e);
+                                            }
                                           }}
-                                          title="Click to change type"
+                                          title={nodeId === 'base-thing-prototype' ? "Thing is the base type and cannot be changed" : "Click to change type"}
                                         >
                                             {typeName}
                                         </span>

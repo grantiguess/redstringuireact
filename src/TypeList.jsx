@@ -84,8 +84,8 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
     // If there are selected nodes, set their type to the clicked node type
     if (selectedNodes.size > 0) {
       selectedNodes.forEach(nodeId => {
-        // Don't allow a node to be typed by itself
-        if (nodeId !== nodeType.id) {
+        // Don't allow a node to be typed by itself or change the base Thing prototype
+        if (nodeId !== nodeType.id && nodeId !== 'base-thing-prototype') {
           setNodeTypeAction(nodeId, nodeType.id);
         }
       });
