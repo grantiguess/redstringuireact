@@ -25,36 +25,9 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
   const connectionColor = getConnectionColor();
 
   const handleNodeClick = () => {
-    // If no connection type is assigned, open the naming dialog
-    if (!currentEdgeType && onOpenConnectionDialog) {
+    // Always open the naming dialog when clicking the center connection display
+    if (onOpenConnectionDialog) {
       onOpenConnectionDialog(selectedEdge.id);
-    } else {
-      // If there is a type, cycle through available types
-      const availableTypes = Array.from(nodePrototypesMap.values())
-        .filter(node => node.typeNodeId === null) // Get base types
-        .sort((a, b) => a.name.localeCompare(b.name)); // Sort alphabetically for consistent order
-      
-      if (availableTypes.length <= 1) {
-        // If only one or no types available, open dialog to create new one
-        if (onOpenConnectionDialog) {
-          onOpenConnectionDialog(selectedEdge.id);
-        }
-        return;
-      }
-      
-      const currentTypeId = selectedEdge.definitionNodeIds?.[0];
-      const currentIndex = availableTypes.findIndex(type => type.id === currentTypeId);
-      
-      // If current type not found in available types, start from beginning
-      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % availableTypes.length;
-      const nextType = availableTypes[nextIndex];
-      
-      console.log('Cycling from', currentEdgeType?.name, 'to', nextType.name);
-      
-      // Update edge to use the new type node as definition
-      updateEdge(selectedEdge.id, (draft) => {
-        draft.definitionNodeIds = [nextType.id];
-      });
     }
   };
 

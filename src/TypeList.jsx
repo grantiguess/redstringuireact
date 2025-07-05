@@ -84,43 +84,36 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
     return typeNodes;
   }, [activeGraphId, graphsMap, nodePrototypesMap]);
 
-  // Get the edge types available for the current active graph
-  const availableEdgeTypes = useMemo(() => {
-    const usedEdgeTypeIds = new Set();
+  // Get the connection types available for the current active graph
+  const availableConnectionTypes = useMemo(() => {
+    const usedConnectionTypeIds = new Set();
     
-    // If there's an active graph with edges, collect edge types being used
+    // If there's an active graph with edges, collect connection types being used
     if (activeGraphId) {
       const activeGraph = graphsMap.get(activeGraphId);
       if (activeGraph && activeGraph.edgeIds) {
         activeGraph.edgeIds.forEach(edgeId => {
           const edge = edgesMap.get(edgeId);
-          if (edge && edge.typeNodeId) {
-            usedEdgeTypeIds.add(edge.typeNodeId);
+          if (edge && edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+            // Connection types are stored as node prototypes referenced by definitionNodeIds
+            edge.definitionNodeIds.forEach(nodeId => {
+              usedConnectionTypeIds.add(nodeId);
+            });
           }
         });
       }
     }
     
-    // Get the actual edge prototype objects for the used types
-    let edgeTypes = Array.from(usedEdgeTypeIds)
-      .map(id => edgePrototypesMap.get(id))
+    // Get the actual connection type node prototypes
+    let connectionTypes = Array.from(usedConnectionTypeIds)
+      .map(id => nodePrototypesMap.get(id))
       .filter(Boolean);
       
-    // If no specific edge types are used, include base types
-    if (edgeTypes.length === 0) {
-      edgeTypes = Array.from(edgePrototypesMap.values())
-        .filter(prototype => {
-          // A prototype is a valid edge type if it has no parent type
-          const isUntyped = !prototype.typeNodeId;
-          const isBaseConnectionPrototype = prototype.id === 'base-connection-prototype';
-          const isGraphDefining = prototype.definitionGraphIds && prototype.definitionGraphIds.length > 0;
-          
-          return isUntyped && (isBaseConnectionPrototype || !isGraphDefining);
-        });
-    }
+    // If no specific connection types are used, return empty array
+    // (we don't want to show base node types as connection types)
     
-    return edgeTypes;
-  }, [activeGraphId, graphsMap, edgePrototypesMap, edgesMap]);
+    return connectionTypes;
+  }, [activeGraphId, graphsMap, nodePrototypesMap, edgesMap]);
 
   const handleNodeTypeClick = (nodeType) => {
     // If there are selected nodes, set their type to the clicked node type
@@ -248,8 +241,8 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
           )}
           {mode === 'connection' && (
             <>
-              {/* Show available edge types for the current graph */}
-              {availableEdgeTypes.map(prototype => (
+              {/* Show available connection types for the current graph */}
+              {availableConnectionTypes.map(prototype => (
                 <EdgeType 
                   key={prototype.id} 
                   name={prototype.name} 
