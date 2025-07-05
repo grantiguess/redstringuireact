@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import './ConnectionControlPanel.css';
 import useGraphStore from './store/graphStore';
@@ -11,34 +11,73 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
 
   // Animation state management
   const [animationState, setAnimationState] = useState('entering');
+  const [shouldRender, setShouldRender] = useState(true);
+  
+  // Store the last valid edge data for use during exit animation
+  const [lastValidEdge, setLastValidEdge] = useState(selectedEdge);
+
+  // Update lastValidEdge when a new valid selectedEdge is provided
+  useEffect(() => {
+    if (selectedEdge) {
+      setLastValidEdge(selectedEdge);
+    }
+  }, [selectedEdge]);
 
   // Handle visibility changes and animation lifecycle
   useEffect(() => {
     if (isVisible) {
+      // Always start fresh when becoming visible
+      setShouldRender(true);
       setAnimationState('entering');
     } else {
-      setAnimationState('exiting');
+      // When becoming invisible, ALWAYS start exit animation if we're currently rendered
+      // Never immediately hide - let the animation complete first
+      if (shouldRender) {
+        setAnimationState('exiting');
+      }
+      // If shouldRender is already false, do nothing - component is already hidden
     }
-  }, [isVisible, selectedEdge?.id]);
+  }, [isVisible]);
+
+  // Always reset to entering state when a new edge is selected
+  useEffect(() => {
+    if (selectedEdge?.id && isVisible) {
+      setAnimationState('entering');
+    }
+  }, [selectedEdge?.id, isVisible]);
 
   // Handle animation end events
-  const handleAnimationEnd = useCallback((e) => {
+  const handleAnimationEnd = (e) => {
     if (e.animationName === 'connectionPanelFlyIn') {
       setAnimationState('visible');
     } else if (e.animationName === 'connectionPanelFlyOut') {
+      setShouldRender(false);
       onAnimationComplete?.();
     }
-  }, [onAnimationComplete]);
+  };
 
-  if (!selectedEdge) return null;
+  // Fallback timeout for exit animation
+  useEffect(() => {
+    if (animationState === 'exiting') {
+      const timeout = setTimeout(() => {
+        setShouldRender(false);
+        onAnimationComplete?.();
+      }, 400); // Slightly longer than the animation duration (300ms)
+      
+      return () => clearTimeout(timeout);
+    }
+  }, [animationState, onAnimationComplete]);
 
-  const destinationNode = nodePrototypesMap.get(selectedEdge.destinationId);
+  // Only stop rendering when shouldRender is false, and ensure we have edge data to work with
+  if (!shouldRender || !lastValidEdge) return null;
+
+  const destinationNode = nodePrototypesMap.get(lastValidEdge.destinationId);
   
   // Check for edge type in definitionNodeIds first, then fallback to typeNodeId
-  const currentEdgeType = selectedEdge.definitionNodeIds && selectedEdge.definitionNodeIds.length > 0 
-    ? nodePrototypesMap.get(selectedEdge.definitionNodeIds[0])
-    : selectedEdge.typeNodeId 
-      ? edgePrototypesMap.get(selectedEdge.typeNodeId)
+  const currentEdgeType = lastValidEdge.definitionNodeIds && lastValidEdge.definitionNodeIds.length > 0 
+    ? nodePrototypesMap.get(lastValidEdge.definitionNodeIds[0])
+    : lastValidEdge.typeNodeId 
+      ? edgePrototypesMap.get(lastValidEdge.typeNodeId)
       : null;
   
   // Check if this is a base connection (or equivalent)
@@ -56,14 +95,14 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
   const handleNodeClick = () => {
     // Always open the naming dialog when clicking the center connection display
     if (onOpenConnectionDialog) {
-      onOpenConnectionDialog(selectedEdge.id);
+      onOpenConnectionDialog(lastValidEdge.id);
     }
   };
 
   const handleArrowToggle = (direction) => {
-    const nodeId = direction === 'left' ? selectedEdge.sourceId : selectedEdge.destinationId;
+    const nodeId = direction === 'left' ? lastValidEdge.sourceId : lastValidEdge.destinationId;
     
-    updateEdge(selectedEdge.id, (draft) => {
+    updateEdge(lastValidEdge.id, (draft) => {
       if (!draft.directionality) {
         draft.directionality = { arrowsToward: new Set() };
       }
@@ -79,8 +118,8 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
     });
   };
 
-  const hasLeftArrow = selectedEdge.directionality?.arrowsToward?.has(selectedEdge.sourceId);
-  const hasRightArrow = selectedEdge.directionality?.arrowsToward?.has(selectedEdge.destinationId);
+  const hasLeftArrow = lastValidEdge.directionality?.arrowsToward?.has(lastValidEdge.sourceId);
+  const hasRightArrow = lastValidEdge.directionality?.arrowsToward?.has(lastValidEdge.destinationId);
 
   return (
     <div 

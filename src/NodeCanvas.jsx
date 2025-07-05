@@ -463,7 +463,6 @@ function NodeCanvas() {
   // Connection control panel animation state
   const [controlPanelVisible, setControlPanelVisible] = useState(false);
   const [controlPanelShouldShow, setControlPanelShouldShow] = useState(false);
-  const [edgeForControlPanel, setEdgeForControlPanel] = useState(null);
 
   // New states for PieMenu transition
   const [selectedNodeIdForPieMenu, setSelectedNodeIdForPieMenu] = useState(null);
@@ -478,13 +477,6 @@ function NodeCanvas() {
   
   // Animation states for carousel
   const [carouselAnimationState, setCarouselAnimationState] = useState('hidden'); // 'hidden', 'entering', 'visible', 'exiting'
-
-  useEffect(() => {
-    if (selectedEdgeId) {
-        setEdgeForControlPanel(edgesMap.get(selectedEdgeId));
-    }
-    // Do not clear on deselection; it's cleared after animation.
-  }, [selectedEdgeId, edgesMap]);
 
   // Define carousel callbacks outside conditional rendering to avoid hook violations
   const onCarouselAnimationStateChange = useCallback((newState) => {
@@ -567,18 +559,21 @@ function NodeCanvas() {
 
   // --- Connection Control Panel Management ---
   useEffect(() => {
-    const shouldShow = selectedEdgeId && !connectionNamePrompt.visible;
+    const shouldShow = Boolean(selectedEdgeId && !connectionNamePrompt.visible);
     
-    if (shouldShow && !controlPanelShouldShow) {
-      // Show the panel
+    if (shouldShow) {
+      // Show the panel immediately
       setControlPanelShouldShow(true);
       setControlPanelVisible(true);
-    } else if (!shouldShow && controlPanelShouldShow) {
-      // Hide the panel
+    } else if (selectedEdgeId === null && controlPanelVisible) {
+      // Edge was deselected - start exit animation but keep panel mounted
       setControlPanelVisible(false);
-      // controlPanelShouldShow will be set to false when animation completes
+      // Don't set controlPanelShouldShow to false yet - let the animation complete
+    } else if (!shouldShow && !selectedEdgeId) {
+      // Other cases where panel should be hidden (like dialog opening)
+      setControlPanelVisible(false);
     }
-  }, [selectedEdgeId, connectionNamePrompt.visible, controlPanelShouldShow]);
+  }, [selectedEdgeId, connectionNamePrompt.visible, controlPanelVisible]);
 
   // Handle control panel callbacks
   const handleControlPanelClose = useCallback(() => {
@@ -587,15 +582,14 @@ function NodeCanvas() {
 
   const handleOpenConnectionDialog = useCallback((edgeId) => {
     setConnectionNamePrompt({ visible: true, name: '', color: NODE_DEFAULT_COLOR, edgeId });
-  }, []);
+  }, [setConnectionNamePrompt]);
 
   // Handle control panel animation completion
   const handleControlPanelAnimationComplete = useCallback(() => {
-    if (!controlPanelVisible) {
-      setControlPanelShouldShow(false);
-      setEdgeForControlPanel(null); // Clear data after hiding
-    }
-  }, [controlPanelVisible, setSelectedEdgeId]);
+    // This callback is only for the exit animation.
+    // When it's called, we know it's safe to unmount the component.
+    setControlPanelShouldShow(false);
+  }, [setControlPanelShouldShow]);
 
   // --- Saved Graphs Management ---
   const bookmarkActive = useMemo(() => {
@@ -3743,9 +3737,9 @@ function NodeCanvas() {
       />
 
       {/* ConnectionControlPanel Component - with animation */}
-      {controlPanelShouldShow && edgeForControlPanel && (
+      {(controlPanelShouldShow || controlPanelVisible) && (
         <ConnectionControlPanel
-          selectedEdge={edgeForControlPanel}
+          selectedEdge={edgesMap.get(selectedEdgeId)}
           onClose={handleControlPanelClose}
           typeListOpen={typeListMode !== 'closed'}
           onOpenConnectionDialog={handleOpenConnectionDialog}
