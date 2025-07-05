@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import './ConnectionControlPanel.css';
 import useGraphStore from './store/graphStore';
@@ -11,32 +11,26 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
 
   // Animation state management
   const [animationState, setAnimationState] = useState('entering');
-  const [shouldRender, setShouldRender] = useState(true);
 
   // Handle visibility changes and animation lifecycle
   useEffect(() => {
     if (isVisible) {
-      setShouldRender(true);
       setAnimationState('entering');
     } else {
       setAnimationState('exiting');
-      // Don't immediately hide - wait for exit animation to complete
-      const timer = setTimeout(() => {
-        setShouldRender(false);
-        onAnimationComplete?.();
-      }, 300); // Match CSS animation duration
-      return () => clearTimeout(timer);
     }
-  }, [isVisible, onAnimationComplete]);
+  }, [isVisible, selectedEdge?.id]);
 
   // Handle animation end events
-  const handleAnimationEnd = (e) => {
+  const handleAnimationEnd = useCallback((e) => {
     if (e.animationName === 'connectionPanelFlyIn') {
       setAnimationState('visible');
+    } else if (e.animationName === 'connectionPanelFlyOut') {
+      onAnimationComplete?.();
     }
-  };
+  }, [onAnimationComplete]);
 
-  if (!selectedEdge || !shouldRender) return null;
+  if (!selectedEdge) return null;
 
   const destinationNode = nodePrototypesMap.get(selectedEdge.destinationId);
   

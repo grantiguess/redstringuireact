@@ -463,6 +463,7 @@ function NodeCanvas() {
   // Connection control panel animation state
   const [controlPanelVisible, setControlPanelVisible] = useState(false);
   const [controlPanelShouldShow, setControlPanelShouldShow] = useState(false);
+  const [edgeForControlPanel, setEdgeForControlPanel] = useState(null);
 
   // New states for PieMenu transition
   const [selectedNodeIdForPieMenu, setSelectedNodeIdForPieMenu] = useState(null);
@@ -477,6 +478,13 @@ function NodeCanvas() {
   
   // Animation states for carousel
   const [carouselAnimationState, setCarouselAnimationState] = useState('hidden'); // 'hidden', 'entering', 'visible', 'exiting'
+
+  useEffect(() => {
+    if (selectedEdgeId) {
+        setEdgeForControlPanel(edgesMap.get(selectedEdgeId));
+    }
+    // Do not clear on deselection; it's cleared after animation.
+  }, [selectedEdgeId, edgesMap]);
 
   // Define carousel callbacks outside conditional rendering to avoid hook violations
   const onCarouselAnimationStateChange = useCallback((newState) => {
@@ -585,8 +593,9 @@ function NodeCanvas() {
   const handleControlPanelAnimationComplete = useCallback(() => {
     if (!controlPanelVisible) {
       setControlPanelShouldShow(false);
+      setEdgeForControlPanel(null); // Clear data after hiding
     }
-  }, [controlPanelVisible]);
+  }, [controlPanelVisible, setSelectedEdgeId]);
 
   // --- Saved Graphs Management ---
   const bookmarkActive = useMemo(() => {
@@ -3734,9 +3743,9 @@ function NodeCanvas() {
       />
 
       {/* ConnectionControlPanel Component - with animation */}
-      {controlPanelShouldShow && (
+      {controlPanelShouldShow && edgeForControlPanel && (
         <ConnectionControlPanel
-          selectedEdge={edgesMap.get(selectedEdgeId)}
+          selectedEdge={edgeForControlPanel}
           onClose={handleControlPanelClose}
           typeListOpen={typeListMode !== 'closed'}
           onOpenConnectionDialog={handleOpenConnectionDialog}
