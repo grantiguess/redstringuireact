@@ -437,6 +437,7 @@ function NodeCanvas() {
 
   const [plusSign, setPlusSign] = useState(null);
   const [nodeNamePrompt, setNodeNamePrompt] = useState({ visible: false, name: '', color: null });
+  const [connectionNamePrompt, setConnectionNamePrompt] = useState({ visible: false, name: '', color: null, edgeId: null });
   
   // Dialog color picker state
   const [dialogColorPickerVisible, setDialogColorPickerVisible] = useState(false);
@@ -1845,7 +1846,11 @@ function NodeCanvas() {
   };
 
   const handleDialogColorChange = (color) => {
-    setNodeNamePrompt(prev => ({ ...prev, color }));
+    if (nodeNamePrompt.visible) {
+      setNodeNamePrompt(prev => ({ ...prev, color }));
+    } else if (connectionNamePrompt.visible) {
+      setConnectionNamePrompt(prev => ({ ...prev, color }));
+    }
   };
 
   const keysPressed = useKeyboardShortcuts();
@@ -1993,6 +1998,126 @@ function NodeCanvas() {
 
     // Add ref for dialog container
   const dialogContainerRef = useRef(null);
+
+  const renderConnectionNamePrompt = () => {
+    if (!connectionNamePrompt.visible) return null;
+    
+    const handleConnectionPromptSubmit = () => {
+      if (connectionNamePrompt.name.trim()) {
+        // Create a new node prototype for this connection type
+        const newConnectionNodeId = uuidv4();
+        addNodePrototype({
+          id: newConnectionNodeId,
+          name: connectionNamePrompt.name.trim(),
+          description: '',
+          picture: null,
+          color: connectionNamePrompt.color || NODE_DEFAULT_COLOR,
+          typeNodeId: null,
+          definitionGraphIds: []
+        });
+        
+        // Update the edge to use this new connection type
+        if (connectionNamePrompt.edgeId) {
+          updateEdge(connectionNamePrompt.edgeId, (draft) => {
+            draft.definitionNodeIds = [newConnectionNodeId];
+          });
+        }
+        
+        setConnectionNamePrompt({ visible: false, name: '', color: null, edgeId: null });
+      }
+    };
+
+    const handleConnectionPromptClose = () => {
+      setConnectionNamePrompt({ visible: false, name: '', color: null, edgeId: null });
+    };
+
+    return (
+      <>
+        <div 
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 1000 }} 
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              handleConnectionPromptClose();
+            }
+          }}
+        />
+        <div
+          style={{
+            position: 'fixed',
+            top: HEADER_HEIGHT + 25,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#bdb5b5',
+            padding: '20px',
+            borderRadius: '10px',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+            zIndex: 1001,
+            width: '300px',
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div style={{ position: 'absolute', top: '10px', right: '10px', cursor: 'pointer' }}>
+            <X size={20} color="#999" onClick={handleConnectionPromptClose} />
+          </div>
+          <div style={{ textAlign: 'center', marginBottom: '15px', color: 'black' }}>
+            <strong style={{ fontSize: '18px' }}>Name Your Connection</strong>
+          </div>
+          <div style={{ textAlign: 'center', marginBottom: '15px', color: '#666', fontSize: '14px' }}>
+            The thing that will define this connection.<br />
+            The name will change based on your Thing's conjugations.
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <Palette
+              size={20}
+              color="#260000"
+              style={{ cursor: 'pointer', flexShrink: 0, marginRight: '8px' }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDialogColorPickerOpen(e.currentTarget, e);
+                // Update the connection prompt color when color picker changes
+                setConnectionNamePrompt({ ...connectionNamePrompt, color: connectionNamePrompt.color || NODE_DEFAULT_COLOR });
+              }}
+              title="Change color"
+            />
+            <input
+              type="text"
+              id="connection-name-prompt-input"
+              name="connectionNamePromptInput"
+              value={connectionNamePrompt.name}
+              onChange={(e) => setConnectionNamePrompt({ ...connectionNamePrompt, name: e.target.value })}
+              onKeyDown={(e) => { 
+                if (e.key === 'Enter') handleConnectionPromptSubmit(); 
+                if (e.key === 'Escape') handleConnectionPromptClose();
+              }}
+              style={{ flex: 1, padding: '10px', borderRadius: '5px', border: '1px solid #ccc', marginRight: '10px' }}
+              autoFocus
+            />
+            <button
+              onClick={handleConnectionPromptSubmit}
+              style={{ 
+                padding: '10px', 
+                backgroundColor: connectionNamePrompt.color || NODE_DEFAULT_COLOR, 
+                color: '#bdb5b5', 
+                border: 'none', 
+                borderRadius: '5px', 
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: '50px',
+                minHeight: '44px'
+              }}
+              title="Create connection type"
+            >
+              <ArrowBigRightDash size={16} color="#bdb5b5" />
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  };
 
   const renderCustomPrompt = () => {
     if (!nodeNamePrompt.visible) return null;
@@ -2979,10 +3104,23 @@ function NodeCanvas() {
                                      onClick={(e) => handleArrowClick(sourceNode.id, e)}
                                      onMouseDown={(e) => e.stopPropagation()}
                                    >
+                                     {/* Glow effect for arrow */}
                                      <polygon
                                        points="-12,15 12,15 0,-15"
-                                       fill="black"
-                                       stroke="black"
+                                       fill={edgeColor}
+                                       stroke={edgeColor}
+                                       strokeWidth="8"
+                                       strokeLinejoin="round"
+                                       strokeLinecap="round"
+                                       opacity="0.3"
+                                       style={{ 
+                                         filter: `blur(2px) drop-shadow(0 0 6px ${edgeColor})`
+                                       }}
+                                     />
+                                     <polygon
+                                       points="-12,15 12,15 0,-15"
+                                       fill={edgeColor}
+                                       stroke={edgeColor}
                                        strokeWidth="6"
                                        strokeLinejoin="round"
                                        strokeLinecap="round"
@@ -2999,10 +3137,23 @@ function NodeCanvas() {
                                      onClick={(e) => handleArrowClick(destNode.id, e)}
                                      onMouseDown={(e) => e.stopPropagation()}
                                    >
+                                     {/* Glow effect for arrow */}
                                      <polygon
                                        points="-12,15 12,15 0,-15"
-                                       fill="black"
-                                       stroke="black"
+                                       fill={edgeColor}
+                                       stroke={edgeColor}
+                                       strokeWidth="8"
+                                       strokeLinejoin="round"
+                                       strokeLinecap="round"
+                                       opacity="0.3"
+                                       style={{ 
+                                         filter: `blur(2px) drop-shadow(0 0 6px ${edgeColor})`
+                                       }}
+                                     />
+                                     <polygon
+                                       points="-12,15 12,15 0,-15"
+                                       fill={edgeColor}
+                                       stroke={edgeColor}
                                        strokeWidth="6"
                                        strokeLinejoin="round"
                                        strokeLinecap="round"
@@ -3438,6 +3589,7 @@ function NodeCanvas() {
           )}
 
           {renderCustomPrompt()}
+          {renderConnectionNamePrompt()}
           
           {/* Node Selection Grid */}
           <NodeSelectionGrid
@@ -3447,6 +3599,27 @@ function NodeCanvas() {
             position={nodeSelectionGrid.position}
             width={300}
             searchTerm={nodeNamePrompt.name}
+          />
+
+          {/* Connection Selection Grid */}
+          <NodeSelectionGrid
+            isVisible={connectionNamePrompt.visible}
+            onNodeSelect={(node) => {
+              // When selecting an existing node for connection type
+              if (connectionNamePrompt.edgeId) {
+                updateEdge(connectionNamePrompt.edgeId, (draft) => {
+                  draft.definitionNodeIds = [node.id];
+                });
+              }
+              setConnectionNamePrompt({ visible: false, name: '', color: null, edgeId: null });
+            }}
+            onClose={() => {}} // Don't close on backdrop click for connection dialog
+            position={{ 
+              x: (typeof window !== 'undefined' ? window.innerWidth : 1200) / 2 - 150, 
+              y: HEADER_HEIGHT + 25 + 180 + 30 
+            }} // Centered below the dialog with more spacing
+            width={300}
+            searchTerm={connectionNamePrompt.name}
           />
           
           {debugMode && (
@@ -3502,12 +3675,15 @@ function NodeCanvas() {
         selectedNodes={selectedInstanceIds}
       />
 
-      {/* ConnectionControlPanel Component */}
-      {selectedEdgeId && (
+      {/* ConnectionControlPanel Component - hidden when connection dialog is open */}
+      {selectedEdgeId && !connectionNamePrompt.visible && (
         <ConnectionControlPanel
           selectedEdge={edgesMap.get(selectedEdgeId)}
           onClose={() => setSelectedEdgeId(null)}
           typeListOpen={typeListMode !== 'closed'}
+          onOpenConnectionDialog={(edgeId) => {
+            setConnectionNamePrompt({ visible: true, name: '', color: NODE_DEFAULT_COLOR, edgeId });
+          }}
         />
       )}
 
@@ -3536,7 +3712,11 @@ function NodeCanvas() {
           isVisible={dialogColorPickerVisible}
           onClose={handleDialogColorPickerClose}
           onColorChange={handleDialogColorChange}
-          currentColor={nodeNamePrompt.color || 'maroon'}
+          currentColor={
+            nodeNamePrompt.visible 
+              ? (nodeNamePrompt.color || NODE_DEFAULT_COLOR)
+              : (connectionNamePrompt.color || NODE_DEFAULT_COLOR)
+          }
           position={dialogColorPickerPosition}
           direction="down-left"
           parentContainerRef={dialogContainerRef}

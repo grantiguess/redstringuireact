@@ -6,6 +6,7 @@
   z-index: 20001;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: auto;
+  transform-origin: center center; /* Ensure growth happens from center */
 }
 
 .connection-control-panel.with-typelist {
@@ -15,13 +16,16 @@
 .connection-control-content {
   display: flex;
   align-items: center;
-  background: #8B4513;
+  background: #260000;
   border-radius: 25px;
   padding: 8px 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  height: 50px;
+  min-height: 50px;
   min-width: 200px;
+  max-width: 400px;
   gap: 16px;
+  white-space: nowrap;
+  overflow: visible;
 }
 
 .arrow-control {
@@ -60,10 +64,20 @@
   justify-content: center;
   cursor: pointer;
   transition: transform 0.2s ease;
+  min-width: 0; /* Allow flex shrinking */
+  max-width: 250px; /* Reasonable max width */
 }
 
 .connection-node-display:hover {
   transform: scale(1.05);
+}
+
+.connection-node-display .node-type {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  min-width: 80px;
 }
 
 .default-connection-node {
@@ -76,11 +90,21 @@
   color: #333;
   font-size: 14px;
   font-weight: 500;
+  white-space: nowrap;
+  min-width: 100px;
+  max-width: 200px;
 }
 
 .connection-node-icon {
   font-size: 16px;
   font-weight: bold;
+  flex-shrink: 0; /* Don't shrink the icon */
+}
+
+.default-connection-node span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .connection-control-panel .node-type {

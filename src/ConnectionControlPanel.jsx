@@ -1,9 +1,9 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import './ConnectionControlPanel.css';
 import useGraphStore from './store/graphStore';
 import NodeType from './NodeType';
 
-const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false }) => {
+const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConnectionDialog }) => {
   const nodePrototypesMap = useGraphStore((state) => state.nodePrototypes);
   const updateEdge = useGraphStore((state) => state.updateEdge);
 
@@ -25,21 +25,37 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false }) => {
   const connectionColor = getConnectionColor();
 
   const handleNodeClick = () => {
-    // Get all available type nodes from the store
-    const availableTypes = Array.from(nodePrototypesMap.values())
-      .filter(node => node.typeNodeId === null); // Get base types
-    
-    if (availableTypes.length === 0) return;
-    
-    const currentTypeId = selectedEdge.definitionNodeIds?.[0];
-    const currentIndex = availableTypes.findIndex(type => type.id === currentTypeId);
-    const nextIndex = (currentIndex + 1) % availableTypes.length;
-    const nextType = availableTypes[nextIndex];
-    
-    // Update edge to use the new type node as definition
-    updateEdge(selectedEdge.id, (draft) => {
-      draft.definitionNodeIds = [nextType.id];
-    });
+    // If no connection type is assigned, open the naming dialog
+    if (!currentEdgeType && onOpenConnectionDialog) {
+      onOpenConnectionDialog(selectedEdge.id);
+    } else {
+      // If there is a type, cycle through available types
+      const availableTypes = Array.from(nodePrototypesMap.values())
+        .filter(node => node.typeNodeId === null) // Get base types
+        .sort((a, b) => a.name.localeCompare(b.name)); // Sort alphabetically for consistent order
+      
+      if (availableTypes.length <= 1) {
+        // If only one or no types available, open dialog to create new one
+        if (onOpenConnectionDialog) {
+          onOpenConnectionDialog(selectedEdge.id);
+        }
+        return;
+      }
+      
+      const currentTypeId = selectedEdge.definitionNodeIds?.[0];
+      const currentIndex = availableTypes.findIndex(type => type.id === currentTypeId);
+      
+      // If current type not found in available types, start from beginning
+      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % availableTypes.length;
+      const nextType = availableTypes[nextIndex];
+      
+      console.log('Cycling from', currentEdgeType?.name, 'to', nextType.name);
+      
+      // Update edge to use the new type node as definition
+      updateEdge(selectedEdge.id, (draft) => {
+        draft.definitionNodeIds = [nextType.id];
+      });
+    }
   };
 
   const handleArrowToggle = (direction) => {
@@ -71,9 +87,6 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false }) => {
           <div 
             className={`arrow-dropdown ${hasLeftArrow ? 'active' : ''}`}
             onClick={() => handleArrowToggle('left')}
-            style={hasLeftArrow ? {
-              boxShadow: `0 0 15px ${connectionColor}60, 0 0 30px ${connectionColor}30`
-            } : {}}
           >
             <ChevronLeft size={20} />
           </div>
@@ -82,20 +95,26 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false }) => {
         <div 
           className="connection-node-display" 
           onClick={handleNodeClick}
-          style={{
-            '--connection-color': connectionColor,
-            boxShadow: `0 0 20px ${connectionColor}40, 0 0 40px ${connectionColor}20`
-          }}
         >
           {currentEdgeType ? (
             <NodeType 
-              node={currentEdgeType}
-              isSelected={false}
+              name={currentEdgeType.name}
+              color={currentEdgeType.color}
               onClick={handleNodeClick}
             />
           ) : (
             <div className="default-connection-node">
-              <div className="connection-node-icon">→</div>
+              <div className="connection-node-icon" style={{ 
+                backgroundColor: '#000', 
+                color: '#fff', 
+                borderRadius: '4px', 
+                padding: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Plus size={16} />
+              </div>
               <span>Connection</span>
             </div>
           )}
@@ -105,9 +124,6 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false }) => {
           <div 
             className={`arrow-dropdown ${hasRightArrow ? 'active' : ''}`}
             onClick={() => handleArrowToggle('right')}
-            style={hasRightArrow ? {
-              boxShadow: `0 0 15px ${connectionColor}60, 0 0 30px ${connectionColor}30`
-            } : {}}
           >
             <ChevronRight size={20} />
           </div>
