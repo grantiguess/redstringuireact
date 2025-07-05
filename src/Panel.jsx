@@ -381,6 +381,10 @@ const Panel = forwardRef(
     nodeDefinitionIndices = new Map(), // Context-specific definition indices 
     onStartHurtleAnimationFromPanel, // <<< Add new prop for animation
   }, ref) => {
+    const [isScrolling, setIsScrolling] = useState(false);
+    const [isHoveringScrollbar, setIsHoveringScrollbar] = useState(false);
+    const scrollTimeoutRef = useRef(null);
+    const scrollbarHoverTimeoutRef = useRef(null);
     panelRenderCount++; // Increment counter
     // --- Zustand State and Actions ---
     /* // Store subscription remains commented out
@@ -926,6 +930,58 @@ const Panel = forwardRef(
         }
       };
     }, [handleResizeMouseMove, handleResizeMouseUp]);
+
+    // Scrollbar hover detection
+    const handleScrollbarMouseEnter = useCallback((e) => {
+        // Check if mouse is over the scrollbar area (right edge of the element)
+        const rect = e.currentTarget.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const scrollbarWidth = 20; // Should match CSS scrollbar width
+        
+        if (mouseX >= rect.width - scrollbarWidth) {
+            setIsHoveringScrollbar(true);
+            if (scrollbarHoverTimeoutRef.current) {
+                clearTimeout(scrollbarHoverTimeoutRef.current);
+            }
+        }
+    }, []);
+
+    const handleScrollbarMouseMove = useCallback((e) => {
+        // Check if mouse is still over the scrollbar area
+        const rect = e.currentTarget.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const scrollbarWidth = 20; // Should match CSS scrollbar width
+        
+        const isOverScrollbar = mouseX >= rect.width - scrollbarWidth;
+        
+        if (isOverScrollbar && !isHoveringScrollbar) {
+            setIsHoveringScrollbar(true);
+            if (scrollbarHoverTimeoutRef.current) {
+                clearTimeout(scrollbarHoverTimeoutRef.current);
+            }
+        } else if (!isOverScrollbar && isHoveringScrollbar) {
+            // Start timeout to fade scrollbar after leaving
+            scrollbarHoverTimeoutRef.current = setTimeout(() => {
+                setIsHoveringScrollbar(false);
+            }, 300); // 300ms delay before fading
+        }
+    }, [isHoveringScrollbar]);
+
+    const handleScrollbarMouseLeave = useCallback(() => {
+        // Start timeout to fade scrollbar after leaving the element
+        scrollbarHoverTimeoutRef.current = setTimeout(() => {
+            setIsHoveringScrollbar(false);
+        }, 300); // 300ms delay before fading
+    }, []);
+
+    // Cleanup scrollbar hover timeout on unmount
+    useEffect(() => {
+        return () => {
+            if (scrollbarHoverTimeoutRef.current) {
+                clearTimeout(scrollbarHoverTimeoutRef.current);
+            }
+        };
+    }, []);
 
     // <<< Add Effect to reset animation state after transition >>>
     useEffect(() => {
@@ -3003,7 +3059,7 @@ const Panel = forwardRef(
                             })()}
                             {/* Scrollable Tab Area (uses store state) */} 
                             {isExpanded && (
-                                <div style={{ flexGrow: 1, overflow: 'hidden', position: 'relative', height: '100%' }}>
+                                <div style={{ flexGrow: 1, position: 'relative', height: '100%' }}>
                                     <div 
                                         ref={tabBarRef} 
                                         className="hide-scrollbar"
@@ -3044,8 +3100,20 @@ const Panel = forwardRef(
 
                 {/* Content Area */} 
                 <div 
-                    style={{ flex: 1, overflow: 'hidden' }}
-                    className="hide-scrollbar"
+                    className={`panel-content ${isScrolling ? 'scrolling' : ''} ${isHoveringScrollbar ? 'hovering-scrollbar' : ''}`}
+                    style={{ flex: 1 }}
+                    onScroll={() => {
+                        setIsScrolling(true);
+                        if (scrollTimeoutRef.current) {
+                            clearTimeout(scrollTimeoutRef.current);
+                        }
+                        scrollTimeoutRef.current = setTimeout(() => {
+                            setIsScrolling(false);
+                        }, 1500);
+                    }}
+                    onMouseEnter={handleScrollbarMouseEnter}
+                    onMouseMove={handleScrollbarMouseMove}
+                    onMouseLeave={handleScrollbarMouseLeave}
                 >
                     {panelContent}
                 </div>

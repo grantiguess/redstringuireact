@@ -1,0 +1,91 @@
+.connection-control-panel {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 20px;
+  z-index: 1000;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: auto;
+}
+
+.connection-control-panel.with-typelist {
+  bottom: 80px;
+}
+
+.connection-control-content {
+  display: flex;
+  align-items: center;
+  background: #8B4513;
+  border-radius: 25px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  height: 50px;
+  min-width: 200px;
+  gap: 16px;
+}
+
+.arrow-control {
+  display: flex;
+  align-items: center;
+}
+
+.arrow-dropdown {
+  background: var(--canvas-background, #f5f5f5);
+  border-radius: 8px;
+  padding: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+  border: 2px solid transparent;
+}
+
+.arrow-dropdown:hover {
+  background: var(--canvas-background-hover, #e0e0e0);
+  transform: translateY(-1px);
+}
+
+.arrow-dropdown.active {
+  background: var(--canvas-background, #f5f5f5);
+  border-color: #8B4513;
+  box-shadow: 0 0 0 2px rgba(139, 69, 19, 0.2);
+}
+
+.connection-node-display {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.connection-node-display:hover {
+  transform: scale(1.05);
+}
+
+.default-connection-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--canvas-background, #f5f5f5);
+  border-radius: 8px;
+  padding: 6px 12px;
+  color: #333;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.connection-node-icon {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.connection-control-panel .node-type {
+  background: var(--canvas-background, #f5f5f5);
+  border-radius: 8px;
+  margin: 0;
+  min-width: 100px;
+}

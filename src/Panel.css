@@ -194,6 +194,45 @@ header .editable-title-input::selection {
   overflow-y: auto; /* Allow content to scroll */
 }
 
+/* Custom scrollbar styling */
+.panel-content::-webkit-scrollbar {
+  width: 20px; /* Wider hitbox for better hover detection */
+}
+
+.panel-content::-webkit-scrollbar-track {
+  background: rgba(38, 0, 0, 0.05); /* Very subtle track background for hover target */
+  border-radius: 4px;
+}
+
+.panel-content::-webkit-scrollbar-thumb {
+  background-color: rgba(38, 0, 0, 0.1); /* Start at 10% opacity as requested */
+  border-radius: 4px;
+  border: 6px solid transparent; /* Create visual 8px thumb with larger hitbox */
+  background-clip: content-box;
+  transition: background-color 0.3s ease, border-width 0.3s ease;
+  min-height: 20px; /* Ensure minimum thumb size for better interaction */
+}
+
+/* Scrollbar fade effect for Firefox */
+.panel-content {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(38, 0, 0, 0.1) rgba(38, 0, 0, 0.05);
+  transition: scrollbar-color 0.3s ease;
+}
+
+/* JavaScript-based hover detection using class */
+.panel-content.hovering-scrollbar::-webkit-scrollbar-thumb,
+.panel-content.scrolling::-webkit-scrollbar-thumb {
+  background-color: #260000; /* Full opacity on hover or scroll */
+  border-width: 4px; /* Expand to 12px visual width */
+}
+
+/* Firefox hover states */
+.panel-content.hovering-scrollbar,
+.panel-content.scrolling {
+  scrollbar-color: #260000 rgba(38, 0, 0, 0.1);
+}
+
 /* Hide content elements when panel is collapsed */
 .panel-container.collapsed .panel-tab-bar,
 .panel-container.collapsed .panel-content {

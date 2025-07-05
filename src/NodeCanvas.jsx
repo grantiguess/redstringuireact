@@ -8,6 +8,7 @@ import Node from './Node.jsx';
 import PlusSign from './PlusSign.jsx'; // Import the new PlusSign component
 import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import AbstractionCarousel from './AbstractionCarousel.jsx'; // Import the AbstractionCarousel component
+import ConnectionControlPanel from './ConnectionControlPanel.jsx'; // Import the ConnectionControlPanel component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
 import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal, Bookmark } from 'lucide-react'; // Icons for PieMenu
@@ -79,6 +80,7 @@ function NodeCanvas() {
   const createNewGraph = useGraphStore((state) => state.createNewGraph);
   const setActiveGraph = useGraphStore((state) => state.setActiveGraph);
   const setActiveDefinitionNode = useGraphStore((state) => state.setActiveDefinitionNode);
+  const setSelectedEdgeId = useGraphStore((state) => state.setSelectedEdgeId);
   const setNodeType = useGraphStore((state) => state.setNodeType);
   const openRightPanelNodeTab = useGraphStore((state) => state.openRightPanelNodeTab);
   const createAndAssignGraphDefinition = useGraphStore((state) => state.createAndAssignGraphDefinition);
@@ -147,6 +149,7 @@ function NodeCanvas() {
   // <<< SELECT STATE DIRECTLY >>>
   const activeGraphId = useGraphStore(state => state.activeGraphId);
   const activeDefinitionNodeId = useGraphStore(state => state.activeDefinitionNodeId);
+  const selectedEdgeId = useGraphStore(state => state.selectedEdgeId);
   const graphsMap = useGraphStore(state => state.graphs);
   const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
   const edgesMap = useGraphStore(state => state.edges);
@@ -2867,7 +2870,11 @@ function NodeCanvas() {
                              y2={shouldShortenDest ? (destIntersection?.y || y2) : y2}
                       stroke="black"
                              strokeWidth="6"
-                             style={{ transition: 'stroke 0.2s ease' }}
+                             style={{ transition: 'stroke 0.2s ease', cursor: 'pointer' }}
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               setSelectedEdgeId(edge.id);
+                             }}
                            />
                           
                                                                                                                   {/* Smart directional arrows with clickable toggle */}
