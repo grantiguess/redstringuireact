@@ -3,13 +3,13 @@
   left: 50%;
   transform: translateX(-50%);
   bottom: 20px;
-  z-index: 1000;
+  z-index: 20001;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: auto;
 }
 
 .connection-control-panel.with-typelist {
-  bottom: 80px;
+  bottom: 70px;
 }
 
 .connection-control-content {

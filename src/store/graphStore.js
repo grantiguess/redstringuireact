@@ -128,6 +128,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     activeGraphId: null,
     activeDefinitionNodeId: null, // This now refers to a prototypeId
     selectedEdgeId: null, // Currently selected edge for editing
+    typeListMode: 'closed', // TypeList state: 'closed', 'node', 'connection'
     rightPanelTabs: [{ type: 'home', isActive: true }], 
     expandedGraphIds: new Set(),
     savedNodeIds: new Set(), // This now refers to prototype IDs
@@ -828,6 +829,12 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   setSelectedEdgeId: (edgeId) => {
      console.log(`[Store Action] Setting selectedEdgeId to: ${edgeId}`);
      set({ selectedEdgeId: edgeId });
+  },
+
+  // Set TypeList mode
+  setTypeListMode: (mode) => {
+     console.log(`[Store Action] Setting typeListMode to: ${mode}`);
+     set({ typeListMode: mode });
   },
 
   // Set the type of a node prototype

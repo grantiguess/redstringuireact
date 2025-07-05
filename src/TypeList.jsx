@@ -9,8 +9,9 @@ import useGraphStore from './store/graphStore';
 import { ChevronUp, Square, Share2 } from 'lucide-react'; // Replaced RoundedRectangle with Square
 
 const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
-  // Modes: 'closed', 'node', 'connection'
-  const [mode, setMode] = useState('closed'); 
+  // Use shared state from store for TypeList mode
+  const mode = useGraphStore((state) => state.typeListMode);
+  const setTypeListMode = useGraphStore((state) => state.setTypeListMode); 
   // const [isAnimating, setIsAnimating] = useState(false); // Basic animation lock
 
   // Get store data for finding type nodes and edges
@@ -154,11 +155,9 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
 
   const cycleMode = () => {
     // Restore cycle: closed -> node -> connection -> closed
-    setMode(currentMode => {
-        if (currentMode === 'closed') return 'node';
-        if (currentMode === 'node') return 'connection'; // Restore connection mode
-        return 'closed';
-    });
+    const newMode = mode === 'closed' ? 'node' : 
+                   mode === 'node' ? 'connection' : 'closed';
+    setTypeListMode(newMode);
     // TODO: Add animation logic if needed
   };
 

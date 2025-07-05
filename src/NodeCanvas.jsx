@@ -150,6 +150,7 @@ function NodeCanvas() {
   const activeGraphId = useGraphStore(state => state.activeGraphId);
   const activeDefinitionNodeId = useGraphStore(state => state.activeDefinitionNodeId);
   const selectedEdgeId = useGraphStore(state => state.selectedEdgeId);
+  const typeListMode = useGraphStore(state => state.typeListMode);
   const graphsMap = useGraphStore(state => state.graphs);
   const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
   const edgesMap = useGraphStore(state => state.edges);
@@ -1707,6 +1708,12 @@ function NodeCanvas() {
           return;
       }
 
+      // Clear selected edge when clicking on empty canvas
+      if (selectedEdgeId) {
+          setSelectedEdgeId(null);
+          return;
+      }
+
       const rect = containerRef.current.getBoundingClientRect();
       const mouseX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
       const mouseY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
@@ -2800,7 +2807,17 @@ function NodeCanvas() {
 
                       
 
-                      const edgeColor = destNode.color || NODE_DEFAULT_COLOR; // Use destination node color
+                      // Get edge color from definition node, fallback to destination node color
+                      const getEdgeColor = () => {
+                        if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+                          const definitionNode = nodePrototypesMap.get(edge.definitionNodeIds[0]);
+                          if (definitionNode) {
+                            return definitionNode.color || NODE_DEFAULT_COLOR;
+                          }
+                        }
+                        return destNode.color || NODE_DEFAULT_COLOR;
+                      };
+                      const edgeColor = getEdgeColor();
                       
                       // Calculate arrow position and rotation
                       const dx = x2 - x1;
@@ -2868,7 +2885,7 @@ function NodeCanvas() {
                              y1={shouldShortenSource ? (sourceIntersection?.y || y1) : y1}
                              x2={shouldShortenDest ? (destIntersection?.x || x2) : x2}
                              y2={shouldShortenDest ? (destIntersection?.y || y2) : y2}
-                      stroke="black"
+                      stroke={edgeColor}
                              strokeWidth="6"
                              style={{ transition: 'stroke 0.2s ease', cursor: 'pointer' }}
                              onClick={(e) => {
@@ -3456,6 +3473,15 @@ function NodeCanvas() {
         setSelectedNodes={setSelectedInstanceIds}
         selectedNodes={selectedInstanceIds}
       />
+
+      {/* ConnectionControlPanel Component */}
+      {selectedEdgeId && (
+        <ConnectionControlPanel
+          selectedEdge={edgesMap.get(selectedEdgeId)}
+          onClose={() => setSelectedEdgeId(null)}
+          typeListOpen={typeListMode !== 'closed'}
+        />
+      )}
 
       {/* AbstractionCarousel Component */}
       {abstractionCarouselVisible && abstractionCarouselNode && (

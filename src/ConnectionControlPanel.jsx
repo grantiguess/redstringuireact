@@ -4,7 +4,7 @@ import './ConnectionControlPanel.css';
 import useGraphStore from './store/graphStore';
 import NodeType from './NodeType';
 
-const ConnectionControlPanel = ({ selectedEdge, onClose }) => {
+const ConnectionControlPanel = ({ selectedEdge, onClose, typeListOpen = false }) => {
   const edgePrototypesMap = useGraphStore((state) => state.edgePrototypes);
   const nodePrototypesMap = useGraphStore((state) => state.nodePrototypes);
   const setEdgeTypeAction = useGraphStore((state) => state.setEdgeType);
@@ -20,15 +20,21 @@ const ConnectionControlPanel = ({ selectedEdge, onClose }) => {
     : null;
 
   const handleNodeClick = () => {
-    // For now, just cycle through available edge types
-    const availableTypes = Array.from(edgePrototypesMap.values());
-    const currentIndex = availableTypes.findIndex(type => 
-      selectedEdge.definitionNodeIds && selectedEdge.definitionNodeIds.includes(type.id)
-    );
+    // Get all available type nodes from the store
+    const availableTypes = Array.from(nodePrototypesMap.values())
+      .filter(node => node.typeNodeId === null); // Get base types
+    
+    if (availableTypes.length === 0) return;
+    
+    const currentTypeId = selectedEdge.definitionNodeIds?.[0];
+    const currentIndex = availableTypes.findIndex(type => type.id === currentTypeId);
     const nextIndex = (currentIndex + 1) % availableTypes.length;
     const nextType = availableTypes[nextIndex];
     
-    setEdgeTypeAction(selectedEdge.id, nextType.id);
+    // Update edge to use the new type node as definition
+    updateEdge(selectedEdge.id, (draft) => {
+      draft.definitionNodeIds = [nextType.id];
+    });
   };
 
   const handleArrowToggle = (direction) => {
@@ -54,7 +60,7 @@ const ConnectionControlPanel = ({ selectedEdge, onClose }) => {
   const hasRightArrow = selectedEdge.directionality?.arrowsToward?.has(selectedEdge.destinationId);
 
   return (
-    <div className="connection-control-panel">
+    <div className={`connection-control-panel ${typeListOpen ? 'with-typelist' : ''}`}>
       <div className="connection-control-content">
         <div className="arrow-control left-arrow">
           <div 
