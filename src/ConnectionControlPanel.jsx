@@ -33,6 +33,7 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
       // When becoming invisible, ALWAYS start exit animation if we're currently rendered
       // Never immediately hide - let the animation complete first
       if (shouldRender) {
+        console.log('Starting exit animation - setting state to exiting');
         setAnimationState('exiting');
       }
       // If shouldRender is already false, do nothing - component is already hidden
@@ -48,6 +49,7 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
 
   // Handle animation end events
   const handleAnimationEnd = (e) => {
+    console.log(`Animation ended: ${e.animationName} Current state: ${animationState}`);
     if (e.animationName === 'connectionPanelFlyIn') {
       setAnimationState('visible');
     } else if (e.animationName === 'connectionPanelFlyOut') {

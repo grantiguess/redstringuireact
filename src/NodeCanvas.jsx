@@ -569,8 +569,11 @@ function NodeCanvas() {
       // Edge was deselected - start exit animation but keep panel mounted
       setControlPanelVisible(false);
       // Don't set controlPanelShouldShow to false yet - let the animation complete
+    } else if (!shouldShow && selectedEdgeId && controlPanelVisible) {
+      // Dialog opened while edge is still selected - hide panel with animation
+      setControlPanelVisible(false);
     } else if (!shouldShow && !selectedEdgeId) {
-      // Other cases where panel should be hidden (like dialog opening)
+      // Other cases where panel should be hidden
       setControlPanelVisible(false);
     }
   }, [selectedEdgeId, connectionNamePrompt.visible, controlPanelVisible]);
