@@ -34,7 +34,7 @@
 }
 
 .arrow-dropdown {
-  background: var(--canvas-background, #f5f5f5);
+  background: #bdb5b5; /* Canvas color background */
   border-radius: 8px;
   padding: 6px;
   cursor: pointer;
@@ -47,12 +47,12 @@
 }
 
 .arrow-dropdown:hover {
-  background: var(--canvas-background-hover, #e0e0e0);
+  background: #a8a0a0; /* Slightly darker canvas color on hover */
   transform: translateY(-1px);
 }
 
 .arrow-dropdown.active {
-  background: var(--canvas-background, #f5f5f5);
+  background: #bdb5b5; /* Canvas color background */
   border-color: #8B4513;
   box-shadow: 0 0 0 2px rgba(139, 69, 19, 0.2);
 }

@@ -1,19 +1,26 @@
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import './ConnectionControlPanel.css';
 import useGraphStore from './store/graphStore';
 import NodeType from './NodeType';
 
 const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConnectionDialog }) => {
   const nodePrototypesMap = useGraphStore((state) => state.nodePrototypes);
+  const edgePrototypesMap = useGraphStore((state) => state.edgePrototypes);
   const updateEdge = useGraphStore((state) => state.updateEdge);
 
   if (!selectedEdge) return null;
 
   const destinationNode = nodePrototypesMap.get(selectedEdge.destinationId);
   
+  // Check for edge type in definitionNodeIds first, then fallback to typeNodeId
   const currentEdgeType = selectedEdge.definitionNodeIds && selectedEdge.definitionNodeIds.length > 0 
     ? nodePrototypesMap.get(selectedEdge.definitionNodeIds[0])
-    : null;
+    : selectedEdge.typeNodeId 
+      ? edgePrototypesMap.get(selectedEdge.typeNodeId)
+      : null;
+  
+  // Check if this is a base connection (or equivalent)
+  const isBaseConnection = !currentEdgeType || currentEdgeType?.id === 'base-connection-prototype';
 
   // Get the connection color for glow effect
   const getConnectionColor = () => {
@@ -69,27 +76,37 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
           className="connection-node-display" 
           onClick={handleNodeClick}
         >
-          {currentEdgeType ? (
+          {isBaseConnection ? (
+            <div className="base-connection-node" style={{
+              backgroundColor: '#bdb5b5', // Canvas color background
+              borderRadius: '8px',
+              padding: '6px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              border: '1px solid #ddd'
+            }}>
+              <span style={{ 
+                color: '#8B0000', // Maroon text
+                fontSize: '16px',
+                fontWeight: 'bold'
+              }}>
+                +
+              </span>
+              <span style={{ 
+                color: '#8B0000', // Maroon text
+                fontSize: '14px',
+                fontWeight: 'bold'
+              }}>
+                Connection
+              </span>
+            </div>
+          ) : (
             <NodeType 
               name={currentEdgeType.name}
               color={currentEdgeType.color}
               onClick={handleNodeClick}
             />
-          ) : (
-            <div className="default-connection-node">
-              <div className="connection-node-icon" style={{ 
-                backgroundColor: '#000', 
-                color: '#fff', 
-                borderRadius: '4px', 
-                padding: '4px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <Plus size={16} />
-              </div>
-              <span>Connection</span>
-            </div>
           )}
         </div>
         

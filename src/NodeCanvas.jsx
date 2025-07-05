@@ -153,6 +153,7 @@ function NodeCanvas() {
   const typeListMode = useGraphStore(state => state.typeListMode);
   const graphsMap = useGraphStore(state => state.graphs);
   const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
+  const edgePrototypesMap = useGraphStore(state => state.edgePrototypes);
   const edgesMap = useGraphStore(state => state.edges);
   const savedNodeIds = useGraphStore(state => state.savedNodeIds);
   const savedGraphIds = useGraphStore(state => state.savedGraphIds);
@@ -2064,8 +2065,8 @@ function NodeCanvas() {
             <strong style={{ fontSize: '18px' }}>Name Your Connection</strong>
           </div>
           <div style={{ textAlign: 'center', marginBottom: '15px', color: '#666', fontSize: '14px' }}>
-            The thing that will define this connection.<br />
-            The name will change based on your Thing's conjugations.
+            The Thing that will define your Connection,<br />
+            in verb form if available.
           </div>
           <div style={{ display: 'flex', alignItems: 'center' }}>
             <Palette
@@ -2933,14 +2934,28 @@ function NodeCanvas() {
 
                       
 
-                      // Get edge color from definition node, fallback to destination node color
+                      // Get edge color - prioritize definitionNodeIds for custom types, then typeNodeId for base types
                       const getEdgeColor = () => {
+                        // First check definitionNodeIds (for custom connection types set via control panel)
                         if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
                           const definitionNode = nodePrototypesMap.get(edge.definitionNodeIds[0]);
                           if (definitionNode) {
                             return definitionNode.color || NODE_DEFAULT_COLOR;
                           }
                         }
+                        
+                        // Then check typeNodeId (for base connection type)
+                        if (edge.typeNodeId) {
+                          // Special handling for base connection prototype - ensure it's black
+                          if (edge.typeNodeId === 'base-connection-prototype') {
+                            return '#000000'; // Black color for base connection
+                          }
+                          const edgePrototype = edgePrototypesMap.get(edge.typeNodeId);
+                          if (edgePrototype) {
+                            return edgePrototype.color || NODE_DEFAULT_COLOR;
+                          }
+                        }
+                        
                         return destNode.color || NODE_DEFAULT_COLOR;
                       };
                       const edgeColor = getEdgeColor();
@@ -3006,8 +3021,8 @@ function NodeCanvas() {
                   return (
                         <g key={`edge-${edge.id}-${idx}`}>
                                                  {/* Main edge line - always same thickness */}
-                    {/* Glow effect for selected edge */}
-                    {isSelected && (
+                    {/* Glow effect for selected or hovered edge */}
+                    {(isSelected || isHovered) && (
                       <line
                         x1={shouldShortenSource ? (sourceIntersection?.x || x1) : x1}
                         y1={shouldShortenSource ? (sourceIntersection?.y || y1) : y1}
@@ -3015,7 +3030,7 @@ function NodeCanvas() {
                         y2={shouldShortenDest ? (destIntersection?.y || y2) : y2}
                         stroke={edgeColor}
                         strokeWidth="12"
-                        opacity="0.3"
+                        opacity={isSelected ? "0.3" : "0.2"}
                         style={{ 
                           filter: `blur(3px) drop-shadow(0 0 8px ${edgeColor})`
                         }}
@@ -3104,19 +3119,21 @@ function NodeCanvas() {
                                      onClick={(e) => handleArrowClick(sourceNode.id, e)}
                                      onMouseDown={(e) => e.stopPropagation()}
                                    >
-                                     {/* Glow effect for arrow */}
-                                     <polygon
-                                       points="-12,15 12,15 0,-15"
-                                       fill={edgeColor}
-                                       stroke={edgeColor}
-                                       strokeWidth="8"
-                                       strokeLinejoin="round"
-                                       strokeLinecap="round"
-                                       opacity="0.3"
-                                       style={{ 
-                                         filter: `blur(2px) drop-shadow(0 0 6px ${edgeColor})`
-                                       }}
-                                     />
+                                     {/* Glow effect for arrow - only when selected or hovered */}
+                                     {(isSelected || isHovered) && (
+                                       <polygon
+                                         points="-12,15 12,15 0,-15"
+                                         fill={edgeColor}
+                                         stroke={edgeColor}
+                                         strokeWidth="8"
+                                         strokeLinejoin="round"
+                                         strokeLinecap="round"
+                                         opacity={isSelected ? "0.3" : "0.2"}
+                                         style={{ 
+                                           filter: `blur(2px) drop-shadow(0 0 6px ${edgeColor})`
+                                         }}
+                                       />
+                                     )}
                                      <polygon
                                        points="-12,15 12,15 0,-15"
                                        fill={edgeColor}
@@ -3137,19 +3154,21 @@ function NodeCanvas() {
                                      onClick={(e) => handleArrowClick(destNode.id, e)}
                                      onMouseDown={(e) => e.stopPropagation()}
                                    >
-                                     {/* Glow effect for arrow */}
-                                     <polygon
-                                       points="-12,15 12,15 0,-15"
-                                       fill={edgeColor}
-                                       stroke={edgeColor}
-                                       strokeWidth="8"
-                                       strokeLinejoin="round"
-                                       strokeLinecap="round"
-                                       opacity="0.3"
-                                       style={{ 
-                                         filter: `blur(2px) drop-shadow(0 0 6px ${edgeColor})`
-                                       }}
-                                     />
+                                     {/* Glow effect for arrow - only when selected or hovered */}
+                                     {(isSelected || isHovered) && (
+                                       <polygon
+                                         points="-12,15 12,15 0,-15"
+                                         fill={edgeColor}
+                                         stroke={edgeColor}
+                                         strokeWidth="8"
+                                         strokeLinejoin="round"
+                                         strokeLinecap="round"
+                                         opacity={isSelected ? "0.3" : "0.2"}
+                                         style={{ 
+                                           filter: `blur(2px) drop-shadow(0 0 6px ${edgeColor})`
+                                         }}
+                                       />
+                                     )}
                                      <polygon
                                        points="-12,15 12,15 0,-15"
                                        fill={edgeColor}
@@ -3181,7 +3200,7 @@ function NodeCanvas() {
                                            cx={sourceArrowX}
                                            cy={sourceArrowY}
                                            r="8"
-                                           fill="black"
+                                           fill={edgeColor}
                                            style={{ pointerEvents: 'none' }}
                                          />
                                        </g>
@@ -3203,7 +3222,7 @@ function NodeCanvas() {
                                            cx={destArrowX}
                                            cy={destArrowY}
                                            r="8"
-                                           fill="black"
+                                           fill={edgeColor}
                                            style={{ pointerEvents: 'none' }}
                                          />
                                        </g>

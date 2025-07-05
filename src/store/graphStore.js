@@ -117,7 +117,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         id: connectionId,
         name: 'Connection',
         description: 'The base type for all connections. Connections are edges, relationships, verbs, actions, whatever you want them to be. They will always be at the bottom of the connection abstraction stack.',
-        color: '#4A5568', // Dark gray
+        color: '#000000', // Black
         typeNodeId: null, // No parent type - this is the most basic connection type
         definitionGraphIds: []
       });

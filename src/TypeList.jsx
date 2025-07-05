@@ -94,23 +94,38 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
       if (activeGraph && activeGraph.edgeIds) {
         activeGraph.edgeIds.forEach(edgeId => {
           const edge = edgesMap.get(edgeId);
-          if (edge && edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
-            // Connection types are stored as node prototypes referenced by definitionNodeIds
-            edge.definitionNodeIds.forEach(nodeId => {
-              usedConnectionTypeIds.add(nodeId);
-            });
+          if (edge) {
+            // Check definitionNodeIds first, then fallback to typeNodeId
+            if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+              // Connection types are stored as node prototypes referenced by definitionNodeIds
+              edge.definitionNodeIds.forEach(nodeId => {
+                usedConnectionTypeIds.add(nodeId);
+              });
+            } else if (edge.typeNodeId) {
+              // Fallback to typeNodeId (for edges created through the store)
+              usedConnectionTypeIds.add(edge.typeNodeId);
+            }
           }
         });
       }
     }
     
-    // Get the actual connection type node prototypes
+    // Get the actual connection type prototypes
     let connectionTypes = Array.from(usedConnectionTypeIds)
-      .map(id => nodePrototypesMap.get(id))
+      .map(id => {
+        // Try both nodePrototypesMap (for definitionNodeIds) and edgePrototypesMap (for typeNodeId)
+        return nodePrototypesMap.get(id) || edgePrototypesMap.get(id);
+      })
       .filter(Boolean);
       
-    // If no specific connection types are used, return empty array
-    // (we don't want to show base node types as connection types)
+    // If no specific connection types are used, show the base Connection type
+    if (connectionTypes.length === 0) {
+      // Check if base "Connection" prototype exists
+      const baseConnectionPrototype = edgePrototypesMap.get('base-connection-prototype');
+      if (baseConnectionPrototype) {
+        connectionTypes = [baseConnectionPrototype];
+      }
+    }
     
     return connectionTypes;
   }, [activeGraphId, graphsMap, nodePrototypesMap, edgesMap]);
