@@ -1,14 +1,42 @@
+import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import './ConnectionControlPanel.css';
 import useGraphStore from './store/graphStore';
 import NodeType from './NodeType';
 
-const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConnectionDialog }) => {
+const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConnectionDialog, isVisible = true, onAnimationComplete }) => {
   const nodePrototypesMap = useGraphStore((state) => state.nodePrototypes);
   const edgePrototypesMap = useGraphStore((state) => state.edgePrototypes);
   const updateEdge = useGraphStore((state) => state.updateEdge);
 
-  if (!selectedEdge) return null;
+  // Animation state management
+  const [animationState, setAnimationState] = useState('entering');
+  const [shouldRender, setShouldRender] = useState(true);
+
+  // Handle visibility changes and animation lifecycle
+  useEffect(() => {
+    if (isVisible) {
+      setShouldRender(true);
+      setAnimationState('entering');
+    } else {
+      setAnimationState('exiting');
+      // Don't immediately hide - wait for exit animation to complete
+      const timer = setTimeout(() => {
+        setShouldRender(false);
+        onAnimationComplete?.();
+      }, 300); // Match CSS animation duration
+      return () => clearTimeout(timer);
+    }
+  }, [isVisible, onAnimationComplete]);
+
+  // Handle animation end events
+  const handleAnimationEnd = (e) => {
+    if (e.animationName === 'connectionPanelFlyIn') {
+      setAnimationState('visible');
+    }
+  };
+
+  if (!selectedEdge || !shouldRender) return null;
 
   const destinationNode = nodePrototypesMap.get(selectedEdge.destinationId);
   
@@ -61,7 +89,10 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
   const hasRightArrow = selectedEdge.directionality?.arrowsToward?.has(selectedEdge.destinationId);
 
   return (
-    <div className={`connection-control-panel ${typeListOpen ? 'with-typelist' : ''}`}>
+    <div 
+      className={`connection-control-panel ${typeListOpen ? 'with-typelist' : ''} ${animationState}`}
+      onAnimationEnd={handleAnimationEnd}
+    >
       <div className="connection-control-content">
         <div className="arrow-control left-arrow">
           <div 
@@ -87,14 +118,14 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
               border: '1px solid #ddd'
             }}>
               <span style={{ 
-                color: '#8B0000', // Maroon text
+                color: '#000000', // Black text
                 fontSize: '16px',
                 fontWeight: 'bold'
               }}>
                 +
               </span>
               <span style={{ 
-                color: '#8B0000', // Maroon text
+                color: '#000000', // Black text
                 fontSize: '14px',
                 fontWeight: 'bold'
               }}>

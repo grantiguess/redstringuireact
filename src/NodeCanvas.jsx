@@ -460,6 +460,10 @@ function NodeCanvas() {
   const [hasMouseMovedSinceDown, setHasMouseMovedSinceDown] = useState(false);
   const [hoveredEdgeInfo, setHoveredEdgeInfo] = useState(null); // Track hovered edge and which end
 
+  // Connection control panel animation state
+  const [controlPanelVisible, setControlPanelVisible] = useState(false);
+  const [controlPanelShouldShow, setControlPanelShouldShow] = useState(false);
+
   // New states for PieMenu transition
   const [selectedNodeIdForPieMenu, setSelectedNodeIdForPieMenu] = useState(null);
   const [isTransitioningPieMenu, setIsTransitioningPieMenu] = useState(false);
@@ -547,7 +551,42 @@ function NodeCanvas() {
     setCarouselFocusedNodeScale(1.2);
     setCarouselFocusedNodeDimensions(null);
     setCarouselAnimationState('hidden');
+
+    // Clear connection control panel
+    setControlPanelVisible(false);
+    setControlPanelShouldShow(false);
   }, [activeGraphId]);
+
+  // --- Connection Control Panel Management ---
+  useEffect(() => {
+    const shouldShow = selectedEdgeId && !connectionNamePrompt.visible;
+    
+    if (shouldShow && !controlPanelShouldShow) {
+      // Show the panel
+      setControlPanelShouldShow(true);
+      setControlPanelVisible(true);
+    } else if (!shouldShow && controlPanelShouldShow) {
+      // Hide the panel
+      setControlPanelVisible(false);
+      // controlPanelShouldShow will be set to false when animation completes
+    }
+  }, [selectedEdgeId, connectionNamePrompt.visible, controlPanelShouldShow]);
+
+  // Handle control panel callbacks
+  const handleControlPanelClose = useCallback(() => {
+    setSelectedEdgeId(null);
+  }, [setSelectedEdgeId]);
+
+  const handleOpenConnectionDialog = useCallback((edgeId) => {
+    setConnectionNamePrompt({ visible: true, name: '', color: NODE_DEFAULT_COLOR, edgeId });
+  }, []);
+
+  // Handle control panel animation completion
+  const handleControlPanelAnimationComplete = useCallback(() => {
+    if (!controlPanelVisible) {
+      setControlPanelShouldShow(false);
+    }
+  }, [controlPanelVisible]);
 
   // --- Saved Graphs Management ---
   const bookmarkActive = useMemo(() => {
@@ -3694,15 +3733,15 @@ function NodeCanvas() {
         selectedNodes={selectedInstanceIds}
       />
 
-      {/* ConnectionControlPanel Component - hidden when connection dialog is open */}
-      {selectedEdgeId && !connectionNamePrompt.visible && (
+      {/* ConnectionControlPanel Component - with animation */}
+      {controlPanelShouldShow && (
         <ConnectionControlPanel
           selectedEdge={edgesMap.get(selectedEdgeId)}
-          onClose={() => setSelectedEdgeId(null)}
+          onClose={handleControlPanelClose}
           typeListOpen={typeListMode !== 'closed'}
-          onOpenConnectionDialog={(edgeId) => {
-            setConnectionNamePrompt({ visible: true, name: '', color: NODE_DEFAULT_COLOR, edgeId });
-          }}
+          onOpenConnectionDialog={handleOpenConnectionDialog}
+          isVisible={controlPanelVisible}
+          onAnimationComplete={handleControlPanelAnimationComplete}
         />
       )}
 
