@@ -1,23 +1,28 @@
-import React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import './ConnectionControlPanel.css';
 import useGraphStore from './store/graphStore';
 import NodeType from './NodeType';
 
-const ConnectionControlPanel = ({ selectedEdge, onClose, typeListOpen = false }) => {
-  const edgePrototypesMap = useGraphStore((state) => state.edgePrototypes);
+const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false }) => {
   const nodePrototypesMap = useGraphStore((state) => state.nodePrototypes);
-  const setEdgeTypeAction = useGraphStore((state) => state.setEdgeType);
   const updateEdge = useGraphStore((state) => state.updateEdge);
 
   if (!selectedEdge) return null;
 
-  const sourceNode = nodePrototypesMap.get(selectedEdge.sourceId);
   const destinationNode = nodePrototypesMap.get(selectedEdge.destinationId);
   
   const currentEdgeType = selectedEdge.definitionNodeIds && selectedEdge.definitionNodeIds.length > 0 
     ? nodePrototypesMap.get(selectedEdge.definitionNodeIds[0])
     : null;
+
+  // Get the connection color for glow effect
+  const getConnectionColor = () => {
+    if (currentEdgeType) {
+      return currentEdgeType.color || '#4A5568';
+    }
+    return destinationNode?.color || '#4A5568';
+  };
+  const connectionColor = getConnectionColor();
 
   const handleNodeClick = () => {
     // Get all available type nodes from the store
@@ -66,12 +71,22 @@ const ConnectionControlPanel = ({ selectedEdge, onClose, typeListOpen = false })
           <div 
             className={`arrow-dropdown ${hasLeftArrow ? 'active' : ''}`}
             onClick={() => handleArrowToggle('left')}
+            style={hasLeftArrow ? {
+              boxShadow: `0 0 15px ${connectionColor}60, 0 0 30px ${connectionColor}30`
+            } : {}}
           >
             <ChevronLeft size={20} />
           </div>
         </div>
         
-        <div className="connection-node-display" onClick={handleNodeClick}>
+        <div 
+          className="connection-node-display" 
+          onClick={handleNodeClick}
+          style={{
+            '--connection-color': connectionColor,
+            boxShadow: `0 0 20px ${connectionColor}40, 0 0 40px ${connectionColor}20`
+          }}
+        >
           {currentEdgeType ? (
             <NodeType 
               node={currentEdgeType}
@@ -90,6 +105,9 @@ const ConnectionControlPanel = ({ selectedEdge, onClose, typeListOpen = false })
           <div 
             className={`arrow-dropdown ${hasRightArrow ? 'active' : ''}`}
             onClick={() => handleArrowToggle('right')}
+            style={hasRightArrow ? {
+              boxShadow: `0 0 15px ${connectionColor}60, 0 0 30px ${connectionColor}30`
+            } : {}}
           >
             <ChevronRight size={20} />
           </div>

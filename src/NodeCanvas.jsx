@@ -2803,6 +2803,7 @@ function NodeCanvas() {
                   const y2 = destNode.y + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
 
                       const isHovered = hoveredEdgeInfo?.edgeId === edge.id;
+                      const isSelected = selectedEdgeId === edge.id;
                       
 
                       
@@ -2880,6 +2881,22 @@ function NodeCanvas() {
                   return (
                         <g key={`edge-${edge.id}-${idx}`}>
                                                  {/* Main edge line - always same thickness */}
+                    {/* Glow effect for selected edge */}
+                    {isSelected && (
+                      <line
+                        x1={shouldShortenSource ? (sourceIntersection?.x || x1) : x1}
+                        y1={shouldShortenSource ? (sourceIntersection?.y || y1) : y1}
+                        x2={shouldShortenDest ? (destIntersection?.x || x2) : x2}
+                        y2={shouldShortenDest ? (destIntersection?.y || y2) : y2}
+                        stroke={edgeColor}
+                        strokeWidth="12"
+                        opacity="0.3"
+                        style={{ 
+                          filter: `blur(3px) drop-shadow(0 0 8px ${edgeColor})`
+                        }}
+                      />
+                    )}
+                    
                     <line
                              x1={shouldShortenSource ? (sourceIntersection?.x || x1) : x1}
                              y1={shouldShortenSource ? (sourceIntersection?.y || y1) : y1}
@@ -2887,7 +2904,18 @@ function NodeCanvas() {
                              y2={shouldShortenDest ? (destIntersection?.y || y2) : y2}
                       stroke={edgeColor}
                              strokeWidth="6"
-                             style={{ transition: 'stroke 0.2s ease', cursor: 'pointer' }}
+                             style={{ transition: 'stroke 0.2s ease' }}
+                           />
+                           
+                           {/* Invisible click area for edge selection - matches hover detection */}
+                           <line
+                             x1={x1}
+                             y1={y1}
+                             x2={x2}
+                             y2={y2}
+                             stroke="transparent"
+                             strokeWidth="40"
+                             style={{ cursor: 'pointer' }}
                              onClick={(e) => {
                                e.stopPropagation();
                                setSelectedEdgeId(edge.id);

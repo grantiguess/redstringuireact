@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import './TypeList.css';
 import { HEADER_HEIGHT } from './constants';
@@ -21,7 +21,6 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
   const edgePrototypesMap = useGraphStore((state) => state.edgePrototypes);
   const edgesMap = useGraphStore((state) => state.edges);
   const setNodeTypeAction = useGraphStore((state) => state.setNodeType);
-  const setEdgeTypeAction = useGraphStore((state) => state.setEdgeType);
   
   // Get the type nodes available for the current active graph
   const availableTypeNodes = useMemo(() => {
