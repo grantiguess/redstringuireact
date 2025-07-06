@@ -1570,7 +1570,7 @@ const Panel = forwardRef(
                             </div>
                         )}
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
                             {/* Color Picker Icon */}
                             <Palette
                                 size={20}
@@ -2403,7 +2403,7 @@ const Panel = forwardRef(
                                     </div>
                                 )}
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
                                     {/* Color Picker Icon */}
                                     <Palette
                                         size={20}

@@ -12,10 +12,39 @@ import {
     NODE_DEFAULT_COLOR
 } from './constants'; // Import necessary constants
 import { getNodeDimensions } from './utils.js'; // Import from utils.js
+import useGraphStore from './store/graphStore.js';
 
 // --- InnerNetwork Component --- 
 // Rename connections to edges, expect plain data objects
 const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
+  // Access store for prototype data to determine edge colors
+  const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
+  const edgePrototypesMap = useGraphStore(state => state.edgePrototypes);
+
+  // Helper function to get edge color based on type hierarchy
+  const getEdgeColor = (edge, destNode) => {
+    // First check definitionNodeIds (for custom connection types set via control panel)
+    if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+      const definitionNode = nodePrototypesMap.get(edge.definitionNodeIds[0]);
+      if (definitionNode) {
+        return definitionNode.color || NODE_DEFAULT_COLOR;
+      }
+    }
+    
+    // Then check typeNodeId (for base connection type)
+    if (edge.typeNodeId) {
+      // Special handling for base connection prototype - ensure it's black
+      if (edge.typeNodeId === 'base-connection-prototype') {
+        return '#000000'; // Black color for base connection
+      }
+      const edgePrototype = edgePrototypesMap.get(edge.typeNodeId);
+      if (edgePrototype) {
+        return edgePrototype.color || NODE_DEFAULT_COLOR;
+      }
+    }
+    
+    return destNode?.color || NODE_DEFAULT_COLOR;
+  };
   // Check for edges instead of connections
   if (!nodes || nodes.length === 0 || !edges || width <= 0 || height <= 0) {
     return null; 
@@ -216,6 +245,9 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
           }
         }
 
+        // Get edge color based on type hierarchy
+        const edgeColor = getEdgeColor(edge, eNodeData);
+
         return (
           <g key={`inner-conn-${edge.id || idx}`}>
             {/* Main edge line */}
@@ -224,7 +256,7 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
               y1={shouldShortenSource ? (sourceIntersection?.y || sCenterY) : sCenterY}
               x2={shouldShortenDest ? (destIntersection?.x || eCenterX) : eCenterX}
               y2={shouldShortenDest ? (destIntersection?.y || eCenterY) : eCenterY}
-              stroke="black"
+              stroke={edgeColor}
               strokeWidth={Math.max(1, 4 / scale)} 
             />
             
@@ -233,8 +265,8 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
               <g transform={`translate(${sourceArrowX}, ${sourceArrowY}) rotate(${sourceArrowAngle + 90})`}>
                 <polygon
                   points="-12,15 12,15 0,-15"
-                  fill="black"
-                  stroke="black"
+                  fill={edgeColor}
+                  stroke={edgeColor}
                   strokeWidth={Math.max(0.5, 2 / scale)}
                   strokeLinejoin="round"
                   strokeLinecap="round"
@@ -248,8 +280,8 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
               <g transform={`translate(${destArrowX}, ${destArrowY}) rotate(${destArrowAngle + 90})`}>
                 <polygon
                   points="-12,15 12,15 0,-15"
-                  fill="black"
-                  stroke="black"
+                  fill={edgeColor}
+                  stroke={edgeColor}
                   strokeWidth={Math.max(0.5, 2 / scale)}
                   strokeLinejoin="round"
                   strokeLinecap="round"

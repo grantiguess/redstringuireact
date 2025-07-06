@@ -1,8 +1,37 @@
 import React, { useMemo } from 'react';
 import { getNodeDimensions } from './utils.js';
-import { NODE_HEIGHT, NODE_WIDTH, NODE_CORNER_RADIUS } from './constants';
+import { NODE_HEIGHT, NODE_WIDTH, NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR } from './constants';
+import useGraphStore from './store/graphStore.js';
 
 const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
+  // Access store for prototype data to determine edge colors
+  const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
+  const edgePrototypesMap = useGraphStore(state => state.edgePrototypes);
+
+  // Helper function to get edge color based on type hierarchy
+  const getEdgeColor = (edge, destNode) => {
+    // First check definitionNodeIds (for custom connection types set via control panel)
+    if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+      const definitionNode = nodePrototypesMap.get(edge.definitionNodeIds[0]);
+      if (definitionNode) {
+        return definitionNode.color || NODE_DEFAULT_COLOR;
+      }
+    }
+    
+    // Then check typeNodeId (for base connection type)
+    if (edge.typeNodeId) {
+      // Special handling for base connection prototype - ensure it's black
+      if (edge.typeNodeId === 'base-connection-prototype') {
+        return '#000000'; // Black color for base connection
+      }
+      const edgePrototype = edgePrototypesMap.get(edge.typeNodeId);
+      if (edgePrototype) {
+        return edgePrototype.color || NODE_DEFAULT_COLOR;
+      }
+    }
+    
+    return destNode.color || NODE_DEFAULT_COLOR;
+  };
 
   // Basic scaling logic (can be refined)
   const { scaledNodes, scaledEdges, viewBox, scale } = useMemo(() => {
@@ -202,6 +231,9 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
             }
           }
 
+          // Get edge color based on type hierarchy
+          const edgeColor = getEdgeColor(edge, nodes.find(n => n.id === edge.destinationId));
+
           return (
             <g key={edge.key}>
               {/* Main edge line - even thinner stroke */}
@@ -210,7 +242,7 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
                 y1={shouldShortenSource ? (sourceIntersection?.y || edge.y1) : edge.y1}
                 x2={shouldShortenDest ? (destIntersection?.x || edge.x2) : edge.x2}
                 y2={shouldShortenDest ? (destIntersection?.y || edge.y2) : edge.y2}
-                stroke="black"
+                stroke={edgeColor}
                 strokeWidth={Math.min(1.0, Math.max(0.2, 0.5 / scale)) || 0.2}
               />
               
@@ -219,8 +251,8 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
                 <g transform={`translate(${sourceArrowX}, ${sourceArrowY}) rotate(${sourceArrowAngle + 90})`}>
                   <polygon
                     points={`${-10 * scale},${12 * scale} ${10 * scale},${12 * scale} 0,${-12 * scale}`}
-                    fill="black"
-                    stroke="black"
+                    fill={edgeColor}
+                    stroke={edgeColor}
                     strokeWidth={Math.min(2.0, Math.max(0.2, 0.6 / scale)) || 0.2}
                     strokeLinejoin="round"
                     strokeLinecap="round"
@@ -234,8 +266,8 @@ const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
                 <g transform={`translate(${destArrowX}, ${destArrowY}) rotate(${destArrowAngle + 90})`}>
                   <polygon
                     points={`${-10 * scale},${12 * scale} ${10 * scale},${12 * scale} 0,${-12 * scale}`}
-                    fill="black"
-                    stroke="black"
+                    fill={edgeColor}
+                    stroke={edgeColor}
                     strokeWidth={Math.min(2.0, Math.max(0.2, 0.6 / scale)) || 0.2}
                     strokeLinejoin="round"
                     strokeLinecap="round"
