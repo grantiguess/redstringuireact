@@ -281,6 +281,8 @@ const DraggableTab = ({ tab, index, displayTitle, dragItemTitle, moveTabAction, 
         height: '100%',
         cursor: cursorStyle,
         maxWidth: '150px',
+        minWidth: '60px',
+        flexShrink: 0,
         transition: 'opacity 0.1s ease'
       }}
       onClick={() => activateTabAction(index)}
@@ -2923,10 +2925,14 @@ const Panel = forwardRef(
     }
 
     // --- Tab Bar Scroll Handler ---
-    const handleTabBarWheel = (e) => {
+    const handleTabBarWheel = useCallback((e) => {
+          
       if (tabBarRef.current) {
         e.preventDefault();
         e.stopPropagation();
+
+        const element = tabBarRef.current;
+        
 
         let scrollAmount = 0;
         // Prioritize axis with larger absolute delta
@@ -2939,27 +2945,42 @@ const Panel = forwardRef(
         const sensitivity = 0.5; 
         const scrollChange = scrollAmount * sensitivity;
 
-        tabBarRef.current.scrollLeft += scrollChange;
+        // Only try to scroll if there's actually scrollable content
+        if (element.scrollWidth > element.clientWidth) {
+          console.log('[Tab Wheel] Attempting to scroll by:', scrollChange);
+          element.scrollLeft += scrollChange;
+          console.log('[Tab Wheel] New scrollLeft:', element.scrollLeft);
+        } else {
+          console.log('[Tab Wheel] No overflow - not scrolling');
+        }
       } else {
-        // console.log('[Tab Wheel] Ref does NOT exist'); // Log if ref is missing
+        console.log('[Tab Wheel] No ref found!');
       }
-    };
+    }, []); // No dependencies needed since it only uses refs
 
     // --- Effect to manually add non-passive wheel listener ---
     useEffect(() => {
       const tabBarNode = tabBarRef.current;
-      if (tabBarNode) {
-        // console.log('[Tab Wheel Effect] Adding non-passive wheel listener');
+      console.log('[Tab Wheel Effect] Running with:', { 
+        hasNode: !!tabBarNode, 
+        side, 
+        isExpanded,
+        nodeTagName: tabBarNode?.tagName,
+        nodeClassList: tabBarNode?.classList.toString()
+      });
+      
+      if (tabBarNode && side === 'right' && isExpanded) {
+        console.log('[Tab Wheel Effect] Adding wheel listener to:', tabBarNode);
         // Add listener with passive: false to allow preventDefault
         tabBarNode.addEventListener('wheel', handleTabBarWheel, { passive: false });
 
         // Cleanup function
         return () => {
-          // console.log('[Tab Wheel Effect] Removing wheel listener');
+          console.log('[Tab Wheel Effect] Removing wheel listener');
           tabBarNode.removeEventListener('wheel', handleTabBarWheel, { passive: false });
         };
       }
-    }, []); // Run only once on mount
+    }, [side, isExpanded, handleTabBarWheel]); // Re-run when dependencies change
 
     return (
         <>
@@ -3059,10 +3080,11 @@ const Panel = forwardRef(
                             })()}
                             {/* Scrollable Tab Area (uses store state) */} 
                             {isExpanded && (
-                                <div style={{ flexGrow: 1, position: 'relative', height: '100%' }}>
+                                <div style={{ flex: '1 1 0', position: 'relative', height: '100%', minWidth: 0 }}>
                                     <div 
                                         ref={tabBarRef} 
                                         className="hide-scrollbar"
+                                        data-panel-tabs="true"
                                         style={{ 
                                             position: 'relative',
                                             height: '100%', 

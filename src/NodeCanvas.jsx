@@ -273,9 +273,10 @@ function NodeCanvas() {
     const preventWheelZoom = (e) => {
       // Prevent Ctrl+wheel zoom (both Mac and Windows)
       if (e.ctrlKey || e.metaKey) {
-        // Only prevent if this wheel event is NOT over our canvas
+        // Only prevent if this wheel event is NOT over our canvas or panel tab bar
         const isOverCanvas = e.target.closest('.canvas-area') || e.target.closest('.canvas');
-        if (!isOverCanvas) {
+        const isOverPanelTabBar = e.target.closest('[data-panel-tabs="true"]');
+        if (!isOverCanvas && !isOverPanelTabBar) {
           e.preventDefault();
           e.stopPropagation();
           return false;
@@ -1415,7 +1416,13 @@ function NodeCanvas() {
   useEffect(() => {
     const container = containerRef.current;
     if (container) {
-      const preventDefaultWheel = (e) => { e.preventDefault(); };
+      const preventDefaultWheel = (e) => { 
+        // Allow wheel events over panel tab bars
+        const isOverPanelTabBar = e.target.closest('[data-panel-tabs="true"]');
+        if (!isOverPanelTabBar) {
+          e.preventDefault(); 
+        }
+      };
       container.addEventListener('wheel', preventDefaultWheel, { passive: false });
       return () => container.removeEventListener('wheel', preventDefaultWheel);
     }
