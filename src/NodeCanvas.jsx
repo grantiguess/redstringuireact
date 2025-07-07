@@ -53,6 +53,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import Panel from './Panel'; // This is now used for both sides
 import TypeList from './TypeList'; // Re-add TypeList component
 import NodeSelectionGrid from './NodeSelectionGrid'; // Import the new node selection grid
+import UnifiedSelector from './UnifiedSelector'; // Import the new unified selector
 
 const SPAWNABLE_NODE = 'spawnable_node';
 
@@ -2052,6 +2053,7 @@ function NodeCanvas() {
     // Add ref for dialog container
   const dialogContainerRef = useRef(null);
 
+  // Deprecated - replaced by UnifiedSelector
   const renderConnectionNamePrompt = () => {
     if (!connectionNamePrompt.visible) return null;
     
@@ -2172,6 +2174,7 @@ function NodeCanvas() {
     );
   };
 
+  // Deprecated - replaced by UnifiedSelector
   const renderCustomPrompt = () => {
     if (!nodeNamePrompt.visible) return null;
     return (
@@ -3659,22 +3662,68 @@ function NodeCanvas() {
             </svg>
           )}
 
-          {renderCustomPrompt()}
-          {renderConnectionNamePrompt()}
-          
-          {/* Node Selection Grid */}
-          <NodeSelectionGrid
-            isVisible={nodeSelectionGrid.visible}
+          {/* Unified Node Creation Selector */}
+          <UnifiedSelector
+            mode="node-creation"
+            isVisible={nodeNamePrompt.visible}
+            onClose={() => {
+              // Close color picker when closing prompt
+              setDialogColorPickerVisible(false);
+              handleClosePrompt();
+            }}
+            onSubmit={({ name, color }) => {
+              // Call the original handlePromptSubmit logic directly
+              if (name && plusSign) {
+                setPlusSign(ps => ps && { ...ps, mode: 'morph', tempName: name, selectedColor: color });
+              } else {
+                setPlusSign(ps => ps && { ...ps, mode: 'disappear' });
+              }
+              setNodeNamePrompt({ visible: false, name: '', color: null });
+              setDialogColorPickerVisible(false);
+            }}
             onNodeSelect={handleNodeSelection}
-            onClose={handleNodeSelectionGridClose}
-            position={nodeSelectionGrid.position}
-            width={300}
+            initialName={nodeNamePrompt.name}
+            initialColor={nodeNamePrompt.color}
+            title="Name Your Thing"
+            subtitle="Add a new component Thing to this Web."
             searchTerm={nodeNamePrompt.name}
           />
 
-          {/* Connection Selection Grid */}
-          <NodeSelectionGrid
+          {/* Unified Connection Creation Selector */}
+          <UnifiedSelector
+            mode="connection-creation"
             isVisible={connectionNamePrompt.visible}
+            onClose={() => {
+              // Close color picker when closing connection prompt
+              setDialogColorPickerVisible(false);
+              setConnectionNamePrompt({ visible: false, name: '', color: null, edgeId: null });
+            }}
+            onSubmit={({ name, color }) => {
+              // Use the exact original handleConnectionPromptSubmit logic
+              if (name.trim()) {
+                // Create a new node prototype for this connection type
+                const newConnectionNodeId = uuidv4();
+                addNodePrototype({
+                  id: newConnectionNodeId,
+                  name: name.trim(),
+                  description: '',
+                  picture: null,
+                  color: color || NODE_DEFAULT_COLOR,
+                  typeNodeId: null,
+                  definitionGraphIds: []
+                });
+                
+                // Update the edge to use this new connection type
+                if (connectionNamePrompt.edgeId) {
+                  updateEdge(connectionNamePrompt.edgeId, (draft) => {
+                    draft.definitionNodeIds = [newConnectionNodeId];
+                  });
+                }
+                
+                setConnectionNamePrompt({ visible: false, name: '', color: null, edgeId: null });
+                setDialogColorPickerVisible(false); // Close color picker on submit
+              }
+            }}
             onNodeSelect={(node) => {
               // When selecting an existing node for connection type
               if (connectionNamePrompt.edgeId) {
@@ -3683,13 +3732,12 @@ function NodeCanvas() {
                 });
               }
               setConnectionNamePrompt({ visible: false, name: '', color: null, edgeId: null });
+              setDialogColorPickerVisible(false); // Close color picker when selecting existing node
             }}
-            onClose={() => {}} // Don't close on backdrop click for connection dialog
-            position={{ 
-              x: (typeof window !== 'undefined' ? window.innerWidth : 1200) / 2 - 150, 
-              y: HEADER_HEIGHT + 25 + 180 + 30 
-            }} // Centered below the dialog with more spacing
-            width={300}
+            initialName={connectionNamePrompt.name}
+            initialColor={connectionNamePrompt.color}
+            title="Name Your Connection"
+            subtitle="The Thing that will define your Connection,<br />in verb form if available."
             searchTerm={connectionNamePrompt.name}
           />
           
