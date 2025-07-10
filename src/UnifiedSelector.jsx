@@ -21,10 +21,16 @@ const UnifiedSelector = ({
   selectedNodes = new Set()
 }) => {
   const [name, setName] = useState(initialName);
+  const lastInitialNameRef = useRef(initialName);
   
   // Update internal name when initialName changes (for clearing)
   useEffect(() => {
-    setName(initialName);
+    // Only update when initialName actually changes from outside
+    // This prevents overriding user input while they're typing
+    if (initialName !== lastInitialNameRef.current) {
+      lastInitialNameRef.current = initialName;
+      setName(initialName);
+    }
   }, [initialName]);
   const [color, setColor] = useState(initialColor || NODE_DEFAULT_COLOR);
   const [colorPickerVisible, setColorPickerVisible] = useState(false);
@@ -74,14 +80,17 @@ const UnifiedSelector = ({
   const showDialog = mode === 'node-creation' || mode === 'connection-creation';
   const showGrid = mode === 'node-typing' || showCreateNewOption || onNodeSelect;
 
-  // Filter prototypes based on search term
+  // Filter prototypes based on search term - use name field as search for creation modes
   const filteredPrototypes = React.useMemo(() => {
     const prototypes = Array.from(nodePrototypesMap.values());
-    if (!searchTerm) return prototypes;
+    // For node/connection creation modes, use the name field as search
+    // For node-typing mode, use the external searchTerm prop
+    const searchText = (mode === 'node-creation' || mode === 'connection-creation') ? name : searchTerm;
+    if (!searchText) return prototypes;
     return prototypes.filter(p => 
-      p.name.toLowerCase().includes(searchTerm.toLowerCase())
+      p.name.toLowerCase().includes(searchText.toLowerCase())
     );
-  }, [nodePrototypesMap, searchTerm]);
+  }, [nodePrototypesMap, name, searchTerm, mode]);
 
   // Handle form submission
   const handleSubmit = () => {

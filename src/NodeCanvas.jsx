@@ -77,6 +77,7 @@ function NodeCanvas() {
   const addNodePrototype = useGraphStore((state) => state.addNodePrototype);
   const addNodeInstance = useGraphStore((state) => state.addNodeInstance);
   const removeNodeInstance = useGraphStore((state) => state.removeNodeInstance);
+  const removeEdge = useGraphStore((state) => state.removeEdge);
   const updateGraph = useGraphStore((state) => state.updateGraph);
   const createNewGraph = useGraphStore((state) => state.createNewGraph);
   const setActiveGraph = useGraphStore((state) => state.setActiveGraph);
@@ -112,6 +113,7 @@ function NodeCanvas() {
     addNodePrototype,
     addNodeInstance,
     removeNodeInstance,
+    removeEdge,
     updateGraph,
     createNewGraph,
     setActiveGraph,
@@ -138,7 +140,7 @@ function NodeCanvas() {
     clearUniverse,
     setUniverseConnected,
   }), [
-    updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance, updateGraph, createNewGraph,
+    updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance, removeEdge, updateGraph, createNewGraph,
     setActiveGraph, setActiveDefinitionNode, setNodeType, openRightPanelNodeTab,
     createAndAssignGraphDefinition, createAndAssignGraphDefinitionWithoutActivation, closeRightPanelTab, activateRightPanelTab,
     openGraphTab, moveRightPanelTab, closeGraph, toggleGraphExpanded,
@@ -2279,6 +2281,7 @@ function NodeCanvas() {
 
       const isDeleteKey = e.key === 'Delete' || e.key === 'Backspace';
       const nodesSelected = selectedInstanceIds.size > 0;
+      const edgeSelected = selectedEdgeId !== null;
 
       if (isDeleteKey && nodesSelected) {
         e.preventDefault();
@@ -2291,11 +2294,27 @@ function NodeCanvas() {
 
         // Clear local selection state AFTER dispatching actions
         setSelectedInstanceIds(new Set());
+      } else if (isDeleteKey && edgeSelected) {
+        console.log('[NodeCanvas] Delete key pressed with edge selected:', {
+          selectedEdgeId,
+          controlPanelShouldShow,
+          controlPanelVisible,
+          connectionNamePromptVisible: connectionNamePrompt.visible,
+          shouldPreventDeletion: connectionNamePrompt.visible
+        });
+        
+        if (!connectionNamePrompt.visible) {
+          e.preventDefault();
+          // Delete the selected edge
+          storeActions.removeEdge(selectedEdgeId);
+        } else {
+          console.log('[NodeCanvas] Edge deletion prevented - connection selector is open');
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedInstanceIds, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible, activeGraphId, storeActions.removeNodeInstance]);
+  }, [selectedInstanceIds, selectedEdgeId, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible, connectionNamePrompt.visible, activeGraphId, storeActions.removeNodeInstance, storeActions.removeEdge]);
 
   const handleProjectTitleChange = (newTitle) => {
     // Get CURRENT activeGraphId directly from store

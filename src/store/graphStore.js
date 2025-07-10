@@ -402,7 +402,34 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   updateNode: () => console.warn("`updateNode` is deprecated. Use `updateNodePrototype` or `updateNodeInstance`."),
   updateMultipleNodePositions: () => console.warn("`updateMultipleNodePositions` is deprecated. Use `updateMultipleNodeInstancePositions`."),
   removeNode: () => console.warn("`removeNode` is deprecated. Use `removeNodeInstance`."),
-  removeEdge: () => console.warn("`removeEdge` is deprecated. Edges are removed with their instances."),
+  removeEdge: (edgeId) => set(produce((draft) => {
+    const edge = draft.edges.get(edgeId);
+    if (!edge) {
+      console.warn(`[Store removeEdge] Edge with ID ${edgeId} not found.`);
+      return;
+    }
+
+    // Remove from global edges Map
+    draft.edges.delete(edgeId);
+
+    // Remove from graph's edgeIds list
+    for (const [graphId, graph] of draft.graphs.entries()) {
+      if (graph.edgeIds && graph.edgeIds.includes(edgeId)) {
+        const index = graph.edgeIds.indexOf(edgeId);
+        if (index > -1) {
+          graph.edgeIds.splice(index, 1);
+        }
+        break;
+      }
+    }
+
+    // Clear selection if this edge was selected
+    if (draft.selectedEdgeId === edgeId) {
+      draft.selectedEdgeId = null;
+    }
+
+    console.log(`[Store removeEdge] Edge ${edgeId} removed successfully.`);
+  })),
 
 
   // --- Tab Management Actions --- (Unaffected by prototype change)

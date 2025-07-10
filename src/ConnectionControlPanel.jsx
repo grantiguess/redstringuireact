@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import './ConnectionControlPanel.css';
 import useGraphStore from './store/graphStore';
 import NodeType from './NodeType';
@@ -8,6 +8,7 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
   const nodePrototypesMap = useGraphStore((state) => state.nodePrototypes);
   const edgePrototypesMap = useGraphStore((state) => state.edgePrototypes);
   const updateEdge = useGraphStore((state) => state.updateEdge);
+  const removeEdge = useGraphStore((state) => state.removeEdge);
 
   // Animation state management
   const [animationState, setAnimationState] = useState('entering');
@@ -120,6 +121,12 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
     });
   };
 
+  const handleDeleteConnection = () => {
+    if (lastValidEdge?.id) {
+      removeEdge(lastValidEdge.id);
+    }
+  };
+
   const hasLeftArrow = lastValidEdge.directionality?.arrowsToward?.has(lastValidEdge.sourceId);
   const hasRightArrow = lastValidEdge.directionality?.arrowsToward?.has(lastValidEdge.destinationId);
 
@@ -182,6 +189,16 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
             onClick={() => handleArrowToggle('right')}
           >
             <ChevronRight size={20} />
+          </div>
+        </div>
+        
+        <div className="delete-control">
+          <div 
+            className="delete-button"
+            onClick={handleDeleteConnection}
+            title="Delete connection"
+          >
+            <Trash2 size={16} />
           </div>
         </div>
       </div>
