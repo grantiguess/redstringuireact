@@ -9,7 +9,7 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
   const edgePrototypesMap = useGraphStore((state) => state.edgePrototypes);
   const updateEdge = useGraphStore((state) => state.updateEdge);
   const removeEdge = useGraphStore((state) => state.removeEdge);
-  const createAndAssignGraphDefinition = useGraphStore((state) => state.createAndAssignGraphDefinition);
+  const createAndAssignGraphDefinitionWithoutActivation = useGraphStore((state) => state.createAndAssignGraphDefinitionWithoutActivation);
 
   // Animation state management
   const [animationState, setAnimationState] = useState('entering');
@@ -142,30 +142,37 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
       // Get the icon's bounding rectangle for the hurtle animation
       const iconRect = e.currentTarget.getBoundingClientRect();
       
-      // Determine the target graph ID
-      let targetGraphId = null;
-      if (connectionType.definitionGraphIds && connectionType.definitionGraphIds.length > 0) {
-        targetGraphId = connectionType.definitionGraphIds[0];
-      } else {
-        // If no definition graphs exist, we need to create one first
-        // This is a bit tricky - we need to create the graph synchronously to get the ID
-        // Let's create it and then get the ID
-        createAndAssignGraphDefinition(connectionType.id);
-        // After creation, the graph should be available
-        const updatedConnectionType = nodePrototypesMap.get(connectionType.id) || edgePrototypesMap.get(connectionType.id);
-        if (updatedConnectionType?.definitionGraphIds?.length > 0) {
-          targetGraphId = updatedConnectionType.definitionGraphIds[0];
-        }
-      }
+      // Start the panel exit animation immediately
+      setAnimationState('exiting');
       
-      if (targetGraphId) {
-        // Start the hurtle animation
+      // Check if definitions exist
+      const hasDefinitions = connectionType.definitionGraphIds && connectionType.definitionGraphIds.length > 0;
+      
+      if (hasDefinitions) {
+        // Has definitions - animate to existing definition
+        const firstDefinitionGraphId = connectionType.definitionGraphIds[0];
         onStartHurtleAnimationFromPanel(
           connectionType.id,
-          targetGraphId,
+          firstDefinitionGraphId,
           connectionType.id,
           iconRect
         );
+      } else {
+        // No definitions - create one first, then animate (with delay like Panel.jsx)
+        createAndAssignGraphDefinitionWithoutActivation(connectionType.id);
+        setTimeout(() => {
+          const currentState = useGraphStore.getState();
+          const updatedConnectionType = currentState.nodePrototypes.get(connectionType.id) || currentState.edgePrototypes.get(connectionType.id);
+          if (updatedConnectionType?.definitionGraphIds?.length > 0) {
+            const newGraphId = updatedConnectionType.definitionGraphIds[updatedConnectionType.definitionGraphIds.length - 1];
+            onStartHurtleAnimationFromPanel(
+              connectionType.id,
+              newGraphId,
+              connectionType.id,
+              iconRect
+            );
+          }
+        }, 150);
       }
     }
   };
