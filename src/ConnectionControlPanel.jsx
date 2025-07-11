@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2, ArrowUpFromDot } from 'lucide-react';
 import './ConnectionControlPanel.css';
 import useGraphStore from './store/graphStore';
 import NodeType from './NodeType';
@@ -9,6 +9,8 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
   const edgePrototypesMap = useGraphStore((state) => state.edgePrototypes);
   const updateEdge = useGraphStore((state) => state.updateEdge);
   const removeEdge = useGraphStore((state) => state.removeEdge);
+  const openGraphTabAndBringToTop = useGraphStore((state) => state.openGraphTabAndBringToTop);
+  const createAndAssignGraphDefinition = useGraphStore((state) => state.createAndAssignGraphDefinition);
 
   // Animation state management
   const [animationState, setAnimationState] = useState('entering');
@@ -127,6 +129,27 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
     }
   };
 
+  const handleOpenDefinition = () => {
+    if (!lastValidEdge) return;
+    
+    // Get the connection type - similar to how we determine currentEdgeType
+    const connectionType = lastValidEdge.definitionNodeIds && lastValidEdge.definitionNodeIds.length > 0 
+      ? nodePrototypesMap.get(lastValidEdge.definitionNodeIds[0])
+      : lastValidEdge.typeNodeId 
+        ? edgePrototypesMap.get(lastValidEdge.typeNodeId)
+        : null;
+    
+    if (connectionType) {
+      // If the connection type has definition graphs, open the first one
+      if (connectionType.definitionGraphIds && connectionType.definitionGraphIds.length > 0) {
+        openGraphTabAndBringToTop(connectionType.definitionGraphIds[0]);
+      } else {
+        // If no definition graphs exist, create one and open it
+        createAndAssignGraphDefinition(connectionType.id);
+      }
+    }
+  };
+
   const hasLeftArrow = lastValidEdge.directionality?.arrowsToward?.has(lastValidEdge.sourceId);
   const hasRightArrow = lastValidEdge.directionality?.arrowsToward?.has(lastValidEdge.destinationId);
 
@@ -189,6 +212,16 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
             onClick={() => handleArrowToggle('right')}
           >
             <ChevronRight size={20} />
+          </div>
+        </div>
+        
+        <div className="up-control">
+          <div 
+            className="up-button"
+            onClick={handleOpenDefinition}
+            title="Open definition"
+          >
+            <ArrowUpFromDot size={16} />
           </div>
         </div>
         
