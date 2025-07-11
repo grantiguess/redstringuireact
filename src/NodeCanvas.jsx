@@ -3822,6 +3822,7 @@ function NodeCanvas() {
           onOpenConnectionDialog={handleOpenConnectionDialog}
           isVisible={controlPanelVisible}
           onAnimationComplete={handleControlPanelAnimationComplete}
+          onStartHurtleAnimationFromPanel={startHurtleAnimationFromPanel}
         />
       )}
 
