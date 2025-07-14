@@ -8,6 +8,15 @@
     /* Add specific styles for how NodeType items are displayed if needed */
     display: flex; /* Use flexbox for layout */
     gap: 10px; /* Spacing between NodeType items */
+    flex-wrap: nowrap; /* Prevent wrapping to ensure horizontal scrolling */
+    
+    /* Hide scrollbars for WebKit browsers */
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* Internet Explorer 10+ */
+}
+
+.type-list-content::-webkit-scrollbar {
+    display: none; /* WebKit browsers */
 }
 
 /* Add styles for the mode button if not fully handled inline */

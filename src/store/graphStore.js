@@ -1003,6 +1003,18 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       }
     }
     
+    // Add prototypes that are referenced by edges (connection types)
+    for (const [edgeId, edge] of draft.edges.entries()) {
+      // Check definitionNodeIds (new approach)
+      if (edge.definitionNodeIds && Array.isArray(edge.definitionNodeIds)) {
+        edge.definitionNodeIds.forEach(nodeId => referencedPrototypeIds.add(nodeId));
+      }
+      // Check typeNodeId (legacy approach)
+      if (edge.typeNodeId) {
+        referencedPrototypeIds.add(edge.typeNodeId);
+      }
+    }
+    
     // Recursively add prototypes from definition graphs
     const addDefinitionPrototypes = (prototypeId) => {
       const prototype = draft.nodePrototypes.get(prototypeId);

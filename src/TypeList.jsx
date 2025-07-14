@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import './TypeList.css';
 import { HEADER_HEIGHT } from './constants';
@@ -12,7 +12,25 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
   // Use shared state from store for TypeList mode
   const mode = useGraphStore((state) => state.typeListMode);
   const setTypeListMode = useGraphStore((state) => state.setTypeListMode); 
-  // const [isAnimating, setIsAnimating] = useState(false); // Basic animation lock
+  
+  // Ref for scrollable content area
+  const contentRef = useRef(null);
+
+  // Load saved state from localStorage on mount
+  useEffect(() => {
+    const savedMode = localStorage.getItem('redstring_typelist_mode');
+    if (savedMode && ['closed', 'node', 'connection'].includes(savedMode)) {
+      setTypeListMode(savedMode);
+    } else {
+      // Set default order: connections -> nodes -> closed
+      setTypeListMode('connection');
+    }
+  }, [setTypeListMode]);
+
+  // Save state to localStorage whenever mode changes
+  useEffect(() => {
+    localStorage.setItem('redstring_typelist_mode', mode);
+  }, [mode]);
 
   // Get store data for finding type nodes and edges
   const activeGraphId = useGraphStore((state) => state.activeGraphId);
@@ -161,11 +179,10 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
   };
 
   const cycleMode = () => {
-    // Restore cycle: closed -> node -> connection -> closed
-    const newMode = mode === 'closed' ? 'node' : 
-                   mode === 'node' ? 'connection' : 'closed';
+    // New cycle order: connection -> node -> closed -> connection
+    const newMode = mode === 'connection' ? 'node' : 
+                   mode === 'node' ? 'closed' : 'connection';
     setTypeListMode(newMode);
-    // TODO: Add animation logic if needed
   };
 
   const getButtonIcon = () => {
@@ -179,6 +196,47 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
         return <ChevronUp size={HEADER_HEIGHT * 0.6} />; // Use ChevronUp for closed state
     }
   };
+
+  // Content area scroll handler (similar to Panel.jsx tab scrolling)
+  const handleContentWheel = useCallback((e) => {
+    if (contentRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const element = contentRef.current;
+      
+      let scrollAmount = 0;
+      // Prioritize axis with larger absolute delta
+      if (Math.abs(e.deltaY) >= Math.abs(e.deltaX)) {
+        scrollAmount = e.deltaY;
+      } else {
+        scrollAmount = e.deltaX;
+      }
+
+      const sensitivity = 0.5; 
+      const scrollChange = scrollAmount * sensitivity;
+
+      // Only try to scroll if there's actually scrollable content
+      if (element.scrollWidth > element.clientWidth) {
+        element.scrollLeft += scrollChange;
+      }
+    }
+  }, []);
+
+  // Effect to manually add non-passive wheel listener
+  useEffect(() => {
+    const contentNode = contentRef.current;
+    
+    if (contentNode && mode !== 'closed') {
+      // Add listener with passive: false to allow preventDefault
+      contentNode.addEventListener('wheel', handleContentWheel, { passive: false });
+
+      // Cleanup function
+      return () => {
+        contentNode.removeEventListener('wheel', handleContentWheel, { passive: false });
+      };
+    }
+  }, [mode, handleContentWheel]);
 
   return (
     <>
@@ -223,47 +281,85 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
           alignItems: 'center',
           backgroundColor: '#260000',
           zIndex: 19999, // Higher than panels but lower than toggle button
-          overflow: 'hidden',
+          overflow: 'visible', // Allow content to overflow horizontally for scrolling
           transition: 'transform 0.3s ease-in-out',
           transform: mode === 'closed' ? 'translateY(100%)' : 'translateY(0)',
           paddingLeft: `calc(${HEADER_HEIGHT}px + 20px)`, // Increase paddingLeft for more space between button and content
           boxShadow: '0 -4px 8px rgba(0, 0, 0, 0.2)'
         }}
       >
-        {/* Content Area - Button is no longer here */}
+        {/* Scrollable Content Area */}
         <div 
+          ref={contentRef}
           className="type-list-content"
           style={{
-            flexGrow: 1,
+            flex: '1 1 auto', // Allow growing and shrinking as needed
+            minWidth: 0, // Allow shrinking if needed
             display: 'flex', 
             alignItems: 'center',
-            // Adjust padding if needed, or remove if paddingLeft on footer is enough
-            // paddingLeft: '10px' 
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            scrollbarWidth: 'none', // Firefox
+            msOverflowStyle: 'none', // Internet Explorer 10+
+            WebkitScrollbar: 'none', // WebKit
+            paddingRight: '20px', // Add right padding to ensure last items are accessible
           }}
         >
           {mode === 'node' && (
             <>
+              {/* Header for Types */}
+              <div style={{
+                fontSize: '18px',
+                fontWeight: 'bold',
+                color: '#bdb5b5',
+                marginLeft: '10px', // Add left margin for balance
+                marginRight: '20px',
+                paddingTop: '8px',
+                paddingBottom: '8px',
+                whiteSpace: 'nowrap',
+                flexShrink: 0 // Prevent shrinking
+              }}>
+                Types
+              </div>
+              
               {/* Show available type nodes for the current graph */}
               {availableTypeNodes.map(prototype => (
-                <NodeType 
-                  key={prototype.id} 
-                  name={prototype.name} 
-                  color={prototype.color} 
-                  onClick={() => handleNodeTypeClick(prototype)} 
-                />
+                <div key={prototype.id} style={{ flexShrink: 0 }}> {/* Prevent shrinking */}
+                  <NodeType 
+                    name={prototype.name} 
+                    color={prototype.color} 
+                    onClick={() => handleNodeTypeClick(prototype)} 
+                  />
+                </div>
               ))}
             </>
           )}
           {mode === 'connection' && (
             <>
+              {/* Header for Connections */}
+              <div style={{
+                fontSize: '18px',
+                fontWeight: 'bold',
+                color: '#bdb5b5',
+                marginLeft: '10px', // Add left margin for balance
+                marginRight: '20px',
+                paddingTop: '8px',
+                paddingBottom: '8px',
+                whiteSpace: 'nowrap',
+                flexShrink: 0 // Prevent shrinking
+              }}>
+                Connections
+              </div>
+              
               {/* Show available connection types for the current graph */}
               {availableConnectionTypes.map(prototype => (
-                <EdgeType 
-                  key={prototype.id} 
-                  name={prototype.name} 
-                  color={prototype.color} 
-                  onClick={() => handleEdgeTypeClick(prototype)} 
-                />
+                <div key={prototype.id} style={{ flexShrink: 0 }}> {/* Prevent shrinking */}
+                  <EdgeType 
+                    name={prototype.name} 
+                    color={prototype.color} 
+                    onClick={() => handleEdgeTypeClick(prototype)} 
+                  />
+                </div>
               ))}
             </>
           )}
