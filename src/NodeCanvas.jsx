@@ -83,6 +83,10 @@ function NodeCanvas() {
   const setActiveGraph = useGraphStore((state) => state.setActiveGraph);
   const setActiveDefinitionNode = useGraphStore((state) => state.setActiveDefinitionNode);
   const setSelectedEdgeId = useGraphStore((state) => state.setSelectedEdgeId);
+  const setSelectedEdgeIds = useGraphStore((state) => state.setSelectedEdgeIds);
+  const addSelectedEdgeId = useGraphStore((state) => state.addSelectedEdgeId);
+  const removeSelectedEdgeId = useGraphStore((state) => state.removeSelectedEdgeId);
+  const clearSelectedEdgeIds = useGraphStore((state) => state.clearSelectedEdgeIds);
   const setNodeType = useGraphStore((state) => state.setNodeType);
   const openRightPanelNodeTab = useGraphStore((state) => state.openRightPanelNodeTab);
   const createAndAssignGraphDefinition = useGraphStore((state) => state.createAndAssignGraphDefinition);
@@ -139,6 +143,10 @@ function NodeCanvas() {
     setUniverseError,
     clearUniverse,
     setUniverseConnected,
+    setSelectedEdgeIds,
+    addSelectedEdgeId,
+    removeSelectedEdgeId,
+    clearSelectedEdgeIds,
   }), [
     updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance, removeEdge, updateGraph, createNewGraph,
     setActiveGraph, setActiveDefinitionNode, setNodeType, openRightPanelNodeTab,
@@ -146,13 +154,15 @@ function NodeCanvas() {
     openGraphTab, moveRightPanelTab, closeGraph, toggleGraphExpanded,
     toggleSavedNode, toggleSavedGraph, updateMultipleNodeInstancePositions, removeDefinitionFromNode,
     openGraphTabAndBringToTop, cleanupOrphanedData, restoreFromSession,
-    loadUniverseFromFile, setUniverseError, clearUniverse, setUniverseConnected
+    loadUniverseFromFile, setUniverseError, clearUniverse, setUniverseConnected,
+    setSelectedEdgeIds, addSelectedEdgeId, removeSelectedEdgeId, clearSelectedEdgeIds
   ]);
 
   // <<< SELECT STATE DIRECTLY >>>
   const activeGraphId = useGraphStore(state => state.activeGraphId);
   const activeDefinitionNodeId = useGraphStore(state => state.activeDefinitionNodeId);
   const selectedEdgeId = useGraphStore(state => state.selectedEdgeId);
+  const selectedEdgeIds = useGraphStore(state => state.selectedEdgeIds);
   const typeListMode = useGraphStore(state => state.typeListMode);
   const graphsMap = useGraphStore(state => state.graphs);
   const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
@@ -585,7 +595,8 @@ function NodeCanvas() {
   // Handle control panel callbacks
   const handleControlPanelClose = useCallback(() => {
     setSelectedEdgeId(null);
-  }, [setSelectedEdgeId]);
+    clearSelectedEdgeIds();
+  }, [setSelectedEdgeId, clearSelectedEdgeIds]);
 
   const handleOpenConnectionDialog = useCallback((edgeId) => {
     setConnectionNamePrompt({ visible: true, name: '', color: NODE_DEFAULT_COLOR, edgeId });
@@ -1766,8 +1777,9 @@ function NodeCanvas() {
       }
 
       // Clear selected edge when clicking on empty canvas
-      if (selectedEdgeId) {
+      if (selectedEdgeId || selectedEdgeIds.size > 0) {
           setSelectedEdgeId(null);
+          clearSelectedEdgeIds();
           return;
       }
 
@@ -2281,7 +2293,7 @@ function NodeCanvas() {
 
       const isDeleteKey = e.key === 'Delete' || e.key === 'Backspace';
       const nodesSelected = selectedInstanceIds.size > 0;
-      const edgeSelected = selectedEdgeId !== null;
+      const edgeSelected = selectedEdgeId !== null || selectedEdgeIds.size > 0;
 
       if (isDeleteKey && nodesSelected) {
         e.preventDefault();
@@ -2305,8 +2317,19 @@ function NodeCanvas() {
         
         if (!connectionNamePrompt.visible) {
           e.preventDefault();
-          // Delete the selected edge
-          storeActions.removeEdge(selectedEdgeId);
+          
+          // Delete single selected edge
+          if (selectedEdgeId) {
+            storeActions.removeEdge(selectedEdgeId);
+          }
+          
+          // Delete multiple selected edges
+          if (selectedEdgeIds.size > 0) {
+            selectedEdgeIds.forEach(edgeId => {
+              storeActions.removeEdge(edgeId);
+            });
+            clearSelectedEdgeIds();
+          }
         } else {
           console.log('[NodeCanvas] Edge deletion prevented - connection selector is open');
         }
@@ -2314,7 +2337,7 @@ function NodeCanvas() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedInstanceIds, selectedEdgeId, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible, connectionNamePrompt.visible, activeGraphId, storeActions.removeNodeInstance, storeActions.removeEdge]);
+  }, [selectedInstanceIds, selectedEdgeId, selectedEdgeIds, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible, connectionNamePrompt.visible, activeGraphId, storeActions.removeNodeInstance, storeActions.removeEdge, clearSelectedEdgeIds]);
 
   const handleProjectTitleChange = (newTitle) => {
     // Get CURRENT activeGraphId directly from store
@@ -3003,7 +3026,7 @@ function NodeCanvas() {
                   const y2 = destNode.y + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
 
                       const isHovered = hoveredEdgeInfo?.edgeId === edge.id;
-                      const isSelected = selectedEdgeId === edge.id;
+                      const isSelected = selectedEdgeId === edge.id || selectedEdgeIds.has(edge.id);
                       
 
                       
@@ -3132,7 +3155,39 @@ function NodeCanvas() {
                              style={{ cursor: 'pointer' }}
                              onClick={(e) => {
                                e.stopPropagation();
-                               setSelectedEdgeId(edge.id);
+                               
+                               // Handle multiple selection with Ctrl/Cmd key
+                               if (e.ctrlKey || e.metaKey) {
+                                 // Toggle this edge in the multiple selection
+                                 if (selectedEdgeIds.has(edge.id)) {
+                                   removeSelectedEdgeId(edge.id);
+                                 } else {
+                                   addSelectedEdgeId(edge.id);
+                                 }
+                               } else {
+                                 // Single selection - clear multiple selection and set single edge
+                                 clearSelectedEdgeIds();
+                                 setSelectedEdgeId(edge.id);
+                               }
+                             }}
+                             onDoubleClick={(e) => {
+                               e.stopPropagation();
+                               
+                               // Find the defining node for this edge's connection type
+                               let definingNodeId = null;
+                               
+                               // Check definitionNodeIds first (for custom connection types)
+                               if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+                                 definingNodeId = edge.definitionNodeIds[0];
+                               } else if (edge.typeNodeId) {
+                                 // Fallback to typeNodeId (for base connection type)
+                                 definingNodeId = edge.typeNodeId;
+                               }
+                               
+                               // Open the panel tab for the defining node
+                               if (definingNodeId) {
+                                 openRightPanelNodeTab(definingNodeId);
+                               }
                              }}
                            />
                           

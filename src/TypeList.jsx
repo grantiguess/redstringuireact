@@ -161,10 +161,44 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
   };
 
   const handleEdgeTypeClick = (edgeType) => {
-    // For now, just log the edge type selection
-    // In the future, this could set edge types for selected edges
-    console.log(`Edge type ${edgeType.name} clicked`);
-    // TODO: Implement edge selection and typing when edge selection is available
+    // Find all edges of this type in the current graph
+    const edgesOfType = [];
+    
+    if (activeGraphId) {
+      const activeGraph = graphsMap.get(activeGraphId);
+      if (activeGraph && activeGraph.edgeIds) {
+        activeGraph.edgeIds.forEach(edgeId => {
+          const edge = edgesMap.get(edgeId);
+          if (edge) {
+            // Check if this edge matches the selected type
+            let matchesType = false;
+            
+            if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+              // Check if any definitionNodeId matches the selected type
+              matchesType = edge.definitionNodeIds.includes(edgeType.id);
+            } else if (edge.typeNodeId) {
+              // Check if typeNodeId matches the selected type
+              matchesType = edge.typeNodeId === edgeType.id;
+            }
+            
+            if (matchesType) {
+              edgesOfType.push(edgeId);
+            }
+          }
+        });
+      }
+    }
+    
+    // Select all edges of this type
+    if (edgesOfType.length > 0) {
+      const setSelectedEdgeIds = useGraphStore.getState().setSelectedEdgeIds;
+      setSelectedEdgeIds(edgesOfType);
+      console.log(`Selected ${edgesOfType.length} edges of type ${edgeType.name}`);
+    }
+    
+    // Open the panel tab for the connection type's defining node
+    const openRightPanelNodeTab = useGraphStore.getState().openRightPanelNodeTab;
+    openRightPanelNodeTab(edgeType.id);
   };
 
   const cycleMode = () => {

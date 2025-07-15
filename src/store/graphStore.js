@@ -128,6 +128,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     activeGraphId: null,
     activeDefinitionNodeId: null, // This now refers to a prototypeId
     selectedEdgeId: null, // Currently selected edge for editing
+    selectedEdgeIds: new Set(), // Multiple selected edges
     typeListMode: (() => {
       // Load saved state from localStorage, with 'connection' as default
       const savedMode = localStorage.getItem('redstring_typelist_mode');
@@ -865,6 +866,30 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
      console.log(`[Store Action] Setting selectedEdgeId to: ${edgeId}`);
      set({ selectedEdgeId: edgeId });
   },
+
+  // Set multiple selected edges
+  setSelectedEdgeIds: (edgeIds) => {
+     console.log(`[Store Action] Setting selectedEdgeIds to:`, edgeIds);
+     set({ selectedEdgeIds: new Set(edgeIds) });
+  },
+
+  // Add edge to selection
+  addSelectedEdgeId: (edgeId) => set(produce((draft) => {
+     draft.selectedEdgeIds.add(edgeId);
+     console.log(`[Store Action] Added edge ${edgeId} to selection`);
+  })),
+
+  // Remove edge from selection
+  removeSelectedEdgeId: (edgeId) => set(produce((draft) => {
+     draft.selectedEdgeIds.delete(edgeId);
+     console.log(`[Store Action] Removed edge ${edgeId} from selection`);
+  })),
+
+  // Clear all selected edges
+  clearSelectedEdgeIds: () => set(produce((draft) => {
+     draft.selectedEdgeIds.clear();
+     console.log(`[Store Action] Cleared all selected edges`);
+  })),
 
   // Set TypeList mode
   setTypeListMode: (mode) => {
