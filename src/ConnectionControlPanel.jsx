@@ -114,9 +114,6 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
       // Get the icon's bounding rectangle for the hurtle animation
       const iconRect = e.currentTarget.getBoundingClientRect();
       
-      // Start the panel exit animation immediately
-      setAnimationState('exiting');
-      
       // Check if definitions exist
       const hasDefinitions = connectionType.definitionGraphIds && connectionType.definitionGraphIds.length > 0;
       
