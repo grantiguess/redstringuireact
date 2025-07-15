@@ -1,49 +1,9 @@
+/* Connection Control Panel specific styles */
 .connection-control-panel {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 20px;
-  z-index: 20001;
-  pointer-events: auto;
-  transform-origin: center center; /* Ensure growth happens from center */
+  /* Additional styles specific to connection control panel can go here */
 }
 
-/* Animation classes */
-.connection-control-panel.entering {
-  animation: connectionPanelFlyIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-}
-
-.connection-control-panel.exiting {
-  animation: connectionPanelFlyOut 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-
-/* Keyframe animations */
-@keyframes connectionPanelFlyIn {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(100px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
-}
-
-@keyframes connectionPanelFlyOut {
-  from {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateX(-50%) translateY(100px);
-  }
-}
-
-.connection-control-panel.with-typelist {
-  bottom: 70px;
-}
-
+/* Keep the connection-control-content for backward compatibility */
 .connection-control-content {
   display: flex;
   align-items: center;
