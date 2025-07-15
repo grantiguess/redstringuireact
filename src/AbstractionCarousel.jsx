@@ -692,11 +692,15 @@ const AbstractionCarousel = ({
       }
     };
 
-    const handleClickAway = (e) => {
-      if (carouselRef.current && !carouselRef.current.contains(e.target)) {
+      const handleClickAway = (e) => {
+    if (carouselRef.current && !carouselRef.current.contains(e.target)) {
+      // Also check if the click was on the abstraction control panel
+      const isOnControlPanel = e.target.closest('.abstraction-control-panel');
+      if (!isOnControlPanel) {
         onClose();
       }
-    };
+    }
+  };
 
     if (isVisible) {
       document.addEventListener('keydown', handleKeyDown);

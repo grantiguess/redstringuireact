@@ -9,6 +9,7 @@ import PlusSign from './PlusSign.jsx'; // Import the new PlusSign component
 import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import AbstractionCarousel from './AbstractionCarousel.jsx'; // Import the AbstractionCarousel component
 import ConnectionControlPanel from './ConnectionControlPanel.jsx'; // Import the ConnectionControlPanel component
+import AbstractionControlPanel from './AbstractionControlPanel.jsx'; // Import the AbstractionControlPanel component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
 import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal, Bookmark } from 'lucide-react'; // Icons for PieMenu
@@ -491,6 +492,14 @@ function NodeCanvas() {
   
   // Animation states for carousel
   const [carouselAnimationState, setCarouselAnimationState] = useState('hidden'); // 'hidden', 'entering', 'visible', 'exiting'
+  
+  // Abstraction dimension management
+  const [abstractionDimensions, setAbstractionDimensions] = useState(['Physical']);
+  const [currentAbstractionDimension, setCurrentAbstractionDimension] = useState('Physical');
+  
+  // Abstraction control panel states
+  const [abstractionControlPanelVisible, setAbstractionControlPanelVisible] = useState(false);
+  const [abstractionControlPanelShouldShow, setAbstractionControlPanelShouldShow] = useState(false);
 
   // Define carousel callbacks outside conditional rendering to avoid hook violations
   const onCarouselAnimationStateChange = useCallback((newState) => {
@@ -569,6 +578,10 @@ function NodeCanvas() {
     // Clear connection control panel
     setControlPanelVisible(false);
     setControlPanelShouldShow(false);
+
+    // Clear abstraction control panel
+    setAbstractionControlPanelVisible(false);
+    setAbstractionControlPanelShouldShow(false);
   }, [activeGraphId]);
 
   // --- Connection Control Panel Management ---
@@ -592,6 +605,24 @@ function NodeCanvas() {
     }
   }, [selectedEdgeId, connectionNamePrompt.visible, controlPanelVisible]);
 
+  // --- Abstraction Control Panel Management ---
+  useEffect(() => {
+    const shouldShow = Boolean(abstractionCarouselVisible && abstractionCarouselNode);
+    
+    if (shouldShow) {
+      // Show the panel immediately when carousel is visible
+      setAbstractionControlPanelShouldShow(true);
+      setAbstractionControlPanelVisible(true);
+    } else if (!abstractionCarouselVisible && abstractionControlPanelVisible) {
+      // Carousel was hidden - start exit animation but keep panel mounted
+      setAbstractionControlPanelVisible(false);
+      // Don't set abstractionControlPanelShouldShow to false yet - let the animation complete
+    } else if (!shouldShow) {
+      // Other cases where panel should be hidden
+      setAbstractionControlPanelVisible(false);
+    }
+  }, [abstractionCarouselVisible, abstractionCarouselNode, abstractionControlPanelVisible]);
+
   // Handle control panel callbacks
   const handleControlPanelClose = useCallback(() => {
     setSelectedEdgeId(null);
@@ -608,6 +639,40 @@ function NodeCanvas() {
     // When it's called, we know it's safe to unmount the component.
     setControlPanelShouldShow(false);
   }, [setControlPanelShouldShow]);
+
+  // Handle abstraction control panel callbacks
+  const handleAbstractionDimensionChange = useCallback((newDimension) => {
+    setCurrentAbstractionDimension(newDimension);
+  }, []);
+
+  const handleAddAbstractionDimension = useCallback((newDimensionName) => {
+    setAbstractionDimensions(prev => [...prev, newDimensionName]);
+    setCurrentAbstractionDimension(newDimensionName);
+  }, []);
+
+  const handleDeleteAbstractionDimension = useCallback((dimensionToDelete) => {
+    setAbstractionDimensions(prev => {
+      const newDimensions = prev.filter(dim => dim !== dimensionToDelete);
+      // If we're deleting the current dimension, switch to the first remaining one
+      if (dimensionToDelete === currentAbstractionDimension && newDimensions.length > 0) {
+        setCurrentAbstractionDimension(newDimensions[0]);
+      }
+      return newDimensions;
+    });
+  }, [currentAbstractionDimension]);
+
+  const handleExpandAbstractionDimension = useCallback((node, dimension, iconRect) => {
+    // For now, just open the node in a new tab
+    // In the future, this could create/open a graph definition for the abstraction chain
+    console.log(`[Abstraction] Expanding ${dimension} dimension for node:`, node.name);
+    // Could implement hurtle animation here similar to other expand buttons
+  }, []);
+
+  const handleAbstractionControlPanelAnimationComplete = useCallback(() => {
+    // This callback is only for the exit animation.
+    // When it's called, we know it's safe to unmount the component.
+    setAbstractionControlPanelShouldShow(false);
+  }, []);
 
   // --- Saved Graphs Management ---
   const bookmarkActive = useMemo(() => {
@@ -3878,6 +3943,22 @@ function NodeCanvas() {
           isVisible={controlPanelVisible}
           onAnimationComplete={handleControlPanelAnimationComplete}
           onStartHurtleAnimationFromPanel={startHurtleAnimationFromPanel}
+        />
+      )}
+
+      {/* AbstractionControlPanel Component - with animation */}
+      {(abstractionControlPanelShouldShow || abstractionControlPanelVisible) && (
+        <AbstractionControlPanel
+          selectedNode={abstractionCarouselNode}
+          currentDimension={currentAbstractionDimension}
+          availableDimensions={abstractionDimensions}
+          onDimensionChange={handleAbstractionDimensionChange}
+          onAddDimension={handleAddAbstractionDimension}
+          onDeleteDimension={handleDeleteAbstractionDimension}
+          onExpandDimension={handleExpandAbstractionDimension}
+          typeListOpen={typeListMode !== 'closed'}
+          isVisible={abstractionControlPanelVisible}
+          onAnimationComplete={handleAbstractionControlPanelAnimationComplete}
         />
       )}
 
