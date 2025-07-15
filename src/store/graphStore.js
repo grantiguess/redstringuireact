@@ -128,7 +128,15 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     activeGraphId: null,
     activeDefinitionNodeId: null, // This now refers to a prototypeId
     selectedEdgeId: null, // Currently selected edge for editing
-    typeListMode: 'closed', // TypeList state: 'closed', 'node', 'connection'
+    typeListMode: (() => {
+      // Load saved state from localStorage, with 'connection' as default
+      const savedMode = localStorage.getItem('redstring_typelist_mode');
+      if (savedMode && ['closed', 'node', 'connection'].includes(savedMode)) {
+        return savedMode;
+      } else {
+        return 'connection'; // Default order: connections -> nodes -> closed
+      }
+    })(),
     rightPanelTabs: [{ type: 'home', isActive: true }], 
     expandedGraphIds: new Set(),
     savedNodeIds: new Set(), // This now refers to prototype IDs

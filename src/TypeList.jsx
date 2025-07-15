@@ -16,17 +16,6 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
   // Ref for scrollable content area
   const contentRef = useRef(null);
 
-  // Load saved state from localStorage on mount
-  useEffect(() => {
-    const savedMode = localStorage.getItem('redstring_typelist_mode');
-    if (savedMode && ['closed', 'node', 'connection'].includes(savedMode)) {
-      setTypeListMode(savedMode);
-    } else {
-      // Set default order: connections -> nodes -> closed
-      setTypeListMode('connection');
-    }
-  }, [setTypeListMode]);
-
   // Save state to localStorage whenever mode changes
   useEffect(() => {
     localStorage.setItem('redstring_typelist_mode', mode);
