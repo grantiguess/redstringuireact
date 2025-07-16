@@ -23,6 +23,9 @@ const Header = ({
   setDebugMode,
   bookmarkActive = false,
   onBookmarkToggle,
+  // Connection names props
+  showConnectionNames,
+  onToggleShowConnectionNames,
   // File management actions
   onNewUniverse,
   onOpenUniverse,
@@ -254,6 +257,8 @@ const Header = ({
             isOpen={isMenuOpen} 
             debugMode={debugMode} 
             setDebugMode={setDebugMode}
+            showConnectionNames={showConnectionNames}
+            onToggleShowConnectionNames={onToggleShowConnectionNames}
             onNewUniverse={onNewUniverse}
             onOpenUniverse={onOpenUniverse}
             onSaveUniverse={onSaveUniverse}
@@ -300,6 +305,8 @@ const Header = ({
           isOpen={isMenuOpen} 
           debugMode={debugMode} 
           setDebugMode={setDebugMode}
+          showConnectionNames={showConnectionNames}
+          onToggleShowConnectionNames={onToggleShowConnectionNames}
           onNewUniverse={onNewUniverse}
           onOpenUniverse={onOpenUniverse}
           onSaveUniverse={onSaveUniverse}

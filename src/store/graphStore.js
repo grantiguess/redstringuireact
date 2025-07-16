@@ -158,6 +158,9 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
 
     // Thing node ID for abstraction system
     thingNodeId: 'base-thing-prototype',
+    
+    // UI Settings
+    showConnectionNames: false,
 
   // --- Actions --- (Operating on plain data)
 
@@ -863,6 +866,11 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     }
     // Replace with a new Set instance to ensure reference change
     draft.savedNodeIds = new Set(draft.savedNodeIds);
+  })),
+
+  // Toggle connection names visibility
+  toggleShowConnectionNames: () => set(produce((draft) => {
+    draft.showConnectionNames = !draft.showConnectionNames;
   })),
 
   // Explicitly set active definition node (e.g., when switching graphs)

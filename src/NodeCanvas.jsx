@@ -100,6 +100,7 @@ function NodeCanvas() {
   const toggleGraphExpanded = useGraphStore((state) => state.toggleGraphExpanded);
   const toggleSavedNode = useGraphStore((state) => state.toggleSavedNode);
   const toggleSavedGraph = useGraphStore((state) => state.toggleSavedGraph);
+  const toggleShowConnectionNames = useGraphStore((state) => state.toggleShowConnectionNames);
   const updateMultipleNodeInstancePositions = useGraphStore((state) => state.updateMultipleNodeInstancePositions);
   const removeDefinitionFromNode = useGraphStore((state) => state.removeDefinitionFromNode);
   const openGraphTabAndBringToTop = useGraphStore((state) => state.openGraphTabAndBringToTop);
@@ -148,15 +149,16 @@ function NodeCanvas() {
     addSelectedEdgeId,
     removeSelectedEdgeId,
     clearSelectedEdgeIds,
+    toggleShowConnectionNames,
   }), [
     updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance, removeEdge, updateGraph, createNewGraph,
     setActiveGraph, setActiveDefinitionNode, setNodeType, openRightPanelNodeTab,
     createAndAssignGraphDefinition, createAndAssignGraphDefinitionWithoutActivation, closeRightPanelTab, activateRightPanelTab,
     openGraphTab, moveRightPanelTab, closeGraph, toggleGraphExpanded,
-    toggleSavedNode, toggleSavedGraph, updateMultipleNodeInstancePositions, removeDefinitionFromNode,
+    toggleSavedNode, toggleSavedGraph, toggleShowConnectionNames, updateMultipleNodeInstancePositions, removeDefinitionFromNode,
     openGraphTabAndBringToTop, cleanupOrphanedData, restoreFromSession,
     loadUniverseFromFile, setUniverseError, clearUniverse, setUniverseConnected,
-    setSelectedEdgeIds, addSelectedEdgeId, removeSelectedEdgeId, clearSelectedEdgeIds
+    setSelectedEdgeIds, addSelectedEdgeId, removeSelectedEdgeId, clearSelectedEdgeIds, toggleShowConnectionNames
   ]);
 
   // <<< SELECT STATE DIRECTLY >>>
@@ -168,6 +170,7 @@ function NodeCanvas() {
   const graphsMap = useGraphStore(state => state.graphs);
   const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
   const edgePrototypesMap = useGraphStore(state => state.edgePrototypes);
+  const showConnectionNames = useGraphStore(state => state.showConnectionNames);
   const edgesMap = useGraphStore(state => state.edges);
   const savedNodeIds = useGraphStore(state => state.savedNodeIds);
   const savedGraphIds = useGraphStore(state => state.savedGraphIds);
@@ -2718,6 +2721,8 @@ function NodeCanvas() {
          setDebugMode={setDebugMode}
          bookmarkActive={bookmarkActive}
          onBookmarkToggle={handleToggleBookmark}
+         showConnectionNames={showConnectionNames}
+         onToggleShowConnectionNames={storeActions.toggleShowConnectionNames}
          onNewUniverse={async () => {
            try {
              console.log('[NodeCanvas] Creating new universe from menu');
@@ -3205,9 +3210,68 @@ function NodeCanvas() {
                              x2={shouldShortenDest ? (destIntersection?.x || x2) : x2}
                              y2={shouldShortenDest ? (destIntersection?.y || y2) : y2}
                       stroke={edgeColor}
-                             strokeWidth="6"
+                             strokeWidth={showConnectionNames ? "8" : "6"}
                              style={{ transition: 'stroke 0.2s ease' }}
                            />
+                           
+                           {/* Connection name text - only show when enabled */}
+                           {showConnectionNames && (() => {
+                             const midX = (x1 + x2) / 2;
+                             const midY = (y1 + y2) / 2;
+                             const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+                             
+                             // Determine connection name to display
+                             let connectionName = 'Connection';
+                             if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+                               const definitionNode = nodePrototypesMap.get(edge.definitionNodeIds[0]);
+                               if (definitionNode) {
+                                 connectionName = definitionNode.name || 'Connection';
+                               }
+                             } else if (edge.typeNodeId) {
+                               const edgePrototype = edgePrototypesMap.get(edge.typeNodeId);
+                               if (edgePrototype) {
+                                 connectionName = edgePrototype.name || 'Connection';
+                               }
+                             }
+                             
+                             // Adjust angle to keep text readable (never upside down)
+                             const adjustedAngle = (angle > 90 || angle < -90) ? angle + 180 : angle;
+                             
+                             return (
+                               <g>
+                                 {/* Background for text readability */}
+                                 <text
+                                   x={midX}
+                                   y={midY}
+                                   fill="white"
+                                   fontSize="12"
+                                   fontWeight="bold"
+                                   textAnchor="middle"
+                                   dominantBaseline="middle"
+                                   transform={`rotate(${adjustedAngle}, ${midX}, ${midY})`}
+                                   stroke="white"
+                                   strokeWidth="3"
+                                   style={{ pointerEvents: 'none' }}
+                                 >
+                                   {connectionName}
+                                 </text>
+                                 {/* Foreground text */}
+                                 <text
+                                   x={midX}
+                                   y={midY}
+                                   fill={edgeColor}
+                                   fontSize="12"
+                                   fontWeight="bold"
+                                   textAnchor="middle"
+                                   dominantBaseline="middle"
+                                   transform={`rotate(${adjustedAngle}, ${midX}, ${midY})`}
+                                   style={{ pointerEvents: 'none' }}
+                                 >
+                                   {connectionName}
+                                 </text>
+                               </g>
+                             );
+                           })()}
                            
                            {/* Invisible click area for edge selection - matches hover detection */}
                            <line

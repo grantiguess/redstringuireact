@@ -8,6 +8,8 @@ const RedstringMenu = ({
   onHoverView, 
   debugMode, 
   setDebugMode,
+  showConnectionNames,
+  onToggleShowConnectionNames,
   // Universe management actions
   onNewUniverse,
   onOpenUniverse,
@@ -220,6 +222,12 @@ const RedstringMenu = ({
                                   onClick={() => setDebugMode(!debugMode)}
                                 >
                                   {debugMode ? 'Hide Debug Overlay' : 'Show Debug Overlay'}
+                                </button>
+                                <button
+                                  className="submenu-item"
+                                  onClick={() => onToggleShowConnectionNames?.()}
+                                >
+                                  {showConnectionNames ? 'Hide Connection Names' : 'Show Connection Names'}
                                 </button>
                             </div>
                           )}
