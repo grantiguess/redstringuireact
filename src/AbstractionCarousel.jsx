@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo, useReducer } 
 import { Plus } from 'lucide-react';
 import { NODE_WIDTH, NODE_HEIGHT, NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR, NODE_PADDING } from './constants';
 import { getNodeDimensions } from './utils';
+import useGraphStore from './store/graphStore';
 import './AbstractionCarousel.css';
 
 // Color utility functions for hue-based progression
@@ -208,7 +209,11 @@ const physicsReducer = (state, action) => {
       } else {
         // Normal velocity-based movement
         nextPosition = state.realPosition + dampedVelocity * frameMultiplier;
-        nextPosition = Math.max(-6, Math.min(6, nextPosition));
+        
+        // Dynamic bounds based on actual chain length
+        const minLevel = action.payload.minLevel || -6;
+        const maxLevel = action.payload.maxLevel || 6;
+        nextPosition = Math.max(minLevel, Math.min(maxLevel, nextPosition));
         
         // Check if we should start snapping (with enhanced "stuck" detection)
         if (Math.abs(dampedVelocity) < MIN_VELOCITY && !state.isSnapping && state.hasUserScrolled) {
@@ -258,7 +263,7 @@ const physicsReducer = (state, action) => {
             }
           }
           
-          nextTargetPosition = Math.max(-6, Math.min(6, newTarget));
+          nextTargetPosition = Math.max(minLevel, Math.min(maxLevel, newTarget));
         }
       }
       
@@ -322,10 +327,33 @@ const AbstractionCarousel = ({
   onClose,
   onReplaceNode,
   onScaleChange, // New callback to report the focused node's current scale
-  onFocusedNodeDimensions // New callback to report the focused node's dimensions
+  onFocusedNodeDimensions, // New callback to report the focused node's dimensions
+  currentDimension = 'Physical', // Current abstraction axis/dimension
+  availableDimensions = [], // Available abstraction axes for this node
+  onDimensionChange, // Called when user changes dimension
+  onAddDimension, // Called when user adds a new dimension
+  onDeleteDimension, // Called when user deletes a dimension
+  onExpandDimension, // Called when user expands a dimension
+  onOpenInPanel // Called when user opens dimension in panel
 }) => {
   const carouselRef = useRef(null);
   
+  // Store bindings
+  const nodePrototypesMap = useGraphStore((state) => state.nodePrototypes);
+  const abstractionAxes = useGraphStore((state) => state.abstractionAxes);
+  const thingNodeId = useGraphStore((state) => state.thingNodeId);
+  
+  // Calculate physics bounds based on chain
+  const physicsMinLevel = useMemo(() => {
+    if (!abstractionChainWithDims.length) return -6;
+    return Math.min(...abstractionChainWithDims.map(n => n.level));
+  }, [abstractionChainWithDims]);
+  
+  const physicsMaxLevel = useMemo(() => {
+    if (!abstractionChainWithDims.length) return 6;
+    return Math.max(...abstractionChainWithDims.map(n => n.level));
+  }, [abstractionChainWithDims]);
+
   // Physics state using reducer
   const [physicsState, dispatchPhysics] = useReducer(physicsReducer, {
     realPosition: 0,
@@ -371,30 +399,71 @@ const AbstractionCarousel = ({
     const baseColor = selectedNode.color || NODE_DEFAULT_COLOR;
     console.log('[AbstractionCarousel] Base color:', baseColor, 'from selectedNode.color:', selectedNode.color);
     
-    const chain = [
-      // Placeholder nodes for adding more
-      { id: 'add_generic', name: 'Add More Generic Thing', type: 'add_generic', level: -6, color: '#999' },
+    // Get the current abstraction axis
+    const currentAxis = Array.from(abstractionAxes.values()).find(axis => axis.name === currentDimension);
+    
+    if (!currentAxis) {
+      // If no axis exists, create a default chain with Thing at the bottom
+      const thingNode = nodePrototypesMap.get(thingNodeId);
       
-      // More generic levels (negative indices) - progressively lighter
-      { id: `${selectedNode.id}_generic_5`, name: 'Existence', type: 'generic', level: -5, color: generateProgressiveColor(baseColor, -5) },
-      { id: `${selectedNode.id}_generic_4`, name: 'Concept', type: 'generic', level: -4, color: generateProgressiveColor(baseColor, -4) },
-      { id: `${selectedNode.id}_generic_3`, name: 'Thing', type: 'generic', level: -3, color: generateProgressiveColor(baseColor, -3) },
-      { id: `${selectedNode.id}_generic_2`, name: 'Entity', type: 'generic', level: -2, color: generateProgressiveColor(baseColor, -2) },
-      { id: `${selectedNode.id}_generic_1`, name: 'Physical Object', type: 'generic', level: -1, color: generateProgressiveColor(baseColor, -1) },
+      const chain = [
+        // Placeholder nodes for adding more
+        { id: 'add_generic', name: 'Add More Generic Thing', type: 'add_generic', level: -2, color: '#ffffff' },
+        
+        // Thing is always at the bottom (only if it exists)
+        ...(thingNode ? [{ ...thingNode, type: 'generic', level: -1, color: generateProgressiveColor(baseColor, -1) }] : []),
+        
+        // Current node (level 0) - use actual selectedNode data including thumbnail
+        { ...selectedNode, type: 'current', level: 0 },
+        
+        // Placeholder nodes for adding more
+        { id: 'add_specific', name: 'Add More Specific Thing', type: 'add_specific', level: 1, color: '#ffffff', textColor: '#000000', borderColor: '#000000' }
+      ];
       
-      // Current node (level 0) - use actual selectedNode data including thumbnail
-      { ...selectedNode, type: 'current', level: 0 },
-      
-      // More specific levels (positive indices) - progressively darker
-      { id: `${selectedNode.id}_specific_1`, name: `Specific ${selectedNode.name}`, type: 'specific', level: 1, color: generateProgressiveColor(baseColor, 1) },
-      { id: `${selectedNode.id}_specific_2`, name: `Very Specific ${selectedNode.name}`, type: 'specific', level: 2, color: generateProgressiveColor(baseColor, 2) },
-      { id: `${selectedNode.id}_specific_3`, name: `${selectedNode.name} Instance`, type: 'specific', level: 3, color: generateProgressiveColor(baseColor, 3) },
-      { id: `${selectedNode.id}_specific_4`, name: `Individual ${selectedNode.name}`, type: 'specific', level: 4, color: generateProgressiveColor(baseColor, 4) },
-      { id: `${selectedNode.id}_specific_5`, name: `Unique ${selectedNode.name}`, type: 'specific', level: 5, color: generateProgressiveColor(baseColor, 5) },
-      
-      // Placeholder nodes for adding more
-      { id: 'add_specific', name: 'Add More Specific Thing', type: 'add_specific', level: 6, color: '#999' }
-    ];
+      // Pre-calculate base dimensions for each node
+      return chain.map(item => {
+        const nodeForDimensions = item.type === 'current' ? selectedNode : item;
+        const baseDimensions = getNodeDimensions(nodeForDimensions, false, null);
+        return { ...item, baseDimensions };
+      });
+    }
+    
+    // Build chain from the abstraction axis
+    const chain = [];
+    
+    // Add the "Add More Generic Thing" button at the top
+    chain.push({ id: 'add_generic', name: 'Add More Generic Thing', type: 'add_generic', level: -currentAxis.chainNodeIds.length - 1, color: '#ffffff' });
+    
+    // Add the nodes from the chain (most generic to most specific)
+    currentAxis.chainNodeIds.forEach((nodeId, index) => {
+      const node = nodePrototypesMap.get(nodeId);
+      if (node) {
+        const level = -(currentAxis.chainNodeIds.length - index);
+        chain.push({
+          ...node,
+          type: 'generic',
+          level: level,
+          color: generateProgressiveColor(baseColor, level)
+        });
+      }
+    });
+    
+    // Always add Thing at the bottom (level -1)
+    const thingNode = nodePrototypesMap.get(thingNodeId);
+    if (thingNode) {
+      chain.push({
+        ...thingNode,
+        type: 'generic',
+        level: -1,
+        color: generateProgressiveColor(baseColor, -1)
+      });
+    }
+    
+    // Add the current node at level 0
+    chain.push({ ...selectedNode, type: 'current', level: 0 });
+    
+    // Add the "Add More Specific Thing" button at the bottom
+    chain.push({ id: 'add_specific', name: 'Add More Specific Thing', type: 'add_specific', level: 1, color: '#ffffff', textColor: '#000000', borderColor: '#000000' });
 
     // Log the generated colors
     chain.forEach(item => {
@@ -409,16 +478,21 @@ const AbstractionCarousel = ({
       const baseDimensions = getNodeDimensions(nodeForDimensions, false, null);
       return { ...item, baseDimensions };
     });
-  }, [selectedNode]);
+  }, [selectedNode, currentDimension, abstractionAxes, nodePrototypesMap, thingNodeId]);
 
   // Pre-calculate the y-offset for each level based on dynamic heights
   const levelOffsets = useMemo(() => {
     const offsets = { 0: 0 };
     if (!abstractionChainWithDims.length) return offsets;
 
+    // Find the minimum and maximum levels
+    const levels = abstractionChainWithDims.map(n => n.level);
+    const minLevel = Math.min(...levels);
+    const maxLevel = Math.max(...levels);
+
     // Calculate upwards from 0
     let upY = 0;
-    for (let i = -1; i >= -6; i--) {
+    for (let i = -1; i >= minLevel; i--) {
       const nodeCurrent = abstractionChainWithDims.find(n => n.level === i);
       const nodeAbove = abstractionChainWithDims.find(n => n.level === i + 1);
       if (!nodeCurrent || !nodeAbove) break;
@@ -432,7 +506,7 @@ const AbstractionCarousel = ({
 
     // Calculate downwards from 0
     let downY = 0;
-    for (let i = 1; i <= 6; i++) {
+    for (let i = 1; i <= maxLevel; i++) {
       const nodeCurrent = abstractionChainWithDims.find(n => n.level === i);
       const nodeBelow = abstractionChainWithDims.find(n => n.level === i - 1);
       if (!nodeCurrent || !nodeBelow) break;
@@ -506,7 +580,14 @@ const AbstractionCarousel = ({
     const frameMultiplier = deltaTimeSeconds * 60;
 
     // Update physics using reducer
-    dispatchPhysics({ type: 'UPDATE_PHYSICS', payload: { frameMultiplier } });
+    dispatchPhysics({ 
+      type: 'UPDATE_PHYSICS', 
+      payload: { 
+        frameMultiplier,
+        minLevel: physicsMinLevel,
+        maxLevel: physicsMaxLevel
+      } 
+    });
 
     // After physics update, get the latest position from the state ref
     // This avoids adding physicsState as a dependency to this callback
@@ -558,7 +639,7 @@ const AbstractionCarousel = ({
     } else {
       animationFrameRef.current = null;
     }
-  }, [isVisible, abstractionChainWithDims, onScaleChange, onFocusedNodeDimensions]);
+  }, [isVisible, abstractionChainWithDims, onScaleChange, onFocusedNodeDimensions, physicsMinLevel, physicsMaxLevel]);
 
   // Update updatePhysics ref
   useEffect(() => {
@@ -678,11 +759,38 @@ const AbstractionCarousel = ({
     
     // Handle click actions
     if (item.type === 'add_generic' || item.type === 'add_specific') {
-      console.log(`Add new ${item.type.replace('add_', '')} abstraction`);
+      // TODO: Implement abstraction axis node creation
+      // For now, create a simple prompt for the user to name the new abstraction level
+      const isGeneric = item.type === 'add_generic';
+      const defaultName = isGeneric ? 'New Generic Thing' : 'New Specific Thing';
+      const newName = prompt(`Enter name for ${isGeneric ? 'generic' : 'specific'} abstraction:`, defaultName);
+      
+      if (newName && newName.trim()) {
+        // Create a new node prototype for this abstraction level
+        const newNodeId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const newNodeData = {
+          id: newNodeId,
+          name: newName.trim(),
+          description: `A ${isGeneric ? 'more generic' : 'more specific'} abstraction of ${selectedNode.name}`,
+          color: selectedNode.color || '#8B0000',
+          typeNodeId: 'base-thing-prototype',
+          definitionGraphIds: [],
+          isSpecificityChainNode: true,
+          hasSpecificityChain: false
+        };
+        
+        // Add the new node to the store
+        // TODO: Add to abstraction axis system when implemented
+        console.log(`Would create new ${isGeneric ? 'generic' : 'specific'} abstraction: ${newName}`);
+        console.log('New node data:', newNodeData);
+        
+        // For now, just show an alert that this feature is coming soon
+        alert(`Abstraction creation for "${newName}" is coming soon! This will be integrated with the full abstraction axis system.`);
+      }
     } else if (item.type !== 'current') {
       console.log(`Replace current node with: ${item.name}`);
     }
-  }, [isVisible]);
+  }, [isVisible, selectedNode]);
 
   // Handle escape key and click-away to close
   useEffect(() => {
@@ -795,8 +903,9 @@ const AbstractionCarousel = ({
           const isCurrent = item.type === 'current';
           const distanceFromMain = Math.abs(item.level - physicsState.realPosition);
           
-          // Fog of war: hide nodes beyond a certain distance
-          if (distanceFromMain > 7.5) {
+          // Fog of war: hide nodes beyond a certain distance (dynamic based on chain length)
+          const maxVisibleDistance = Math.min(7.5, abstractionChainWithDims.length + 1);
+          if (distanceFromMain > maxVisibleDistance) {
             return null;
           }
 
@@ -980,16 +1089,18 @@ const AbstractionCarousel = ({
                     }}
                   >
                     {isPlaceholder ? (
-                      <div style={{ 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        alignItems: 'center',
-                        color: '#260000',
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        textAlign: 'center',
-                        lineHeight: '1.2'
-                      }}>
+                      <div 
+                        className={`carousel-add-button ${item.type === 'add_generic' ? 'add-generic' : 'add-specific'}`}
+                        style={{ 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          alignItems: 'center',
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                          textAlign: 'center',
+                          lineHeight: '1.2'
+                        }}
+                      >
                         <Plus size={20} style={{ marginBottom: '2px' }} />
                         <span style={{ 
                           maxWidth: '90%',

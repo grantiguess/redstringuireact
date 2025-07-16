@@ -75,7 +75,8 @@ export const exportToRedstring = (storeState) => {
     expandedGraphIds,
     rightPanelTabs,
     savedNodeIds,
-    savedGraphIds
+    savedGraphIds,
+    abstractionAxes
   } = storeState;
 
   // Convert Maps to objects for serialization
@@ -138,6 +139,15 @@ export const exportToRedstring = (storeState) => {
     };
   });
 
+  // Convert abstraction axes Map to object
+  const abstractionAxesObj = {};
+  abstractionAxes.forEach((axis, id) => {
+    abstractionAxesObj[id] = {
+      "@type": "AbstractionAxis",
+      ...axis
+    };
+  });
+
   return {
     "@context": REDSTRING_CONTEXT,
     "@type": "redstring:CognitiveSpace",
@@ -157,6 +167,7 @@ export const exportToRedstring = (storeState) => {
     "graphs": graphsObj,
     "nodePrototypes": nodesObj,
     "edges": edgesObj,
+    "abstractionAxes": abstractionAxesObj,
     
     "userInterface": {
       "openGraphIds": [...openGraphIds],
@@ -178,6 +189,7 @@ export const importFromRedstring = (redstringData, storeActions) => {
     graphs: graphsObj = {},
     nodePrototypes: nodesObj = {},
     edges: edgesObj = {},
+    abstractionAxes: abstractionAxesObj = {},
     userInterface = {}
   } = redstringData;
 
@@ -234,11 +246,18 @@ export const importFromRedstring = (redstringData, storeActions) => {
     edgesMap.set(id, edgeData);
   });
 
+  // Convert abstraction axes back to Map
+  const abstractionAxesMap = new Map();
+  Object.entries(abstractionAxesObj).forEach(([id, axis]) => {
+    abstractionAxesMap.set(id, axis);
+  });
+
   // Return the converted state for file storage to use
   const storeState = {
     graphs: graphsMap,
     nodePrototypes: nodesMap,
     edges: edgesMap,
+    abstractionAxes: abstractionAxesMap,
     openGraphIds: userInterface.openGraphIds || [],
     activeGraphId: userInterface.activeGraphId,
     activeDefinitionNodeId: userInterface.activeDefinitionNodeId,

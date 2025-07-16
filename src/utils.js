@@ -18,6 +18,21 @@ const DESCRIPTION_PADDING = 8; // Padding around description text
 
 // --- getNodeDimensions Utility Function ---
 export const getNodeDimensions = (node, isPreviewing = false, descriptionContent = null) => {
+    // --- ADDED: Handle undefined nodes gracefully ---
+    if (!node) {
+        console.warn('[getNodeDimensions] Received undefined node, returning default dimensions');
+        return {
+            currentWidth: NODE_WIDTH,
+            currentHeight: NODE_HEIGHT,
+            textAreaHeight: NODE_HEIGHT,
+            imageWidth: 0,
+            calculatedImageHeight: 0,
+            innerNetworkWidth: 0,
+            innerNetworkHeight: 0,
+            descriptionAreaHeight: 0
+        };
+    }
+    
     // --- ADDED: Handle placeholder nodes from AbstractionCarousel ---
     if (node && (node.type === 'add_generic' || node.type === 'add_specific')) {
         const placeholderWidth = NODE_WIDTH * 1.2;

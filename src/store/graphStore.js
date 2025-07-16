@@ -105,7 +105,9 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         description: 'The base type for all things. Things are nodes, ideas, nouns, concepts, objects, whatever you want them to be. They will always be at the bottom of the abstraction stack. They are the "atoms" of your Redstring universe.',
         color: '#8B0000', // Dark red/maroon
         typeNodeId: null, // No parent type - this is the most basic type
-        definitionGraphIds: []
+        definitionGraphIds: [],
+        isSpecificityChainNode: false, // Not part of any specificity chain
+        hasSpecificityChain: false // Does not define a specificity chain
       });
       return nodePrototypes;
     })(),
@@ -119,7 +121,9 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         description: 'The base type for all connections. Connections are edges, relationships, verbs, actions, whatever you want them to be. They will always be at the bottom of the connection abstraction stack.',
         color: '#000000', // Black
         typeNodeId: null, // No parent type - this is the most basic connection type
-        definitionGraphIds: []
+        definitionGraphIds: [],
+        isSpecificityChainNode: false, // Not part of any specificity chain
+        hasSpecificityChain: false // Does not define a specificity chain
       });
       return edgePrototypes;
     })(),
@@ -148,6 +152,12 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     isUniverseLoading: true, // Start in loading state
     universeLoadingError: null,
     hasUniverseFile: false,
+    
+    // Abstraction axis system
+    abstractionAxes: new Map(), // Map of axisId -> { name, definingNodeId, chainNodeIds: [] }
+
+    // Thing node ID for abstraction system
+    thingNodeId: 'base-thing-prototype',
 
   // --- Actions --- (Operating on plain data)
 
@@ -1207,6 +1217,104 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     universeLoadingError: error,
     hasUniverseFile: false
   }),
+  
+  // --- Abstraction Axis Actions ---
+  
+  createAbstractionAxis: (axisName, definingNodeId, chainNodeIds = []) => set(produce((draft) => {
+    const axisId = uuidv4();
+    draft.abstractionAxes.set(axisId, {
+      id: axisId,
+      name: axisName,
+      definingNodeId,
+      chainNodeIds // Array of node IDs from most generic to most specific
+    });
+    
+    // Mark the defining node as having a specificity chain
+    if (draft.nodePrototypes.has(definingNodeId)) {
+      draft.nodePrototypes.get(definingNodeId).hasSpecificityChain = true;
+    }
+    
+    // Mark all nodes in the chain as being part of a specificity chain
+    chainNodeIds.forEach(nodeId => {
+      if (draft.nodePrototypes.has(nodeId)) {
+        draft.nodePrototypes.get(nodeId).isSpecificityChainNode = true;
+      }
+    });
+  })),
+  
+  updateAbstractionAxis: (axisId, updates) => set(produce((draft) => {
+    const axis = draft.abstractionAxes.get(axisId);
+    if (axis) {
+      // Update the axis
+      Object.assign(axis, updates);
+      
+      // Update node properties if chain changed
+      if (updates.chainNodeIds) {
+        // First, remove the old chain properties
+        axis.chainNodeIds?.forEach(nodeId => {
+          if (draft.nodePrototypes.has(nodeId)) {
+            draft.nodePrototypes.get(nodeId).isSpecificityChainNode = false;
+          }
+        });
+        
+        // Then add the new chain properties
+        updates.chainNodeIds.forEach(nodeId => {
+          if (draft.nodePrototypes.has(nodeId)) {
+            draft.nodePrototypes.get(nodeId).isSpecificityChainNode = true;
+          }
+        });
+      }
+    }
+  })),
+  
+  deleteAbstractionAxis: (axisId) => set(produce((draft) => {
+    const axis = draft.abstractionAxes.get(axisId);
+    if (axis) {
+      // Remove specificity chain properties from nodes
+      if (draft.nodePrototypes.has(axis.definingNodeId)) {
+        draft.nodePrototypes.get(axis.definingNodeId).hasSpecificityChain = false;
+      }
+      
+      axis.chainNodeIds?.forEach(nodeId => {
+        if (draft.nodePrototypes.has(nodeId)) {
+          draft.nodePrototypes.get(nodeId).isSpecificityChainNode = false;
+        }
+      });
+      
+      // Remove the axis
+      draft.abstractionAxes.delete(axisId);
+    }
+  })),
+  
+  addNodeToAbstractionChain: (axisId, nodeId, position = -1) => set(produce((draft) => {
+    const axis = draft.abstractionAxes.get(axisId);
+    if (axis) {
+      const chainNodeIds = [...axis.chainNodeIds];
+      if (position === -1) {
+        chainNodeIds.push(nodeId);
+      } else {
+        chainNodeIds.splice(position, 0, nodeId);
+      }
+      axis.chainNodeIds = chainNodeIds;
+      
+      // Mark the node as part of a specificity chain
+      if (draft.nodePrototypes.has(nodeId)) {
+        draft.nodePrototypes.get(nodeId).isSpecificityChainNode = true;
+      }
+    }
+  })),
+  
+  removeNodeFromAbstractionChain: (axisId, nodeId) => set(produce((draft) => {
+    const axis = draft.abstractionAxes.get(axisId);
+    if (axis) {
+      axis.chainNodeIds = axis.chainNodeIds.filter(id => id !== nodeId);
+      
+      // Remove the specificity chain property from the node
+      if (draft.nodePrototypes.has(nodeId)) {
+        draft.nodePrototypes.get(nodeId).isSpecificityChainNode = false;
+      }
+    }
+  })),
 
   clearUniverse: () => set(() => ({
     graphs: new Map(),
@@ -1222,7 +1330,10 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     isUniverseLoaded: false,
     isUniverseLoading: false,
     universeLoadingError: null,
-    hasUniverseFile: false
+    hasUniverseFile: false,
+    
+    // Abstraction axis system
+    abstractionAxes: new Map(), // Map of axisId -> { name, definingNodeId, chainNodeIds: [] }
   })),
 
   setUniverseConnected: (hasFile = true) => set(state => ({

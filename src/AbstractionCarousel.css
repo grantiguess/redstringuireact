@@ -132,4 +132,46 @@
   100% {
     opacity: var(--target-opacity, 1); /* End at calculated opacity */
   }
-} 
+}
+
+/* Add button styling */
+.carousel-add-button {
+  border: 2px dashed #666;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #999;
+  font-style: italic;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.2;
+  border-radius: 8px;
+  min-height: 60px;
+}
+
+/* Add Generic Thing button - pure white background */
+.carousel-add-button.add-generic {
+  background-color: #ffffff;
+  border: 2px solid #ccc;
+  color: #333;
+  font-style: normal;
+  border-radius: 8px;
+}
+
+/* Add Specific Thing button - solid black outline with white text */
+.carousel-add-button.add-specific {
+  background-color: #ffffff;
+  border: 2px solid #000000;
+  color: #000000;
+  font-style: normal;
+  border-radius: 8px;
+}
+
+.carousel-add-button:hover {
+  opacity: 0.8;
+  transform: scale(1.02);
+}
