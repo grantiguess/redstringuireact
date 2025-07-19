@@ -3182,6 +3182,7 @@ function NodeCanvas() {
                         ? edge.directionality.arrowsToward 
                         : new Set(Array.isArray(edge.directionality?.arrowsToward) ? edge.directionality.arrowsToward : []);
                       
+                      // Only shorten connections at ends with arrows or hover state
                       const shouldShortenSource = isHovered || arrowsToward.has(sourceNode.id);
                       const shouldShortenDest = isHovered || arrowsToward.has(destNode.id);
 
@@ -3210,7 +3211,7 @@ function NodeCanvas() {
                              x2={shouldShortenDest ? (destIntersection?.x || x2) : x2}
                              y2={shouldShortenDest ? (destIntersection?.y || y2) : y2}
                       stroke={edgeColor}
-                             strokeWidth={showConnectionNames ? "8" : "6"}
+                             strokeWidth={showConnectionNames ? "16" : "6"}
                              style={{ transition: 'stroke 0.2s ease' }}
                            />
                            
@@ -3239,27 +3240,11 @@ function NodeCanvas() {
                              
                              return (
                                <g>
-                                 {/* Background for text readability */}
+                                 {/* Canvas-colored text creating a "hole" effect in the connection */}
                                  <text
                                    x={midX}
                                    y={midY}
-                                   fill="white"
-                                   fontSize="12"
-                                   fontWeight="bold"
-                                   textAnchor="middle"
-                                   dominantBaseline="middle"
-                                   transform={`rotate(${adjustedAngle}, ${midX}, ${midY})`}
-                                   stroke="white"
-                                   strokeWidth="3"
-                                   style={{ pointerEvents: 'none' }}
-                                 >
-                                   {connectionName}
-                                 </text>
-                                 {/* Foreground text */}
-                                 <text
-                                   x={midX}
-                                   y={midY}
-                                   fill={edgeColor}
+                                   fill="#bdb5b5"
                                    fontSize="12"
                                    fontWeight="bold"
                                    textAnchor="middle"
@@ -3326,16 +3311,17 @@ function NodeCanvas() {
                              let sourceArrowX, sourceArrowY, destArrowX, destArrowY, sourceArrowAngle, destArrowAngle;
                              
                              if (!sourceIntersection || !destIntersection) {
-                               // Fallback positioning
-                               sourceArrowX = x1 + (dx / length) * 20;
-                               sourceArrowY = y1 + (dy / length) * 20;
-                               destArrowX = x2 - (dx / length) * 20;
-                               destArrowY = y2 - (dy / length) * 20;
+                               // Fallback positioning - move arrows closer to center
+                               const fallbackOffset = shouldShortenSource || shouldShortenDest ? 10 : 15;
+                               sourceArrowX = x1 + (dx / length) * fallbackOffset;
+                               sourceArrowY = y1 + (dy / length) * fallbackOffset;
+                               destArrowX = x2 - (dx / length) * fallbackOffset;
+                               destArrowY = y2 - (dy / length) * fallbackOffset;
                                sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
                                destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
                              } else {
-                               // Precise intersection positioning
-                               const arrowLength = 5;
+                               // Precise intersection positioning - move arrows closer to center when connection shortened
+                               const arrowLength = shouldShortenSource || shouldShortenDest ? 1 : 3;
                                sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
                                sourceArrowX = sourceIntersection.x + (dx / length) * arrowLength;
                                sourceArrowY = sourceIntersection.y + (dy / length) * arrowLength;
