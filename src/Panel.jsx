@@ -1208,7 +1208,7 @@ const Panel = forwardRef(
         const newTypeData = {
           id: newTypeId,
           name: name,
-          description: `A type representing ${name}`,
+          description: '',
           color: typeNamePrompt.color || '#8B0000', // Default to maroon
           definitionGraphIds: [],
           typeNodeId: null, // Types have no parent type

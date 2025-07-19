@@ -343,6 +343,94 @@ const AbstractionCarousel = ({
   const abstractionAxes = useGraphStore((state) => state.abstractionAxes);
   const thingNodeId = useGraphStore((state) => state.thingNodeId);
   
+  // Pre-calculate the abstraction chain and base dimensions for each node
+  const abstractionChainWithDims = useMemo(() => {
+    if (!selectedNode) return [];
+    
+    const baseColor = selectedNode.color || NODE_DEFAULT_COLOR;
+    console.log('[AbstractionCarousel] Base color:', baseColor, 'from selectedNode.color:', selectedNode.color);
+    
+    // Get the current abstraction axis
+    const currentAxis = Array.from(abstractionAxes.values()).find(axis => axis.name === currentDimension);
+    
+    if (!currentAxis) {
+      // If no axis exists, create a default chain with Thing at the bottom
+      const thingNode = nodePrototypesMap.get(thingNodeId);
+      
+      const chain = [
+        // Placeholder nodes for adding more
+        { id: 'add_generic', name: 'Add More Generic Thing', type: 'add_generic', level: -2, color: '#ffffff' },
+        
+        // Thing is always at the bottom (only if it exists)
+        ...(thingNode ? [{ ...thingNode, type: 'generic', level: -1, color: generateProgressiveColor(baseColor, -1) }] : []),
+        
+        // Current node (level 0) - use actual selectedNode data including thumbnail
+        { ...selectedNode, type: 'current', level: 0 },
+        
+        // Placeholder nodes for adding more
+        { id: 'add_specific', name: 'Add More Specific Thing', type: 'add_specific', level: 1, color: '#000000', textColor: '#ffffff', borderColor: '#000000' }
+      ];
+      
+      // Pre-calculate base dimensions for each node
+      return chain.map(item => {
+        const nodeForDimensions = item.type === 'current' ? selectedNode : item;
+        const baseDimensions = getNodeDimensions(nodeForDimensions, false, null);
+        return { ...item, baseDimensions };
+      });
+    }
+    
+    // Build chain from the abstraction axis
+    const chain = [];
+    
+    // Add the "Add More Generic Thing" button at the top
+    chain.push({ id: 'add_generic', name: 'Add More Generic Thing', type: 'add_generic', level: -currentAxis.chainNodeIds.length - 1, color: '#ffffff' });
+    
+    // Add the nodes from the chain (most generic to most specific)
+    currentAxis.chainNodeIds.forEach((nodeId, index) => {
+      const node = nodePrototypesMap.get(nodeId);
+      if (node) {
+        const level = -(currentAxis.chainNodeIds.length - index);
+        chain.push({
+          ...node,
+          type: 'generic',
+          level: level,
+          color: generateProgressiveColor(baseColor, level)
+        });
+      }
+    });
+    
+    // Always add Thing at the bottom (level -1)
+    const thingNode = nodePrototypesMap.get(thingNodeId);
+    if (thingNode) {
+      chain.push({
+        ...thingNode,
+        type: 'generic',
+        level: -1,
+        color: generateProgressiveColor(baseColor, -1)
+      });
+    }
+    
+    // Add the current node at level 0
+    chain.push({ ...selectedNode, type: 'current', level: 0 });
+    
+    // Add the "Add More Specific Thing" button at the bottom
+    chain.push({ id: 'add_specific', name: 'Add More Specific Thing', type: 'add_specific', level: 1, color: '#000000', textColor: '#ffffff', borderColor: '#000000' });
+
+    // Log the generated colors
+    chain.forEach(item => {
+      if (item.level !== 0) {
+        console.log(`[AbstractionCarousel] Level ${item.level}: ${item.name} -> Color: ${item.color}`);
+      }
+    });
+
+    // Pre-calculate base dimensions for each node to use for smooth interpolation later
+    return chain.map(item => {
+      const nodeForDimensions = item.type === 'current' ? selectedNode : item;
+      const baseDimensions = getNodeDimensions(nodeForDimensions, false, null);
+      return { ...item, baseDimensions };
+    });
+  }, [selectedNode, currentDimension, abstractionAxes, nodePrototypesMap, thingNodeId]);
+  
   // Calculate physics bounds based on chain
   const physicsMinLevel = useMemo(() => {
     if (!abstractionChainWithDims.length) return -6;
@@ -391,94 +479,6 @@ const AbstractionCarousel = ({
       return () => clearTimeout(timer);
     }
   }, [animationState, onAnimationStateChange, onExitAnimationComplete]);
-
-  // Pre-calculate the abstraction chain and base dimensions for each node
-  const abstractionChainWithDims = useMemo(() => {
-    if (!selectedNode) return [];
-    
-    const baseColor = selectedNode.color || NODE_DEFAULT_COLOR;
-    console.log('[AbstractionCarousel] Base color:', baseColor, 'from selectedNode.color:', selectedNode.color);
-    
-    // Get the current abstraction axis
-    const currentAxis = Array.from(abstractionAxes.values()).find(axis => axis.name === currentDimension);
-    
-    if (!currentAxis) {
-      // If no axis exists, create a default chain with Thing at the bottom
-      const thingNode = nodePrototypesMap.get(thingNodeId);
-      
-      const chain = [
-        // Placeholder nodes for adding more
-        { id: 'add_generic', name: 'Add More Generic Thing', type: 'add_generic', level: -2, color: '#ffffff' },
-        
-        // Thing is always at the bottom (only if it exists)
-        ...(thingNode ? [{ ...thingNode, type: 'generic', level: -1, color: generateProgressiveColor(baseColor, -1) }] : []),
-        
-        // Current node (level 0) - use actual selectedNode data including thumbnail
-        { ...selectedNode, type: 'current', level: 0 },
-        
-        // Placeholder nodes for adding more
-        { id: 'add_specific', name: 'Add More Specific Thing', type: 'add_specific', level: 1, color: '#ffffff', textColor: '#000000', borderColor: '#000000' }
-      ];
-      
-      // Pre-calculate base dimensions for each node
-      return chain.map(item => {
-        const nodeForDimensions = item.type === 'current' ? selectedNode : item;
-        const baseDimensions = getNodeDimensions(nodeForDimensions, false, null);
-        return { ...item, baseDimensions };
-      });
-    }
-    
-    // Build chain from the abstraction axis
-    const chain = [];
-    
-    // Add the "Add More Generic Thing" button at the top
-    chain.push({ id: 'add_generic', name: 'Add More Generic Thing', type: 'add_generic', level: -currentAxis.chainNodeIds.length - 1, color: '#ffffff' });
-    
-    // Add the nodes from the chain (most generic to most specific)
-    currentAxis.chainNodeIds.forEach((nodeId, index) => {
-      const node = nodePrototypesMap.get(nodeId);
-      if (node) {
-        const level = -(currentAxis.chainNodeIds.length - index);
-        chain.push({
-          ...node,
-          type: 'generic',
-          level: level,
-          color: generateProgressiveColor(baseColor, level)
-        });
-      }
-    });
-    
-    // Always add Thing at the bottom (level -1)
-    const thingNode = nodePrototypesMap.get(thingNodeId);
-    if (thingNode) {
-      chain.push({
-        ...thingNode,
-        type: 'generic',
-        level: -1,
-        color: generateProgressiveColor(baseColor, -1)
-      });
-    }
-    
-    // Add the current node at level 0
-    chain.push({ ...selectedNode, type: 'current', level: 0 });
-    
-    // Add the "Add More Specific Thing" button at the bottom
-    chain.push({ id: 'add_specific', name: 'Add More Specific Thing', type: 'add_specific', level: 1, color: '#ffffff', textColor: '#000000', borderColor: '#000000' });
-
-    // Log the generated colors
-    chain.forEach(item => {
-      if (item.level !== 0) {
-        console.log(`[AbstractionCarousel] Level ${item.level}: ${item.name} -> Color: ${item.color}`);
-      }
-    });
-
-    // Pre-calculate base dimensions for each node to use for smooth interpolation later
-    return chain.map(item => {
-      const nodeForDimensions = item.type === 'current' ? selectedNode : item;
-      const baseDimensions = getNodeDimensions(nodeForDimensions, false, null);
-      return { ...item, baseDimensions };
-    });
-  }, [selectedNode, currentDimension, abstractionAxes, nodePrototypesMap, thingNodeId]);
 
   // Pre-calculate the y-offset for each level based on dynamic heights
   const levelOffsets = useMemo(() => {
@@ -986,7 +986,7 @@ const AbstractionCarousel = ({
           const cornerRadius = NODE_CORNER_RADIUS;
           
           const borderColor = isPlaceholder ? '#999' : (isMainNode ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.3)'); // Use semi-transparent borders
-          const nodeColor = isPlaceholder ? '#bdb5b5' : (item.color || NODE_DEFAULT_COLOR);
+          const nodeColor = isPlaceholder ? (item.color || '#bdb5b5') : (item.color || NODE_DEFAULT_COLOR);
           
           // Debug logging
           if (!isPlaceholder) {
@@ -1089,30 +1089,24 @@ const AbstractionCarousel = ({
                     }}
                   >
                     {isPlaceholder ? (
-                      <div 
-                        className={`carousel-add-button ${item.type === 'add_generic' ? 'add-generic' : 'add-specific'}`}
-                        style={{ 
-                          display: 'flex', 
-                          flexDirection: 'column', 
-                          alignItems: 'center',
-                          fontSize: '12px',
-                          fontWeight: 'bold',
-                          fontFamily: "'EmOne', sans-serif",
-                          textAlign: 'center',
-                          lineHeight: '1.2'
-                        }}
-                      >
-                        <Plus size={20} style={{ marginBottom: '2px' }} />
+                      <>
+                        <Plus size={20} style={{ marginBottom: '2px', color: item.textColor || getTextColor(nodeColor) }} />
                         <span style={{ 
                           maxWidth: '90%',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
-                          whiteSpace: 'normal',
-                          wordBreak: 'break-word'
+                          whiteSpace: 'pre-line',
+                          wordBreak: 'break-word',
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                          fontFamily: "'EmOne', sans-serif",
+                          textAlign: 'center',
+                          lineHeight: '1.2',
+                          color: item.textColor || getTextColor(nodeColor)
                         }}>
-                          {item.name}
+                          {item.name.replace(' Generic Thing', '\nGeneric Thing').replace(' Specific Thing', '\nSpecific Thing')}
                         </span>
-                      </div>
+                      </>
                     ) : (
                       <span
                         style={{
