@@ -1524,8 +1524,9 @@ function NodeCanvas() {
       const hoveredNode = nodes.find(node => isInsideNode(node, e.clientX, e.clientY));
       
       if (!hoveredNode) {
-        // Not over a node, check for edge hover
+        // Not over a node, check for edge hover - find closest edge to mouse
         let foundHoveredEdgeInfo = null;
+        let closestDistance = Infinity;
         
         for (const edge of edges) {
           const sourceNode = nodes.find(n => n.id === edge.sourceId);
@@ -1543,9 +1544,34 @@ function NodeCanvas() {
             const x2 = destNode.x + eNodeDims.currentWidth / 2;
             const y2 = destNode.y + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
             
-            if (isNearEdge(x1, y1, x2, y2, currentX, currentY, 40)) {
-              foundHoveredEdgeInfo = { edgeId: edge.id };
-              break;
+            // Calculate distance from point to line segment
+            const A = currentX - x1;
+            const B = currentY - y1;
+            const C = x2 - x1;
+            const D = y2 - y1;
+
+            const dot = A * C + B * D;
+            const lenSq = C * C + D * D;
+            
+            if (lenSq > 0) {
+              let param = dot / lenSq;
+              
+              // Clamp to line segment
+              if (param < 0) param = 0;
+              else if (param > 1) param = 1;
+              
+              const xx = x1 + param * C;
+              const yy = y1 + param * D;
+              
+              const dx = currentX - xx;
+              const dy = currentY - yy;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+              
+              // Only consider edges within hover threshold and pick the closest one
+              if (distance <= 40 && distance < closestDistance) {
+                closestDistance = distance;
+                foundHoveredEdgeInfo = { edgeId: edge.id };
+              }
             }
           }
         }
@@ -3311,9 +3337,9 @@ function NodeCanvas() {
                              let sourceArrowX, sourceArrowY, destArrowX, destArrowY, sourceArrowAngle, destArrowAngle;
                              
                              if (!sourceIntersection || !destIntersection) {
-                               // Fallback positioning - further from nodes across the board
-                               const fallbackOffset = showConnectionNames ? 22 : 
-                                                     (shouldShortenSource || shouldShortenDest ? 16 : 18);
+                               // Fallback positioning - arrows/dots closer to connection center  
+                               const fallbackOffset = showConnectionNames ? 20 : 
+                                                     (shouldShortenSource || shouldShortenDest ? 12 : 15);
                                sourceArrowX = x1 + (dx / length) * fallbackOffset;
                                sourceArrowY = y1 + (dy / length) * fallbackOffset;
                                destArrowX = x2 - (dx / length) * fallbackOffset;
@@ -3321,9 +3347,16 @@ function NodeCanvas() {
                                sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
                                destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
                              } else {
-                               // Precise intersection positioning - further from nodes across the board
-                               const arrowLength = showConnectionNames ? 6 : 
-                                                 (shouldShortenSource || shouldShortenDest ? 4 : 5);
+                               // Precise intersection positioning - adjust based on slope for visual consistency
+                               const angle = Math.abs(Math.atan2(dy, dx) * (180 / Math.PI));
+                               const normalizedAngle = angle > 90 ? 180 - angle : angle;
+                               
+                               // Shorter distance for quantized slopes (hitting node sides) vs diagonal (hitting corners)
+                               const isQuantizedSlope = normalizedAngle < 15 || normalizedAngle > 75;
+                               const baseLength = showConnectionNames ? 6 : 
+                                                (shouldShortenSource || shouldShortenDest ? 3 : 5);
+                               const arrowLength = isQuantizedSlope ? baseLength * 0.6 : baseLength;
+                               
                                sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
                                sourceArrowX = sourceIntersection.x + (dx / length) * arrowLength;
                                sourceArrowY = sourceIntersection.y + (dy / length) * arrowLength;
