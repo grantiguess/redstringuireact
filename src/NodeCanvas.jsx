@@ -684,7 +684,7 @@ function NodeCanvas() {
     const activeGraph = graphsMap.get(activeGraphId);
     const definingNodeId = activeGraph?.definingNodeIds?.[0];
     const isActive = definingNodeId ? savedNodeIds.has(definingNodeId) : false;
-    console.log('[NodeCanvas bookmarkActive] activeGraphId:', activeGraphId, 'definingNodeId:', definingNodeId, 'savedNodeIds:', Array.from(savedNodeIds), 'isActive:', isActive);
+    //console.log('[NodeCanvas bookmarkActive] activeGraphId:', activeGraphId, 'definingNodeId:', definingNodeId, 'savedNodeIds:', Array.from(savedNodeIds), 'isActive:', isActive);
     return isActive;
   }, [activeGraphId, graphsMap, savedNodeIds]);
 
@@ -3909,7 +3909,7 @@ function NodeCanvas() {
             initialName={nodeNamePrompt.name}
             initialColor={nodeNamePrompt.color}
             title="Name Your Thing"
-            subtitle="Add a new component Thing to this Web."
+            subtitle="Add a new Thing to this Web."
             searchTerm={nodeNamePrompt.name}
           />
 

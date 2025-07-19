@@ -15,7 +15,7 @@ let lastChangeTime = 0;
 let preferredDirectory = null;
 
 // Constants
-const AUTO_SAVE_INTERVAL = 250; // Auto-save every 250ms (4x per second)
+const AUTO_SAVE_INTERVAL = 500; // Auto-save every 500ms (2x per second)
 const DEBOUNCE_DELAY = 150; // Wait 150ms after last change before saving
 const FILE_NAME = 'universe.redstring';
 const MAX_LOCALSTORAGE_SIZE = 4 * 1024 * 1024; // 4MB limit for localStorage to stay well under browser limits
