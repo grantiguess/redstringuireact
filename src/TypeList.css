@@ -23,6 +23,7 @@
 .type-list-bar button {
     /* Example: Add hover effect */
     transition: background-color 0.2s ease;
+    font-family: 'EmOne', sans-serif;
 }
 
 .type-list-bar button:hover {
@@ -50,4 +51,5 @@
     -webkit-user-select: none !important; /* Safari */
     -moz-user-select: none !important;    /* Firefox */
     -ms-user-select: none !important;     /* IE/Edge */
+    font-family: 'EmOne', sans-serif;
 }

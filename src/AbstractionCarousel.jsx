@@ -1097,6 +1097,7 @@ const AbstractionCarousel = ({
                           alignItems: 'center',
                           fontSize: '12px',
                           fontWeight: 'bold',
+                          fontFamily: "'EmOne', sans-serif",
                           textAlign: 'center',
                           lineHeight: '1.2'
                         }}
@@ -1117,6 +1118,7 @@ const AbstractionCarousel = ({
                         style={{
                           fontSize: '20px', // Match Node.jsx
                           fontWeight: 'bold', // Match Node.jsx
+                          fontFamily: "'EmOne', sans-serif", // Use EmOne for node names
                           color: getTextColor(nodeColor),
                           whiteSpace: 'normal',
                           wordWrap: 'break-word',
@@ -1149,6 +1151,7 @@ const AbstractionCarousel = ({
                       textAnchor="middle"
                       dominantBaseline="central"
                       fontSize={12}
+                      fontFamily="'EmOne', sans-serif"
                       fill="#bdb5b5"
                       fontWeight="bold"
                       style={{
@@ -1174,6 +1177,7 @@ const AbstractionCarousel = ({
           top: `${stackOffset}px`,
           color: '#666',
           fontSize: `${12 * zoomLevel}px`,
+          fontFamily: "'EmOne', sans-serif",
           pointerEvents: 'none',
           userSelect: 'none',
           textAlign: 'left'
@@ -1183,6 +1187,7 @@ const AbstractionCarousel = ({
             color: '#333', 
             fontWeight: 'bold',
             fontSize: `${14 * zoomLevel}px`,
+            fontFamily: "'EmOne', sans-serif",
             marginBottom: '8px'
           }}>
             Level {physicsState.realPosition.toFixed(1)}
@@ -1192,6 +1197,7 @@ const AbstractionCarousel = ({
           {/* Physics debug info */}
           <div style={{ 
             fontSize: `${10 * zoomLevel}px`,
+            fontFamily: "'EmOne', sans-serif",
             color: '#999',
             marginTop: '10px'
           }}>

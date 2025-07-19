@@ -16,6 +16,7 @@ const NodeType = ({ name, color = '#800000', onClick }) => {
         justifyContent: 'center',
         fontWeight: 'bold',
         fontSize: '14px',
+        fontFamily: "'EmOne', sans-serif",
         cursor: 'pointer',
         transition: 'all 0.2s ease',
         border: '2px solid transparent',

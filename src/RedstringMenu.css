@@ -26,6 +26,7 @@
     padding: 8px 12px;
     text-align: left;
     font-size: 14px;
+    font-family: 'EmOne', sans-serif;
     cursor: pointer;
     transition: background-color 0.2s;
     display: flex;
@@ -106,6 +107,7 @@ to {
     background: none;
     color: #BDB6B5;
     font-size: 14px;
+    font-family: 'EmOne', sans-serif;
     cursor: pointer;
     transition: background-color 0.2s;
     text-align: left;
@@ -149,6 +151,7 @@ to {
     padding: 8px 12px;
     text-align: left;
     font-size: 14px;
+    font-family: 'EmOne', sans-serif;
     cursor: pointer;
     transition: background-color 0.2s;
     margin: 4px 0;
@@ -194,5 +197,6 @@ to {
     color: #999;
     font-style: italic;
     font-size: 14px;
+    font-family: 'EmOne', sans-serif;
     text-align: center;
 }

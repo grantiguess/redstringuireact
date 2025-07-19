@@ -77,6 +77,7 @@ const HeaderGraphTab = ({ graph, onSelect, onDoubleClick, isActive, hideText = f
     whiteSpace: 'nowrap',
     fontWeight: 'bold',
     fontSize: '18px',
+    fontFamily: "'EmOne', sans-serif",
     boxShadow: isActive ? '0 0 8px rgba(0,0,0,0.0)' : 'none',
     border: 'none',
     userSelect: 'none',
@@ -113,7 +114,8 @@ const HeaderGraphTab = ({ graph, onSelect, onDoubleClick, isActive, hideText = f
         verticalAlign: 'middle', // Better vertical alignment
         maxWidth: '100%',
         overflow: 'hidden',
-        textOverflow: 'ellipsis'
+        textOverflow: 'ellipsis',
+        fontFamily: "'EmOne', sans-serif"
       }}>
         {graph.name}
       </span>

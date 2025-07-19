@@ -8,7 +8,7 @@
   border: 2px solid #260000;      /* Text-colored border */
     border-radius: 8px;             /* Rounded corners */
   padding: 5px 10px;              /* Padding */
-  font-family: inherit;           /* Inherit font family */
+  font-family: 'EmOne', sans-serif;           /* Use EmOne font */
   font-size: 1.1rem;              /* Match previous inline style */
   font-weight: bold;              /* Bold text */
   outline: none;                  /* Remove default focus outline */
@@ -41,7 +41,7 @@ header .editable-title-input::selection {
     border: 1px solid #ccc;
     border-radius: 4px;
     font-size: 14px;
-    font-family: Helvetica, sans-serif;
+    font-family: 'EmOne', sans-serif;
   }
   
   .panel-tab {
@@ -76,6 +76,7 @@ header .editable-title-input::selection {
   border-radius: 0; /* Removed border-radius */
   transition: width 0.3s ease; /* Animate width changes */
   overflow: hidden; /* Hide content when collapsed */
+  font-family: 'EmOne', sans-serif;
 }
 
 /* Left-side panel specifics */

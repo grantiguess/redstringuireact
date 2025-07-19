@@ -32,6 +32,7 @@
   display: inline-block;
   width: 100%; /* Needed for ellipsis/centering */
   text-align: center; /* Ensure centered text */
+  font-family: 'EmOne', sans-serif;
   /* Remove transition - handled inline */
 }
 
@@ -49,7 +50,7 @@
   max-width: 100%;
   box-sizing: border-box;
   outline: none;
-  font-family: inherit;
+  font-family: 'EmOne', sans-serif;
 }
 
 .node-name-input:focus {
