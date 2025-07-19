@@ -3311,8 +3311,9 @@ function NodeCanvas() {
                              let sourceArrowX, sourceArrowY, destArrowX, destArrowY, sourceArrowAngle, destArrowAngle;
                              
                              if (!sourceIntersection || !destIntersection) {
-                               // Fallback positioning - move arrows closer to center
-                               const fallbackOffset = shouldShortenSource || shouldShortenDest ? 10 : 15;
+                               // Fallback positioning - further from nodes across the board
+                               const fallbackOffset = showConnectionNames ? 22 : 
+                                                     (shouldShortenSource || shouldShortenDest ? 16 : 18);
                                sourceArrowX = x1 + (dx / length) * fallbackOffset;
                                sourceArrowY = y1 + (dy / length) * fallbackOffset;
                                destArrowX = x2 - (dx / length) * fallbackOffset;
@@ -3320,8 +3321,9 @@ function NodeCanvas() {
                                sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
                                destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
                              } else {
-                               // Precise intersection positioning - move arrows closer to center when connection shortened
-                               const arrowLength = shouldShortenSource || shouldShortenDest ? 1 : 3;
+                               // Precise intersection positioning - further from nodes across the board
+                               const arrowLength = showConnectionNames ? 6 : 
+                                                 (shouldShortenSource || shouldShortenDest ? 4 : 5);
                                sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
                                sourceArrowX = sourceIntersection.x + (dx / length) * arrowLength;
                                sourceArrowY = sourceIntersection.y + (dy / length) * arrowLength;
@@ -3379,7 +3381,7 @@ function NodeCanvas() {
                                        />
                                      )}
                                      <polygon
-                                       points="-12,15 12,15 0,-15"
+                                       points={showConnectionNames ? "-14,18 14,18 0,-18" : "-12,15 12,15 0,-15"}
                                        fill={edgeColor}
                                        stroke={edgeColor}
                                        strokeWidth="6"
@@ -3414,7 +3416,7 @@ function NodeCanvas() {
                                        />
                                      )}
                                      <polygon
-                                       points="-12,15 12,15 0,-15"
+                                       points={showConnectionNames ? "-14,18 14,18 0,-18" : "-12,15 12,15 0,-15"}
                                        fill={edgeColor}
                                        stroke={edgeColor}
                                        strokeWidth="6"
@@ -3443,7 +3445,7 @@ function NodeCanvas() {
                                          <circle
                                            cx={sourceArrowX}
                                            cy={sourceArrowY}
-                                           r="8"
+                                           r={showConnectionNames ? "12" : "8"}
                                            fill={edgeColor}
                                            style={{ pointerEvents: 'none' }}
                                          />
@@ -3465,7 +3467,7 @@ function NodeCanvas() {
                                          <circle
                                            cx={destArrowX}
                                            cy={destArrowY}
-                                           r="8"
+                                           r={showConnectionNames ? "12" : "8"}
                                            fill={edgeColor}
                                            style={{ pointerEvents: 'none' }}
                                          />
