@@ -159,7 +159,7 @@ const DebugOverlay = ({ debugData, hideOverlay }) => {
       ))}
       <div style={{ marginTop: '10px', borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '10px' }}>
         <strong>Full Debug Data:</strong>
-        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0, fontFamily: "'EmOne', sans-serif", fontSize: '12px' }}>
           {debugData ? JSON.stringify(debugData, null, 2) : 'No debug data'}
         </pre>
       </div>

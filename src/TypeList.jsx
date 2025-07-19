@@ -334,6 +334,7 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
               <div style={{
                 fontSize: '18px',
                 fontWeight: 'bold',
+                fontFamily: "'EmOne', sans-serif",
                 color: '#bdb5b5',
                 marginLeft: '10px', // Add left margin for balance
                 marginRight: '20px',
@@ -363,6 +364,7 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
               <div style={{
                 fontSize: '18px',
                 fontWeight: 'bold',
+                fontFamily: "'EmOne', sans-serif",
                 color: '#bdb5b5',
                 marginLeft: '10px', // Add left margin for balance
                 marginRight: '20px',

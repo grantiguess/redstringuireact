@@ -317,7 +317,7 @@ const ColorPicker = ({
             backgroundColor: 'white',
             color: '#260000',
             fontSize: '14px',
-            fontFamily: 'monospace',
+            fontFamily: "'EmOne', sans-serif",
             boxSizing: 'border-box'
           }}
         />

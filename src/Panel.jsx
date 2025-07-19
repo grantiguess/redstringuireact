@@ -165,6 +165,7 @@ const SavedNodeItem = ({ node, onClick, onDoubleClick, onUnsave, isActive }) => 
         margin: '4px',
         minWidth: '100px',
         opacity: isDragging ? 0.5 : 1,
+        fontFamily: "'EmOne', sans-serif",
       }}
     >
       {node.name || 'Unnamed'}
@@ -1259,14 +1260,14 @@ const Panel = forwardRef(
             panelContent = (
                 <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                     <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
-                        <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold' }}>
+                        <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
                             Saved Things
                         </h2>
                     </div>
 
                     {/* --- Type Sections --- */}
                     {savedNodesByType.size === 0 ? (
-                        <div style={{ color: '#666', fontSize: '0.9rem', textAlign: 'center', marginTop: '20px' }}>
+                        <div style={{ color: '#666', fontSize: '0.9rem', fontFamily: "'EmOne', sans-serif", textAlign: 'center', marginTop: '20px' }}>
                             No saved nodes.
                         </div>
                     ) : (
@@ -1295,6 +1296,7 @@ const Panel = forwardRef(
                                                 borderRadius: '12px', // Rounded corners
                                                 transition: 'all 0.2s ease',
                                                 boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                                                fontFamily: "'EmOne', sans-serif"
                                             }}
                                             onMouseEnter={(e) => {
                                                 e.currentTarget.style.filter = 'brightness(1.1)';
@@ -1311,6 +1313,7 @@ const Panel = forwardRef(
                                                 transition: 'transform 0.2s ease',
                                                 transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
                                                 fontSize: '14px',
+                                                fontFamily: "'EmOne', sans-serif"
                             }}>▶</span>
                         </div>
 
@@ -1407,7 +1410,7 @@ const Panel = forwardRef(
                 <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}> 
                     {/* Title Row with Plus button (No flexGrow) */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}> 
-                        <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold' }}>
+                        <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
                             Open Things
                         </h2>
                         <button 
@@ -1455,7 +1458,7 @@ const Panel = forwardRef(
                             />
                         ))}
                          {openGraphsForList.length === 0 && (
-                            <div style={{ color: '#666', textAlign: 'center', marginTop: '20px' }}>No graphs currently open.</div>
+                            <div style={{ color: '#666', textAlign: 'center', marginTop: '20px', fontFamily: "'EmOne', sans-serif" }}>No graphs currently open.</div>
                         )}
                     </div>
                 </div>
@@ -1534,7 +1537,7 @@ const Panel = forwardRef(
                                 onKeyDown={(e) => { if (e.key === 'Enter') commitProjectTitleChange(); }}
                                 onBlur={commitProjectTitleChange}
                                 onFocus={() => onFocusChange?.(true)}
-                                style={{}}
+                                style={{ fontFamily: "'EmOne', sans-serif" }}
                             />
                         ) : (
                             <div
@@ -1547,6 +1550,7 @@ const Panel = forwardRef(
                                     userSelect: 'none',
                                     fontSize: '1.1rem',
                                     fontWeight: 'bold',
+                                    fontFamily: "'EmOne', sans-serif",
                                     color: '#bdb5b5',
                                     margin: 0,
                                     display: 'flex',
@@ -1564,7 +1568,8 @@ const Panel = forwardRef(
                                     maxWidth: '210px',
                                     whiteSpace: 'normal',
                                     overflowWrap: 'break-word',
-                                    verticalAlign: 'bottom'
+                                    verticalAlign: 'bottom',
+                                    fontFamily: "'EmOne', sans-serif"
                                 }}>
                                     {graphName ?? 'Loading...'}
                                 </span>
@@ -1642,12 +1647,13 @@ const Panel = forwardRef(
                     <div style={{ 
                         marginBottom: '8px', 
                         fontSize: '0.9rem', 
+                        fontFamily: "'EmOne', sans-serif",
                         color: '#555',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px'
                     }}>
-                        <span>Is {getArticleFor(typeName)} </span>
+                        <span style={{ fontFamily: "'EmOne', sans-serif" }}>Is {getArticleFor(typeName)} </span>
                         <span 
                           style={{
                             backgroundColor: typeColor,
@@ -1656,6 +1662,7 @@ const Panel = forwardRef(
                             borderRadius: '4px',
                             fontSize: '0.8rem',
                             fontWeight: 'bold',
+                            fontFamily: "'EmOne', sans-serif",
                             cursor: definingNodeId === 'base-thing-prototype' ? 'default' : 'pointer',
                             transition: 'opacity 0.2s ease',
                             opacity: definingNodeId === 'base-thing-prototype' ? 0.7 : 1,
@@ -1691,7 +1698,8 @@ const Panel = forwardRef(
                         color: '#333', 
                         fontSize: '1.1rem',
                         fontWeight: 'bold',
-                        userSelect: 'none'
+                        userSelect: 'none',
+                        fontFamily: "'EmOne', sans-serif"
                     }}>
                         Bio
                     </h3>
@@ -1722,7 +1730,7 @@ const Panel = forwardRef(
                             backgroundColor: '#bdb5b5',
                             fontSize: '14px',
                             lineHeight: '1.4',
-                            fontFamily: 'inherit',
+                            fontFamily: "'EmOne', sans-serif",
                             overflow: 'auto',
                         }}
                         value={graphDescription}
@@ -1753,7 +1761,8 @@ const Panel = forwardRef(
                         color: '#333', 
                         fontSize: '1.1rem',
                         fontWeight: 'bold',
-                        userSelect: 'none'
+                        userSelect: 'none',
+                        fontFamily: "'EmOne', sans-serif"
                     }}>
                         Forms
                     </h3>
@@ -1767,7 +1776,8 @@ const Panel = forwardRef(
                                     color: '#555', 
                                     fontSize: '0.9rem',
                                     fontWeight: 'normal',
-                                    userSelect: 'none'
+                                    userSelect: 'none',
+                                    fontFamily: "'EmOne', sans-serif"
                                 }}>
                                     As a Thing
                                 </h4>
@@ -1788,7 +1798,8 @@ const Panel = forwardRef(
                                             display: 'flex',
                                             alignItems: 'center',
                                             minHeight: '32px',
-                                            boxSizing: 'border-box'
+                                            boxSizing: 'border-box',
+                                            fontFamily: "'EmOne', sans-serif"
                                         }}
                                     >
                                         {definingNodeData.name || 'Untitled'}
@@ -1802,7 +1813,8 @@ const Panel = forwardRef(
                                         color: '#666', 
                                         display: 'block', 
                                         marginBottom: '3px',
-                                        userSelect: 'none'
+                                        userSelect: 'none',
+                                        fontFamily: "'EmOne', sans-serif"
                                     }}>
                                         Plural
                                     </label>
@@ -1826,7 +1838,8 @@ const Panel = forwardRef(
                                             border: '1px solid #ccc',
                                             borderRadius: '4px',
                                             backgroundColor: '#bdb5b5',
-                                            color: '#260000'
+                                            color: '#260000',
+                                            fontFamily: "'EmOne', sans-serif"
                                         }}
                                         onFocus={() => onFocusChange?.(true)}
                                         onBlur={() => onFocusChange?.(false)}
@@ -1840,7 +1853,8 @@ const Panel = forwardRef(
                                     color: '#555', 
                                     fontSize: '0.9rem',
                                     fontWeight: 'normal',
-                                    userSelect: 'none'
+                                    userSelect: 'none',
+                                    fontFamily: "'EmOne', sans-serif"
                                 }}>
                                     As a Connection
                                 </h4>
@@ -1859,7 +1873,8 @@ const Panel = forwardRef(
                                             color: '#666', 
                                             display: 'block', 
                                             marginBottom: '3px',
-                                            userSelect: 'none'
+                                            userSelect: 'none',
+                                            fontFamily: "'EmOne', sans-serif"
                                         }}>
                                             Present Singular
                                         </label>
@@ -1883,7 +1898,8 @@ const Panel = forwardRef(
                                                 border: '1px solid #ccc',
                                                 borderRadius: '4px',
                                                 backgroundColor: '#bdb5b5',
-                                                color: '#260000'
+                                                color: '#260000',
+                                                fontFamily: "'EmOne', sans-serif"
                                             }}
                                             onFocus={() => onFocusChange?.(true)}
                                             onBlur={() => onFocusChange?.(false)}
@@ -1897,7 +1913,8 @@ const Panel = forwardRef(
                                             color: '#666', 
                                             display: 'block', 
                                             marginBottom: '3px',
-                                            userSelect: 'none'
+                                            userSelect: 'none',
+                                            fontFamily: "'EmOne', sans-serif"
                                         }}>
                                             Present Plural
                                         </label>
@@ -1921,7 +1938,8 @@ const Panel = forwardRef(
                                                 border: '1px solid #ccc',
                                                 borderRadius: '4px',
                                                 backgroundColor: '#bdb5b5',
-                                                color: '#260000'
+                                                color: '#260000',
+                                                fontFamily: "'EmOne', sans-serif"
                                             }}
                                             onFocus={() => onFocusChange?.(true)}
                                             onBlur={() => onFocusChange?.(false)}
@@ -1935,7 +1953,8 @@ const Panel = forwardRef(
                                             color: '#666', 
                                             display: 'block', 
                                             marginBottom: '3px',
-                                            userSelect: 'none'
+                                            userSelect: 'none',
+                                            fontFamily: "'EmOne', sans-serif"
                                         }}>
                                             Past Singular
                                         </label>
@@ -1959,7 +1978,8 @@ const Panel = forwardRef(
                                                 border: '1px solid #ccc',
                                                 borderRadius: '4px',
                                                 backgroundColor: '#bdb5b5',
-                                                color: '#260000'
+                                                color: '#260000',
+                                                fontFamily: "'EmOne', sans-serif"
                                             }}
                                             onFocus={() => onFocusChange?.(true)}
                                             onBlur={() => onFocusChange?.(false)}
@@ -1973,7 +1993,8 @@ const Panel = forwardRef(
                                             color: '#666', 
                                             display: 'block', 
                                             marginBottom: '3px',
-                                            userSelect: 'none'
+                                            userSelect: 'none',
+                                            fontFamily: "'EmOne', sans-serif"
                                         }}>
                                             Past Plural
                                         </label>
@@ -1997,7 +2018,8 @@ const Panel = forwardRef(
                                                 border: '1px solid #ccc',
                                                 borderRadius: '4px',
                                                 backgroundColor: '#bdb5b5',
-                                                color: '#260000'
+                                                color: '#260000',
+                                                fontFamily: "'EmOne', sans-serif"
                                             }}
                                             onFocus={() => onFocusChange?.(true)}
                                             onBlur={() => onFocusChange?.(false)}
@@ -2010,7 +2032,8 @@ const Panel = forwardRef(
                                 padding: '10px', 
                                 color: '#999', 
                                 fontStyle: 'italic',
-                                fontSize: '14px'
+                                fontSize: '14px',
+                                fontFamily: "'EmOne', sans-serif"
                             }}>
                                 No defining node found for this graph.
                             </div>
@@ -2055,7 +2078,8 @@ const Panel = forwardRef(
                         marginBottom: '10px', 
                         color: '#555', 
                         fontSize: '0.9rem',
-                        userSelect: 'none'
+                        userSelect: 'none',
+                        fontFamily: "'EmOne', sans-serif"
                     }}>
                         Components ({activeGraphNodes.length})
                     </h3>
@@ -2096,7 +2120,8 @@ const Panel = forwardRef(
                                     textAlign: 'center',
                                     padding: '0 10px',
                                     boxSizing: 'border-box',
-                                    userSelect: 'none'
+                                    userSelect: 'none',
+                                    fontFamily: "'EmOne', sans-serif"
                                 }}>
                                     {node.name}
                                 </span>
@@ -2126,7 +2151,8 @@ const Panel = forwardRef(
                                     marginBottom: '10px', 
                                     color: '#555', 
                                     fontSize: '0.9rem',
-                                    userSelect: 'none'
+                                    userSelect: 'none',
+                                    fontFamily: "'EmOne', sans-serif"
                                 }}>
                                     Component Of ({componentOfNodes.length})
                                 </h3>
@@ -2167,7 +2193,8 @@ const Panel = forwardRef(
                                                 textAlign: 'center',
                                                 padding: '0 10px',
                                                 boxSizing: 'border-box',
-                                                userSelect: 'none'
+                                                userSelect: 'none',
+                                                fontFamily: "'EmOne', sans-serif"
                                             }}>
                                                 {node.name}
                                             </span>
@@ -2203,7 +2230,8 @@ const Panel = forwardRef(
                                     marginBottom: '10px', 
                                     color: '#555', 
                                     fontSize: '0.9rem',
-                                    userSelect: 'none'
+                                    userSelect: 'none',
+                                    fontFamily: "'EmOne', sans-serif"
                                 }}>
                                     Defines ({definitionNodes.length})
                                 </h3>
@@ -2258,7 +2286,8 @@ const Panel = forwardRef(
                                                     textAlign: 'center',
                                                     padding: '0 10px',
                                                     boxSizing: 'border-box',
-                                                    userSelect: 'none'
+                                                    userSelect: 'none',
+                                                    fontFamily: "'EmOne', sans-serif"
                                                 }}>
                                                     {node.name}
                                                 </span>
@@ -2279,7 +2308,8 @@ const Panel = forwardRef(
                                                     fontSize: '0.6rem',
                                                     fontWeight: 'bold',
                                                     userSelect: 'none',
-                                                    zIndex: 1
+                                                    zIndex: 1,
+                                                    fontFamily: "'EmOne', sans-serif"
                                                 }}>
                                                     {definitionOrder}
                                                 </div>
@@ -2300,7 +2330,7 @@ const Panel = forwardRef(
             if (!nodeData) {
                 // Node data doesn't exist globally - error case
                 panelContent = (
-                    <div style={{ padding: '10px', color: '#aaa' }}>Node data not found globally...</div>
+                    <div style={{ padding: '10px', color: '#aaa', fontFamily: "'EmOne', sans-serif" }}>Node data not found globally...</div>
                 );
             } else {
                 // --- Node data found globally - Render the full editable view --- 
@@ -2367,7 +2397,7 @@ const Panel = forwardRef(
                                         onKeyDown={(e) => { if (e.key === 'Enter') commitTitleChange(); }}
                                         onBlur={commitTitleChange}
                                         onFocus={() => onFocusChange?.(true)}
-                                        style={{}}
+                                        style={{ fontFamily: "'EmOne', sans-serif" }}
                                     />
                                 ) : (
                                     <div
@@ -2385,7 +2415,8 @@ const Panel = forwardRef(
                                             display: 'flex',
                                             alignItems: 'center',
                                             minHeight: '32px', // Match the height that the input would have
-                                            boxSizing: 'border-box'
+                                            boxSizing: 'border-box',
+                                            fontFamily: "'EmOne', sans-serif"
                                         }}
                                         onDoubleClick={() => {
                                             setEditingTitle(true);
@@ -2497,7 +2528,8 @@ const Panel = forwardRef(
                                         color: '#555',
                                         display: 'flex',
                                         alignItems: 'center',
-                                        gap: '8px'
+                                        gap: '8px',
+                                        fontFamily: "'EmOne', sans-serif"
                                     }}>
                                         <span>Is {getArticleFor(typeName)} </span>
                                         <span 
@@ -2511,6 +2543,7 @@ const Panel = forwardRef(
                                             cursor: nodeId === 'base-thing-prototype' ? 'default' : 'pointer',
                                             transition: 'opacity 0.2s ease',
                                             opacity: nodeId === 'base-thing-prototype' ? 0.7 : 1,
+                                            fontFamily: "'EmOne', sans-serif"
                                           }}
                                           onMouseEnter={(e) => {
                                             if (nodeId !== 'base-thing-prototype') {
@@ -2546,7 +2579,8 @@ const Panel = forwardRef(
                             color: '#333', 
                             fontSize: '1.1rem',
                             fontWeight: 'bold',
-                            userSelect: 'none'
+                            userSelect: 'none',
+                            fontFamily: "'EmOne', sans-serif"
                         }}>
                             Bio
                         </h3>
@@ -2577,7 +2611,7 @@ const Panel = forwardRef(
                                     backgroundColor: '#bdb5b5',
                                     fontSize: '14px',
                                     lineHeight: '1.4',
-                                    fontFamily: 'inherit',
+                                    fontFamily: "'EmOne', sans-serif",
                                     userSelect: 'text',
                                     overflow: 'auto',
                                 }}
@@ -2607,7 +2641,8 @@ const Panel = forwardRef(
                             color: '#333', 
                             fontSize: '1.1rem',
                             fontWeight: 'bold',
-                            userSelect: 'none'
+                            userSelect: 'none',
+                            fontFamily: "'EmOne', sans-serif"
                         }}>
                             Forms
                         </h3>
@@ -2619,7 +2654,8 @@ const Panel = forwardRef(
                                 color: '#555', 
                                 fontSize: '0.9rem',
                                 fontWeight: 'normal',
-                                userSelect: 'none'
+                                userSelect: 'none',
+                                fontFamily: "'EmOne', sans-serif"
                             }}>
                                 As a Thing
                             </h4>
@@ -2640,7 +2676,8 @@ const Panel = forwardRef(
                                         display: 'flex',
                                         alignItems: 'center',
                                         minHeight: '32px',
-                                        boxSizing: 'border-box'
+                                        boxSizing: 'border-box',
+                                        fontFamily: "'EmOne', sans-serif"
                                     }}
                                 >
                                     {nodeData.name || 'Untitled'}
@@ -2654,7 +2691,8 @@ const Panel = forwardRef(
                                     color: '#666', 
                                     display: 'block', 
                                     marginBottom: '3px',
-                                    userSelect: 'none'
+                                    userSelect: 'none',
+                                    fontFamily: "'EmOne', sans-serif"
                                 }}>
                                     Plural
                                 </label>
@@ -2678,7 +2716,8 @@ const Panel = forwardRef(
                                         border: '1px solid #ccc',
                                         borderRadius: '4px',
                                         backgroundColor: '#bdb5b5',
-                                        color: '#260000'
+                                        color: '#260000',
+                                        fontFamily: "'EmOne', sans-serif"
                                     }}
                                     onFocus={() => onFocusChange?.(true)}
                                     onBlur={() => onFocusChange?.(false)}
@@ -2692,7 +2731,8 @@ const Panel = forwardRef(
                                 color: '#555', 
                                 fontSize: '0.9rem',
                                 fontWeight: 'normal',
-                                userSelect: 'none'
+                                userSelect: 'none',
+                                fontFamily: "'EmOne', sans-serif"
                             }}>
                                 As a Connection
                             </h4>
@@ -2711,7 +2751,8 @@ const Panel = forwardRef(
                                         color: '#666', 
                                         display: 'block', 
                                         marginBottom: '3px',
-                                        userSelect: 'none'
+                                        userSelect: 'none',
+                                        fontFamily: "'EmOne', sans-serif"
                                     }}>
                                         Present Singular
                                     </label>
@@ -2735,7 +2776,8 @@ const Panel = forwardRef(
                                             border: '1px solid #ccc',
                                             borderRadius: '4px',
                                             backgroundColor: '#bdb5b5',
-                                            color: '#260000'
+                                            color: '#260000',
+                                            fontFamily: "'EmOne', sans-serif"
                                         }}
                                         onFocus={() => onFocusChange?.(true)}
                                         onBlur={() => onFocusChange?.(false)}
@@ -2749,7 +2791,8 @@ const Panel = forwardRef(
                                         color: '#666', 
                                         display: 'block', 
                                         marginBottom: '3px',
-                                        userSelect: 'none'
+                                        userSelect: 'none',
+                                        fontFamily: "'EmOne', sans-serif"
                                     }}>
                                         Present Plural
                                     </label>
@@ -2773,7 +2816,8 @@ const Panel = forwardRef(
                                             border: '1px solid #ccc',
                                             borderRadius: '4px',
                                             backgroundColor: '#bdb5b5',
-                                            color: '#260000'
+                                            color: '#260000',
+                                            fontFamily: "'EmOne', sans-serif"
                                         }}
                                         onFocus={() => onFocusChange?.(true)}
                                         onBlur={() => onFocusChange?.(false)}
@@ -2787,7 +2831,8 @@ const Panel = forwardRef(
                                         color: '#666', 
                                         display: 'block', 
                                         marginBottom: '3px',
-                                        userSelect: 'none'
+                                        userSelect: 'none',
+                                        fontFamily: "'EmOne', sans-serif"
                                     }}>
                                         Past Singular
                                     </label>
@@ -2811,7 +2856,8 @@ const Panel = forwardRef(
                                             border: '1px solid #ccc',
                                             borderRadius: '4px',
                                             backgroundColor: '#bdb5b5',
-                                            color: '#260000'
+                                            color: '#260000',
+                                            fontFamily: "'EmOne', sans-serif"
                                         }}
                                         onFocus={() => onFocusChange?.(true)}
                                         onBlur={() => onFocusChange?.(false)}
@@ -2825,7 +2871,8 @@ const Panel = forwardRef(
                                         color: '#666', 
                                         display: 'block', 
                                         marginBottom: '3px',
-                                        userSelect: 'none'
+                                        userSelect: 'none',
+                                        fontFamily: "'EmOne', sans-serif"
                                     }}>
                                         Past Plural
                                     </label>
@@ -2849,7 +2896,8 @@ const Panel = forwardRef(
                                             border: '1px solid #ccc',
                                             borderRadius: '4px',
                                             backgroundColor: '#bdb5b5',
-                                            color: '#260000'
+                                            color: '#260000',
+                                            fontFamily: "'EmOne', sans-serif"
                                         }}
                                         onFocus={() => onFocusChange?.(true)}
                                         onBlur={() => onFocusChange?.(false)}
@@ -3186,7 +3234,7 @@ const Panel = forwardRef(
                   <div style={{ position: 'absolute', top: '10px', right: '10px', cursor: 'pointer' }}>
                     <X size={20} color="#999" onClick={handleCloseTypePrompt} />
                   </div>
-                        <div style={{ textAlign: 'center', marginBottom: '8px', color: 'black' }}>
+                        <div style={{ textAlign: 'center', marginBottom: '8px', color: 'black', fontFamily: "'EmOne', sans-serif" }}>
         <strong style={{ fontSize: '18px' }}>Name Your Thing</strong>
       </div>
       <div style={{ 
@@ -3198,7 +3246,8 @@ const Panel = forwardRef(
         maxWidth: '280px',
         margin: '0 auto 15px auto',
         wordWrap: 'break-word',
-        hyphens: 'auto'
+        hyphens: 'auto',
+        fontFamily: "'EmOne', sans-serif"
       }}>
         a more generic way to refer to {typeNamePrompt.targetNodeName},<br/>also known as a superclass
       </div>
@@ -3224,7 +3273,7 @@ const Panel = forwardRef(
                 // Stop propagation to prevent canvas shortcuts
                 e.stopPropagation();
               }}
-              style={{ flex: 1, padding: '10px', borderRadius: '5px', border: '1px solid #ccc', marginRight: '10px' }}
+              style={{ flex: 1, padding: '10px', borderRadius: '5px', border: '1px solid #ccc', marginRight: '10px', fontFamily: "'EmOne', sans-serif" }}
               autoFocus
             />
             <button
@@ -3240,7 +3289,8 @@ const Panel = forwardRef(
                 alignItems: 'center',
                 justifyContent: 'center',
                 minWidth: '50px',
-                minHeight: '44px'
+                minHeight: '44px',
+                fontFamily: "'EmOne', sans-serif"
               }}
               title="Create type"
             >

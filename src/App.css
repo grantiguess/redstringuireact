@@ -12,6 +12,7 @@ html, body, #root {
   display: flex;
   height: 100vh; /* Full viewport height */
   width: 100vw; /* Full viewport width */
+  font-family: 'EmOne', sans-serif; /* Example font */
 }
 
 /* Sidebar panel */

@@ -6,7 +6,7 @@
   background: rgba(0, 0, 0, 0.7);
   color: white;
   padding: 10px;
-  font-family: monospace;
+  font-family: 'EmOne', sans-serif;
   z-index: 1000;
   overflow: auto; /* Add this if you expect the content to be scrollable */
 }

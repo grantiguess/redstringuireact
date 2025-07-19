@@ -202,12 +202,12 @@ const UnifiedSelector = ({
             </div>
             
             <div style={{ textAlign: 'center', marginBottom: '15px', color: 'black' }}>
-              <strong style={{ fontSize: '18px' }}>{title}</strong>
+              <strong style={{ fontSize: '18px', fontFamily: "'EmOne', sans-serif" }}>{title}</strong>
             </div>
             
             {subtitle && (
               <div 
-                style={{ textAlign: 'center', marginBottom: '15px', color: '#666', fontSize: '14px' }}
+                style={{ textAlign: 'center', marginBottom: '15px', color: '#666', fontSize: '14px', fontFamily: "'EmOne', sans-serif" }}
                 dangerouslySetInnerHTML={{ __html: subtitle }}
               />
             )}

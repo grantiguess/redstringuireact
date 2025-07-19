@@ -168,14 +168,16 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
           <span style={{ 
             color: '#000000', // Black text
             fontSize: '16px',
-            fontWeight: 'bold'
+            fontWeight: 'bold',
+            fontFamily: "'EmOne', sans-serif"
           }}>
             +
           </span>
           <span style={{ 
             color: '#000000', // Black text
             fontSize: '14px',
-            fontWeight: 'bold'
+            fontWeight: 'bold',
+            fontFamily: "'EmOne', sans-serif"
           }}>
             Connection
           </span>

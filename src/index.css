@@ -3,26 +3,16 @@
   font-family: 'EmOne';
   src: url('./assets/fonts/EmOne-SemiBold.woff2') format('woff2'),
        url('./assets/fonts/EmOne-SemiBold.woff') format('woff');
-  font-weight: 600; /* Corresponds to SemiBold */
+  font-weight: 600;
   font-style: normal;
-  font-display: swap;
 }
 
 @font-face {
   font-family: 'EmOne';
   src: url('./assets/fonts/EmOne-SemiBoldItalic.woff2') format('woff2'),
        url('./assets/fonts/EmOne-SemiBoldItalic.woff') format('woff');
-  font-weight: 600; /* Corresponds to SemiBold */
+  font-weight: 600;
   font-style: italic;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Salma Pro';
-  src: url('./assets/fonts/salma_pro/SalmaPro-MediumNarrow.otf') format('opentype');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
 }
 
 /* Apply base font and prevent page zoom */
@@ -58,7 +48,6 @@ body {
 }
 
 :root {
-  /* font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif; */ /* This was overriding the body font */
   line-height: 1.5;
   font-weight: 400;
 
@@ -106,7 +95,7 @@ button {
   padding: 0.6em 1.2em;
   font-size: 1em;
   font-weight: 500;
-  font-family: inherit;
+  font-family: 'EmOne', sans-serif;
   background-color: #1a1a1a;
   cursor: pointer;
   transition: border-color 0.25s;

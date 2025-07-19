@@ -3276,7 +3276,7 @@ function NodeCanvas() {
                                    textAnchor="middle"
                                    dominantBaseline="middle"
                                    transform={`rotate(${adjustedAngle}, ${midX}, ${midY})`}
-                                   style={{ pointerEvents: 'none' }}
+                                   style={{ pointerEvents: 'none', fontFamily: "'EmOne', sans-serif" }}
                                  >
                                    {connectionName}
                                  </text>

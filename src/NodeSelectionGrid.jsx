@@ -149,7 +149,8 @@ const NodeSelectionGrid = ({
                 marginBottom: '8px',
                 fontWeight: 'bold',
                 color: '#bdb5b5',
-                fontSize: '16px'
+                fontSize: '16px',
+                fontFamily: "'EmOne', sans-serif"
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = '#5c5858';

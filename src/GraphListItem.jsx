@@ -140,6 +140,7 @@ const GraphListItem = forwardRef(({
            marginTop: isExpanded ? '0' : 'auto',
            marginBottom: isExpanded ? '10px' : 'auto',
            userSelect: 'none',
+           fontFamily: "'EmOne', sans-serif",
         }}
       >
         {graphData.name}

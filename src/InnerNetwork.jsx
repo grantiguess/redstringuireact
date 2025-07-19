@@ -336,6 +336,7 @@ const InnerNetwork = ({ nodes, edges, width, height, padding }) => {
                fontSize={Math.max(8, 12 / scale)} // Scale font size but keep readable
                fill="#bdb5b5"
                fontWeight="bold"
+               fontFamily="'EmOne', sans-serif"
                style={{
                  pointerEvents: 'none',
                  userSelect: 'none'

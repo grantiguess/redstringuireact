@@ -77,6 +77,7 @@ const NodeGridItem = ({
           color: '#bdb5b5',
           fontSize: '12px',
           fontWeight: 'bold',
+          fontFamily: "'EmOne', sans-serif",
           textAlign: 'center',
           wordWrap: 'break-word',
           whiteSpace: 'normal',
