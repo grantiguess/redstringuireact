@@ -982,10 +982,10 @@ const AbstractionCarousel = ({
           const hasThumbnail = Boolean(item.thumbnailSrc);
 
           // Unscaled border and corner radius
-          const borderWidth = (isMainNode ? 4 : 2); // Reduced border width to let colors show through better
+          const borderWidth = isMainNode ? 12 * scale : 0; // Match NodeCanvas: 12 for centered, 0 for others
           const cornerRadius = NODE_CORNER_RADIUS;
           
-          const borderColor = isPlaceholder ? '#999' : (isMainNode ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.3)'); // Use semi-transparent borders
+          const borderColor = isMainNode ? 'black' : 'none'; // Match NodeCanvas: black for centered, none for others
           const nodeColor = isPlaceholder ? (item.color || '#bdb5b5') : (item.color || NODE_DEFAULT_COLOR);
           
           // Debug logging
@@ -1115,7 +1115,8 @@ const AbstractionCarousel = ({
                           fontFamily: "'EmOne', sans-serif", // Use EmOne for node names
                           color: getTextColor(nodeColor),
                           whiteSpace: 'normal',
-                          wordWrap: 'break-word',
+                          overflowWrap: 'break-word',
+                          wordBreak: 'keep-all',
                           textAlign: 'center',
                           minWidth: 0,
                           width: `${nodeDimensions.currentWidth - NODE_PADDING * 2}px`,
