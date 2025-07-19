@@ -982,7 +982,7 @@ const AbstractionCarousel = ({
           const hasThumbnail = Boolean(item.thumbnailSrc);
 
           // Unscaled border and corner radius
-          const borderWidth = isMainNode ? 12 * scale : 0; // Match NodeCanvas: 12 for centered, 0 for others
+          const borderWidth = isMainNode ? 12 : 0; // Match NodeCanvas: 12 for centered, 0 for others
           const cornerRadius = NODE_CORNER_RADIUS;
           
           const borderColor = isMainNode ? 'black' : 'none'; // Match NodeCanvas: black for centered, none for others
@@ -1042,7 +1042,7 @@ const AbstractionCarousel = ({
                   ry={cornerRadius - 6}
                   fill={nodeColor}
                   stroke={borderColor}
-                  strokeWidth={borderWidth / scale} // Counter-scale border based on carousel scale only
+                  strokeWidth={borderWidth / (zoomLevel * scale)} // Counter-scale to match Node.jsx appearance
                   style={{
                     filter: isMainNode 
                       ? 'drop-shadow(0px 0px 20px rgba(0, 0, 0, 0.5))'
@@ -1082,7 +1082,7 @@ const AbstractionCarousel = ({
                       justifyContent: 'center',
                       width: '100%',
                       height: '100%',
-                      padding: isPlaceholder ? '0' : `10px ${NODE_PADDING}px`, // Use constant padding
+                      padding: isPlaceholder ? '0' : '15px 15px', // Match Node.jsx padding
                       boxSizing: 'border-box',
                       userSelect: 'none',
                       minWidth: 0
@@ -1119,7 +1119,8 @@ const AbstractionCarousel = ({
                           wordBreak: 'keep-all',
                           textAlign: 'center',
                           minWidth: 0,
-                          width: `${nodeDimensions.currentWidth - NODE_PADDING * 2}px`,
+                          width: '100%',
+                          display: 'inline-block',
                           hyphens: 'auto'
                         }}
                         lang="en"
