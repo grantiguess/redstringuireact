@@ -12,7 +12,7 @@ import ConnectionControlPanel from './ConnectionControlPanel.jsx'; // Import the
 import AbstractionControlPanel from './AbstractionControlPanel.jsx'; // Import the AbstractionControlPanel component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
-import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal, Bookmark } from 'lucide-react'; // Icons for PieMenu
+import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal, Bookmark, Plus } from 'lucide-react'; // Icons for PieMenu
 import ColorPicker from './ColorPicker';
 import { useDrop } from 'react-dnd';
 
@@ -807,13 +807,13 @@ function NodeCanvas() {
 
     // Check if we're in AbstractionCarousel mode
     if (selectedNode && abstractionCarouselVisible && abstractionCarouselNode && selectedNode.id === abstractionCarouselNode.id) {
-      // AbstractionCarousel mode: show Back and Swap buttons on left and right
+      // AbstractionCarousel mode: show 4 buttons from left to right: Back, Swap, Plus, ArrowUpFromDot
       return [
         {
-          id: 'carousel-back',
+          id: 'carousel-back-outer',
           label: 'Back',
           icon: ArrowLeft,
-          position: 'left',
+          position: 'left-outer',
           action: (nodeId) => {
             console.log(`[PieMenu Action] Back clicked for node: ${nodeId}. Closing AbstractionCarousel.`);
             // Just trigger pie menu exit - carousel exit will be handled in onExitAnimationComplete
@@ -825,10 +825,66 @@ function NodeCanvas() {
           id: 'carousel-swap',
           label: 'Swap',
           icon: SendToBack,
-          position: 'right',
+          position: 'left-inner',
           action: (nodeId) => {
             console.log(`[PieMenu Action] Swap clicked for node: ${nodeId}. TODO: Implement swap functionality.`);
             // TODO: Implement swap functionality
+          }
+        },
+        {
+          id: 'carousel-plus',
+          label: 'Create Definition',
+          icon: Plus,
+          position: 'right-inner',
+          action: (nodeId) => {
+            console.log(`[PieMenu Action] Create Definition clicked for carousel node: ${nodeId}. Creating definition and closing carousel.`);
+            const selectedNode = nodes.find(n => n.id === nodeId);
+            if (selectedNode) {
+              // Create definition for the node prototype
+              storeActions.createAndAssignGraphDefinition(selectedNode.prototypeId);
+              // Close carousel after animation
+              setSelectedNodeIdForPieMenu(null);
+              setIsTransitioningPieMenu(true);
+            }
+          }
+        },
+        {
+          id: 'carousel-expand',
+          label: 'Expand',
+          icon: ArrowUpFromDot,
+          position: 'right-outer',
+          action: (nodeId) => {
+            console.log(`[PieMenu Action] Expand clicked for carousel node: ${nodeId}. Starting hurtle animation and closing carousel.`);
+            const nodeData = nodes.find(n => n.id === nodeId);
+            if (nodeData) {
+              const prototypeId = nodeData.prototypeId;
+              if (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
+                // Node has definitions - start hurtle animation to first one
+                const graphIdToOpen = nodeData.definitionGraphIds[0];
+                startHurtleAnimation(nodeId, graphIdToOpen, prototypeId);
+                // Close carousel after animation starts
+                setSelectedNodeIdForPieMenu(null);
+                setIsTransitioningPieMenu(true);
+              } else {
+                // Node has no definitions - create one first, then start hurtle animation
+                const sourceGraphId = activeGraphId; // Capture current graph before it changes
+                storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
+                
+                setTimeout(() => {
+                  const currentState = useGraphStore.getState();
+                  const updatedNodeData = currentState.nodePrototypes.get(prototypeId);
+                  if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                    const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                    startHurtleAnimation(nodeId, newGraphId, prototypeId, sourceGraphId);
+                    // Close carousel after animation starts
+                    setSelectedNodeIdForPieMenu(null);
+                    setIsTransitioningPieMenu(true);
+                  } else {
+                    console.error(`[PieMenu Expand] Could not find new definition for node ${prototypeId} after creation.`);
+                  }
+                }, 50);
+              }
+            }
           }
         }
       ];
@@ -966,7 +1022,7 @@ function NodeCanvas() {
         } }
       ];
     }
-  }, [storeActions, setSelectedInstanceIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, activeGraphId, abstractionCarouselVisible, abstractionCarouselNode, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Bookmark, ArrowLeft, SendToBack, Palette, MoreHorizontal, zoomLevel, panOffset, containerRef, handlePieMenuColorPickerOpen, savedNodeIds]);
+  }, [storeActions, setSelectedInstanceIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, activeGraphId, abstractionCarouselVisible, abstractionCarouselNode, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Bookmark, ArrowLeft, SendToBack, Plus, Palette, MoreHorizontal, zoomLevel, panOffset, containerRef, handlePieMenuColorPickerOpen, savedNodeIds]);
 
   // Effect to restore view state on graph change or center if no stored state
   useLayoutEffect(() => {
@@ -3271,11 +3327,13 @@ function NodeCanvas() {
                                    x={midX}
                                    y={midY}
                                    fill="#bdb5b5"
-                                   fontSize="12"
+                                   fontSize="18"
                                    fontWeight="bold"
                                    textAnchor="middle"
                                    dominantBaseline="middle"
                                    transform={`rotate(${adjustedAngle}, ${midX}, ${midY})`}
+                                   stroke={edgeColor}
+                                   strokeWidth="6"
                                    style={{ pointerEvents: 'none', fontFamily: "'EmOne', sans-serif" }}
                                  >
                                    {connectionName}

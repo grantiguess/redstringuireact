@@ -171,12 +171,19 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
           // nodeDimensions now contains the actual current scaled dimensions from AbstractionCarousel
           const currentNodeHalfWidth = nodeDimensions.currentWidth / 2;
           const padding = BUBBLE_PADDING + BUBBLE_SIZE / 2;
+          const outerOffset = BUBBLE_SIZE + BUBBLE_PADDING; // Additional offset for outer buttons
           
-          if (button.position === 'left') {
+          if (button.position === 'left-outer') {
+            bubbleX = nodeCenterX - currentNodeHalfWidth - padding - outerOffset;
+            bubbleY = nodeCenterY;
+          } else if (button.position === 'left' || button.position === 'left-inner') {
             bubbleX = nodeCenterX - currentNodeHalfWidth - padding;
             bubbleY = nodeCenterY;
-          } else if (button.position === 'right') {
+          } else if (button.position === 'right' || button.position === 'right-inner') {
             bubbleX = nodeCenterX + currentNodeHalfWidth + padding;
+            bubbleY = nodeCenterY;
+          } else if (button.position === 'right-outer') {
+            bubbleX = nodeCenterX + currentNodeHalfWidth + padding + outerOffset;
             bubbleY = nodeCenterY;
           } else {
             // Fallback to center if no position specified
