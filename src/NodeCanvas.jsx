@@ -3468,13 +3468,15 @@ function NodeCanvas() {
                                    x={midX}
                                    y={midY}
                                    fill="#bdb5b5"
-                                   fontSize="18"
+                                   fontSize="24"
                                    fontWeight="bold"
                                    textAnchor="middle"
                                    dominantBaseline="middle"
                                    transform={`rotate(${adjustedAngle}, ${midX}, ${midY})`}
-                                   stroke="#1a1a1a"
-                                   strokeWidth="3"
+                                   stroke={edgeColor}
+                                   strokeWidth="6"
+                                   strokeLinecap="round"
+                                   strokeLinejoin="round"
                                    paintOrder="stroke fill"
                                    style={{ pointerEvents: 'none', fontFamily: "'EmOne', sans-serif" }}
                                  >
