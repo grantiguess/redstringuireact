@@ -110,6 +110,8 @@ function NodeCanvas() {
   const setUniverseError = useGraphStore((state) => state.setUniverseError);
   const clearUniverse = useGraphStore((state) => state.clearUniverse);
   const setUniverseConnected = useGraphStore((state) => state.setUniverseConnected);
+  const addNodeToAbstractionChain = useGraphStore((state) => state.addNodeToAbstractionChain);
+  const createAbstractionAxis = useGraphStore((state) => state.createAbstractionAxis);
 
   // Create a stable actions object only when needed for props
   const storeActions = useMemo(() => ({
@@ -176,6 +178,7 @@ function NodeCanvas() {
   const savedGraphIds = useGraphStore(state => state.savedGraphIds);
   // Get open graph IDs needed for initial check
   const openGraphIds = useGraphStore(state => state.openGraphIds);
+  const abstractionAxes = useGraphStore(state => state.abstractionAxes);
   // Universe file state
   const isUniverseLoaded = useGraphStore(state => state.isUniverseLoaded);
   const isUniverseLoading = useGraphStore(state => state.isUniverseLoading);
@@ -915,9 +918,53 @@ function NodeCanvas() {
             icon: CornerUpLeft,
             position: 'right-top',
             action: (nodeId) => {
-              console.log(`[PieMenu Action] Add Above clicked for carousel node: ${nodeId}. TODO: Implement add above functionality.`);
-              // TODO: Implement add above functionality
-              // For now, just close the carousel
+              console.log(`[PieMenu Action] Add Above clicked for carousel node: ${nodeId}. Creating new node above in chain.`);
+              
+              const selectedNode = nodes.find(n => n.id === nodeId);
+              if (!selectedNode) return;
+
+              // Find the current abstraction axis for this node
+              const currentAxisId = `${selectedNode.prototypeId}-${currentAbstractionDimension}`;
+              let currentAxis = abstractionAxes.get(currentAxisId);
+              
+              if (!currentAxis) {
+                // Create a new abstraction axis if one doesn't exist
+                createAbstractionAxis(currentAbstractionDimension, selectedNode.prototypeId, []);
+                currentAxis = { chainNodeIds: [] }; // Use empty chain for positioning
+              }
+              
+              if (currentAxis) {
+                // Find the position of the selected node in the chain
+                const selectedPosition = currentAxis.chainNodeIds.findIndex(id => {
+                  const nodeProto = nodePrototypesMap.get(id);
+                  return nodeProto && nodeProto.name === selectedNode.name;
+                });
+                
+                // Create new node above (more generic than) the selected node
+                const newNodeId = uuidv4();
+                const newNodeName = `More Generic ${selectedNode.name}`;
+                
+                // Create the new node prototype
+                storeActions.addNodePrototype({
+                  id: newNodeId,
+                  name: newNodeName,
+                  description: `A more generic abstraction of ${selectedNode.name}`,
+                  color: selectedNode.color || '#8B0000',
+                  typeNodeId: 'base-thing-prototype',
+                  definitionGraphIds: [],
+                  isSpecificityChainNode: true
+                });
+                
+                // Insert the new node above the selected node in the chain
+                const insertPosition = selectedPosition >= 0 ? selectedPosition : 0;
+                addNodeToAbstractionChain(currentAxisId, newNodeId, insertPosition);
+                
+                console.log(`[PieMenu Action] Added new node "${newNodeName}" above selected node at position ${insertPosition}`);
+              } else {
+                console.warn(`[PieMenu Action] No abstraction axis found for node: ${selectedNode.name}`);
+              }
+              
+              // Close the carousel after adding
               setSelectedNodeIdForPieMenu(null);
               setIsTransitioningPieMenu(true);
             }
@@ -928,9 +975,53 @@ function NodeCanvas() {
             icon: CornerDownLeft,
             position: 'right-bottom',
             action: (nodeId) => {
-              console.log(`[PieMenu Action] Add Below clicked for carousel node: ${nodeId}. TODO: Implement add below functionality.`);
-              // TODO: Implement add below functionality  
-              // For now, just close the carousel
+              console.log(`[PieMenu Action] Add Below clicked for carousel node: ${nodeId}. Creating new node below in chain.`);
+              
+              const selectedNode = nodes.find(n => n.id === nodeId);
+              if (!selectedNode) return;
+
+              // Find the current abstraction axis for this node
+              const currentAxisId = `${selectedNode.prototypeId}-${currentAbstractionDimension}`;
+              let currentAxis = abstractionAxes.get(currentAxisId);
+              
+              if (!currentAxis) {
+                // Create a new abstraction axis if one doesn't exist
+                createAbstractionAxis(currentAbstractionDimension, selectedNode.prototypeId, []);
+                currentAxis = { chainNodeIds: [] }; // Use empty chain for positioning
+              }
+              
+              if (currentAxis) {
+                // Find the position of the selected node in the chain
+                const selectedPosition = currentAxis.chainNodeIds.findIndex(id => {
+                  const nodeProto = nodePrototypesMap.get(id);
+                  return nodeProto && nodeProto.name === selectedNode.name;
+                });
+                
+                // Create new node below (more specific than) the selected node
+                const newNodeId = uuidv4();
+                const newNodeName = `More Specific ${selectedNode.name}`;
+                
+                // Create the new node prototype
+                storeActions.addNodePrototype({
+                  id: newNodeId,
+                  name: newNodeName,
+                  description: `A more specific abstraction of ${selectedNode.name}`,
+                  color: selectedNode.color || '#8B0000',
+                  typeNodeId: 'base-thing-prototype',
+                  definitionGraphIds: [],
+                  isSpecificityChainNode: true
+                });
+                
+                // Insert the new node below the selected node in the chain
+                const insertPosition = selectedPosition >= 0 ? selectedPosition + 1 : currentAxis.chainNodeIds.length;
+                addNodeToAbstractionChain(currentAxisId, newNodeId, insertPosition);
+                
+                console.log(`[PieMenu Action] Added new node "${newNodeName}" below selected node at position ${insertPosition}`);
+              } else {
+                console.warn(`[PieMenu Action] No abstraction axis found for node: ${selectedNode.name}`);
+              }
+              
+              // Close the carousel after adding
               setSelectedNodeIdForPieMenu(null);
               setIsTransitioningPieMenu(true);
             }
@@ -3382,8 +3473,9 @@ function NodeCanvas() {
                                    textAnchor="middle"
                                    dominantBaseline="middle"
                                    transform={`rotate(${adjustedAngle}, ${midX}, ${midY})`}
-                                   stroke={edgeColor}
-                                   strokeWidth="6"
+                                   stroke="#1a1a1a"
+                                   strokeWidth="3"
+                                   paintOrder="stroke fill"
                                    style={{ pointerEvents: 'none', fontFamily: "'EmOne', sans-serif" }}
                                  >
                                    {connectionName}
@@ -3522,7 +3614,7 @@ function NodeCanvas() {
                                        />
                                      )}
                                      <polygon
-                                       points={showConnectionNames ? "-14,18 14,18 0,-18" : "-12,15 12,15 0,-15"}
+                                       points={showConnectionNames ? "-18,22 18,22 0,-22" : "-12,15 12,15 0,-15"}
                                        fill={edgeColor}
                                        stroke={edgeColor}
                                        strokeWidth="6"
@@ -3557,7 +3649,7 @@ function NodeCanvas() {
                                        />
                                      )}
                                      <polygon
-                                       points={showConnectionNames ? "-14,18 14,18 0,-18" : "-12,15 12,15 0,-15"}
+                                       points={showConnectionNames ? "-18,22 18,22 0,-22" : "-12,15 12,15 0,-15"}
                                        fill={edgeColor}
                                        stroke={edgeColor}
                                        strokeWidth="6"
@@ -3586,7 +3678,7 @@ function NodeCanvas() {
                                          <circle
                                            cx={sourceArrowX}
                                            cy={sourceArrowY}
-                                           r={showConnectionNames ? "12" : "8"}
+                                           r={showConnectionNames ? "16" : "8"}
                                            fill={edgeColor}
                                            style={{ pointerEvents: 'none' }}
                                          />
@@ -3608,7 +3700,7 @@ function NodeCanvas() {
                                          <circle
                                            cx={destArrowX}
                                            cy={destArrowY}
-                                           r={showConnectionNames ? "12" : "8"}
+                                           r={showConnectionNames ? "16" : "8"}
                                            fill={edgeColor}
                                            style={{ pointerEvents: 'none' }}
                                          />
