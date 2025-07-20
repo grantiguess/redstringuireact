@@ -472,10 +472,6 @@ function NodeCanvas() {
   const [carouselPieMenuStage, setCarouselPieMenuStage] = useState(1); // 1 = main stage, 2 = position selection stage
   const [isCarouselStageTransition, setIsCarouselStageTransition] = useState(false); // Flag to track internal stage transitions
   
-  // Debug effect to track stage changes
-  useEffect(() => {
-    console.log(`[DEBUG] carouselPieMenuStage changed to: ${carouselPieMenuStage}`);
-  }, [carouselPieMenuStage]);
   const [rightPanelExpanded, setRightPanelExpanded] = useState(true); // Default to open?
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
   const [isRightPanelInputFocused, setIsRightPanelInputFocused] = useState(false);
@@ -816,15 +812,12 @@ function NodeCanvas() {
 
   // Pie Menu Button Configuration - now targetPieMenuButtons and dynamic
   const targetPieMenuButtons = useMemo(() => {
-    console.log(`[DEBUG] targetPieMenuButtons recalculating, carouselPieMenuStage: ${carouselPieMenuStage}`);
     const selectedNode = selectedNodeIdForPieMenu ? nodes.find(n => n.id === selectedNodeIdForPieMenu) : null;
 
     // Check if we're in AbstractionCarousel mode
     if (selectedNode && abstractionCarouselVisible && abstractionCarouselNode && selectedNode.id === abstractionCarouselNode.id) {
-      console.log(`[DEBUG] In carousel mode, stage: ${carouselPieMenuStage}`);
       // AbstractionCarousel mode: different layouts based on stage
       if (carouselPieMenuStage === 1) {
-        console.log(`[DEBUG] Returning stage 1 buttons`);
         // Stage 1: Main carousel menu with 4 buttons from left to right: Back, Swap, Plus, ArrowUpFromDot
         return [
         {
@@ -856,13 +849,9 @@ function NodeCanvas() {
           position: 'right-inner',
           action: (nodeId) => {
             console.log(`[PieMenu Action] Create Definition clicked for carousel node: ${nodeId}. Transitioning to position selection stage.`);
-            console.log(`[DEBUG] Current carouselPieMenuStage before: ${carouselPieMenuStage}`);
-            console.log(`[DEBUG] Current abstractionCarouselVisible: ${abstractionCarouselVisible}`);
-            console.log(`[DEBUG] Current selectedNodeIdForPieMenu: ${selectedNodeIdForPieMenu}`);
             // Transition to stage 2 for position selection
             setIsCarouselStageTransition(true); // Mark this as an internal stage transition
             setCarouselPieMenuStage(2);
-            console.log(`[DEBUG] setCarouselPieMenuStage(2) called`);
           }
         },
         {
@@ -906,7 +895,6 @@ function NodeCanvas() {
         }
       ];
       } else if (carouselPieMenuStage === 2) {
-        console.log(`[DEBUG] Returning stage 2 buttons`);
         // Stage 2: Position selection menu - Back on left-inner, vertical stack on right
         return [
           {
@@ -949,8 +937,6 @@ function NodeCanvas() {
           }
         ];
       }
-    } else {
-      console.log(`[DEBUG] NOT in carousel mode. selectedNode: ${!!selectedNode}, abstractionCarouselVisible: ${abstractionCarouselVisible}, abstractionCarouselNode: ${!!abstractionCarouselNode}, nodeIdMatch: ${selectedNode && abstractionCarouselNode ? selectedNode.id === abstractionCarouselNode.id : 'N/A'}`);
     }
     
     if (selectedNode && previewingNodeId === selectedNode.id) {
@@ -1973,7 +1959,6 @@ function NodeCanvas() {
   };
 
   const handleCanvasClick = (e) => {
-      console.log(`[DEBUG] handleCanvasClick triggered, target:`, e.target, `selectedInstanceIds.size: ${selectedInstanceIds.size}`);
       if (wasDrawingConnection.current) {
           wasDrawingConnection.current = false;
           return;
@@ -1981,7 +1966,6 @@ function NodeCanvas() {
       if (e.target.closest('g[data-plus-sign="true"]')) return;
       // Prevent canvas click when clicking on PieMenu elements
       if (e.target.closest('.pie-menu')) {
-          console.log(`[DEBUG] handleCanvasClick blocked - clicked on pie menu`);
           return;
       }
       if (e.target.tagName !== 'svg' || !e.target.classList.contains('canvas')) return;
@@ -1992,7 +1976,6 @@ function NodeCanvas() {
       if (ignoreCanvasClick.current) { ignoreCanvasClick.current = false; return; }
 
       if (selectedInstanceIds.size > 0) {
-          console.log(`[DEBUG] handleCanvasClick clearing selection`);
           setSelectedInstanceIds(new Set());
           // Pie menu will be handled by useEffect on selectedInstanceIds, no direct setShowPieMenu here
           return;
@@ -2583,24 +2566,19 @@ function NodeCanvas() {
 
   // Effect to manage PieMenu visibility and data for animations
   useEffect(() => {
-    console.log(`[NodeCanvas] useEffect[selectedInstanceIds, isTransitioningPieMenu]: Running. selectedInstanceIds.size = ${selectedInstanceIds.size}, selectedInstanceIds = [${Array.from(selectedInstanceIds).join(', ')}], isTransitioningPieMenu = ${isTransitioningPieMenu}`);
     if (selectedInstanceIds.size === 1) {
       const instanceId = [...selectedInstanceIds][0];
       
       if (!isTransitioningPieMenu) {
-        console.log(`[NodeCanvas] Single node selected (${instanceId}), not transitioning. Setting selectedNodeIdForPieMenu.`);
         setSelectedNodeIdForPieMenu(instanceId);
       } else {
         // If transitioning, PieMenu's onExitAnimationComplete will handle setting the next selectedNodeIdForPieMenu
-        console.log(`[NodeCanvas] Single node selected (${instanceId}), but IS transitioning. Waiting for exit animation to potentially set new pie menu target.`);
       }
       } else {
     // Not a single selection (0 or multiple)
-    console.log("[NodeCanvas] No single node selected (or multiple). Setting selectedNodeIdForPieMenu to null.");
     
     // If we're currently in carousel mode and losing selection, treat it as a transition
     if (abstractionCarouselVisible && selectedNodeIdForPieMenu) {
-      console.log(`[DEBUG] Setting isTransitioningPieMenu = true due to carousel mode selection loss`);
       setIsTransitioningPieMenu(true);
     }
     
@@ -2610,7 +2588,6 @@ function NodeCanvas() {
 
   // Effect to prepare and render PieMenu when selectedNodeIdForPieMenu changes and not transitioning
   useEffect(() => {
-    console.log(`[NodeCanvas] PieMenu useEffect: selectedNodeIdForPieMenu = ${selectedNodeIdForPieMenu}, isTransitioning = ${isTransitioningPieMenu}, carouselPieMenuStage = ${carouselPieMenuStage}`);
     if (selectedNodeIdForPieMenu && !isTransitioningPieMenu) {
       const node = nodes.find(n => n.id === selectedNodeIdForPieMenu);
       if (node) {
@@ -3801,7 +3778,6 @@ function NodeCanvas() {
                 // Check if this was an internal stage transition vs carousel exit
                 if (isCarouselStageTransition) {
                   // This was an internal stage transition - stay in carousel, just update PieMenu
-                  console.log(`[DEBUG] Internal carousel stage transition - staying in carousel`);
                   setIsCarouselStageTransition(false); // Reset the flag
                   setIsTransitioningPieMenu(false);
                   // Re-select the node to show the new stage PieMenu
