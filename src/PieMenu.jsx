@@ -185,6 +185,14 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
           } else if (button.position === 'right-outer') {
             bubbleX = nodeCenterX + currentNodeHalfWidth + padding + outerOffset;
             bubbleY = nodeCenterY;
+          } else if (button.position === 'right-top') {
+            // Vertical stack on right side - top button
+            bubbleX = nodeCenterX + currentNodeHalfWidth + padding;
+            bubbleY = nodeCenterY - (BUBBLE_SIZE + BUBBLE_PADDING) / 2;
+          } else if (button.position === 'right-bottom') {
+            // Vertical stack on right side - bottom button
+            bubbleX = nodeCenterX + currentNodeHalfWidth + padding;
+            bubbleY = nodeCenterY + (BUBBLE_SIZE + BUBBLE_PADDING) / 2;
           } else {
             // Fallback to center if no position specified
             bubbleX = nodeCenterX;
@@ -263,9 +271,19 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
             transform={`translate(${bubbleX}, ${bubbleY})`}
             style={{ cursor: 'pointer' }}
             onClick={(e) => {
-              if (animationState === 'shrinking') return; // Prevent click during exit animation
+              console.log(`[PieMenu] Button clicked: ${button.id}, animationState: ${animationState}, isVisible: ${isVisible}`);
+              // Allow carousel stage transition buttons to work even during shrinking
+              const isCarouselStageTransition = button.id === 'carousel-plus' || button.id === 'carousel-back-stage2';
+              if (animationState === 'shrinking' && !isCarouselStageTransition) {
+                console.log(`[PieMenu] Click blocked - animation shrinking`);
+                return; // Prevent click during exit animation
+              }
               e.stopPropagation();
-              if (!isVisible) return; // Prevent action if menu is supposed to be hidden but animation not complete
+              if (!isVisible && !isCarouselStageTransition) {
+                console.log(`[PieMenu] Click blocked - not visible`);
+                return; // Prevent action if menu is supposed to be hidden but animation not complete
+              }
+              console.log(`[PieMenu] Executing button action for: ${button.id}`);
               button.action(node.id);
             }}
           >

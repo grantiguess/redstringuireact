@@ -12,7 +12,7 @@ import ConnectionControlPanel from './ConnectionControlPanel.jsx'; // Import the
 import AbstractionControlPanel from './AbstractionControlPanel.jsx'; // Import the AbstractionControlPanel component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
-import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal, Bookmark, Plus } from 'lucide-react'; // Icons for PieMenu
+import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal, Bookmark, Plus, CornerUpLeft, CornerDownLeft } from 'lucide-react'; // Icons for PieMenu
 import ColorPicker from './ColorPicker';
 import { useDrop } from 'react-dnd';
 
@@ -467,6 +467,15 @@ function NodeCanvas() {
   const [pieMenuColorPickerPosition, setPieMenuColorPickerPosition] = useState({ x: 0, y: 0 });
   const [activePieMenuColorNodeId, setActivePieMenuColorNodeId] = useState(null);
   const [nodeSelectionGrid, setNodeSelectionGrid] = useState({ visible: false, position: { x: 0, y: 0 } });
+  
+  // Carousel PieMenu stage state
+  const [carouselPieMenuStage, setCarouselPieMenuStage] = useState(1); // 1 = main stage, 2 = position selection stage
+  const [isCarouselStageTransition, setIsCarouselStageTransition] = useState(false); // Flag to track internal stage transitions
+  
+  // Debug effect to track stage changes
+  useEffect(() => {
+    console.log(`[DEBUG] carouselPieMenuStage changed to: ${carouselPieMenuStage}`);
+  }, [carouselPieMenuStage]);
   const [rightPanelExpanded, setRightPanelExpanded] = useState(true); // Default to open?
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
   const [isRightPanelInputFocused, setIsRightPanelInputFocused] = useState(false);
@@ -513,6 +522,8 @@ function NodeCanvas() {
     // Use the same logic as the back button for a smooth transition
     setSelectedNodeIdForPieMenu(null);
     setIsTransitioningPieMenu(true);
+    setCarouselPieMenuStage(1); // Reset to main stage
+    setIsCarouselStageTransition(false); // Reset stage transition flag
   }, []);
 
   const onCarouselReplaceNode = useCallback((oldNodeId, newNodeData) => {
@@ -564,6 +575,8 @@ function NodeCanvas() {
     setSelectedNodeIdForPieMenu(null);
     setCurrentPieMenuData(null);
     setIsPieMenuRendered(false);
+    setCarouselPieMenuStage(1); // Reset to main stage
+    setIsCarouselStageTransition(false); // Reset stage transition flag
     setIsTransitioningPieMenu(false); // Reset any pending transition
 
     // Clear pie menu color picker state
@@ -803,12 +816,17 @@ function NodeCanvas() {
 
   // Pie Menu Button Configuration - now targetPieMenuButtons and dynamic
   const targetPieMenuButtons = useMemo(() => {
+    console.log(`[DEBUG] targetPieMenuButtons recalculating, carouselPieMenuStage: ${carouselPieMenuStage}`);
     const selectedNode = selectedNodeIdForPieMenu ? nodes.find(n => n.id === selectedNodeIdForPieMenu) : null;
 
     // Check if we're in AbstractionCarousel mode
     if (selectedNode && abstractionCarouselVisible && abstractionCarouselNode && selectedNode.id === abstractionCarouselNode.id) {
-      // AbstractionCarousel mode: show 4 buttons from left to right: Back, Swap, Plus, ArrowUpFromDot
-      return [
+      console.log(`[DEBUG] In carousel mode, stage: ${carouselPieMenuStage}`);
+      // AbstractionCarousel mode: different layouts based on stage
+      if (carouselPieMenuStage === 1) {
+        console.log(`[DEBUG] Returning stage 1 buttons`);
+        // Stage 1: Main carousel menu with 4 buttons from left to right: Back, Swap, Plus, ArrowUpFromDot
+        return [
         {
           id: 'carousel-back-outer',
           label: 'Back',
@@ -837,15 +855,14 @@ function NodeCanvas() {
           icon: Plus,
           position: 'right-inner',
           action: (nodeId) => {
-            console.log(`[PieMenu Action] Create Definition clicked for carousel node: ${nodeId}. Creating definition and closing carousel.`);
-            const selectedNode = nodes.find(n => n.id === nodeId);
-            if (selectedNode) {
-              // Create definition for the node prototype
-              storeActions.createAndAssignGraphDefinition(selectedNode.prototypeId);
-              // Close carousel after animation
-              setSelectedNodeIdForPieMenu(null);
-              setIsTransitioningPieMenu(true);
-            }
+            console.log(`[PieMenu Action] Create Definition clicked for carousel node: ${nodeId}. Transitioning to position selection stage.`);
+            console.log(`[DEBUG] Current carouselPieMenuStage before: ${carouselPieMenuStage}`);
+            console.log(`[DEBUG] Current abstractionCarouselVisible: ${abstractionCarouselVisible}`);
+            console.log(`[DEBUG] Current selectedNodeIdForPieMenu: ${selectedNodeIdForPieMenu}`);
+            // Transition to stage 2 for position selection
+            setIsCarouselStageTransition(true); // Mark this as an internal stage transition
+            setCarouselPieMenuStage(2);
+            console.log(`[DEBUG] setCarouselPieMenuStage(2) called`);
           }
         },
         {
@@ -888,7 +905,55 @@ function NodeCanvas() {
           }
         }
       ];
-    } else if (selectedNode && previewingNodeId === selectedNode.id) {
+      } else if (carouselPieMenuStage === 2) {
+        console.log(`[DEBUG] Returning stage 2 buttons`);
+        // Stage 2: Position selection menu - Back on left-inner, vertical stack on right
+        return [
+          {
+            id: 'carousel-back-stage2',
+            label: 'Back',
+            icon: ArrowLeft,
+            position: 'left-inner',
+            action: (nodeId) => {
+              console.log(`[PieMenu Action] Back clicked in stage 2. Returning to main carousel menu.`);
+              // Return to stage 1
+              setIsCarouselStageTransition(true); // Mark this as an internal stage transition
+              setCarouselPieMenuStage(1);
+            }
+          },
+          {
+            id: 'carousel-add-above',
+            label: 'Add Above',
+            icon: CornerUpLeft,
+            position: 'right-top',
+            action: (nodeId) => {
+              console.log(`[PieMenu Action] Add Above clicked for carousel node: ${nodeId}. TODO: Implement add above functionality.`);
+              // TODO: Implement add above functionality
+              // For now, just close the carousel
+              setSelectedNodeIdForPieMenu(null);
+              setIsTransitioningPieMenu(true);
+            }
+          },
+          {
+            id: 'carousel-add-below',
+            label: 'Add Below',
+            icon: CornerDownLeft,
+            position: 'right-bottom',
+            action: (nodeId) => {
+              console.log(`[PieMenu Action] Add Below clicked for carousel node: ${nodeId}. TODO: Implement add below functionality.`);
+              // TODO: Implement add below functionality  
+              // For now, just close the carousel
+              setSelectedNodeIdForPieMenu(null);
+              setIsTransitioningPieMenu(true);
+            }
+          }
+        ];
+      }
+    } else {
+      console.log(`[DEBUG] NOT in carousel mode. selectedNode: ${!!selectedNode}, abstractionCarouselVisible: ${abstractionCarouselVisible}, abstractionCarouselNode: ${!!abstractionCarouselNode}, nodeIdMatch: ${selectedNode && abstractionCarouselNode ? selectedNode.id === abstractionCarouselNode.id : 'N/A'}`);
+    }
+    
+    if (selectedNode && previewingNodeId === selectedNode.id) {
       // If the selected node for the pie menu is the one being previewed, show only Compose
       return [
         {
@@ -1022,7 +1087,7 @@ function NodeCanvas() {
         } }
       ];
     }
-  }, [storeActions, setSelectedInstanceIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, activeGraphId, abstractionCarouselVisible, abstractionCarouselNode, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Bookmark, ArrowLeft, SendToBack, Plus, Palette, MoreHorizontal, zoomLevel, panOffset, containerRef, handlePieMenuColorPickerOpen, savedNodeIds]);
+  }, [storeActions, setSelectedInstanceIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, activeGraphId, abstractionCarouselVisible, abstractionCarouselNode, carouselPieMenuStage, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Bookmark, ArrowLeft, SendToBack, Plus, CornerUpLeft, CornerDownLeft, Palette, MoreHorizontal, zoomLevel, panOffset, containerRef, handlePieMenuColorPickerOpen, savedNodeIds]);
 
   // Effect to restore view state on graph change or center if no stored state
   useLayoutEffect(() => {
@@ -1908,11 +1973,17 @@ function NodeCanvas() {
   };
 
   const handleCanvasClick = (e) => {
+      console.log(`[DEBUG] handleCanvasClick triggered, target:`, e.target, `selectedInstanceIds.size: ${selectedInstanceIds.size}`);
       if (wasDrawingConnection.current) {
           wasDrawingConnection.current = false;
           return;
       }
       if (e.target.closest('g[data-plus-sign="true"]')) return;
+      // Prevent canvas click when clicking on PieMenu elements
+      if (e.target.closest('.pie-menu')) {
+          console.log(`[DEBUG] handleCanvasClick blocked - clicked on pie menu`);
+          return;
+      }
       if (e.target.tagName !== 'svg' || !e.target.classList.contains('canvas')) return;
       if (isPaused || draggingNodeInfo || drawingConnectionFrom || mouseMoved.current || recentlyPanned || nodeNamePrompt.visible || !activeGraphId) {
           setLastInteractionType('blocked_click');
@@ -1921,6 +1992,7 @@ function NodeCanvas() {
       if (ignoreCanvasClick.current) { ignoreCanvasClick.current = false; return; }
 
       if (selectedInstanceIds.size > 0) {
+          console.log(`[DEBUG] handleCanvasClick clearing selection`);
           setSelectedInstanceIds(new Set());
           // Pie menu will be handled by useEffect on selectedInstanceIds, no direct setShowPieMenu here
           return;
@@ -2528,6 +2600,7 @@ function NodeCanvas() {
     
     // If we're currently in carousel mode and losing selection, treat it as a transition
     if (abstractionCarouselVisible && selectedNodeIdForPieMenu) {
+      console.log(`[DEBUG] Setting isTransitioningPieMenu = true due to carousel mode selection loss`);
       setIsTransitioningPieMenu(true);
     }
     
@@ -2537,7 +2610,7 @@ function NodeCanvas() {
 
   // Effect to prepare and render PieMenu when selectedNodeIdForPieMenu changes and not transitioning
   useEffect(() => {
-    //console.log(`[NodeCanvas] useEffect[selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu]: Running. selectedNodeIdForPieMenu = ${selectedNodeIdForPieMenu}, isTransitioning = ${isTransitioningPieMenu}`);
+    console.log(`[NodeCanvas] PieMenu useEffect: selectedNodeIdForPieMenu = ${selectedNodeIdForPieMenu}, isTransitioning = ${isTransitioningPieMenu}, carouselPieMenuStage = ${carouselPieMenuStage}`);
     if (selectedNodeIdForPieMenu && !isTransitioningPieMenu) {
       const node = nodes.find(n => n.id === selectedNodeIdForPieMenu);
       if (node) {
@@ -2588,7 +2661,7 @@ function NodeCanvas() {
     }
     // If isTransitioningPieMenu is true, we don't change currentPieMenuData or isPieMenuRendered here.
     // The existing menu plays its exit animation, and onExitAnimationComplete handles the next steps.
-  }, [selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu, abstractionCarouselVisible, abstractionCarouselNode, carouselFocusedNodeScale, carouselFocusedNodeDimensions]);
+  }, [selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu, abstractionCarouselVisible, abstractionCarouselNode, carouselPieMenuStage, carouselFocusedNodeScale, carouselFocusedNodeDimensions]);
 
   // --- Hurtle Animation State & Logic ---
   const [hurtleAnimation, setHurtleAnimation] = useState(null);
@@ -3725,10 +3798,22 @@ function NodeCanvas() {
                  setSelectedNodeIdForPieMenu(pendingAbstractionId);
                }
              } else if (wasTransitioning && wasInCarousel) {
-                // This was a "back" transition from the carousel - start exit animation now
-                setCarouselAnimationState('exiting');
-                // DON'T set isTransitioningPieMenu(false) yet - wait for carousel to finish
-                // The carousel's onExitAnimationComplete will show the regular pie menu
+                // Check if this was an internal stage transition vs carousel exit
+                if (isCarouselStageTransition) {
+                  // This was an internal stage transition - stay in carousel, just update PieMenu
+                  console.log(`[DEBUG] Internal carousel stage transition - staying in carousel`);
+                  setIsCarouselStageTransition(false); // Reset the flag
+                  setIsTransitioningPieMenu(false);
+                  // Re-select the node to show the new stage PieMenu
+                  if (lastActiveNodeId) {
+                    setSelectedNodeIdForPieMenu(lastActiveNodeId);
+                  }
+                } else {
+                  // This was a "back" transition from the carousel - start exit animation now
+                  setCarouselAnimationState('exiting');
+                  // DON'T set isTransitioningPieMenu(false) yet - wait for carousel to finish
+                  // The carousel's onExitAnimationComplete will show the regular pie menu
+                }
              } else if (wasTransitioning) {
                setIsTransitioningPieMenu(false); 
                const currentlySelectedNodeId = [...selectedInstanceIds][0]; 
