@@ -6,7 +6,7 @@ import ColorPicker from './ColorPicker';
 import useGraphStore from './store/graphStore.js';
 
 const UnifiedSelector = ({ 
-  mode, // 'node-creation', 'connection-creation', or 'node-typing'
+  mode, // 'node-creation', 'connection-creation', 'node-typing', or 'abstraction-node-creation'
   isVisible,
   onClose,
   onSubmit,
@@ -18,7 +18,8 @@ const UnifiedSelector = ({
   showCreateNewOption = false,
   searchTerm = '',
   onNodeSelect = null,
-  selectedNodes = new Set()
+  selectedNodes = new Set(),
+  abstractionDirection = 'above' // 'above' or 'below' for abstraction mode
 }) => {
   const [name, setName] = useState(initialName);
   const lastInitialNameRef = useRef(initialName);
@@ -55,15 +56,15 @@ const UnifiedSelector = ({
   }, [position]);
 
   // Define showDialog and showGrid early
-  const showDialog = mode === 'node-creation' || mode === 'connection-creation';
-  const showGrid = mode === 'node-typing' || showCreateNewOption || onNodeSelect;
+  const showDialog = mode === 'node-creation' || mode === 'connection-creation' || mode === 'abstraction-node-creation';
+  const showGrid = mode === 'node-typing' || mode === 'abstraction-node-creation' || showCreateNewOption || onNodeSelect;
 
   // Filter prototypes based on search term - use name field as search for creation modes
   const filteredPrototypes = React.useMemo(() => {
     const prototypes = Array.from(nodePrototypesMap.values());
-    // For node/connection creation modes, use the name field as search
+    // For node/connection/abstraction creation modes, use the name field as search
     // For node-typing mode, use the external searchTerm prop
-    const searchText = (mode === 'node-creation' || mode === 'connection-creation') ? name : searchTerm;
+    const searchText = (mode === 'node-creation' || mode === 'connection-creation' || mode === 'abstraction-node-creation') ? name : searchTerm;
     if (!searchText) return prototypes;
     return prototypes.filter(p => 
       p.name.toLowerCase().includes(searchText.toLowerCase())
@@ -115,7 +116,7 @@ const UnifiedSelector = ({
       
       if (e.key === 'Escape') {
         onClose?.();
-      } else if (e.key === 'Enter' && (mode === 'node-creation' || mode === 'connection-creation')) {
+      } else if (e.key === 'Enter' && (mode === 'node-creation' || mode === 'connection-creation' || mode === 'abstraction-node-creation')) {
         handleSubmit();
       }
     };
@@ -258,7 +259,7 @@ const UnifiedSelector = ({
                   minWidth: '50px',
                   minHeight: '44px'
                 }}
-                title={mode === 'connection-creation' ? 'Create connection type' : 'Create node type'}
+                title={mode === 'connection-creation' ? 'Create connection type' : mode === 'abstraction-node-creation' ? `Create ${abstractionDirection} abstraction` : 'Create node type'}
               >
                 <ArrowBigRightDash size={16} color="#bdb5b5" />
               </button>

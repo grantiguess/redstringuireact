@@ -272,7 +272,7 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
             style={{ cursor: 'pointer' }}
             onClick={(e) => {
               // Allow carousel stage transition buttons to work even during shrinking
-              const isCarouselStageTransition = button.id === 'carousel-plus' || button.id === 'carousel-back-stage2';
+              const isCarouselStageTransition = button.id === 'carousel-plus' || button.id === 'carousel-back-stage2' || button.id === 'carousel-add-above' || button.id === 'carousel-add-below';
               if (animationState === 'shrinking' && !isCarouselStageTransition) {
                 return; // Prevent click during exit animation
               }

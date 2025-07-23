@@ -460,6 +460,12 @@ function NodeCanvas() {
   const [plusSign, setPlusSign] = useState(null);
   const [nodeNamePrompt, setNodeNamePrompt] = useState({ visible: false, name: '', color: null });
   const [connectionNamePrompt, setConnectionNamePrompt] = useState({ visible: false, name: '', color: null, edgeId: null });
+  const [abstractionPrompt, setAbstractionPrompt] = useState({ visible: false, name: '', color: null, direction: 'above', nodeId: null });
+
+  // Add logging for abstraction prompt state changes
+  useEffect(() => {
+    console.log(`[Abstraction Prompt] State changed:`, abstractionPrompt);
+  }, [abstractionPrompt]);
   
   // Dialog color picker state
   const [dialogColorPickerVisible, setDialogColorPickerVisible] = useState(false);
@@ -474,6 +480,11 @@ function NodeCanvas() {
   // Carousel PieMenu stage state
   const [carouselPieMenuStage, setCarouselPieMenuStage] = useState(1); // 1 = main stage, 2 = position selection stage
   const [isCarouselStageTransition, setIsCarouselStageTransition] = useState(false); // Flag to track internal stage transitions
+
+  // Add logging for carousel stage changes
+  useEffect(() => {
+    console.log(`[Carousel Stage] Changed to stage:`, carouselPieMenuStage);
+  }, [carouselPieMenuStage]);
   
   const [rightPanelExpanded, setRightPanelExpanded] = useState(true); // Default to open?
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
@@ -852,9 +863,11 @@ function NodeCanvas() {
           position: 'right-inner',
           action: (nodeId) => {
             console.log(`[PieMenu Action] Create Definition clicked for carousel node: ${nodeId}. Transitioning to position selection stage.`);
+            console.log(`[PieMenu Action] Current stage: ${carouselPieMenuStage}, transitioning to stage 2`);
             // Transition to stage 2 for position selection
             setIsCarouselStageTransition(true); // Mark this as an internal stage transition
             setCarouselPieMenuStage(2);
+            console.log(`[PieMenu Action] Stage transition completed`);
           }
         },
         {
@@ -918,55 +931,31 @@ function NodeCanvas() {
             icon: CornerUpLeft,
             position: 'right-top',
             action: (nodeId) => {
-              console.log(`[PieMenu Action] Add Above clicked for carousel node: ${nodeId}. Creating new node above in chain.`);
+              console.log(`[PieMenu Action] Add Above clicked for carousel node: ${nodeId}`);
+              console.log(`[PieMenu Action] Current nodes:`, nodes.map(n => ({ id: n.id, name: n.name, prototypeId: n.prototypeId })));
               
               const selectedNode = nodes.find(n => n.id === nodeId);
-              if (!selectedNode) return;
+              console.log(`[PieMenu Action] Found selected node:`, selectedNode);
+              if (!selectedNode) {
+                console.error(`[PieMenu Action] No node found with ID: ${nodeId}`);
+                return;
+              }
 
-              // Find the current abstraction axis for this node
-              const currentAxisId = `${selectedNode.prototypeId}-${currentAbstractionDimension}`;
-              let currentAxis = abstractionAxes.get(currentAxisId);
+              console.log(`[PieMenu Action] Setting abstraction prompt state...`);
+              // Open abstraction prompt
+              setAbstractionPrompt({
+                visible: true,
+                name: '',
+                color: null,
+                direction: 'above',
+                nodeId: nodeId
+              });
               
-              if (!currentAxis) {
-                // Create a new abstraction axis if one doesn't exist
-                createAbstractionAxis(currentAbstractionDimension, selectedNode.prototypeId, []);
-                currentAxis = { chainNodeIds: [] }; // Use empty chain for positioning
-              }
-              
-              if (currentAxis) {
-                // Find the position of the selected node in the chain
-                const selectedPosition = currentAxis.chainNodeIds.findIndex(id => {
-                  const nodeProto = nodePrototypesMap.get(id);
-                  return nodeProto && nodeProto.name === selectedNode.name;
-                });
-                
-                // Create new node above (more generic than) the selected node
-                const newNodeId = uuidv4();
-                const newNodeName = `More Generic ${selectedNode.name}`;
-                
-                // Create the new node prototype
-                storeActions.addNodePrototype({
-                  id: newNodeId,
-                  name: newNodeName,
-                  description: `A more generic abstraction of ${selectedNode.name}`,
-                  color: selectedNode.color || '#8B0000',
-                  typeNodeId: 'base-thing-prototype',
-                  definitionGraphIds: [],
-                  isSpecificityChainNode: true
-                });
-                
-                // Insert the new node above the selected node in the chain
-                const insertPosition = selectedPosition >= 0 ? selectedPosition : 0;
-                addNodeToAbstractionChain(currentAxisId, newNodeId, insertPosition);
-                
-                console.log(`[PieMenu Action] Added new node "${newNodeName}" above selected node at position ${insertPosition}`);
-              } else {
-                console.warn(`[PieMenu Action] No abstraction axis found for node: ${selectedNode.name}`);
-              }
-              
-              // Close the carousel after adding
+              console.log(`[PieMenu Action] Closing pie menu...`);
+              // Close the pie menu
               setSelectedNodeIdForPieMenu(null);
               setIsTransitioningPieMenu(true);
+              console.log(`[PieMenu Action] Add Above action completed`);
             }
           },
           {
@@ -975,55 +964,31 @@ function NodeCanvas() {
             icon: CornerDownLeft,
             position: 'right-bottom',
             action: (nodeId) => {
-              console.log(`[PieMenu Action] Add Below clicked for carousel node: ${nodeId}. Creating new node below in chain.`);
+              console.log(`[PieMenu Action] Add Below clicked for carousel node: ${nodeId}`);
+              console.log(`[PieMenu Action] Current nodes:`, nodes.map(n => ({ id: n.id, name: n.name, prototypeId: n.prototypeId })));
               
               const selectedNode = nodes.find(n => n.id === nodeId);
-              if (!selectedNode) return;
+              console.log(`[PieMenu Action] Found selected node:`, selectedNode);
+              if (!selectedNode) {
+                console.error(`[PieMenu Action] No node found with ID: ${nodeId}`);
+                return;
+              }
 
-              // Find the current abstraction axis for this node
-              const currentAxisId = `${selectedNode.prototypeId}-${currentAbstractionDimension}`;
-              let currentAxis = abstractionAxes.get(currentAxisId);
+              console.log(`[PieMenu Action] Setting abstraction prompt state...`);
+              // Open abstraction prompt
+              setAbstractionPrompt({
+                visible: true,
+                name: '',
+                color: null,
+                direction: 'below',
+                nodeId: nodeId
+              });
               
-              if (!currentAxis) {
-                // Create a new abstraction axis if one doesn't exist
-                createAbstractionAxis(currentAbstractionDimension, selectedNode.prototypeId, []);
-                currentAxis = { chainNodeIds: [] }; // Use empty chain for positioning
-              }
-              
-              if (currentAxis) {
-                // Find the position of the selected node in the chain
-                const selectedPosition = currentAxis.chainNodeIds.findIndex(id => {
-                  const nodeProto = nodePrototypesMap.get(id);
-                  return nodeProto && nodeProto.name === selectedNode.name;
-                });
-                
-                // Create new node below (more specific than) the selected node
-                const newNodeId = uuidv4();
-                const newNodeName = `More Specific ${selectedNode.name}`;
-                
-                // Create the new node prototype
-                storeActions.addNodePrototype({
-                  id: newNodeId,
-                  name: newNodeName,
-                  description: `A more specific abstraction of ${selectedNode.name}`,
-                  color: selectedNode.color || '#8B0000',
-                  typeNodeId: 'base-thing-prototype',
-                  definitionGraphIds: [],
-                  isSpecificityChainNode: true
-                });
-                
-                // Insert the new node below the selected node in the chain
-                const insertPosition = selectedPosition >= 0 ? selectedPosition + 1 : currentAxis.chainNodeIds.length;
-                addNodeToAbstractionChain(currentAxisId, newNodeId, insertPosition);
-                
-                console.log(`[PieMenu Action] Added new node "${newNodeName}" below selected node at position ${insertPosition}`);
-              } else {
-                console.warn(`[PieMenu Action] No abstraction axis found for node: ${selectedNode.name}`);
-              }
-              
-              // Close the carousel after adding
+              console.log(`[PieMenu Action] Closing pie menu...`);
+              // Close the pie menu
               setSelectedNodeIdForPieMenu(null);
               setIsTransitioningPieMenu(true);
+              console.log(`[PieMenu Action] Add Below action completed`);
             }
           }
         ];
@@ -2119,6 +2084,125 @@ function NodeCanvas() {
     setNodeNamePrompt({ visible: false, name: '', color: null });
     setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
     setDialogColorPickerVisible(false); // Close color picker when closing prompt
+  };
+
+  // Helper function to interpolate between two colors
+  const interpolateColor = (color1, color2, factor) => {
+    // Simple color interpolation - convert hex to RGB, interpolate, convert back
+    const hex1 = color1.replace('#', '');
+    const hex2 = color2.replace('#', '');
+    
+    const r1 = parseInt(hex1.substr(0, 2), 16);
+    const g1 = parseInt(hex1.substr(2, 2), 16);
+    const b1 = parseInt(hex1.substr(4, 2), 16);
+    
+    const r2 = parseInt(hex2.substr(0, 2), 16);
+    const g2 = parseInt(hex2.substr(2, 2), 16);
+    const b2 = parseInt(hex2.substr(4, 2), 16);
+    
+    const r = Math.round(r1 + (r2 - r1) * factor);
+    const g = Math.round(g1 + (g2 - g1) * factor);
+    const b = Math.round(b1 + (b2 - b1) * factor);
+    
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  };
+
+  const handleAbstractionSubmit = ({ name, color }) => {
+    console.log(`[Abstraction Submit] Called with:`, { name, color, promptState: abstractionPrompt });
+    
+    if (name.trim() && abstractionPrompt.nodeId) {
+      const selectedNode = nodes.find(n => n.id === abstractionPrompt.nodeId);
+      console.log(`[Abstraction Submit] Found selected node:`, selectedNode);
+      if (!selectedNode) {
+        console.error(`[Abstraction Submit] No node found with ID: ${abstractionPrompt.nodeId}`);
+        return;
+      }
+
+      const continueNodeCreation = (axisToUse = null) => {
+        // Find the current abstraction axis for this dimension
+        let currentAxis = axisToUse || Array.from(useGraphStore.getState().abstractionAxes.values()).find(axis => axis.name === currentAbstractionDimension);
+        
+        if (!currentAxis) {
+          console.error(`[Abstraction Submit] Still no axis found after creation attempt`);
+          return;
+        }
+
+        console.log(`[Abstraction Submit] Using axis:`, currentAxis);
+
+        // Find the position of the selected node in the chain
+        let selectedPosition = currentAxis.chainNodeIds.findIndex(id => id === selectedNode.prototypeId);
+        
+        // If the selected node isn't in the chain yet, add it
+        if (selectedPosition === -1) {
+          console.log(`[Abstraction Submit] Adding selected node to chain`);
+          addNodeToAbstractionChain(currentAxis.id, selectedNode.prototypeId, -1);
+          // Refetch the axis to get updated chainNodeIds
+          currentAxis = Array.from(useGraphStore.getState().abstractionAxes.values()).find(axis => axis.name === currentAbstractionDimension);
+          selectedPosition = currentAxis.chainNodeIds.findIndex(id => id === selectedNode.prototypeId);
+        }
+        
+        // Create new node
+        const newNodeId = uuidv4();
+        
+        // Calculate color gradient based on direction and position
+        let newNodeColor = color;
+        if (!newNodeColor) {
+          const isAbove = abstractionPrompt.direction === 'above';
+          const abstractionLevel = isAbove ? 0.3 : -0.2; // Above = lighter, below = darker
+          const targetColor = isAbove ? '#FFFFFF' : '#000000';
+          newNodeColor = interpolateColor(selectedNode.color || '#8B0000', targetColor, Math.abs(abstractionLevel));
+        }
+        
+        console.log(`[Abstraction Submit] Creating new node with color:`, newNodeColor);
+        
+        // Create the new node prototype
+        storeActions.addNodePrototype({
+          id: newNodeId,
+          name: name.trim(),
+          description: `A ${abstractionPrompt.direction === 'above' ? 'more abstract' : 'more specific'} concept related to ${selectedNode.name}`,
+          color: newNodeColor,
+          typeNodeId: 'base-thing-prototype',
+          definitionGraphIds: [],
+          isSpecificityChainNode: true
+        });
+        
+        // Insert the new node at the appropriate position
+        const insertPosition = abstractionPrompt.direction === 'above' 
+          ? (selectedPosition >= 0 ? selectedPosition : 0)
+          : (selectedPosition >= 0 ? selectedPosition + 1 : currentAxis.chainNodeIds.length);
+          
+        console.log(`[Abstraction Submit] Adding node to chain at position:`, insertPosition);
+        addNodeToAbstractionChain(currentAxis.id, newNodeId, insertPosition);
+        
+        console.log(`[Abstraction] Added new node "${name.trim()}" ${abstractionPrompt.direction} selected node at position ${insertPosition}`);
+        
+        // Close the prompt
+        setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null });
+      };
+
+      // Find the current abstraction axis for this dimension
+      let currentAxis = Array.from(abstractionAxes.values()).find(axis => axis.name === currentAbstractionDimension);
+      
+      if (!currentAxis) {
+        console.log(`[Abstraction Submit] No axis found, creating new one`);
+        // Create a new abstraction axis if one doesn't exist
+        createAbstractionAxis(currentAbstractionDimension, selectedNode.prototypeId, [selectedNode.prototypeId]);
+        // Wait for store update and refetch the axis
+        setTimeout(() => {
+          const newAxis = Array.from(useGraphStore.getState().abstractionAxes.values()).find(axis => axis.name === currentAbstractionDimension);
+          if (!newAxis) {
+            console.error(`[Abstraction Submit] Failed to create abstraction axis for ${currentAbstractionDimension}`);
+            return;
+          }
+          console.log(`[Abstraction Submit] Created new axis:`, newAxis);
+          continueNodeCreation(newAxis);
+        }, 50);
+        return;
+      }
+      
+      // If we have an existing axis, proceed directly
+      continueNodeCreation(currentAxis);
+    }
   };
 
   const handlePromptSubmit = () => {
@@ -4176,6 +4260,26 @@ function NodeCanvas() {
             title="Name Your Connection"
             subtitle="The Thing that will define your Connection,<br />in verb form if available."
             searchTerm={connectionNamePrompt.name}
+          />
+
+          {/* UnifiedSelector for abstraction node creation */}
+          <UnifiedSelector
+            mode="abstraction-node-creation"
+            isVisible={abstractionPrompt.visible}
+            onClose={() => {
+              console.log(`[Abstraction] Closing UnifiedSelector`);
+              setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null });
+            }}
+            onSubmit={handleAbstractionSubmit}
+            onNodeSelect={(node) => {
+              console.log(`[Abstraction] Selected existing node:`, node);
+              handleAbstractionSubmit({ name: node.name, color: node.color });
+            }}
+            initialName={abstractionPrompt.name}
+            initialColor={abstractionPrompt.color}
+            title={`Add ${abstractionPrompt.direction === 'above' ? 'Above' : 'Below'}`}
+            subtitle={`Create a ${abstractionPrompt.direction === 'above' ? 'more abstract' : 'more specific'} node in the abstraction chain`}
+            abstractionDirection={abstractionPrompt.direction}
           />
           
           {debugMode && (

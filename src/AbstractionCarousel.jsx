@@ -348,7 +348,6 @@ const AbstractionCarousel = ({
     if (!selectedNode) return [];
     
     const baseColor = selectedNode.color || NODE_DEFAULT_COLOR;
-    console.log('[AbstractionCarousel] Base color:', baseColor, 'from selectedNode.color:', selectedNode.color);
     
     // Get the current abstraction axis
     const currentAxis = Array.from(abstractionAxes.values()).find(axis => axis.name === currentDimension);
@@ -419,7 +418,6 @@ const AbstractionCarousel = ({
     // Log the generated colors
     chain.forEach(item => {
       if (item.level !== 0) {
-        console.log(`[AbstractionCarousel] Level ${item.level}: ${item.name} -> Color: ${item.color}`);
       }
     });
 
@@ -781,14 +779,11 @@ const AbstractionCarousel = ({
         
         // Add the new node to the store
         // TODO: Add to abstraction axis system when implemented
-        console.log(`Would create new ${isGeneric ? 'generic' : 'specific'} abstraction: ${newName}`);
-        console.log('New node data:', newNodeData);
         
         // For now, just show an alert that this feature is coming soon
         alert(`Abstraction creation for "${newName}" is coming soon! This will be integrated with the full abstraction axis system.`);
       }
     } else if (item.type !== 'current') {
-      console.log(`Replace current node with: ${item.name}`);
     }
   }, [isVisible, selectedNode]);
 
@@ -990,7 +985,6 @@ const AbstractionCarousel = ({
           
           // Debug logging
           if (!isPlaceholder) {
-            console.log(`[AbstractionCarousel Render] Level ${item.level}: ${item.name} -> item.color: ${item.color}, final nodeColor: ${nodeColor}`);
           }
           
           // Calculate animation transform for enter/exit
