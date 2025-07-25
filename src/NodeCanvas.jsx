@@ -2167,11 +2167,11 @@ function NodeCanvas() {
   const handleAbstractionSubmit = ({ name, color }) => {
     console.log(`[Abstraction Submit] Called with:`, { name, color, promptState: abstractionPrompt });
     
-    if (name.trim() && abstractionPrompt.nodeId) {
-      const selectedNode = nodes.find(n => n.id === abstractionPrompt.nodeId);
-      console.log(`[Abstraction Submit] Found selected node:`, selectedNode);
+    if (name.trim() && abstractionPrompt.nodeId && abstractionCarouselNode) {
+      const currentlySelectedNode = nodes.find(n => n.id === abstractionPrompt.nodeId);
+      console.log(`[Abstraction Submit] Found currently selected node in carousel:`, currentlySelectedNode);
       
-      if (!selectedNode) {
+      if (!currentlySelectedNode) {
         console.error(`[Abstraction Submit] No node found with ID: ${abstractionPrompt.nodeId}`);
         return;
       }
@@ -2183,7 +2183,7 @@ function NodeCanvas() {
         const isAbove = abstractionPrompt.direction === 'above';
         const abstractionLevel = isAbove ? 0.3 : -0.2;
         const targetColor = isAbove ? '#FFFFFF' : '#000000';
-        newNodeColor = interpolateColor(selectedNode.color || '#8B0000', targetColor, Math.abs(abstractionLevel));
+        newNodeColor = interpolateColor(currentlySelectedNode.color || '#8B0000', targetColor, Math.abs(abstractionLevel));
       }
       
       console.log(`[Abstraction Submit] Creating new node with color:`, newNodeColor);
@@ -2192,21 +2192,23 @@ function NodeCanvas() {
       storeActions.addNodePrototype({
         id: newNodeId,
         name: name.trim(),
-        description: `A ${abstractionPrompt.direction === 'above' ? 'more abstract' : 'more specific'} concept related to ${selectedNode.name}`,
+        description: `A ${abstractionPrompt.direction === 'above' ? 'more abstract' : 'more specific'} concept related to ${currentlySelectedNode.name}`,
         color: newNodeColor,
         typeNodeId: 'base-thing-prototype',
         definitionGraphIds: []
       });
       
-      // Add to the abstraction chain - this is now super simple!
+      // Add to the abstraction chain relative to the currently selected node
+      // Use the original carousel node as the chain owner, but insert relative to the currently selected node
       addToAbstractionChain(
-        selectedNode.prototypeId,           // the node whose chain we're adding to
-        currentAbstractionDimension,        // dimension (Physical, Conceptual, etc.)
-        abstractionPrompt.direction,        // 'above' or 'below'
-        newNodeId                          // the new node to add
+        abstractionCarouselNode.prototypeId,     // the node whose chain we're modifying (original carousel node)
+        currentAbstractionDimension,            // dimension (Physical, Conceptual, etc.)
+        abstractionPrompt.direction,            // 'above' or 'below'
+        newNodeId,                              // the new node to add
+        currentlySelectedNode.prototypeId       // insert relative to this node (currently selected in carousel)
       );
       
-      console.log(`[Abstraction] Added new node "${name.trim()}" ${abstractionPrompt.direction} ${selectedNode.name} in ${currentAbstractionDimension} dimension`);
+      console.log(`[Abstraction] Added new node "${name.trim()}" ${abstractionPrompt.direction} ${currentlySelectedNode.name} in ${abstractionCarouselNode.name}'s ${currentAbstractionDimension} dimension`);
       
       // Close the abstraction prompt and return to stage 1 of the carousel
       setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null, carouselLevel: null });
