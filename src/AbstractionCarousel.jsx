@@ -371,7 +371,7 @@ const AbstractionCarousel = ({
       // Add button for more abstract (above current node)
       chain.push({ 
         id: 'add_generic', 
-        name: 'Add More Abstract', 
+        name: 'Add More Generic', 
         type: 'add_generic', 
         level: -1, 
         color: '#ffffff' 
@@ -419,7 +419,7 @@ const AbstractionCarousel = ({
       // Add button at the top (most abstract, reachable)
       chain.push({ 
         id: 'add_generic', 
-        name: 'Add More Abstract', 
+        name: 'Add More Generic', 
         type: 'add_generic', 
         level: -currentNodeIndex - 1, // One level above the most abstract node
         color: '#ffffff' 
@@ -479,7 +479,7 @@ const AbstractionCarousel = ({
       const minLevel = Math.min(...chain.map(n => n.level));
       chain.unshift({ 
         id: 'add_generic', 
-        name: 'Add More Abstract', 
+        name: 'Add More Generic', 
         type: 'add_generic', 
         level: minLevel - 1, 
         color: '#ffffff' 
