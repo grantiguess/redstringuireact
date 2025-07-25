@@ -182,17 +182,26 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
           } else if (button.position === 'right' || button.position === 'right-inner') {
             bubbleX = nodeCenterX + currentNodeHalfWidth + padding;
             bubbleY = nodeCenterY;
-          } else if (button.position === 'right-outer') {
+          } else if (button.position === 'right-second') {
+            bubbleX = nodeCenterX + currentNodeHalfWidth + padding + outerOffset * 0.67;
+            bubbleY = nodeCenterY;
+          } else if (button.position === 'right-third') {
+            bubbleX = nodeCenterX + currentNodeHalfWidth + padding + outerOffset * 1.33;
+            bubbleY = nodeCenterY;
+          } else if (button.position === 'right-middle') {
             bubbleX = nodeCenterX + currentNodeHalfWidth + padding + outerOffset;
+            bubbleY = nodeCenterY;
+          } else if (button.position === 'right-outer') {
+            bubbleX = nodeCenterX + currentNodeHalfWidth + padding + outerOffset * 2;
             bubbleY = nodeCenterY;
           } else if (button.position === 'right-top') {
             // Vertical stack on right side - top button
             bubbleX = nodeCenterX + currentNodeHalfWidth + padding;
-            bubbleY = nodeCenterY - (BUBBLE_SIZE + BUBBLE_PADDING) / 2;
+            bubbleY = nodeCenterY - (BUBBLE_SIZE + BUBBLE_PADDING);
           } else if (button.position === 'right-bottom') {
             // Vertical stack on right side - bottom button
             bubbleX = nodeCenterX + currentNodeHalfWidth + padding;
-            bubbleY = nodeCenterY + (BUBBLE_SIZE + BUBBLE_PADDING) / 2;
+            bubbleY = nodeCenterY + (BUBBLE_SIZE + BUBBLE_PADDING);
           } else {
             // Fallback to center if no position specified
             bubbleX = nodeCenterX;

@@ -852,10 +852,10 @@ function NodeCanvas() {
         // Stage 1: Main carousel menu with 4 buttons from left to right: Back, Swap, Plus, ArrowUpFromDot
         return [
         {
-          id: 'carousel-back-outer',
+          id: 'carousel-back',
           label: 'Back',
           icon: ArrowLeft,
-          position: 'left-outer',
+          position: 'left-inner',
           action: (nodeId) => {
             console.log(`[PieMenu Action] Back clicked for node: ${nodeId}. Closing AbstractionCarousel.`);
             // Just trigger pie menu exit - carousel exit will be handled in onExitAnimationComplete
@@ -867,7 +867,7 @@ function NodeCanvas() {
           id: 'carousel-swap',
           label: 'Swap',
           icon: SendToBack,
-          position: 'left-inner',
+          position: 'right-inner',
           action: (nodeId) => {
             console.log(`[PieMenu Action] Swap clicked for node: ${nodeId}. This will replace the canvas node.`);
             // The swap functionality will replace the current instance in the canvas
@@ -884,7 +884,7 @@ function NodeCanvas() {
           id: 'carousel-plus',
           label: 'Create Definition',
           icon: Plus,
-          position: 'right-inner',
+          position: 'right-second',
           action: (nodeId) => {
             console.log(`[PieMenu Action] Create Definition clicked for carousel node: ${nodeId}. Transitioning to position selection stage.`);
             console.log(`[PieMenu Action] Current stage: ${carouselPieMenuStage}, transitioning to stage 2`);
@@ -892,6 +892,47 @@ function NodeCanvas() {
             setIsCarouselStageTransition(true); // Mark this as an internal stage transition
             setCarouselPieMenuStage(2);
             console.log(`[PieMenu Action] Stage transition completed`);
+          }
+        },
+        {
+          id: 'carousel-delete',
+          label: 'Delete',
+          icon: Trash2,
+          position: 'right-third',
+          action: (nodeId) => {
+            console.log(`[PieMenu Action] Delete clicked for carousel node: ${nodeId}`);
+            
+            const selectedNode = nodes.find(n => n.id === nodeId);
+            if (!selectedNode) {
+              console.error(`[PieMenu Action] No node found with ID: ${nodeId}`);
+              return;
+            }
+
+            // Get the current abstraction carousel data to find the original node
+            const carouselNode = abstractionCarouselNode;
+            if (!carouselNode) {
+              console.error(`[PieMenu Action] No carousel data available`);
+              return;
+            }
+
+            // Prevent deletion of the original node that the carousel is built around
+            if (selectedNode.prototypeId === carouselNode.prototypeId) {
+              console.warn(`[PieMenu Action] Cannot delete the original node that the carousel is built around`);
+              return;
+            }
+
+            // Remove the node from the abstraction chain
+            removeFromAbstractionChain(
+              carouselNode.prototypeId,     // the node whose chain we're modifying
+              currentAbstractionDimension,  // dimension (Physical, Conceptual, etc.)
+              selectedNode.prototypeId      // the node to remove
+            );
+
+            console.log(`[PieMenu Action] Removed node "${selectedNode.name}" from ${carouselNode.name}'s ${currentAbstractionDimension} abstraction chain`);
+            
+            // Don't close the pie menu after deletion - stay in the carousel to see the updated chain
+            // setSelectedNodeIdForPieMenu(null);
+            // setIsTransitioningPieMenu(true);
           }
         },
         {
@@ -1015,47 +1056,6 @@ function NodeCanvas() {
               
               console.log(`[PieMenu Action] Keeping pie menu open while abstraction selector is visible`);
               console.log(`[PieMenu Action] Add Below action completed`);
-            }
-          },
-          {
-            id: 'carousel-delete',
-            label: 'Delete',
-            icon: Trash2,
-            position: 'right-inner',
-            action: (nodeId) => {
-              console.log(`[PieMenu Action] Delete clicked for carousel node: ${nodeId}`);
-              
-              const selectedNode = nodes.find(n => n.id === nodeId);
-              if (!selectedNode) {
-                console.error(`[PieMenu Action] No node found with ID: ${nodeId}`);
-                return;
-              }
-
-              // Get the current abstraction carousel data to find the original node
-              const carouselNode = abstractionCarouselNode;
-              if (!carouselNode) {
-                console.error(`[PieMenu Action] No carousel data available`);
-                return;
-              }
-
-              // Prevent deletion of the original node that the carousel is built around
-              if (selectedNode.prototypeId === carouselNode.prototypeId) {
-                console.warn(`[PieMenu Action] Cannot delete the original node that the carousel is built around`);
-                return;
-              }
-
-              // Remove the node from the abstraction chain
-              removeFromAbstractionChain(
-                carouselNode.prototypeId,     // the node whose chain we're modifying
-                currentAbstractionDimension,  // dimension (Physical, Conceptual, etc.)
-                selectedNode.prototypeId      // the node to remove
-              );
-
-              console.log(`[PieMenu Action] Removed node "${selectedNode.name}" from ${carouselNode.name}'s ${currentAbstractionDimension} abstraction chain`);
-              
-              // Close the pie menu after deletion
-              setSelectedNodeIdForPieMenu(null);
-              setIsTransitioningPieMenu(true);
             }
           }
         ];
