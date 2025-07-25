@@ -152,9 +152,6 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     isUniverseLoading: true, // Start in loading state
     universeLoadingError: null,
     hasUniverseFile: false,
-    
-    // Abstraction axis system
-    abstractionAxes: new Map(), // Map of axisId -> { name, definingNodeId, chainNodeIds: [] }
 
     // Thing node ID for abstraction system
     thingNodeId: 'base-thing-prototype',
@@ -539,7 +536,9 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         directed: initialData.directed !== undefined ? initialData.directed : false,
         instances: new Map(), // Initialize with empty instances map
         edgeIds: [],
-        definingNodeIds: [definingPrototypeId] // This graph is defined by the new prototype
+        definingNodeIds: [definingPrototypeId], // This graph is defined by the new prototype
+        panOffset: null,
+        zoomLevel: null,
     };
     draft.graphs.set(newGraphId, newGraphData);
 
@@ -1226,102 +1225,65 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     hasUniverseFile: false
   }),
   
-  // --- Abstraction Axis Actions ---
+  // --- Simple Abstraction Actions ---
   
-  createAbstractionAxis: (axisName, definingNodeId, chainNodeIds = []) => set(produce((draft) => {
-    const axisId = uuidv4();
-    draft.abstractionAxes.set(axisId, {
-      id: axisId,
-      name: axisName,
-      definingNodeId,
-      chainNodeIds // Array of node IDs from most generic to most specific
-    });
-    
-    // Mark the defining node as having a specificity chain
-    if (draft.nodePrototypes.has(definingNodeId)) {
-      draft.nodePrototypes.get(definingNodeId).hasSpecificityChain = true;
+  // Add a node above (more abstract) or below (more specific) in a dimension chain
+  addToAbstractionChain: (nodeId, dimension, direction, newNodeId) => set(produce((draft) => {
+    const node = draft.nodePrototypes.get(nodeId);
+    if (!node) {
+      console.error(`Node ${nodeId} not found`);
+      return;
     }
     
-    // Mark all nodes in the chain as being part of a specificity chain
-    chainNodeIds.forEach(nodeId => {
-      if (draft.nodePrototypes.has(nodeId)) {
-        draft.nodePrototypes.get(nodeId).isSpecificityChainNode = true;
-      }
-    });
+    // Initialize abstraction chains if they don't exist
+    if (!node.abstractionChains) {
+      node.abstractionChains = {};
+    }
+    
+    // Initialize this dimension if it doesn't exist
+    if (!node.abstractionChains[dimension]) {
+      node.abstractionChains[dimension] = [nodeId]; // Start with just this node
+    }
+    
+    // Find current node's position in the chain
+    const chain = node.abstractionChains[dimension];
+    const currentIndex = chain.indexOf(nodeId);
+    
+    if (currentIndex === -1) {
+      // Node not in chain, add it first
+      chain.push(nodeId);
+    }
+    
+    // Add new node in the right position
+    if (direction === 'above') {
+      // More abstract - add at beginning, shift everything right
+      chain.unshift(newNodeId);
+    } else {
+      // More specific - add at end
+      chain.push(newNodeId);
+    }
+    
+    console.log(`Added ${newNodeId} ${direction} ${nodeId} in ${dimension} dimension. Chain:`, chain);
   })),
   
-  updateAbstractionAxis: (axisId, updates) => set(produce((draft) => {
-    const axis = draft.abstractionAxes.get(axisId);
-    if (axis) {
-      // Update the axis
-      Object.assign(axis, updates);
-      
-      // Update node properties if chain changed
-      if (updates.chainNodeIds) {
-        // First, remove the old chain properties
-        axis.chainNodeIds?.forEach(nodeId => {
-          if (draft.nodePrototypes.has(nodeId)) {
-            draft.nodePrototypes.get(nodeId).isSpecificityChainNode = false;
-          }
-        });
-        
-        // Then add the new chain properties
-        updates.chainNodeIds.forEach(nodeId => {
-          if (draft.nodePrototypes.has(nodeId)) {
-            draft.nodePrototypes.get(nodeId).isSpecificityChainNode = true;
-          }
-        });
-      }
+  // Remove a node from an abstraction chain
+  removeFromAbstractionChain: (nodeId, dimension, nodeToRemove) => set(produce((draft) => {
+    const node = draft.nodePrototypes.get(nodeId);
+    if (!node?.abstractionChains?.[dimension]) return;
+    
+    const chain = node.abstractionChains[dimension];
+    const index = chain.indexOf(nodeToRemove);
+    if (index > -1) {
+      chain.splice(index, 1);
+      console.log(`Removed ${nodeToRemove} from ${nodeId}'s ${dimension} chain`);
     }
   })),
   
-  deleteAbstractionAxis: (axisId) => set(produce((draft) => {
-    const axis = draft.abstractionAxes.get(axisId);
-    if (axis) {
-      // Remove specificity chain properties from nodes
-      if (draft.nodePrototypes.has(axis.definingNodeId)) {
-        draft.nodePrototypes.get(axis.definingNodeId).hasSpecificityChain = false;
-      }
-      
-      axis.chainNodeIds?.forEach(nodeId => {
-        if (draft.nodePrototypes.has(nodeId)) {
-          draft.nodePrototypes.get(nodeId).isSpecificityChainNode = false;
-        }
-      });
-      
-      // Remove the axis
-      draft.abstractionAxes.delete(axisId);
-    }
-  })),
-  
-  addNodeToAbstractionChain: (axisId, nodeId, position = -1) => set(produce((draft) => {
-    const axis = draft.abstractionAxes.get(axisId);
-    if (axis) {
-      const chainNodeIds = [...axis.chainNodeIds];
-      if (position === -1) {
-        chainNodeIds.push(nodeId);
-      } else {
-        chainNodeIds.splice(position, 0, nodeId);
-      }
-      axis.chainNodeIds = chainNodeIds;
-      
-      // Mark the node as part of a specificity chain
-      if (draft.nodePrototypes.has(nodeId)) {
-        draft.nodePrototypes.get(nodeId).isSpecificityChainNode = true;
-      }
-    }
-  })),
-  
-  removeNodeFromAbstractionChain: (axisId, nodeId) => set(produce((draft) => {
-    const axis = draft.abstractionAxes.get(axisId);
-    if (axis) {
-      axis.chainNodeIds = axis.chainNodeIds.filter(id => id !== nodeId);
-      
-      // Remove the specificity chain property from the node
-      if (draft.nodePrototypes.has(nodeId)) {
-        draft.nodePrototypes.get(nodeId).isSpecificityChainNode = false;
-      }
-    }
+  // Replace a node in the canvas with one from the abstraction chain
+  swapNodeInChain: (currentNodeId, newNodeId) => set(produce((draft) => {
+    // This will be used by the swap button in the carousel
+    // For now, just log the action - the actual swap will happen in the UI layer
+    console.log(`Swapping ${currentNodeId} with ${newNodeId}`);
   })),
 
   clearUniverse: () => set(() => ({
@@ -1339,15 +1301,23 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     isUniverseLoading: false,
     universeLoadingError: null,
     hasUniverseFile: false,
-    
-    // Abstraction axis system
-    abstractionAxes: new Map(), // Map of axisId -> { name, definingNodeId, chainNodeIds: [] }
   })),
 
   setUniverseConnected: (hasFile = true) => set(state => ({
     ...state,
     hasUniverseFile: hasFile
   })),
+
+  updateGraphView: (graphId, panOffset, zoomLevel) => {
+    set(produce((draft) => {
+      const graph = draft.graphs.get(graphId);
+      if (graph) {
+        graph.panOffset = panOffset;
+        graph.zoomLevel = zoomLevel;
+      }
+    }));
+    notifyChanges(); // for auto-save
+  },
 
   }; // End of returned state and actions object
 })); // End of create function with middleware

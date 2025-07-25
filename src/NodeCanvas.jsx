@@ -102,7 +102,7 @@ function NodeCanvas() {
   const toggleSavedGraph = useGraphStore((state) => state.toggleSavedGraph);
   const toggleShowConnectionNames = useGraphStore((state) => state.toggleShowConnectionNames);
   const updateMultipleNodeInstancePositions = useGraphStore((state) => state.updateMultipleNodeInstancePositions);
-  const removeDefinitionFromNode = useGraphStore((state) => state.removeDefinitionFromNode);
+  const removeDefinitionFromNode = useGraphStore((state) => state.removeFromDefinitionFromNode);
   const openGraphTabAndBringToTop = useGraphStore((state) => state.openGraphTabAndBringToTop);
   const cleanupOrphanedData = useGraphStore((state) => state.cleanupOrphanedData);
   const restoreFromSession = useGraphStore((state) => state.restoreFromSession);
@@ -110,8 +110,9 @@ function NodeCanvas() {
   const setUniverseError = useGraphStore((state) => state.setUniverseError);
   const clearUniverse = useGraphStore((state) => state.clearUniverse);
   const setUniverseConnected = useGraphStore((state) => state.setUniverseConnected);
-  const addNodeToAbstractionChain = useGraphStore((state) => state.addNodeToAbstractionChain);
-  const createAbstractionAxis = useGraphStore((state) => state.createAbstractionAxis);
+  const addToAbstractionChain = useGraphStore((state) => state.addToAbstractionChain);
+  const removeFromAbstractionChain = useGraphStore((state) => state.removeFromAbstractionChain);
+  const updateGraphView = useGraphStore((state) => state.updateGraphView);
 
   // Create a stable actions object only when needed for props
   const storeActions = useMemo(() => ({
@@ -152,6 +153,7 @@ function NodeCanvas() {
     removeSelectedEdgeId,
     clearSelectedEdgeIds,
     toggleShowConnectionNames,
+    updateGraphView,
   }), [
     updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance, removeEdge, updateGraph, createNewGraph,
     setActiveGraph, setActiveDefinitionNode, setNodeType, openRightPanelNodeTab,
@@ -160,7 +162,8 @@ function NodeCanvas() {
     toggleSavedNode, toggleSavedGraph, toggleShowConnectionNames, updateMultipleNodeInstancePositions, removeDefinitionFromNode,
     openGraphTabAndBringToTop, cleanupOrphanedData, restoreFromSession,
     loadUniverseFromFile, setUniverseError, clearUniverse, setUniverseConnected,
-    setSelectedEdgeIds, addSelectedEdgeId, removeSelectedEdgeId, clearSelectedEdgeIds, toggleShowConnectionNames
+    setSelectedEdgeIds, addSelectedEdgeId, removeSelectedEdgeId, clearSelectedEdgeIds, toggleShowConnectionNames,
+    updateGraphView
   ]);
 
   // <<< SELECT STATE DIRECTLY >>>
@@ -178,7 +181,6 @@ function NodeCanvas() {
   const savedGraphIds = useGraphStore(state => state.savedGraphIds);
   // Get open graph IDs needed for initial check
   const openGraphIds = useGraphStore(state => state.openGraphIds);
-  const abstractionAxes = useGraphStore(state => state.abstractionAxes);
   // Universe file state
   const isUniverseLoaded = useGraphStore(state => state.isUniverseLoaded);
   const isUniverseLoading = useGraphStore(state => state.isUniverseLoading);
@@ -396,9 +398,10 @@ function NodeCanvas() {
   );
 
   // Store view states per graph (graphId -> {panOffset, zoomLevel})
-  const [graphViewStates, setGraphViewStates] = useState(new Map());
+  // const [graphViewStates, setGraphViewStates] = useState(new Map());
 
   // Load view states from localStorage on mount
+  /*
   useEffect(() => {
     try {
       const stored = localStorage.getItem('redstring_graph_view_states');
@@ -414,8 +417,10 @@ function NodeCanvas() {
       console.error('Error loading graph view states:', error);
     }
   }, []);
+  */
 
   // Save view states to localStorage (debounced)
+  /*
   const saveViewStatesToStorage = useCallback((viewStates) => {
     try {
       const stateObject = Object.fromEntries(viewStates);
@@ -424,8 +429,10 @@ function NodeCanvas() {
       console.error('Error saving graph view states:', error);
     }
   }, []);
+  */
 
   // Debounced save to localStorage
+  /*
   const debouncedSaveViewStates = useRef(null);
   useEffect(() => {
     if (debouncedSaveViewStates.current) {
@@ -441,6 +448,7 @@ function NodeCanvas() {
       }
     };
   }, [graphViewStates, saveViewStatesToStorage]);
+  */
 
   const [debugMode, setDebugMode] = useState(false);
   const [debugData, setDebugData] = useState({
@@ -460,7 +468,7 @@ function NodeCanvas() {
   const [plusSign, setPlusSign] = useState(null);
   const [nodeNamePrompt, setNodeNamePrompt] = useState({ visible: false, name: '', color: null });
   const [connectionNamePrompt, setConnectionNamePrompt] = useState({ visible: false, name: '', color: null, edgeId: null });
-  const [abstractionPrompt, setAbstractionPrompt] = useState({ visible: false, name: '', color: null, direction: 'above', nodeId: null });
+  const [abstractionPrompt, setAbstractionPrompt] = useState({ visible: false, name: '', color: null, direction: 'above', nodeId: null, carouselLevel: null });
 
   // Add logging for abstraction prompt state changes
   useEffect(() => {
@@ -485,6 +493,15 @@ function NodeCanvas() {
   useEffect(() => {
     console.log(`[Carousel Stage] Changed to stage:`, carouselPieMenuStage);
   }, [carouselPieMenuStage]);
+
+  // Prevent carousel stage resets while abstraction prompt is open
+  useEffect(() => {
+    if (abstractionPrompt.visible && carouselPieMenuStage !== 2) {
+      console.log(`[Carousel Stage] Abstraction prompt visible, ensuring stage stays at 2`);
+      setCarouselPieMenuStage(2);
+      setIsCarouselStageTransition(true);
+    }
+  }, [abstractionPrompt.visible, carouselPieMenuStage]);
   
   const [rightPanelExpanded, setRightPanelExpanded] = useState(true); // Default to open?
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
@@ -852,8 +869,15 @@ function NodeCanvas() {
           icon: SendToBack,
           position: 'left-inner',
           action: (nodeId) => {
-            console.log(`[PieMenu Action] Swap clicked for node: ${nodeId}. TODO: Implement swap functionality.`);
-            // TODO: Implement swap functionality
+            console.log(`[PieMenu Action] Swap clicked for node: ${nodeId}. This will replace the canvas node.`);
+            // The swap functionality will replace the current instance in the canvas
+            // with the selected node from the carousel
+            const currentInstance = nodes.find(n => n.id === nodeId);
+            if (currentInstance) {
+              // This would replace the current instance's prototype with the carousel node's prototype
+              // For now, just log it - the actual implementation would update the instance
+              console.log(`Would swap canvas node ${currentInstance.prototypeId} with carousel selection`);
+            }
           }
         },
         {
@@ -942,19 +966,20 @@ function NodeCanvas() {
               }
 
               console.log(`[PieMenu Action] Setting abstraction prompt state...`);
-              // Open abstraction prompt
+              // Get the current carousel state to determine insertion position
+              const currentCarouselData = abstractionCarouselNode;
+              console.log(`[PieMenu Action] Current carousel data:`, currentCarouselData);
+              
               setAbstractionPrompt({
                 visible: true,
                 name: '',
                 color: null,
                 direction: 'above',
-                nodeId: nodeId
+                nodeId: nodeId,
+                carouselLevel: currentCarouselData // Pass the carousel state
               });
               
-              console.log(`[PieMenu Action] Closing pie menu...`);
-              // Close the pie menu
-              setSelectedNodeIdForPieMenu(null);
-              setIsTransitioningPieMenu(true);
+              console.log(`[PieMenu Action] Keeping pie menu open while abstraction selector is visible`);
               console.log(`[PieMenu Action] Add Above action completed`);
             }
           },
@@ -975,20 +1000,62 @@ function NodeCanvas() {
               }
 
               console.log(`[PieMenu Action] Setting abstraction prompt state...`);
-              // Open abstraction prompt
+              // Get the current carousel state to determine insertion position
+              const currentCarouselData = abstractionCarouselNode;
+              console.log(`[PieMenu Action] Current carousel data:`, currentCarouselData);
+              
               setAbstractionPrompt({
                 visible: true,
                 name: '',
                 color: null,
                 direction: 'below',
-                nodeId: nodeId
+                nodeId: nodeId,
+                carouselLevel: currentCarouselData // Pass the carousel state
               });
               
-              console.log(`[PieMenu Action] Closing pie menu...`);
-              // Close the pie menu
+              console.log(`[PieMenu Action] Keeping pie menu open while abstraction selector is visible`);
+              console.log(`[PieMenu Action] Add Below action completed`);
+            }
+          },
+          {
+            id: 'carousel-delete',
+            label: 'Delete',
+            icon: Trash2,
+            position: 'right-inner',
+            action: (nodeId) => {
+              console.log(`[PieMenu Action] Delete clicked for carousel node: ${nodeId}`);
+              
+              const selectedNode = nodes.find(n => n.id === nodeId);
+              if (!selectedNode) {
+                console.error(`[PieMenu Action] No node found with ID: ${nodeId}`);
+                return;
+              }
+
+              // Get the current abstraction carousel data to find the original node
+              const carouselNode = abstractionCarouselNode;
+              if (!carouselNode) {
+                console.error(`[PieMenu Action] No carousel data available`);
+                return;
+              }
+
+              // Prevent deletion of the original node that the carousel is built around
+              if (selectedNode.prototypeId === carouselNode.prototypeId) {
+                console.warn(`[PieMenu Action] Cannot delete the original node that the carousel is built around`);
+                return;
+              }
+
+              // Remove the node from the abstraction chain
+              removeFromAbstractionChain(
+                carouselNode.prototypeId,     // the node whose chain we're modifying
+                currentAbstractionDimension,  // dimension (Physical, Conceptual, etc.)
+                selectedNode.prototypeId      // the node to remove
+              );
+
+              console.log(`[PieMenu Action] Removed node "${selectedNode.name}" from ${carouselNode.name}'s ${currentAbstractionDimension} abstraction chain`);
+              
+              // Close the pie menu after deletion
               setSelectedNodeIdForPieMenu(null);
               setIsTransitioningPieMenu(true);
-              console.log(`[PieMenu Action] Add Below action completed`);
             }
           }
         ];
@@ -1138,14 +1205,13 @@ function NodeCanvas() {
     // Ensure we have valid sizes and an active graph
     if (activeGraphId && viewportSize.width > 0 && viewportSize.height > 0 && canvasSize.width > 0 && canvasSize.height > 0) {
 
-      // Check if we have a stored view state for this graph
-      const storedViewState = graphViewStates.get(activeGraphId);
-      
-      if (storedViewState) {
+      const graphData = graphsMap.get(activeGraphId);
+
+      if (graphData && graphData.panOffset && typeof graphData.zoomLevel === 'number') {
         // Restore the stored view state immediately
         // console.log(`[NodeCanvas] Restoring view state for graph ${activeGraphId}:`, storedViewState);
-        setPanOffset(storedViewState.panOffset);
-        setZoomLevel(storedViewState.zoomLevel);
+        setPanOffset(graphData.panOffset);
+        setZoomLevel(graphData.zoomLevel);
       } else {
         // No stored state, center the view as before
         // console.log(`[NodeCanvas] No stored view state for graph ${activeGraphId}, centering view`);
@@ -1180,27 +1246,18 @@ function NodeCanvas() {
     } else if (!activeGraphId) {
       setIsViewReady(true); // No graph, so "ready" to show nothing
     }
-  }, [activeGraphId, viewportSize, canvasSize]);
+  }, [activeGraphId, viewportSize, canvasSize, graphsMap]);
 
   // Track when panning/zooming operations are active
   const isPanningOrZooming = useRef(false);
   const saveViewStateTimeout = useRef(null);
 
   // Function to save view state when operations complete
-  const saveCurrentViewState = useCallback(() => {
+  const updateGraphViewInStore = useCallback(() => {
     if (activeGraphId && panOffset && zoomLevel) {
-      setGraphViewStates(prev => {
-        const newStates = new Map(prev);
-        const newState = {
-          panOffset: { ...panOffset },
-          zoomLevel: zoomLevel
-        };
-        newStates.set(activeGraphId, newState);
-// console.log(`[NodeCanvas] Saved view state for graph ${activeGraphId}:`, newState);
-        return newStates;
-      });
+      updateGraphView(activeGraphId, panOffset, zoomLevel);
     }
-  }, [activeGraphId, panOffset, zoomLevel]);
+  }, [activeGraphId, panOffset, zoomLevel, updateGraphView]);
 
   // Effect to save view state after panning/zooming stops
   useEffect(() => {
@@ -1213,7 +1270,7 @@ function NodeCanvas() {
       // Set a timeout to save after operations stop
       saveViewStateTimeout.current = setTimeout(() => {
         if (!isPanningOrZooming.current) {
-          saveCurrentViewState();
+          updateGraphViewInStore();
         }
       }, 300); // Save 300ms after last pan/zoom change
     }
@@ -1223,7 +1280,7 @@ function NodeCanvas() {
         clearTimeout(saveViewStateTimeout.current);
       }
     };
-  }, [activeGraphId, panOffset, zoomLevel, saveCurrentViewState]);
+  }, [activeGraphId, panOffset, zoomLevel, updateGraphViewInStore]);
 
   // --- Utility Functions ---
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -2113,95 +2170,48 @@ function NodeCanvas() {
     if (name.trim() && abstractionPrompt.nodeId) {
       const selectedNode = nodes.find(n => n.id === abstractionPrompt.nodeId);
       console.log(`[Abstraction Submit] Found selected node:`, selectedNode);
+      
       if (!selectedNode) {
         console.error(`[Abstraction Submit] No node found with ID: ${abstractionPrompt.nodeId}`);
         return;
       }
 
-      const continueNodeCreation = (axisToUse = null) => {
-        // Find the current abstraction axis for this dimension
-        let currentAxis = axisToUse || Array.from(useGraphStore.getState().abstractionAxes.values()).find(axis => axis.name === currentAbstractionDimension);
-        
-        if (!currentAxis) {
-          console.error(`[Abstraction Submit] Still no axis found after creation attempt`);
-          return;
-        }
-
-        console.log(`[Abstraction Submit] Using axis:`, currentAxis);
-
-        // Find the position of the selected node in the chain
-        let selectedPosition = currentAxis.chainNodeIds.findIndex(id => id === selectedNode.prototypeId);
-        
-        // If the selected node isn't in the chain yet, add it
-        if (selectedPosition === -1) {
-          console.log(`[Abstraction Submit] Adding selected node to chain`);
-          addNodeToAbstractionChain(currentAxis.id, selectedNode.prototypeId, -1);
-          // Refetch the axis to get updated chainNodeIds
-          currentAxis = Array.from(useGraphStore.getState().abstractionAxes.values()).find(axis => axis.name === currentAbstractionDimension);
-          selectedPosition = currentAxis.chainNodeIds.findIndex(id => id === selectedNode.prototypeId);
-        }
-        
-        // Create new node
-        const newNodeId = uuidv4();
-        
-        // Calculate color gradient based on direction and position
-        let newNodeColor = color;
-        if (!newNodeColor) {
-          const isAbove = abstractionPrompt.direction === 'above';
-          const abstractionLevel = isAbove ? 0.3 : -0.2; // Above = lighter, below = darker
-          const targetColor = isAbove ? '#FFFFFF' : '#000000';
-          newNodeColor = interpolateColor(selectedNode.color || '#8B0000', targetColor, Math.abs(abstractionLevel));
-        }
-        
-        console.log(`[Abstraction Submit] Creating new node with color:`, newNodeColor);
-        
-        // Create the new node prototype
-        storeActions.addNodePrototype({
-          id: newNodeId,
-          name: name.trim(),
-          description: `A ${abstractionPrompt.direction === 'above' ? 'more abstract' : 'more specific'} concept related to ${selectedNode.name}`,
-          color: newNodeColor,
-          typeNodeId: 'base-thing-prototype',
-          definitionGraphIds: [],
-          isSpecificityChainNode: true
-        });
-        
-        // Insert the new node at the appropriate position
-        const insertPosition = abstractionPrompt.direction === 'above' 
-          ? (selectedPosition >= 0 ? selectedPosition : 0)
-          : (selectedPosition >= 0 ? selectedPosition + 1 : currentAxis.chainNodeIds.length);
-          
-        console.log(`[Abstraction Submit] Adding node to chain at position:`, insertPosition);
-        addNodeToAbstractionChain(currentAxis.id, newNodeId, insertPosition);
-        
-        console.log(`[Abstraction] Added new node "${name.trim()}" ${abstractionPrompt.direction} selected node at position ${insertPosition}`);
-        
-        // Close the prompt
-        setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null });
-      };
-
-      // Find the current abstraction axis for this dimension
-      let currentAxis = Array.from(abstractionAxes.values()).find(axis => axis.name === currentAbstractionDimension);
-      
-      if (!currentAxis) {
-        console.log(`[Abstraction Submit] No axis found, creating new one`);
-        // Create a new abstraction axis if one doesn't exist
-        createAbstractionAxis(currentAbstractionDimension, selectedNode.prototypeId, [selectedNode.prototypeId]);
-        // Wait for store update and refetch the axis
-        setTimeout(() => {
-          const newAxis = Array.from(useGraphStore.getState().abstractionAxes.values()).find(axis => axis.name === currentAbstractionDimension);
-          if (!newAxis) {
-            console.error(`[Abstraction Submit] Failed to create abstraction axis for ${currentAbstractionDimension}`);
-            return;
-          }
-          console.log(`[Abstraction Submit] Created new axis:`, newAxis);
-          continueNodeCreation(newAxis);
-        }, 50);
-        return;
+      // Create new node with color gradient
+      const newNodeId = uuidv4();
+      let newNodeColor = color;
+      if (!newNodeColor) {
+        const isAbove = abstractionPrompt.direction === 'above';
+        const abstractionLevel = isAbove ? 0.3 : -0.2;
+        const targetColor = isAbove ? '#FFFFFF' : '#000000';
+        newNodeColor = interpolateColor(selectedNode.color || '#8B0000', targetColor, Math.abs(abstractionLevel));
       }
       
-      // If we have an existing axis, proceed directly
-      continueNodeCreation(currentAxis);
+      console.log(`[Abstraction Submit] Creating new node with color:`, newNodeColor);
+      
+      // Create the new node prototype
+      storeActions.addNodePrototype({
+        id: newNodeId,
+        name: name.trim(),
+        description: `A ${abstractionPrompt.direction === 'above' ? 'more abstract' : 'more specific'} concept related to ${selectedNode.name}`,
+        color: newNodeColor,
+        typeNodeId: 'base-thing-prototype',
+        definitionGraphIds: []
+      });
+      
+      // Add to the abstraction chain - this is now super simple!
+      addToAbstractionChain(
+        selectedNode.prototypeId,           // the node whose chain we're adding to
+        currentAbstractionDimension,        // dimension (Physical, Conceptual, etc.)
+        abstractionPrompt.direction,        // 'above' or 'below'
+        newNodeId                          // the new node to add
+      );
+      
+      console.log(`[Abstraction] Added new node "${name.trim()}" ${abstractionPrompt.direction} ${selectedNode.name} in ${currentAbstractionDimension} dimension`);
+      
+      // Close the abstraction prompt and return to stage 1 of the carousel
+      setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null, carouselLevel: null });
+      setCarouselPieMenuStage(1);
+      setIsCarouselStageTransition(true);
     }
   };
 
@@ -4268,7 +4278,7 @@ function NodeCanvas() {
             isVisible={abstractionPrompt.visible}
             onClose={() => {
               console.log(`[Abstraction] Closing UnifiedSelector`);
-              setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null });
+              setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null, carouselLevel: null });
             }}
             onSubmit={handleAbstractionSubmit}
             onNodeSelect={(node) => {

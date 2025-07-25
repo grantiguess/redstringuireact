@@ -340,7 +340,6 @@ const AbstractionCarousel = ({
   
   // Store bindings
   const nodePrototypesMap = useGraphStore((state) => state.nodePrototypes);
-  const abstractionAxes = useGraphStore((state) => state.abstractionAxes);
   const thingNodeId = useGraphStore((state) => state.thingNodeId);
   
   // Pre-calculate the abstraction chain and base dimensions for each node
@@ -349,95 +348,188 @@ const AbstractionCarousel = ({
     
     const baseColor = selectedNode.color || NODE_DEFAULT_COLOR;
     
-    // Get the current abstraction axis
-    const currentAxis = Array.from(abstractionAxes.values()).find(axis => axis.name === currentDimension);
+    // Get the abstraction chain for this node and dimension (simple array access!)
+    const selectedNodePrototype = nodePrototypesMap.get(selectedNode.prototypeId);
+    const chainNodeIds = selectedNodePrototype?.abstractionChains?.[currentDimension] || [];
     
-    if (!currentAxis) {
-      // If no axis exists, create a default chain with Thing at the bottom
-      const thingNode = nodePrototypesMap.get(thingNodeId);
-      
-      const chain = [
-        // Placeholder nodes for adding more
-        { id: 'add_generic', name: 'Add More Generic Thing', type: 'add_generic', level: -2, color: '#ffffff' },
-        
-        // Thing is always at the bottom (only if it exists)
-        ...(thingNode ? [{ ...thingNode, type: 'generic', level: -1, color: generateProgressiveColor(baseColor, -1) }] : []),
-        
-        // Current node (level 0) - use actual selectedNode data including thumbnail
-        { ...selectedNode, type: 'current', level: 0 },
-        
-        // Placeholder nodes for adding more
-        { id: 'add_specific', name: 'Add More Specific Thing', type: 'add_specific', level: 1, color: '#000000', textColor: '#ffffff', borderColor: '#000000' }
-      ];
-      
-      // Pre-calculate base dimensions for each node
-      return chain.map(item => {
-        const nodeForDimensions = item.type === 'current' ? selectedNode : item;
-        const baseDimensions = getNodeDimensions(nodeForDimensions, false, null);
-        return { ...item, baseDimensions };
-      });
-    }
-    
-    // Build chain from the abstraction axis
     const chain = [];
+    const thingNode = nodePrototypesMap.get(thingNodeId);
     
-    // Add the "Add More Generic Thing" button at the top
-    chain.push({ id: 'add_generic', name: 'Add More Generic Thing', type: 'add_generic', level: -currentAxis.chainNodeIds.length - 1, color: '#ffffff' });
-    
-    // Add the nodes from the chain (most generic to most specific)
-    currentAxis.chainNodeIds.forEach((nodeId, index) => {
-      const node = nodePrototypesMap.get(nodeId);
-      if (node) {
-        const level = -(currentAxis.chainNodeIds.length - index);
-        chain.push({
-          ...node,
-          type: 'generic',
-          level: level,
-          color: generateProgressiveColor(baseColor, level)
+    if (chainNodeIds.length === 0) {
+      // No chain exists yet - show default layout with proper hierarchy
+      // Thing is at the top (most abstract, non-reachable)
+      if (thingNode) {
+        chain.push({ 
+          ...thingNode, 
+          type: 'generic', 
+          level: -3, 
+          color: generateProgressiveColor(baseColor, -3),
+          isNonReachable: true // Flag to prevent scrolling to this as center
         });
       }
-    });
+      
+      // Add button for more abstract (above current node)
+      chain.push({ 
+        id: 'add_generic', 
+        name: 'Add More Abstract', 
+        type: 'add_generic', 
+        level: -1, 
+        color: '#ffffff' 
+      });
+      
+      // Current node at level 0
+      chain.push({ 
+        ...selectedNode, 
+        type: 'current', 
+        level: 0,
+        textColor: getTextColor(selectedNode.color)
+      });
+      
+      // Add button for more specific (below current node)
+      chain.push({ 
+        id: 'add_specific', 
+        name: 'Add More Specific', 
+        type: 'add_specific', 
+        level: 1, 
+        color: '#000000', 
+        textColor: '#ffffff', 
+        borderColor: '#000000' 
+      });
+    } else {
+      // Chain exists - build it properly with current node always at level 0
+      
+      // Find the current node's position in the chain
+      const currentNodeIndex = chainNodeIds.indexOf(selectedNode.prototypeId);
+      if (currentNodeIndex === -1) {
+        console.error('Current node not found in abstraction chain!');
+        return [];
+      }
+      
+      // Always put Thing at the top if it exists (non-reachable)
+      if (thingNode && !chainNodeIds.includes(thingNodeId)) {
+        chain.push({ 
+          ...thingNode, 
+          type: 'generic', 
+          level: -currentNodeIndex - 3, // Position Thing above everything
+          color: generateProgressiveColor(baseColor, -currentNodeIndex - 3),
+          isNonReachable: true
+        });
+      }
+      
+      // Add button at the top (most abstract, reachable)
+      chain.push({ 
+        id: 'add_generic', 
+        name: 'Add More Abstract', 
+        type: 'add_generic', 
+        level: -currentNodeIndex - 1, // One level above the most abstract node
+        color: '#ffffff' 
+      });
+      
+      // Add all nodes in the chain, with current node always at level 0
+      chainNodeIds.forEach((nodeId, index) => {
+        const node = nodePrototypesMap.get(nodeId);
+        if (node) {
+          const level = index - currentNodeIndex; // Current node will be at level 0
+          const nodeType = nodeId === selectedNode.prototypeId ? 'current' : 'generic';
+          
+          // Calculate color based on level - nodes below current (positive levels) get darker
+          let nodeColor;
+          if (nodeType === 'current') {
+            nodeColor = selectedNode.color;
+          } else {
+            nodeColor = generateProgressiveColor(baseColor, level);
+          }
+          
+          // For nodes more specific than current (positive levels), ensure dark background + bright text
+          let textColor = getTextColor(nodeColor);
+          if (level > 0) {
+            // Force bright text for darker specific nodes
+            textColor = '#ffffff';
+          }
+          
+          chain.push({
+            ...node,
+            type: nodeType,
+            level: level,
+            color: nodeColor,
+            textColor: textColor
+          });
+        }
+      });
+      
+      // Add button at the bottom (most specific)
+      const maxNodeLevel = chainNodeIds.length - 1 - currentNodeIndex;
+      chain.push({ 
+        id: 'add_specific', 
+        name: 'Add More Specific', 
+        type: 'add_specific', 
+        level: maxNodeLevel + 1, 
+        color: '#000000', 
+        textColor: '#ffffff', 
+        borderColor: '#000000' 
+      });
+    }
+
+    // Ensure we always have add buttons (safety check)
+    const hasAddGeneric = chain.some(item => item.type === 'add_generic');
+    const hasAddSpecific = chain.some(item => item.type === 'add_specific');
     
-    // Always add Thing at the bottom (level -1)
-    const thingNode = nodePrototypesMap.get(thingNodeId);
-    if (thingNode) {
-      chain.push({
-        ...thingNode,
-        type: 'generic',
-        level: -1,
-        color: generateProgressiveColor(baseColor, -1)
+    if (!hasAddGeneric) {
+      console.warn('[AbstractionCarousel] Missing add_generic button, adding it');
+      const minLevel = Math.min(...chain.map(n => n.level));
+      chain.unshift({ 
+        id: 'add_generic', 
+        name: 'Add More Abstract', 
+        type: 'add_generic', 
+        level: minLevel - 1, 
+        color: '#ffffff' 
       });
     }
     
-    // Add the current node at level 0
-    chain.push({ ...selectedNode, type: 'current', level: 0 });
-    
-    // Add the "Add More Specific Thing" button at the bottom
-    chain.push({ id: 'add_specific', name: 'Add More Specific Thing', type: 'add_specific', level: 1, color: '#000000', textColor: '#ffffff', borderColor: '#000000' });
+    if (!hasAddSpecific) {
+      console.warn('[AbstractionCarousel] Missing add_specific button, adding it');
+      const maxLevel = Math.max(...chain.map(n => n.level));
+      chain.push({ 
+        id: 'add_specific', 
+        name: 'Add More Specific', 
+        type: 'add_specific', 
+        level: maxLevel + 1, 
+        color: '#000000', 
+        textColor: '#ffffff', 
+        borderColor: '#000000' 
+      });
+    }
 
-    // Log the generated colors
-    chain.forEach(item => {
-      if (item.level !== 0) {
-      }
-    });
-
-    // Pre-calculate base dimensions for each node to use for smooth interpolation later
+    // Pre-calculate base dimensions for each node
     return chain.map(item => {
       const nodeForDimensions = item.type === 'current' ? selectedNode : item;
       const baseDimensions = getNodeDimensions(nodeForDimensions, false, null);
       return { ...item, baseDimensions };
     });
-  }, [selectedNode, currentDimension, abstractionAxes, nodePrototypesMap, thingNodeId]);
+  }, [selectedNode, currentDimension, nodePrototypesMap, thingNodeId]);
   
-  // Calculate physics bounds based on chain
+  // Calculate physics bounds based on chain, excluding non-reachable nodes
   const physicsMinLevel = useMemo(() => {
     if (!abstractionChainWithDims.length) return -6;
-    return Math.min(...abstractionChainWithDims.map(n => n.level));
+    // Find the most abstract reachable level (exclude Thing if marked as non-reachable)
+    // But include add buttons in the bounds
+    const reachableLevels = abstractionChainWithDims
+      .filter(n => !n.isNonReachable && (n.type === 'add_generic' || n.type === 'add_specific' || n.type === 'current' || n.type === 'generic'))
+      .map(n => n.level);
+    const minLevel = reachableLevels.length > 0 ? Math.min(...reachableLevels) : -6;
+    console.log(`[AbstractionCarousel] Physics min level: ${minLevel}, reachable levels:`, reachableLevels);
+    return minLevel;
   }, [abstractionChainWithDims]);
   
   const physicsMaxLevel = useMemo(() => {
     if (!abstractionChainWithDims.length) return 6;
-    return Math.max(...abstractionChainWithDims.map(n => n.level));
+    // Find the most specific reachable level (include add buttons)
+    const reachableLevels = abstractionChainWithDims
+      .filter(n => !n.isNonReachable && (n.type === 'add_generic' || n.type === 'add_specific' || n.type === 'current' || n.type === 'generic'))
+      .map(n => n.level);
+    const maxLevel = reachableLevels.length > 0 ? Math.max(...reachableLevels) : 6;
+    console.log(`[AbstractionCarousel] Physics max level: ${maxLevel}, reachable levels:`, reachableLevels);
+    return maxLevel;
   }, [abstractionChainWithDims]);
 
   // Physics state using reducer
@@ -493,10 +585,16 @@ const AbstractionCarousel = ({
     for (let i = -1; i >= minLevel; i--) {
       const nodeCurrent = abstractionChainWithDims.find(n => n.level === i);
       const nodeAbove = abstractionChainWithDims.find(n => n.level === i + 1);
-      if (!nodeCurrent || !nodeAbove) break;
+      if (!nodeCurrent) {
+        // If no node at this level, use fallback spacing
+        upY -= (NODE_HEIGHT + LEVEL_SPACING);
+        offsets[i] = upY;
+        continue;
+      }
+      if (!nodeAbove) break;
       
-      const hCurrent = nodeCurrent.baseDimensions.currentHeight;
-      const hAbove = nodeAbove.baseDimensions.currentHeight;
+      const hCurrent = nodeCurrent.baseDimensions?.currentHeight || NODE_HEIGHT;
+      const hAbove = nodeAbove.baseDimensions?.currentHeight || NODE_HEIGHT;
       
       upY -= ((hAbove / 2) + (hCurrent / 2) + LEVEL_SPACING);
       offsets[i] = upY;
@@ -507,10 +605,16 @@ const AbstractionCarousel = ({
     for (let i = 1; i <= maxLevel; i++) {
       const nodeCurrent = abstractionChainWithDims.find(n => n.level === i);
       const nodeBelow = abstractionChainWithDims.find(n => n.level === i - 1);
-      if (!nodeCurrent || !nodeBelow) break;
+      if (!nodeCurrent) {
+        // If no node at this level, use fallback spacing
+        downY += (NODE_HEIGHT + LEVEL_SPACING);
+        offsets[i] = downY;
+        continue;
+      }
+      if (!nodeBelow) break;
 
-      const hCurrent = nodeCurrent.baseDimensions.currentHeight;
-      const hBelow = nodeBelow.baseDimensions.currentHeight;
+      const hCurrent = nodeCurrent.baseDimensions?.currentHeight || NODE_HEIGHT;
+      const hBelow = nodeBelow.baseDimensions?.currentHeight || NODE_HEIGHT;
 
       downY += ((hBelow / 2) + (hCurrent / 2) + LEVEL_SPACING);
       offsets[i] = downY;
@@ -883,14 +987,12 @@ const AbstractionCarousel = ({
             const distA = Math.abs(a.level - physicsState.realPosition);
             const distB = Math.abs(b.level - physicsState.realPosition);
 
-            const isMainA = distA < 0.5;
-            const isMainB = distB < 0.5;
+            // Current node (type === 'current') always renders on top
+            if (a.type === 'current') return 1;
+            if (b.type === 'current') return -1;
 
-            if (isMainA) return 1; // Main node always last (on top)
-            if (isMainB) return -1;
-
-            // Sort by distance descending, so farther nodes are rendered first (underneath)
-            return distB - distA;
+            // Then sort by distance - closer nodes render on top of farther ones
+            return distA - distB;
           })
           .map((item, index) => {
           const nodeDimensions = item.baseDimensions; // Use pre-calculated dimensions
@@ -961,7 +1063,9 @@ const AbstractionCarousel = ({
           
           // Position calculation - uses dynamic offsets now
           const nodeX = window.innerWidth * 0.5;
-          const nodeY = window.innerHeight * 2 + (levelOffsets[item.level] * zoomLevel);
+          // Fix NaN issue by providing fallback for missing levelOffsets
+          const levelOffset = levelOffsets[item.level] ?? (item.level * (NODE_HEIGHT + LEVEL_SPACING));
+          const nodeY = window.innerHeight * 2 + (levelOffset * zoomLevel);
           
           // Determine if this is the "main" node (closest to scroll position)
           const isMainNode = distanceFromMain < 0.5;
@@ -1107,7 +1211,7 @@ const AbstractionCarousel = ({
                           fontSize: '20px', // Match Node.jsx
                           fontWeight: 'bold', // Match Node.jsx
                           fontFamily: "'EmOne', sans-serif", // Use EmOne for node names
-                          color: getTextColor(nodeColor),
+                          color: item.textColor || getTextColor(nodeColor),
                           whiteSpace: 'normal',
                           overflowWrap: 'break-word',
                           wordBreak: 'keep-all',

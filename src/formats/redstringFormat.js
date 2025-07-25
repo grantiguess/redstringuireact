@@ -75,8 +75,7 @@ export const exportToRedstring = (storeState) => {
     expandedGraphIds,
     rightPanelTabs,
     savedNodeIds,
-    savedGraphIds,
-    abstractionAxes
+    savedGraphIds
   } = storeState;
 
   // Convert Maps to objects for serialization
@@ -139,14 +138,8 @@ export const exportToRedstring = (storeState) => {
     };
   });
 
-  // Convert abstraction axes Map to object
-  const abstractionAxesObj = {};
-  abstractionAxes.forEach((axis, id) => {
-    abstractionAxesObj[id] = {
-      "@type": "AbstractionAxis",
-      ...axis
-    };
-  });
+  // Note: abstractionChains are now stored directly on node prototypes
+  // No separate abstraction axes needed
 
   return {
     "@context": REDSTRING_CONTEXT,
@@ -167,7 +160,6 @@ export const exportToRedstring = (storeState) => {
     "graphs": graphsObj,
     "nodePrototypes": nodesObj,
     "edges": edgesObj,
-    "abstractionAxes": abstractionAxesObj,
     
     "userInterface": {
       "openGraphIds": [...openGraphIds],
@@ -189,7 +181,6 @@ export const importFromRedstring = (redstringData, storeActions) => {
     graphs: graphsObj = {},
     nodePrototypes: nodesObj = {},
     edges: edgesObj = {},
-    abstractionAxes: abstractionAxesObj = {},
     userInterface = {}
   } = redstringData;
 
@@ -246,18 +237,13 @@ export const importFromRedstring = (redstringData, storeActions) => {
     edgesMap.set(id, edgeData);
   });
 
-  // Convert abstraction axes back to Map
-  const abstractionAxesMap = new Map();
-  Object.entries(abstractionAxesObj).forEach(([id, axis]) => {
-    abstractionAxesMap.set(id, axis);
-  });
+  // Note: abstractionChains are stored directly on node prototypes
 
   // Return the converted state for file storage to use
   const storeState = {
     graphs: graphsMap,
     nodePrototypes: nodesMap,
     edges: edgesMap,
-    abstractionAxes: abstractionAxesMap,
     openGraphIds: userInterface.openGraphIds || [],
     activeGraphId: userInterface.activeGraphId,
     activeDefinitionNodeId: userInterface.activeDefinitionNodeId,
