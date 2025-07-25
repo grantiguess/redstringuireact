@@ -494,15 +494,6 @@ function NodeCanvas() {
     console.log(`[Carousel Stage] Changed to stage:`, carouselPieMenuStage);
   }, [carouselPieMenuStage]);
 
-  // Prevent carousel stage resets while abstraction prompt is open
-  useEffect(() => {
-    if (abstractionPrompt.visible && carouselPieMenuStage !== 2) {
-      console.log(`[Carousel Stage] Abstraction prompt visible, ensuring stage stays at 2`);
-      setCarouselPieMenuStage(2);
-      setIsCarouselStageTransition(true);
-    }
-  }, [abstractionPrompt.visible, carouselPieMenuStage]);
-  
   const [rightPanelExpanded, setRightPanelExpanded] = useState(true); // Default to open?
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
   const [isRightPanelInputFocused, setIsRightPanelInputFocused] = useState(false);
@@ -557,6 +548,24 @@ function NodeCanvas() {
     // TODO: Implement node replacement functionality
     console.log('Replace node:', oldNodeId, 'with:', newNodeData);
   }, []);
+
+  // Prevent carousel stage resets while abstraction prompt is open
+  useEffect(() => {
+    if (abstractionPrompt.visible && carouselPieMenuStage !== 2) {
+      console.log(`[Carousel Stage] Abstraction prompt visible, ensuring stage stays at 2`);
+      console.log(`[Carousel Stage] Current selectedNodeIdForPieMenu: ${selectedNodeIdForPieMenu}`);
+      console.log(`[Carousel Stage] Current isTransitioningPieMenu: ${isTransitioningPieMenu}`);
+      setCarouselPieMenuStage(2);
+      // Don't mark this as a stage transition to avoid hiding the pie menu
+      // setIsCarouselStageTransition(true);
+      
+      // Ensure the pie menu remains visible during abstraction prompt
+      if (!selectedNodeIdForPieMenu && abstractionCarouselNode) {
+        console.log(`[Carousel Stage] Restoring selectedNodeIdForPieMenu to keep pie menu visible`);
+        setSelectedNodeIdForPieMenu(abstractionCarouselNode.id);
+      }
+    }
+  }, [abstractionPrompt.visible, carouselPieMenuStage, selectedNodeIdForPieMenu, abstractionCarouselNode]);
 
   const onCarouselExitAnimationComplete = useCallback(() => {
     // Capture the node ID before cleaning up
@@ -997,6 +1006,9 @@ function NodeCanvas() {
             position: 'right-top',
             action: (nodeId) => {
               console.log(`[PieMenu Action] Add Above clicked for carousel node: ${nodeId}`);
+              console.log(`[PieMenu Action] Current selectedNodeIdForPieMenu: ${selectedNodeIdForPieMenu}`);
+              console.log(`[PieMenu Action] Current isTransitioningPieMenu: ${isTransitioningPieMenu}`);
+              console.log(`[PieMenu Action] Current carouselPieMenuStage: ${carouselPieMenuStage}`);
               console.log(`[PieMenu Action] Current nodes:`, nodes.map(n => ({ id: n.id, name: n.name, prototypeId: n.prototypeId })));
               
               const selectedNode = nodes.find(n => n.id === nodeId);
@@ -1011,6 +1023,7 @@ function NodeCanvas() {
               const currentCarouselData = abstractionCarouselNode;
               console.log(`[PieMenu Action] Current carousel data:`, currentCarouselData);
               
+              // Set abstraction prompt and ensure pie menu stays visible
               setAbstractionPrompt({
                 visible: true,
                 name: '',
@@ -1020,7 +1033,12 @@ function NodeCanvas() {
                 carouselLevel: currentCarouselData // Pass the carousel state
               });
               
-              console.log(`[PieMenu Action] Keeping pie menu open while abstraction selector is visible`);
+              // Ensure pie menu doesn't disappear - keep the same selected node
+              // Do NOT clear selectedNodeIdForPieMenu
+              // Do NOT set isTransitioningPieMenu to true
+              
+              console.log(`[PieMenu Action] Abstraction prompt set, keeping pie menu visible`);
+              console.log(`[PieMenu Action] selectedNodeIdForPieMenu should remain: ${selectedNodeIdForPieMenu}`);
               console.log(`[PieMenu Action] Add Above action completed`);
             }
           },
@@ -1031,6 +1049,9 @@ function NodeCanvas() {
             position: 'right-bottom',
             action: (nodeId) => {
               console.log(`[PieMenu Action] Add Below clicked for carousel node: ${nodeId}`);
+              console.log(`[PieMenu Action] Current selectedNodeIdForPieMenu: ${selectedNodeIdForPieMenu}`);
+              console.log(`[PieMenu Action] Current isTransitioningPieMenu: ${isTransitioningPieMenu}`);
+              console.log(`[PieMenu Action] Current carouselPieMenuStage: ${carouselPieMenuStage}`);
               console.log(`[PieMenu Action] Current nodes:`, nodes.map(n => ({ id: n.id, name: n.name, prototypeId: n.prototypeId })));
               
               const selectedNode = nodes.find(n => n.id === nodeId);
@@ -1045,6 +1066,7 @@ function NodeCanvas() {
               const currentCarouselData = abstractionCarouselNode;
               console.log(`[PieMenu Action] Current carousel data:`, currentCarouselData);
               
+              // Set abstraction prompt and ensure pie menu stays visible
               setAbstractionPrompt({
                 visible: true,
                 name: '',
@@ -1054,7 +1076,12 @@ function NodeCanvas() {
                 carouselLevel: currentCarouselData // Pass the carousel state
               });
               
-              console.log(`[PieMenu Action] Keeping pie menu open while abstraction selector is visible`);
+              // Ensure pie menu doesn't disappear - keep the same selected node
+              // Do NOT clear selectedNodeIdForPieMenu
+              // Do NOT set isTransitioningPieMenu to true
+              
+              console.log(`[PieMenu Action] Abstraction prompt set, keeping pie menu visible`);
+              console.log(`[PieMenu Action] selectedNodeIdForPieMenu should remain: ${selectedNodeIdForPieMenu}`);
               console.log(`[PieMenu Action] Add Below action completed`);
             }
           }
@@ -2211,9 +2238,26 @@ function NodeCanvas() {
       console.log(`[Abstraction] Added new node "${name.trim()}" ${abstractionPrompt.direction} ${currentlySelectedNode.name} in ${abstractionCarouselNode.name}'s ${currentAbstractionDimension} dimension`);
       
       // Close the abstraction prompt and return to stage 1 of the carousel
+      // Ensure carousel stays visible by maintaining its state
+      console.log(`[Abstraction Submit] Current selectedNodeIdForPieMenu before submit completion: ${selectedNodeIdForPieMenu}`);
       setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null, carouselLevel: null });
+      
+      // Explicitly maintain carousel visibility and return to stage 1
+      setAbstractionCarouselVisible(true); // Ensure carousel stays visible
       setCarouselPieMenuStage(1);
+      
+      // Ensure pie menu stays selected for the carousel node
+      if (abstractionCarouselNode && !selectedNodeIdForPieMenu) {
+        console.log(`[Abstraction Submit] Restoring selectedNodeIdForPieMenu after successful submit`);
+        setSelectedNodeIdForPieMenu(abstractionCarouselNode.id);
+      }
+      console.log(`[Abstraction Submit] selectedNodeIdForPieMenu after submit: ${selectedNodeIdForPieMenu}`);
       setIsCarouselStageTransition(true);
+      
+      // Ensure the carousel node is still selected for pie menu
+      if (abstractionCarouselNode) {
+        setSelectedNodeIdForPieMenu(abstractionCarouselNode.id);
+      }
     }
   };
 
@@ -3935,7 +3979,7 @@ function NodeCanvas() {
                            nodeDimensions={currentPieMenuData.nodeDimensions}
                            isVisible={(
                              currentPieMenuData?.node?.id === selectedNodeIdForPieMenu &&
-                             !isTransitioningPieMenu &&
+                             (!isTransitioningPieMenu || abstractionPrompt.visible) &&
                              !(draggingNodeInfo && 
                                (draggingNodeInfo.primaryId === selectedNodeIdForPieMenu || draggingNodeInfo.instanceId === selectedNodeIdForPieMenu)
                              )
@@ -4279,8 +4323,17 @@ function NodeCanvas() {
             mode="abstraction-node-creation"
             isVisible={abstractionPrompt.visible}
             onClose={() => {
-              console.log(`[Abstraction] Closing UnifiedSelector`);
+              console.log(`[Abstraction] Closing UnifiedSelector without creating node`);
+              console.log(`[Abstraction] Current selectedNodeIdForPieMenu before close: ${selectedNodeIdForPieMenu}`);
               setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null, carouselLevel: null });
+              // When manually closing (without creating node), return to stage 1 but keep carousel visible
+              setCarouselPieMenuStage(1);
+              setIsCarouselStageTransition(true);
+              // Ensure pie menu stays selected for the carousel node
+              if (abstractionCarouselNode && !selectedNodeIdForPieMenu) {
+                console.log(`[Abstraction] Restoring selectedNodeIdForPieMenu after close`);
+                setSelectedNodeIdForPieMenu(abstractionCarouselNode.id);
+              }
             }}
             onSubmit={handleAbstractionSubmit}
             onNodeSelect={(node) => {

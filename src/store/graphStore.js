@@ -1228,7 +1228,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   // --- Simple Abstraction Actions ---
   
   // Add a node above (more abstract) or below (more specific) in a dimension chain
-  addToAbstractionChain: (nodeId, dimension, direction, newNodeId) => set(produce((draft) => {
+  addToAbstractionChain: (nodeId, dimension, direction, newNodeId, insertRelativeToNodeId) => set(produce((draft) => {
     const node = draft.nodePrototypes.get(nodeId);
     if (!node) {
       console.error(`Node ${nodeId} not found`);
@@ -1245,8 +1245,27 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       node.abstractionChains[dimension] = [nodeId]; // Start with just this node
     }
     
-    // Find current node's position in the chain
     const chain = node.abstractionChains[dimension];
+    
+    // If insertRelativeToNodeId is provided, insert relative to that node
+    if (insertRelativeToNodeId && insertRelativeToNodeId !== nodeId) {
+      const relativeIndex = chain.indexOf(insertRelativeToNodeId);
+      if (relativeIndex !== -1) {
+        if (direction === 'above') {
+          // More abstract - insert before the relative node
+          chain.splice(relativeIndex, 0, newNodeId);
+        } else {
+          // More specific - insert after the relative node
+          chain.splice(relativeIndex + 1, 0, newNodeId);
+        }
+        console.log(`Added ${newNodeId} ${direction} ${insertRelativeToNodeId} in ${dimension} dimension. Chain:`, chain);
+        return;
+      } else {
+        console.warn(`Relative node ${insertRelativeToNodeId} not found in chain, falling back to chain owner`);
+      }
+    }
+    
+    // Fallback: insert relative to the chain owner (original behavior)
     const currentIndex = chain.indexOf(nodeId);
     
     if (currentIndex === -1) {
@@ -1254,7 +1273,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       chain.push(nodeId);
     }
     
-    // Add new node in the right position
+    // Add new node in the right position relative to chain owner
     if (direction === 'above') {
       // More abstract - add at beginning, shift everything right
       chain.unshift(newNodeId);
