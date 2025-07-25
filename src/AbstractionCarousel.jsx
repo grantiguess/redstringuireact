@@ -173,7 +173,7 @@ const getTextColor = (backgroundColor) => {
   }
 };
 
-const LEVEL_SPACING = -5; // Much tighter spacing for vertical carousel with dynamic content
+const LEVEL_SPACING = -30; // Overlapping spacing to create a stacked effect
 const PHYSICS_DAMPING = 0.75; // Much lower damping for less friction/stickiness
 const BASE_SCROLL_SENSITIVITY = 0.0003; // Reduced from 0.0008 for less sensitive quick scrolls
 const PRECISION_SCROLL_SENSITIVITY = 0.0008; // Increased from 0.0010 for better slow start gain
@@ -987,11 +987,14 @@ const AbstractionCarousel = ({
             const distA = Math.abs(a.level - physicsState.realPosition);
             const distB = Math.abs(b.level - physicsState.realPosition);
 
-            // Current node (type === 'current') always renders on top
-            if (a.type === 'current') return 1;
-            if (b.type === 'current') return -1;
-
-            // Then sort by distance - closer nodes render on top of farther ones
+            // Centered node (closest to scroll position) always renders on top
+            const isACenter = distA < 0.5;
+            const isBCenter = distB < 0.5;
+            
+            if (isACenter && !isBCenter) return 1; // A is center, B is not - A on top
+            if (isBCenter && !isACenter) return -1; // B is center, A is not - B on top
+            
+            // If both are center or neither are center, sort by distance - closer nodes render on top
             return distA - distB;
           })
           .map((item, index) => {
@@ -1000,8 +1003,8 @@ const AbstractionCarousel = ({
           const isCurrent = item.type === 'current';
           const distanceFromMain = Math.abs(item.level - physicsState.realPosition);
           
-          // Fog of war: hide nodes beyond a certain distance (dynamic based on chain length)
-          const maxVisibleDistance = Math.min(7.5, abstractionChainWithDims.length + 1);
+          // Fog of war: hide nodes beyond a certain distance (show more for stacking effect)
+          const maxVisibleDistance = Math.min(10, abstractionChainWithDims.length + 2);
           if (distanceFromMain > maxVisibleDistance) {
             return null;
           }
@@ -1031,28 +1034,35 @@ const AbstractionCarousel = ({
             useAnimationOpacity = false; // Don't override opacity - let CSS animate from current opacity
           }
           
-          // Progressive scaling - center node matches real node size exactly
+          // Progressive scaling for stacking effect - more pronounced size differences
           let scale = 1.0;
           if (distanceFromMain === 0) {
             // Exactly at focus - should match the real node size
             scale = 1.0;
           } else if (distanceFromMain < 1) {
-            // Close to focus - gentler drop from 1.0 to 0.8
-            scale = 1.0 - (distanceFromMain * 0.2);
+            // Close to focus - more pronounced drop for stacking
+            scale = 1.0 - (distanceFromMain * 0.25);
+          } else if (distanceFromMain < 2) {
+            // Medium distance - continue shrinking
+            scale = 0.75 - ((distanceFromMain - 1) * 0.15);
           } else {
-            // Further from focus - shrink more gradually
-            scale = 0.8 - ((distanceFromMain - 1) * 0.1);
-            scale = Math.max(0.5, scale); // Minimum scale of 0.5 for readability
+            // Further from focus - shrink more significantly for layering effect
+            scale = 0.6 - ((distanceFromMain - 2) * 0.08);
+            scale = Math.max(0.35, scale); // Minimum scale for visibility in stack
           }
           
-          // Calculate opacity: smooth falloff based on distance, combined with animation
+          // Calculate opacity: more pronounced falloff for stacking effect
           let opacity = 1;
-          if (distanceFromMain <= 1) {
-            opacity = 1.0 - (distanceFromMain * 0.1); // Gentler falloff within 1 level
+          if (distanceFromMain <= 0.5) {
+            opacity = 1.0; // Full opacity for center node
+          } else if (distanceFromMain <= 1) {
+            opacity = 0.95 - (distanceFromMain * 0.15); // Gentle falloff for adjacent nodes
           } else if (distanceFromMain <= 2) {
-            opacity = 0.9 - ((distanceFromMain - 1) * 0.4); // Steeper falloff beyond 1 level
+            opacity = 0.8 - ((distanceFromMain - 1) * 0.3); // More pronounced falloff for stacking
+          } else if (distanceFromMain <= 3) {
+            opacity = 0.5 - ((distanceFromMain - 2) * 0.3); // Continue falloff
           } else {
-            opacity = 0.5 - ((distanceFromMain - 2) * 0.8); // Fade to invisible beyond 2 levels
+            opacity = 0.2 - ((distanceFromMain - 3) * 0.15); // Fade to very low opacity
           }
           
           // Apply animation opacity only when we want to override (entrance animation)
@@ -1143,8 +1153,8 @@ const AbstractionCarousel = ({
                   strokeWidth={8}
                   style={{
                     filter: isMainNode 
-                      ? 'drop-shadow(0px 0px 20px rgba(0, 0, 0, 0.5))'
-                      : 'drop-shadow(0px 4px 8px rgba(0, 0, 0, 0.2))'
+                      ? 'drop-shadow(0px 0px 20px rgba(0, 0, 0, 0.6))'
+                      : `drop-shadow(0px ${Math.min(8, 2 + distanceFromMain * 2)}px ${Math.min(16, 4 + distanceFromMain * 4)}px rgba(0, 0, 0, ${Math.min(0.4, 0.1 + distanceFromMain * 0.1)}))`
                   }}
                 />
                 
