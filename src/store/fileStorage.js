@@ -18,7 +18,6 @@ let preferredDirectory = null;
 const AUTO_SAVE_INTERVAL = 500; // Auto-save every 500ms (2x per second)
 const DEBOUNCE_DELAY = 150; // Wait 150ms after last change before saving
 const FILE_NAME = 'universe.redstring';
-const MAX_LOCALSTORAGE_SIZE = 4 * 1024 * 1024; // 4MB limit for localStorage to stay well under browser limits
 
 // Default paths for different operating systems
 const DEFAULT_PATHS = {
@@ -31,8 +30,6 @@ const DEFAULT_PATHS = {
 const STORAGE_KEYS = {
   FILE_HANDLE: 'redstring_universe_handle',
   PREFERRED_DIRECTORY: 'redstring_preferred_directory',
-  LAST_DATA: 'redstring_last_data',
-  SESSION_ACTIVE: 'redstring_session_active'
 };
 
 /**
@@ -40,65 +37,6 @@ const STORAGE_KEYS = {
  */
 export const isFileSystemSupported = () => {
   return 'showSaveFilePicker' in window && 'showOpenFilePicker' in window;
-};
-
-/**
- * Safely store data to localStorage with size checking
- */
-const safeLocalStorageSetItem = (key, value) => {
-  try {
-    // Check if the value size exceeds our limit
-    const valueSize = new Blob([value]).size;
-    if (valueSize > MAX_LOCALSTORAGE_SIZE) {
-      console.warn(`[FileStorage] Data too large for localStorage (${(valueSize / 1024 / 1024).toFixed(1)}MB), skipping localStorage backup`);
-      // Store a metadata object instead of the full data
-      const metadata = {
-        timestamp: Date.now(),
-        size: valueSize,
-        dataTooBig: true,
-        message: 'Data exceeded localStorage size limit'
-      };
-      localStorage.setItem(key + '_meta', JSON.stringify(metadata));
-      return false;
-    }
-    
-    localStorage.setItem(key, value);
-    // Clear any existing metadata since we successfully stored the data
-    localStorage.removeItem(key + '_meta');
-    return true;
-  } catch (error) {
-    console.warn(`[FileStorage] Failed to store data in localStorage (${error.message}), continuing without localStorage backup`);
-    
-    // If it's a quota exceeded error, try to clean up and retry once
-    if (error.name === 'QuotaExceededError' || error.message.includes('quota')) {
-      console.log('[FileStorage] Quota exceeded, attempting cleanup and retry...');
-      const cleanupResult = checkAndCleanLocalStorage();
-      
-      if (cleanupResult.cleaned) {
-        try {
-          // Retry after cleanup
-          localStorage.setItem(key, value);
-          console.log('[FileStorage] Successfully stored data after cleanup');
-          return true;
-        } catch (retryError) {
-          console.warn('[FileStorage] Still failed after cleanup:', retryError.message);
-        }
-      }
-    }
-    
-    // Store error metadata
-    const errorMeta = {
-      timestamp: Date.now(),
-      error: error.message,
-      storageFailure: true
-    };
-    try {
-      localStorage.setItem(key + '_meta', JSON.stringify(errorMeta));
-    } catch (metaError) {
-      console.warn('[FileStorage] Even metadata storage failed:', metaError.message);
-    }
-    return false;
-  }
 };
 
 /**
@@ -519,8 +457,6 @@ export const createUniverseFile = async () => {
     await writable.close();
     
     // Store session data
-    safeLocalStorageSetItem(STORAGE_KEYS.LAST_DATA, dataString);
-    localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
     
     lastSaveTime = Date.now();
     
@@ -588,8 +524,6 @@ export const openUniverseFile = async () => {
     }
     
     // Store session data
-    safeLocalStorageSetItem(STORAGE_KEYS.LAST_DATA, text);
-    localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
     
     // Add to recent files
     await addToRecentFiles(handle, handle.name || FILE_NAME);
@@ -617,8 +551,6 @@ export const autoConnectToUniverse = async () => {
 
   console.log('[FileStorage] Starting auto-connect to universe...');
   
-  // Clean up localStorage if it's getting full
-  checkAndCleanLocalStorage();
   
   // Strategy 1: Try to restore the exact file handle
   const fileRestored = await tryRestoreFileHandle();
@@ -641,8 +573,6 @@ export const autoConnectToUniverse = async () => {
       
       const importResult = importFromRedstring(jsonData);
       
-      safeLocalStorageSetItem(STORAGE_KEYS.LAST_DATA, text);
-      localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
       
       // Add to recent files
       await addToRecentFiles(fileHandle, fileHandle.name || FILE_NAME);
@@ -688,8 +618,6 @@ export const autoConnectToUniverse = async () => {
         
         const importResult = importFromRedstring(jsonData);
         
-        safeLocalStorageSetItem(STORAGE_KEYS.LAST_DATA, text);
-        localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
         
         // Add to recent files
         await addToRecentFiles(foundFile, foundFile.name || FILE_NAME);
@@ -728,21 +656,6 @@ export const restoreLastSession = async () => {
         autoConnected: true,
         hasUniverseFile: true
       };
-    }
-
-    // Check if we have metadata indicating localStorage storage issues
-    try {
-      const metadata = localStorage.getItem(STORAGE_KEYS.LAST_DATA + '_meta');
-      if (metadata) {
-        const metaData = JSON.parse(metadata);
-        if (metaData.dataTooBig) {
-          console.log('[FileStorage] Previous session data was too large for localStorage, but file auto-connect failed');
-        } else if (metaData.storageFailure) {
-          console.log('[FileStorage] Previous localStorage storage failed:', metaData.error);
-        }
-      }
-    } catch (metaError) {
-      console.warn('[FileStorage] Could not read metadata:', metaError);
     }
 
     // No fallback to localStorage - universe file is required
@@ -794,8 +707,6 @@ export const saveToFile = async (storeState, showSuccess = true) => {
     await writable.close();
     
     // Update localStorage
-    safeLocalStorageSetItem(STORAGE_KEYS.LAST_DATA, dataString);
-    localStorage.setItem(STORAGE_KEYS.SESSION_ACTIVE, 'true');
     
     lastSaveTime = Date.now();
     
@@ -811,7 +722,6 @@ export const saveToFile = async (storeState, showSuccess = true) => {
     if (error.message.includes('permission') || error.name === 'NotAllowedError') {
       fileHandle = null;
       disableAutoSave();
-      localStorage.removeItem(STORAGE_KEYS.FILE_HANDLE);
     }
     
     throw error;
@@ -868,8 +778,43 @@ export const getFileStatus = () => {
 };
 
 // Recent files management
-const RECENT_FILES_KEY = 'redstring_recent_files';
+const RECENT_FILES_DB_NAME = 'RedstringRecentFiles';
+const RECENT_FILES_STORE_NAME = 'recentFiles';
+const FILE_HANDLES_STORE_NAME = 'fileHandles';
+const DB_VERSION = 2; // Increased version for schema update
 const MAX_RECENT_FILES = 10;
+
+const openRecentFilesDB = () => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(RECENT_FILES_DB_NAME, DB_VERSION);
+    request.onerror = () => reject(request.error);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(RECENT_FILES_STORE_NAME)) {
+        db.createObjectStore(RECENT_FILES_STORE_NAME, { keyPath: 'handleId' });
+      }
+      if (!db.objectStoreNames.contains(FILE_HANDLES_STORE_NAME)) {
+        db.createObjectStore(FILE_HANDLES_STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = (event) => resolve(event.target.result);
+  });
+};
+
+const storeRecentFiles = async (files) => {
+  const db = await openRecentFilesDB();
+  const transaction = db.transaction([RECENT_FILES_STORE_NAME], 'readwrite');
+  const store = transaction.objectStore(RECENT_FILES_STORE_NAME);
+  
+  // Clear existing and add new files
+  store.clear();
+  files.forEach(file => store.put(file));
+  
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
 
 const addToRecentFiles = async (fileHandle, fileName) => {
   try {
@@ -891,8 +836,8 @@ const addToRecentFiles = async (fileHandle, fileName) => {
     // Add new entry at the beginning
     const updatedFiles = [newEntry, ...filteredFiles].slice(0, MAX_RECENT_FILES);
     
-    // Store in localStorage
-    localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(updatedFiles));
+    // Store in IndexedDB
+    await storeRecentFiles(updatedFiles);
     
     console.log(`[FileStorage] Added ${fileName} to recent files`);
   } catch (error) {
@@ -902,31 +847,15 @@ const addToRecentFiles = async (fileHandle, fileName) => {
 
 const storeFileHandleWithId = async (handle, handleId) => {
   try {
-    const dbName = 'RedstringRecentFiles';
-    const storeName = 'fileHandles';
+    const db = await openRecentFilesDB();
+    const transaction = db.transaction([FILE_HANDLES_STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(FILE_HANDLES_STORE_NAME);
+    
+    const putRequest = store.put({ id: handleId, handle: handle });
     
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(dbName, 1);
-      
-      request.onerror = () => reject(request.error);
-      
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains(storeName)) {
-          db.createObjectStore(storeName, { keyPath: 'id' });
-        }
-      };
-      
-      request.onsuccess = (event) => {
-        const db = event.target.result;
-        const transaction = db.transaction([storeName], 'readwrite');
-        const store = transaction.objectStore(storeName);
-        
-        const putRequest = store.put({ id: handleId, handle: handle });
-        
-        putRequest.onsuccess = () => resolve();
-        putRequest.onerror = () => reject(putRequest.error);
-      };
+      putRequest.onsuccess = () => resolve();
+      putRequest.onerror = () => reject(putRequest.error);
     });
   } catch (error) {
     console.error('[FileStorage] Error storing file handle with ID:', error);
@@ -936,8 +865,19 @@ const storeFileHandleWithId = async (handle, handleId) => {
 
 export const getRecentFiles = async () => {
   try {
-    const stored = localStorage.getItem(RECENT_FILES_KEY);
-    return stored ? JSON.parse(stored) : [];
+    const db = await openRecentFilesDB();
+    const transaction = db.transaction([RECENT_FILES_STORE_NAME], 'readonly');
+    const store = transaction.objectStore(RECENT_FILES_STORE_NAME);
+    const getAllRequest = store.getAll();
+    
+    return new Promise((resolve, reject) => {
+      getAllRequest.onsuccess = () => {
+        // Sort by lastOpened descending
+        const sortedFiles = (getAllRequest.result || []).sort((a, b) => b.lastOpened - a.lastOpened);
+        resolve(sortedFiles);
+      };
+      getAllRequest.onerror = () => reject(getAllRequest.error);
+    });
   } catch (error) {
     console.error('[FileStorage] Error getting recent files:', error);
     return [];
@@ -970,7 +910,7 @@ export const openRecentFile = async (recentFileEntry) => {
         ? { ...file, lastOpened: Date.now() }
         : file
     );
-    localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(updatedFiles));
+    await storeRecentFiles(updatedFiles);
     
     // Store the current file handle for auto-save (using original function)
     await storeFileHandle(handle);
@@ -992,7 +932,7 @@ const removeFromRecentFiles = async (handleId) => {
   try {
     const recentFiles = await getRecentFiles();
     const filteredFiles = recentFiles.filter(file => file.handleId !== handleId);
-    localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(filteredFiles));
+    await storeRecentFiles(filteredFiles);
     console.log(`[FileStorage] Removed invalid recent file entry`);
   } catch (error) {
     console.error('[FileStorage] Error removing from recent files:', error);
@@ -1001,32 +941,23 @@ const removeFromRecentFiles = async (handleId) => {
 
 const tryRestoreFileHandleById = async (handleId) => {
   try {
-    const dbName = 'RedstringRecentFiles';
-    const storeName = 'fileHandles';
+    const db = await openRecentFilesDB();
     
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(dbName, 1);
-      
-      request.onerror = () => resolve(null);
-      
-      request.onsuccess = (event) => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains(storeName)) {
-          resolve(null);
-          return;
-        }
+    if (!db.objectStoreNames.contains(FILE_HANDLES_STORE_NAME)) {
+      console.warn(`[FileStorage] Object store "${FILE_HANDLES_STORE_NAME}" not found.`);
+      return null;
+    }
         
-        const transaction = db.transaction([storeName], 'readonly');
-        const store = transaction.objectStore(storeName);
-        const getRequest = store.get(handleId);
-        
-        getRequest.onsuccess = () => {
-          const result = getRequest.result;
-          resolve(result ? result.handle : null);
-        };
-        
-        getRequest.onerror = () => resolve(null);
+    const transaction = db.transaction([FILE_HANDLES_STORE_NAME], 'readonly');
+    const store = transaction.objectStore(FILE_HANDLES_STORE_NAME);
+    const getRequest = store.get(handleId);
+    
+    return new Promise((resolve) => {
+      getRequest.onsuccess = () => {
+        const result = getRequest.result;
+        resolve(result ? result.handle : null);
       };
+      getRequest.onerror = () => resolve(null);
     });
   } catch (error) {
     console.error('[FileStorage] Error restoring file handle by ID:', error);
@@ -1079,10 +1010,6 @@ export const clearIndexedDB = async () => {
  * Clear session data
  */
 export const clearSession = async () => {
-  localStorage.removeItem(STORAGE_KEYS.LAST_DATA);
-  localStorage.removeItem(STORAGE_KEYS.LAST_DATA + '_meta'); // Also clear metadata
-  localStorage.removeItem(STORAGE_KEYS.SESSION_ACTIVE);
-  localStorage.removeItem(STORAGE_KEYS.FILE_HANDLE);
   fileHandle = null;
   disableAutoSave();
   
@@ -1090,44 +1017,6 @@ export const clearSession = async () => {
   await clearIndexedDB();
   
   console.log('[FileStorage] Session cleared');
-};
-
-/**
- * Check localStorage usage and clean up if needed
- */
-export const checkAndCleanLocalStorage = () => {
-  try {
-    // Estimate current localStorage usage
-    let totalSize = 0;
-    for (let key in localStorage) {
-      if (localStorage.hasOwnProperty(key)) {
-        totalSize += localStorage[key].length + key.length;
-      }
-    }
-    
-    console.log(`[FileStorage] LocalStorage usage: ${(totalSize / 1024).toFixed(1)}KB`);
-    
-    // If we're using a lot of space, clean up old redstring data
-    if (totalSize > MAX_LOCALSTORAGE_SIZE * 0.8) { // 80% of our limit
-      console.warn('[FileStorage] LocalStorage usage high, clearing old redstring data');
-      localStorage.removeItem(STORAGE_KEYS.LAST_DATA);
-      localStorage.removeItem(STORAGE_KEYS.LAST_DATA + '_meta');
-      
-      // Recalculate after cleanup
-      totalSize = 0;
-      for (let key in localStorage) {
-        if (localStorage.hasOwnProperty(key)) {
-          totalSize += localStorage[key].length + key.length;
-        }
-      }
-      console.log(`[FileStorage] LocalStorage usage after cleanup: ${(totalSize / 1024).toFixed(1)}KB`);
-    }
-    
-    return { totalSize, cleaned: totalSize > MAX_LOCALSTORAGE_SIZE * 0.8 };
-  } catch (error) {
-    console.warn('[FileStorage] Error checking localStorage usage:', error);
-    return { totalSize: -1, cleaned: false, error: error.message };
-  }
 };
 
 /**
