@@ -328,6 +328,7 @@ const AbstractionCarousel = ({
   onReplaceNode,
   onScaleChange, // New callback to report the focused node's current scale
   onFocusedNodeDimensions, // New callback to report the focused node's dimensions
+  onFocusedNodeChange, // New callback to report which node is currently focused
   currentDimension = 'Physical', // Current abstraction axis/dimension
   availableDimensions = [], // Available abstraction axes for this node
   onDimensionChange, // Called when user changes dimension
@@ -503,7 +504,8 @@ const AbstractionCarousel = ({
             type: nodeType,
             level: level,
             color: nodeColor,
-            textColor: textColor
+            textColor: textColor,
+            prototypeId: nodeId // Ensure prototypeId is set for focused node reporting
           });
         }
       });
@@ -782,6 +784,16 @@ const AbstractionCarousel = ({
           textAreaHeight: interpolatedTextAreaHeight
         };
         onFocusedNodeDimensions(actualCurrentDimensions);
+      }
+    }
+    
+    // Report which node is currently focused (closest to the center)
+    if (onFocusedNodeChange && abstractionChainWithDims.length > 0) {
+      const roundedLevel = Math.round(position);
+      const focusedNode = abstractionChainWithDims.find(item => item.level === roundedLevel);
+      if (focusedNode && focusedNode.type !== 'add_generic' && focusedNode.type !== 'add_specific') {
+        // Only report actual nodes, not add buttons
+        onFocusedNodeChange(focusedNode);
       }
     }
 

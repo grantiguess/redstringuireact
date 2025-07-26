@@ -519,6 +519,7 @@ function NodeCanvas() {
   const [pendingAbstractionNodeId, setPendingAbstractionNodeId] = useState(null);
   const [carouselFocusedNodeScale, setCarouselFocusedNodeScale] = useState(1.2);
   const [carouselFocusedNodeDimensions, setCarouselFocusedNodeDimensions] = useState(null);
+  const [carouselFocusedNode, setCarouselFocusedNode] = useState(null); // Track which node is currently focused in carousel
   
   // Animation states for carousel
   const [carouselAnimationState, setCarouselAnimationState] = useState('hidden'); // 'hidden', 'entering', 'visible', 'exiting'
@@ -596,6 +597,21 @@ function NodeCanvas() {
   useEffect(() => {
     // This effect runs whenever the active graph changes.
     // We clear any graph-specific UI state to ensure a clean slate.
+    console.log(`[NodeCanvas] activeGraphId changed to: ${activeGraphId}, cleaning up UI state`);
+    console.log(`[NodeCanvas] Current state during cleanup:`, {
+      abstractionCarouselVisible,
+      abstractionPromptVisible: abstractionPrompt.visible,
+      carouselPieMenuStage,
+      selectedNodeIdForPieMenu
+    });
+    
+    // DON'T clean up if the abstraction carousel is visible (regardless of prompt state)
+    if (abstractionCarouselVisible) {
+      console.log(`[NodeCanvas] Skipping cleanup - abstraction carousel is visible`);
+      return;
+    }
+    
+    console.log(`[NodeCanvas] 📍 CLEAR #1: Graph cleanup clearing selectedInstanceIds`);
     setSelectedInstanceIds(new Set());
     setPreviewingNodeId(null);
     setEditingNodeIdOnCanvas(null);
@@ -620,11 +636,13 @@ function NodeCanvas() {
     setActivePieMenuColorNodeId(null);
 
     // Clear abstraction carousel
+    console.log(`[NodeCanvas] Cleaning up abstraction carousel state`);
     setAbstractionCarouselVisible(false);
     setAbstractionCarouselNode(null);
     setPendingAbstractionNodeId(null);
-    setCarouselFocusedNodeScale(1.2);
-    setCarouselFocusedNodeDimensions(null);
+          setCarouselFocusedNodeScale(1.2);
+      setCarouselFocusedNodeDimensions(null);
+      setCarouselFocusedNode(null);
     setCarouselAnimationState('hidden');
 
     // Clear connection control panel
@@ -634,7 +652,7 @@ function NodeCanvas() {
     // Clear abstraction control panel
     setAbstractionControlPanelVisible(false);
     setAbstractionControlPanelShouldShow(false);
-  }, [activeGraphId]);
+  }, [activeGraphId, abstractionCarouselVisible]); // Only need carousel visibility to protect from cleanup
 
   // --- Connection Control Panel Management ---
   useEffect(() => {
@@ -855,7 +873,9 @@ function NodeCanvas() {
     const selectedNode = selectedNodeIdForPieMenu ? nodes.find(n => n.id === selectedNodeIdForPieMenu) : null;
 
     // Check if we're in AbstractionCarousel mode
-    if (selectedNode && abstractionCarouselVisible && abstractionCarouselNode && selectedNode.id === abstractionCarouselNode.id) {
+    // In stage 2, we might be using a focused node different from the original carousel node
+    const isInCarouselMode = selectedNode && abstractionCarouselVisible && abstractionCarouselNode && selectedNode.id === abstractionCarouselNode.id;
+    if (isInCarouselMode) {
       // AbstractionCarousel mode: different layouts based on stage
       if (carouselPieMenuStage === 1) {
         // Stage 1: Main carousel menu with 4 buttons from left to right: Back, Swap, Plus, ArrowUpFromDot
@@ -895,12 +915,19 @@ function NodeCanvas() {
           icon: Plus,
           position: 'right-second',
           action: (nodeId) => {
-            console.log(`[PieMenu Action] Create Definition clicked for carousel node: ${nodeId}. Transitioning to position selection stage.`);
+            console.log(`[PieMenu Action] *** PLUS BUTTON CLICKED *** Create Definition clicked for carousel node: ${nodeId}. Transitioning to position selection stage.`);
             console.log(`[PieMenu Action] Current stage: ${carouselPieMenuStage}, transitioning to stage 2`);
+            console.log(`[PieMenu Action] State before transition:`, {
+              carouselPieMenuStage,
+              isCarouselStageTransition: false,
+              selectedNodeIdForPieMenu
+            });
+            
             // Transition to stage 2 for position selection
             setIsCarouselStageTransition(true); // Mark this as an internal stage transition
             setCarouselPieMenuStage(2);
-            console.log(`[PieMenu Action] Stage transition completed`);
+            
+            console.log(`[PieMenu Action] *** STAGE TRANSITION COMPLETED *** Set stage to 2`);
           }
         },
         {
@@ -986,7 +1013,8 @@ function NodeCanvas() {
       ];
       } else if (carouselPieMenuStage === 2) {
         // Stage 2: Position selection menu - Back on left-inner, vertical stack on right
-        return [
+        console.log(`[PieMenu Buttons] Generating stage 2 buttons for carousel mode`);
+        const stage2Buttons = [
           {
             id: 'carousel-back-stage2',
             label: 'Back',
@@ -1006,38 +1034,37 @@ function NodeCanvas() {
             position: 'right-top',
             action: (nodeId) => {
               console.log(`[PieMenu Action] Add Above clicked for carousel node: ${nodeId}`);
-              console.log(`[PieMenu Action] Current selectedNodeIdForPieMenu: ${selectedNodeIdForPieMenu}`);
-              console.log(`[PieMenu Action] Current isTransitioningPieMenu: ${isTransitioningPieMenu}`);
+              console.log(`[PieMenu Action] Current carouselFocusedNode:`, carouselFocusedNode);
               console.log(`[PieMenu Action] Current carouselPieMenuStage: ${carouselPieMenuStage}`);
-              console.log(`[PieMenu Action] Current nodes:`, nodes.map(n => ({ id: n.id, name: n.name, prototypeId: n.prototypeId })));
               
-              const selectedNode = nodes.find(n => n.id === nodeId);
-              console.log(`[PieMenu Action] Found selected node:`, selectedNode);
-              if (!selectedNode) {
-                console.error(`[PieMenu Action] No node found with ID: ${nodeId}`);
+              // In stage 2, use the focused carousel node, otherwise use the clicked node
+              const targetNode = carouselPieMenuStage === 2 && carouselFocusedNode 
+                ? carouselFocusedNode 
+                : nodes.find(n => n.id === nodeId);
+                
+              console.log(`[PieMenu Action] Using target node for Add Above:`, {
+                id: targetNode?.id,
+                name: targetNode?.name,
+                prototypeId: targetNode?.prototypeId,
+                usingFocusedNode: carouselPieMenuStage === 2 && carouselFocusedNode
+              });
+              
+              if (!targetNode) {
+                console.error(`[PieMenu Action] No target node found`);
                 return;
               }
-
-              console.log(`[PieMenu Action] Setting abstraction prompt state...`);
-              // Get the current carousel state to determine insertion position
-              const currentCarouselData = abstractionCarouselNode;
-              console.log(`[PieMenu Action] Current carousel data:`, currentCarouselData);
               
-              // Set abstraction prompt and ensure pie menu stays visible
+              // Set abstraction prompt with the target node (focused node in stage 2)
               setAbstractionPrompt({
                 visible: true,
                 name: '',
                 color: null,
                 direction: 'above',
-                nodeId: nodeId,
-                carouselLevel: currentCarouselData // Pass the carousel state
+                nodeId: targetNode.id,
+                carouselLevel: abstractionCarouselNode // Pass the carousel state
               });
               
-              // Explicitly prevent pie menu from closing by NOT marking as transitioning
-              // Keep the same selected node and stage
-              console.log(`[PieMenu Action] Abstraction prompt set, keeping pie menu visible`);
-              console.log(`[PieMenu Action] selectedNodeIdForPieMenu should remain: ${selectedNodeIdForPieMenu}`);
-              console.log(`[PieMenu Action] Add Above action completed`);
+              console.log(`[PieMenu Action] Add Above abstraction prompt set for targetNodeId: ${targetNode.id}`);
             }
           },
           {
@@ -1047,41 +1074,42 @@ function NodeCanvas() {
             position: 'right-bottom',
             action: (nodeId) => {
               console.log(`[PieMenu Action] Add Below clicked for carousel node: ${nodeId}`);
-              console.log(`[PieMenu Action] Current selectedNodeIdForPieMenu: ${selectedNodeIdForPieMenu}`);
-              console.log(`[PieMenu Action] Current isTransitioningPieMenu: ${isTransitioningPieMenu}`);
+              console.log(`[PieMenu Action] Current carouselFocusedNode:`, carouselFocusedNode);
               console.log(`[PieMenu Action] Current carouselPieMenuStage: ${carouselPieMenuStage}`);
-              console.log(`[PieMenu Action] Current nodes:`, nodes.map(n => ({ id: n.id, name: n.name, prototypeId: n.prototypeId })));
               
-              const selectedNode = nodes.find(n => n.id === nodeId);
-              console.log(`[PieMenu Action] Found selected node:`, selectedNode);
-              if (!selectedNode) {
-                console.error(`[PieMenu Action] No node found with ID: ${nodeId}`);
+              // In stage 2, use the focused carousel node, otherwise use the clicked node
+              const targetNode = carouselPieMenuStage === 2 && carouselFocusedNode 
+                ? carouselFocusedNode 
+                : nodes.find(n => n.id === nodeId);
+                
+              console.log(`[PieMenu Action] Using target node for Add Below:`, {
+                id: targetNode?.id,
+                name: targetNode?.name,
+                prototypeId: targetNode?.prototypeId,
+                usingFocusedNode: carouselPieMenuStage === 2 && carouselFocusedNode
+              });
+              
+              if (!targetNode) {
+                console.error(`[PieMenu Action] No target node found`);
                 return;
               }
-
-              console.log(`[PieMenu Action] Setting abstraction prompt state...`);
-              // Get the current carousel state to determine insertion position
-              const currentCarouselData = abstractionCarouselNode;
-              console.log(`[PieMenu Action] Current carousel data:`, currentCarouselData);
               
-              // Set abstraction prompt and ensure pie menu stays visible
+              // Set abstraction prompt with the target node (focused node in stage 2)
               setAbstractionPrompt({
                 visible: true,
                 name: '',
                 color: null,
                 direction: 'below',
-                nodeId: nodeId,
-                carouselLevel: currentCarouselData // Pass the carousel state
+                nodeId: targetNode.id,
+                carouselLevel: abstractionCarouselNode // Pass the carousel state
               });
               
-              // Explicitly prevent pie menu from closing by NOT marking as transitioning
-              // Keep the same selected node and stage
-              console.log(`[PieMenu Action] Abstraction prompt set, keeping pie menu visible`);
-              console.log(`[PieMenu Action] selectedNodeIdForPieMenu should remain: ${selectedNodeIdForPieMenu}`);
-              console.log(`[PieMenu Action] Add Below action completed`);
+              console.log(`[PieMenu Action] Add Below abstraction prompt set for targetNodeId: ${targetNode.id}`);
             }
           }
         ];
+        console.log(`[PieMenu Buttons] Generated ${stage2Buttons.length} stage 2 buttons:`, stage2Buttons.map(b => b.id));
+        return stage2Buttons;
       }
     }
     
@@ -1151,6 +1179,7 @@ function NodeCanvas() {
         } },
         { id: 'delete', label: 'Delete', icon: Trash2, action: (instanceId) => {
           storeActions.removeNodeInstance(activeGraphId, instanceId);
+          console.log(`[NodeCanvas] 📍 CLEAR #2: Delete action clearing selectedInstanceIds for node ${instanceId}`);
           setSelectedInstanceIds(new Set()); // Deselect after deleting
           setSelectedNodeIdForPieMenu(null); // Ensure pie menu hides
         } },
@@ -1219,7 +1248,18 @@ function NodeCanvas() {
         } }
       ];
     }
-  }, [storeActions, setSelectedInstanceIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, activeGraphId, abstractionCarouselVisible, abstractionCarouselNode, carouselPieMenuStage, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Bookmark, ArrowLeft, SendToBack, Plus, CornerUpLeft, CornerDownLeft, Palette, MoreHorizontal, zoomLevel, panOffset, containerRef, handlePieMenuColorPickerOpen, savedNodeIds]);
+  }, [storeActions, setSelectedInstanceIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, activeGraphId, abstractionCarouselVisible, abstractionCarouselNode, carouselPieMenuStage, carouselFocusedNode, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Bookmark, ArrowLeft, SendToBack, Plus, CornerUpLeft, CornerDownLeft, Palette, MoreHorizontal, zoomLevel, panOffset, containerRef, handlePieMenuColorPickerOpen, savedNodeIds]);
+  
+  // Log button changes for debugging
+  useEffect(() => {
+    console.log(`[PieMenu Buttons] targetPieMenuButtons changed:`, {
+      buttonCount: targetPieMenuButtons.length,
+      buttonIds: targetPieMenuButtons.map(b => b.id),
+      carouselStage: carouselPieMenuStage,
+      selectedNodeId: selectedNodeIdForPieMenu,
+      carouselVisible: abstractionCarouselVisible
+    });
+  }, [targetPieMenuButtons, carouselPieMenuStage, selectedNodeIdForPieMenu, abstractionCarouselVisible]);
 
   // Effect to restore view state on graph change or center if no stored state
   useLayoutEffect(() => {
@@ -2111,7 +2151,20 @@ function NodeCanvas() {
       }
       if (ignoreCanvasClick.current) { ignoreCanvasClick.current = false; return; }
 
+      // DEFENSIVE: If carousel is visible but pie menu isn't, force close carousel
+      if (abstractionCarouselVisible && !selectedNodeIdForPieMenu) {
+        console.log(`[NodeCanvas] 🔧 DEFENSIVE: Carousel stuck without pie menu - force closing`);
+        setAbstractionCarouselVisible(false);
+        setAbstractionCarouselNode(null);
+        setCarouselAnimationState('hidden');
+        setCarouselPieMenuStage(1);
+        setCarouselFocusedNode(null);
+        setCarouselFocusedNodeDimensions(null);
+        return;
+      }
+
       if (selectedInstanceIds.size > 0) {
+          console.log(`[NodeCanvas] 📍 CLEAR #3: Canvas click clearing selection of ${selectedInstanceIds.size} items`);
           setSelectedInstanceIds(new Set());
           // Pie menu will be handled by useEffect on selectedInstanceIds, no direct setShowPieMenu here
           return;
@@ -2189,12 +2242,53 @@ function NodeCanvas() {
 
   const handleAbstractionSubmit = ({ name, color }) => {
     console.log(`[Abstraction Submit] Called with:`, { name, color, promptState: abstractionPrompt });
+    console.log(`[Abstraction Submit] Current abstractionCarouselNode:`, abstractionCarouselNode);
+    console.log(`[Abstraction Submit] Looking for node with ID:`, abstractionPrompt.nodeId);
     
     if (name.trim() && abstractionPrompt.nodeId && abstractionCarouselNode) {
-      const currentlySelectedNode = nodes.find(n => n.id === abstractionPrompt.nodeId);
-      console.log(`[Abstraction Submit] Found currently selected node in carousel:`, currentlySelectedNode);
+      // The nodeId could be either a canvas instance ID or a prototype ID (from focused carousel node)
+      let currentlySelectedNode = nodes.find(n => n.id === abstractionPrompt.nodeId);
+      let targetPrototypeId = null;
       
-      if (!currentlySelectedNode) {
+      if (currentlySelectedNode) {
+        // Found canvas instance - use its prototype ID
+        targetPrototypeId = currentlySelectedNode.prototypeId;
+        console.log(`[Abstraction Submit] Found canvas instance node:`, {
+          id: currentlySelectedNode.id,
+          name: currentlySelectedNode.name,
+          prototypeId: currentlySelectedNode.prototypeId
+        });
+      } else {
+        // Not found as canvas instance - might be a prototype ID from focused carousel node
+        const nodePrototype = nodePrototypesMap.get(abstractionPrompt.nodeId);
+        if (nodePrototype) {
+          targetPrototypeId = abstractionPrompt.nodeId;
+          // Create a mock node object for the rest of the function
+          currentlySelectedNode = {
+            id: nodePrototype.id,
+            name: nodePrototype.name,
+            prototypeId: nodePrototype.id,
+            color: nodePrototype.color
+          };
+          console.log(`[Abstraction Submit] Found prototype node:`, {
+            id: nodePrototype.id,
+            name: nodePrototype.name,
+            prototypeId: nodePrototype.id
+          });
+        }
+      }
+      
+      console.log(`[Abstraction Submit] RESOLVED NODE INFO:`, {
+        promptNodeId: abstractionPrompt.nodeId,
+        foundNodeId: currentlySelectedNode?.id,
+        foundNodeName: currentlySelectedNode?.name,
+        targetPrototypeId: targetPrototypeId,
+        carouselNodeId: abstractionCarouselNode.id,
+        carouselNodeProtoId: abstractionCarouselNode.prototypeId,
+        direction: abstractionPrompt.direction
+      });
+      
+      if (!currentlySelectedNode || !targetPrototypeId) {
         console.error(`[Abstraction Submit] No node found with ID: ${abstractionPrompt.nodeId}`);
         return;
       }
@@ -2223,15 +2317,24 @@ function NodeCanvas() {
       
       // Add to the abstraction chain relative to the currently selected node
       // Use the original carousel node as the chain owner, but insert relative to the currently selected node
+      console.log(`[Abstraction Submit] About to call addToAbstractionChain with:`, {
+        chainOwnerNodeId: abstractionCarouselNode.prototypeId,
+        dimension: currentAbstractionDimension,
+        direction: abstractionPrompt.direction,
+        newNodeId: newNodeId,
+        insertRelativeToNodeId: currentlySelectedNode.prototypeId
+      });
+      
       addToAbstractionChain(
         abstractionCarouselNode.prototypeId,     // the node whose chain we're modifying (original carousel node)
         currentAbstractionDimension,            // dimension (Physical, Conceptual, etc.)
         abstractionPrompt.direction,            // 'above' or 'below'
         newNodeId,                              // the new node to add
-        currentlySelectedNode.prototypeId       // insert relative to this node (currently selected in carousel)
+        targetPrototypeId                       // insert relative to this node (focused node in carousel)
       );
       
       console.log(`[Abstraction] Added new node "${name.trim()}" ${abstractionPrompt.direction} ${currentlySelectedNode.name} in ${abstractionCarouselNode.name}'s ${currentAbstractionDimension} dimension`);
+      console.log(`[Abstraction] Target prototype ID used: ${targetPrototypeId}`);
       
       // Close the abstraction prompt but keep pie menu in stage 2
       // Ensure carousel stays visible by maintaining its state
@@ -2737,6 +2840,7 @@ function NodeCanvas() {
         });
 
         // Clear local selection state AFTER dispatching actions
+        console.log(`[NodeCanvas] 📍 CLEAR #4: Keyboard delete clearing selectedInstanceIds after deleting ${idsToDelete.length} nodes`);
         setSelectedInstanceIds(new Set());
       } else if (isDeleteKey && edgeSelected) {
         console.log('[NodeCanvas] Delete key pressed with edge selected:', {
@@ -2793,6 +2897,20 @@ function NodeCanvas() {
 
   // Effect to manage PieMenu visibility and data for animations
   useEffect(() => {
+    console.log(`[NodeCanvas] selectedInstanceIds changed:`, {
+      size: selectedInstanceIds.size,
+      ids: [...selectedInstanceIds],
+      isTransitioningPieMenu,
+      abstractionCarouselVisible,
+      selectedNodeIdForPieMenu,
+      abstractionPromptVisible: abstractionPrompt.visible
+    });
+    
+    // Add stack trace for unexpected clears to debug the issue
+    if (selectedInstanceIds.size === 0 && selectedNodeIdForPieMenu) {
+      console.log(`[NodeCanvas] ⚠️ UNEXPECTED SELECTION CLEAR - Stack trace:`, new Error().stack);
+    }
+    
     if (selectedInstanceIds.size === 1) {
       const instanceId = [...selectedInstanceIds][0];
       
@@ -2801,17 +2919,25 @@ function NodeCanvas() {
       } else {
         // If transitioning, PieMenu's onExitAnimationComplete will handle setting the next selectedNodeIdForPieMenu
       }
-      } else {
-    // Not a single selection (0 or multiple)
-    
-    // If we're currently in carousel mode and losing selection, treat it as a transition
-    if (abstractionCarouselVisible && selectedNodeIdForPieMenu) {
-      setIsTransitioningPieMenu(true);
+    } else {
+      // Not a single selection (0 or multiple)
+      
+      // SPECIAL CASE: If abstraction prompt is visible, don't close pie menu yet
+      if (abstractionPrompt.visible && abstractionCarouselVisible) {
+        console.log(`[NodeCanvas] Abstraction prompt visible - keeping pie menu open despite selection change`);
+        return;
+      }
+      
+      // If we're currently in carousel mode and losing selection, treat it as a transition
+      if (abstractionCarouselVisible && selectedNodeIdForPieMenu) {
+        console.log(`[NodeCanvas] Carousel visible but losing selection - starting transition`);
+        setIsTransitioningPieMenu(true);
+      }
+      
+      console.log(`[NodeCanvas] Setting selectedNodeIdForPieMenu to null due to selection change`);
+      setSelectedNodeIdForPieMenu(null);
     }
-    
-    setSelectedNodeIdForPieMenu(null);
-  }
-  }, [selectedInstanceIds, isTransitioningPieMenu]); // Dependencies: only selectedInstanceIds and isTransitioningPieMenu
+  }, [selectedInstanceIds, isTransitioningPieMenu, abstractionPrompt.visible, abstractionCarouselVisible, selectedNodeIdForPieMenu]); // Added abstraction prompt dependencies
 
   // Effect to prepare and render PieMenu when selectedNodeIdForPieMenu changes and not transitioning
   useEffect(() => {
@@ -2827,7 +2953,9 @@ function NodeCanvas() {
           : getNodeDimensions(node, previewingNodeId === node.id, null);
         
         // In carousel mode, create a virtual node positioned at the carousel center
+        // Keep the original node for PieMenu, but store focused node info for button actions
         let nodeForPieMenu = node;
+        
         if (isInCarouselMode && abstractionCarouselNode) {
           // Calculate carousel center position in canvas coordinates
           const originalNodeDimensions = getNodeDimensions(abstractionCarouselNode, false, null);
@@ -2836,13 +2964,22 @@ function NodeCanvas() {
           
           // Create virtual node at carousel center
           nodeForPieMenu = {
-            ...node,
+            ...nodeForPieMenu,
             x: carouselCenterX - dimensions.currentWidth / 2,
             y: carouselCenterY - dimensions.currentHeight / 2
           };
+          
+          console.log(`[NodeCanvas] Final nodeForPieMenu for pie menu:`, {
+            id: nodeForPieMenu.id,
+            name: nodeForPieMenu.name,
+            prototypeId: nodeForPieMenu.prototypeId,
+            stage: carouselPieMenuStage,
+            focusedNodeId: carouselFocusedNode?.id,
+            focusedNodeName: carouselFocusedNode?.name
+          });
         }
         
-        //console.log(`[NodeCanvas] Preparing pie menu for node ${selectedNodeIdForPieMenu}. Not transitioning. Buttons:`, targetPieMenuButtons.map(b => b.id));
+        console.log(`[NodeCanvas] Preparing pie menu for node ${selectedNodeIdForPieMenu}. Stage: ${carouselPieMenuStage}. Buttons:`, targetPieMenuButtons.map(b => b.id));
         
         setCurrentPieMenuData({ 
           node: nodeForPieMenu, 
@@ -2865,7 +3002,7 @@ function NodeCanvas() {
     }
     // If isTransitioningPieMenu is true, we don't change currentPieMenuData or isPieMenuRendered here.
     // The existing menu plays its exit animation, and onExitAnimationComplete handles the next steps.
-  }, [selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu, abstractionCarouselVisible, abstractionCarouselNode, carouselPieMenuStage, carouselFocusedNodeScale, carouselFocusedNodeDimensions]);
+  }, [selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu, abstractionCarouselVisible, abstractionCarouselNode, carouselPieMenuStage, carouselFocusedNodeScale, carouselFocusedNodeDimensions, carouselFocusedNode]);
 
   // --- Hurtle Animation State & Logic ---
   const [hurtleAnimation, setHurtleAnimation] = useState(null);
@@ -4440,6 +4577,7 @@ function NodeCanvas() {
           onReplaceNode={onCarouselReplaceNode}
           onScaleChange={setCarouselFocusedNodeScale}
           onFocusedNodeDimensions={setCarouselFocusedNodeDimensions}
+          onFocusedNodeChange={setCarouselFocusedNode}
           onExitAnimationComplete={onCarouselExitAnimationComplete}
         />
       )}

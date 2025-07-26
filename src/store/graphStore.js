@@ -1229,11 +1229,26 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   
   // Add a node above (more abstract) or below (more specific) in a dimension chain
   addToAbstractionChain: (nodeId, dimension, direction, newNodeId, insertRelativeToNodeId) => set(produce((draft) => {
+    console.log(`[Store] addToAbstractionChain called with:`, {
+      nodeId,
+      dimension,
+      direction,
+      newNodeId,
+      insertRelativeToNodeId
+    });
+    
     const node = draft.nodePrototypes.get(nodeId);
     if (!node) {
       console.error(`Node ${nodeId} not found`);
       return;
     }
+    
+    console.log(`[Store] Found chain owner node:`, {
+      id: node.id,
+      name: node.name,
+      hasAbstractionChains: !!node.abstractionChains,
+      existingChain: node.abstractionChains?.[dimension]
+    });
     
     // Initialize abstraction chains if they don't exist
     if (!node.abstractionChains) {
