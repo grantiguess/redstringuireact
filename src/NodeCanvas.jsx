@@ -1033,10 +1033,8 @@ function NodeCanvas() {
                 carouselLevel: currentCarouselData // Pass the carousel state
               });
               
-              // Ensure pie menu doesn't disappear - keep the same selected node
-              // Do NOT clear selectedNodeIdForPieMenu
-              // Do NOT set isTransitioningPieMenu to true
-              
+              // Explicitly prevent pie menu from closing by NOT marking as transitioning
+              // Keep the same selected node and stage
               console.log(`[PieMenu Action] Abstraction prompt set, keeping pie menu visible`);
               console.log(`[PieMenu Action] selectedNodeIdForPieMenu should remain: ${selectedNodeIdForPieMenu}`);
               console.log(`[PieMenu Action] Add Above action completed`);
@@ -1076,10 +1074,8 @@ function NodeCanvas() {
                 carouselLevel: currentCarouselData // Pass the carousel state
               });
               
-              // Ensure pie menu doesn't disappear - keep the same selected node
-              // Do NOT clear selectedNodeIdForPieMenu
-              // Do NOT set isTransitioningPieMenu to true
-              
+              // Explicitly prevent pie menu from closing by NOT marking as transitioning
+              // Keep the same selected node and stage
               console.log(`[PieMenu Action] Abstraction prompt set, keeping pie menu visible`);
               console.log(`[PieMenu Action] selectedNodeIdForPieMenu should remain: ${selectedNodeIdForPieMenu}`);
               console.log(`[PieMenu Action] Add Below action completed`);
@@ -2237,14 +2233,14 @@ function NodeCanvas() {
       
       console.log(`[Abstraction] Added new node "${name.trim()}" ${abstractionPrompt.direction} ${currentlySelectedNode.name} in ${abstractionCarouselNode.name}'s ${currentAbstractionDimension} dimension`);
       
-      // Close the abstraction prompt and return to stage 1 of the carousel
+      // Close the abstraction prompt but keep pie menu in stage 2
       // Ensure carousel stays visible by maintaining its state
       console.log(`[Abstraction Submit] Current selectedNodeIdForPieMenu before submit completion: ${selectedNodeIdForPieMenu}`);
       setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null, carouselLevel: null });
       
-      // Explicitly maintain carousel visibility and return to stage 1
+      // Explicitly maintain carousel visibility and stay in stage 2 (don't go back to stage 1)
       setAbstractionCarouselVisible(true); // Ensure carousel stays visible
-      setCarouselPieMenuStage(1);
+      // Keep carouselPieMenuStage at 2 so users can add more nodes without having to re-enter stage 2
       
       // Ensure pie menu stays selected for the carousel node
       if (abstractionCarouselNode && !selectedNodeIdForPieMenu) {

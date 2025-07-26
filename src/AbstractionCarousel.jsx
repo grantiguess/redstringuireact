@@ -346,11 +346,57 @@ const AbstractionCarousel = ({
   const abstractionChainWithDims = useMemo(() => {
     if (!selectedNode) return [];
     
+    console.log('[AbstractionCarousel] Building chain for selectedNode:', {
+      id: selectedNode.id,
+      prototypeId: selectedNode.prototypeId,
+      name: selectedNode.name,
+      currentDimension
+    });
+    
+    // Guard clause: ensure selectedNode has a prototypeId
+    if (!selectedNode.prototypeId) {
+      console.warn('[AbstractionCarousel] selectedNode missing prototypeId, returning empty chain');
+      return [];
+    }
+    
     const baseColor = selectedNode.color || NODE_DEFAULT_COLOR;
     
-    // Get the abstraction chain for this node and dimension (simple array access!)
+    // Find the abstraction chain for this node and dimension
+    // The selectedNode might be the chain owner, or it might be a member of someone else's chain
+    let chainNodeIds = [];
+    let chainOwnerNodeId = null;
+    
+    // First, check if this node owns a chain
     const selectedNodePrototype = nodePrototypesMap.get(selectedNode.prototypeId);
-    const chainNodeIds = selectedNodePrototype?.abstractionChains?.[currentDimension] || [];
+    if (selectedNodePrototype?.abstractionChains?.[currentDimension]?.length > 0) {
+      // This node owns a chain
+      chainNodeIds = selectedNodePrototype.abstractionChains[currentDimension];
+      chainOwnerNodeId = selectedNode.prototypeId;
+    } else {
+      // This node doesn't own a chain, check if it's a member of someone else's chain
+      for (const [nodeId, nodePrototype] of nodePrototypesMap.entries()) {
+        const existingChain = nodePrototype.abstractionChains?.[currentDimension];
+        if (existingChain && existingChain.includes(selectedNode.prototypeId)) {
+          // Found the chain that contains this node
+          chainNodeIds = existingChain;
+          chainOwnerNodeId = nodeId;
+          break;
+        }
+      }
+    }
+    
+    console.log('[AbstractionCarousel] Chain search result:', {
+      chainNodeIds,
+      chainOwnerNodeId,
+      selectedNodeInChain: chainNodeIds.includes(selectedNode.prototypeId)
+    });
+    
+    // If no chain was found, create a default single-node chain
+    if (chainNodeIds.length === 0) {
+      chainNodeIds = [selectedNode.prototypeId];
+      chainOwnerNodeId = selectedNode.prototypeId;
+      console.log('[AbstractionCarousel] No existing chain found, created default single-node chain');
+    }
     
     const chain = [];
     const thingNode = nodePrototypesMap.get(thingNodeId);
@@ -401,7 +447,12 @@ const AbstractionCarousel = ({
       // Find the current node's position in the chain
       const currentNodeIndex = chainNodeIds.indexOf(selectedNode.prototypeId);
       if (currentNodeIndex === -1) {
-        console.error('Current node not found in abstraction chain!');
+        console.error('Current node not found in abstraction chain!', {
+          selectedNodeId: selectedNode.prototypeId,
+          chainNodeIds,
+          chainOwnerNodeId,
+          currentDimension
+        });
         return [];
       }
       

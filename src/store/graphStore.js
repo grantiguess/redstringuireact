@@ -1261,7 +1261,21 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         console.log(`Added ${newNodeId} ${direction} ${insertRelativeToNodeId} in ${dimension} dimension. Chain:`, chain);
         return;
       } else {
-        console.warn(`Relative node ${insertRelativeToNodeId} not found in chain, falling back to chain owner`);
+        console.warn(`Relative node ${insertRelativeToNodeId} not found in chain, inserting both nodes`);
+        // If the relative node isn't in the chain yet, we need to handle this case
+        // Insert both the relative node and the new node in the correct order
+        const chainOwnerIndex = chain.indexOf(nodeId);
+        if (chainOwnerIndex !== -1) {
+          if (direction === 'above') {
+            // Insert relative node at chain owner position, then new node above it
+            chain.splice(chainOwnerIndex, 0, newNodeId, insertRelativeToNodeId);
+          } else {
+            // Insert relative node at chain owner position, then new node below it  
+            chain.splice(chainOwnerIndex, 0, insertRelativeToNodeId, newNodeId);
+          }
+          console.log(`Added relative node ${insertRelativeToNodeId} and new node ${newNodeId} ${direction} it. Chain:`, chain);
+          return;
+        }
       }
     }
     
@@ -1274,12 +1288,13 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     }
     
     // Add new node in the right position relative to chain owner
+    const updatedCurrentIndex = chain.indexOf(nodeId);
     if (direction === 'above') {
-      // More abstract - add at beginning, shift everything right
-      chain.unshift(newNodeId);
+      // More abstract - insert before the chain owner
+      chain.splice(updatedCurrentIndex, 0, newNodeId);
     } else {
-      // More specific - add at end
-      chain.push(newNodeId);
+      // More specific - insert after the chain owner
+      chain.splice(updatedCurrentIndex + 1, 0, newNodeId);
     }
     
     console.log(`Added ${newNodeId} ${direction} ${nodeId} in ${dimension} dimension. Chain:`, chain);
