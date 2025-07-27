@@ -157,7 +157,6 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
   }
 
   //console.log(`[PieMenu] Render: Rendering PieMenu. isVisible=${isVisible}, animationState=${animationState}`);
-  console.log(`[PieMenu] *** RENDERING PIE MENU *** Buttons:`, buttons.map(b => ({ id: b.id, label: b.label, position: b.position })));
   
   // Check if this is a carousel mode (buttons have position property)
   const isCarouselMode = buttons.some(button => button.position);
@@ -299,7 +298,6 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
               }
               
               // Execute the button action
-              console.log(`[PieMenu] *** BUTTON CLICKED *** Button ${button.id} clicked for node ${node.id}`);
               button.action(node.id);
             }}
           >

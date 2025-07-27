@@ -498,9 +498,20 @@ const AbstractionCarousel = ({
     const reachableLevels = abstractionChainWithDims
       .filter(n => !n.isNonReachable && (n.type === 'current' || n.type === 'generic'))
       .map(n => n.level);
-    const minLevel = reachableLevels.length > 0 ? Math.min(...reachableLevels) : -6;
+    
+    if (reachableLevels.length === 0) return -6;
+    
+    const minLevel = Math.min(...reachableLevels);
+    
+    // If there's only one reachable node (just the current node), allow limited scrolling range above it
+    if (reachableLevels.length === 1) {
+      // Allow scrolling to 0.1 levels above the only node (very limited range)
+      return minLevel - 0.1;
+    }
+    
     console.log(`[AbstractionCarousel] Physics min level: ${minLevel}, reachable levels:`, reachableLevels);
-    return minLevel;
+    // For multiple nodes, also add a small buffer to prevent scrolling past node centers
+    return minLevel + 0.05;
   }, [abstractionChainWithDims]);
   
   const physicsMaxLevel = useMemo(() => {
@@ -509,9 +520,20 @@ const AbstractionCarousel = ({
     const reachableLevels = abstractionChainWithDims
       .filter(n => !n.isNonReachable && (n.type === 'current' || n.type === 'generic'))
       .map(n => n.level);
-    const maxLevel = reachableLevels.length > 0 ? Math.max(...reachableLevels) : 6;
+    
+    if (reachableLevels.length === 0) return 6;
+    
+    const maxLevel = Math.max(...reachableLevels);
+    
+    // If there's only one reachable node (just the current node), allow limited scrolling range below it
+    if (reachableLevels.length === 1) {
+      // Allow scrolling to 0.1 levels below the only node (very limited range)
+      return maxLevel + 0.1;
+    }
+    
     console.log(`[AbstractionCarousel] Physics max level: ${maxLevel}, reachable levels:`, reachableLevels);
-    return maxLevel;
+    // For multiple nodes, also add a small buffer to prevent scrolling past node centers
+    return maxLevel - 0.05;
   }, [abstractionChainWithDims]);
 
   // Physics state using reducer
