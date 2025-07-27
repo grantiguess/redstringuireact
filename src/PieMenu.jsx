@@ -279,9 +279,10 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
             key={button.id || index}
             transform={`translate(${bubbleX}, ${bubbleY})`}
             style={{ cursor: 'pointer' }}
+            onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
             onClick={(e) => {
               // Allow carousel stage transition buttons to work even during shrinking
-              const isCarouselStageTransition = button.id === 'carousel-plus' || button.id === 'carousel-back-stage2' || button.id === 'carousel-add-above' || button.id === 'carousel-add-below';
+              const isCarouselStageTransition = button.id === 'carousel-plus' || button.id === 'carousel-back' || button.id === 'carousel-back-stage2' || button.id === 'carousel-add-above' || button.id === 'carousel-add-below';
               
               // Prevent clicks during shrinking animation unless it's a carousel transition button
               if (animationState === 'shrinking' && !isCarouselStageTransition) {

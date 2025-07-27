@@ -890,7 +890,8 @@ const AbstractionCarousel = ({
     if (carouselRef.current && !carouselRef.current.contains(e.target)) {
       // Also check if the click was on the abstraction control panel
       const isOnControlPanel = e.target.closest('.abstraction-control-panel');
-      if (!isOnControlPanel) {
+      const isOnPieMenu = e.target.closest('.pie-menu');
+      if (!isOnControlPanel && !isOnPieMenu) {
         onClose();
       }
     }

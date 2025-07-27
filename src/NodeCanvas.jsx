@@ -523,6 +523,7 @@ function NodeCanvas() {
   
   // Animation states for carousel
   const [carouselAnimationState, setCarouselAnimationState] = useState('hidden'); // 'hidden', 'entering', 'visible', 'exiting'
+  const [justCompletedCarouselExit, setJustCompletedCarouselExit] = useState(false);
   
   // Abstraction dimension management
   const [abstractionDimensions, setAbstractionDimensions] = useState(['Physical']);
@@ -531,6 +532,7 @@ function NodeCanvas() {
   // Abstraction control panel states
   const [abstractionControlPanelVisible, setAbstractionControlPanelVisible] = useState(false);
   const [abstractionControlPanelShouldShow, setAbstractionControlPanelShouldShow] = useState(false);
+  const [isPieMenuActionInProgress, setIsPieMenuActionInProgress] = useState(false);
 
   // Define carousel callbacks outside conditional rendering to avoid hook violations
   const onCarouselAnimationStateChange = useCallback((newState) => {
@@ -572,6 +574,9 @@ function NodeCanvas() {
     // Capture the node ID before cleaning up
     const nodeIdToShowPieMenu = abstractionCarouselNode?.id;
     
+    // Set exit in progress flag
+    carouselExitInProgressRef.current = true;
+    
     // Clean up after exit animation completes
     setAbstractionCarouselVisible(false);
     setAbstractionCarouselNode(null);
@@ -580,8 +585,20 @@ function NodeCanvas() {
     
     // Now show the regular pie menu for the node that was in the carousel
     if (nodeIdToShowPieMenu) {
+      console.log(`[NodeCanvas] Carousel exit complete - restoring selection and pie menu for node: ${nodeIdToShowPieMenu}`);
+      setSelectedInstanceIds(new Set([nodeIdToShowPieMenu])); // Restore selection
       setSelectedNodeIdForPieMenu(nodeIdToShowPieMenu);
+      
+      // Set flag to prevent immediate cleanup
+      justRestoredSelectionRef.current = true;
     }
+    
+    // Clear the protection flags after a much longer delay to allow all animations to complete
+    setTimeout(() => {
+      setJustCompletedCarouselExit(false);
+      carouselExitInProgressRef.current = false;
+      justRestoredSelectionRef.current = false;
+    }, 2000); // Extended to 2 seconds to cover all animations
   }, [abstractionCarouselNode?.id]);
 
   // Use the local state values populated by subscribe
@@ -592,6 +609,12 @@ function NodeCanvas() {
   
   // Track current definition index for each node per graph context (nodeId-graphId -> index)
   const [nodeDefinitionIndices, setNodeDefinitionIndices] = useState(new Map());
+  
+  // Ref to track carousel exit process to prevent cleanup interference
+  const carouselExitInProgressRef = useRef(false);
+  
+  // Ref to track if we just restored a selection (to prevent immediate cleanup)
+  const justRestoredSelectionRef = useRef(false);
 
   // --- Graph Change Cleanup ---
   useEffect(() => {
@@ -608,6 +631,36 @@ function NodeCanvas() {
     // DON'T clean up if the abstraction carousel is visible (regardless of prompt state)
     if (abstractionCarouselVisible) {
       console.log(`[NodeCanvas] Skipping cleanup - abstraction carousel is visible`);
+      return;
+    }
+    
+    // DON'T clean up if we just completed a carousel exit (to prevent clearing restored state)
+    if (justCompletedCarouselExit) {
+      console.log(`[NodeCanvas] Skipping cleanup - just completed carousel exit`);
+      return;
+    }
+    
+    // DON'T clean up if we're transitioning the pie menu (carousel exit in progress)
+    if (isTransitioningPieMenu) {
+      console.log(`[NodeCanvas] Skipping cleanup - pie menu transition in progress`);
+      return;
+    }
+    
+    // DON'T clean up if carousel exit is in progress (ref-based check)
+    if (carouselExitInProgressRef.current) {
+      console.log(`[NodeCanvas] Skipping cleanup - carousel exit in progress (ref)`);
+      return;
+    }
+    
+    // DON'T clean up if we just restored a selection
+    if (justRestoredSelectionRef.current) {
+      console.log(`[NodeCanvas] Skipping cleanup - just restored selection`);
+      return;
+    }
+    
+    // DON'T clean up if we have a selected node and pie menu is active (indicates recent restoration)
+    if (selectedInstanceIds.size === 1 && selectedNodeIdForPieMenu && !abstractionCarouselVisible) {
+      console.log(`[NodeCanvas] Skipping cleanup - active selection with pie menu (likely just restored)`);
       return;
     }
     
@@ -652,7 +705,7 @@ function NodeCanvas() {
     // Clear abstraction control panel
     setAbstractionControlPanelVisible(false);
     setAbstractionControlPanelShouldShow(false);
-  }, [activeGraphId, abstractionCarouselVisible]); // Only need carousel visibility to protect from cleanup
+  }, [activeGraphId, abstractionCarouselVisible, justCompletedCarouselExit, isTransitioningPieMenu]); // Protect from cleanup during carousel transitions
 
   // --- Connection Control Panel Management ---
   useEffect(() => {
@@ -885,12 +938,17 @@ function NodeCanvas() {
           label: 'Back',
           icon: ArrowLeft,
           position: 'left-inner',
-          action: (nodeId) => {
-            console.log(`[PieMenu Action] Back clicked for node: ${nodeId}. Closing AbstractionCarousel.`);
-            // Just trigger pie menu exit - carousel exit will be handled in onExitAnimationComplete
-            setSelectedNodeIdForPieMenu(null);
-            setIsTransitioningPieMenu(true);
-          }
+                        action: (nodeId) => {
+              // Set ALL protection flags BEFORE starting exit to prevent graph cleanup interference
+              setJustCompletedCarouselExit(true);
+              carouselExitInProgressRef.current = true;
+              justRestoredSelectionRef.current = true;
+              setIsPieMenuActionInProgress(true);
+              setTimeout(() => setIsPieMenuActionInProgress(false), 100);
+              console.log(`[PieMenu Action] Back clicked for node: ${nodeId}. Closing AbstractionCarousel.`);
+              // This will trigger the pie menu to shrink, and its onExitAnimationComplete will trigger the carousel to close.
+              setIsTransitioningPieMenu(true);
+            }
         },
         {
           id: 'carousel-swap',
@@ -898,6 +956,9 @@ function NodeCanvas() {
           icon: SendToBack,
           position: 'right-inner',
           action: (nodeId) => {
+            setIsPieMenuActionInProgress(true);
+            setTimeout(() => setIsPieMenuActionInProgress(false), 100);
+
             console.log(`[PieMenu Action] Swap clicked for node: ${nodeId}. This will replace the canvas node.`);
             // The swap functionality will replace the current instance in the canvas
             // with the selected node from the carousel
@@ -936,9 +997,12 @@ function NodeCanvas() {
           icon: Trash2,
           position: 'right-third',
           action: (nodeId) => {
+            setIsPieMenuActionInProgress(true);
+            setTimeout(() => setIsPieMenuActionInProgress(false), 100);
+
             console.log(`[PieMenu Action] Delete clicked for carousel node: ${nodeId}`);
             
-            const selectedNode = nodes.find(n => n.id === nodeId);
+            const selectedNode = carouselFocusedNode || nodes.find(n => n.id === nodeId);
             if (!selectedNode) {
               console.error(`[PieMenu Action] No node found with ID: ${nodeId}`);
               return;
@@ -977,6 +1041,9 @@ function NodeCanvas() {
           icon: ArrowUpFromDot,
           position: 'right-outer',
           action: (nodeId) => {
+            setIsPieMenuActionInProgress(true);
+            setTimeout(() => setIsPieMenuActionInProgress(false), 100);
+            
             console.log(`[PieMenu Action] Expand clicked for carousel node: ${nodeId}. Starting hurtle animation and closing carousel.`);
             const nodeData = nodes.find(n => n.id === nodeId);
             if (nodeData) {
@@ -2139,6 +2206,9 @@ function NodeCanvas() {
           wasDrawingConnection.current = false;
           return;
       }
+      if (isPieMenuActionInProgress) {
+        return;
+      }
       if (e.target.closest('g[data-plus-sign="true"]')) return;
       // Prevent canvas click when clicking on PieMenu elements
       if (e.target.closest('.pie-menu')) {
@@ -2164,6 +2234,12 @@ function NodeCanvas() {
       }
 
       if (selectedInstanceIds.size > 0) {
+          // Don't clear selection if we just completed a carousel exit
+          if (justCompletedCarouselExit) {
+            console.log(`[NodeCanvas] Skipping canvas click selection clear - just completed carousel exit`);
+            return;
+          }
+          
           console.log(`[NodeCanvas] 📍 CLEAR #3: Canvas click clearing selection of ${selectedInstanceIds.size} items`);
           setSelectedInstanceIds(new Set());
           // Pie menu will be handled by useEffect on selectedInstanceIds, no direct setShowPieMenu here
@@ -2907,7 +2983,7 @@ function NodeCanvas() {
     });
     
     // Add stack trace for unexpected clears to debug the issue
-    if (selectedInstanceIds.size === 0 && selectedNodeIdForPieMenu) {
+    if (selectedInstanceIds.size === 0 && selectedNodeIdForPieMenu && !justCompletedCarouselExit) {
       console.log(`[NodeCanvas] ⚠️ UNEXPECTED SELECTION CLEAR - Stack trace:`, new Error().stack);
     }
     
@@ -2934,10 +3010,22 @@ function NodeCanvas() {
         setIsTransitioningPieMenu(true);
       }
       
+      // SPECIAL CASE: If carousel is exiting, don't clear the pie menu - let the exit complete first
+      if (carouselAnimationState === 'exiting') {
+        console.log(`[NodeCanvas] Carousel is exiting - not clearing pie menu yet`);
+        return;
+      }
+      
+      // SPECIAL CASE: If we just completed carousel exit, don't clear the pie menu 
+      if (justCompletedCarouselExit) {
+        console.log(`[NodeCanvas] Just completed carousel exit - not clearing pie menu`);
+        return;
+      }
+      
       console.log(`[NodeCanvas] Setting selectedNodeIdForPieMenu to null due to selection change`);
       setSelectedNodeIdForPieMenu(null);
     }
-  }, [selectedInstanceIds, isTransitioningPieMenu, abstractionPrompt.visible, abstractionCarouselVisible, selectedNodeIdForPieMenu]); // Added abstraction prompt dependencies
+  }, [selectedInstanceIds, isTransitioningPieMenu, abstractionPrompt.visible, abstractionCarouselVisible, selectedNodeIdForPieMenu, carouselAnimationState, justCompletedCarouselExit]); // Added carousel protection flags
 
   // Effect to prepare and render PieMenu when selectedNodeIdForPieMenu changes and not transitioning
   useEffect(() => {
@@ -4112,7 +4200,7 @@ function NodeCanvas() {
                            nodeDimensions={currentPieMenuData.nodeDimensions}
                            isVisible={(
                              currentPieMenuData?.node?.id === selectedNodeIdForPieMenu &&
-                             (!isTransitioningPieMenu || abstractionPrompt.visible) &&
+                             (!isTransitioningPieMenu || abstractionPrompt.visible || carouselAnimationState === 'exiting') &&
                              !(draggingNodeInfo && 
                                (draggingNodeInfo.primaryId === selectedNodeIdForPieMenu || draggingNodeInfo.instanceId === selectedNodeIdForPieMenu)
                              )
