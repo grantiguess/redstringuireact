@@ -886,16 +886,19 @@ const AbstractionCarousel = ({
       }
     };
 
-      const handleClickAway = (e) => {
-    if (carouselRef.current && !carouselRef.current.contains(e.target)) {
-      // Also check if the click was on the abstraction control panel
-      const isOnControlPanel = e.target.closest('.abstraction-control-panel');
-      const isOnPieMenu = e.target.closest('.pie-menu');
-      if (!isOnControlPanel && !isOnPieMenu) {
-        onClose();
+    const handleClickAway = (e) => {
+      if (carouselRef.current && !carouselRef.current.contains(e.target)) {
+        // Also check if the click was on the abstraction control panel
+        const isOnControlPanel = e.target.closest('.abstraction-control-panel');
+        const isOnPieMenu = e.target.closest('.pie-menu');
+        const isOnCanvas = e.target.closest('.canvas');
+        
+        // Only close if the click is not on any of these elements
+        if (!isOnControlPanel && !isOnPieMenu && !isOnCanvas) {
+          onClose();
+        }
       }
-    }
-  };
+    };
 
     if (isVisible) {
       document.addEventListener('keydown', handleKeyDown);

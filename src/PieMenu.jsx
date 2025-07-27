@@ -298,6 +298,12 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
                 return; 
               }
               
+              // Additional safety check: prevent compose-preview during carousel transitions
+              if (button.id === 'compose-preview' && animationState === 'shrinking') {
+                console.log('[PieMenu] Blocking compose-preview during carousel shrink');
+                return;
+              }
+              
               // Execute the button action
               button.action(node.id);
             }}

@@ -540,9 +540,9 @@ function NodeCanvas() {
   }, []);
 
   const onCarouselClose = useCallback(() => {
-    // Use the same logic as the back button for a smooth transition
-    setSelectedNodeIdForPieMenu(null);
-    setIsTransitioningPieMenu(true);
+    // Start the carousel exit animation instead of immediately clearing state
+    // This prevents race conditions with canvas click handling
+    setCarouselAnimationState('exiting');
     setCarouselPieMenuStage(1); // Reset to main stage
     setIsCarouselStageTransition(false); // Reset stage transition flag
   }, []);
@@ -1182,12 +1182,23 @@ function NodeCanvas() {
     
     if (selectedNode && previewingNodeId === selectedNode.id) {
       // If the selected node for the pie menu is the one being previewed, show only Compose
+      // But don't show it if the carousel is exiting
+      if (abstractionCarouselVisible && carouselAnimationState === 'exiting') {
+        return []; // Return empty array to hide all buttons during carousel exit
+      }
+      
       return [
         {
           id: 'compose-preview',
           label: 'Compose',
           icon: Package,
           action: (nodeId) => {
+            // Prevent compose action during carousel transitions
+            if (abstractionCarouselVisible && carouselAnimationState === 'exiting') {
+              console.log('[PieMenu Action] Blocking compose during carousel exit');
+              return;
+            }
+            
             // console.log(`[PieMenu Action] Compose clicked for node: ${nodeId}. Starting transition.`);
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
             // setPreviewingNodeId(null); // This will be set after animation
@@ -1196,6 +1207,11 @@ function NodeCanvas() {
       ];
     } else {
       // Default buttons: Expand, Decompose, Connect, Delete, Edit (swapped edit and expand positions)
+      // But don't show buttons if the carousel is exiting
+      if (abstractionCarouselVisible && carouselAnimationState === 'exiting') {
+        return []; // Return empty array to hide all buttons during carousel exit
+      }
+      
       return [
         {
           id: 'expand-tab',
@@ -1233,12 +1249,24 @@ function NodeCanvas() {
           label: 'Decompose',
           icon: PackageOpen,
           action: (instanceId) => {
+            // Prevent decompose action during carousel transitions
+            if (abstractionCarouselVisible && carouselAnimationState === 'exiting') {
+              console.log('[PieMenu Action] Blocking decompose during carousel exit');
+              return;
+            }
+            
             console.log(`[PieMenu Action] Decompose clicked for instance: ${instanceId}. Starting transition.`);
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
             // previewingNodeId (which is an instanceId) will be set in onExitAnimationComplete after animation
           }
         },
         { id: 'abstraction', label: 'Abstraction', icon: Layers, action: (instanceId) => {
+            // Prevent abstraction action during carousel transitions
+            if (abstractionCarouselVisible && carouselAnimationState === 'exiting') {
+              console.log('[PieMenu Action] Blocking abstraction during carousel exit');
+              return;
+            }
+            
             console.log(`[PieMenu Action] Abstraction clicked for node: ${instanceId}.`);
             setPendingAbstractionNodeId(instanceId); // Store the instance ID for later
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
@@ -1315,7 +1343,7 @@ function NodeCanvas() {
         } }
       ];
     }
-  }, [storeActions, setSelectedInstanceIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, activeGraphId, abstractionCarouselVisible, abstractionCarouselNode, carouselPieMenuStage, carouselFocusedNode, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Bookmark, ArrowLeft, SendToBack, Plus, CornerUpLeft, CornerDownLeft, Palette, MoreHorizontal, zoomLevel, panOffset, containerRef, handlePieMenuColorPickerOpen, savedNodeIds]);
+  }, [storeActions, setSelectedInstanceIds, setPreviewingNodeId, selectedNodeIdForPieMenu, previewingNodeId, nodes, activeGraphId, abstractionCarouselVisible, abstractionCarouselNode, carouselPieMenuStage, carouselFocusedNode, carouselAnimationState, PackageOpen, Package, ArrowUpFromDot, Edit3, Trash2, Bookmark, ArrowLeft, SendToBack, Plus, CornerUpLeft, CornerDownLeft, Palette, MoreHorizontal, zoomLevel, panOffset, containerRef, handlePieMenuColorPickerOpen, savedNodeIds]);
   
   // Log button changes for debugging
   useEffect(() => {
@@ -2233,6 +2261,12 @@ function NodeCanvas() {
         return;
       }
 
+      // If carousel is visible and exiting, don't handle canvas clicks
+      if (abstractionCarouselVisible && carouselAnimationState === 'exiting') {
+        console.log(`[NodeCanvas] Carousel is exiting - ignoring canvas click`);
+        return;
+      }
+
       if (selectedInstanceIds.size > 0) {
           // Don't clear selection if we just completed a carousel exit
           if (justCompletedCarouselExit) {
@@ -3019,6 +3053,13 @@ function NodeCanvas() {
       // SPECIAL CASE: If we just completed carousel exit, don't clear the pie menu 
       if (justCompletedCarouselExit) {
         console.log(`[NodeCanvas] Just completed carousel exit - not clearing pie menu`);
+        return;
+      }
+      
+      // SPECIAL CASE: If carousel is visible and we're losing selection, start exit animation
+      if (abstractionCarouselVisible && selectedNodeIdForPieMenu) {
+        console.log(`[NodeCanvas] Carousel visible and losing selection - starting exit animation`);
+        setCarouselAnimationState('exiting');
         return;
       }
       
