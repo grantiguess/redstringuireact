@@ -540,11 +540,9 @@ function NodeCanvas() {
   }, []);
 
   const onCarouselClose = useCallback(() => {
-    // Start the carousel exit animation instead of immediately clearing state
-    // This prevents race conditions with canvas click handling
-    setCarouselAnimationState('exiting');
-    setCarouselPieMenuStage(1); // Reset to main stage
-    setIsCarouselStageTransition(false); // Reset stage transition flag
+    // Use the same logic as the back button for a smooth transition
+    setSelectedNodeIdForPieMenu(null);
+    setIsTransitioningPieMenu(true);
   }, []);
 
   const onCarouselReplaceNode = useCallback((oldNodeId, newNodeData) => {
@@ -588,16 +586,12 @@ function NodeCanvas() {
       console.log(`[NodeCanvas] Carousel exit complete - restoring selection and pie menu for node: ${nodeIdToShowPieMenu}`);
       setSelectedInstanceIds(new Set([nodeIdToShowPieMenu])); // Restore selection
       setSelectedNodeIdForPieMenu(nodeIdToShowPieMenu);
-      
-      // Set flag to prevent immediate cleanup
-      justRestoredSelectionRef.current = true;
     }
     
     // Clear the protection flags after animations complete
     setTimeout(() => {
       setJustCompletedCarouselExit(false);
       carouselExitInProgressRef.current = false;
-      justRestoredSelectionRef.current = false;
     }, 300); // Quick timeout - allows normal interaction almost immediately
   }, [abstractionCarouselNode?.id]);
 
@@ -612,9 +606,6 @@ function NodeCanvas() {
   
   // Ref to track carousel exit process to prevent cleanup interference
   const carouselExitInProgressRef = useRef(false);
-  
-  // Ref to track if we just restored a selection (to prevent immediate cleanup)
-  const justRestoredSelectionRef = useRef(false);
 
   // --- Graph Change Cleanup ---
   useEffect(() => {
@@ -649,12 +640,6 @@ function NodeCanvas() {
     // DON'T clean up if carousel exit is in progress (ref-based check)
     if (carouselExitInProgressRef.current) {
       console.log(`[NodeCanvas] Skipping cleanup - carousel exit in progress (ref)`);
-      return;
-    }
-    
-    // DON'T clean up if we just restored a selection
-    if (justRestoredSelectionRef.current) {
-      console.log(`[NodeCanvas] Skipping cleanup - just restored selection`);
       return;
     }
     
@@ -939,10 +924,8 @@ function NodeCanvas() {
           icon: ArrowLeft,
           position: 'left-inner',
                         action: (nodeId) => {
-              // Set ALL protection flags BEFORE starting exit to prevent graph cleanup interference
+              // Set protection flag BEFORE starting exit to prevent graph cleanup interference
               setJustCompletedCarouselExit(true);
-              carouselExitInProgressRef.current = true;
-              justRestoredSelectionRef.current = true;
               setIsPieMenuActionInProgress(true);
               setTimeout(() => setIsPieMenuActionInProgress(false), 100);
               console.log(`[PieMenu Action] Back clicked for node: ${nodeId}. Closing AbstractionCarousel.`);
@@ -984,11 +967,12 @@ function NodeCanvas() {
               selectedNodeIdForPieMenu
             });
             
-            // Transition to stage 2 for position selection
+            // Start the stage transition by triggering the pie menu to shrink first
             setIsCarouselStageTransition(true); // Mark this as an internal stage transition
-            setCarouselPieMenuStage(2);
+            setIsTransitioningPieMenu(true); // This will trigger the pie menu to shrink
             
-            console.log(`[PieMenu Action] *** STAGE TRANSITION COMPLETED *** Set stage to 2`);
+            // The stage will be changed in onExitAnimationComplete after the shrink animation completes
+            console.log(`[PieMenu Action] *** STAGE TRANSITION STARTED *** Triggering pie menu shrink`);
           }
         },
         {
@@ -1089,9 +1073,12 @@ function NodeCanvas() {
             position: 'left-inner',
             action: (nodeId) => {
               console.log(`[PieMenu Action] Back clicked in stage 2. Returning to main carousel menu.`);
-              // Return to stage 1
+              // Start the stage transition by triggering the pie menu to shrink first
               setIsCarouselStageTransition(true); // Mark this as an internal stage transition
-              setCarouselPieMenuStage(1);
+              setIsTransitioningPieMenu(true); // This will trigger the pie menu to shrink
+              
+              // The stage will be changed in onExitAnimationComplete after the shrink animation completes
+              console.log(`[PieMenu Action] *** STAGE TRANSITION STARTED *** Triggering pie menu shrink`);
             }
           },
           {
@@ -1182,8 +1169,8 @@ function NodeCanvas() {
     
     if (selectedNode && previewingNodeId === selectedNode.id) {
       // If the selected node for the pie menu is the one being previewed, show only Compose
-      // But don't show it if the carousel is exiting
-      if (abstractionCarouselVisible && carouselAnimationState === 'exiting') {
+      // But don't show it if the carousel is exiting (only for non-carousel mode)
+      if (!abstractionCarouselVisible && carouselAnimationState === 'exiting') {
         return []; // Return empty array to hide all buttons during carousel exit
       }
       
@@ -1193,8 +1180,8 @@ function NodeCanvas() {
           label: 'Compose',
           icon: Package,
           action: (nodeId) => {
-            // Prevent compose action during carousel transitions
-            if (abstractionCarouselVisible && carouselAnimationState === 'exiting') {
+            // Prevent compose action during carousel transitions (only for non-carousel mode)
+            if (!abstractionCarouselVisible && carouselAnimationState === 'exiting') {
               console.log('[PieMenu Action] Blocking compose during carousel exit');
               return;
             }
@@ -1207,8 +1194,8 @@ function NodeCanvas() {
       ];
     } else {
       // Default buttons: Expand, Decompose, Connect, Delete, Edit (swapped edit and expand positions)
-      // But don't show buttons if the carousel is exiting
-      if (abstractionCarouselVisible && carouselAnimationState === 'exiting') {
+      // But don't show buttons if the carousel is exiting (only for non-carousel mode)
+      if (!abstractionCarouselVisible && carouselAnimationState === 'exiting') {
         return []; // Return empty array to hide all buttons during carousel exit
       }
       
@@ -1249,8 +1236,8 @@ function NodeCanvas() {
           label: 'Decompose',
           icon: PackageOpen,
           action: (instanceId) => {
-            // Prevent decompose action during carousel transitions
-            if (abstractionCarouselVisible && carouselAnimationState === 'exiting') {
+            // Prevent decompose action during carousel transitions (only for non-carousel mode)
+            if (!abstractionCarouselVisible && carouselAnimationState === 'exiting') {
               console.log('[PieMenu Action] Blocking decompose during carousel exit');
               return;
             }
@@ -1261,8 +1248,8 @@ function NodeCanvas() {
           }
         },
         { id: 'abstraction', label: 'Abstraction', icon: Layers, action: (instanceId) => {
-            // Prevent abstraction action during carousel transitions
-            if (abstractionCarouselVisible && carouselAnimationState === 'exiting') {
+            // Prevent abstraction action during carousel transitions (only for non-carousel mode)
+            if (!abstractionCarouselVisible && carouselAnimationState === 'exiting') {
               console.log('[PieMenu Action] Blocking abstraction during carousel exit');
               return;
             }
@@ -4282,6 +4269,16 @@ function NodeCanvas() {
                   // This was an internal stage transition - stay in carousel, just update PieMenu
                   setIsCarouselStageTransition(false); // Reset the flag
                   setIsTransitioningPieMenu(false);
+                  
+                  // Change the stage here after the shrink animation completes
+                  if (carouselPieMenuStage === 1) {
+                    setCarouselPieMenuStage(2);
+                    console.log(`[PieMenu Action] *** STAGE TRANSITION COMPLETED *** Changed to stage 2`);
+                  } else if (carouselPieMenuStage === 2) {
+                    setCarouselPieMenuStage(1);
+                    console.log(`[PieMenu Action] *** STAGE TRANSITION COMPLETED *** Changed to stage 1`);
+                  }
+                  
                   // Re-select the node to show the new stage PieMenu
                   if (lastActiveNodeId) {
                     setSelectedNodeIdForPieMenu(lastActiveNodeId);
