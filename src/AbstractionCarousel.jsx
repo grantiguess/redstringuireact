@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useReducer } from 'react';
-import { Plus } from 'lucide-react';
 import { NODE_WIDTH, NODE_HEIGHT, NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR, NODE_PADDING } from './constants';
 import { getNodeDimensions } from './utils';
 import useGraphStore from './store/graphStore';
@@ -409,20 +408,11 @@ const AbstractionCarousel = ({
         chain.push({ 
           ...thingNode, 
           type: 'generic', 
-          level: -3, 
-          color: generateProgressiveColor(baseColor, -3),
+          level: -1, 
+          color: generateProgressiveColor(baseColor, -1),
           isNonReachable: true // Flag to prevent scrolling to this as center
         });
       }
-      
-      // Add button for more abstract (above current node)
-      chain.push({ 
-        id: 'add_generic', 
-        name: 'Add More Generic', 
-        type: 'add_generic', 
-        level: -1, 
-        color: '#ffffff' 
-      });
       
       // Current node at level 0
       chain.push({ 
@@ -430,17 +420,6 @@ const AbstractionCarousel = ({
         type: 'current', 
         level: 0,
         textColor: getTextColor(selectedNode.color)
-      });
-      
-      // Add button for more specific (below current node)
-      chain.push({ 
-        id: 'add_specific', 
-        name: 'Add More Specific', 
-        type: 'add_specific', 
-        level: 1, 
-        color: '#000000', 
-        textColor: '#ffffff', 
-        borderColor: '#000000' 
       });
     } else {
       // Chain exists - build it properly with current node always at level 0
@@ -462,20 +441,11 @@ const AbstractionCarousel = ({
         chain.push({ 
           ...thingNode, 
           type: 'generic', 
-          level: -currentNodeIndex - 3, // Position Thing above everything
-          color: generateProgressiveColor(baseColor, -currentNodeIndex - 3),
+          level: -currentNodeIndex - 1, // Position Thing above everything
+          color: generateProgressiveColor(baseColor, -currentNodeIndex - 1),
           isNonReachable: true
         });
       }
-      
-      // Add button at the top (most abstract, reachable)
-      chain.push({ 
-        id: 'add_generic', 
-        name: 'Add More Generic', 
-        type: 'add_generic', 
-        level: -currentNodeIndex - 1, // One level above the most abstract node
-        color: '#ffffff' 
-      });
       
       // Add all nodes in the chain, with current node always at level 0
       chainNodeIds.forEach((nodeId, index) => {
@@ -509,49 +479,9 @@ const AbstractionCarousel = ({
           });
         }
       });
-      
-      // Add button at the bottom (most specific)
-      const maxNodeLevel = chainNodeIds.length - 1 - currentNodeIndex;
-      chain.push({ 
-        id: 'add_specific', 
-        name: 'Add More Specific', 
-        type: 'add_specific', 
-        level: maxNodeLevel + 1, 
-        color: '#000000', 
-        textColor: '#ffffff', 
-        borderColor: '#000000' 
-      });
     }
 
-    // Ensure we always have add buttons (safety check)
-    const hasAddGeneric = chain.some(item => item.type === 'add_generic');
-    const hasAddSpecific = chain.some(item => item.type === 'add_specific');
-    
-    if (!hasAddGeneric) {
-      console.warn('[AbstractionCarousel] Missing add_generic button, adding it');
-      const minLevel = Math.min(...chain.map(n => n.level));
-      chain.unshift({ 
-        id: 'add_generic', 
-        name: 'Add More Generic', 
-        type: 'add_generic', 
-        level: minLevel - 1, 
-        color: '#ffffff' 
-      });
-    }
-    
-    if (!hasAddSpecific) {
-      console.warn('[AbstractionCarousel] Missing add_specific button, adding it');
-      const maxLevel = Math.max(...chain.map(n => n.level));
-      chain.push({ 
-        id: 'add_specific', 
-        name: 'Add More Specific', 
-        type: 'add_specific', 
-        level: maxLevel + 1, 
-        color: '#000000', 
-        textColor: '#ffffff', 
-        borderColor: '#000000' 
-      });
-    }
+
 
     // Pre-calculate base dimensions for each node
     return chain.map(item => {
@@ -565,9 +495,8 @@ const AbstractionCarousel = ({
   const physicsMinLevel = useMemo(() => {
     if (!abstractionChainWithDims.length) return -6;
     // Find the most abstract reachable level (exclude Thing if marked as non-reachable)
-    // But include add buttons in the bounds
     const reachableLevels = abstractionChainWithDims
-      .filter(n => !n.isNonReachable && (n.type === 'add_generic' || n.type === 'add_specific' || n.type === 'current' || n.type === 'generic'))
+      .filter(n => !n.isNonReachable && (n.type === 'current' || n.type === 'generic'))
       .map(n => n.level);
     const minLevel = reachableLevels.length > 0 ? Math.min(...reachableLevels) : -6;
     console.log(`[AbstractionCarousel] Physics min level: ${minLevel}, reachable levels:`, reachableLevels);
@@ -576,9 +505,9 @@ const AbstractionCarousel = ({
   
   const physicsMaxLevel = useMemo(() => {
     if (!abstractionChainWithDims.length) return 6;
-    // Find the most specific reachable level (include add buttons)
+    // Find the most specific reachable level
     const reachableLevels = abstractionChainWithDims
-      .filter(n => !n.isNonReachable && (n.type === 'add_generic' || n.type === 'add_specific' || n.type === 'current' || n.type === 'generic'))
+      .filter(n => !n.isNonReachable && (n.type === 'current' || n.type === 'generic'))
       .map(n => n.level);
     const maxLevel = reachableLevels.length > 0 ? Math.max(...reachableLevels) : 6;
     console.log(`[AbstractionCarousel] Physics max level: ${maxLevel}, reachable levels:`, reachableLevels);
@@ -791,8 +720,7 @@ const AbstractionCarousel = ({
     if (onFocusedNodeChange && abstractionChainWithDims.length > 0) {
       const roundedLevel = Math.round(position);
       const focusedNode = abstractionChainWithDims.find(item => item.level === roundedLevel);
-      if (focusedNode && focusedNode.type !== 'add_generic' && focusedNode.type !== 'add_specific') {
-        // Only report actual nodes, not add buttons
+      if (focusedNode) {
         onFocusedNodeChange(focusedNode);
       }
     }
@@ -922,35 +850,9 @@ const AbstractionCarousel = ({
       animationFrameRef.current = requestAnimationFrame(updatePhysicsRef.current);
     }
     
-    // Handle click actions
-    if (item.type === 'add_generic' || item.type === 'add_specific') {
-      // TODO: Implement abstraction axis node creation
-      // For now, create a simple prompt for the user to name the new abstraction level
-      const isGeneric = item.type === 'add_generic';
-      const defaultName = isGeneric ? 'New Generic Thing' : 'New Specific Thing';
-      const newName = prompt(`Enter name for ${isGeneric ? 'generic' : 'specific'} abstraction:`, defaultName);
-      
-      if (newName && newName.trim()) {
-        // Create a new node prototype for this abstraction level
-        const newNodeId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        const newNodeData = {
-          id: newNodeId,
-          name: newName.trim(),
-          description: `A ${isGeneric ? 'more generic' : 'more specific'} abstraction of ${selectedNode.name}`,
-          color: selectedNode.color || '#8B0000',
-          typeNodeId: 'base-thing-prototype',
-          definitionGraphIds: [],
-          isSpecificityChainNode: true,
-          hasSpecificityChain: false
-        };
-        
-        // Add the new node to the store
-        // TODO: Add to abstraction axis system when implemented
-        
-        // For now, just show an alert that this feature is coming soon
-        alert(`Abstraction creation for "${newName}" is coming soon! This will be integrated with the full abstraction axis system.`);
-      }
-    } else if (item.type !== 'current') {
+    // Handle click actions for non-current nodes
+    if (item.type !== 'current') {
+      // TODO: Handle navigation to other abstraction levels
     }
   }, [isVisible, selectedNode]);
 
@@ -1062,7 +964,6 @@ const AbstractionCarousel = ({
           })
           .map((item, index) => {
           const nodeDimensions = item.baseDimensions; // Use pre-calculated dimensions
-          const isPlaceholder = item.type === 'add_generic' || item.type === 'add_specific';
           const isCurrent = item.type === 'current';
           const distanceFromMain = Math.abs(item.level - physicsState.realPosition);
           
@@ -1158,11 +1059,9 @@ const AbstractionCarousel = ({
           const cornerRadius = NODE_CORNER_RADIUS;
           
           const borderColor = isMainNode ? 'black' : 'none'; // Match NodeCanvas: black for centered, none for others
-          const nodeColor = isPlaceholder ? (item.color || '#bdb5b5') : (item.color || NODE_DEFAULT_COLOR);
+          const nodeColor = item.color || NODE_DEFAULT_COLOR;
           
-          // Debug logging
-          if (!isPlaceholder) {
-          }
+
           
           // Calculate animation transform for enter/exit
           const animationTransform = !isCurrent && shouldAnimate && (animationState === 'entering' || animationState === 'exiting') 
@@ -1253,57 +1152,36 @@ const AbstractionCarousel = ({
                       justifyContent: 'center',
                       width: '100%',
                       height: '100%',
-                      padding: isPlaceholder ? '0' : '15px 15px', // Match Node.jsx padding
+                      padding: '15px 15px', // Match Node.jsx padding
                       boxSizing: 'border-box',
                       userSelect: 'none',
                       minWidth: 0
                     }}
                   >
-                    {isPlaceholder ? (
-                      <>
-                        <Plus size={20} style={{ marginBottom: '2px', color: item.textColor || getTextColor(nodeColor) }} />
-                        <span style={{ 
-                          maxWidth: '90%',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'pre-line',
-                          wordBreak: 'break-word',
-                          fontSize: '12px',
-                          fontWeight: 'bold',
-                          fontFamily: "'EmOne', sans-serif",
-                          textAlign: 'center',
-                          lineHeight: '1.2',
-                          color: item.textColor || getTextColor(nodeColor)
-                        }}>
-                          {item.name.replace(' Generic Thing', '\nGeneric Thing').replace(' Specific Thing', '\nSpecific Thing')}
-                        </span>
-                      </>
-                    ) : (
-                      <span
-                        style={{
-                          fontSize: '20px', // Match Node.jsx
-                          fontWeight: 'bold', // Match Node.jsx
-                          fontFamily: "'EmOne', sans-serif", // Use EmOne for node names
-                          color: item.textColor || getTextColor(nodeColor),
-                          whiteSpace: 'normal',
-                          overflowWrap: 'break-word',
-                          wordBreak: 'keep-all',
-                          textAlign: 'center',
-                          minWidth: 0,
-                          width: '100%',
-                          display: 'inline-block',
-                          hyphens: 'auto'
-                        }}
-                        lang="en"
-                      >
-                        {item.name}
-                      </span>
-                    )}
+                    <span
+                      style={{
+                        fontSize: '20px', // Match Node.jsx
+                        fontWeight: 'bold', // Match Node.jsx
+                        fontFamily: "'EmOne', sans-serif", // Use EmOne for node names
+                        color: item.textColor || getTextColor(nodeColor),
+                        whiteSpace: 'normal',
+                        overflowWrap: 'break-word',
+                        wordBreak: 'keep-all',
+                        textAlign: 'center',
+                        minWidth: 0,
+                        width: '100%',
+                        display: 'inline-block',
+                        hyphens: 'auto'
+                      }}
+                      lang="en"
+                    >
+                      {item.name}
+                    </span>
                   </div>
                 </foreignObject>
 
                 {/* Level indicator - positioned inside the transformed group */}
-                {!isPlaceholder && debugMode && (
+                {debugMode && (
                   <g>
                     <circle
                       cx={unscaledWidth / 2 - 8}
