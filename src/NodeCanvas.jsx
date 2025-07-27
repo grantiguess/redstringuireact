@@ -593,12 +593,12 @@ function NodeCanvas() {
       justRestoredSelectionRef.current = true;
     }
     
-    // Clear the protection flags after a much longer delay to allow all animations to complete
+    // Clear the protection flags after animations complete
     setTimeout(() => {
       setJustCompletedCarouselExit(false);
       carouselExitInProgressRef.current = false;
       justRestoredSelectionRef.current = false;
-    }, 2000); // Extended to 2 seconds to cover all animations
+    }, 300); // Quick timeout - allows normal interaction almost immediately
   }, [abstractionCarouselNode?.id]);
 
   // Use the local state values populated by subscribe
@@ -2271,6 +2271,12 @@ function NodeCanvas() {
           // Don't clear selection if we just completed a carousel exit
           if (justCompletedCarouselExit) {
             console.log(`[NodeCanvas] Skipping canvas click selection clear - just completed carousel exit`);
+            return;
+          }
+          
+          // Don't clear selection if carousel exit is in progress
+          if (carouselExitInProgressRef.current) {
+            console.log(`[NodeCanvas] Skipping canvas click selection clear - carousel exit in progress`);
             return;
           }
           
