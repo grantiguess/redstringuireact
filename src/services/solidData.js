@@ -158,9 +158,9 @@ class SolidDataService {
       const spaceThingUrl = `${indexUrl}#${spaceName.replace(/[^a-zA-Z0-9-_]/g, '_')}`;
       let spaceThing = getThing(dataset, spaceThingUrl) || createThing({ url: spaceThingUrl });
       
-      spaceThing = addUrl(spaceThing, 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type', 'https://redstring.org/vocab/CognitiveSpace');
+      spaceThing = addUrl(spaceThing, 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type', 'https://redstring.io/vocab/CognitiveSpace');
       spaceThing = addStringNoLocale(spaceThing, 'http://schema.org/name', spaceName);
-      spaceThing = addUrl(spaceThing, 'https://redstring.org/vocab/spaceLocation', spaceUrl);
+      spaceThing = addUrl(spaceThing, 'https://redstring.io/vocab/spaceLocation', spaceUrl);
       
       if (metadata?.title) {
         spaceThing = addStringNoLocale(spaceThing, 'http://schema.org/title', metadata.title);
@@ -205,7 +205,7 @@ class SolidDataService {
 
       for (const thing of spaceThings) {
         const name = getStringNoLocale(thing, 'http://schema.org/name');
-        const spaceUrl = getUrl(thing, 'https://redstring.org/vocab/spaceLocation');
+        const spaceUrl = getUrl(thing, 'https://redstring.io/vocab/spaceLocation');
         const title = getStringNoLocale(thing, 'http://schema.org/title');
         const description = getStringNoLocale(thing, 'http://schema.org/description');
         const modified = getStringNoLocale(thing, 'http://purl.org/dc/terms/modified');

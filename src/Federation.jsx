@@ -142,9 +142,9 @@ const Federation = () => {
 
   if (!sessionInfo.isLoggedIn) {
     return (
-      <div style={{ padding: '20px', fontFamily: "'EmOne', sans-serif" }}>
+      <div style={{ padding: '15px', fontFamily: "'EmOne', sans-serif", height: '100%', color: '#260000' }}>
         <div style={{ marginBottom: '20px' }}>
-          <h3 style={{ color: '#260000', marginBottom: '10px' }}>Connect to Solid Pod</h3>
+          <h3 style={{ color: '#260000', marginBottom: '10px', fontSize: '1.1rem' }}>Connect to Solid Pod</h3>
           <p style={{ color: '#666', fontSize: '0.9rem', marginBottom: '15px' }}>
             Connect to your Solid Pod to save and share your cognitive spaces across the decentralized web.
           </p>
@@ -162,10 +162,12 @@ const Federation = () => {
             style={{
               width: '100%',
               padding: '8px',
-              border: '1px solid #ccc',
+              border: '1px solid #979090',
               borderRadius: '4px',
               fontSize: '0.9rem',
-              fontFamily: "'EmOne', sans-serif"
+              fontFamily: "'EmOne', sans-serif",
+              backgroundColor: '#bdb5b5',
+              color: '#260000'
             }}
           />
         </div>
@@ -210,9 +212,9 @@ const Federation = () => {
   }
 
   return (
-    <div style={{ padding: '20px', fontFamily: "'EmOne', sans-serif" }}>
+    <div style={{ padding: '15px', fontFamily: "'EmOne', sans-serif", height: '100%', color: '#260000' }}>
       {/* User Info */}
-      <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f5f5f5', borderRadius: '8px' }}>
+      <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#979090', borderRadius: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
           <User size={20} color="#260000" />
           <div>
@@ -231,9 +233,9 @@ const Federation = () => {
             alignItems: 'center',
             gap: '6px',
             padding: '6px 12px',
-            backgroundColor: '#fff',
+            backgroundColor: '#bdb5b5',
             color: '#260000',
-            border: '1px solid #ccc',
+            border: '1px solid #979090',
             borderRadius: '4px',
             cursor: 'pointer',
             fontSize: '0.8rem',
@@ -246,7 +248,7 @@ const Federation = () => {
       </div>
 
       {/* Save Current Space */}
-      <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f9f9f9', borderRadius: '8px' }}>
+      <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#979090', borderRadius: '8px' }}>
         <h4 style={{ color: '#260000', marginBottom: '10px', fontSize: '0.9rem' }}>
           Save Current Space
         </h4>
@@ -259,10 +261,12 @@ const Federation = () => {
             style={{
               flex: 1,
               padding: '6px 8px',
-              border: '1px solid #ccc',
+              border: '1px solid #979090',
               borderRadius: '4px',
               fontSize: '0.8rem',
-              fontFamily: "'EmOne', sans-serif"
+              fontFamily: "'EmOne', sans-serif",
+              backgroundColor: '#bdb5b5',
+              color: '#260000'
             }}
           />
           <button
@@ -304,7 +308,7 @@ const Federation = () => {
               padding: '4px 8px',
               backgroundColor: 'transparent',
               color: '#260000',
-              border: '1px solid #ccc',
+              border: '1px solid #979090',
               borderRadius: '4px',
               cursor: loading ? 'not-allowed' : 'pointer',
               fontSize: '0.8rem',
@@ -335,8 +339,8 @@ const Federation = () => {
                 key={index}
                 style={{
                   padding: '12px',
-                  backgroundColor: '#fff',
-                  border: '1px solid #ddd',
+                  backgroundColor: '#979090',
+                  border: '1px solid #bdb5b5',
                   borderRadius: '6px',
                   cursor: 'pointer'
                 }}
@@ -370,7 +374,7 @@ const Federation = () => {
                         padding: '4px',
                         backgroundColor: 'transparent',
                         color: '#260000',
-                        border: '1px solid #ccc',
+                        border: '1px solid #979090',
                         borderRadius: '3px',
                         cursor: 'pointer',
                         fontSize: '0.7rem'

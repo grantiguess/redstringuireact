@@ -8,10 +8,10 @@ import { v4 as uuidv4 } from 'uuid';
 // JSON-LD Context for Redstring
 export const REDSTRING_CONTEXT = {
   "@version": 1.1,
-  "@vocab": "https://redstring.org/vocab/",
+  "@vocab": "https://redstring.io/vocab/",
   
   // Core Redstring Concepts
-  "redstring": "https://redstring.org/vocab/",
+  "redstring": "https://redstring.io/vocab/",
   "Graph": "redstring:Graph",
   "Node": "redstring:Node", 
   "Edge": "redstring:Edge",
