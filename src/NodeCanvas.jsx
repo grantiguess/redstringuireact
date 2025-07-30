@@ -3446,6 +3446,31 @@ function NodeCanvas() {
              alert(`Failed to save universe: ${error.message}`);
            }
          }}
+         onExportRdf={async () => {
+           try {
+             console.log('[NodeCanvas] RDF export requested');
+             const { exportToRdfTurtle } = await import('./formats/rdfExport.js');
+             
+             const currentState = useGraphStore.getState();
+             const rdfData = await exportToRdfTurtle(currentState);
+             
+             // Create a download link
+             const blob = new Blob([rdfData], { type: 'text/turtle' });
+             const url = URL.createObjectURL(blob);
+             const a = document.createElement('a');
+             a.href = url;
+             a.download = 'cognitive-space.ttl';
+             document.body.appendChild(a);
+             a.click();
+             document.body.removeChild(a);
+             URL.revokeObjectURL(url);
+             
+             console.log('[NodeCanvas] RDF export completed successfully');
+           } catch (error) {
+             console.error('[NodeCanvas] Error during RDF export:', error);
+             alert(`Failed to export RDF: ${error.message}`);
+           }
+         }}
          onOpenRecentFile={async (recentFileEntry) => {
            try {
              // Check if user has unsaved work

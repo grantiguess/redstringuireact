@@ -14,6 +14,7 @@ const RedstringMenu = ({
   onNewUniverse,
   onOpenUniverse,
   onSaveUniverse,
+  onExportRdf,
   onOpenRecentFile
 }) => {
   const [isExiting, setIsExiting] = useState(false);
@@ -155,6 +156,16 @@ const RedstringMenu = ({
                                 >
                                   <Save size={16} style={{ marginRight: '8px' }} />
                                   Save Universe
+                                </button>
+                                <button
+                                  className="submenu-item"
+                                  onClick={() => {
+                                    // console.log('[RedstringMenu] Export as RDF/Turtle clicked');
+                                    onExportRdf?.();
+                                  }}
+                                >
+                                  <FileText size={16} style={{ marginRight: '8px' }} />
+                                  Export as RDF/Turtle
                                 </button>
                                 <button
                                     className={`submenu-item has-submenu ${openSubmenu === 'RecentFiles' ? 'active-submenu-parent' : ''}`}

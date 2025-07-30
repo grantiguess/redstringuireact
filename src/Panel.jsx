@@ -2,7 +2,7 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, us
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR } from './constants';
-import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
@@ -18,6 +18,7 @@ import useGraphStore, {
 } from './store/graphStore';
 import { shallow } from 'zustand/shallow';
 import GraphListItem from './GraphListItem'; // <<< Import the new component
+import Federation from './Federation'; // Import Federation component
 
 // Helper function to determine the correct article ("a" or "an")
 const getArticleFor = (word) => {
@@ -565,7 +566,7 @@ const Panel = forwardRef(
     const [tempProjectTitle, setTempProjectTitle] = useState(''); // Used by right panel home tab
 
     // Left panel view state and collapsed sections
-    const [leftViewActive, setLeftViewActive] = useState('library'); // 'library' or 'grid'
+    const [leftViewActive, setLeftViewActive] = useState('library'); // 'library', 'grid', or 'federation'
     const [sectionCollapsed, setSectionCollapsed] = useState({});
     const [sectionMaxHeights, setSectionMaxHeights] = useState({});
 
@@ -1461,6 +1462,13 @@ const Panel = forwardRef(
                             <div style={{ color: '#666', textAlign: 'center', marginTop: '20px', fontFamily: "'EmOne', sans-serif" }}>No graphs currently open.</div>
                         )}
                     </div>
+                </div>
+            );
+        } else if (leftViewActive === 'federation') {
+            // Federation view for Solid Pods
+            panelContent = (
+                <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                    <Federation />
                 </div>
             );
         }
@@ -3093,6 +3101,14 @@ const Panel = forwardRef(
                                 onClick={() => setLeftViewActive('grid')}
                             >
                                 <BookOpen size={20} color="#260000" />
+                            </div>
+                            {/* Federation Button -> Solid Pods */} 
+                            <div 
+                                title="Federation" 
+                                style={{ /* Common Button Styles */ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backgroundColor: leftViewActive === 'federation' ? '#bdb5b5' : '#979090', zIndex: 2 }}
+                                onClick={() => setLeftViewActive('federation')}
+                            >
+                                <Globe size={20} color="#260000" />
                             </div>
                         </div>
                     ) : (

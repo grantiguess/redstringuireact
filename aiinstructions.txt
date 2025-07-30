@@ -98,6 +98,17 @@ Beyond the general guidelines, recent development has focused on more complex UI
     *   Debug information includes detected device type, delta history length, and analysis flags for troubleshooting input detection issues
 
 20. **Inline Node Editing and Panel Integration:**
+
+21. **Semantic Web & Solid Pod Integration:**
+    *   **RDF Export**: The system now exports cognitive spaces in RDF/Turtle format, making them interoperable with the global semantic web. See `src/formats/rdfExport.js` and `src/formats/redstringFormat.js` for implementation details.
+    *   **Abstraction Mapping**: Redstring's abstraction chains are mapped to `rdfs:subClassOf` relationships, encoding hierarchical knowledge in W3C standards.
+    *   **Connection Triples**: Redstring connections are transformed into formal RDF statements (subject-predicate-object) for machine-readable knowledge graphs.
+    *   **Solid Pod Federation**: Complete integration with Solid Pods for decentralized storage and sharing of cognitive spaces. See `src/services/solidAuth.js` and `src/services/solidData.js`.
+    *   **Federation UI**: New "Federation" tab in the left panel (`src/Federation.jsx`) provides Pod authentication, space management, and browsing capabilities.
+    *   **WebID Authentication**: OIDC-based authentication flow with session management and automatic redirect handling.
+    *   **Pod CRUD Operations**: Save, load, list, and delete cognitive spaces from personal Solid Pods with RDF indexing.
+    *   **Error Handling**: Comprehensive error handling for network issues, authentication failures, and data corruption.
+    *   **Architecture**: The system serves as a bridge between local cognitive tools and the global semantic web, enabling "planetary intelligence" through distributed knowledge graphs.
     *   The PieMenu's "Edit" button (`targetPieMenuButtons` in `NodeCanvas.jsx`) triggers both inline canvas editing and panel tab creation/activation
     *   When the edit button is clicked, it: (1) opens/creates a panel tab for the node using `storeActions.openRightPanelNodeTab()`, (2) ensures the right panel is expanded, and (3) enables inline editing on the canvas by setting `editingNodeIdOnCanvas`
     *   The `Node.jsx` component handles inline editing through `isEditingOnCanvas`, `onCommitCanvasEdit`, and `onCancelCanvasEdit` props, displaying either a text span or an input field based on editing state

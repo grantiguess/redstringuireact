@@ -11,10 +11,14 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@inrupt/solid-client": "^1.23.1",
+    "@inrupt/solid-client-authn-browser": "^3.1.0",
     "@types/uuid": "^10.0.0",
     "framer-motion": "^11.5.4",
     "immer": "^10.1.1",
+    "jsonld": "^8.3.3",
     "lucide-react": "^0.454.0",
+    "rdflib": "^2.2.37",
     "react": "^18.3.1",
     "react-contenteditable": "^3.3.7",
     "react-dnd": "^16.0.1",

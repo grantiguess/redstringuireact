@@ -35,6 +35,17 @@ export const REDSTRING_CONTEXT = {
   "composedOf": "http://purl.org/vocab/frbr/core#embodiment",
   "composes": "http://purl.org/vocab/frbr/core#embodimentOf",
   
+  // RDFS for class hierarchies
+  "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+  "subClassOf": "rdfs:subClassOf",
+
+  // RDF for statements
+  "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+  "Statement": "rdf:Statement",
+  "subject": { "@id": "rdf:subject", "@type": "@id" },
+  "predicate": { "@id": "rdf:predicate", "@type": "@id" },
+  "object": { "@id": "rdf:object", "@type": "@id" },
+  
   // Spatial & UI State
   "x": "redstring:xCoordinate",
   "y": "redstring:yCoordinate", 
@@ -121,21 +132,59 @@ export const exportToRedstring = (storeState) => {
     };
   });
 
+  // Process abstraction chains to add subClassOf relationships
+  nodePrototypes.forEach((node) => {
+    if (node.abstractionChains) {
+      for (const dimension in node.abstractionChains) {
+        const chain = node.abstractionChains[dimension];
+        if (chain && chain.length > 1) {
+          for (let i = 1; i < chain.length; i++) {
+            const subClassId = chain[i];
+            const superClassId = chain[i - 1];
+            if (nodesObj[subClassId]) {
+              if (!nodesObj[subClassId].subClassOf) {
+                nodesObj[subClassId].subClassOf = [];
+              }
+              // Add as an object to be expanded to a proper link by JSON-LD
+              const superClassRef = { "@id": superClassId };
+              // Avoid duplicates
+              if (!nodesObj[subClassId].subClassOf.some(item => item["@id"] === superClassId)) {
+                nodesObj[subClassId].subClassOf.push(superClassRef);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // Create a map of instanceId -> prototypeId for efficient lookup
+  const instanceToPrototypeMap = new Map();
+  graphs.forEach(graph => {
+    if (graph.instances) {
+      graph.instances.forEach(instance => {
+        instanceToPrototypeMap.set(instance.id, instance.prototypeId);
+      });
+    }
+  });
+
   const edgesObj = {};
   edges.forEach((edge, id) => {
-    // Convert directionality Set to Array for JSON serialization
-    const edgeData = { ...edge };
-    if (edgeData.directionality && edgeData.directionality.arrowsToward instanceof Set) {
-      edgeData.directionality = {
-        ...edgeData.directionality,
-        arrowsToward: Array.from(edgeData.directionality.arrowsToward)
+    const sourcePrototypeId = instanceToPrototypeMap.get(edge.sourceId);
+    const destinationPrototypeId = instanceToPrototypeMap.get(edge.destinationId);
+    const predicatePrototypeId = edge.definitionNodeIds?.[0] || edge.typeNodeId;
+
+    // Only create a statement if all parts are resolved
+    if (sourcePrototypeId && destinationPrototypeId && predicatePrototypeId) {
+      edgesObj[id] = {
+        "@type": "Statement",
+        "subject": { "@id": `node:${sourcePrototypeId}` },
+        "predicate": { "@id": `node:${predicatePrototypeId}` },
+        "object": { "@id": `node:${destinationPrototypeId}` },
+        "name": edge.name,
+        "description": edge.description,
       };
     }
-    
-    edgesObj[id] = {
-      "@type": "Edge",
-      ...edgeData
-    };
   });
 
   // Note: abstractionChains are now stored directly on node prototypes
@@ -217,12 +266,27 @@ export const importFromRedstring = (redstringData, storeActions) => {
       thumbnailSrc: media.thumbnail,
       imageAspectRatio: media.aspectRatio
     });
+    // Note: subClassOf is not explicitly imported back into the store's
+    // abstractionChain model, as that is derived dynamically in the UI.
+    // The subClassOf relationship is preserved for RDF export fidelity.
   });
 
   const edgesMap = new Map();
   Object.entries(edgesObj).forEach(([id, edge]) => {
+    // Reconstruct the simple edge object for the store, since the RDF statement
+    // is a projection for export purposes. We can derive source/dest from the statement.
+    const reconstructedEdge = {
+      id,
+      name: edge.name,
+      description: edge.description,
+      sourceId: edge.subject?.['@id'].replace('node:', ''),
+      destinationId: edge.object?.['@id'].replace('node:', ''),
+      typeNodeId: edge.predicate?.['@id'].replace('node:', ''),
+      // A default directionality will be added below if missing
+    };
+
     const edgeData = {
-      ...edge,
+      ...reconstructedEdge,
       id // Ensure ID is preserved
     };
     

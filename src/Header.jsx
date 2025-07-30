@@ -30,6 +30,7 @@ const Header = ({
   onNewUniverse,
   onOpenUniverse,
   onSaveUniverse,
+  onExportRdf,
   onOpenRecentFile,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -263,6 +264,7 @@ const Header = ({
             onNewUniverse={onNewUniverse}
             onOpenUniverse={onOpenUniverse}
             onSaveUniverse={onSaveUniverse}
+            onExportRdf={onExportRdf}
             onOpenRecentFile={onOpenRecentFile}
           />
       </header>
@@ -312,6 +314,7 @@ const Header = ({
           onNewUniverse={onNewUniverse}
           onOpenUniverse={onOpenUniverse}
           onSaveUniverse={onSaveUniverse}
+          onExportRdf={onExportRdf}
           onOpenRecentFile={onOpenRecentFile}
         />
       </div>
