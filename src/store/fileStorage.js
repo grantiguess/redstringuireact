@@ -895,10 +895,41 @@ export const openRecentFile = async (recentFileEntry) => {
       throw new Error('File handle no longer available. The file may have been moved or deleted.');
     }
     
-    // Read the file
-    const file = await handle.getFile();
-    const content = await file.text();
-    const data = JSON.parse(content);
+    // Read the file with comprehensive error handling
+    let file;
+    try {
+      file = await handle.getFile();
+    } catch (fileError) {
+      console.error('[FileStorage] Error getting file from handle:', fileError);
+      throw new Error('File handle is no longer valid. The file may have been moved, deleted, or permissions changed.');
+    }
+    
+    // Check if file is valid
+    if (!file) {
+      throw new Error('File handle returned null or undefined file.');
+    }
+    
+    if (typeof file.size === 'undefined') {
+      throw new Error('File object is invalid - missing size property.');
+    }
+    
+    // Read file content
+    let content;
+    try {
+      content = await file.text();
+    } catch (readError) {
+      console.error('[FileStorage] Error reading file content:', readError);
+      throw new Error('Failed to read file content. The file may be corrupted or inaccessible.');
+    }
+    
+    // Parse JSON
+    let data;
+    try {
+      data = JSON.parse(content);
+    } catch (parseError) {
+      console.error('[FileStorage] Error parsing file JSON:', parseError);
+      throw new Error('File contains invalid JSON data.');
+    }
     
     // Update current file references
     fileHandle = handle;
@@ -924,6 +955,12 @@ export const openRecentFile = async (recentFileEntry) => {
     // Remove the problematic entry from recent files
     await removeFromRecentFiles(recentFileEntry.handleId);
     
+    // If this is a file handle error, try to clear all corrupted files
+    if (error.message.includes('File handle') || error.message.includes('size')) {
+      console.log('[FileStorage] Attempting to clear corrupted recent files');
+      await clearCorruptedRecentFiles();
+    }
+    
     throw error;
   }
 };
@@ -941,6 +978,8 @@ const removeFromRecentFiles = async (handleId) => {
 
 const tryRestoreFileHandleById = async (handleId) => {
   try {
+    console.log(`[FileStorage] Attempting to restore file handle for ID: ${handleId}`);
+    
     const db = await openRecentFilesDB();
     
     if (!db.objectStoreNames.contains(FILE_HANDLES_STORE_NAME)) {
@@ -955,13 +994,58 @@ const tryRestoreFileHandleById = async (handleId) => {
     return new Promise((resolve) => {
       getRequest.onsuccess = () => {
         const result = getRequest.result;
-        resolve(result ? result.handle : null);
+        console.log(`[FileStorage] Retrieved file handle result:`, result);
+        if (result && result.handle) {
+          console.log(`[FileStorage] File handle restored successfully`);
+          resolve(result.handle);
+        } else {
+          console.warn(`[FileStorage] No file handle found for ID: ${handleId}`);
+          resolve(null);
+        }
       };
-      getRequest.onerror = () => resolve(null);
+      getRequest.onerror = () => {
+        console.error(`[FileStorage] Error retrieving file handle for ID: ${handleId}`);
+        resolve(null);
+      };
     });
   } catch (error) {
     console.error('[FileStorage] Error restoring file handle by ID:', error);
     return null;
+  }
+};
+
+/**
+ * Clear corrupted recent files
+ */
+export const clearCorruptedRecentFiles = async () => {
+  try {
+    console.log('[FileStorage] Clearing potentially corrupted recent files');
+    
+    const recentFiles = await getRecentFiles();
+    const validFiles = [];
+    
+    for (const file of recentFiles) {
+      try {
+        const handle = await tryRestoreFileHandleById(file.handleId);
+        if (handle) {
+          // Test if the handle is still valid
+          await handle.getFile();
+          validFiles.push(file);
+        } else {
+          console.log(`[FileStorage] Removing invalid file: ${file.fileName}`);
+        }
+      } catch (error) {
+        console.log(`[FileStorage] Removing corrupted file: ${file.fileName}`, error);
+      }
+    }
+    
+    await storeRecentFiles(validFiles);
+    console.log(`[FileStorage] Kept ${validFiles.length} valid files, removed ${recentFiles.length - validFiles.length} corrupted files`);
+    
+    return validFiles;
+  } catch (error) {
+    console.error('[FileStorage] Error clearing corrupted recent files:', error);
+    return [];
   }
 };
 

@@ -170,21 +170,74 @@ export const exportToRedstring = (storeState) => {
 
   const edgesObj = {};
   edges.forEach((edge, id) => {
+    console.log('[DEBUG] Exporting edge:', id, edge);
     const sourcePrototypeId = instanceToPrototypeMap.get(edge.sourceId);
     const destinationPrototypeId = instanceToPrototypeMap.get(edge.destinationId);
-    const predicatePrototypeId = edge.definitionNodeIds?.[0] || edge.typeNodeId;
-
-    // Only create a statement if all parts are resolved
-    if (sourcePrototypeId && destinationPrototypeId && predicatePrototypeId) {
-      edgesObj[id] = {
-        "@type": "Statement",
-        "subject": { "@id": `node:${sourcePrototypeId}` },
-        "predicate": { "@id": `node:${predicatePrototypeId}` },
-        "object": { "@id": `node:${destinationPrototypeId}` },
-        "name": edge.name,
-        "description": edge.description,
-      };
+    
+    // Get the predicate prototype ID by mapping from definition node ID to its prototype ID
+    let predicatePrototypeId = edge.typeNodeId; // fallback to type node ID
+    if (edge.definitionNodeIds?.[0]) {
+      // Find the definition node and get its prototype ID
+      const definitionNodeId = edge.definitionNodeIds[0];
+      const definitionNode = nodePrototypes.get(definitionNodeId);
+      if (definitionNode) {
+        predicatePrototypeId = definitionNode.prototypeId || definitionNode.typeNodeId;
+      }
     }
+
+    console.log('[DEBUG] Edge mapping:', {
+      sourceId: edge.sourceId,
+      sourcePrototypeId,
+      destinationId: edge.destinationId,
+      destinationPrototypeId,
+      predicatePrototypeId,
+      definitionNodeIds: edge.definitionNodeIds
+    });
+
+    // Store both native Redstring format and RDF format
+    edgesObj[id] = {
+      // Native Redstring format (for application use)
+      "id": edge.id,
+      "sourceId": edge.sourceId,
+      "destinationId": edge.destinationId,
+      "name": edge.name,
+      "description": edge.description,
+      "typeNodeId": edge.typeNodeId,
+      "definitionNodeIds": edge.definitionNodeIds,
+      "directionality": edge.directionality,
+      
+      // RDF format (for semantic web integration)
+      "rdfStatements": sourcePrototypeId && destinationPrototypeId && predicatePrototypeId ? (() => {
+        const statements = [];
+        
+        // Always add the forward direction
+        statements.push({
+          "@type": "Statement",
+          "subject": { "@id": `node:${sourcePrototypeId}` },
+          "predicate": { "@id": `node:${predicatePrototypeId}` },
+          "object": { "@id": `node:${destinationPrototypeId}` },
+        });
+        
+        // For non-directional connections, add the reverse direction
+        if (edge.directionality && edge.directionality.arrowsToward && edge.directionality.arrowsToward.size === 0) {
+          statements.push({
+            "@type": "Statement", 
+            "subject": { "@id": `node:${destinationPrototypeId}` },
+            "predicate": { "@id": `node:${predicatePrototypeId}` },
+            "object": { "@id": `node:${sourcePrototypeId}` },
+          });
+        }
+        
+        return statements;
+      })() : null,
+      
+      // Metadata for both formats
+      "sourcePrototypeId": sourcePrototypeId,
+      "destinationPrototypeId": destinationPrototypeId,
+      "predicatePrototypeId": predicatePrototypeId,
+    };
+    
+    console.log('[DEBUG] Created dual-format edge:', id, edgesObj[id]);
   });
 
   // Note: abstractionChains are now stored directly on node prototypes
@@ -233,6 +286,8 @@ export const importFromRedstring = (redstringData, storeActions) => {
     userInterface = {}
   } = redstringData;
 
+  console.log('[DEBUG] Importing edges:', edgesObj);
+
   // Convert objects back to Maps and import to store
   const graphsMap = new Map();
   Object.entries(graphsObj).forEach(([id, graph]) => {
@@ -273,22 +328,47 @@ export const importFromRedstring = (redstringData, storeActions) => {
 
   const edgesMap = new Map();
   Object.entries(edgesObj).forEach(([id, edge]) => {
-    // Reconstruct the simple edge object for the store, since the RDF statement
-    // is a projection for export purposes. We can derive source/dest from the statement.
-    const reconstructedEdge = {
-      id,
-      name: edge.name,
-      description: edge.description,
-      sourceId: edge.subject?.['@id'].replace('node:', ''),
-      destinationId: edge.object?.['@id'].replace('node:', ''),
-      typeNodeId: edge.predicate?.['@id'].replace('node:', ''),
-      // A default directionality will be added below if missing
-    };
-
-    const edgeData = {
-      ...reconstructedEdge,
-      id // Ensure ID is preserved
-    };
+    console.log('[DEBUG] Processing edge:', id, edge);
+    let edgeData;
+    
+    // Check if this is the new dual-format (has both native and RDF data)
+    if (edge.sourceId && edge.destinationId && edge.hasOwnProperty('rdfStatement')) {
+      console.log('[DEBUG] Edge is in dual format');
+      // Use the native Redstring format for the application
+      edgeData = {
+        id: edge.id,
+        sourceId: edge.sourceId,
+        destinationId: edge.destinationId,
+        name: edge.name,
+        description: edge.description,
+        typeNodeId: edge.typeNodeId,
+        definitionNodeIds: edge.definitionNodeIds,
+        directionality: edge.directionality,
+      };
+    }
+    // Check if this is an old RDF statement format (legacy)
+    else if (edge['@type'] === 'Statement' && edge.subject && edge.object) {
+      console.log('[DEBUG] Edge is in legacy RDF statement format');
+      // Reconstruct from RDF statement format
+      edgeData = {
+        id,
+        name: edge.name,
+        description: edge.description,
+        sourceId: edge.originalSourceId || edge.subject['@id'].replace('node:', ''),
+        destinationId: edge.originalDestinationId || edge.object['@id'].replace('node:', ''),
+        typeNodeId: edge.predicate?.['@id'].replace('node:', ''),
+      };
+    }
+    // This is the old format - use the edge data directly
+    else {
+      console.log('[DEBUG] Edge is in old format');
+      edgeData = {
+        ...edge,
+        id // Ensure ID is preserved
+      };
+    }
+    
+    console.log('[DEBUG] Final edge data:', edgeData);
     
     // Convert directionality.arrowsToward from Array back to Set if it exists
     if (edgeData.directionality && Array.isArray(edgeData.directionality.arrowsToward)) {
@@ -300,6 +380,8 @@ export const importFromRedstring = (redstringData, storeActions) => {
     
     edgesMap.set(id, edgeData);
   });
+
+  console.log('[DEBUG] Final edges map:', edgesMap);
 
   // Note: abstractionChains are stored directly on node prototypes
 

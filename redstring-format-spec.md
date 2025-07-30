@@ -65,6 +65,35 @@ Redstring's file format is designed to mirror cognitive processes - how thoughts
 }
 ```
 
+## Dual Format Edge Storage
+
+Redstring uses a dual format approach for edges to support both native application functionality and semantic web integration:
+
+### Native Redstring Format
+- **`sourceId`**: Instance ID of the source node
+- **`destinationId`**: Instance ID of the destination node  
+- **`directionality`**: Arrow direction configuration
+- **`typeNodeId`**: Connection type prototype ID
+- **`definitionNodeIds`**: Array of definition node IDs
+- **`name`**, **`description`**: Human-readable metadata
+
+### RDF Format (Semantic Web)
+- **`rdfStatement`**: RDF Statement with subject-predicate-object
+- **`subject`**: Prototype ID of source node (semantic concept)
+- **`predicate`**: Prototype ID of connection type (semantic relationship)
+- **`object`**: Prototype ID of destination node (semantic concept)
+
+### Metadata
+- **`sourcePrototypeId`**: Maps instance to prototype for RDF
+- **`destinationPrototypeId`**: Maps instance to prototype for RDF
+- **`predicatePrototypeId`**: Connection type prototype for RDF
+
+This approach enables:
+1. **Full application functionality** using instance IDs and directionality
+2. **Semantic web interoperability** using prototype-based RDF statements
+3. **Backwards compatibility** with older file formats
+4. **Future semantic features** like cross-Pod linking and AI reasoning
+
 ## Native .redstring Format
 
 ```json
@@ -170,7 +199,25 @@ Redstring's file format is designed to mirror cognitive processes - how thoughts
       "sourceId": "carbon-pricing",
       "destinationId": "renewable-energy", 
       "name": "Economic Incentive",
-      "description": "Carbon pricing creates market incentives for renewable adoption"
+      "description": "Carbon pricing creates market incentives for renewable adoption",
+      "typeNodeId": "base-connection-prototype",
+      "definitionNodeIds": [],
+      "directionality": {
+        "arrowsToward": []
+      },
+      
+      // RDF format (for semantic web integration)
+      "rdfStatement": {
+        "@type": "Statement",
+        "subject": { "@id": "node:carbon-pricing-prototype" },
+        "predicate": { "@id": "node:base-connection-prototype" },
+        "object": { "@id": "node:renewable-energy-prototype" }
+      },
+      
+      // Metadata for both formats
+      "sourcePrototypeId": "carbon-pricing-prototype",
+      "destinationPrototypeId": "renewable-energy-prototype",
+      "predicatePrototypeId": "base-connection-prototype"
     }
   },
   

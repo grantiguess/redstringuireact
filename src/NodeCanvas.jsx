@@ -3455,11 +3455,11 @@ function NodeCanvas() {
              const rdfData = await exportToRdfTurtle(currentState);
              
              // Create a download link
-             const blob = new Blob([rdfData], { type: 'text/turtle' });
+             const blob = new Blob([rdfData], { type: 'application/n-quads' });
              const url = URL.createObjectURL(blob);
              const a = document.createElement('a');
              a.href = url;
-             a.download = 'cognitive-space.ttl';
+             a.download = 'cognitive-space.nq';
              document.body.appendChild(a);
              a.click();
              document.body.removeChild(a);
