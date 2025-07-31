@@ -81,13 +81,14 @@ class SolidDataService {
    * Save a Redstring cognitive space to the Pod
    * @param {Object} storeState - The current Zustand store state
    * @param {string} spaceName - Name for the cognitive space
+   * @param {string} [userDomain] - User's domain for dynamic URI generation
    * @returns {Promise<string>} URL of the saved space
    */
-  async saveCognitiveSpace(storeState, spaceName) {
+  async saveCognitiveSpace(storeState, spaceName, userDomain = null) {
     try {
       await this.ensureRedstringContainer();
       
-      const redstringData = exportToRedstring(storeState);
+      const redstringData = exportToRedstring(storeState, userDomain);
       const fileName = `${spaceName.replace(/[^a-zA-Z0-9-_]/g, '_')}.redstring`;
       const spaceUrl = this.getPodResourceUrl(`${this.redstringContainerPath}${fileName}`);
       

@@ -4,8 +4,9 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import uriGenerator from '../services/uriGenerator.js';
 
-// JSON-LD Context for Redstring
+// Legacy JSON-LD Context for Redstring (fallback)
 export const REDSTRING_CONTEXT = {
   "@version": 1.1,
   "@vocab": "https://redstring.io/vocab/",
@@ -74,8 +75,11 @@ export const REDSTRING_CONTEXT = {
 
 /**
  * Export current Zustand store state to .redstring format
+ * @param {Object} storeState - The current state from the Zustand store
+ * @param {string} [userDomain] - User's domain for dynamic URI generation
+ * @returns {Object} Redstring data with dynamic URIs
  */
-export const exportToRedstring = (storeState) => {
+export const exportToRedstring = (storeState, userDomain = null) => {
   const {
     graphs,
     nodePrototypes,
@@ -243,15 +247,23 @@ export const exportToRedstring = (storeState) => {
   // Note: abstractionChains are now stored directly on node prototypes
   // No separate abstraction axes needed
 
+  // Generate dynamic context if user domain is provided
+  const context = userDomain ? uriGenerator.generateContext(userDomain) : REDSTRING_CONTEXT;
+  
+  // Generate user URIs if domain is provided
+  const userURIs = userDomain ? uriGenerator.generateUserURIs(userDomain) : null;
+  
   return {
-    "@context": REDSTRING_CONTEXT,
+    "@context": context,
     "@type": "redstring:CognitiveSpace",
     "format": "redstring-v1.0.0",
     "metadata": {
       "created": new Date().toISOString(),
       "modified": new Date().toISOString(),
       "title": graphs.get(activeGraphId)?.name || "Untitled Space",
-      "description": graphs.get(activeGraphId)?.description || ""
+      "description": graphs.get(activeGraphId)?.description || "",
+      "domain": userDomain || null,
+      "userURIs": userURIs
     },
     
     "spatialContext": {
