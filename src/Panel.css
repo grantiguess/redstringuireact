@@ -1,3 +1,11 @@
+/* Global input styling for panels */
+.panel-container input,
+.panel-container textarea,
+.panel-container select {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
 /* Style for the editable title input */
 
 /* New style for editable title inputs */
@@ -42,6 +50,9 @@ header .editable-title-input::selection {
     border-radius: 4px;
     font-size: 14px;
     font-family: 'EmOne', sans-serif;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
   }
   
   .panel-tab {

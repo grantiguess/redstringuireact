@@ -111,7 +111,7 @@ export class GitHubSemanticProvider extends SemanticProvider {
     this.user = config.user;
     this.repo = config.repo;
     this.token = config.token;
-    this.semanticPath = config.semanticPath || 'semantic';
+    this.semanticPath = config.semanticPath || 'schema';
   }
 
   async authenticate() {
@@ -344,7 +344,7 @@ export class GiteaSemanticProvider extends SemanticProvider {
     this.user = config.user;
     this.repo = config.repo;
     this.token = config.token;
-    this.semanticPath = config.semanticPath || 'knowledge';
+    this.semanticPath = config.semanticPath || 'schema';
   }
 
   async authenticate() {

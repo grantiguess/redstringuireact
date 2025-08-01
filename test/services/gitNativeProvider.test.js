@@ -455,7 +455,7 @@ describe('Git-Native Semantic Web Provider', () => {
       expect(archive.user).toBe('testuser');
       expect(archive.repo).toBe('testrepo');
       expect(archive.exportedAt).toBeDefined();
-      expect(archive.files).toHaveProperty('semantic/vocabulary/concepts/test.ttl');
+      expect(archive.files).toHaveProperty('schema/vocabulary/concepts/test.ttl');
     });
 
     it('should import full graph to GitHub', async () => {
