@@ -231,16 +231,6 @@ const GitNativeFederation = () => {
           <p style={{ color: '#666', fontSize: '0.9rem', marginBottom: '15px' }}>
             Connect to any Git provider for real-time, decentralized semantic storage with censorship resistance.
           </p>
-          <div style={{ 
-            padding: '12px', 
-            backgroundColor: '#f0f0f0', 
-            borderRadius: '6px', 
-            fontSize: '0.8rem',
-            color: '#555',
-            marginBottom: '15px'
-          }}>
-            <strong>What is this?</strong> This revolutionary protocol treats Git repositories as the fundamental unit of semantic storage, enabling real-time collaboration while maintaining true decentralization and censorship resistance.
-          </div>
         </div>
 
         {/* Provider Selection */}
