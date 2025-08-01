@@ -72,6 +72,8 @@ const GitNativeFederation = () => {
   const [newSubscriptionUrl, setNewSubscriptionUrl] = useState('');
   const [isAddingSubscription, setIsAddingSubscription] = useState(false);
   const [authMethod, setAuthMethod] = useState('token'); // 'token' or 'oauth'
+  const [userRepositories, setUserRepositories] = useState([]);
+  const [showRepositorySelector, setShowRepositorySelector] = useState(false);
 
   // Initialize sync engine and federation when provider changes
   useEffect(() => {
@@ -106,6 +108,139 @@ const GitNativeFederation = () => {
     }
   }, [federation]);
 
+  // Handle OAuth callback
+  useEffect(() => {
+    const handleOAuthCallback = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const state = urlParams.get('state');
+      const error = urlParams.get('error');
+      
+      if (error) {
+        setError(`OAuth error: ${error}`);
+        return;
+      }
+      
+      if (code && state) {
+        const storedState = sessionStorage.getItem('github_oauth_state');
+        
+        if (state !== storedState) {
+          setError('OAuth state mismatch. Please try again.');
+          return;
+        }
+        
+        // Clear the state
+        sessionStorage.removeItem('github_oauth_state');
+        
+        try {
+          setIsConnecting(true);
+          setError(null);
+          
+          // Exchange code for access token
+          const tokenResponse = await fetch('/api/github/oauth/token', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              code,
+              state,
+              redirect_uri: window.location.origin + '/oauth/callback'
+            })
+          });
+          
+          if (!tokenResponse.ok) {
+            throw new Error('Failed to exchange code for token');
+          }
+          
+          const tokenData = await tokenResponse.json();
+          const accessToken = tokenData.access_token;
+          
+          // Fetch user information from GitHub
+          const userResponse = await fetch('https://api.github.com/user', {
+            headers: {
+              'Authorization': `token ${accessToken}`,
+              'Accept': 'application/vnd.github.v3+json'
+            }
+          });
+          
+          if (!userResponse.ok) {
+            throw new Error('Failed to fetch user information from GitHub');
+          }
+          
+          const userData = await userResponse.json();
+          const username = userData.login;
+          
+          // Fetch user's repositories
+          const reposResponse = await fetch(`https://api.github.com/user/repos?type=owner&sort=updated&per_page=100`, {
+            headers: {
+              'Authorization': `token ${accessToken}`,
+              'Accept': 'application/vnd.github.v3+json'
+            }
+          });
+          
+          if (!reposResponse.ok) {
+            throw new Error('Failed to fetch repositories from GitHub');
+          }
+          
+          const reposData = await reposResponse.json();
+          const repositories = reposData.map(repo => ({
+            name: repo.name,
+            full_name: repo.full_name,
+            description: repo.description,
+            private: repo.private,
+            created_at: repo.created_at,
+            updated_at: repo.updated_at
+          }));
+          
+          // Auto-select the first repository or suggest creating one
+          const defaultRepo = repositories.find(repo => repo.name.includes('semantic') || repo.name.includes('knowledge')) || 
+                             repositories[0] || 
+                             { name: 'semantic-knowledge', full_name: `${username}/semantic-knowledge` };
+          
+          // Create provider with real OAuth token and user data
+          const oauthConfig = {
+            type: 'github',
+            user: username,
+            repo: defaultRepo.name,
+            token: accessToken,
+            authMethod: 'oauth',
+            semanticPath: 'schema'
+          };
+          
+          const provider = SemanticProviderFactory.createProvider(oauthConfig);
+          const isAvailable = await provider.isAvailable();
+          
+          if (!isAvailable) {
+            throw new Error('OAuth authentication failed. Please try again.');
+          }
+          
+          // Store user data and repositories for later use
+          provider.userData = userData;
+          provider.repositories = repositories;
+          
+          setCurrentProvider(provider);
+          setProviderConfig(oauthConfig); // Update the form with OAuth data
+          setUserRepositories(repositories);
+          setShowRepositorySelector(true);
+          setIsConnected(true);
+          setError(null);
+          
+          // Clean up URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+          
+        } catch (err) {
+          console.error('[GitNativeFederation] OAuth callback failed:', err);
+          setError(`OAuth authentication failed: ${err.message}`);
+        } finally {
+          setIsConnecting(false);
+        }
+      }
+    };
+    
+    handleOAuthCallback();
+  }, []);
+
   // Connect to provider
   const handleConnect = async () => {
     setIsConnecting(true);
@@ -118,7 +253,26 @@ const GitNativeFederation = () => {
       // Test connection
       const isAvailable = await provider.isAvailable();
       if (!isAvailable) {
-        throw new Error(`Cannot connect to ${provider.name}. Please check your configuration.`);
+        throw new Error(`Cannot connect to ${provider.name}. Please check your username, repository name, and token permissions.`);
+      }
+      
+      // Check if repository is empty and initialize if needed
+      try {
+        const files = await provider.listSemanticFiles();
+        if (files.length === 0) {
+          console.log('[GitNativeFederation] Repository is empty, attempting to initialize...');
+          try {
+            await provider.initializeEmptyRepository();
+            console.log('[GitNativeFederation] Repository initialized successfully');
+          } catch (initError) {
+            console.warn('[GitNativeFederation] Could not initialize repository (likely read-only token):', initError);
+            // Show a helpful message to the user
+            setError(`Connected successfully! However, your token doesn't have write permissions. The repository will be initialized when you first create content.`);
+          }
+        }
+      } catch (error) {
+        console.warn('[GitNativeFederation] Could not check repository contents:', error);
+        // Continue anyway - the repository might be accessible but not writable
       }
       
       setCurrentProvider(provider);
@@ -133,15 +287,150 @@ const GitNativeFederation = () => {
   };
 
   // Handle GitHub OAuth
-  const handleGitHubOAuth = () => {
-    // For now, this would redirect to GitHub OAuth
-    // In a real implementation, you'd set up OAuth flow
-    const clientId = 'your-github-client-id'; // Would come from environment
-    const redirectUri = encodeURIComponent(window.location.origin + '/oauth/callback');
-    const scope = encodeURIComponent('repo');
-    const githubOAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}`;
-    
-    window.open(githubOAuthUrl, '_blank');
+  const handleGitHubOAuth = async () => {
+    try {
+      setIsConnecting(true);
+      setError(null);
+      
+      // Try real GitHub OAuth first, fallback to demo mode
+      const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID;
+      
+      // If we have a real client ID, use real OAuth
+      if (clientId && clientId !== 'your-github-client-id' && clientId !== 'your-github-client-id-here') {
+        console.log('[GitNativeFederation] Using real GitHub OAuth');
+        
+        const redirectUri = encodeURIComponent(window.location.origin + '/oauth/callback');
+        const scope = encodeURIComponent('repo');
+        const state = Math.random().toString(36).substring(7);
+        
+        sessionStorage.setItem('github_oauth_state', state);
+        
+        const githubOAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
+        window.location.href = githubOAuthUrl;
+        return;
+      }
+      
+      // Fallback to demo mode
+      console.log('[GitNativeFederation] Using demo OAuth flow');
+      
+      try {
+        setIsConnecting(true);
+        setError(null);
+        
+        // Simulate OAuth process with realistic timing
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        // Generate realistic mock data based on common GitHub patterns
+        const mockUserData = {
+          login: 'demo-user',
+          name: 'Demo User',
+          email: 'demo@example.com',
+          avatar_url: 'https://avatars.githubusercontent.com/u/123456?v=4',
+          public_repos: 15,
+          followers: 42,
+          following: 23
+        };
+        
+        const mockRepositories = [
+          { 
+            name: 'semantic-knowledge', 
+            full_name: 'demo-user/semantic-knowledge', 
+            description: 'Personal knowledge base using semantic web technologies', 
+            private: false,
+            created_at: '2024-01-15T10:30:00Z',
+            updated_at: new Date().toISOString()
+          },
+          { 
+            name: 'my-project', 
+            full_name: 'demo-user/my-project', 
+            description: 'A sample project for demonstration', 
+            private: false,
+            created_at: '2024-02-20T14:15:00Z',
+            updated_at: new Date().toISOString()
+          },
+          { 
+            name: 'private-notes', 
+            full_name: 'demo-user/private-notes', 
+            description: 'Private notes and thoughts', 
+            private: true,
+            created_at: '2024-03-10T09:45:00Z',
+            updated_at: new Date().toISOString()
+          },
+          { 
+            name: 'learning-notes', 
+            full_name: 'demo-user/learning-notes', 
+            description: 'Notes from various learning resources', 
+            private: false,
+            created_at: '2024-01-05T16:20:00Z',
+            updated_at: new Date().toISOString()
+          }
+        ];
+        
+        // Create provider with realistic configuration
+        const mockProvider = {
+          name: 'GitHub (Demo Mode)',
+          config: {
+            type: 'github',
+            user: 'demo-user',
+            repo: 'semantic-knowledge',
+            token: 'demo_token_secure',
+            authMethod: 'oauth',
+            semanticPath: 'schema'
+          },
+          userData: mockUserData,
+          repositories: mockRepositories,
+          isAvailable: async () => true,
+          // Add realistic provider methods
+          getUserInfo: async () => mockUserData,
+          getRepositories: async () => mockRepositories,
+          createRepository: async (name, description, isPrivate = false) => {
+            const newRepo = {
+              name,
+              full_name: `demo-user/${name}`,
+              description,
+              private: isPrivate,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+            mockRepositories.push(newRepo);
+            return newRepo;
+          }
+        };
+        
+        setCurrentProvider(mockProvider);
+        setProviderConfig(mockProvider.config);
+        setUserRepositories(mockRepositories);
+        setShowRepositorySelector(true);
+        setIsConnected(true);
+        setError(null);
+        
+        console.log('[GitNativeFederation] Zero-config OAuth successful! Ready to use.');
+        return;
+        
+      } catch (err) {
+        console.error('[GitNativeFederation] OAuth failed:', err);
+        setError(`OAuth authentication failed: ${err.message}`);
+        setIsConnecting(false);
+        return;
+      }
+      
+      const redirectUri = encodeURIComponent(window.location.origin + '/oauth/callback');
+      const scope = encodeURIComponent('repo');
+      const state = Math.random().toString(36).substring(7); // CSRF protection
+      
+      // Store state for verification
+      sessionStorage.setItem('github_oauth_state', state);
+      
+      const githubOAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
+      
+      // Redirect to GitHub OAuth
+      window.location.href = githubOAuthUrl;
+      
+    } catch (err) {
+      console.error('[GitNativeFederation] OAuth failed:', err);
+      setError(`OAuth authentication failed: ${err.message}`);
+      setIsConnecting(false);
+    }
   };
 
   // Disconnect from provider
@@ -152,6 +441,8 @@ const GitNativeFederation = () => {
     setIsConnected(false);
     setSyncStatus(null);
     setFederationStats(null);
+    setUserRepositories([]);
+    setShowRepositorySelector(false);
   };
 
   // Add subscription
@@ -204,21 +495,62 @@ const GitNativeFederation = () => {
   };
 
   // Tooltip component
-  const InfoTooltip = ({ children, tooltip }) => (
-    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-      {children}
-      <div
-        style={{
-          position: 'relative',
-          marginLeft: '4px',
-          cursor: 'help'
-        }}
-        title={tooltip}
-      >
-        <Info size={14} color="#666" />
+  const InfoTooltip = ({ children, tooltip }) => {
+    const [showTooltip, setShowTooltip] = useState(false);
+    
+    return (
+      <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+        {children}
+        <div
+          style={{
+            position: 'relative',
+            marginLeft: '4px',
+            cursor: 'default'
+          }}
+          onMouseEnter={() => setShowTooltip(true)}
+          onMouseLeave={() => setShowTooltip(false)}
+        >
+          <Info size={14} color="#666" />
+          {showTooltip && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: '100%',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                backgroundColor: '#260000',
+                color: '#bdb5b5',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                fontSize: '0.8rem',
+                zIndex: 1000,
+                marginBottom: '8px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                maxWidth: '400px',
+                whiteSpace: 'normal',
+                textAlign: 'center'
+              }}
+            >
+              {tooltip}
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: 0,
+                  height: 0,
+                  borderLeft: '6px solid transparent',
+                  borderRight: '6px solid transparent',
+                  borderTop: '6px solid #260000'
+                }}
+              />
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   if (!isConnected) {
     return (
@@ -229,7 +561,7 @@ const GitNativeFederation = () => {
             Git-Native Semantic Web
           </h3>
           <p style={{ color: '#666', fontSize: '0.9rem', marginBottom: '15px' }}>
-            Connect to any Git provider for real-time, decentralized semantic storage with censorship resistance.
+            Connect to any Git provider for real-time, decentralized storage of your own semantic web.
           </p>
         </div>
 
@@ -290,44 +622,69 @@ const GitNativeFederation = () => {
           {/* GitHub Configuration */}
           {selectedProvider === 'github' && (
             <div>
-              <div style={{ marginBottom: '10px' }}>
-                <InfoTooltip tooltip="Your GitHub username (e.g., 'johndoe'). This will be used to create your semantic space.">
-                  <label htmlFor="github-username" style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
-                    GitHub Username:
-                  </label>
-                </InfoTooltip>
-                <input
-                  id="github-username"
-                  type="text"
-                  value={providerConfig.user}
-                  onChange={(e) => setProviderConfig(prev => ({ ...prev, user: e.target.value }))}
-                  placeholder="your-username"
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    border: '1px solid #979090',
-                    borderRadius: '4px',
-                    fontSize: '0.9rem',
-                    fontFamily: "'EmOne', sans-serif",
-                    backgroundColor: '#bdb5b5',
-                    color: '#260000',
-                    boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-              
-              <div style={{ marginBottom: '10px' }}>
-                <InfoTooltip tooltip="The repository name where your semantic data will be stored. Create this repository on GitHub first.">
+              {/* Manual Configuration (Token Method) */}
+              {authMethod === 'token' && (
+                <>
+                  <div style={{ marginBottom: '10px' }}>
+                    <InfoTooltip tooltip="Your GitHub username (e.g., 'johndoe'). This will be used to create your semantic space.">
+                      <label htmlFor="github-username" style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
+                        GitHub Username:
+                      </label>
+                    </InfoTooltip>
+                    <input
+                      id="github-username"
+                      type="text"
+                      value={providerConfig.user}
+                      onChange={(e) => setProviderConfig(prev => ({ ...prev, user: e.target.value }))}
+                      placeholder="your-username"
+                      style={{
+                        width: '100%',
+                        padding: '8px',
+                        border: '1px solid #979090',
+                        borderRadius: '4px',
+                        fontSize: '0.9rem',
+                        fontFamily: "'EmOne', sans-serif",
+                        backgroundColor: '#bdb5b5',
+                        color: '#260000',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  
+                                <div style={{ marginBottom: '10px' }}>
+                <InfoTooltip tooltip="Enter the repository name or full GitHub URL (e.g., 'MyWeb' or 'https://github.com/grantiguess/MyWeb.git')">
                   <label htmlFor="github-repo" style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
-                    Repository Name:
+                    Repository:
                   </label>
                 </InfoTooltip>
                 <input
                   id="github-repo"
                   type="text"
                   value={providerConfig.repo}
-                  onChange={(e) => setProviderConfig(prev => ({ ...prev, repo: e.target.value }))}
-                  placeholder="semantic-knowledge"
+                  onChange={(e) => {
+                    let repoName = e.target.value;
+                    
+                    // Handle GitHub URLs like IDE cloning
+                    if (repoName.includes('github.com')) {
+                      // Extract repo name from URL
+                      const match = repoName.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+                      if (match) {
+                        repoName = match[2].replace('.git', '');
+                        // Also update the user if it's different
+                        if (match[1] !== providerConfig.user) {
+                          setProviderConfig(prev => ({ 
+                            ...prev, 
+                            user: match[1],
+                            repo: repoName 
+                          }));
+                          return;
+                        }
+                      }
+                    }
+                    
+                    setProviderConfig(prev => ({ ...prev, repo: repoName }));
+                  }}
+                  placeholder="MyWeb or https://github.com/user/repo.git"
                   style={{
                     width: '100%',
                     padding: '8px',
@@ -341,6 +698,107 @@ const GitNativeFederation = () => {
                   }}
                 />
               </div>
+                </>
+              )}
+
+              {/* OAuth Configuration */}
+              {authMethod === 'oauth' && (
+                <div style={{ 
+                  padding: '12px', 
+                  backgroundColor: '#e8f5e8', 
+                  borderRadius: '6px', 
+                  fontSize: '0.8rem',
+                  color: '#2e7d32',
+                  marginBottom: '15px',
+                  border: '1px solid #4caf50'
+                }}>
+                  <strong>✅ Zero-Config OAuth:</strong> Click "Connect with GitHub" below to instantly connect with demo data. No GitHub setup required!
+                </div>
+              )}
+
+              {/* Repository Selector (after OAuth) */}
+              {authMethod === 'oauth' && showRepositorySelector && userRepositories.length > 0 && (
+                <div style={{ marginBottom: '15px' }}>
+                  <InfoTooltip tooltip="Select a repository for your semantic data. You can also create a new one.">
+                    <label style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
+                      Select Repository:
+                    </label>
+                  </InfoTooltip>
+                  <select
+                    value={providerConfig.repo}
+                    onChange={(e) => {
+                      const selectedRepo = userRepositories.find(repo => repo.name === e.target.value);
+                      setProviderConfig(prev => ({ 
+                        ...prev, 
+                        repo: e.target.value,
+                        user: selectedRepo ? selectedRepo.full_name.split('/')[0] : prev.user
+                      }));
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      border: '1px solid #979090',
+                      borderRadius: '4px',
+                      fontSize: '0.9rem',
+                      fontFamily: "'EmOne', sans-serif",
+                      backgroundColor: '#bdb5b5',
+                      color: '#260000',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    {userRepositories.map(repo => (
+                      <option key={repo.name} value={repo.name}>
+                        {repo.full_name} {repo.private ? '(Private)' : '(Public)'}
+                      </option>
+                    ))}
+                  </select>
+                  <div style={{ 
+                    marginTop: '8px', 
+                    fontSize: '0.8rem', 
+                    color: '#666',
+                    display: 'flex',
+                    gap: '8px',
+                    alignItems: 'center'
+                  }}>
+                    <button
+                      onClick={() => {
+                        const newRepoName = prompt('Enter new repository name:', 'semantic-knowledge');
+                        if (newRepoName) {
+                          setProviderConfig(prev => ({ ...prev, repo: newRepoName }));
+                        }
+                      }}
+                      style={{
+                        padding: '4px 8px',
+                        backgroundColor: 'transparent',
+                        color: '#260000',
+                        border: '1px solid #979090',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem',
+                        fontFamily: "'EmOne', sans-serif"
+                      }}
+                    >
+                      Create New Repository
+                    </button>
+                    <span>or</span>
+                    <button
+                      onClick={() => setShowRepositorySelector(false)}
+                      style={{
+                        padding: '4px 8px',
+                        backgroundColor: 'transparent',
+                        color: '#260000',
+                        border: '1px solid #979090',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem',
+                        fontFamily: "'EmOne', sans-serif"
+                      }}
+                    >
+                      Use Selected
+                    </button>
+                  </div>
+                </div>
+              )}
               
               {/* Authentication Method Selection */}
               <div style={{ marginBottom: '15px' }}>
@@ -398,7 +856,7 @@ const GitNativeFederation = () => {
               {/* Token Input */}
               {authMethod === 'token' && (
                 <div style={{ marginBottom: '10px' }}>
-                  <InfoTooltip tooltip="Create a Personal Access Token on GitHub with 'repo' permissions. Go to Settings > Developer settings > Personal access tokens.">
+                  <InfoTooltip tooltip="Create a Personal Access Token on GitHub. For fine-grained tokens, ensure 'Contents' read/write permissions. For classic tokens, use 'repo' scope. Go to Settings > Developer settings > Personal access tokens.">
                     <label htmlFor="github-token" style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
                       Personal Access Token:
                     </label>
@@ -427,21 +885,22 @@ const GitNativeFederation = () => {
               {/* OAuth Button */}
               {authMethod === 'oauth' && (
                 <div style={{ marginBottom: '10px' }}>
-                  <InfoTooltip tooltip="Click to authenticate with GitHub using OAuth. You'll be redirected to GitHub to authorize this application.">
+                  <InfoTooltip tooltip="Click to connect with GitHub OAuth. Works immediately with demo data - no setup required!">
                     <label style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
                       GitHub OAuth:
                     </label>
                   </InfoTooltip>
                   <button
                     onClick={handleGitHubOAuth}
+                    disabled={isConnecting}
                     style={{
                       width: '100%',
                       padding: '10px',
-                      backgroundColor: '#260000',
+                      backgroundColor: isConnecting ? '#ccc' : '#260000',
                       color: '#bdb5b5',
                       border: 'none',
                       borderRadius: '4px',
-                      cursor: 'pointer',
+                      cursor: isConnecting ? 'not-allowed' : 'pointer',
                       fontSize: '0.9rem',
                       fontFamily: "'EmOne', sans-serif",
                       display: 'flex',
@@ -451,7 +910,7 @@ const GitNativeFederation = () => {
                     }}
                   >
                     <Github size={16} />
-                    Connect with GitHub
+                    {isConnecting ? 'Authenticating...' : 'Connect with GitHub'}
                   </button>
                 </div>
               )}
@@ -606,28 +1065,30 @@ const GitNativeFederation = () => {
         </div>
 
         {/* Connection Button */}
-        <button
-          onClick={handleConnect}
-          disabled={isConnecting || (authMethod === 'oauth' && selectedProvider === 'github')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 15px',
-            backgroundColor: isConnecting ? '#ccc' : '#260000',
-            color: '#bdb5b5',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: isConnecting ? 'not-allowed' : 'pointer',
-            fontSize: '0.9rem',
-            fontFamily: "'EmOne', sans-serif",
-            width: '100%',
-            justifyContent: 'center'
-          }}
-        >
-          <GitBranch size={16} />
-          {isConnecting ? 'Connecting...' : (authMethod === 'oauth' && selectedProvider === 'github') ? 'Use OAuth Button Above' : 'Connect to Git Provider'}
-        </button>
+        {!(authMethod === 'oauth' && selectedProvider === 'github') && (
+          <button
+            onClick={handleConnect}
+            disabled={isConnecting}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 15px',
+              backgroundColor: isConnecting ? '#ccc' : '#260000',
+              color: '#bdb5b5',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: isConnecting ? 'not-allowed' : 'pointer',
+              fontSize: '0.9rem',
+              fontFamily: "'EmOne', sans-serif",
+              width: '100%',
+              justifyContent: 'center'
+            }}
+          >
+            <GitBranch size={16} />
+            {isConnecting ? 'Connecting...' : 'Connect to Git Provider'}
+          </button>
+        )}
 
         {error && (
           <div style={{ 

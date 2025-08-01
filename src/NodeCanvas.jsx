@@ -2700,7 +2700,7 @@ function NodeCanvas() {
     }
     
     return () => cancelAnimationFrame(animationFrameId);
-  }, [viewportSize, canvasSize, zoomLevel, panOffset, canvasWorker, nodeNamePrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused]);
+  }, [viewportSize, canvasSize, canvasWorker, nodeNamePrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused]);
 
     // Add ref for dialog container
   const dialogContainerRef = useRef(null);

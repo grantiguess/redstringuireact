@@ -137,7 +137,7 @@ describe('GitNativeFederation', () => {
       render(<GitNativeFederation />);
 
       expect(screen.getByText(/Git-Native Semantic Web/)).toBeTruthy();
-      expect(screen.getByText('Connect to any Git provider for real-time, decentralized semantic storage with censorship resistance.')).toBeTruthy();
+      expect(screen.getByText('Connect to any Git provider for real-time, decentralized storage of your own semantic web.')).toBeTruthy();
       expect(screen.getByText(/Provider Configuration/)).toBeTruthy();
       expect(screen.getByText('GitHub')).toBeTruthy();
       expect(screen.getByText('Self-Hosted Gitea')).toBeTruthy();

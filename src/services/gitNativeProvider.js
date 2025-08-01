@@ -139,6 +139,38 @@ export class GitHubSemanticProvider extends SemanticProvider {
     };
   }
 
+  async initializeEmptyRepository() {
+    try {
+      console.log('[GitHubSemanticProvider] Initializing empty repository...');
+      
+      // Create the semantic path directory with a README
+      const readmeContent = `# Semantic Knowledge Base
+
+This repository contains semantic data for the RedString UI React application.
+
+## Structure
+
+- \`schema/\` - Contains semantic files in Turtle (.ttl) format
+- \`profile/\` - User profile and preferences
+- \`vocabulary/\` - Ontology and schema definitions
+- \`federation/\` - Federation and subscription data
+
+## Getting Started
+
+This repository was automatically initialized by RedString UI React. You can now start adding semantic data through the application interface.
+`;
+
+      // Create the semantic path directory
+      await this.writeSemanticFile('README', readmeContent);
+      
+      console.log('[GitHubSemanticProvider] Repository initialized successfully');
+      return true;
+    } catch (error) {
+      console.error('[GitHubSemanticProvider] Failed to initialize repository:', error);
+      throw error;
+    }
+  }
+
   async writeSemanticFile(path, ttlContent) {
     const fullPath = `${this.semanticPath}/${path}.ttl`;
     
@@ -146,21 +178,29 @@ export class GitHubSemanticProvider extends SemanticProvider {
       // Check if file exists to get current SHA
       const existingFile = await this.getFileInfo(fullPath);
       
+      const requestBody = {
+        message: `Update ${path} semantic data`,
+        content: btoa(ttlContent)
+      };
+      
+      // Only include SHA if file exists (for updates)
+      if (existingFile?.sha) {
+        requestBody.sha = existingFile.sha;
+      }
+      
       const response = await fetch(`${this.rootUrl}/${fullPath}`, {
         method: 'PUT',
         headers: {
           'Authorization': `token ${this.token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          message: `Update ${path} semantic data`,
-          content: btoa(ttlContent),
-          sha: existingFile?.sha
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
-        throw new Error(`GitHub API error: ${response.statusText}`);
+        const errorText = await response.text();
+        console.error('[GitHubProvider] Write failed:', response.status, errorText);
+        throw new Error(`GitHub API error: ${response.status} - ${errorText}`);
       }
 
       return await response.json();
@@ -228,13 +268,28 @@ export class GitHubSemanticProvider extends SemanticProvider {
 
   async isAvailable() {
     try {
-      const response = await fetch(`${this.rootUrl}`, {
+      // Check if the repository exists by accessing the repo info, not contents
+      const repoUrl = `https://api.github.com/repos/${this.user}/${this.repo}`;
+      const response = await fetch(repoUrl, {
         headers: {
-          'Authorization': `token ${this.token}`
+          'Authorization': `token ${this.token}`,
+          'Accept': 'application/vnd.github.v3+json'
         }
       });
-      return response.ok;
+      
+      if (response.ok) {
+        return true; // Repository exists and is accessible
+      }
+      
+      // If 404, repository doesn't exist
+      if (response.status === 404) {
+        return false;
+      }
+      
+      // For other errors (401, 403, etc.), check if it's an auth issue
+      return false;
     } catch (error) {
+      console.error('[GitHubSemanticProvider] isAvailable error:', error);
       return false;
     }
   }
@@ -278,16 +333,24 @@ export class GitHubSemanticProvider extends SemanticProvider {
     try {
       const response = await fetch(`${this.rootUrl}/${this.semanticPath}`, {
         headers: {
-          'Authorization': `token ${this.token}`
+          'Authorization': `token ${this.token}`,
+          'Accept': 'application/vnd.github.v3+json'
         }
       });
       
+      // If 404, the semantic path doesn't exist (empty repo or no schema folder)
+      if (response.status === 404) {
+        return [];
+      }
+      
       if (!response.ok) {
+        console.error('[GitHubSemanticProvider] listSemanticFiles error:', response.status, response.statusText);
         return [];
       }
       
       return await response.json();
     } catch (error) {
+      console.error('[GitHubSemanticProvider] listSemanticFiles error:', error);
       return [];
     }
   }
