@@ -18,7 +18,7 @@ import useGraphStore, {
 } from './store/graphStore';
 import { shallow } from 'zustand/shallow';
 import GraphListItem from './GraphListItem'; // <<< Import the new component
-import DynamicFederation from './DynamicFederation'; // Import Dynamic Federation component
+import GitNativeFederation from './GitNativeFederation'; // Import Git-Native Federation component
 
 // Helper function to determine the correct article ("a" or "an")
 const getArticleFor = (word) => {
@@ -1465,10 +1465,10 @@ const Panel = forwardRef(
                 </div>
             );
         } else if (leftViewActive === 'federation') {
-            // Dynamic Federation view for user-configurable Pods
+            // Git-Native Federation view for revolutionary protocol
             panelContent = (
                 <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                    <DynamicFederation />
+                    <GitNativeFederation />
                 </div>
             );
         }
