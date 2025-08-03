@@ -544,6 +544,56 @@ const GitNativeFederation = () => {
     }
   };
 
+  // Test repository write
+  const handleTestWrite = async () => {
+    if (!currentProvider) {
+      setError('No provider connected');
+      return;
+    }
+
+    try {
+      console.log('[GitNativeFederation] Testing repository write...');
+      
+      const testContent = `# Test Semantic File
+
+This is a test file created by RedString UI React to verify repository write access.
+
+## Test Data
+- Created: ${new Date().toISOString()}
+- Provider: ${currentProvider.name}
+- Repository: ${providerConfig.user}/${providerConfig.repo}
+- Semantic Path: ${providerConfig.semanticPath}
+
+## Turtle Content
+@prefix test: <https://redstring.io/test/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+test:TestConcept a test:Concept ;
+    rdfs:label "Test Concept" ;
+    rdfs:comment "This is a test concept to verify repository write access" ;
+    test:createdAt "${new Date().toISOString()}" .
+`;
+
+      console.log('[GitNativeFederation] Writing test file to repository...');
+      await currentProvider.writeSemanticFile('test-write', testContent);
+      
+      console.log('[GitNativeFederation] Test write successful!');
+      setSyncStatus({
+        type: 'success',
+        status: 'Test file written successfully to repository'
+      });
+      
+      // Clear the status after 3 seconds
+      setTimeout(() => {
+        setSyncStatus(null);
+      }, 3000);
+      
+    } catch (error) {
+      console.error('[GitNativeFederation] Test write failed:', error);
+      setError(`Test write failed: ${error.message}`);
+    }
+  };
+
   // Migrate provider
   const handleMigrateProvider = async () => {
     if (!syncEngine) return;
@@ -1321,7 +1371,7 @@ const GitNativeFederation = () => {
       )}
 
       {/* Actions */}
-      <div style={{ display: 'flex', gap: '8px' }}>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
         <button
           onClick={handleForceSync}
           style={{
@@ -1364,6 +1414,32 @@ const GitNativeFederation = () => {
         >
           <GitBranchPlus size={14} />
           Migrate
+        </button>
+      </div>
+
+      {/* Test Write Button */}
+      <div style={{ marginBottom: '10px' }}>
+        <button
+          onClick={handleTestWrite}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '10px 12px',
+            backgroundColor: '#4caf50',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '0.8rem',
+            fontFamily: "'EmOne', sans-serif",
+            justifyContent: 'center',
+            fontWeight: 'bold'
+          }}
+        >
+          <Upload size={14} />
+          Test Repository Write
         </button>
       </div>
 
