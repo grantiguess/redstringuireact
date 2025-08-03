@@ -142,6 +142,8 @@ export class GitHubSemanticProvider extends SemanticProvider {
   async initializeEmptyRepository() {
     try {
       console.log('[GitHubSemanticProvider] Initializing empty repository...');
+      console.log('[GitHubSemanticProvider] Repository:', `${this.user}/${this.repo}`);
+      console.log('[GitHubSemanticProvider] Semantic path:', this.semanticPath);
       
       // Create the semantic path directory with a README
       const readmeContent = `# Semantic Knowledge Base
@@ -150,7 +152,7 @@ This repository contains semantic data for the RedString UI React application.
 
 ## Structure
 
-- \`schema/\` - Contains semantic files in Turtle (.ttl) format
+- \`${this.semanticPath}/\` - Contains semantic files in Turtle (.ttl) format
 - \`profile/\` - User profile and preferences
 - \`vocabulary/\` - Ontology and schema definitions
 - \`federation/\` - Federation and subscription data
@@ -160,8 +162,19 @@ This repository contains semantic data for the RedString UI React application.
 This repository was automatically initialized by RedString UI React. You can now start adding semantic data through the application interface.
 `;
 
+      console.log('[GitHubSemanticProvider] Creating README file...');
       // Create the semantic path directory
       await this.writeSemanticFile('README', readmeContent);
+      
+      console.log('[GitHubSemanticProvider] Creating standard directory structure...');
+      
+      // Create the standard directory structure
+      const structure = this.generateStandardStructure(`${this.user}-${this.repo}`);
+      
+      for (const [path, content] of Object.entries(structure)) {
+        console.log('[GitHubSemanticProvider] Creating file:', path);
+        await this.writeSemanticFile(path, content);
+      }
       
       console.log('[GitHubSemanticProvider] Repository initialized successfully');
       return true;
@@ -173,6 +186,8 @@ This repository was automatically initialized by RedString UI React. You can now
 
   async writeSemanticFile(path, ttlContent) {
     const fullPath = `${this.semanticPath}/${path}.ttl`;
+    
+    console.log('[GitHubSemanticProvider] Writing file:', fullPath);
     
     try {
       // Check if file exists to get current SHA
@@ -186,6 +201,9 @@ This repository was automatically initialized by RedString UI React. You can now
       // Only include SHA if file exists (for updates)
       if (existingFile?.sha) {
         requestBody.sha = existingFile.sha;
+        console.log('[GitHubSemanticProvider] Updating existing file');
+      } else {
+        console.log('[GitHubSemanticProvider] Creating new file');
       }
       
       const response = await fetch(`${this.rootUrl}/${fullPath}`, {
@@ -197,15 +215,19 @@ This repository was automatically initialized by RedString UI React. You can now
         body: JSON.stringify(requestBody)
       });
 
+      console.log('[GitHubSemanticProvider] Write response status:', response.status);
+
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('[GitHubProvider] Write failed:', response.status, errorText);
+        console.error('[GitHubSemanticProvider] Write failed:', response.status, errorText);
         throw new Error(`GitHub API error: ${response.status} - ${errorText}`);
       }
 
-      return await response.json();
+      const result = await response.json();
+      console.log('[GitHubSemanticProvider] File written successfully:', path);
+      return result;
     } catch (error) {
-      console.error('[GitHubProvider] Write failed:', error);
+      console.error('[GitHubSemanticProvider] Write failed:', error);
       throw error;
     }
   }
@@ -344,13 +366,13 @@ This repository was automatically initialized by RedString UI React. You can now
       }
       
       if (!response.ok) {
-        console.error('[GitHubSemanticProvider] listSemanticFiles error:', response.status, response.statusText);
+        // console.error('[GitHubSemanticProvider] listSemanticFiles error:', response.status, response.statusText);
         return [];
       }
       
       return await response.json();
     } catch (error) {
-      console.error('[GitHubSemanticProvider] listSemanticFiles error:', error);
+      // console.error('[GitHubSemanticProvider] listSemanticFiles error:', error);
       return [];
     }
   }
