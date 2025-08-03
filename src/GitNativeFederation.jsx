@@ -321,6 +321,16 @@ const GitNativeFederation = () => {
               status: `Repository initialized with semantic structure`
             });
             
+            // Force a refresh of the files list
+            setTimeout(async () => {
+              try {
+                const updatedFiles = await provider.listSemanticFiles();
+                console.log('[GitNativeFederation] After initialization, files found:', updatedFiles.length);
+              } catch (refreshError) {
+                console.error('[GitNativeFederation] Error refreshing file list:', refreshError);
+              }
+            }, 2000);
+            
           } catch (initError) {
             console.error('[GitNativeFederation] Repository initialization failed:', initError);
             console.warn('[GitNativeFederation] Could not initialize repository (likely read-only token):', initError);
@@ -544,55 +554,40 @@ const GitNativeFederation = () => {
     }
   };
 
-  // Test repository write
-  const handleTestWrite = async () => {
+  // Initialize repository
+  const handleInitializeRepository = async () => {
     if (!currentProvider) {
       setError('No provider connected');
       return;
     }
 
     try {
-      console.log('[GitNativeFederation] Testing repository write...');
+      console.log('[GitNativeFederation] Manually initializing repository...');
+      setIsConnecting(true);
+      setError(null);
       
-      const testContent = `# Test Semantic File
-
-This is a test file created by RedString UI React to verify repository write access.
-
-## Test Data
-- Created: ${new Date().toISOString()}
-- Provider: ${currentProvider.name}
-- Repository: ${providerConfig.user}/${providerConfig.repo}
-- Semantic Path: ${providerConfig.semanticPath}
-
-## Turtle Content
-@prefix test: <https://redstring.io/test/> .
-@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-
-test:TestConcept a test:Concept ;
-    rdfs:label "Test Concept" ;
-    rdfs:comment "This is a test concept to verify repository write access" ;
-    test:createdAt "${new Date().toISOString()}" .
-`;
-
-      console.log('[GitNativeFederation] Writing test file to repository...');
-      await currentProvider.writeSemanticFile('test-write', testContent);
+      await currentProvider.initializeEmptyRepository();
       
-      console.log('[GitNativeFederation] Test write successful!');
+      console.log('[GitNativeFederation] Repository initialization successful!');
       setSyncStatus({
         type: 'success',
-        status: 'Test file written successfully to repository'
+        status: 'Repository initialized with semantic structure'
       });
       
-      // Clear the status after 3 seconds
+      // Clear the status after 5 seconds
       setTimeout(() => {
         setSyncStatus(null);
-      }, 3000);
+      }, 5000);
       
     } catch (error) {
-      console.error('[GitNativeFederation] Test write failed:', error);
-      setError(`Test write failed: ${error.message}`);
+      console.error('[GitNativeFederation] Repository initialization failed:', error);
+      setError(`Repository initialization failed: ${error.message}`);
+    } finally {
+      setIsConnecting(false);
     }
   };
+
+
 
   // Migrate provider
   const handleMigrateProvider = async () => {
@@ -1395,6 +1390,31 @@ test:TestConcept a test:Concept ;
         </button>
         
         <button
+          onClick={handleInitializeRepository}
+          disabled={isConnecting}
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 12px',
+            backgroundColor: isConnecting ? '#ccc' : '#260000',
+            color: '#bdb5b5',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: isConnecting ? 'not-allowed' : 'pointer',
+            fontSize: '0.8rem',
+            fontFamily: "'EmOne', sans-serif",
+            justifyContent: 'center'
+          }}
+        >
+          <GitBranchPlus size={14} />
+          {isConnecting ? 'Initializing...' : 'Initialize Repository'}
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+        <button
           onClick={handleMigrateProvider}
           style={{
             flex: 1,
@@ -1417,31 +1437,7 @@ test:TestConcept a test:Concept ;
         </button>
       </div>
 
-      {/* Test Write Button */}
-      <div style={{ marginBottom: '10px' }}>
-        <button
-          onClick={handleTestWrite}
-          style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '10px 12px',
-            backgroundColor: '#4caf50',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '0.8rem',
-            fontFamily: "'EmOne', sans-serif",
-            justifyContent: 'center',
-            fontWeight: 'bold'
-          }}
-        >
-          <Upload size={14} />
-          Test Repository Write
-        </button>
-      </div>
+
 
       {error && (
         <div style={{ 

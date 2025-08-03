@@ -185,7 +185,10 @@ This repository was automatically initialized by RedString UI React. You can now
   }
 
   async writeSemanticFile(path, ttlContent) {
-    const fullPath = `${this.semanticPath}/${path}.ttl`;
+    // Don't add .ttl if the path already ends with it
+    const fullPath = path.endsWith('.ttl') 
+      ? `${this.semanticPath}/${path}`
+      : `${this.semanticPath}/${path}.ttl`;
     
     console.log('[GitHubSemanticProvider] Writing file:', fullPath);
     
@@ -233,7 +236,10 @@ This repository was automatically initialized by RedString UI React. You can now
   }
 
   async readSemanticFile(path) {
-    const fullPath = `${this.semanticPath}/${path}.ttl`;
+    // Don't add .ttl if the path already ends with it
+    const fullPath = path.endsWith('.ttl') 
+      ? `${this.semanticPath}/${path}`
+      : `${this.semanticPath}/${path}.ttl`;
     
     try {
       const fileInfo = await this.getFileInfo(fullPath);
@@ -458,7 +464,10 @@ export class GiteaSemanticProvider extends SemanticProvider {
   }
 
   async writeSemanticFile(path, ttlContent) {
-    const fullPath = `${this.semanticPath}/${path}.ttl`;
+    // Don't add .ttl if the path already ends with it
+    const fullPath = path.endsWith('.ttl') 
+      ? `${this.semanticPath}/${path}`
+      : `${this.semanticPath}/${path}.ttl`;
     
     try {
       const response = await fetch(`${this.rootUrl}/${fullPath}`, {
@@ -486,7 +495,10 @@ export class GiteaSemanticProvider extends SemanticProvider {
   }
 
   async readSemanticFile(path) {
-    const fullPath = `${this.semanticPath}/${path}.ttl`;
+    // Don't add .ttl if the path already ends with it
+    const fullPath = path.endsWith('.ttl') 
+      ? `${this.semanticPath}/${path}`
+      : `${this.semanticPath}/${path}.ttl`;
     
     try {
       const response = await fetch(`${this.rootUrl}/${fullPath}?ref=main`, {
