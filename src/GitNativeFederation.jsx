@@ -221,27 +221,51 @@ const GitNativeFederation = () => {
           
           console.log('[GitNativeFederation] Found repositories:', repositories.length);
           
-          // Store user data and repositories for repository selection
-          setUserRepositories(repositories);
-          setProviderConfig({
+          // Auto-select the first repository (but let user change it later)
+          const defaultRepo = repositories.find(repo => repo.name.includes('semantic') || repo.name.includes('knowledge')) || 
+                             repositories[0] || 
+                             { name: 'semantic-knowledge', full_name: `${username}/semantic-knowledge` };
+          
+          console.log('[GitNativeFederation] Auto-selected repo:', defaultRepo.name);
+          
+          // Create provider with real OAuth token and user data
+          const oauthConfig = {
             type: 'github',
             user: username,
-            repo: '', // Let user choose
+            repo: defaultRepo.name,
             token: accessToken,
             authMethod: 'oauth',
             semanticPath: 'schema'
-          });
+          };
           
-          // Show repository selector instead of auto-selecting
-          setShowRepositorySelector(true);
+          const provider = SemanticProviderFactory.createProvider(oauthConfig);
+          const isAvailable = await provider.isAvailable();
+          
+          if (!isAvailable) {
+            throw new Error('OAuth authentication failed. Please try again.');
+          }
+          
+          // Store user data and repositories for later use
+          provider.userData = userData;
+          provider.repositories = repositories;
+          
+          setCurrentProvider(provider);
+          setProviderConfig(oauthConfig);
+          setUserRepositories(repositories);
+          setIsConnected(true);
           setError(null);
-          
-          console.log('[GitNativeFederation] OAuth successful! Please select a repository.');
           
           console.log('[GitNativeFederation] OAuth authentication successful!');
           
-          // Clean up URL
+          console.log('[GitNativeFederation] OAuth authentication successful!');
+          
+          // Clean up URL immediately
           window.history.replaceState({}, document.title, window.location.pathname);
+          
+          // Also clean up on component mount if URL still has OAuth params
+          if (window.location.search.includes('code=') || window.location.search.includes('error=')) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
           
         } catch (err) {
           console.error('[GitNativeFederation] OAuth callback failed:', err);
@@ -290,6 +314,13 @@ const GitNativeFederation = () => {
             console.log('[GitNativeFederation] Calling initializeEmptyRepository()...');
             await provider.initializeEmptyRepository();
             console.log('[GitNativeFederation] Repository initialized successfully');
+            
+            // Show success message to user
+            setSyncStatus({
+              type: 'success',
+              status: `Repository initialized with semantic structure`
+            });
+            
           } catch (initError) {
             console.error('[GitNativeFederation] Repository initialization failed:', initError);
             console.warn('[GitNativeFederation] Could not initialize repository (likely read-only token):', initError);
@@ -298,6 +329,10 @@ const GitNativeFederation = () => {
           }
         } else {
           console.log('[GitNativeFederation] Repository already has content, no initialization needed');
+          setSyncStatus({
+            type: 'success',
+            status: `Connected to existing repository`
+          });
         }
       } catch (error) {
         console.error('[GitNativeFederation] Error checking repository contents:', error);
@@ -746,144 +781,7 @@ const GitNativeFederation = () => {
                 </div>
               )}
 
-              {/* Repository Selector (after OAuth) */}
-              {authMethod === 'oauth' && showRepositorySelector && userRepositories.length > 0 && (
-                <div style={{ 
-                  marginBottom: '20px', 
-                  padding: '15px', 
-                  backgroundColor: '#e8f5e8', 
-                  borderRadius: '8px',
-                  border: '1px solid #4caf50'
-                }}>
-                  <div style={{ marginBottom: '15px' }}>
-                    <h4 style={{ color: '#2e7d32', marginBottom: '10px', fontSize: '1rem' }}>
-                      🎉 OAuth Successful! Choose Your Repository
-                    </h4>
-                    <p style={{ color: '#2e7d32', fontSize: '0.9rem', marginBottom: '15px' }}>
-                      Select which repository to use for your semantic data, or create a new one.
-                    </p>
-                  </div>
-                  
-                  <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', color: '#260000', marginBottom: '8px', fontSize: '0.9rem', fontWeight: 'bold' }}>
-                      Your Repositories:
-                    </label>
-                    <select
-                      value={providerConfig.repo}
-                      onChange={(e) => {
-                        const selectedRepo = userRepositories.find(repo => repo.name === e.target.value);
-                        setProviderConfig(prev => ({ 
-                          ...prev, 
-                          repo: e.target.value,
-                          user: selectedRepo ? selectedRepo.full_name.split('/')[0] : prev.user
-                        }));
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '10px',
-                        border: '1px solid #979090',
-                        borderRadius: '6px',
-                        fontSize: '0.9rem',
-                        fontFamily: "'EmOne', sans-serif",
-                        backgroundColor: '#bdb5b5',
-                        color: '#260000',
-                        boxSizing: 'border-box',
-                        marginBottom: '10px'
-                      }}
-                    >
-                      <option value="">-- Select a repository --</option>
-                      {userRepositories.map(repo => (
-                        <option key={repo.name} value={repo.name}>
-                          📁 {repo.full_name} {repo.private ? '(Private)' : '(Public)'}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  <div style={{ 
-                    display: 'flex', 
-                    gap: '10px', 
-                    alignItems: 'center',
-                    flexWrap: 'wrap'
-                  }}>
-                    <button
-                      onClick={async () => {
-                        if (!providerConfig.repo) {
-                          setError('Please select a repository first');
-                          return;
-                        }
-                        
-                        try {
-                          setIsConnecting(true);
-                          setError(null);
-                          
-                          const oauthConfig = {
-                            type: 'github',
-                            user: providerConfig.user,
-                            repo: providerConfig.repo,
-                            token: providerConfig.token,
-                            authMethod: 'oauth',
-                            semanticPath: 'schema'
-                          };
-                          
-                          const provider = SemanticProviderFactory.createProvider(oauthConfig);
-                          const isAvailable = await provider.isAvailable();
-                          
-                          if (!isAvailable) {
-                            throw new Error('Cannot connect to selected repository. Please check permissions.');
-                          }
-                          
-                          setCurrentProvider(provider);
-                          setShowRepositorySelector(false);
-                          setIsConnected(true);
-                          setError(null);
-                          
-                        } catch (err) {
-                          console.error('[GitNativeFederation] Repository connection failed:', err);
-                          setError(`Connection failed: ${err.message}`);
-                        } finally {
-                          setIsConnecting(false);
-                        }
-                      }}
-                      disabled={isConnecting || !providerConfig.repo}
-                      style={{
-                        padding: '10px 15px',
-                        backgroundColor: isConnecting || !providerConfig.repo ? '#ccc' : '#260000',
-                        color: '#bdb5b5',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: isConnecting || !providerConfig.repo ? 'not-allowed' : 'pointer',
-                        fontSize: '0.9rem',
-                        fontFamily: "'EmOne', sans-serif",
-                        fontWeight: 'bold'
-                      }}
-                    >
-                      {isConnecting ? 'Connecting...' : 'Connect to Selected Repository'}
-                    </button>
-                    
-                    <button
-                      onClick={() => {
-                        const newRepoName = prompt('Enter new repository name:', 'semantic-knowledge');
-                        if (newRepoName) {
-                          setProviderConfig(prev => ({ ...prev, repo: newRepoName }));
-                        }
-                      }}
-                      style={{
-                        padding: '8px 12px',
-                        backgroundColor: 'transparent',
-                        color: '#260000',
-                        border: '1px solid #979090',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        fontSize: '0.8rem',
-                        fontFamily: "'EmOne', sans-serif"
-                      }}
-                    >
-                      ➕ Create New Repository
-                    </button>
-                  </div>
-                </div>
-              )}
+
               
               {/* Authentication Method Selection */}
               <div style={{ marginBottom: '15px' }}>
@@ -1239,18 +1137,18 @@ const GitNativeFederation = () => {
             alignItems: 'center', 
             gap: '8px', 
             padding: '8px', 
-            backgroundColor: syncStatus.type === 'error' ? '#ffebee' : '#e8f5e8',
+            backgroundColor: syncStatus.type === 'error' ? '#ffebee' : '#bdb5b5',
             borderRadius: '4px',
             fontSize: '0.8rem'
           }}>
             {syncStatus.type === 'error' ? (
               <XCircle size={14} color="#d32f2f" />
             ) : syncStatus.type === 'success' ? (
-              <CheckCircle size={14} color="#4caf50" />
+              <CheckCircle size={14} color="#260000" />
             ) : (
               <RefreshCw size={14} color="#666" />
             )}
-            <span style={{ color: syncStatus.type === 'error' ? '#d32f2f' : '#666' }}>
+            <span style={{ color: syncStatus.type === 'error' ? '#d32f2f' : '#260000' }}>
               {syncStatus.status}
             </span>
           </div>
@@ -1258,13 +1156,13 @@ const GitNativeFederation = () => {
       </div>
 
       {/* Federation Stats */}
-      {federationStats && (
-        <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#979090', borderRadius: '8px' }}>
-          <h4 style={{ color: '#260000', marginBottom: '10px', fontSize: '0.9rem' }}>
-            <Network size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-            Federation Network
-          </h4>
-          
+      <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#979090', borderRadius: '8px' }}>
+        <h4 style={{ color: '#260000', marginBottom: '10px', fontSize: '0.9rem' }}>
+          <Network size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+          Federation Network
+        </h4>
+        
+        {federationStats ? (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.8rem' }}>
             <div style={{ textAlign: 'center', padding: '8px', backgroundColor: '#bdb5b5', borderRadius: '4px' }}>
               <div style={{ fontWeight: 'bold', color: '#260000' }}>
@@ -1294,8 +1192,12 @@ const GitNativeFederation = () => {
               <div style={{ color: '#666' }}>Real-time Sync</div>
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div style={{ textAlign: 'center', padding: '20px', color: '#666', fontSize: '0.8rem' }}>
+            Loading federation data...
+          </div>
+        )}
+      </div>
 
       {/* Add Subscription */}
       <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#979090', borderRadius: '8px' }}>
