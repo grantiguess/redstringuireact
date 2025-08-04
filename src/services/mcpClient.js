@@ -14,24 +14,12 @@ class RedstringMCPClient {
     this.sessionId = null;
     this.capabilities = {
       tools: {
-        'list_available_graphs': { description: 'List all available knowledge graphs' },
-        'set_active_graph': { description: 'Switch to a different knowledge graph' },
-        'explore_knowledge': { description: 'Explore knowledge graph with query matching' },
-        'get_node_details': { description: 'Get detailed information about a specific node' },
-        'create_concept_map': { description: 'Create a concept map from the knowledge graph' },
-        'add_node': { description: 'Add a new node to the knowledge graph' },
-        'remove_node': { description: 'Remove a node from the knowledge graph' },
-        'move_node': { description: 'Move a node to a new position' },
-        'format_graph': { description: 'Format and organize the graph layout' },
-        'collaborative_reasoning': { description: 'Collaborative reasoning with Claude Desktop' },
-        'add_edge': { description: 'Add a new edge/relationship between nodes' },
-        'remove_edge': { description: 'Remove an edge/relationship from the knowledge graph' },
-        'update_node': { description: 'Update an existing node\'s properties' },
-        'duplicate_node': { description: 'Create a copy of an existing node' },
-        'merge_nodes': { description: 'Merge two nodes into a single node' },
-        'create_graph': { description: 'Create a new knowledge graph' },
-        'delete_graph': { description: 'Delete an entire knowledge graph' },
-        'export_graph': { description: 'Export a knowledge graph to various formats' }
+        'list_available_graphs': { description: 'List all available knowledge graphs from the real Redstring store' },
+        'get_active_graph': { description: 'Get detailed information about the currently active graph from the real Redstring store' },
+        'set_active_graph': { description: 'Set a graph as the active graph in the real Redstring UI (graph must already be open)' },
+        'add_node_prototype': { description: 'Add a new node prototype to the real Redstring store' },
+        'add_node_instance': { description: 'Add a new instance of a prototype to the active graph in the real Redstring store' },
+        'open_graph': { description: 'Open a graph and make it the active graph in the real Redstring UI' }
       },
       resources: {}
     };

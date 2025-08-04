@@ -11,7 +11,8 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 // GitHub OAuth token exchange endpoint
 app.post('/api/github/oauth/token', async (req, res) => {
@@ -87,6 +88,35 @@ app.post('/api/github/oauth/token', async (req, res) => {
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Store for the bridge data
+let bridgeStoreData = null;
+
+// MCP Bridge endpoint - POST to update store data
+app.post('/api/bridge/state', (req, res) => {
+  try {
+    bridgeStoreData = req.body;
+    console.log('✅ Bridge: Store data updated');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Bridge POST error:', error);
+    res.status(500).json({ error: 'Failed to update store state' });
+  }
+});
+
+// MCP Bridge endpoint - GET to retrieve store data
+app.get('/api/bridge/state', (req, res) => {
+  try {
+    if (bridgeStoreData) {
+      res.json(bridgeStoreData);
+    } else {
+      res.status(503).json({ error: 'Redstring store not available' });
+    }
+  } catch (error) {
+    console.error('Bridge GET error:', error);
+    res.status(500).json({ error: 'Failed to get store state' });
+  }
 });
 
 app.listen(PORT, () => {
