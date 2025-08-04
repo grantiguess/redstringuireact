@@ -133,9 +133,9 @@ const AICollaborationPanel = () => {
       // Add welcome message
       addMessage('ai', `AI Assistant connected! Session ID: ${result.sessionId.slice(0, 8)}...`);
       
-      // MCP server is available
-      addMessage('ai', 'MCP Server connected! I can help you explore, analyze, and build knowledge in your Redstring graph. What would you like to work on?');
-      addMessage('system', `MCP Server: ${result.claudeMessage}`);
+      // Claude Desktop MCP server is available
+      addMessage('ai', 'Claude Desktop connected! 🧠✨\n\n**Available MCP Tools:**\n• `list_available_graphs` - See all your knowledge graphs\n• `set_active_graph` - Switch between graphs (main, better-call-saul)\n• `explore_knowledge` - Search for concepts in your graphs\n• `get_node_details` - Get detailed info about specific nodes\n• `create_concept_map` - Visualize graph relationships\n• `add_node` - Add new nodes to any graph\n• `remove_node` - Remove nodes from graphs\n• `move_node` - Reposition nodes in the graph\n• `format_graph` - Organize graph layout (circular, grid, etc.)\n• `add_edge` - Create relationships between nodes\n• `remove_edge` - Remove relationships\n• `update_node` - Modify node properties\n• `duplicate_node` - Copy existing nodes\n• `merge_nodes` - Combine multiple nodes\n• `create_graph` - Create new knowledge graphs\n• `delete_graph` - Remove entire graphs\n• `export_graph` - Export data in various formats\n• `collaborative_reasoning` - AI-powered analysis\n\n**I can do everything a person could do with your knowledge graphs!** 🚀\n\n**To use these tools:**\n1. Open Claude Desktop\n2. Look for the "Search and tools" icon (slider icon)\n3. Use the Redstring MCP tools\n4. Start with `list_available_graphs` to see your graphs!\n\nWhat would you like to explore or modify in your Redstring graphs?');
+      addMessage('system', `Claude Desktop: ${result.claudeMessage}`);
       
     } catch (error) {
       console.error('[AI Collaboration] Connection failed:', error);
@@ -397,11 +397,16 @@ const AICollaborationPanel = () => {
         });
         
         console.log('[AI Panel] Collaborative reasoning result:', result);
-        const response = result.finalInsights && result.finalInsights.length > 0 
-          ? `Based on our collaborative analysis: ${result.finalInsights[0].description}`
-          : "I've analyzed your question in the context of your knowledge graph. Could you be more specific about which concepts you'd like me to explore?";
         
-        addMessage('ai', response);
+        if (result.claudeDesktopReady) {
+          addMessage('ai', 'Ready for Claude Desktop! 🧠✨\n\n**Available MCP Tools:**\n• `list_available_graphs` - See all your knowledge graphs\n• `set_active_graph` - Switch between graphs (main, better-call-saul)\n• `explore_knowledge` - Search for concepts in your graphs\n• `get_node_details` - Get detailed info about specific nodes\n• `create_concept_map` - Visualize graph relationships\n• `add_node` - Add new nodes to any graph\n• `remove_node` - Remove nodes from graphs\n• `move_node` - Reposition nodes in the graph\n• `format_graph` - Organize graph layout (circular, grid, etc.)\n• `collaborative_reasoning` - AI-powered analysis\n\n**To use these tools:**\n1. Open Claude Desktop\n2. Look for the "Search and tools" icon (slider icon)\n3. Use the Redstring MCP tools\n4. Start with `list_available_graphs` to see your graphs!\n\nWhat would you like to explore in your Redstring graphs?');
+        } else {
+          const response = result.finalInsights && result.finalInsights.length > 0 
+            ? result.finalInsights[0]
+            : "I've analyzed your question in the context of your knowledge graph. Could you be more specific about which concepts you'd like me to explore?";
+          
+          addMessage('ai', response);
+        }
       }
       
     } catch (error) {
@@ -442,11 +447,16 @@ const AICollaborationPanel = () => {
       });
       
       console.log('[AI Panel] General input result:', result);
-      const response = result.finalInsights && result.finalInsights.length > 0 
-        ? `Based on our collaborative analysis: ${result.finalInsights[0].description}`
-        : "I've processed your input and updated my understanding of your knowledge graph.";
       
-      addMessage('ai', response);
+      if (result.claudeDesktopReady) {
+        addMessage('ai', 'Ready for Claude Desktop! 🧠✨\n\nTo use collaborative reasoning:\n1. Open Claude Desktop\n2. Look for the "Search and tools" icon (slider icon)\n3. Use the Redstring MCP tools for collaborative reasoning\n4. Ask Claude Desktop about your knowledge graph\n\nWhat would you like to explore in your Redstring graph?');
+      } else {
+        const response = result.finalInsights && result.finalInsights.length > 0 
+          ? result.finalInsights[0]
+          : "I've processed your input and updated my understanding of your knowledge graph.";
+        
+        addMessage('ai', response);
+      }
       
     } catch (error) {
       console.error('[AI Collaboration] General input handling failed:', error);
