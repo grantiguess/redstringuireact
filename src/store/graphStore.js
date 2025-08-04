@@ -159,6 +159,26 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     // UI Settings
     showConnectionNames: false,
 
+    // Git Federation State
+    gitConnection: (() => {
+      // Load saved connection from localStorage
+      const saved = localStorage.getItem('redstring_git_connection');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.warn('[GraphStore] Failed to parse saved Git connection:', e);
+        }
+      }
+      return null;
+    })(),
+    gitSyncEngine: null, // Will be set by GitNativeFederation component
+    gitSourceOfTruth: (() => {
+      // Load saved source of truth from localStorage
+      const saved = localStorage.getItem('redstring_git_source_of_truth');
+      return saved === 'git' ? 'git' : 'local'; // Default to 'local'
+    })(),
+
   // --- Actions --- (Operating on plain data)
 
   // This action is deprecated. All loading now goes through loadUniverseFromFile.
@@ -1367,6 +1387,38 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     }));
     notifyChanges(); // for auto-save
   },
+
+  // Git Federation Actions
+  setGitConnection: (connectionConfig) => {
+    set(produce((draft) => {
+      draft.gitConnection = connectionConfig;
+      // Persist to localStorage
+      localStorage.setItem('redstring_git_connection', JSON.stringify(connectionConfig));
+    }));
+  },
+
+  clearGitConnection: () => {
+    set(produce((draft) => {
+      draft.gitConnection = null;
+      draft.gitSyncEngine = null;
+      // Clear from localStorage
+      localStorage.removeItem('redstring_git_connection');
+    }));
+  },
+
+  setGitSyncEngine: (syncEngine) => {
+    set(produce((draft) => {
+      draft.gitSyncEngine = syncEngine;
+    }));
+  },
+
+  setGitSourceOfTruth: (sourceOfTruth) => {
+    set(produce((draft) => {
+      draft.gitSourceOfTruth = sourceOfTruth;
+      // Persist to localStorage
+      localStorage.setItem('redstring_git_source_of_truth', sourceOfTruth);
+    }));
+  }
 
   }; // End of returned state and actions object
 })); // End of create function with middleware

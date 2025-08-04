@@ -77,12 +77,51 @@ const GitNativeFederation = () => {
   const [authMethod, setAuthMethod] = useState('oauth'); // 'token' or 'oauth'
   const [userRepositories, setUserRepositories] = useState([]);
   const [showRepositorySelector, setShowRepositorySelector] = useState(false);
-  const [gitSyncEngine, setGitSyncEngine] = useState(null);
-  const [sourceOfTruthMode, setSourceOfTruthMode] = useState(SOURCE_OF_TRUTH.LOCAL);
-  
   // Get the actual RedString store
   const storeState = useGraphStore();
   const storeActions = useGraphStore.getState();
+  
+  // Get persistent Git connection state from store
+  const gitConnection = useGraphStore(state => state.gitConnection);
+  const gitSourceOfTruth = useGraphStore(state => state.gitSourceOfTruth);
+  const setGitConnection = useGraphStore(state => state.setGitConnection);
+  const clearGitConnection = useGraphStore(state => state.clearGitConnection);
+  const setGitSyncEngineStore = useGraphStore(state => state.setGitSyncEngine);
+  const setGitSourceOfTruth = useGraphStore(state => state.setGitSourceOfTruth);
+  
+  const [gitSyncEngine, setGitSyncEngine] = useState(null);
+  const [sourceOfTruthMode, setSourceOfTruthMode] = useState(
+    gitSourceOfTruth === 'git' ? SOURCE_OF_TRUTH.GIT : SOURCE_OF_TRUTH.LOCAL
+  );
+
+  // Restore Git connection on mount
+  useEffect(() => {
+    if (gitConnection && !currentProvider) {
+      console.log('[GitNativeFederation] Restoring saved Git connection:', gitConnection);
+      
+      // Show restoring status
+      setSyncStatus({
+        type: 'success',
+        status: 'Restoring saved connection...'
+      });
+      
+      // Restore provider config
+      setProviderConfig(gitConnection);
+      setSelectedProvider(gitConnection.type);
+      
+      // Create provider from saved config
+      const provider = SemanticProviderFactory.createProvider(gitConnection);
+      setCurrentProvider(provider);
+      setIsConnected(true);
+      
+      console.log('[GitNativeFederation] Git connection restored successfully');
+      
+      // Clear the status after 3 seconds
+      setTimeout(() => {
+        setSyncStatus(null);
+      }, 3000);
+    }
+  }, [gitConnection, currentProvider]);
 
   // Initialize sync engine, federation, and Git storage when provider changes
   useEffect(() => {
@@ -103,6 +142,7 @@ const GitNativeFederation = () => {
       // Initialize Git sync engine with current source of truth mode
       const newGitSyncEngine = new GitSyncEngine(currentProvider, sourceOfTruthMode);
       setGitSyncEngine(newGitSyncEngine);
+      setGitSyncEngineStore(newGitSyncEngine);
       
       // Try to load existing data from Git
       newGitSyncEngine.loadFromGit().then((redstringData) => {
@@ -357,6 +397,9 @@ const GitNativeFederation = () => {
           setIsConnected(true);
           setError(null);
           
+          // Save connection to persistent store
+          setGitConnection(oauthConfig);
+          
           console.log('[GitNativeFederation] OAuth authentication successful!');
           
           console.log('[GitNativeFederation] OAuth authentication successful!');
@@ -454,6 +497,9 @@ const GitNativeFederation = () => {
       
       setCurrentProvider(provider);
       setIsConnected(true);
+      
+      // Save connection to persistent store
+      setGitConnection(config);
       
     } catch (err) {
       console.error('[GitNativeFederation] Connection failed:', err);
@@ -581,6 +627,9 @@ const GitNativeFederation = () => {
         setIsConnected(true);
         setError(null);
         
+        // Save connection to persistent store
+        setGitConnection(mockProvider.config);
+        
         console.log('[GitNativeFederation] Zero-config OAuth successful! Ready to use.');
         return;
         
@@ -626,6 +675,10 @@ const GitNativeFederation = () => {
     setUserRepositories([]);
     setShowRepositorySelector(false);
     setGitSyncEngine(null);
+    setGitSyncEngineStore(null);
+    
+    // Clear persistent connection
+    clearGitConnection();
   };
 
   // Add subscription
@@ -710,6 +763,9 @@ const GitNativeFederation = () => {
     try {
       gitSyncEngine.setSourceOfTruth(newMode);
       setSourceOfTruthMode(newMode);
+      
+      // Persist source of truth setting
+      setGitSourceOfTruth(newMode === SOURCE_OF_TRUTH.GIT ? 'git' : 'local');
       
       setSyncStatus({
         type: 'success',
