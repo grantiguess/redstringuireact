@@ -1334,13 +1334,13 @@ function NodeCanvas() {
   
   // Log button changes for debugging
   useEffect(() => {
-    console.log(`[PieMenu Buttons] targetPieMenuButtons changed:`, {
-      buttonCount: targetPieMenuButtons.length,
-      buttonIds: targetPieMenuButtons.map(b => b.id),
-      carouselStage: carouselPieMenuStage,
-      selectedNodeId: selectedNodeIdForPieMenu,
-      carouselVisible: abstractionCarouselVisible
-    });
+    // console.log(`[PieMenu Buttons] targetPieMenuButtons changed:`, {
+    //   buttonCount: targetPieMenuButtons.length,
+    //   buttonIds: targetPieMenuButtons.map(b => b.id),
+    //   carouselStage: carouselPieMenuStage,
+    //   selectedNodeId: selectedNodeIdForPieMenu,
+    //   carouselVisible: abstractionCarouselVisible
+    // });
   }, [targetPieMenuButtons, carouselPieMenuStage, selectedNodeIdForPieMenu, abstractionCarouselVisible]);
 
   // Effect to restore view state on graph change or center if no stored state

@@ -40,6 +40,9 @@ import {
 import { SemanticProviderFactory } from './services/gitNativeProvider.js';
 import { SemanticSyncEngine } from './services/semanticSyncEngine.js';
 import { SemanticFederation } from './services/semanticFederation.js';
+import { GitSyncEngine } from './services/gitSyncEngine.js';
+import useGraphStore from './store/graphStore.js';
+import { importFromRedstring } from './formats/redstringFormat.js';
 
 const GitNativeFederation = () => {
   const [currentProvider, setCurrentProvider] = useState(null);
@@ -74,8 +77,13 @@ const GitNativeFederation = () => {
   const [authMethod, setAuthMethod] = useState('oauth'); // 'token' or 'oauth'
   const [userRepositories, setUserRepositories] = useState([]);
   const [showRepositorySelector, setShowRepositorySelector] = useState(false);
+  const [gitSyncEngine, setGitSyncEngine] = useState(null);
+  
+  // Get the actual RedString store
+  const storeState = useGraphStore();
+  const storeActions = useGraphStore.getState();
 
-  // Initialize sync engine and federation when provider changes
+  // Initialize sync engine, federation, and Git storage when provider changes
   useEffect(() => {
     if (currentProvider && !syncEngine && providerConfig.repo) {
       console.log('[GitNativeFederation] Initializing sync engine for:', providerConfig.repo);
@@ -89,6 +97,41 @@ const GitNativeFederation = () => {
       // Subscribe to status updates
       newSyncEngine.onStatusChange((status) => {
         setSyncStatus(status);
+      });
+      
+      // Initialize Git sync engine
+      const newGitSyncEngine = new GitSyncEngine(currentProvider);
+      setGitSyncEngine(newGitSyncEngine);
+      
+      // Try to load existing data from Git
+      newGitSyncEngine.loadFromGit().then((redstringData) => {
+        if (redstringData) {
+          console.log('[GitNativeFederation] Loaded existing data from Git');
+          
+          // Import the data into the store
+          importFromRedstring(redstringData, storeActions);
+          
+          setSyncStatus({
+            type: 'success',
+            status: 'Loaded existing data from repository'
+          });
+        } else {
+          console.log('[GitNativeFederation] No existing data found, will create on first save');
+          setSyncStatus({
+            type: 'success',
+            status: 'Connected to repository - ready to save data'
+          });
+        }
+        
+        // Start the sync engine
+        newGitSyncEngine.start();
+        
+      }).catch((error) => {
+        console.error('[GitNativeFederation] Failed to load from Git:', error);
+        setSyncStatus({
+          type: 'error',
+          status: 'Failed to load existing data'
+        });
       });
       
       // Load initial data
@@ -109,6 +152,13 @@ const GitNativeFederation = () => {
       return () => clearInterval(interval);
     }
   }, [federation]);
+
+  // Update Git sync engine when store state changes
+  useEffect(() => {
+    if (gitSyncEngine && storeState) {
+      gitSyncEngine.updateState(storeState);
+    }
+  }, [gitSyncEngine, storeState]);
 
   // Handle OAuth callback
   useEffect(() => {
@@ -510,6 +560,11 @@ const GitNativeFederation = () => {
 
   // Disconnect from provider
   const handleDisconnect = () => {
+    // Stop Git sync engine
+    if (gitSyncEngine) {
+      gitSyncEngine.stop();
+    }
+    
     setCurrentProvider(null);
     setSyncEngine(null);
     setFederation(null);
@@ -518,6 +573,7 @@ const GitNativeFederation = () => {
     setFederationStats(null);
     setUserRepositories([]);
     setShowRepositorySelector(false);
+    setGitSyncEngine(null);
   };
 
   // Add subscription
@@ -551,6 +607,40 @@ const GitNativeFederation = () => {
   const handleForceSync = async () => {
     if (syncEngine) {
       await syncEngine.forceSync();
+    }
+  };
+
+  // Save to Git
+  const handleSaveToGit = async () => {
+    if (!gitSyncEngine) {
+      setError('No sync engine connected');
+      return;
+    }
+
+    try {
+      console.log('[GitNativeFederation] Manually saving to Git...');
+      setIsConnecting(true);
+      setError(null);
+      
+      // Force commit using the sync engine
+      await gitSyncEngine.forceCommit(storeState);
+      
+      console.log('[GitNativeFederation] Save to Git successful!');
+      setSyncStatus({
+        type: 'success',
+        status: 'Data saved to repository'
+      });
+      
+      // Clear the status after 5 seconds
+      setTimeout(() => {
+        setSyncStatus(null);
+      }, 5000);
+      
+    } catch (error) {
+      console.error('[GitNativeFederation] Save to Git failed:', error);
+      setError(`Save to Git failed: ${error.message}`);
+    } finally {
+      setIsConnecting(false);
     }
   };
 
@@ -1414,6 +1504,29 @@ const GitNativeFederation = () => {
       </div>
 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+        <button
+          onClick={handleSaveToGit}
+          disabled={isConnecting}
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 12px',
+            backgroundColor: isConnecting ? '#ccc' : '#260000',
+            color: '#bdb5b5',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: isConnecting ? 'not-allowed' : 'pointer',
+            fontSize: '0.8rem',
+            fontFamily: "'EmOne', sans-serif",
+            justifyContent: 'center'
+          }}
+        >
+          <Upload size={14} />
+          {isConnecting ? 'Saving...' : 'Save to Git'}
+        </button>
+        
         <button
           onClick={handleMigrateProvider}
           style={{

@@ -204,7 +204,7 @@ This repository was automatically initialized by RedString UI React. You can now
       // Only include SHA if file exists (for updates)
       if (existingFile?.sha) {
         requestBody.sha = existingFile.sha;
-        console.log('[GitHubSemanticProvider] Updating existing file');
+        console.log('[GitHubSemanticProvider] Updating existing file with SHA:', existingFile.sha.substring(0, 8));
       } else {
         console.log('[GitHubSemanticProvider] Creating new file');
       }
@@ -223,6 +223,37 @@ This repository was automatically initialized by RedString UI React. You can now
       if (!response.ok) {
         const errorText = await response.text();
         console.error('[GitHubSemanticProvider] Write failed:', response.status, errorText);
+        
+        // Handle 409 conflict by retrying with fresh SHA
+        if (response.status === 409) {
+          console.log('[GitHubSemanticProvider] 409 conflict detected, retrying with fresh SHA...');
+          
+          // Get fresh file info
+          const freshFile = await this.getFileInfo(fullPath);
+          if (freshFile?.sha) {
+            requestBody.sha = freshFile.sha;
+            console.log('[GitHubSemanticProvider] Retrying with fresh SHA:', freshFile.sha.substring(0, 8));
+            
+            const retryResponse = await fetch(`${this.rootUrl}/${fullPath}`, {
+              method: 'PUT',
+              headers: {
+                'Authorization': `token ${this.token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(requestBody)
+            });
+            
+            if (!retryResponse.ok) {
+              const retryErrorText = await retryResponse.text();
+              throw new Error(`GitHub API error (retry): ${retryResponse.status} - ${retryErrorText}`);
+            }
+            
+            const retryResult = await retryResponse.json();
+            console.log('[GitHubSemanticProvider] File written successfully after retry:', path);
+            return retryResult;
+          }
+        }
+        
         throw new Error(`GitHub API error: ${response.status} - ${errorText}`);
       }
 
