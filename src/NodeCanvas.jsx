@@ -56,6 +56,7 @@ import TypeList from './TypeList'; // Re-add TypeList component
 import NodeSelectionGrid from './NodeSelectionGrid'; // Import the new node selection grid
 import UnifiedSelector from './UnifiedSelector'; // Import the new unified selector
 
+
 const SPAWNABLE_NODE = 'spawnable_node';
 
 // Check if user's on a Mac using userAgent as platform is deprecated
@@ -533,6 +534,7 @@ function NodeCanvas() {
   const [abstractionControlPanelVisible, setAbstractionControlPanelVisible] = useState(false);
   const [abstractionControlPanelShouldShow, setAbstractionControlPanelShouldShow] = useState(false);
   const [isPieMenuActionInProgress, setIsPieMenuActionInProgress] = useState(false);
+
 
   // Define carousel callbacks outside conditional rendering to avoid hook violations
   const onCarouselAnimationStateChange = useCallback((newState) => {
@@ -2615,6 +2617,8 @@ function NodeCanvas() {
       if (keysPressed.current[' ']) { zoomDelta = KEYBOARD_ZOOM_SPEED; }
       if (keysPressed.current['Shift']) { zoomDelta = -KEYBOARD_ZOOM_SPEED; }
 
+
+
       // 3. Perform Zoom Calculation (if needed)
       let zoomResult = null;
       if (zoomDelta !== 0 && !isKeyboardZooming.current) {
@@ -2918,6 +2922,8 @@ function NodeCanvas() {
     setLeftPanelExpanded(prev => !prev);
     // console.log("[Left Panel Toggle] New state:", !leftPanelExpanded);
   }, [leftPanelExpanded]);
+
+
 
   const handleLeftPanelFocusChange = useCallback((isFocused) => {
     //console.log(`[Left Panel Focus Change] Setting isLeftPanelInputFocused to: ${isFocused}`);
@@ -3341,6 +3347,7 @@ function NodeCanvas() {
          onBookmarkToggle={handleToggleBookmark}
          showConnectionNames={showConnectionNames}
          onToggleShowConnectionNames={storeActions.toggleShowConnectionNames}
+
          onNewUniverse={async () => {
            try {
              console.log('[NodeCanvas] Creating new universe from menu');
@@ -4770,6 +4777,8 @@ function NodeCanvas() {
           direction="down-left"
         />
       )}
+
+
 
       {/* <div>NodeCanvas Simplified - Testing Loop</div> */}
     </div>

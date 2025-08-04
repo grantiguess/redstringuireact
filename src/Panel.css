@@ -74,6 +74,16 @@ header .editable-title-input::selection {
   box-sizing: border-box;
 }
 
+/* AI Panel specific styling */
+.panel-content-inner.ai-panel {
+  padding: 0; /* Remove padding for AI panel */
+  font-family: 'EmOne', sans-serif;
+}
+
+.panel-content-inner.ai-panel * {
+  font-family: 'EmOne', sans-serif !important;
+}
+
 /* Base styles for panels */
 .panel-container {
   position: relative; /* Changed from absolute */

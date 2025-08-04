@@ -287,8 +287,12 @@ class GitSyncEngine {
       const redstringData = exportToRedstring(latestState);
       const jsonString = JSON.stringify(redstringData, null, 2);
       
-      // Save to Git repository
+      // Save to Git repository with small delay between writes to reduce conflicts
       await this.provider.writeSemanticFile('universe.redstring', jsonString);
+      
+      // Small delay to reduce race conditions
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       await this.provider.writeSemanticFile('backup.redstring', jsonString);
       
       // Update tracking
@@ -332,6 +336,10 @@ class GitSyncEngine {
       const jsonString = JSON.stringify(redstringData, null, 2);
       
       await this.provider.writeSemanticFile('universe.redstring', jsonString);
+      
+      // Small delay to reduce race conditions
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       await this.provider.writeSemanticFile('backup.redstring', jsonString);
       
       // Update tracking for force commit

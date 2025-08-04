@@ -228,30 +228,55 @@ This repository was automatically initialized by RedString UI React. You can now
         if (response.status === 409) {
           console.log('[GitHubSemanticProvider] 409 conflict detected, retrying with fresh SHA...');
           
-          // Get fresh file info
-          const freshFile = await this.getFileInfo(fullPath);
-          if (freshFile?.sha) {
-            requestBody.sha = freshFile.sha;
-            console.log('[GitHubSemanticProvider] Retrying with fresh SHA:', freshFile.sha.substring(0, 8));
-            
-            const retryResponse = await fetch(`${this.rootUrl}/${fullPath}`, {
-              method: 'PUT',
-              headers: {
-                'Authorization': `token ${this.token}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(requestBody)
-            });
-            
-            if (!retryResponse.ok) {
-              const retryErrorText = await retryResponse.text();
-              throw new Error(`GitHub API error (retry): ${retryResponse.status} - ${retryErrorText}`);
+          // Retry up to 3 times with exponential backoff
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              // Wait a bit before retrying (exponential backoff)
+              if (attempt > 1) {
+                const delay = Math.pow(2, attempt - 1) * 100; // 100ms, 200ms, 400ms
+                console.log(`[GitHubSemanticProvider] Retry attempt ${attempt}, waiting ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+              }
+              
+              // Get fresh file info
+              const freshFile = await this.getFileInfo(fullPath);
+              if (freshFile?.sha) {
+                requestBody.sha = freshFile.sha;
+                console.log(`[GitHubSemanticProvider] Retry attempt ${attempt} with fresh SHA:`, freshFile.sha.substring(0, 8));
+                
+                const retryResponse = await fetch(`${this.rootUrl}/${fullPath}`, {
+                  method: 'PUT',
+                  headers: {
+                    'Authorization': `token ${this.token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify(requestBody)
+                });
+                
+                if (retryResponse.ok) {
+                  const retryResult = await retryResponse.json();
+                  console.log(`[GitHubSemanticProvider] File written successfully after retry attempt ${attempt}:`, path);
+                  return retryResult;
+                } else if (retryResponse.status !== 409) {
+                  // If it's not a 409, don't retry further
+                  const retryErrorText = await retryResponse.text();
+                  throw new Error(`GitHub API error (retry): ${retryResponse.status} - ${retryErrorText}`);
+                }
+                
+                // If it's still 409, continue to next attempt
+                console.log(`[GitHubSemanticProvider] Retry attempt ${attempt} still got 409, trying again...`);
+              }
+            } catch (retryError) {
+              if (attempt === 3) {
+                // Last attempt failed
+                throw retryError;
+              }
+              console.log(`[GitHubSemanticProvider] Retry attempt ${attempt} failed:`, retryError.message);
             }
-            
-            const retryResult = await retryResponse.json();
-            console.log('[GitHubSemanticProvider] File written successfully after retry:', path);
-            return retryResult;
           }
+          
+          // All retries failed
+          throw new Error(`GitHub API error: Failed after 3 retry attempts - ${errorText}`);
         }
         
         throw new Error(`GitHub API error: ${response.status} - ${errorText}`);

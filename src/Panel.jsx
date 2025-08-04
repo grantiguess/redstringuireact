@@ -2,7 +2,7 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, us
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR } from './constants';
-import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Brain } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
@@ -19,6 +19,7 @@ import useGraphStore, {
 import { shallow } from 'zustand/shallow';
 import GraphListItem from './GraphListItem'; // <<< Import the new component
 import GitNativeFederation from './GitNativeFederation'; // Import Git-Native Federation component
+import AICollaborationPanel from './AICollaborationPanel'; // Import AI Collaboration Panel
 
 // Helper function to determine the correct article ("a" or "an")
 const getArticleFor = (word) => {
@@ -566,7 +567,7 @@ const Panel = forwardRef(
     const [tempProjectTitle, setTempProjectTitle] = useState(''); // Used by right panel home tab
 
     // Left panel view state and collapsed sections
-    const [leftViewActive, setLeftViewActive] = useState('library'); // 'library', 'grid', or 'federation'
+    const [leftViewActive, setLeftViewActive] = useState('library'); // 'library', 'grid', 'federation', or 'ai'
     const [sectionCollapsed, setSectionCollapsed] = useState({});
     const [sectionMaxHeights, setSectionMaxHeights] = useState({});
 
@@ -1469,6 +1470,18 @@ const Panel = forwardRef(
             panelContent = (
                 <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                     <GitNativeFederation />
+                </div>
+            );
+        } else if (leftViewActive === 'ai') {
+            // AI Collaboration view
+            panelContent = (
+                <div className="panel-content-inner ai-panel" style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    height: '100%', 
+                    padding: 0
+                }}>
+                    <AICollaborationPanel />
                 </div>
             );
         }
@@ -3110,6 +3123,15 @@ const Panel = forwardRef(
                             >
                                 <Globe size={20} color="#260000" />
                             </div>
+
+                            {/* AI Collaboration Button */}
+                            <div 
+                                title="AI Collaboration" 
+                                style={{ /* Common Button Styles */ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backgroundColor: leftViewActive === 'ai' ? '#bdb5b5' : '#979090', zIndex: 2 }}
+                                onClick={() => setLeftViewActive('ai')}
+                            >
+                                <Brain size={20} color="#260000" />
+                            </div>
                         </div>
                     ) : (
                         // --- Right Panel Header (Uses store state `rightPanelTabs`) ---
@@ -3143,6 +3165,8 @@ const Panel = forwardRef(
                                     </div>
                                 );
                             })()}
+
+
                             {/* Scrollable Tab Area (uses store state) */} 
                             {isExpanded && (
                                 <div style={{ flex: '1 1 0', position: 'relative', height: '100%', minWidth: 0 }}>
