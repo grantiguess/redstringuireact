@@ -5,9 +5,16 @@
 
 import { exportToRedstring } from '../formats/redstringFormat.js';
 
+// Source of truth modes
+const SOURCE_OF_TRUTH = {
+  LOCAL: 'local',    // RedString file is authoritative (default, safe)
+  GIT: 'git'         // Git repository is authoritative (advanced, experimental)
+};
+
 class GitSyncEngine {
-  constructor(provider) {
+  constructor(provider, sourceOfTruth = SOURCE_OF_TRUTH.LOCAL) {
     this.provider = provider;
+    this.sourceOfTruth = sourceOfTruth; // Configurable source of truth
     this.localState = new Map(); // Instant updates
     this.pendingCommits = []; // Queue of pending changes
     this.commitInterval = 5000; // 5-second auto-commits
@@ -16,6 +23,95 @@ class GitSyncEngine {
     this.commitLoop = null;
     
     console.log('[GitSyncEngine] Initialized with provider:', provider.name);
+    console.log('[GitSyncEngine] Source of truth:', this.sourceOfTruth);
+  }
+  
+  /**
+   * Set the source of truth mode
+   * @param {string} mode - 'local' or 'git'
+   */
+  setSourceOfTruth(mode) {
+    if (mode !== SOURCE_OF_TRUTH.LOCAL && mode !== SOURCE_OF_TRUTH.GIT) {
+      throw new Error(`Invalid source of truth mode: ${mode}. Must be 'local' or 'git'`);
+    }
+    
+    const oldMode = this.sourceOfTruth;
+    this.sourceOfTruth = mode;
+    
+    console.log(`[GitSyncEngine] Source of truth changed from '${oldMode}' to '${mode}'`);
+    
+    if (mode === SOURCE_OF_TRUTH.GIT) {
+      console.warn('[GitSyncEngine] WARNING: Git mode enabled. This is experimental and may overwrite local content!');
+    }
+  }
+  
+  /**
+   * Get current source of truth mode
+   */
+  getSourceOfTruth() {
+    return this.sourceOfTruth;
+  }
+  
+  /**
+   * Merge Git data with existing local content
+   * Behavior depends on source of truth setting
+   */
+  mergeWithLocalContent(gitData, localState) {
+    console.log(`[GitSyncEngine] Evaluating Git data against local RedString content (source: ${this.sourceOfTruth})...`);
+    
+    const gitHasContent = gitData && (
+      (gitData.graphs && Object.keys(gitData.graphs).length > 0) ||
+      (gitData.nodePrototypes && Object.keys(gitData.nodePrototypes).length > 0) ||
+      (gitData.edges && Object.keys(gitData.edges).length > 0)
+    );
+    
+    const localHasContent = localState && (
+      localState.graphs.size > 0 ||
+      localState.nodePrototypes.size > 0 ||
+      localState.edges.size > 0
+    );
+    
+    // LOCAL MODE: RedString file is source of truth (default, safe)
+    if (this.sourceOfTruth === SOURCE_OF_TRUTH.LOCAL) {
+      if (!gitHasContent && localHasContent) {
+        console.log('[GitSyncEngine] LOCAL MODE: Git has no content, preserving local RedString content');
+        return null; // Keep local content, sync to Git
+      }
+      
+      if (gitHasContent && !localHasContent) {
+        console.log('[GitSyncEngine] LOCAL MODE: Local has no content, using Git data as backup');
+        return gitData; // Use Git data only if local is empty
+      }
+      
+      if (gitHasContent && localHasContent) {
+        console.log('[GitSyncEngine] LOCAL MODE: Both have content - RedString is source of truth, preserving local content');
+        return null; // Keep local content, sync to Git
+      }
+      
+      console.log('[GitSyncEngine] LOCAL MODE: Neither has content, starting fresh');
+      return null; // Start fresh
+    }
+    
+    // GIT MODE: Git repository is source of truth (experimental)
+    if (this.sourceOfTruth === SOURCE_OF_TRUTH.GIT) {
+      if (!gitHasContent && localHasContent) {
+        console.log('[GitSyncEngine] GIT MODE: Git has no content, preserving local content and syncing to Git');
+        return null; // Keep local content, sync to Git
+      }
+      
+      if (gitHasContent && !localHasContent) {
+        console.log('[GitSyncEngine] GIT MODE: Local has no content, using Git data as source');
+        return gitData; // Use Git data
+      }
+      
+      if (gitHasContent && localHasContent) {
+        console.log('[GitSyncEngine] GIT MODE: Both have content - Git is source of truth, using Git data');
+        return gitData; // Use Git data as source of truth
+      }
+      
+      console.log('[GitSyncEngine] GIT MODE: Neither has content, starting fresh');
+      return null; // Start fresh
+    }
   }
   
   /**
@@ -162,15 +258,26 @@ class GitSyncEngine {
         }
       }
       
-      // Parse the content
-      const redstringData = JSON.parse(content);
-      console.log('[GitSyncEngine] Successfully parsed RedString data');
+      // Check if content is empty or whitespace
+      if (!content || content.trim() === '') {
+        console.log('[GitSyncEngine] File is empty, starting fresh');
+        return null;
+      }
       
-      return redstringData;
+      // Try to parse the content
+      try {
+        const redstringData = JSON.parse(content);
+        console.log('[GitSyncEngine] Successfully parsed RedString data');
+        return redstringData;
+      } catch (parseError) {
+        console.warn('[GitSyncEngine] Failed to parse JSON, file may be corrupted:', parseError.message);
+        console.log('[GitSyncEngine] File content preview:', content.substring(0, 100) + '...');
+        return null; // Return null to start fresh
+      }
       
     } catch (error) {
       console.error('[GitSyncEngine] Failed to load from Git:', error);
-      throw error;
+      return null; // Return null instead of throwing to start fresh
     }
   }
   
@@ -182,9 +289,10 @@ class GitSyncEngine {
       isRunning: this.isRunning,
       pendingCommits: this.pendingCommits.length,
       lastCommitTime: this.lastCommitTime,
-      provider: this.provider.name
+      provider: this.provider.name,
+      sourceOfTruth: this.sourceOfTruth
     };
   }
 }
 
-export { GitSyncEngine }; 
+export { GitSyncEngine, SOURCE_OF_TRUTH }; 

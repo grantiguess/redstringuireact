@@ -97,6 +97,15 @@ const ipfsGitSemantic = {
 
 **Real-Time Local State + Background Persistence:**
 
+**Core Principle: Configurable Source of Truth**
+The system supports two modes for determining the authoritative source of content:
+
+1. **Local Mode (Default)**: RedString universe file (.redstring) is the authoritative source. Git repositories serve as backup and sync targets, preventing corruption of user work from potentially problematic Git content.
+
+2. **Git Mode (Experimental)**: Git repository is the authoritative source, enabling true distributed collaboration when the Git provider is reliable and trusted.
+
+Users can toggle between modes based on their trust level in the Git provider and collaboration requirements.
+
 ```javascript
 class SemanticSyncEngine {
   constructor(provider) {
@@ -123,6 +132,16 @@ class SemanticSyncEngine {
         this.showUI('✓ Synced to ' + this.provider.name);
       }
     }, this.commitInterval);
+  }
+  
+  // Merge strategy: Local RedString content takes priority
+  mergeWithLocalContent(gitData, localState) {
+    // If local has content, preserve it regardless of Git state
+    if (localState.hasContent()) {
+      return null; // Keep local content, sync to Git
+    }
+    // Only use Git data if local is completely empty
+    return gitData;
   }
 }
 ```

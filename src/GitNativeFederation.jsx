@@ -40,7 +40,7 @@ import {
 import { SemanticProviderFactory } from './services/gitNativeProvider.js';
 import { SemanticSyncEngine } from './services/semanticSyncEngine.js';
 import { SemanticFederation } from './services/semanticFederation.js';
-import { GitSyncEngine } from './services/gitSyncEngine.js';
+import { GitSyncEngine, SOURCE_OF_TRUTH } from './services/gitSyncEngine.js';
 import useGraphStore from './store/graphStore.js';
 import { importFromRedstring } from './formats/redstringFormat.js';
 
@@ -78,6 +78,7 @@ const GitNativeFederation = () => {
   const [userRepositories, setUserRepositories] = useState([]);
   const [showRepositorySelector, setShowRepositorySelector] = useState(false);
   const [gitSyncEngine, setGitSyncEngine] = useState(null);
+  const [sourceOfTruthMode, setSourceOfTruthMode] = useState(SOURCE_OF_TRUTH.LOCAL);
   
   // Get the actual RedString store
   const storeState = useGraphStore();
@@ -99,8 +100,8 @@ const GitNativeFederation = () => {
         setSyncStatus(status);
       });
       
-      // Initialize Git sync engine
-      const newGitSyncEngine = new GitSyncEngine(currentProvider);
+      // Initialize Git sync engine with current source of truth mode
+      const newGitSyncEngine = new GitSyncEngine(currentProvider, sourceOfTruthMode);
       setGitSyncEngine(newGitSyncEngine);
       
       // Try to load existing data from Git
@@ -108,19 +109,67 @@ const GitNativeFederation = () => {
         if (redstringData) {
           console.log('[GitNativeFederation] Loaded existing data from Git');
           
-          // Import the data into the store
-          importFromRedstring(redstringData, storeActions);
+          // Check if we have existing local content
+          const currentState = useGraphStore.getState();
+          const hasLocalContent = currentState.graphs.size > 0 || currentState.nodePrototypes.size > 0 || currentState.edges.size > 0;
           
-          setSyncStatus({
-            type: 'success',
-            status: 'Loaded existing data from repository'
-          });
+          if (hasLocalContent) {
+            console.log('[GitNativeFederation] Found existing local content, merging with Git data');
+            
+            // Use the merge function to decide what to do
+            const mergedData = newGitSyncEngine.mergeWithLocalContent(redstringData, currentState);
+            
+            if (mergedData) {
+              // Import the merged data (only if local is empty)
+              importFromRedstring(mergedData, storeActions);
+              setSyncStatus({
+                type: 'success',
+                status: sourceOfTruthMode === SOURCE_OF_TRUTH.LOCAL 
+                  ? 'Restored from Git backup (local was empty)' 
+                  : 'Loaded from Git source'
+              });
+            } else {
+              // Keep local content, don't import Git data
+              setSyncStatus({
+                type: 'success',
+                status: sourceOfTruthMode === SOURCE_OF_TRUTH.LOCAL 
+                  ? 'RedString content preserved • Syncing to Git' 
+                  : 'Local content preserved • Syncing to Git'
+              });
+            }
+          } else {
+            console.log('[GitNativeFederation] No local content, loading Git data');
+            
+            // Import the data into the store
+            importFromRedstring(redstringData, storeActions);
+            
+            setSyncStatus({
+              type: 'success',
+              status: 'Loaded existing data from repository'
+            });
+          }
         } else {
-          console.log('[GitNativeFederation] No existing data found, will create on first save');
-          setSyncStatus({
-            type: 'success',
-            status: 'Connected to repository - ready to save data'
-          });
+          console.log('[GitNativeFederation] No existing Git data found, preserving local content');
+          
+          // Check if we have existing local content to preserve
+          const currentState = useGraphStore.getState();
+          const hasLocalContent = currentState.graphs.size > 0 || currentState.nodePrototypes.size > 0 || currentState.edges.size > 0;
+          
+          if (hasLocalContent) {
+            console.log('[GitNativeFederation] Preserving existing RedString content, will sync to Git');
+            setSyncStatus({
+              type: 'success',
+              status: sourceOfTruthMode === SOURCE_OF_TRUTH.LOCAL 
+                ? 'RedString content preserved • Syncing to Git' 
+                : 'Local content preserved • Syncing to Git'
+            });
+          } else {
+            console.log('[GitNativeFederation] No existing content found, will create on first save');
+            setSyncStatus({
+              type: 'success',
+              status: 'Connected to repository • Ready to save RedString data'
+            });
+          }
         }
         
         // Start the sync engine
@@ -132,6 +181,9 @@ const GitNativeFederation = () => {
           type: 'error',
           status: 'Failed to load existing data'
         });
+        
+        // Start the sync engine even if loading failed
+        newGitSyncEngine.start();
       });
       
       // Load initial data
@@ -641,6 +693,37 @@ const GitNativeFederation = () => {
       setError(`Save to Git failed: ${error.message}`);
     } finally {
       setIsConnecting(false);
+    }
+  };
+
+  // Toggle source of truth mode
+  const handleToggleSourceOfTruth = () => {
+    if (!gitSyncEngine) {
+      setError('No sync engine connected');
+      return;
+    }
+
+    const newMode = sourceOfTruthMode === SOURCE_OF_TRUTH.LOCAL 
+      ? SOURCE_OF_TRUTH.GIT 
+      : SOURCE_OF_TRUTH.LOCAL;
+    
+    try {
+      gitSyncEngine.setSourceOfTruth(newMode);
+      setSourceOfTruthMode(newMode);
+      
+      setSyncStatus({
+        type: 'success',
+        status: `Source of truth changed to: ${newMode}`
+      });
+      
+      // Clear the status after 5 seconds
+      setTimeout(() => {
+        setSyncStatus(null);
+      }, 5000);
+      
+    } catch (error) {
+      console.error('[GitNativeFederation] Failed to change source of truth:', error);
+      setError(`Failed to change source of truth: ${error.message}`);
     }
   };
 
@@ -1286,6 +1369,65 @@ const GitNativeFederation = () => {
             <span style={{ color: syncStatus.type === 'error' ? '#d32f2f' : '#260000' }}>
               {syncStatus.status}
             </span>
+          </div>
+        )}
+
+        {/* Content Status */}
+        {gitSyncEngine && (
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px', 
+            padding: '8px', 
+            backgroundColor: '#e8f5e8',
+            borderRadius: '4px',
+            fontSize: '0.8rem',
+            marginTop: '8px'
+          }}>
+            <CheckCircle size={14} color="#2e7d32" />
+            <span style={{ color: '#2e7d32' }}>
+              Auto-save enabled • Every 5 seconds
+            </span>
+          </div>
+        )}
+
+        {/* Source of Truth Toggle */}
+        {gitSyncEngine && (
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            padding: '12px', 
+            backgroundColor: sourceOfTruthMode === SOURCE_OF_TRUTH.GIT ? '#fff3e0' : '#f3e5f5',
+            borderRadius: '4px',
+            fontSize: '0.8rem',
+            marginTop: '8px',
+            border: `1px solid ${sourceOfTruthMode === SOURCE_OF_TRUTH.GIT ? '#ff9800' : '#9c27b0'}`
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Shield size={14} color={sourceOfTruthMode === SOURCE_OF_TRUTH.GIT ? '#ff9800' : '#9c27b0'} />
+              <span style={{ color: sourceOfTruthMode === SOURCE_OF_TRUTH.GIT ? '#e65100' : '#4a148c' }}>
+                Source of Truth: <strong>{sourceOfTruthMode === SOURCE_OF_TRUTH.LOCAL ? 'RedString File' : 'Git Repository'}</strong>
+              </span>
+            </div>
+            <button
+              onClick={handleToggleSourceOfTruth}
+              style={{
+                padding: '4px 8px',
+                backgroundColor: sourceOfTruthMode === SOURCE_OF_TRUTH.GIT ? '#ff9800' : '#9c27b0',
+                color: 'white',
+                border: 'none',
+                borderRadius: '3px',
+                cursor: 'pointer',
+                fontSize: '0.7rem',
+                fontFamily: "'EmOne', sans-serif"
+              }}
+              title={sourceOfTruthMode === SOURCE_OF_TRUTH.LOCAL 
+                ? 'Switch to Git mode (experimental)' 
+                : 'Switch to RedString mode (safe)'}
+            >
+              {sourceOfTruthMode === SOURCE_OF_TRUTH.LOCAL ? 'Use Git' : 'Use RedString'}
+            </button>
           </div>
         )}
       </div>
