@@ -1379,14 +1379,29 @@ const GitNativeFederation = () => {
             alignItems: 'center', 
             gap: '8px', 
             padding: '8px', 
-            backgroundColor: '#e8f5e8',
+            backgroundColor: gitSyncEngine.getStatus().isDragging ? '#fff3e0' : 
+                           gitSyncEngine.getStatus().hasChanges ? '#e8f5e8' : '#f5f5f5',
             borderRadius: '4px',
             fontSize: '0.8rem',
             marginTop: '8px'
           }}>
-            <CheckCircle size={14} color="#2e7d32" />
-            <span style={{ color: '#2e7d32' }}>
-              Auto-save enabled • Every 5 seconds
+            {gitSyncEngine.getStatus().isDragging ? (
+              <RefreshCw size={14} color="#ff9800" />
+            ) : gitSyncEngine.getStatus().hasChanges ? (
+              <CheckCircle size={14} color="#2e7d32" />
+            ) : (
+              <RefreshCw size={14} color="#666" />
+            )}
+            <span style={{ 
+              color: gitSyncEngine.getStatus().isDragging ? '#e65100' : 
+                     gitSyncEngine.getStatus().hasChanges ? '#2e7d32' : '#666' 
+            }}>
+              {gitSyncEngine.getStatus().isDragging 
+                ? 'Auto-save enabled • Dragging in progress...' 
+                : gitSyncEngine.getStatus().hasChanges 
+                  ? 'Auto-save enabled • Changes pending' 
+                  : 'Auto-save enabled • No changes to commit'
+              }
             </span>
           </div>
         )}
@@ -1407,7 +1422,7 @@ const GitNativeFederation = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Shield size={14} color={sourceOfTruthMode === SOURCE_OF_TRUTH.GIT ? '#ff9800' : '#9c27b0'} />
               <span style={{ color: sourceOfTruthMode === SOURCE_OF_TRUTH.GIT ? '#e65100' : '#4a148c' }}>
-                Source of Truth: <strong>{sourceOfTruthMode === SOURCE_OF_TRUTH.LOCAL ? 'RedString File' : 'Git Repository'}</strong>
+                Source of Truth: <strong>{sourceOfTruthMode === SOURCE_OF_TRUTH.LOCAL ? '.redstring File' : 'Git Repository'}</strong>
               </span>
             </div>
             <button

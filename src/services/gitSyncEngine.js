@@ -21,6 +21,15 @@ class GitSyncEngine {
     this.isRunning = false;
     this.lastCommitTime = 0;
     this.commitLoop = null;
+    this.lastCommittedHash = null; // Hash of last committed state
+    this.hasChanges = false; // Track if there are actual changes
+    
+    // Rate limiting and debouncing
+    this.minCommitInterval = 2000; // Minimum 2 seconds between commits
+    this.debounceTimeout = null; // For debouncing rapid updates
+    this.debounceDelay = 1000; // 1 second debounce for continuous operations
+    this.isDragging = false; // Track if we're in a dragging operation
+    this.dragStartTime = 0; // Track when dragging started
     
     console.log('[GitSyncEngine] Initialized with provider:', provider.name);
     console.log('[GitSyncEngine] Source of truth:', this.sourceOfTruth);
@@ -149,40 +158,130 @@ class GitSyncEngine {
   }
   
   /**
+   * Generate a hash of the store state for change detection
+   * Only includes content changes, not viewport changes
+   */
+  generateStateHash(storeState) {
+    // Extract only content-related state, excluding viewport state
+    const contentState = {
+      graphs: Array.from(storeState.graphs.entries()).map(([id, graph]) => {
+        // Exclude viewport state from graphs
+        const { panOffset, zoomLevel, ...contentGraph } = graph;
+        return [id, contentGraph];
+      }),
+      nodePrototypes: Array.from(storeState.nodePrototypes.entries()),
+      edges: Array.from(storeState.edges.entries())
+    };
+    
+    // Create a simple hash of the content state
+    const stateString = JSON.stringify(contentState);
+    
+    // Simple hash function
+    let hash = 0;
+    for (let i = 0; i < stateString.length; i++) {
+      const char = stateString.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return hash.toString();
+  }
+
+  /**
    * Update local state instantly (user operations)
+   * Now with intelligent rate limiting and debouncing
    */
   updateState(storeState) {
     // Store the current state for background persistence
     this.localState.set('current', storeState);
     
+    // Check if there are actual changes (content only, not viewport)
+    const currentHash = this.generateStateHash(storeState);
+    const hasChanges = this.lastCommittedHash !== currentHash;
+    
+    if (!hasChanges) {
+      return; // No changes, nothing to do
+    }
+    
+    // Detect if this might be a dragging operation
+    const now = Date.now();
+    const timeSinceLastUpdate = now - (this.pendingCommits.length > 0 ? this.pendingCommits[this.pendingCommits.length - 1].timestamp : 0);
+    
+    // If updates are coming very rapidly (less than 100ms apart), likely dragging
+    if (timeSinceLastUpdate < 100) {
+      this.isDragging = true;
+      this.dragStartTime = this.dragStartTime || now;
+      console.log('[GitSyncEngine] Detected rapid updates (likely dragging), debouncing...');
+    }
+    
+    // Clear any existing debounce timeout
+    if (this.debounceTimeout) {
+      clearTimeout(this.debounceTimeout);
+    }
+    
     // Add to pending commits
     this.pendingCommits.push({
       type: 'state_update',
-      timestamp: Date.now(),
-      data: storeState
+      timestamp: now,
+      data: storeState,
+      hash: currentHash,
+      isDragging: this.isDragging
     });
     
-    console.log('[GitSyncEngine] State updated, pending commits:', this.pendingCommits.length);
+    this.hasChanges = true;
+    
+    // If we're dragging, use debounced commit
+    if (this.isDragging) {
+      this.debounceTimeout = setTimeout(() => {
+        console.log('[GitSyncEngine] Dragging finished, committing final state');
+        this.isDragging = false;
+        this.dragStartTime = 0;
+        this.processPendingCommits();
+      }, this.debounceDelay);
+    } else {
+      // Normal update, log but don't spam
+      console.log('[GitSyncEngine] Content updated, pending commits:', this.pendingCommits.length);
+    }
   }
   
   /**
    * Process pending commits in batches
+   * Now with rate limiting and intelligent batching
    */
   async processPendingCommits() {
     if (this.pendingCommits.length === 0) {
       return; // Nothing to commit
     }
     
-    const timeSinceLastCommit = Date.now() - this.lastCommitTime;
-    if (timeSinceLastCommit < this.commitInterval) {
-      return; // Too soon since last commit
+    const now = Date.now();
+    const timeSinceLastCommit = now - this.lastCommitTime;
+    
+    // Rate limiting: enforce minimum interval between commits
+    if (timeSinceLastCommit < this.minCommitInterval) {
+      console.log('[GitSyncEngine] Rate limited: too soon since last commit');
+      return;
+    }
+    
+    // Check if there are actual changes to commit
+    if (!this.hasChanges) {
+      console.log('[GitSyncEngine] No changes detected, skipping commit');
+      return;
+    }
+    
+    // If we're currently dragging, don't commit yet (let debounce handle it)
+    if (this.isDragging) {
+      console.log('[GitSyncEngine] Currently dragging, waiting for drag to finish');
+      return;
     }
     
     try {
-      console.log('[GitSyncEngine] Processing', this.pendingCommits.length, 'pending commits...');
+      const commitCount = this.pendingCommits.length;
+      const isFromDragging = this.pendingCommits.some(commit => commit.isDragging);
       
-      // Get the most recent state
+      console.log(`[GitSyncEngine] Processing ${commitCount} pending commits${isFromDragging ? ' (from dragging)' : ''}...`);
+      
+      // Get the most recent state (always use the latest, discard intermediate states)
       const latestState = this.pendingCommits[this.pendingCommits.length - 1].data;
+      const latestHash = this.pendingCommits[this.pendingCommits.length - 1].hash;
       
       // Export to RedString format
       const redstringData = exportToRedstring(latestState);
@@ -192,20 +291,22 @@ class GitSyncEngine {
       await this.provider.writeSemanticFile('universe.redstring', jsonString);
       await this.provider.writeSemanticFile('backup.redstring', jsonString);
       
-      // Clear pending commits
+      // Update tracking
+      this.lastCommittedHash = latestHash;
+      this.hasChanges = false;
       this.pendingCommits = [];
-      this.lastCommitTime = Date.now();
+      this.lastCommitTime = now;
       
-      console.log('[GitSyncEngine] Successfully committed to Git repository');
+      console.log(`[GitSyncEngine] Successfully committed changes to Git repository (${commitCount} updates batched)`);
       
     } catch (error) {
       console.error('[GitSyncEngine] Failed to commit:', error);
       
       // Don't clear pending commits on error - they'll be retried
       // But limit the queue size to prevent memory issues
-      if (this.pendingCommits.length > 10) {
-        console.warn('[GitSyncEngine] Too many pending commits, keeping only latest 5');
-        this.pendingCommits = this.pendingCommits.slice(-5);
+      if (this.pendingCommits.length > 20) {
+        console.warn('[GitSyncEngine] Too many pending commits, keeping only latest 10');
+        this.pendingCommits = this.pendingCommits.slice(-10);
       }
     }
   }
@@ -217,12 +318,26 @@ class GitSyncEngine {
     try {
       console.log('[GitSyncEngine] Force committing...');
       
+      // Clear any pending debounce
+      if (this.debounceTimeout) {
+        clearTimeout(this.debounceTimeout);
+        this.debounceTimeout = null;
+      }
+      
+      // Reset dragging state
+      this.isDragging = false;
+      this.dragStartTime = 0;
+      
       const redstringData = exportToRedstring(storeState);
       const jsonString = JSON.stringify(redstringData, null, 2);
       
       await this.provider.writeSemanticFile('universe.redstring', jsonString);
       await this.provider.writeSemanticFile('backup.redstring', jsonString);
       
+      // Update tracking for force commit
+      const currentHash = this.generateStateHash(storeState);
+      this.lastCommittedHash = currentHash;
+      this.hasChanges = false;
       this.pendingCommits = []; // Clear pending commits
       this.lastCommitTime = Date.now();
       
@@ -282,6 +397,26 @@ class GitSyncEngine {
   }
   
   /**
+   * Manually end dragging state (useful for edge cases)
+   */
+  endDragging() {
+    if (this.isDragging) {
+      console.log('[GitSyncEngine] Manually ending dragging state');
+      this.isDragging = false;
+      this.dragStartTime = 0;
+      
+      // Clear debounce and commit immediately
+      if (this.debounceTimeout) {
+        clearTimeout(this.debounceTimeout);
+        this.debounceTimeout = null;
+      }
+      
+      // Process any pending commits
+      this.processPendingCommits();
+    }
+  }
+
+  /**
    * Get sync status
    */
   getStatus() {
@@ -290,7 +425,11 @@ class GitSyncEngine {
       pendingCommits: this.pendingCommits.length,
       lastCommitTime: this.lastCommitTime,
       provider: this.provider.name,
-      sourceOfTruth: this.sourceOfTruth
+      sourceOfTruth: this.sourceOfTruth,
+      hasChanges: this.hasChanges,
+      lastCommittedHash: this.lastCommittedHash ? this.lastCommittedHash.substring(0, 8) : null,
+      isDragging: this.isDragging,
+      debounceActive: !!this.debounceTimeout
     };
   }
 }
