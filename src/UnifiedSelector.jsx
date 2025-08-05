@@ -67,7 +67,7 @@ const UnifiedSelector = ({
     const searchText = (mode === 'node-creation' || mode === 'connection-creation' || mode === 'abstraction-node-creation') ? name : searchTerm;
     if (!searchText) return prototypes;
     return prototypes.filter(p => 
-      p.name.toLowerCase().includes(searchText.toLowerCase())
+      p.name && p.name.toLowerCase().includes(searchText.toLowerCase())
     );
   }, [nodePrototypesMap, name, searchTerm, mode]);
 

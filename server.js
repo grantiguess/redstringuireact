@@ -96,27 +96,24 @@ let bridgeStoreData = null;
 // Function to call actual Redstring store actions
 async function callRedstringStoreAction(action, params) {
   try {
-    // This will be called by the Redstring app to register the store
-    if (global.redstringStoreActions) {
-      return await global.redstringStoreActions[action](...params);
+    // Store the action to be executed by the MCPBridge
+    if (!global.pendingActions) {
+      global.pendingActions = [];
     }
     
-    // Fallback: try to call via HTTP to the Redstring app
-    const response = await fetch('http://localhost:4000/api/store/action', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ action, params })
+    global.pendingActions.push({
+      action,
+      params,
+      timestamp: Date.now()
     });
     
-    if (response.ok) {
-      return await response.json();
-    } else {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
+    // Trigger a save
+    saveTriggerTimestamp = Date.now();
+    
+    console.log(`✅ Bridge: Queued action ${action} for execution by MCPBridge`);
+    return { success: true, queued: true };
   } catch (error) {
-    console.error(`Failed to call Redstring store action ${action}:`, error);
+    console.error(`Failed to queue Redstring store action ${action}:`, error);
     throw error;
   }
 }
@@ -204,7 +201,7 @@ app.post('/api/bridge/actions/add-node-prototype', async (req, res) => {
     // Generate a unique ID for the prototype
     const prototypeId = `prototype-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // Call the actual Redstring store action
+    // Queue the action for execution by MCPBridge
     try {
       await callRedstringStoreAction('addNodePrototype', [prototypeId, {
         name,
@@ -213,38 +210,16 @@ app.post('/api/bridge/actions/add-node-prototype', async (req, res) => {
         typeNodeId: typeNodeId || null
       }]);
       
-      console.log('✅ Bridge: Added node prototype to real store:', name);
+      console.log('✅ Bridge: Queued addNodePrototype action for MCPBridge:', name);
       
-      // Also update bridge data for consistency
-      if (bridgeStoreData && bridgeStoreData.nodePrototypes) {
-        bridgeStoreData.nodePrototypes.push({
-          id: prototypeId,
-          name,
-          description,
-          color: color || '#4A90E2',
-          typeNodeId: typeNodeId || null
-        });
-      }
-      
-      res.json({ success: true, prototype: { id: prototypeId, name, description, color: color || '#4A90E2', typeNodeId: typeNodeId || null } });
+      res.json({ 
+        success: true, 
+        prototype: { id: prototypeId, name, description, color: color || '#4A90E2', typeNodeId: typeNodeId || null },
+        message: 'Action queued for execution by Redstring store'
+      });
     } catch (storeError) {
-      console.error('Failed to call real store action:', storeError);
-      
-      // Fallback to bridge-only storage
-      const newPrototype = {
-        id: prototypeId,
-        name,
-        description,
-        color: color || '#4A90E2',
-        typeNodeId: typeNodeId || null
-      };
-      
-      if (bridgeStoreData && bridgeStoreData.nodePrototypes) {
-        bridgeStoreData.nodePrototypes.push(newPrototype);
-        console.log('✅ Bridge: Added node prototype (bridge only):', name);
-      }
-      
-      res.json({ success: true, prototype: newPrototype, warning: 'Bridge-only storage - not saved to file' });
+      console.error('Failed to queue store action:', storeError);
+      res.status(500).json({ error: 'Failed to queue action for Redstring store' });
     }
   } catch (error) {
     console.error('Bridge action error:', error);
@@ -260,74 +235,29 @@ app.post('/api/bridge/actions/add-node-instance', async (req, res) => {
       return res.status(400).json({ error: 'Graph ID, prototype name, and position are required' });
     }
     
-    // Find the prototype by name or ID
-    let prototype = bridgeStoreData?.nodePrototypes?.find(p => p.name === prototypeName);
-    if (!prototype) {
-      // Try ID match
-      prototype = bridgeStoreData?.nodePrototypes?.find(p => p.id === prototypeName);
-    }
-    if (!prototype) {
-      // Try case-insensitive name match
-      prototype = bridgeStoreData?.nodePrototypes?.find(p => 
-        p.name.toLowerCase() === prototypeName.toLowerCase()
-      );
-    }
-    if (!prototype) {
-      return res.status(404).json({ 
-        error: `Prototype '${prototypeName}' not found`,
-        availablePrototypes: bridgeStoreData?.nodePrototypes?.map(p => ({ name: p.name, id: p.id })) || []
-      });
-    }
+    // For now, we'll assume the prototype exists and use the prototypeName as the prototypeId
+    // The MCPBridge will handle the actual lookup in the Redstring store
+    const prototypeId = prototypeName; // This could be either a name or ID
+    
+    console.log('🔍 Bridge: Using prototypeId for instance creation:', prototypeId);
     
     // Generate instance ID
     const instanceId = `instance-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // Call the actual Redstring store action
+    // Queue the action for execution by MCPBridge
     try {
-      await callRedstringStoreAction('addNodeInstance', [graphId, prototype.id, position, instanceId]);
+      await callRedstringStoreAction('addNodeInstance', [graphId, prototypeId, position, instanceId]);
       
-      console.log('✅ Bridge: Added node instance to real store:', prototypeName, 'to graph:', graphId);
+      console.log('✅ Bridge: Queued addNodeInstance action for MCPBridge:', prototypeName, 'to graph:', graphId);
       
-      // Also update bridge data for consistency
-      if (bridgeStoreData && bridgeStoreData.graphs) {
-        const graph = bridgeStoreData.graphs.find(g => g.id === graphId);
-        if (graph) {
-          if (!graph.instances) graph.instances = [];
-          graph.instances.push({
-            id: instanceId,
-            prototypeId: prototype.id,
-            x: position.x,
-            y: position.y,
-            scale: 1
-          });
-          graph.instanceCount = (graph.instanceCount || 0) + 1;
-        }
-      }
-      
-      res.json({ success: true, instance: { id: instanceId, prototypeId: prototype.id, x: position.x, y: position.y, scale: 1 } });
+      res.json({ 
+        success: true, 
+        instance: { id: instanceId, prototypeId: prototypeId, x: position.x, y: position.y, scale: 1 },
+        message: 'Action queued for execution by Redstring store'
+      });
     } catch (storeError) {
-      console.error('Failed to call real store action:', storeError);
-      
-      // Fallback to bridge-only storage
-      const newInstance = {
-        id: instanceId,
-        prototypeId: prototype.id,
-        x: position.x,
-        y: position.y,
-        scale: 1
-      };
-      
-      if (bridgeStoreData && bridgeStoreData.graphs) {
-        const graph = bridgeStoreData.graphs.find(g => g.id === graphId);
-        if (graph) {
-          if (!graph.instances) graph.instances = [];
-          graph.instances.push(newInstance);
-          graph.instanceCount = (graph.instanceCount || 0) + 1;
-          console.log('✅ Bridge: Added node instance (bridge only):', prototypeName, 'to graph:', graph.name);
-        }
-      }
-      
-      res.json({ success: true, instance: newInstance, warning: 'Bridge-only storage - not saved to file' });
+      console.error('Failed to queue store action:', storeError);
+      res.status(500).json({ error: 'Failed to queue action for Redstring store' });
     }
   } catch (error) {
     console.error('Bridge action error:', error);
@@ -881,6 +811,93 @@ app.post('/api/bridge/actions/search-nodes', (req, res) => {
   } catch (error) {
     console.error('Bridge action error:', error);
     res.status(500).json({ error: 'Failed to search nodes' });
+  }
+});
+
+// Save trigger mechanism
+let saveTriggerTimestamp = null;
+
+// Endpoint to trigger a save in the Redstring app
+app.post('/api/bridge/trigger-save', async (req, res) => {
+  try {
+    saveTriggerTimestamp = Date.now();
+    console.log('✅ Bridge: Save trigger set');
+    res.json({ success: true, message: 'Save trigger set' });
+  } catch (error) {
+    console.error('Bridge save trigger error:', error);
+    res.status(500).json({ error: 'Failed to trigger save' });
+  }
+});
+
+// Endpoint to check for save triggers
+app.get('/api/bridge/check-save-trigger', (req, res) => {
+  try {
+    if (saveTriggerTimestamp) {
+      const shouldSave = true;
+      saveTriggerTimestamp = null; // Clear the trigger
+      res.json({ shouldSave });
+    } else {
+      res.json({ shouldSave: false });
+    }
+  } catch (error) {
+    console.error('Bridge save trigger error:', error);
+    res.status(500).json({ error: 'Failed to check save trigger' });
+  }
+});
+
+// Endpoint to get pending actions
+app.get('/api/bridge/pending-actions', (req, res) => {
+  try {
+    const pendingActions = global.pendingActions || [];
+    global.pendingActions = []; // Clear the queue
+    res.json({ pendingActions });
+  } catch (error) {
+    console.error('Bridge pending actions error:', error);
+    res.status(500).json({ error: 'Failed to get pending actions' });
+  }
+});
+
+// Endpoint to receive action feedback from MCPBridge
+app.post('/api/bridge/action-feedback', (req, res) => {
+  try {
+    const { action, status, error, params } = req.body;
+    
+    if (status === 'error') {
+      console.error('❌ Bridge: Action execution failed:', {
+        action,
+        error,
+        params
+      });
+      
+      // Store error for potential retry or user notification
+      if (!global.actionErrors) {
+        global.actionErrors = [];
+      }
+      global.actionErrors.push({
+        action,
+        error,
+        params,
+        timestamp: Date.now()
+      });
+    } else {
+      console.log('✅ Bridge: Action execution succeeded:', action);
+    }
+    
+    res.json({ success: true, received: true });
+  } catch (error) {
+    console.error('Bridge action feedback error:', error);
+    res.status(500).json({ error: 'Failed to process action feedback' });
+  }
+});
+
+// Endpoint to get action errors
+app.get('/api/bridge/action-errors', (req, res) => {
+  try {
+    const errors = global.actionErrors || [];
+    res.json({ errors });
+  } catch (error) {
+    console.error('Bridge action errors error:', error);
+    res.status(500).json({ error: 'Failed to get action errors' });
   }
 });
 

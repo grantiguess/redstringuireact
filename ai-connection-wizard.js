@@ -288,9 +288,13 @@ class AIConnectionWizard {
     console.log('\n📊 Starting connection monitor...');
     console.log('   Press Ctrl+C to stop the wizard\n');
 
+    let consecutiveFailures = 0;
+    const maxFailures = 3;
+    const timeout = 5000; // 5 second timeout
+
     const monitor = setInterval(() => {
-      // Check bridge status
-      get(`http://localhost:${this.config.bridgePort}/api/bridge/state`, (res) => {
+      // Check bridge status with timeout
+      const bridgeRequest = get(`http://localhost:${this.config.bridgePort}/api/bridge/state`, (res) => {
         let data = '';
         res.on('data', (chunk) => {
           data += chunk;
@@ -299,29 +303,55 @@ class AIConnectionWizard {
           try {
             const bridgeData = JSON.parse(data);
             const hasData = bridgeData.graphs?.length > 0;
+            consecutiveFailures = 0; // Reset failure counter on success
             
-            // Check Redstring status
-            get(`http://localhost:${this.config.redstringPort}`, (redstringRes) => {
+            // Check Redstring status with timeout
+            const redstringRequest = get(`http://localhost:${this.config.redstringPort}`, (redstringRes) => {
               process.stdout.write('\r');
               process.stdout.write(`Status: Bridge ✅ | Redstring ✅ | Data ${hasData ? '✅' : '❌'}`);
-            }).on('error', () => {
+            });
+            
+            redstringRequest.on('error', () => {
               process.stdout.write('\r');
               process.stdout.write(`Status: Bridge ✅ | Redstring ❌ | Data ${hasData ? '✅' : '❌'}`);
             });
+            
+            // Set timeout for Redstring request
+            redstringRequest.setTimeout(timeout, () => {
+              redstringRequest.destroy();
+              process.stdout.write('\r');
+              process.stdout.write(`Status: Bridge ✅ | Redstring ❌ | Data ${hasData ? '✅' : '❌'}`);
+            });
+            
           } catch (error) {
             process.stdout.write('\r');
             process.stdout.write(`Status: Bridge ✅ | Redstring ❌ | Data ❌`);
           }
         });
-      }).on('error', () => {
-        // Check Redstring status
-        get(`http://localhost:${this.config.redstringPort}`, (redstringRes) => {
-          process.stdout.write('\r');
-          process.stdout.write(`Status: Bridge ❌ | Redstring ✅ | Data ❌`);
-        }).on('error', () => {
-          process.stdout.write('\r');
-          process.stdout.write(`Status: Bridge ❌ | Redstring ❌ | Data ❌`);
-        });
+      });
+      
+      bridgeRequest.on('error', () => {
+        consecutiveFailures++;
+        process.stdout.write('\r');
+        process.stdout.write(`Status: Bridge ❌ | Redstring ❌ | Data ❌ (Attempt ${consecutiveFailures}/${maxFailures})`);
+        
+        if (consecutiveFailures >= maxFailures) {
+          console.log('\n\n⚠️  Connection lost! Attempting to reconnect...');
+          this.attemptReconnection();
+        }
+      });
+      
+      // Set timeout for bridge request
+      bridgeRequest.setTimeout(timeout, () => {
+        bridgeRequest.destroy();
+        consecutiveFailures++;
+        process.stdout.write('\r');
+        process.stdout.write(`Status: Bridge ❌ | Redstring ❌ | Data ❌ (Timeout, Attempt ${consecutiveFailures}/${maxFailures})`);
+        
+        if (consecutiveFailures >= maxFailures) {
+          console.log('\n\n⚠️  Connection lost! Attempting to reconnect...');
+          this.attemptReconnection();
+        }
       });
     }, 2000);
 
@@ -339,6 +369,61 @@ class AIConnectionWizard {
       this.cleanup();
       process.exit(0);
     });
+  }
+
+  async attemptReconnection() {
+    console.log('🔄 Attempting to reconnect...');
+    
+    try {
+      // Wait a moment before attempting reconnection
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Check if services are back up
+      const bridgeCheck = new Promise((resolve) => {
+        get(`http://localhost:${this.config.bridgePort}/api/bridge/state`, (res) => {
+          resolve(true);
+        }).on('error', () => {
+          resolve(false);
+        }).setTimeout(3000, () => {
+          resolve(false);
+        });
+      });
+      
+      const redstringCheck = new Promise((resolve) => {
+        get(`http://localhost:${this.config.redstringPort}`, (res) => {
+          resolve(true);
+        }).on('error', () => {
+          resolve(false);
+        }).setTimeout(3000, () => {
+          resolve(false);
+        });
+      });
+      
+      const [bridgeUp, redstringUp] = await Promise.all([bridgeCheck, redstringCheck]);
+      
+      if (bridgeUp && redstringUp) {
+        console.log('✅ Reconnection successful! Services are back online.');
+        return;
+      }
+      
+      if (!bridgeUp) {
+        console.log('🔄 Bridge server down, attempting to restart...');
+        // Try to restart bridge server
+        try {
+          await this.startBridgeServer();
+          console.log('✅ Bridge server restarted successfully');
+        } catch (error) {
+          console.log('❌ Failed to restart bridge server:', error.message);
+        }
+      }
+      
+      if (!redstringUp) {
+        console.log('⚠️  Redstring appears to be down. Please restart it manually.');
+      }
+      
+    } catch (error) {
+      console.log('❌ Reconnection attempt failed:', error.message);
+    }
   }
 
   cleanup() {
