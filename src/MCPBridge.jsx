@@ -27,6 +27,10 @@ const MCPBridge = () => {
             description: 'Add a node instance to a graph',
             parameters: ['graphId', 'prototypeId', 'position', 'instanceId']
           },
+          removeNodeInstance: {
+            description: 'Remove a node instance from a graph',
+            parameters: ['graphId', 'instanceId']
+          },
           setActiveGraph: {
             description: 'Set the active graph',
             parameters: ['graphId']
@@ -48,6 +52,11 @@ const MCPBridge = () => {
             addNodeInstance: async (graphId, prototypeId, position, instanceId) => {
               console.log('MCPBridge: Calling addNodeInstance', graphId, prototypeId, position, instanceId);
               state.addNodeInstance(graphId, prototypeId, position, instanceId);
+              return { success: true, instanceId };
+            },
+            removeNodeInstance: async (graphId, instanceId) => {
+              console.log('MCPBridge: Calling removeNodeInstance', graphId, instanceId);
+              state.removeNodeInstance(graphId, instanceId);
               return { success: true, instanceId };
             },
             setActiveGraph: async (graphId) => {

@@ -282,8 +282,10 @@ class AIConnectionWizard {
     console.log('   - get_active_graph');
     console.log('   - open_graph');
     console.log('   - set_active_graph');
-    console.log('   - add_node_prototype');
-    console.log('   - add_node_instance');
+    console.log('   - addNodeToGraph (RECOMMENDED)');
+    console.log('   - removeNodeFromGraph (RECOMMENDED)');
+    console.log('   - add_node_prototype (LEGACY)');
+    console.log('   - add_node_instance (LEGACY)');
   }
 
   startMonitoring() {
