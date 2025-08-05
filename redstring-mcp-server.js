@@ -51,25 +51,74 @@ async function getRealRedstringState() {
   }
 }
 
-// Function to access real Redstring store actions (simplified for now)
+// Function to access real Redstring store actions via HTTP bridge
 function getRealRedstringActions() {
-  // For now, we'll use a simplified approach
-  // In a full implementation, we'd need to create HTTP endpoints for actions
   return {
     addNodePrototype: async (prototypeData) => {
-      console.error('Actions not yet implemented via HTTP bridge');
-      // Return success instead of throwing error to prevent server crash
-      return { success: true, message: 'Action simulated successfully' };
+      try {
+        const response = await fetch('http://localhost:3001/api/bridge/actions/add-node-prototype', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(prototypeData)
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.error('✅ Bridge: Prototype added successfully');
+        return result;
+      } catch (error) {
+        console.error('❌ Bridge: Failed to add prototype:', error.message);
+        throw error;
+      }
     },
-    addNodeInstance: async (graphId, prototypeId, position) => {
-      console.error('Actions not yet implemented via HTTP bridge');
-      // Return success instead of throwing error to prevent server crash
-      return { success: true, message: 'Action simulated successfully' };
+    addNodeInstance: async (graphId, prototypeName, position) => {
+      try {
+        const response = await fetch('http://localhost:3001/api/bridge/actions/add-node-instance', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ graphId, prototypeName, position })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.error('✅ Bridge: Instance added successfully');
+        return result;
+      } catch (error) {
+        console.error('❌ Bridge: Failed to add instance:', error.message);
+        throw error;
+      }
     },
     setActiveGraphId: async (graphId) => {
-      console.error('Actions not yet implemented via HTTP bridge');
-      // Return success instead of throwing error to prevent server crash
-      return { success: true, message: 'Action simulated successfully' };
+      try {
+        const response = await fetch('http://localhost:3001/api/bridge/actions/set-active-graph', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ graphId })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.error('✅ Bridge: Active graph set successfully');
+        return result;
+      } catch (error) {
+        console.error('❌ Bridge: Failed to set active graph:', error.message);
+        throw error;
+      }
     }
   };
 }
@@ -92,52 +141,19 @@ async function getGraphData() {
     // Safely iterate over the Map
     if (state.graphs && state.graphs instanceof Map && state.graphs.size > 0) {
       state.graphs.forEach((graph, graphId) => {
-    // Get hydrated nodes (instances + prototype data) for this graph
-    const hydratedNodes = Array.from(graph.instances.values()).map(instance => {
-      const prototype = state.nodePrototypes.get(instance.prototypeId);
-      if (prototype) {
-        return {
-          id: instance.id,
-          name: prototype.name,
-          description: prototype.description,
-          type: prototype.typeNodeId,
-          color: prototype.color,
-          x: instance.x,
-          y: instance.y,
-          scale: instance.scale,
-          prototypeId: instance.prototypeId
+        // Bridge data has minimal graph info, not full instances
+        graphs[graphId] = {
+          id: graphId,
+          name: graph.name,
+          description: graph.description || '',
+          nodes: [], // Bridge doesn't send full instance data
+          edges: [], // Bridge doesn't send edge data
+          nodeCount: graph.instanceCount || 0,
+          edgeCount: 0,
+          instances: new Map(), // Empty since bridge doesn't send full instances
+          edgeIds: []
         };
-      }
-      return null;
-    }).filter(Boolean);
-    
-    // Get edges for this graph
-    const edges = graph.edgeIds.map(edgeId => {
-      const edge = state.edges.get(edgeId);
-      if (edge) {
-        return {
-          id: edgeId,
-          sourceId: edge.sourceId,
-          targetId: edge.destinationId,
-          type: edge.type,
-          weight: edge.weight || 1
-        };
-      }
-      return null;
-    }).filter(Boolean);
-    
-    graphs[graphId] = {
-      id: graphId,
-      name: graph.name,
-      description: graph.description,
-      nodes: hydratedNodes,
-      edges: edges,
-      nodeCount: hydratedNodes.length,
-      edgeCount: edges.length,
-      instances: graph.instances,
-      edgeIds: graph.edgeIds
-    };
-  });
+      });
     }
     
     return {

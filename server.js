@@ -96,7 +96,32 @@ let bridgeStoreData = null;
 // MCP Bridge endpoint - POST to update store data
 app.post('/api/bridge/state', (req, res) => {
   try {
-    bridgeStoreData = req.body;
+    const newData = req.body;
+    
+    // If we have existing data, merge the new data with our changes
+    if (bridgeStoreData && bridgeStoreData.nodePrototypes) {
+      // Preserve any prototypes we've added via actions
+      const existingPrototypes = bridgeStoreData.nodePrototypes || [];
+      const newPrototypes = newData.nodePrototypes || [];
+      
+      // Merge prototypes, keeping our additions
+      const mergedPrototypes = [...existingPrototypes];
+      newPrototypes.forEach(newProto => {
+        if (!mergedPrototypes.find(existing => existing.id === newProto.id)) {
+          mergedPrototypes.push(newProto);
+        }
+      });
+      
+      // Update the data with merged prototypes
+      bridgeStoreData = {
+        ...newData,
+        nodePrototypes: mergedPrototypes
+      };
+    } else {
+      // First time, just set the data
+      bridgeStoreData = newData;
+    }
+    
     console.log('✅ Bridge: Store data updated');
     res.json({ success: true });
   } catch (error) {
@@ -116,6 +141,103 @@ app.get('/api/bridge/state', (req, res) => {
   } catch (error) {
     console.error('Bridge GET error:', error);
     res.status(500).json({ error: 'Failed to get store state' });
+  }
+});
+
+// MCP Bridge action endpoints
+app.post('/api/bridge/actions/add-node-prototype', (req, res) => {
+  try {
+    const { name, description, color, typeNodeId } = req.body;
+    
+    if (!name || !description) {
+      return res.status(400).json({ error: 'Name and description are required' });
+    }
+    
+    // Generate a unique ID for the prototype
+    const prototypeId = `prototype-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const newPrototype = {
+      id: prototypeId,
+      name,
+      description,
+      color: color || '#4A90E2',
+      typeNodeId: typeNodeId || null
+    };
+    
+    // Add to bridge store data
+    if (bridgeStoreData && bridgeStoreData.nodePrototypes) {
+      bridgeStoreData.nodePrototypes.push(newPrototype);
+      console.log('✅ Bridge: Added node prototype:', name);
+    }
+    
+    res.json({ success: true, prototype: newPrototype });
+  } catch (error) {
+    console.error('Bridge action error:', error);
+    res.status(500).json({ error: 'Failed to add node prototype' });
+  }
+});
+
+app.post('/api/bridge/actions/add-node-instance', (req, res) => {
+  try {
+    const { graphId, prototypeName, position } = req.body;
+    
+    if (!graphId || !prototypeName || !position) {
+      return res.status(400).json({ error: 'Graph ID, prototype name, and position are required' });
+    }
+    
+    // Find the prototype
+    const prototype = bridgeStoreData?.nodePrototypes?.find(p => p.name === prototypeName);
+    if (!prototype) {
+      return res.status(404).json({ error: `Prototype '${prototypeName}' not found` });
+    }
+    
+    // Generate instance ID
+    const instanceId = `instance-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const newInstance = {
+      id: instanceId,
+      prototypeId: prototype.id,
+      x: position.x,
+      y: position.y,
+      scale: 1
+    };
+    
+    // Add to the specified graph
+    if (bridgeStoreData && bridgeStoreData.graphs) {
+      const graph = bridgeStoreData.graphs.find(g => g.id === graphId);
+      if (graph) {
+        if (!graph.instances) graph.instances = [];
+        graph.instances.push(newInstance);
+        graph.instanceCount = (graph.instanceCount || 0) + 1;
+        console.log('✅ Bridge: Added node instance:', prototypeName, 'to graph:', graph.name);
+      }
+    }
+    
+    res.json({ success: true, instance: newInstance });
+  } catch (error) {
+    console.error('Bridge action error:', error);
+    res.status(500).json({ error: 'Failed to add node instance' });
+  }
+});
+
+app.post('/api/bridge/actions/set-active-graph', (req, res) => {
+  try {
+    const { graphId } = req.body;
+    
+    if (!graphId) {
+      return res.status(400).json({ error: 'Graph ID is required' });
+    }
+    
+    // Update active graph in bridge store data
+    if (bridgeStoreData) {
+      bridgeStoreData.activeGraphId = graphId;
+      console.log('✅ Bridge: Set active graph to:', graphId);
+    }
+    
+    res.json({ success: true, activeGraphId: graphId });
+  } catch (error) {
+    console.error('Bridge action error:', error);
+    res.status(500).json({ error: 'Failed to set active graph' });
   }
 });
 

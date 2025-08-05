@@ -9,6 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
+    "ai-connect": "node ai-connection-wizard-simple.js",
+    "ai-wizard": "node ai-connection-wizard-simple.js",
     "server": "node server.js",
     "dev:full": "concurrently \"npm run server\" \"npm run dev\"",
     "setup:oauth": "node setup-oauth.js"
