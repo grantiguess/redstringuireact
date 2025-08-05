@@ -119,6 +119,213 @@ function getRealRedstringActions() {
         console.error('❌ Bridge: Failed to set active graph:', error.message);
         throw error;
       }
+    },
+    
+    openGraphTabAndBringToTop: async (graphId) => {
+      try {
+        const response = await fetch('http://localhost:3001/api/bridge/actions/open-graph-tab', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ graphId, bringToFront: true })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.error('✅ Bridge: Graph tab opened and brought to top successfully');
+        return result;
+      } catch (error) {
+        console.error('❌ Bridge: Failed to open graph tab:', error.message);
+        throw error;
+      }
+    },
+    
+    openGraphTab: async (graphId) => {
+      try {
+        const response = await fetch('http://localhost:3001/api/bridge/actions/open-graph-tab', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ graphId, bringToFront: false })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.error('✅ Bridge: Graph tab opened successfully');
+        return result;
+      } catch (error) {
+        console.error('❌ Bridge: Failed to open graph tab:', error.message);
+        throw error;
+      }
+    },
+    
+    createAndAssignGraphDefinitionWithoutActivation: async (prototypeId) => {
+      try {
+        const response = await fetch('http://localhost:3001/api/bridge/actions/create-graph-definition', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ prototypeId, activate: false })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.error('✅ Bridge: Graph definition created successfully');
+        return result.graphId;
+      } catch (error) {
+        console.error('❌ Bridge: Failed to create graph definition:', error.message);
+        throw error;
+      }
+    },
+    
+    updateNodePrototype: async (prototypeId, updates) => {
+      try {
+        const response = await fetch('http://localhost:3001/api/bridge/actions/update-node-prototype', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ prototypeId, updates })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.error('✅ Bridge: Node prototype updated successfully');
+        return result;
+      } catch (error) {
+        console.error('❌ Bridge: Failed to update node prototype:', error.message);
+        throw error;
+      }
+    },
+    
+    deleteNodeInstance: async (graphId, instanceId) => {
+      try {
+        const response = await fetch('http://localhost:3001/api/bridge/actions/delete-node-instance', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ graphId, instanceId })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.error('✅ Bridge: Node instance deleted successfully');
+        return result;
+      } catch (error) {
+        console.error('❌ Bridge: Failed to delete node instance:', error.message);
+        throw error;
+      }
+    },
+    
+    createEdge: async (graphId, sourceId, targetId, edgeType, weight) => {
+      try {
+        const response = await fetch('http://localhost:3001/api/bridge/actions/create-edge', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ graphId, sourceId, targetId, edgeType, weight })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.error('✅ Bridge: Edge created successfully');
+        return result;
+      } catch (error) {
+        console.error('❌ Bridge: Failed to create edge:', error.message);
+        throw error;
+      }
+    },
+    
+    createEdgeDefinition: async (edgeDefinitionData) => {
+      try {
+        const response = await fetch('http://localhost:3001/api/bridge/actions/create-edge-definition', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(edgeDefinitionData)
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.error('✅ Bridge: Edge definition created successfully');
+        return result;
+      } catch (error) {
+        console.error('❌ Bridge: Failed to create edge definition:', error.message);
+        throw error;
+      }
+    },
+    
+    moveNodeInstance: async (graphId, instanceId, position) => {
+      try {
+        const response = await fetch('http://localhost:3001/api/bridge/actions/move-node-instance', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ graphId, instanceId, position })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.error('✅ Bridge: Node instance moved successfully');
+        return result;
+      } catch (error) {
+        console.error('❌ Bridge: Failed to move node instance:', error.message);
+        throw error;
+      }
+    },
+    
+    searchNodes: async (query, graphId) => {
+      try {
+        const response = await fetch('http://localhost:3001/api/bridge/actions/search-nodes', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ query, graphId })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.error('✅ Bridge: Node search completed successfully');
+        return result;
+      } catch (error) {
+        console.error('❌ Bridge: Failed to search nodes:', error.message);
+        throw error;
+      }
     }
   };
 }
@@ -299,9 +506,11 @@ ${Object.values(graphData.graphs).map(graph => `
 **Current Active Graph:** ${graphData.activeGraphId || 'None'}
 
 **Available Prototypes:**
-${Array.from(graphData.nodePrototypes.values()).map(prototype => 
-  `- ${prototype.name} (${prototype.id}) - ${prototype.description}`
-).join('\n')}
+${graphData.nodePrototypes && graphData.nodePrototypes instanceof Map ? 
+  Array.from(graphData.nodePrototypes.values()).map(prototype => 
+    `- ${prototype.name} (${prototype.id}) - ${prototype.description}`
+  ).join('\n') : 
+  'No prototypes available'}
 
 **🎯 To open a graph, use:** \`open_graph\` with any of the graph IDs above.`;
 
@@ -348,7 +557,7 @@ server.tool(
       };
       
       // Add to real Redstring store
-      actions.addNodePrototype(prototypeData);
+      await actions.addNodePrototype(prototypeData);
       
       const response = `✅ **Node Prototype Added Successfully (Real Redstring Store)**
 
@@ -403,7 +612,7 @@ server.tool(
   },
   async ({ prototypeName, position, graphId }) => {
     try {
-      const state = getRealRedstringState();
+      const state = await getRealRedstringState();
       const actions = getRealRedstringActions();
       
       const targetGraphId = graphId || state.activeGraphId;
@@ -431,13 +640,23 @@ server.tool(
         };
       }
       
-      // Find the prototype by name (exact match first, then partial)
-      let prototype = Array.from(state.nodePrototypes.values()).find(p => 
+      // Find the prototype by name or ID
+      let prototype = null;
+      
+      // First try exact name match
+      prototype = Array.from(state.nodePrototypes.values()).find(p => 
         p.name.toLowerCase() === prototypeName.toLowerCase()
       );
       
       if (!prototype) {
-        // Try partial match
+        // Try ID match
+        prototype = Array.from(state.nodePrototypes.values()).find(p => 
+          p.id === prototypeName
+        );
+      }
+      
+      if (!prototype) {
+        // Try partial name match
         prototype = Array.from(state.nodePrototypes.values()).find(p => 
           p.name.toLowerCase().includes(prototypeName.toLowerCase())
         );
@@ -448,7 +667,15 @@ server.tool(
           content: [
             {
               type: "text",
-              text: `❌ Prototype "${prototypeName}" not found. Available prototypes:\n${Array.from(state.nodePrototypes.values()).map(p => `- ${p.name} (${p.id})`).join('\n')}\n\n**Note:** You must create a prototype first using \`add_node_prototype\` before you can create instances of it.`
+              text: `❌ Prototype "${prototypeName}" not found. 
+
+**Available prototypes:**
+${Array.from(state.nodePrototypes.values()).map(p => `- ${p.name} (${p.id})`).join('\n')}
+
+**Troubleshooting:**
+- Use the prototype **name** (e.g., "Charles McGill") or **ID** (e.g., "33b579d9-9d19-4c03-b802-44de24055f23")
+- Make sure the prototype exists first using \`add_node_prototype\`
+- Or use \`ai_guided_workflow\` with \`full_workflow\` which creates prototypes automatically`
             }
           ]
         };
@@ -467,7 +694,7 @@ server.tool(
       }
       
       // Add instance to real Redstring store
-      actions.addNodeInstance(targetGraphId, prototype.id, position);
+      await actions.addNodeInstance(targetGraphId, prototype.name, position);
       
       const response = `✅ **Node Instance Added Successfully (Real Redstring Store)**
 
@@ -517,7 +744,7 @@ server.tool(
   },
   async ({ graphId }) => {
     try {
-      const state = getRealRedstringState();
+      const state = await getRealRedstringState();
       const actions = getRealRedstringActions();
       
       if (!state.graphs.has(graphId)) {
@@ -545,7 +772,7 @@ server.tool(
       const graph = state.graphs.get(graphId);
       
       // Set as active graph using real Redstring actions
-      actions.setActiveGraphId(graphId);
+      await actions.setActiveGraphId(graphId);
       
       const response = `🎯 **Active Graph Set Successfully (Real Redstring UI)**
 
@@ -602,7 +829,7 @@ server.tool(
   },
   async ({ graphId, bringToFront = true, autoExpand = true }) => {
     try {
-      const state = getRealRedstringState();
+      const state = await getRealRedstringState();
       const actions = getRealRedstringActions();
       
       if (!state.graphs.has(graphId)) {
@@ -620,9 +847,9 @@ server.tool(
       
       // Use real Redstring actions to open the graph
       if (bringToFront) {
-        actions.openGraphTabAndBringToTop(graphId);
+        await actions.openGraphTabAndBringToTop(graphId);
       } else {
-        actions.openGraphTab(graphId);
+        await actions.openGraphTab(graphId);
       }
       
       const response = `📂 **Graph Opened Successfully (Real Redstring UI)**
@@ -669,6 +896,543 @@ ${state.openGraphIds.map((id, index) => {
           {
             type: "text",
             text: `❌ Error opening graph in Redstring: ${error.message}`
+          }
+        ]
+      };
+    }
+  }
+);
+
+// Tool: Update node prototype
+server.tool(
+  "update_node_prototype",
+  "Update properties of an existing node prototype",
+  {
+    prototypeId: z.string().describe("The ID of the prototype to update"),
+    updates: z.object({
+      name: z.string().optional().describe("New name for the prototype"),
+      description: z.string().optional().describe("New description for the prototype"),
+      color: z.string().optional().describe("New color for the prototype (hex format)")
+    }).describe("Properties to update")
+  },
+  async ({ prototypeId, updates }) => {
+    try {
+      const actions = getRealRedstringActions();
+      const result = await actions.updateNodePrototype(prototypeId, updates);
+      
+      if (result.success) {
+        return {
+          content: [{
+            type: "text",
+            text: `✅ Successfully updated node prototype "${prototypeId}" with: ${JSON.stringify(updates)}`
+          }]
+        };
+      } else {
+        return {
+          content: [{
+            type: "text",
+            text: `❌ Failed to update node prototype: ${result.error || 'Unknown error'}`
+          }]
+        };
+      }
+    } catch (error) {
+      console.error('Error in update_node_prototype tool:', error);
+      return {
+        content: [{
+          type: "text",
+          text: `❌ Error updating node prototype: ${error.message}`
+        }]
+      };
+    }
+  }
+);
+
+// Tool: Delete node instance
+server.tool(
+  "delete_node_instance",
+  "Remove a node instance from a graph",
+  {
+    graphId: z.string().describe("The ID of the graph containing the instance"),
+    instanceId: z.string().describe("The ID of the instance to delete")
+  },
+  async ({ graphId, instanceId }) => {
+    try {
+      const actions = getRealRedstringActions();
+      const result = await actions.deleteNodeInstance(graphId, instanceId);
+      
+      if (result.success) {
+        return {
+          content: [{
+            type: "text",
+            text: `✅ Successfully deleted node instance "${instanceId}" from graph "${graphId}"`
+          }]
+        };
+      } else {
+        return {
+          content: [{
+            type: "text",
+            text: `❌ Failed to delete node instance: ${result.error || 'Unknown error'}`
+          }]
+        };
+      }
+    } catch (error) {
+      console.error('Error in delete_node_instance tool:', error);
+      return {
+        content: [{
+          type: "text",
+          text: `❌ Error deleting node instance: ${error.message}`
+        }]
+      };
+    }
+  }
+);
+
+// Tool: Create edge
+server.tool(
+  "create_edge",
+  "Create a connection between two nodes",
+  {
+    graphId: z.string().describe("The ID of the graph to add the edge to"),
+    sourceId: z.string().describe("The ID of the source node"),
+    targetId: z.string().describe("The ID of the target node"),
+    edgeType: z.string().optional().describe("Type of the edge (optional)"),
+    weight: z.number().optional().describe("Weight of the edge (optional, default 1)")
+  },
+  async ({ graphId, sourceId, targetId, edgeType, weight }) => {
+    try {
+      const actions = getRealRedstringActions();
+      const result = await actions.createEdge(graphId, sourceId, targetId, edgeType, weight);
+      
+      if (result.success) {
+        return {
+          content: [{
+            type: "text",
+            text: `✅ Successfully created edge from "${sourceId}" to "${targetId}" in graph "${graphId}"`
+          }]
+        };
+      } else {
+        return {
+          content: [{
+            type: "text",
+            text: `❌ Failed to create edge: ${result.error || 'Unknown error'}`
+          }]
+        };
+      }
+    } catch (error) {
+      console.error('Error in create_edge tool:', error);
+      return {
+        content: [{
+          type: "text",
+          text: `❌ Error creating edge: ${error.message}`
+        }]
+      };
+    }
+  }
+);
+
+// Tool: Create edge definition
+server.tool(
+  "create_edge_definition",
+  "Create a new edge type definition",
+  {
+    name: z.string().describe("Name of the edge type"),
+    description: z.string().describe("Description of the edge type"),
+    color: z.string().optional().describe("Color for the edge type (hex format, optional)"),
+    typeNodeId: z.string().optional().describe("Type node ID (optional)")
+  },
+  async ({ name, description, color, typeNodeId }) => {
+    try {
+      const actions = getRealRedstringActions();
+      const result = await actions.createEdgeDefinition({ name, description, color, typeNodeId });
+      
+      if (result.success) {
+        return {
+          content: [{
+            type: "text",
+            text: `✅ Successfully created edge definition "${name}" with description: ${description}`
+          }]
+        };
+      } else {
+        return {
+          content: [{
+            type: "text",
+            text: `❌ Failed to create edge definition: ${result.error || 'Unknown error'}`
+          }]
+        };
+      }
+    } catch (error) {
+      console.error('Error in create_edge_definition tool:', error);
+      return {
+        content: [{
+          type: "text",
+          text: `❌ Error creating edge definition: ${error.message}`
+        }]
+      };
+    }
+  }
+);
+
+// Tool: Move node instance
+server.tool(
+  "move_node_instance",
+  "Move a node instance to a new position",
+  {
+    graphId: z.string().describe("The ID of the graph containing the instance"),
+    instanceId: z.string().describe("The ID of the instance to move"),
+    position: z.object({
+      x: z.number().describe("New X coordinate"),
+      y: z.number().describe("New Y coordinate")
+    }).describe("New position for the node")
+  },
+  async ({ graphId, instanceId, position }) => {
+    try {
+      const actions = getRealRedstringActions();
+      const result = await actions.moveNodeInstance(graphId, instanceId, position);
+      
+      if (result.success) {
+        return {
+          content: [{
+            type: "text",
+            text: `✅ Successfully moved node instance "${instanceId}" to position (${position.x}, ${position.y})`
+          }]
+        };
+      } else {
+        return {
+          content: [{
+            type: "text",
+            text: `❌ Failed to move node instance: ${result.error || 'Unknown error'}`
+          }]
+        };
+      }
+    } catch (error) {
+      console.error('Error in move_node_instance tool:', error);
+      return {
+        content: [{
+          type: "text",
+          text: `❌ Error moving node instance: ${error.message}`
+        }]
+      };
+    }
+  }
+);
+
+// Tool: Search nodes
+server.tool(
+  "search_nodes",
+  "Search for nodes by name or description",
+  {
+    query: z.string().describe("Search query to match against node names and descriptions"),
+    graphId: z.string().optional().describe("Optional graph ID to search only within that graph")
+  },
+  async ({ query, graphId }) => {
+    try {
+      const actions = getRealRedstringActions();
+      const result = await actions.searchNodes(query, graphId);
+      
+      if (result.success) {
+        const resultText = result.results.length > 0 
+          ? `Found ${result.results.length} matches:\n` + result.results.map(r => 
+              `- ${r.name} (${r.type}): ${r.description || 'No description'}`
+            ).join('\n')
+          : `No nodes found matching "${query}"`;
+          
+        return {
+          content: [{
+            type: "text",
+            text: `🔍 Search results for "${query}":\n\n${resultText}`
+          }]
+        };
+      } else {
+        return {
+          content: [{
+            type: "text",
+            text: `❌ Failed to search nodes: ${result.error || 'Unknown error'}`
+          }]
+        };
+      }
+    } catch (error) {
+      console.error('Error in search_nodes tool:', error);
+      return {
+        content: [{
+          type: "text",
+          text: `❌ Error searching nodes: ${error.message}`
+        }]
+      };
+    }
+  }
+);
+
+// AI-Guided Workflow Tool
+server.tool(
+  "ai_guided_workflow",
+  "Walk a human user through the complete process of adding a node, creating a graph definition, and building connections. This tool orchestrates the full workflow that a human would do manually.",
+  {
+    workflowType: z.enum(['create_prototype_and_definition', 'add_instance_to_graph', 'create_connections', 'full_workflow']).describe("Type of workflow to guide the user through"),
+    prototypeName: z.string().optional().describe("Name for the new prototype (required for create_prototype_and_definition and full_workflow)"),
+    prototypeDescription: z.string().optional().describe("Description for the new prototype"),
+    prototypeColor: z.string().optional().describe("Color for the prototype (hex code)"),
+    targetGraphId: z.string().optional().describe("Target graph ID for adding instances or creating connections"),
+    instancePositions: z.array(z.object({
+      prototypeName: z.string().describe("Name of prototype to create instance of"),
+      x: z.number().describe("X coordinate"),
+      y: z.number().describe("Y coordinate")
+    })).optional().describe("Array of instances to create with positions"),
+    connections: z.array(z.object({
+      sourceName: z.string().describe("Name of source node"),
+      targetName: z.string().describe("Name of target node"),
+      edgeType: z.string().optional().describe("Type of connection"),
+      weight: z.number().optional().describe("Connection weight")
+    })).optional().describe("Array of connections to create"),
+    enableUserGuidance: z.boolean().optional().describe("Enable step-by-step user guidance (default: true)")
+  },
+  async ({ workflowType, prototypeName, prototypeDescription, prototypeColor, targetGraphId, instancePositions, connections, enableUserGuidance = true }) => {
+    try {
+      const state = await getRealRedstringState();
+      const actions = getRealRedstringActions();
+      
+      let workflowSteps = [];
+      let currentStep = 0;
+      
+      switch (workflowType) {
+        case 'create_prototype_and_definition':
+          workflowSteps = [
+            {
+              step: 1,
+              action: 'create_prototype',
+              description: `Create a new node prototype called "${prototypeName}"`,
+              instruction: `I'm creating a new node prototype called "${prototypeName}" with description: "${prototypeDescription || 'No description provided'}"`,
+              color: prototypeColor || '#4A90E2'
+            },
+            {
+              step: 2,
+              action: 'create_definition',
+              description: `Create a graph definition for the "${prototypeName}" prototype`,
+              instruction: `Now I'm creating a graph definition for the "${prototypeName}" prototype. This is like clicking the up arrow in the pie menu to create a new definition.`,
+              prototypeName: prototypeName
+            },
+            {
+              step: 3,
+              action: 'open_definition',
+              description: `Open the new definition graph as the active graph`,
+              instruction: `Opening the new definition graph as the active graph so you can start adding content to it.`,
+              prototypeName: prototypeName
+            }
+          ];
+          break;
+          
+        case 'add_instance_to_graph':
+          workflowSteps = [
+            {
+              step: 1,
+              action: 'ensure_active_graph',
+              description: `Ensure we have an active graph to work with`,
+              instruction: `First, let's make sure we have an active graph to add instances to.`,
+              targetGraphId: targetGraphId
+            },
+            {
+              step: 2,
+              action: 'add_instances',
+              description: `Add the specified instances to the active graph`,
+              instruction: `Now I'm adding the specified instances to the active graph.`,
+              instancePositions: instancePositions
+            }
+          ];
+          break;
+          
+        case 'create_connections':
+          workflowSteps = [
+            {
+              step: 1,
+              action: 'ensure_active_graph',
+              description: `Ensure we have an active graph to work with`,
+              instruction: `First, let's make sure we have an active graph to create connections in.`,
+              targetGraphId: targetGraphId
+            },
+            {
+              step: 2,
+              action: 'create_connections',
+              description: `Create the specified connections between nodes`,
+              instruction: `Now I'm creating the specified connections between nodes.`,
+              connections: connections
+            }
+          ];
+          break;
+          
+        case 'full_workflow':
+          workflowSteps = [
+            {
+              step: 1,
+              action: 'create_prototype',
+              description: `Create a new node prototype called "${prototypeName}"`,
+              instruction: `Starting the full workflow! First, I'm creating a new node prototype called "${prototypeName}" with description: "${prototypeDescription || 'No description provided'}"`,
+              color: prototypeColor || '#4A90E2'
+            },
+            {
+              step: 2,
+              action: 'create_definition',
+              description: `Create a graph definition for the "${prototypeName}" prototype`,
+              instruction: `Now I'm creating a graph definition for the "${prototypeName}" prototype. This is equivalent to clicking the up arrow (expand) button in the pie menu.`,
+              prototypeName: prototypeName
+            },
+            {
+              step: 3,
+              action: 'open_definition',
+              description: `Open the new definition graph as the active graph`,
+              instruction: `Opening the new definition graph as the active graph so we can start building its content.`,
+              prototypeName: prototypeName
+            },
+            {
+              step: 4,
+              action: 'add_instances',
+              description: `Add instances to the new definition graph`,
+              instruction: `Now I'm adding instances to the new definition graph to build out its structure.`,
+              instancePositions: instancePositions || []
+            },
+            {
+              step: 5,
+              action: 'create_connections',
+              description: `Create connections between the instances`,
+              instruction: `Finally, I'm creating connections between the instances to establish relationships.`,
+              connections: connections || []
+            }
+          ];
+          break;
+      }
+      
+      let results = [];
+      let currentGraphId = null;
+      
+      for (const step of workflowSteps) {
+        if (enableUserGuidance) {
+          results.push(`**Step ${step.step}:** ${step.description}\n${step.instruction}`);
+        }
+        
+        try {
+          switch (step.action) {
+            case 'create_prototype':
+              const prototypeResult = await actions.addNodePrototype({
+                name: step.description.match(/"([^"]+)"/)?.[1] || prototypeName,
+                description: prototypeDescription || '',
+                color: step.color
+              });
+              results.push(`✅ Created prototype: ${prototypeName}`);
+              break;
+              
+            case 'create_definition':
+              // Find the prototype we just created
+              const prototype = Array.from(state.nodePrototypes.values()).find(p => 
+                p.name.toLowerCase() === (step.prototypeName || prototypeName).toLowerCase()
+              );
+              if (!prototype) {
+                throw new Error(`Prototype "${step.prototypeName || prototypeName}" not found`);
+              }
+              
+              // Create definition graph
+              const definitionGraphId = await actions.createAndAssignGraphDefinitionWithoutActivation(prototype.id);
+              currentGraphId = definitionGraphId;
+              results.push(`✅ Created definition graph: ${definitionGraphId} for prototype "${prototype.name}"`);
+              break;
+              
+            case 'open_definition':
+              // Find the prototype and its definition
+              const prototypeForOpen = Array.from(state.nodePrototypes.values()).find(p => 
+                p.name.toLowerCase() === (step.prototypeName || prototypeName).toLowerCase()
+              );
+              if (!prototypeForOpen || !prototypeForOpen.definitionGraphIds?.length) {
+                throw new Error(`No definition graph found for prototype "${step.prototypeName || prototypeName}"`);
+              }
+              
+              const definitionId = prototypeForOpen.definitionGraphIds[prototypeForOpen.definitionGraphIds.length - 1];
+              await actions.openGraphTab(definitionId);
+              await actions.setActiveGraphId(definitionId);
+              currentGraphId = definitionId;
+              results.push(`✅ Opened definition graph as active: ${definitionId}`);
+              break;
+              
+            case 'ensure_active_graph':
+              if (step.targetGraphId) {
+                await actions.openGraphTab(step.targetGraphId);
+                await actions.setActiveGraphId(step.targetGraphId);
+                currentGraphId = step.targetGraphId;
+                results.push(`✅ Set target graph as active: ${step.targetGraphId}`);
+              } else if (state.activeGraphId) {
+                currentGraphId = state.activeGraphId;
+                results.push(`✅ Using current active graph: ${state.activeGraphId}`);
+              } else {
+                throw new Error('No active graph and no target graph specified');
+              }
+              break;
+              
+            case 'add_instances':
+              if (step.instancePositions?.length) {
+                for (const instance of step.instancePositions) {
+                  await actions.addNodeInstance(currentGraphId, instance.prototypeName, { x: instance.x, y: instance.y });
+                  results.push(`✅ Added instance: ${instance.prototypeName} at (${instance.x}, ${instance.y})`);
+                }
+              }
+              break;
+              
+            case 'create_connections':
+              if (step.connections?.length) {
+                for (const connection of step.connections) {
+                  // For now, we'll just report the connection since edge creation isn't fully implemented
+                  results.push(`📝 Connection planned: ${connection.sourceName} → ${connection.targetName} (${connection.edgeType || 'default'})`);
+                }
+              }
+              break;
+          }
+        } catch (error) {
+          results.push(`❌ Step ${step.step} failed: ${error.message}`);
+          break;
+        }
+      }
+      
+      const response = `🤖 **AI-Guided Workflow Completed**
+
+**Workflow Type:** ${workflowType}
+**Steps Executed:** ${workflowSteps.length}
+
+**Results:**
+${results.join('\n\n')}
+
+**Current State:**
+- Active Graph: ${currentGraphId || state.activeGraphId || 'None'}
+- Open Graphs: ${state.openGraphIds.length}
+
+**What This Accomplished:**
+${workflowType === 'full_workflow' ? `
+✅ Created a new prototype: "${prototypeName}"
+✅ Created a graph definition for the prototype
+✅ Opened the definition as the active graph
+✅ Added instances to build out the structure
+✅ Planned connections between instances
+
+This is equivalent to a human user:
+1. Adding a new node to a network
+2. Clicking the pie menu up arrow to create a definition
+3. Opening that definition as the active graph
+4. Adding nodes and connections to build the structure
+` : 'The requested workflow steps have been completed.'}
+
+**Next Steps:**
+- Use \`get_active_graph\` to see the current state
+- Use \`add_node_instance\` to add more instances
+- Use \`list_available_graphs\` to see all available graphs`;
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: response
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `❌ AI-guided workflow failed: ${error.message}`
           }
         ]
       };

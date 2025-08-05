@@ -5,12 +5,62 @@ import useGraphStore from './store/graphStore';
  * MCP Bridge Component
  * 
  * This component establishes a bridge between the Redstring store and the MCP server.
- * It sends minimal essential store state to the server via HTTP.
+ * It sends minimal essential store state to the server via HTTP and registers store actions.
  */
 const MCPBridge = () => {
   const intervalRef = useRef(null);
 
   useEffect(() => {
+    // Function to register store actions with the bridge server
+    const registerStoreActions = async () => {
+      try {
+        const state = useGraphStore.getState();
+        
+        // Create a wrapper for store actions that can be called remotely
+        const actions = {
+          addNodePrototype: async (prototypeId, prototypeData) => {
+            console.log('MCPBridge: Calling addNodePrototype', prototypeId, prototypeData);
+            state.addNodePrototype(prototypeId, prototypeData);
+            return { success: true, prototypeId };
+          },
+          addNodeInstance: async (graphId, prototypeId, position, instanceId) => {
+            console.log('MCPBridge: Calling addNodeInstance', graphId, prototypeId, position, instanceId);
+            state.addNodeInstance(graphId, prototypeId, position, instanceId);
+            return { success: true, instanceId };
+          },
+          setActiveGraph: async (graphId) => {
+            console.log('MCPBridge: Calling setActiveGraph', graphId);
+            state.setActiveGraph(graphId);
+            return { success: true, graphId };
+          },
+          openGraph: async (graphId) => {
+            console.log('MCPBridge: Calling openGraph', graphId);
+            state.openGraph(graphId);
+            return { success: true, graphId };
+          }
+        };
+        
+        console.log('MCPBridge: Created actions object with keys:', Object.keys(actions));
+
+        // Register actions with bridge server
+        const response = await fetch('http://localhost:3001/api/bridge/register-store', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ actions })
+        });
+        
+        if (response.ok) {
+          console.log('✅ MCP Bridge: Store actions registered with bridge server');
+        } else {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+      } catch (error) {
+        console.error('❌ MCP Bridge: Failed to register store actions:', error);
+      }
+    };
+
     // Function to send store state to server
     const sendStoreToServer = async () => {
       try {
@@ -60,7 +110,8 @@ const MCPBridge = () => {
       }
     };
 
-    // Send initial state
+    // Register store actions and send initial state
+    registerStoreActions();
     sendStoreToServer();
     
     console.log('✅ MCP Bridge: Redstring store bridge established');
