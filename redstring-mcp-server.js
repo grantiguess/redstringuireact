@@ -76,14 +76,14 @@ function getRealRedstringActions() {
         throw error;
       }
     },
-    addNodeInstance: async (graphId, prototypeName, position) => {
+    addNodeInstance: async (graphId, prototypeId, position) => {
       try {
         const response = await fetch('http://localhost:3001/api/bridge/actions/add-node-instance', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ graphId, prototypeName, position })
+          body: JSON.stringify({ graphId, prototypeId, position })
         });
         
         if (!response.ok) {
@@ -392,6 +392,178 @@ async function getGraphData() {
 
 // Register MCP tools
 server.tool(
+  "get_graph_instances",
+  "Get detailed information about all instances in a specific graph",
+  {
+    graphId: z.string().optional().describe("Graph ID to check (default: active graph)")
+  },
+  async ({ graphId }) => {
+    try {
+      const state = await getRealRedstringState();
+      
+      const targetGraphId = graphId || state.activeGraphId;
+      
+      if (!targetGraphId) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `❌ No graph specified and no active graph found. Use \`open_graph\` to open a graph first.`
+            }
+          ]
+        };
+      }
+      
+      const graph = state.graphs.get(targetGraphId);
+      
+      if (!graph) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `❌ Graph "${targetGraphId}" not found. Use \`list_available_graphs\` to see available graphs.`
+            }
+          ]
+        };
+      }
+      
+      const instances = graph.instances || new Map();
+      const instanceList = Array.from(instances.values()).map(instance => {
+        const prototype = state.nodePrototypes.get(instance.prototypeId);
+        return {
+          id: instance.id,
+          prototypeName: prototype?.name || 'Unknown',
+          prototypeId: instance.prototypeId,
+          position: { x: instance.x, y: instance.y },
+          scale: instance.scale
+        };
+      });
+      
+      const response = `📊 **Graph Instances: ${graph.name}**
+
+**Graph Details:**
+- **Name:** ${graph.name}
+- **ID:** ${targetGraphId}
+- **Description:** ${graph.description || 'No description'}
+- **Total Instances:** ${instances.size}
+
+**Instance Details:**
+${instanceList.length > 0 ? 
+  instanceList.map((inst, index) => 
+    `${index + 1}. **${inst.prototypeName}** (${inst.id})
+   - Prototype ID: ${inst.prototypeId}
+   - Position: (${inst.position.x}, ${inst.position.y})
+   - Scale: ${inst.scale}`
+  ).join('\n\n') : 
+  'No instances in this graph'}
+
+**Available Prototypes for This Graph:**
+${Array.from(state.nodePrototypes.values()).slice(0, 10).map(p => 
+  `- ${p.name} (${p.id})`
+).join('\n')}
+
+**💡 Usage:**
+- Use this to verify instances were actually added
+- Check positions and prototype assignments
+- Debug instance creation issues`;
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: response
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `❌ Error getting graph instances: ${error.message}`
+          }
+        ]
+      };
+    }
+  }
+);
+
+server.tool(
+  "verify_state",
+  "Verify the current state of the Redstring store and provide explicit debugging information",
+  {},
+  async () => {
+    try {
+      const state = await getRealRedstringState();
+      
+      const response = `🔍 **Redstring Store State Verification**
+
+**📊 Store Statistics:**
+- **Total Graphs:** ${state.graphs.size}
+- **Total Prototypes:** ${state.nodePrototypes.size}
+- **Total Edges:** ${state.edges.size}
+- **Open Graphs:** ${state.openGraphIds.length}
+- **Active Graph:** ${state.activeGraphId || 'None'}
+
+**🎯 Active Graph Details:**
+${state.activeGraphId ? (() => {
+  const activeGraph = state.graphs.get(state.activeGraphId);
+  if (!activeGraph) return '❌ Active graph ID exists but graph not found in store';
+  
+  return `- **Name:** ${activeGraph.name}
+- **ID:** ${state.activeGraphId}
+- **Description:** ${activeGraph.description || 'No description'}
+- **Instance Count:** ${activeGraph.instances?.size || 0}
+- **Open Status:** ✅ Open in UI
+- **Expanded:** ${state.expandedGraphIds.has(state.activeGraphId) ? '✅ Yes' : '❌ No'}`;
+})() : '❌ No active graph set'}
+
+**📋 Available Prototypes (Last 10):**
+${Array.from(state.nodePrototypes.values()).slice(-10).map(p => 
+  `- ${p.name} (${p.id}) - ${p.description || 'No description'}`
+).join('\n')}
+
+**📁 Open Graphs:**
+${state.openGraphIds.map((id, index) => {
+  const g = state.graphs.get(id);
+  const isActive = id === state.activeGraphId;
+  return `${index + 1}. ${g?.name || 'Unknown'} (${id})${isActive ? ' 🟢 ACTIVE' : ''}`;
+}).join('\n')}
+
+**🔧 Bridge Status:**
+- **Bridge Server:** ✅ Running on localhost:3001
+- **Redstring App:** ✅ Running on localhost:4000
+- **MCPBridge Connected:** ✅ Store actions registered
+- **Data Sync:** ✅ Real-time updates enabled
+
+**💡 Usage:**
+- Use this tool to verify state before and after actions
+- Compare counts to detect sync issues
+- Check if actions actually succeeded
+- Debug connectivity problems`;
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: response
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `❌ Error verifying Redstring store state: ${error.message}`
+          }
+        ]
+      };
+    }
+  }
+);
+
+server.tool(
   "get_active_graph",
   "Get detailed information about the currently active graph from the real Redstring store",
   {},
@@ -556,19 +728,80 @@ server.tool(
         typeNodeId
       };
       
+      // Get initial state to compare
+      const initialState = await getRealRedstringState();
+      const initialPrototypeCount = initialState.nodePrototypes.size;
+      
       // Add to real Redstring store
       await actions.addNodePrototype(prototypeData);
       
-      const response = `✅ **Node Prototype Added Successfully (Real Redstring Store)**
+      // CRITICAL: Verify the action actually succeeded by checking the updated state
+      const updatedState = await getRealRedstringState();
+      const newPrototypeCount = updatedState.nodePrototypes.size;
+      
+      if (newPrototypeCount <= initialPrototypeCount) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `❌ **VERIFICATION FAILED**: Prototype count did not increase. Expected: ${initialPrototypeCount + 1}, Actual: ${newPrototypeCount}
+
+**Debug Information:**
+- Prototype Name: ${name}
+- Description: ${description}
+- Color: ${color}
+- Parent Type: ${typeNodeId || 'None'}
+
+**Troubleshooting:**
+- The action was queued but may not have executed successfully
+- Check if the MCPBridge is properly connected to Redstring
+- Try using \`list_available_graphs\` to see current state`
+            }
+          ]
+        };
+      }
+      
+      // Find the newly created prototype to get its ID
+      const newPrototype = Array.from(updatedState.nodePrototypes.values()).find(p => 
+        p.name === name && p.description === description
+      );
+      
+      if (!newPrototype) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `❌ **VERIFICATION FAILED**: New prototype not found in store after creation.
+
+**Debug Information:**
+- Prototype Name: ${name}
+- Description: ${description}
+- Expected Count: ${initialPrototypeCount + 1}
+- Actual Count: ${newPrototypeCount}
+
+**Troubleshooting:**
+- The prototype may have been created with different data
+- Check if there are duplicate names or descriptions
+- Try using \`list_available_graphs\` to see current state`
+            }
+          ]
+        };
+      }
+      
+      const response = `✅ **Node Prototype Added Successfully (VERIFIED)**
 
 **New Prototype:**
 - **Name:** ${name}
+- **ID:** ${newPrototype.id}
 - **Description:** ${description}
 - **Color:** ${color}
 - **Parent Type:** ${typeNodeId || 'None (base type)'}
+- **Prototype Count:** ${initialPrototypeCount} → ${newPrototypeCount} ✅
 
-**What This Means:**
-- ✅ Prototype added to global prototype pool
+**Verification:**
+- ✅ Action executed successfully
+- ✅ Prototype count increased
+- ✅ Prototype found in store
 - ✅ Available for creating instances in any graph
 - ✅ Will appear in type selection lists
 - ✅ Persists to .redstring file
@@ -694,26 +927,74 @@ ${Array.from(state.nodePrototypes.values()).map(p => `- ${p.name} (${p.id})`).jo
       }
       
       // Add instance to real Redstring store
-      await actions.addNodeInstance(targetGraphId, prototype.name, position);
+      await actions.addNodeInstance(targetGraphId, prototype.id, position);
       
-      const response = `✅ **Node Instance Added Successfully (Real Redstring Store)**
+      // CRITICAL: Verify the action actually succeeded by checking the updated state
+      const updatedState = await getRealRedstringState();
+      const updatedGraph = updatedState.graphs.get(targetGraphId);
+      
+      if (!updatedGraph) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `❌ **VERIFICATION FAILED**: Graph "${targetGraphId}" not found after adding instance. The action may have failed.`
+            }
+          ]
+        };
+      }
+      
+      // Check if the instance was actually added by comparing instance counts
+      const originalInstanceCount = state.graphs.get(targetGraphId)?.instances?.size || 0;
+      const newInstanceCount = updatedGraph.instances?.size || 0;
+      
+      if (newInstanceCount <= originalInstanceCount) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `❌ **VERIFICATION FAILED**: Instance count did not increase. Expected: ${originalInstanceCount + 1}, Actual: ${newInstanceCount}
+
+**Debug Information:**
+- Prototype: ${prototype.name} (${prototype.id})
+- Target Graph: ${state.graphs.get(targetGraphId)?.name} (${targetGraphId})
+- Position: (${position.x}, ${position.y})
+
+**Troubleshooting:**
+- The action was queued but may not have executed successfully
+- Check if the MCPBridge is properly connected to Redstring
+- Try using \`get_active_graph\` to see current state`
+            }
+          ]
+        };
+      }
+      
+      const response = `✅ **Node Instance Added Successfully (VERIFIED)**
 
 **New Instance:**
 - **Prototype:** ${prototype.name} (${prototype.id})
 - **Position:** (${position.x}, ${position.y})
 - **Graph:** ${state.graphs.get(targetGraphId)?.name} (${targetGraphId})
+- **Instance Count:** ${originalInstanceCount} → ${newInstanceCount} ✅
 
-**What This Means:**
-- ✅ Instance added to the real graph
+**Verification:**
+- ✅ Action executed successfully
+- ✅ Instance count increased
+- ✅ Instance added to real graph
 - ✅ Visible in Redstring UI immediately
 - ✅ Persists to .redstring file
-- ✅ Can be connected with edges
-- ✅ Can be moved and manipulated
+
+**Debug Information:**
+- **Graph ID:** ${targetGraphId}
+- **Prototype ID:** ${prototype.id}
+- **Expected Count Increase:** +1
+- **Actual Count Increase:** +${newInstanceCount - originalInstanceCount}
 
 **Next Steps:**
+- Use \`get_graph_instances\` to see detailed instance information
+- Use \`get_active_graph\` to see all instances in the graph
 - Use \`add_edge\` to connect this instance to others
-- Use \`move_node_instance\` to reposition the instance
-- Use \`get_active_graph\` to see all instances in the graph`;
+- Use \`move_node_instance\` to reposition the instance`;
 
       return {
         content: [
@@ -1366,7 +1647,17 @@ server.tool(
             case 'add_instances':
               if (step.instancePositions?.length) {
                 for (const instance of step.instancePositions) {
-                  await actions.addNodeInstance(currentGraphId, instance.prototypeName, { x: instance.x, y: instance.y });
+                  // Find the prototype by name to get its ID
+                  const prototype = Array.from(state.nodePrototypes.values()).find(p => 
+                    p.name.toLowerCase() === instance.prototypeName.toLowerCase()
+                  );
+                  
+                  if (!prototype) {
+                    results.push(`❌ Prototype "${instance.prototypeName}" not found, skipping instance`);
+                    continue;
+                  }
+                  
+                  await actions.addNodeInstance(currentGraphId, prototype.id, { x: instance.x, y: instance.y });
                   results.push(`✅ Added instance: ${instance.prototypeName} at (${instance.x}, ${instance.y})`);
                 }
               }

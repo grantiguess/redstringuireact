@@ -229,15 +229,14 @@ app.post('/api/bridge/actions/add-node-prototype', async (req, res) => {
 
 app.post('/api/bridge/actions/add-node-instance', async (req, res) => {
   try {
-    const { graphId, prototypeName, position } = req.body;
+    const { graphId, prototypeId, position } = req.body;
     
-    if (!graphId || !prototypeName || !position) {
-      return res.status(400).json({ error: 'Graph ID, prototype name, and position are required' });
+    if (!graphId || !prototypeId || !position) {
+      return res.status(400).json({ error: 'Graph ID, prototype ID, and position are required' });
     }
     
-    // For now, we'll assume the prototype exists and use the prototypeName as the prototypeId
+    // The prototypeId should be the actual ID from the Redstring store
     // The MCPBridge will handle the actual lookup in the Redstring store
-    const prototypeId = prototypeName; // This could be either a name or ID
     
     console.log('🔍 Bridge: Using prototypeId for instance creation:', prototypeId);
     
@@ -248,7 +247,7 @@ app.post('/api/bridge/actions/add-node-instance', async (req, res) => {
     try {
       await callRedstringStoreAction('addNodeInstance', [graphId, prototypeId, position, instanceId]);
       
-      console.log('✅ Bridge: Queued addNodeInstance action for MCPBridge:', prototypeName, 'to graph:', graphId);
+      console.log('✅ Bridge: Queued addNodeInstance action for MCPBridge:', prototypeId, 'to graph:', graphId);
       
       res.json({ 
         success: true, 

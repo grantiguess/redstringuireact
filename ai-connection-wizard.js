@@ -276,6 +276,8 @@ class AIConnectionWizard {
     }
 
     console.log('\n🔗 Available MCP Tools:');
+    console.log('   - verify_state');
+    console.log('   - get_graph_instances');
     console.log('   - list_available_graphs');
     console.log('   - get_active_graph');
     console.log('   - open_graph');
@@ -291,6 +293,7 @@ class AIConnectionWizard {
     let consecutiveFailures = 0;
     const maxFailures = 3;
     const timeout = 5000; // 5 second timeout
+    let lastRedstringStatus = true; // Track last known status
 
     const monitor = setInterval(() => {
       // Check bridge status with timeout
@@ -305,23 +308,35 @@ class AIConnectionWizard {
             const hasData = bridgeData.graphs?.length > 0;
             consecutiveFailures = 0; // Reset failure counter on success
             
-            // Check Redstring status with timeout
-            const redstringRequest = get(`http://localhost:${this.config.redstringPort}`, (redstringRes) => {
+            // Check if bridge has recent data from Redstring (more reliable than direct check)
+            const hasRecentData = bridgeData.summary?.lastUpdate && 
+              (Date.now() - bridgeData.summary.lastUpdate) < 30000; // Within 30 seconds
+            
+            if (hasRecentData) {
+              lastRedstringStatus = true;
               process.stdout.write('\r');
               process.stdout.write(`Status: Bridge ✅ | Redstring ✅ | Data ${hasData ? '✅' : '❌'}`);
-            });
-            
-            redstringRequest.on('error', () => {
-              process.stdout.write('\r');
-              process.stdout.write(`Status: Bridge ✅ | Redstring ❌ | Data ${hasData ? '✅' : '❌'}`);
-            });
-            
-            // Set timeout for Redstring request
-            redstringRequest.setTimeout(timeout, () => {
-              redstringRequest.destroy();
-              process.stdout.write('\r');
-              process.stdout.write(`Status: Bridge ✅ | Redstring ❌ | Data ${hasData ? '✅' : '❌'}`);
-            });
+            } else {
+              // Fallback: try direct Redstring check
+              const redstringRequest = get(`http://localhost:${this.config.redstringPort}`, (redstringRes) => {
+                lastRedstringStatus = true;
+                process.stdout.write('\r');
+                process.stdout.write(`Status: Bridge ✅ | Redstring ✅ | Data ${hasData ? '✅' : '❌'}`);
+              });
+              
+              redstringRequest.on('error', () => {
+                lastRedstringStatus = false;
+                process.stdout.write('\r');
+                process.stdout.write(`Status: Bridge ✅ | Redstring ❌ | Data ${hasData ? '✅' : '❌'}`);
+              });
+              
+              redstringRequest.setTimeout(2000, () => {
+                redstringRequest.destroy();
+                lastRedstringStatus = false;
+                process.stdout.write('\r');
+                process.stdout.write(`Status: Bridge ✅ | Redstring ❌ | Data ${hasData ? '✅' : '❌'}`);
+              });
+            }
             
           } catch (error) {
             process.stdout.write('\r');
@@ -353,7 +368,7 @@ class AIConnectionWizard {
           this.attemptReconnection();
         }
       });
-    }, 2000);
+    }, 5000); // Check every 5 seconds instead of 2 seconds
 
     // Handle cleanup on exit
     process.on('SIGINT', () => {
