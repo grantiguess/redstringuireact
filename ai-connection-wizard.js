@@ -53,10 +53,7 @@ class AIConnectionWizard {
       // Step 1: Check if Redstring is running
       await this.checkRedstringStatus();
       
-      // Step 2: Start bridge server with retry logic
-      await this.startBridgeServerWithRetry();
-      
-      // Step 3: Start MCP server with retry logic
+      // Step 2: Start MCP server (now includes HTTP functionality)
       await this.startMCPServerWithRetry();
       
       // Step 4: Detect AI clients
@@ -242,7 +239,7 @@ class AIConnectionWizard {
         env: { ...process.env, NODE_ENV: 'production' }
       });
       
-      // Share the MCP process globally so the bridge can access it
+      // Share the MCP process globally for potential future use
       global.mcpProcess = mcpProcess;
 
       let startupTimeout = setTimeout(() => {
@@ -464,16 +461,16 @@ class AIConnectionWizard {
   }
 
   async checkAllServices() {
-    const status = { bridge: false, redstring: false, data: false };
+    const status = { mcp: false, redstring: false, data: false };
     
-    // Check bridge status
+    // Check MCP server status (now includes HTTP functionality)
     try {
-      const bridgeData = await this.checkBridgeStatus();
-      status.bridge = true;
-      status.data = bridgeData.hasData;
-      status.redstring = bridgeData.hasRecentData;
+      const mcpData = await this.checkMCPStatus();
+      status.mcp = true;
+      status.data = mcpData.hasData;
+      status.redstring = mcpData.hasRecentData;
     } catch (error) {
-      // Bridge failed, try direct Redstring check
+      // MCP failed, try direct Redstring check
       try {
         await this.checkRedstringDirect();
         status.redstring = true;
@@ -485,7 +482,7 @@ class AIConnectionWizard {
     return status;
   }
 
-  async checkBridgeStatus() {
+  async checkMCPStatus() {
     return new Promise((resolve, reject) => {
       const request = get(`http://localhost:${this.config.bridgePort}/api/bridge/state`, (res) => {
         let data = '';
@@ -536,11 +533,11 @@ class AIConnectionWizard {
 
   updateStatusDisplay(status) {
     process.stdout.write('\r');
-    process.stdout.write(`Status: Bridge ${status.bridge ? 'OK' : 'FAIL'} | Redstring ${status.redstring ? 'OK' : 'FAIL'} | Data ${status.data ? 'OK' : 'FAIL'}`);
+    process.stdout.write(`Status: MCP ${status.mcp ? 'OK' : 'FAIL'} | Redstring ${status.redstring ? 'OK' : 'FAIL'} | Data ${status.data ? 'OK' : 'FAIL'}`);
   }
 
   hasServiceChanged(lastStatus, currentStatus) {
-    return lastStatus.bridge !== currentStatus.bridge ||
+    return lastStatus.mcp !== currentStatus.mcp ||
            lastStatus.redstring !== currentStatus.redstring ||
            lastStatus.data !== currentStatus.data;
   }

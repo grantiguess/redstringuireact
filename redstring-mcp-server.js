@@ -7,6 +7,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import express from 'express';
+import cors from 'cors';
+import fetch from 'node-fetch';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 // Create MCP server instance
 const server = new McpServer({
@@ -18,9 +25,24 @@ const server = new McpServer({
   },
 });
 
+// Create Express app for HTTP endpoints
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
+
 // Bridge to the real Redstring store
 // This will be populated when the Redstring app is running
 let redstringStoreBridge = null;
+
+// Store for the bridge data
+let bridgeStoreData = null;
+
+// MCP connection state (always true since we're the MCP server)
+let mcpConnected = true;
 
 // Function to get the real Redstring store state via HTTP request
 async function getRealRedstringState() {
@@ -2250,6 +2272,283 @@ function setupRedstringBridge(store) {
   console.error("✅ Redstring store bridge established");
 }
 
+// HTTP Endpoints (from bridge server)
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// GitHub OAuth token exchange endpoint
+app.post('/api/github/oauth/token', async (req, res) => {
+  console.log('[OAuth Server] Token exchange request received');
+  
+  try {
+    const { code, state, redirect_uri } = req.body;
+    
+    if (!code || !state) {
+      return res.status(400).json({ error: 'Missing code or state parameter' });
+    }
+    
+    const clientId = process.env.GITHUB_CLIENT_ID;
+    const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+    
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ error: 'GitHub OAuth not configured' });
+    }
+    
+    // Exchange authorization code for access token
+    const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code: code,
+        redirect_uri: redirect_uri
+      })
+    });
+    
+    const tokenData = await tokenResponse.json();
+    
+    if (tokenData.error) {
+      return res.status(400).json({ error: tokenData.error_description || tokenData.error });
+    }
+    
+    res.json({
+      access_token: tokenData.access_token,
+      token_type: tokenData.token_type,
+      scope: tokenData.scope
+    });
+    
+  } catch (error) {
+    console.error('OAuth token exchange error:', error);
+    res.status(500).json({ error: 'Failed to exchange token' });
+  }
+});
+
+// Bridge state endpoints
+app.post('/api/bridge/state', (req, res) => {
+  try {
+    bridgeStoreData = req.body;
+    console.log('✅ Bridge: Store data updated');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Bridge POST error:', error);
+    res.status(500).json({ error: 'Failed to update store state' });
+  }
+});
+
+app.get('/api/bridge/state', (req, res) => {
+  try {
+    if (bridgeStoreData) {
+      res.json({ ...bridgeStoreData, mcpConnected });
+    } else {
+      res.status(503).json({ error: 'Redstring store not available' });
+    }
+  } catch (error) {
+    console.error('Bridge GET error:', error);
+    res.status(500).json({ error: 'Failed to get store state' });
+  }
+});
+
+// Save trigger endpoint (for MCPBridge compatibility)
+app.get('/api/bridge/check-save-trigger', (req, res) => {
+  // This was used to trigger saves, but we don't need it anymore
+  // Return false to indicate no save needed
+  res.json({ shouldSave: false });
+});
+
+// Pending actions endpoint (for MCPBridge compatibility)
+let pendingActions = [];
+
+app.get('/api/bridge/pending-actions', (req, res) => {
+  try {
+    const actions = [...pendingActions];
+    pendingActions = []; // Clear after reading
+    res.json({ actions });
+  } catch (error) {
+    console.error('Pending actions error:', error);
+    res.status(500).json({ error: 'Failed to get pending actions' });
+  }
+});
+
+app.post('/api/bridge/action-completed', (req, res) => {
+  try {
+    const { actionId, result } = req.body;
+    console.log('✅ Bridge: Action completed:', actionId, result);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Action completion error:', error);
+    res.status(500).json({ error: 'Failed to record action completion' });
+  }
+});
+
+// MCP request endpoint (direct handling since we ARE the MCP server)
+app.post('/api/mcp/request', async (req, res) => {
+  try {
+    const { method, params, id } = req.body;
+    
+    console.log('[MCP] Request received:', { method, id });
+    
+    let response;
+    
+    switch (method) {
+      case 'initialize':
+        response = {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            protocolVersion: '2024-11-05',
+            capabilities: { tools: { listChanged: true } },
+            serverInfo: {
+              name: 'redstring',
+              version: '1.0.0',
+              capabilities: { resources: {}, tools: {} }
+            }
+          }
+        };
+        break;
+        
+      case 'tools/list':
+        response = {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            tools: [
+              {
+                name: 'chat',
+                description: 'Send a message to the AI model and get a response',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    message: { type: 'string' },
+                    context: {
+                      type: 'object',
+                      properties: {
+                        activeGraphId: { type: ['string', 'null'] },
+                        graphCount: { type: 'number' },
+                        hasAPIKey: { type: 'boolean' }
+                      }
+                    }
+                  },
+                  required: ['message']
+                }
+              },
+              {
+                name: 'verify_state',
+                description: 'Verify the current state of the Redstring store',
+                inputSchema: { type: 'object', properties: {}, additionalProperties: false }
+              },
+              {
+                name: 'list_available_graphs',
+                description: 'List all available knowledge graphs',
+                inputSchema: { type: 'object', properties: {}, additionalProperties: false }
+              },
+              {
+                name: 'get_active_graph',
+                description: 'Get currently active graph information',
+                inputSchema: { type: 'object', properties: {}, additionalProperties: false }
+              },
+              {
+                name: 'addNodeToGraph',
+                description: 'Add a concept/node to the active graph',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    conceptName: { type: 'string' },
+                    position: { type: 'object' }
+                  },
+                  required: ['conceptName', 'position']
+                }
+              },
+              {
+                name: 'search_nodes',
+                description: 'Search for nodes by name or description',
+                inputSchema: {
+                  type: 'object',
+                  properties: { query: { type: 'string' } },
+                  required: ['query']
+                }
+              }
+            ]
+          }
+        };
+        break;
+        
+      case 'tools/call':
+        const toolName = params.name;
+        const toolArgs = params.arguments || {};
+        
+        console.log('[MCP] Tool call:', toolName, toolArgs);
+        
+        // Execute the tool directly since we have access to everything
+        let toolResult;
+        
+        switch (toolName) {
+          case 'chat':
+            // Handle chat directly through the MCP chat tool
+            const chatResponse = await server.callTool('chat', toolArgs);
+            toolResult = chatResponse.content[0].text;
+            break;
+            
+          default:
+            // Queue action for MCPBridge to execute
+            const actionId = `action-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            pendingActions.push({
+              id: actionId,
+              action: toolName,
+              params: toolArgs,
+              timestamp: Date.now()
+            });
+            
+            // Wait a bit for the action to be processed
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            toolResult = `Tool ${toolName} queued for execution`;
+        }
+        
+        response = {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{
+              type: 'text',
+              text: toolResult
+            }]
+          }
+        };
+        break;
+        
+      default:
+        response = {
+          jsonrpc: '2.0',
+          id,
+          error: {
+            code: -32601,
+            message: 'Method not found'
+          }
+        };
+    }
+    
+    res.json(response);
+    
+  } catch (error) {
+    console.error('[MCP] Request error:', error);
+    res.status(500).json({
+      jsonrpc: '2.0',
+      id: req.body.id,
+      error: {
+        code: -32603,
+        message: error.message
+      }
+    });
+  }
+});
+
 // Main function
 async function main() {
   // Add global error handlers to prevent crashes
@@ -2263,12 +2562,16 @@ async function main() {
     // Don't exit the process, just log the error
   });
   
+  // Start MCP stdio server for AI model communication
   const transport = new StdioServerTransport();
   await server.connect(transport);
   
-  // Use stderr for logging since stdout must only contain JSON-RPC messages
-  console.error("Redstring MCP Server running on stdio");
-  console.error("Waiting for Redstring store bridge...");
+  // Start HTTP server for web clients
+  app.listen(PORT, () => {
+    console.error(`Redstring MCP Server running on port ${PORT} (HTTP) and stdio (MCP)`);
+    console.error(`GitHub OAuth callback URL: http://localhost:${PORT}/oauth/callback`);
+    console.error("Waiting for Redstring store bridge...");
+  });
   
   // The bridge will be set up when Redstring connects
   global.setupRedstringBridge = setupRedstringBridge;
