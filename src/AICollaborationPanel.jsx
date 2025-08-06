@@ -155,9 +155,16 @@ const AICollaborationPanel = () => {
       // Get API configuration for the chat request
       const apiConfig = await apiKeyManager.getAPIKeyInfo();
       
+      // Prepare conversation history (last 10 messages for context)
+      const conversationHistory = messages.slice(-10).map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      }));
+      
       // Send the message to the AI model through the MCP server
       const result = await mcpClient.callTool('chat', { 
         message: question,
+        conversationHistory: conversationHistory,
         context: {
           activeGraphId: activeGraphId,
           graphCount: graphs.size,

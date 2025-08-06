@@ -2418,11 +2418,95 @@ app.post('/api/ai/chat', async (req, res) => {
         body: JSON.stringify({
           model: model,
           messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: message }
+            {
+              role: 'system',
+              content: systemPrompt || 'You are a helpful AI assistant.'
+            },
+            {
+              role: 'user',
+              content: message
+            }
           ],
           max_tokens: context?.apiConfig?.settings?.max_tokens || 1000,
-          temperature: context?.apiConfig?.settings?.temperature || 0.7
+          temperature: context?.apiConfig?.settings?.temperature || 0.7,
+          tools: [
+            {
+              type: "function",
+              function: {
+                name: "verify_state",
+                description: "Check the current state of the Redstring store",
+                parameters: { type: "object", properties: {}, additionalProperties: false }
+              }
+            },
+            {
+              type: "function", 
+              function: {
+                name: "list_available_graphs",
+                description: "List all available knowledge graphs",
+                parameters: { type: "object", properties: {}, additionalProperties: false }
+              }
+            },
+            {
+              type: "function",
+              function: {
+                name: "get_active_graph", 
+                description: "Get currently active graph information",
+                parameters: { type: "object", properties: {}, additionalProperties: false }
+              }
+            },
+            {
+              type: "function",
+              function: {
+                name: "addNodeToGraph",
+                description: "Add a concept/node to the active graph",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    conceptName: { type: "string", description: "Name of the concept to add" },
+                    description: { type: "string", description: "Optional description" },
+                    position: {
+                      type: "object",
+                      properties: {
+                        x: { type: "number" },
+                        y: { type: "number" }
+                      },
+                      required: ["x", "y"]
+                    }
+                  },
+                  required: ["conceptName", "position"]
+                }
+              }
+            },
+            {
+              type: "function",
+              function: {
+                name: "open_graph",
+                description: "Open a graph and make it active",
+                parameters: {
+                  type: "object", 
+                  properties: {
+                    graphId: { type: "string", description: "ID of the graph to open" }
+                  },
+                  required: ["graphId"]
+                }
+              }
+            },
+            {
+              type: "function",
+              function: {
+                name: "search_nodes",
+                description: "Search for nodes by name or description",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    query: { type: "string", description: "Search query" }
+                  },
+                  required: ["query"]
+                }
+              }
+            }
+          ],
+          tool_choice: "auto"
         })
       });
 
@@ -2443,7 +2527,96 @@ app.post('/api/ai/chat', async (req, res) => {
       }
 
       const data = await response.json();
-      aiResponse = data.choices[0].message.content;
+      const choice = data.choices[0];
+      const assistantMessage = choice.message;
+      
+      // Handle tool calls if the AI wants to use tools
+      if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+        let toolResults = [];
+        
+        for (const toolCall of assistantMessage.tool_calls) {
+          const toolName = toolCall.function.name;
+          const toolArgs = JSON.parse(toolCall.function.arguments || '{}');
+          
+          console.log(`[AI] Calling tool: ${toolName} with args:`, toolArgs);
+          
+          try {
+            let toolResult;
+            switch (toolName) {
+              case 'verify_state':
+                const verifyResult = await server.tools.get('verify_state').handler({});
+                toolResult = verifyResult.content[0].text;
+                break;
+              case 'list_available_graphs':
+                const listResult = await server.tools.get('list_available_graphs').handler({});
+                toolResult = listResult.content[0].text;
+                break;
+              case 'get_active_graph':
+                const activeResult = await server.tools.get('get_active_graph').handler({});
+                toolResult = activeResult.content[0].text;
+                break;
+              case 'addNodeToGraph':
+                const addResult = await server.tools.get('addNodeToGraph').handler(toolArgs);
+                toolResult = addResult.content[0].text;
+                break;
+              case 'open_graph':
+                try {
+                  const state = await getRealRedstringState();
+                  const actions = getRealRedstringActions();
+                  const { graphId } = toolArgs;
+                  
+                  // Check if graphId is actually a name - search for it
+                  let targetGraphId = graphId;
+                  if (!state.graphs.has(graphId)) {
+                    // Search for graph by name
+                    const graphByName = Array.from(state.graphs.values()).find(g => 
+                      g.name.toLowerCase() === graphId.toLowerCase()
+                    );
+                    if (graphByName) {
+                      targetGraphId = graphByName.id;
+                    } else {
+                      toolResult = `❌ Graph "${graphId}" not found. Available graphs: ${Array.from(state.graphs.values()).map(g => g.name).join(', ')}`;
+                      break;
+                    }
+                  }
+                  
+                  const graph = state.graphs.get(targetGraphId);
+                  if (!graph) {
+                    toolResult = `❌ Graph with ID "${targetGraphId}" not found.`;
+                    break;
+                  }
+                  
+                  // Open the graph tab and set it as active
+                  await actions.openGraphTab(targetGraphId);
+                  await actions.setActiveGraphId(targetGraphId);
+                  
+                  toolResult = `✅ Successfully opened graph "${graph.name}" and set it as active.`;
+                } catch (error) {
+                  toolResult = `❌ Failed to open graph: ${error.message}`;
+                }
+                break;
+              case 'search_nodes':
+                const searchResult = await server.tools.get('search_nodes').handler(toolArgs);
+                toolResult = searchResult.content[0].text;
+                break;
+              default:
+                toolResult = `Tool ${toolName} not implemented`;
+            }
+            
+            toolResults.push(`**${toolName}**: ${toolResult}`);
+          } catch (error) {
+            console.error(`Error calling tool ${toolName}:`, error);
+            toolResults.push(`**${toolName}**: Error - ${error.message}`);
+          }
+        }
+        
+        // Combine AI response with tool results
+        const baseResponse = assistantMessage.content || "I've called some tools for you:";
+        aiResponse = `${baseResponse}\n\n${toolResults.join('\n\n')}`;
+      } else {
+        // No tool calls, just return the text response
+        aiResponse = assistantMessage.content;
+      }
     }
 
     res.json({ 
@@ -2804,7 +2977,12 @@ app.post('/api/mcp/request', async (req, res) => {
               const activeGraph = state.activeGraphId ? state.graphs.get(state.activeGraphId) : null;
               const graphInfo = activeGraph ? `${activeGraph.name} (${activeGraph.instances?.size || 0} instances)` : 'No active graph';
               
-              const systemPrompt = `You are an AI assistant helping with a Redstring knowledge graph system. 
+              // Prepare conversation history
+              const conversationHistory = toolArgs.conversationHistory || [];
+              const messages = [
+                {
+                  role: 'system',
+                  content: `You are an AI assistant helping with a Redstring knowledge graph system. 
 
 Current Context:
 - Active Graph: ${graphInfo}
@@ -2812,7 +2990,7 @@ Current Context:
 - Available Concepts: ${state.nodePrototypes.size}
 - Available Graphs: ${Array.from(state.graphs.values()).map(g => g.name).join(', ')}
 
-You have access to these tools that you can call directly:
+You have access to these tools that you can call directly by name:
 - verify_state: Check the current state of the Redstring store
 - list_available_graphs: List all available knowledge graphs
 - get_active_graph: Get information about the currently active graph
@@ -2824,20 +3002,24 @@ You have access to these tools that you can call directly:
 - get_graph_instances: Get detailed information about instances in a graph
 
 When a user asks you to:
-1. Add something to a graph → Use addNodeToGraph
-2. List graphs → Use list_available_graphs
-3. Check current state → Use verify_state
-4. Search for nodes → Use search_nodes
-5. Open a graph → Use open_graph
+1. Add something to a graph → Call addNodeToGraph with conceptName and position
+2. List graphs → Call list_available_graphs
+3. Check current state → Call verify_state
+4. Search for nodes → Call search_nodes
+5. Open a graph → Call open_graph with graphId
 
-You can help users:
-1. Add concepts to their graphs
-2. Search through existing nodes
-3. Navigate between graphs
-4. Analyze relationships and patterns
-5. Understand their knowledge structure
+You MUST use tools to perform actions. Don't just describe what you would do - actually call the appropriate tools.
 
-Be helpful, concise, and focused on graph-related tasks. If they ask about adding concepts, suggest specific node types that might be relevant.`;
+Be helpful, concise, and focused on graph-related tasks. Always try to use tools to provide real, actionable responses.`
+                },
+                ...conversationHistory,
+                {
+                  role: 'user',
+                  content: message
+                }
+              ];
+
+              const systemPrompt = messages[0].content;
 
               // Make API call to get AI response, passing through auth header
               const headers = {
@@ -2936,8 +3118,40 @@ Be helpful, concise, and focused on graph-related tasks. If they ask about addin
               break;
               
             case 'open_graph':
-              const openResult = await server.tools.get('open_graph').handler(toolArgs);
-              toolResult = openResult.content[0].text;
+              try {
+                const state = await getRealRedstringState();
+                const actions = getRealRedstringActions();
+                const { graphId } = toolArgs;
+                
+                // Check if graphId is actually a name - search for it
+                let targetGraphId = graphId;
+                if (!state.graphs.has(graphId)) {
+                  // Search for graph by name
+                  const graphByName = Array.from(state.graphs.values()).find(g => 
+                    g.name.toLowerCase() === graphId.toLowerCase()
+                  );
+                  if (graphByName) {
+                    targetGraphId = graphByName.id;
+                  } else {
+                    toolResult = `❌ Graph "${graphId}" not found. Available graphs: ${Array.from(state.graphs.values()).map(g => g.name).join(', ')}`;
+                    break;
+                  }
+                }
+                
+                const graph = state.graphs.get(targetGraphId);
+                if (!graph) {
+                  toolResult = `❌ Graph with ID "${targetGraphId}" not found.`;
+                  break;
+                }
+                
+                // Open the graph tab and set it as active
+                await actions.openGraphTab(targetGraphId);
+                await actions.setActiveGraphId(targetGraphId);
+                
+                toolResult = `✅ Successfully opened graph "${graph.name}" and set it as active.`;
+              } catch (error) {
+                toolResult = `❌ Failed to open graph: ${error.message}`;
+              }
               break;
               
             case 'set_active_graph':
