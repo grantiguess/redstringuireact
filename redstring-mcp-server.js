@@ -1891,93 +1891,7 @@ server.tool(
   }
 );
 
-// AI-Guided Workflow Tool
-server.tool(
-  "chat",
-  "Send a message to the AI model and get a response",
-  {
-    message: z.string().describe("The user's message"),
-    context: z.object({
-      activeGraphId: z.string().nullable().describe("Currently active graph ID"),
-      graphCount: z.number().describe("Total number of graphs"),
-      hasAPIKey: z.boolean().describe("Whether the user has set up their API key")
-    }).describe("Current context for the AI model")
-  },
-  async ({ message, context }) => {
-    try {
-      // First, get the current state to provide context
-      const state = await getRealRedstringState();
-      
-      // Format the message for the AI model
-      const aiMessage = `User Message: ${message}
-
-Current Context:
-- Active Graph: ${context.activeGraphId ? state.graphs.get(context.activeGraphId)?.name : 'None'}
-- Total Graphs: ${context.graphCount}
-- API Key Status: ${context.hasAPIKey ? 'Set up' : 'Not set up'}
-
-Available Tools:
-- verify_state: Check current Redstring state
-- list_available_graphs: List all graphs
-- get_active_graph: Get active graph details
-- addNodeToGraph: Add a new concept
-- search_nodes: Search for concepts
-- and more...`;
-
-      // Forward the message to the AI through stdio
-      const response = await server.transport.request({
-        jsonrpc: "2.0",
-        method: "chat",
-        params: {
-          messages: [
-            {
-              role: "system",
-              content: `You are assisting with a Redstring knowledge graph. Current state:
-- Active Graph: ${state.activeGraphId ? `${state.graphs.get(state.activeGraphId)?.name} (${state.graphs.get(state.activeGraphId)?.instances?.size || 0} instances)` : 'None'}
-- Total Graphs: ${state.graphs.size}
-- Available Graphs: ${Array.from(state.graphs.values()).map(g => g.name).join(', ')}
-- Total Prototypes: ${state.nodePrototypes.size}
-- Available Concepts: ${Array.from(state.nodePrototypes.values()).map(p => p.name).join(', ')}`
-            },
-            {
-              role: "user",
-              content: message
-            }
-          ]
-        }
-      });
-
-      // The AI response comes back in the result.content field
-      if (!response || !response.result || !response.result.content) {
-        throw new Error('Invalid response from AI model');
-      }
-
-      // Return the AI's response in the expected MCP format
-      return {
-        content: [
-          {
-            type: "text",
-            text: response.result.content
-          }
-        ]
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `I encountered an error processing your message: ${error.message}
-
-Let me know if you'd like to:
-1. Try a different question
-2. See available graphs
-3. Get help with a specific task`
-          }
-        ]
-      };
-    }
-  }
-);
+// AI-Guided Workflow Tool removed - chat tool already exists above
 
 server.tool(
   "ai_guided_workflow",
@@ -2387,6 +2301,18 @@ app.post('/api/bridge/action-completed', (req, res) => {
   }
 });
 
+// Store registration endpoint (for MCPBridge compatibility)
+app.post('/api/bridge/register-store', (req, res) => {
+  try {
+    const { actionMetadata } = req.body;
+    console.log('✅ Bridge: Store actions registered:', Object.keys(actionMetadata || {}));
+    res.json({ success: true, registeredActions: Object.keys(actionMetadata || {}) });
+  } catch (error) {
+    console.error('Store registration error:', error);
+    res.status(500).json({ error: 'Failed to register store actions' });
+  }
+});
+
 // MCP request endpoint (direct handling since we ARE the MCP server)
 app.post('/api/mcp/request', async (req, res) => {
   try {
@@ -2490,9 +2416,45 @@ app.post('/api/mcp/request', async (req, res) => {
         
         switch (toolName) {
           case 'chat':
-            // Handle chat directly through the MCP chat tool
-            const chatResponse = await server.callTool('chat', toolArgs);
-            toolResult = chatResponse.content[0].text;
+            // Handle chat directly - implement the chat logic here
+            try {
+              const { message, context } = toolArgs;
+              
+              // Get the current state to provide context
+              const state = await getRealRedstringState();
+              
+              // Forward the message to the AI through stdio
+              const aiResponse = await server.transport.request({
+                jsonrpc: "2.0",
+                method: "chat",
+                params: {
+                  messages: [
+                    {
+                      role: "system",
+                      content: `You are assisting with a Redstring knowledge graph. Current state:
+- Active Graph: ${state.activeGraphId ? `${state.graphs.get(state.activeGraphId)?.name} (${state.graphs.get(state.activeGraphId)?.instances?.size || 0} instances)` : 'None'}
+- Total Graphs: ${state.graphs.size}
+- Available Graphs: ${Array.from(state.graphs.values()).map(g => g.name).join(', ')}
+- Total Prototypes: ${state.nodePrototypes.size}
+- Available Concepts: ${Array.from(state.nodePrototypes.values()).map(p => p.name).join(', ')}`
+                    },
+                    {
+                      role: "user",
+                      content: message
+                    }
+                  ]
+                }
+              });
+              
+              if (aiResponse && aiResponse.result && aiResponse.result.content) {
+                toolResult = aiResponse.result.content;
+              } else {
+                toolResult = `I encountered an error processing your message. Let me know if you'd like to try again or need help with a specific task.`;
+              }
+            } catch (error) {
+              console.error('[MCP] Chat error:', error);
+              toolResult = `I encountered an error: ${error.message}. Please try again or ask for help with a specific task.`;
+            }
             break;
             
           default:
