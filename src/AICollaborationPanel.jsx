@@ -240,24 +240,13 @@ const AICollaborationPanel = () => {
           </div>
         </div>
         <div className="ai-header-actions">
-          {!hasAPIKey && (
-            <button 
-              className="ai-header-button api-key-button"
-              onClick={() => setShowAPIKeySetup(true)}
-              title="Setup API Key"
-            >
-              <Key size={16} />
-            </button>
-          )}
-          {hasAPIKey && (
-            <button 
-              className="ai-header-button api-key-button"
-              onClick={() => setShowAPIKeySetup(true)}
-              title="Manage API Key"
-            >
-              <Key size={16} />
-            </button>
-          )}
+          <button 
+            className={`ai-header-button api-key-button ${showAPIKeySetup ? 'active' : ''}`}
+            onClick={() => setShowAPIKeySetup(!showAPIKeySetup)}
+            title={hasAPIKey ? "Manage API Key" : "Setup API Key"}
+          >
+            <Key size={16} />
+          </button>
           <button 
             className="ai-header-button"
             onClick={() => setShowAdvanced(!showAdvanced)}

@@ -209,12 +209,12 @@ class APIKeyManager {
     const models = {
       'anthropic': 'claude-3-sonnet-20240229',
       'openai': 'gpt-4o',
-      'openrouter': 'anthropic/claude-3-sonnet-20240229',
+      'openrouter': 'anthropic/claude-3-sonnet', // Fixed: Use the correct model name
       'google': 'gemini-pro',
       'cohere': 'command-r',
       'custom': ''
     };
-    return models[provider] || 'anthropic/claude-3-sonnet-20240229';
+    return models[provider] || 'anthropic/claude-3-sonnet'; // Fixed: Use the correct model name
   }
 
   /**
@@ -223,10 +223,13 @@ class APIKeyManager {
    */
   getOpenRouterModels() {
     return [
-      { id: 'anthropic/claude-3-sonnet-20240229', name: 'Claude 3 Sonnet', provider: 'Anthropic' },
-      { id: 'anthropic/claude-3-opus-20240229', name: 'Claude 3 Opus', provider: 'Anthropic' },
+      { id: 'anthropic/claude-3-sonnet', name: 'Claude 3 Sonnet', provider: 'Anthropic' },
+      { id: 'anthropic/claude-3-haiku', name: 'Claude 3 Haiku', provider: 'Anthropic' },
+      { id: 'anthropic/claude-3-opus', name: 'Claude 3 Opus', provider: 'Anthropic' },
       { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI' },
       { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI' },
+      { id: 'openai/gpt-4-turbo', name: 'GPT-4 Turbo', provider: 'OpenAI' },
+      { id: 'openai/gpt-3.5-turbo', name: 'GPT-3.5 Turbo', provider: 'OpenAI' },
       { id: 'meta-llama/llama-3.1-405b-instruct', name: 'Llama 3.1 405B', provider: 'Meta' },
       { id: 'google/gemini-pro-1.5', name: 'Gemini Pro 1.5', provider: 'Google' },
       { id: 'perplexity/llama-3.1-sonar-large-128k-online', name: 'Perplexity Sonar Large (Online)', provider: 'Perplexity' },

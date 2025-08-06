@@ -198,8 +198,20 @@ const APIKeySetup = ({ onKeySet, onClose, inline = false }) => {
                 <em>⚠️ Legacy configuration - consider updating to set custom endpoint/model</em>
               </div>
             )}
+            {existingKeyInfo.provider === 'openrouter' && existingKeyInfo.model === 'anthropic/claude-3-sonnet-20240229' && (
+              <div className="model-warning">
+                <br />
+                <em>⚠️ Model "anthropic/claude-3-sonnet-20240229" not found on OpenRouter. Please update to a valid model ID like "anthropic/claude-3-sonnet".</em>
+              </div>
+            )}
           </div>
           <div className="key-actions">
+            <button 
+              className="update-button"
+              onClick={() => setExistingKeyInfo(null)}
+            >
+              Update Configuration
+            </button>
             <button 
               className="test-button"
               onClick={handleTestKey}
@@ -262,6 +274,25 @@ const APIKeySetup = ({ onKeySet, onClose, inline = false }) => {
               </div>
             </div>
 
+            {/* Model Selection - Always show for OpenRouter */}
+            {provider === 'openrouter' && (
+              <div className="form-group">
+                <label htmlFor="model">Model ID</label>
+                <input
+                  id="model"
+                  type="text"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="e.g., anthropic/claude-3-sonnet"
+                  disabled={isLoading}
+                  className="model-input"
+                />
+                <small className="field-help">
+                  Enter the model ID from OpenRouter. Examples: anthropic/claude-3-sonnet, openai/gpt-4o, google/gemini-pro-1.5
+                </small>
+              </div>
+            )}
+
             {/* Advanced Configuration */}
             <div className="form-group">
               <button
@@ -292,24 +323,9 @@ const APIKeySetup = ({ onKeySet, onClose, inline = false }) => {
                   </small>
                 </div>
 
-                <div className="form-group">
-                  <label htmlFor="model">Model</label>
-                  {provider === 'openrouter' ? (
-                    <select
-                      id="model"
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                      disabled={isLoading}
-                      className="model-select"
-                    >
-                      <option value="">Select a model...</option>
-                      {apiKeyManager.getOpenRouterModels().map(m => (
-                        <option key={m.id} value={m.id}>
-                          {m.name} ({m.provider})
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
+                {provider !== 'openrouter' && (
+                  <div className="form-group">
+                    <label htmlFor="model">Model</label>
                     <input
                       id="model"
                       type="text"
@@ -319,14 +335,11 @@ const APIKeySetup = ({ onKeySet, onClose, inline = false }) => {
                       disabled={isLoading}
                       className="model-input"
                     />
-                  )}
-                  <small className="field-help">
-                    {provider === 'openrouter' 
-                      ? 'Choose from 200+ available models on OpenRouter.'
-                      : 'Model name/ID to use for API calls. Leave empty to use default.'
-                    }
-                  </small>
-                </div>
+                    <small className="field-help">
+                      Model name/ID to use for API calls. Leave empty to use default.
+                    </small>
+                  </div>
+                )}
               </div>
             )}
 

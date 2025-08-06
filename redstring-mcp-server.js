@@ -2338,6 +2338,23 @@ app.post('/api/ai/chat', async (req, res) => {
     let endpoint = 'https://openrouter.ai/api/v1/chat/completions'; // default  
     let model = 'anthropic/claude-3-sonnet-20240229'; // default
     
+    // Check if the model exists on OpenRouter, fallback to a known working model
+    const validOpenRouterModels = [
+      'anthropic/claude-3-sonnet-20240229',
+      'anthropic/claude-3-sonnet',
+      'anthropic/claude-3-haiku-20240307',
+      'anthropic/claude-3-haiku',
+      'openai/gpt-4o',
+      'openai/gpt-4o-mini',
+      'openai/gpt-4-turbo',
+      'openai/gpt-3.5-turbo'
+    ];
+    
+    // If the requested model is not in our valid list, use a fallback
+    if (!validOpenRouterModels.includes(model)) {
+      model = 'anthropic/claude-3-sonnet'; // Fallback to a known working model
+    }
+    
     // Check if client provided API configuration
     if (context?.apiConfig) {
       provider = context.apiConfig.provider || provider;
@@ -2411,7 +2428,18 @@ app.post('/api/ai/chat', async (req, res) => {
 
       if (!response.ok) {
         const errorData = await response.text();
-        throw new Error(`OpenRouter API error: ${response.status} - ${errorData}`);
+        let errorMessage = `OpenRouter API error: ${response.status} - ${errorData}`;
+        
+        // Provide more helpful error messages
+        if (response.status === 404 && errorData.includes('No endpoints found')) {
+          errorMessage = `Model "${model}" not found on OpenRouter. Available models include: anthropic/claude-3-sonnet, anthropic/claude-3-haiku, openai/gpt-4o, openai/gpt-4o-mini. Please update your API configuration.`;
+        } else if (response.status === 401) {
+          errorMessage = `Invalid API key. Please check your OpenRouter API key configuration.`;
+        } else if (response.status === 429) {
+          errorMessage = `Rate limit exceeded. Please wait a moment and try again.`;
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -2972,7 +3000,33 @@ Be helpful, concise, and focused on graph-related tasks. If they ask about addin
           }
         } catch (error) {
           console.error(`[MCP] Tool ${toolName} error:`, error);
-          toolResult = `Error executing tool "${toolName}": ${error.message}`;
+          
+          // Provide more detailed error messages for chat tool
+          if (toolName === 'chat') {
+            let errorMessage = error.message;
+            
+            if (error.message.includes('Rate limit exceeded')) {
+              errorMessage = 'Rate limit exceeded. Please wait a moment and try again, or try a different model.';
+            } else if (error.message.includes('No endpoints found')) {
+              errorMessage = `Model not found on OpenRouter. Please check your model ID and try again. Current model: ${model}`;
+            } else if (error.message.includes('Invalid API key')) {
+              errorMessage = 'Invalid API key. Please check your OpenRouter API key configuration.';
+            } else if (error.message.includes('AI API call failed: 500')) {
+              errorMessage = 'Server error. Please check your API key and model configuration, or try again later.';
+            } else if (error.message.includes('AI API call failed: 404')) {
+              errorMessage = 'Model not found. Please check your model ID and try again.';
+            }
+            
+            toolResult = `I encountered an error: ${errorMessage}
+
+**Troubleshooting:**
+- Check your API key is valid
+- Verify your model ID is correct (e.g., "anthropic/claude-3-sonnet")
+- Try a different model if rate limited
+- Make sure your OpenRouter account has credits`;
+          } else {
+            toolResult = `Error executing tool "${toolName}": ${error.message}`;
+          }
         }
         
         response = {

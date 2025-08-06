@@ -83,7 +83,8 @@
 }
 
 .test-button,
-.remove-button {
+.remove-button,
+.update-button {
   padding: 8px 16px;
   border-radius: 6px;
   font-size: 14px;
@@ -122,6 +123,22 @@
 }
 
 .remove-button:disabled {
+  background: #f3f4f6;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.update-button {
+  background: #059669;
+  color: white;
+  border: none;
+}
+
+.update-button:hover:not(:disabled) {
+  background: #047857;
+}
+
+.update-button:disabled {
   background: #f3f4f6;
   color: #9ca3af;
   cursor: not-allowed;
@@ -327,4 +344,15 @@
   .submit-button {
     width: 100%;
   }
+}
+
+/* Model Warning */
+.model-warning {
+  color: #dc2626;
+  font-size: 13px;
+  margin-top: 8px;
+  background: #fef2f2;
+  padding: 8px;
+  border-radius: 4px;
+  border-left: 3px solid #dc2626;
 } 
