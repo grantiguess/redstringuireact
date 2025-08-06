@@ -102,7 +102,8 @@ const AICollaborationPanel = () => {
       sender, // 'user', 'ai', 'system'
       content,
       timestamp: new Date().toISOString(),
-      metadata
+      metadata,
+      toolCalls: metadata.toolCalls || []
     };
     setMessages(prev => [...prev, message]);
   };
@@ -178,22 +179,50 @@ const AICollaborationPanel = () => {
         }
       });
       
+      // Parse the response and extract tool call information
+      let aiResponse = '';
+      let toolCalls = [];
+      
       if (result && typeof result === 'string') {
-        // Direct string response
-        addMessage('ai', result);
+        // Direct string response - parse for tool call patterns
+        aiResponse = result;
+        
+        // Extract tool calls from the response using pattern matching
+        const toolCallPattern = /\*\*([^*]+)\*\*:\s*(.+?)(?=\n\n\*\*|$)/gs;
+        let match;
+        while ((match = toolCallPattern.exec(result)) !== null) {
+          const toolName = match[1].trim();
+          const toolResult = match[2].trim();
+          
+          // Skip if it's not a tool call (contains spaces or doesn't look like a tool)
+          if (!toolName.includes(' ') && ['open_graph', 'search_nodes', 'list_available_graphs', 'verify_state', 'get_active_graph', 'addNodeToGraph', 'removeNodeFromGraph'].includes(toolName)) {
+            const status = toolResult.startsWith('✅') ? 'completed' : 
+                          toolResult.startsWith('❌') ? 'failed' : 'completed';
+            
+            toolCalls.push({
+              name: toolName,
+              status: status,
+              result: toolResult
+            });
+          }
+        }
+        
       } else if (result?.content && Array.isArray(result.content)) {
         // Content array response
         for (const content of result.content) {
           if (content && typeof content.text === 'string') {
-            addMessage('ai', content.text);
+            aiResponse += content.text + '\n';
           }
         }
       } else if (result?.content && typeof result.content === 'string') {
         // Single content string
-        addMessage('ai', result.content);
+        aiResponse = result.content;
       } else {
-        addMessage('ai', "I'm having trouble understanding. Could you rephrase your question?");
+        aiResponse = "I'm having trouble understanding. Could you rephrase your question?";
       }
+      
+      // Add the message with tool call metadata
+      addMessage('ai', aiResponse.trim(), { toolCalls });
     } catch (error) {
       console.error('[AI Collaboration] Question handling failed:', error);
       addMessage('ai', 'I encountered an error while processing your question. Please try again or check your connection to the MCP server.');
@@ -307,6 +336,40 @@ const AICollaborationPanel = () => {
                   {message.sender === 'user' ? <User size={16} /> : <Bot size={16} />}
                 </div>
                 <div className="ai-message-content">
+                  {/* Tool Calls Display (Cursor-style) */}
+                  {message.toolCalls && message.toolCalls.length > 0 && (
+                    <div className="ai-tool-calls">
+                      {message.toolCalls.map((toolCall, index) => (
+                        <div key={index} className={`ai-tool-call ai-tool-call-${toolCall.status || 'running'}`}>
+                          <div className="ai-tool-call-header">
+                            <div className="ai-tool-call-icon">
+                              {toolCall.status === 'completed' ? '✅' : 
+                               toolCall.status === 'failed' ? '❌' : '🔄'}
+                            </div>
+                            <span className="ai-tool-call-name">{toolCall.name}</span>
+                            <span className="ai-tool-call-status">
+                              {toolCall.status === 'completed' ? 'Completed' :
+                               toolCall.status === 'failed' ? 'Failed' : 'Running...'}
+                            </span>
+                          </div>
+                          {toolCall.args && (
+                            <div className="ai-tool-call-args">
+                              <small>{JSON.stringify(toolCall.args, null, 2)}</small>
+                            </div>
+                          )}
+                          {toolCall.result && (
+                            <div className="ai-tool-call-result">
+                              <div className="ai-tool-call-result-content">
+                                {toolCall.result}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* Regular Message Content */}
                   <div className="ai-message-text">{message.content}</div>
                   <div className="ai-message-timestamp">
                     {new Date(message.timestamp).toLocaleTimeString()}

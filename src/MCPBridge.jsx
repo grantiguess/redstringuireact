@@ -69,8 +69,8 @@ const MCPBridge = () => {
               return { success: true, graphId };
             },
             openGraph: async (graphId) => {
-              console.log('MCPBridge: Calling openGraph', graphId);
-              state.openGraph(graphId);
+              console.log('MCPBridge: Calling openGraphTab', graphId);
+              state.openGraphTab(graphId);
               return { success: true, graphId };
             },
             chat: async (message, context) => {
@@ -187,6 +187,16 @@ const MCPBridge = () => {
           }
         }
         
+        // Check for bridge state changes and sync them back to Redstring
+        // DISABLED: This was causing conflicts with Redstring state restoration
+        // TODO: Re-implement this as a one-way sync only when AI tools make explicit changes
+        // 
+        // const bridgeResponse = await fetch('http://localhost:3001/api/bridge/state');
+        // if (bridgeResponse.ok) {
+        //   const bridgeData = await bridgeResponse.json();
+        //   // ... sync logic disabled for now
+        // }
+
         // Check for pending actions
         const actionsResponse = await fetch('http://localhost:3001/api/bridge/pending-actions');
         if (actionsResponse.ok) {
