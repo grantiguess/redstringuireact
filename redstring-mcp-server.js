@@ -2313,10 +2313,131 @@ app.post('/api/bridge/register-store', (req, res) => {
   }
 });
 
+// AI Chat API endpoint - handles actual AI provider calls
+app.post('/api/ai/chat', async (req, res) => {
+  try {
+    const { message, systemPrompt, context, model: requestedModel } = req.body;
+    
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    // Get API key from client-side storage (we'll need to receive it in the request)
+    // For now, return a helpful message asking them to implement the API key passing
+    if (!req.headers.authorization) {
+      return res.status(401).json({ 
+        error: 'API key required', 
+        response: 'I need access to your AI API key to provide responses. The API key should be passed in the Authorization header.' 
+      });
+    }
+
+    const apiKey = req.headers.authorization.replace('Bearer ', '');
+    
+    // Use custom configuration from client if provided, otherwise use defaults
+    let provider = 'openrouter'; // default
+    let endpoint = 'https://openrouter.ai/api/v1/chat/completions'; // default  
+    let model = 'anthropic/claude-3-sonnet-20240229'; // default
+    
+    // Check if client provided API configuration
+    if (context?.apiConfig) {
+      provider = context.apiConfig.provider || provider;
+      endpoint = context.apiConfig.endpoint || endpoint;
+      model = context.apiConfig.model || model;
+      console.log('[AI Chat] Using custom config:', { provider, endpoint, model });
+    } else {
+      // Fall back to key-based detection for legacy compatibility
+      if (apiKey.startsWith('sk-') && !requestedModel) {
+        provider = 'openrouter';
+        model = 'openai/gpt-4o';
+      } else if (apiKey.startsWith('claude-')) {
+        provider = 'anthropic';
+        endpoint = 'https://api.anthropic.com/v1/messages';
+        model = requestedModel || 'claude-3-sonnet-20240229';
+      }
+    }
+
+    let aiResponse;
+    
+    if (provider === 'anthropic') {
+      // Call Anthropic Claude API directly
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: model,
+          max_tokens: context?.apiConfig?.settings?.max_tokens || 1000,
+          temperature: context?.apiConfig?.settings?.temperature || 0.7,
+          messages: [
+            {
+              role: 'user',
+              content: `${systemPrompt}\n\nUser: ${message}`
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`Anthropic API error: ${response.status} - ${errorData}`);
+      }
+
+      const data = await response.json();
+      aiResponse = data.content[0].text;
+      
+    } else {
+      // Use OpenRouter (supports OpenAI, Anthropic, and many other models)
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'http://localhost:4000', // Optional: helps with rate limits
+          'X-Title': 'Redstring Knowledge Graph' // Optional: helps identify your app
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: message }
+          ],
+          max_tokens: context?.apiConfig?.settings?.max_tokens || 1000,
+          temperature: context?.apiConfig?.settings?.temperature || 0.7
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`OpenRouter API error: ${response.status} - ${errorData}`);
+      }
+
+      const data = await response.json();
+      aiResponse = data.choices[0].message.content;
+    }
+
+    res.json({ 
+      response: aiResponse,
+      provider: provider
+    });
+
+  } catch (error) {
+    console.error('[AI Chat API] Error:', error);
+    res.status(500).json({ 
+      error: 'AI chat failed', 
+      message: error.message,
+      response: `I encountered an error while processing your request: ${error.message}. Please check your API key and try again.`
+    });
+  }
+});
+
 // MCP request endpoint (direct handling since we ARE the MCP server)
 app.post('/api/mcp/request', async (req, res) => {
   try {
     const { method, params, id } = req.body;
+    const authHeader = req.headers.authorization;
     
     console.log('[MCP] Request received:', { method, id });
     
@@ -2416,44 +2537,71 @@ app.post('/api/mcp/request', async (req, res) => {
         
         switch (toolName) {
           case 'chat':
-            // Handle chat directly - implement the chat logic here
+            // Handle chat directly - make actual AI API calls
             try {
               const { message, context } = toolArgs;
+              
+              // Check if user has API key
+              if (!context.hasAPIKey) {
+                toolResult = `Please set up your AI API key first. Click the key icon in the AI panel to configure your API credentials.`;
+                break;
+              }
               
               // Get the current state to provide context
               const state = await getRealRedstringState();
               
-              // Forward the message to the AI through stdio
-              const aiResponse = await server.transport.request({
-                jsonrpc: "2.0",
-                method: "chat",
-                params: {
-                  messages: [
-                    {
-                      role: "system",
-                      content: `You are assisting with a Redstring knowledge graph. Current state:
-- Active Graph: ${state.activeGraphId ? `${state.graphs.get(state.activeGraphId)?.name} (${state.graphs.get(state.activeGraphId)?.instances?.size || 0} instances)` : 'None'}
-- Total Graphs: ${state.graphs.size}
-- Available Graphs: ${Array.from(state.graphs.values()).map(g => g.name).join(', ')}
-- Total Prototypes: ${state.nodePrototypes.size}
-- Available Concepts: ${Array.from(state.nodePrototypes.values()).map(p => p.name).join(', ')}`
-                    },
-                    {
-                      role: "user",
-                      content: message
-                    }
-                  ]
-                }
-              });
+              // Prepare context for AI
+              const activeGraph = state.activeGraphId ? state.graphs.get(state.activeGraphId) : null;
+              const graphInfo = activeGraph ? `${activeGraph.name} (${activeGraph.instances?.size || 0} instances)` : 'No active graph';
               
-              if (aiResponse && aiResponse.result && aiResponse.result.content) {
-                toolResult = aiResponse.result.content;
-              } else {
-                toolResult = `I encountered an error processing your message. Let me know if you'd like to try again or need help with a specific task.`;
+              const systemPrompt = `You are an AI assistant helping with a Redstring knowledge graph system. 
+
+Current Context:
+- Active Graph: ${graphInfo}
+- Total Graphs: ${state.graphs.size}
+- Available Concepts: ${state.nodePrototypes.size}
+- Available Graphs: ${Array.from(state.graphs.values()).map(g => g.name).join(', ')}
+
+You can help users:
+1. Add concepts to their graphs
+2. Search through existing nodes
+3. Navigate between graphs
+4. Analyze relationships and patterns
+5. Understand their knowledge structure
+
+Be helpful, concise, and focused on graph-related tasks. If they ask about adding concepts, suggest specific node types that might be relevant.`;
+
+              // Make API call to get AI response, passing through auth header
+              const headers = {
+                'Content-Type': 'application/json',
+              };
+              
+              // Pass through authorization header if available
+              if (authHeader) {
+                headers['Authorization'] = authHeader;
               }
+              
+              const aiResponse = await fetch('http://localhost:3001/api/ai/chat', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                  message: message,
+                  systemPrompt: systemPrompt,
+                  context: context,
+                  model: context.preferredModel // Allow client to specify model
+                })
+              });
+
+              if (!aiResponse.ok) {
+                throw new Error(`AI API call failed: ${aiResponse.status}`);
+              }
+
+              const aiResult = await aiResponse.json();
+              toolResult = aiResult.response || "I'm having trouble generating a response. Please try again.";
+              
             } catch (error) {
               console.error('[MCP] Chat error:', error);
-              toolResult = `I encountered an error: ${error.message}. Please try again or ask for help with a specific task.`;
+              toolResult = `I encountered an error: ${error.message}. Please check your API key configuration and try again.`;
             }
             break;
             

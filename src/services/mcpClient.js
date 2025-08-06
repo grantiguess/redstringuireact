@@ -206,13 +206,19 @@ class MCPClient {
     try {
       const apiKey = await apiKeyManager.getAPIKey();
       
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      // Only add auth header if we have an API key
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+      
       // Send request through the bridge server's MCP endpoint
       const response = await fetch('http://localhost:3001/api/mcp/request', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
+        headers: headers,
         body: JSON.stringify(request)
       });
 

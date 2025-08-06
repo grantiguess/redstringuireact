@@ -12,11 +12,15 @@ class APIKeyManager {
   }
 
   /**
-   * Store API key securely in localStorage
+   * Store API key and configuration securely in localStorage
    * @param {string} apiKey - The API key to store
-   * @param {string} provider - The provider (e.g., 'anthropic', 'openai')
+   * @param {string} provider - The provider (e.g., 'anthropic', 'openai', 'openrouter')
+   * @param {Object} config - Additional configuration
+   * @param {string} config.endpoint - Custom API endpoint URL
+   * @param {string} config.model - Preferred model name
+   * @param {Object} config.settings - Additional model settings (temperature, max_tokens, etc.)
    */
-  async storeAPIKey(apiKey, provider = 'anthropic') {
+  async storeAPIKey(apiKey, provider = 'anthropic', config = {}) {
     try {
       // Simple obfuscation (in production, you might want stronger encryption)
       const obfuscatedKey = this.obfuscate(apiKey);
@@ -24,17 +28,24 @@ class APIKeyManager {
       const keyData = {
         key: obfuscatedKey,
         provider,
+        endpoint: config.endpoint || this.getDefaultEndpoint(provider),
+        model: config.model || this.getDefaultModel(provider),
+        settings: {
+          temperature: 0.7,
+          max_tokens: 1000,
+          ...config.settings
+        },
         timestamp: Date.now(),
-        version: '1.0'
+        version: '2.0'
       };
 
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(keyData));
       
-      console.log('[API Key Manager] API key stored successfully');
-      return { success: true, provider };
+      console.log('[API Key Manager] API configuration stored successfully');
+      return { success: true, provider, endpoint: keyData.endpoint, model: keyData.model };
     } catch (error) {
-      console.error('[API Key Manager] Failed to store API key:', error);
-      throw new Error('Failed to store API key');
+      console.error('[API Key Manager] Failed to store API configuration:', error);
+      throw new Error('Failed to store API configuration');
     }
   }
 
@@ -61,7 +72,7 @@ class APIKeyManager {
   }
 
   /**
-   * Get API key info (provider, timestamp, etc.)
+   * Get API key info (provider, endpoint, model, timestamp, etc.)
    * @returns {object|null} Key information or null if not found
    */
   async getAPIKeyInfo() {
@@ -72,8 +83,27 @@ class APIKeyManager {
       }
 
       const keyData = JSON.parse(stored);
+      
+      // Handle legacy format (version 1.0)
+      if (keyData.version === '1.0') {
+        return {
+          provider: keyData.provider,
+          endpoint: this.getDefaultEndpoint(keyData.provider),
+          model: this.getDefaultModel(keyData.provider),
+          settings: { temperature: 0.7, max_tokens: 1000 },
+          timestamp: keyData.timestamp,
+          version: keyData.version,
+          hasKey: true,
+          isLegacy: true
+        };
+      }
+      
+      // Current format (version 2.0+)
       return {
         provider: keyData.provider,
+        endpoint: keyData.endpoint,
+        model: keyData.model,
+        settings: keyData.settings,
         timestamp: keyData.timestamp,
         version: keyData.version,
         hasKey: true
@@ -154,14 +184,65 @@ class APIKeyManager {
   }
 
   /**
-   * Get common provider presets (just for UI convenience)
+   * Get default API endpoint for a provider
+   * @param {string} provider - The provider name
+   * @returns {string} Default endpoint URL
+   */
+  getDefaultEndpoint(provider) {
+    const endpoints = {
+      'anthropic': 'https://api.anthropic.com/v1/messages',
+      'openai': 'https://api.openai.com/v1/chat/completions',
+      'openrouter': 'https://openrouter.ai/api/v1/chat/completions',
+      'google': 'https://generativelanguage.googleapis.com/v1beta/models',
+      'cohere': 'https://api.cohere.ai/v1/chat',
+      'custom': ''
+    };
+    return endpoints[provider] || 'https://openrouter.ai/api/v1/chat/completions';
+  }
+
+  /**
+   * Get default model for a provider
+   * @param {string} provider - The provider name
+   * @returns {string} Default model name
+   */
+  getDefaultModel(provider) {
+    const models = {
+      'anthropic': 'claude-3-sonnet-20240229',
+      'openai': 'gpt-4o',
+      'openrouter': 'anthropic/claude-3-sonnet-20240229',
+      'google': 'gemini-pro',
+      'cohere': 'command-r',
+      'custom': ''
+    };
+    return models[provider] || 'anthropic/claude-3-sonnet-20240229';
+  }
+
+  /**
+   * Get popular models for OpenRouter
+   * @returns {Array} List of popular OpenRouter models
+   */
+  getOpenRouterModels() {
+    return [
+      { id: 'anthropic/claude-3-sonnet-20240229', name: 'Claude 3 Sonnet', provider: 'Anthropic' },
+      { id: 'anthropic/claude-3-opus-20240229', name: 'Claude 3 Opus', provider: 'Anthropic' },
+      { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI' },
+      { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI' },
+      { id: 'meta-llama/llama-3.1-405b-instruct', name: 'Llama 3.1 405B', provider: 'Meta' },
+      { id: 'google/gemini-pro-1.5', name: 'Gemini Pro 1.5', provider: 'Google' },
+      { id: 'perplexity/llama-3.1-sonar-large-128k-online', name: 'Perplexity Sonar Large (Online)', provider: 'Perplexity' },
+      { id: 'mistralai/mixtral-8x7b-instruct', name: 'Mixtral 8x7B', provider: 'Mistral AI' }
+    ];
+  }
+
+  /**
+   * Get common provider presets (updated with OpenRouter)
    * @returns {Array} List of common providers for quick selection
    */
   getCommonProviders() {
     return [
+      { id: 'openrouter', name: 'OpenRouter (200+ Models)' },
       { id: 'anthropic', name: 'Anthropic Claude' },
       { id: 'openai', name: 'OpenAI GPT' },
-      { id: 'kimi', name: 'Kimi K2' },
       { id: 'google', name: 'Google Gemini' },
       { id: 'cohere', name: 'Cohere' },
       { id: 'custom', name: 'Custom Provider' }

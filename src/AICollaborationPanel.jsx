@@ -152,13 +152,22 @@ const AICollaborationPanel = () => {
 
   const handleQuestion = async (question) => {
     try {
+      // Get API configuration for the chat request
+      const apiConfig = await apiKeyManager.getAPIKeyInfo();
+      
       // Send the message to the AI model through the MCP server
       const result = await mcpClient.callTool('chat', { 
         message: question,
         context: {
           activeGraphId: activeGraphId,
           graphCount: graphs.size,
-          hasAPIKey: hasAPIKey
+          hasAPIKey: hasAPIKey,
+          apiConfig: apiConfig ? {
+            provider: apiConfig.provider,
+            endpoint: apiConfig.endpoint,
+            model: apiConfig.model,
+            settings: apiConfig.settings
+          } : null
         }
       });
       
@@ -280,6 +289,17 @@ const AICollaborationPanel = () => {
 
 
 
+      {/* API Key Setup Section */}
+      {showAPIKeySetup && (
+        <div className="ai-api-setup-section">
+          <APIKeySetup 
+            onKeySet={handleAPIKeySet}
+            onClose={() => setShowAPIKeySetup(false)}
+            inline={true}
+          />
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="ai-panel-content">
         <div className="ai-chat-mode">
@@ -342,17 +362,6 @@ const AICollaborationPanel = () => {
 
 
 
-      {/* API Key Setup Modal */}
-      {showAPIKeySetup && (
-        <div className="api-key-modal-overlay">
-          <div className="api-key-modal">
-            <APIKeySetup 
-              onKeySet={handleAPIKeySet}
-              onClose={() => setShowAPIKeySetup(false)}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 };

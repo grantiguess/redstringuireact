@@ -3,10 +3,13 @@ import { Key, Eye, EyeOff, CheckCircle, AlertCircle, ExternalLink, Settings, Tra
 import apiKeyManager from '../services/apiKeyManager.js';
 import './APIKeySetup.css';
 
-const APIKeySetup = ({ onKeySet, onClose }) => {
+const APIKeySetup = ({ onKeySet, onClose, inline = false }) => {
   const [apiKey, setApiKey] = useState('');
-  const [provider, setProvider] = useState('anthropic');
+  const [provider, setProvider] = useState('openrouter');
   const [customProviderName, setCustomProviderName] = useState('');
+  const [endpoint, setEndpoint] = useState('');
+  const [model, setModel] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -20,15 +23,37 @@ const APIKeySetup = ({ onKeySet, onClose }) => {
     loadExistingKey();
   }, []);
 
+  // Initialize defaults when component loads
+  useEffect(() => {
+    if (!existingKeyInfo) {
+      setEndpoint(apiKeyManager.getDefaultEndpoint(provider));
+      setModel(apiKeyManager.getDefaultModel(provider));
+    }
+  }, [provider, existingKeyInfo]);
+
   const loadExistingKey = async () => {
     try {
       const keyInfo = await apiKeyManager.getAPIKeyInfo();
       if (keyInfo) {
         setExistingKeyInfo(keyInfo);
         setProvider(keyInfo.provider);
+        setEndpoint(keyInfo.endpoint || '');
+        setModel(keyInfo.model || '');
       }
     } catch (error) {
       console.error('Failed to load existing key info:', error);
+    }
+  };
+
+  const handleProviderChange = (newProvider) => {
+    setProvider(newProvider);
+    // Auto-set defaults for known providers
+    if (newProvider !== 'custom') {
+      setEndpoint(apiKeyManager.getDefaultEndpoint(newProvider));
+      setModel(apiKeyManager.getDefaultModel(newProvider));
+    } else {
+      setEndpoint('');
+      setModel('');
     }
   };
 
@@ -47,8 +72,15 @@ const APIKeySetup = ({ onKeySet, onClose }) => {
       // For custom providers, use the custom name
       const finalProvider = provider === 'custom' ? customProviderName : provider;
       
-      // Store the API key
-      await apiKeyManager.storeAPIKey(apiKey, finalProvider);
+      // Store the API key with configuration
+      await apiKeyManager.storeAPIKey(apiKey, finalProvider, {
+        endpoint: endpoint.trim(),
+        model: model.trim(),
+        settings: {
+          temperature: 0.7,
+          max_tokens: 1000
+        }
+      });
       
               setSuccess(`API key stored successfully for ${finalProvider}`);
       setApiKey('');
@@ -130,13 +162,20 @@ const APIKeySetup = ({ onKeySet, onClose }) => {
   };
 
   return (
-    <div className="api-key-setup">
+    <div className={`api-key-setup ${inline ? 'api-key-setup-inline' : ''}`}>
       <div className="api-key-header">
         <Key className="api-key-icon" />
-        <h3>AI API Key Setup</h3>
-        <button className="close-button" onClick={onClose}>
-          ×
-        </button>
+        <h3>AI API Configuration</h3>
+        {!inline && (
+          <button className="close-button" onClick={onClose}>
+            ×
+          </button>
+        )}
+        {inline && (
+          <button className="collapse-button" onClick={onClose}>
+            <Settings size={16} />
+          </button>
+        )}
       </div>
 
       {existingKeyInfo && (
@@ -148,7 +187,17 @@ const APIKeySetup = ({ onKeySet, onClose }) => {
           <div className="key-details">
             <strong>Provider:</strong> {existingKeyInfo.provider}
             <br />
+            <strong>Endpoint:</strong> {existingKeyInfo.endpoint}
+            <br />
+            <strong>Model:</strong> {existingKeyInfo.model}
+            <br />
             <strong>Added:</strong> {formatTimestamp(existingKeyInfo.timestamp)}
+            {existingKeyInfo.isLegacy && (
+              <div className="legacy-notice">
+                <br />
+                <em>⚠️ Legacy configuration - consider updating to set custom endpoint/model</em>
+              </div>
+            )}
           </div>
           <div className="key-actions">
             <button 
@@ -183,7 +232,7 @@ const APIKeySetup = ({ onKeySet, onClose }) => {
               <select
                 id="provider"
                 value={provider}
-                onChange={(e) => setProvider(e.target.value)}
+                onChange={(e) => handleProviderChange(e.target.value)}
                 disabled={isLoading}
               >
                 {providers.map(p => (
@@ -212,6 +261,74 @@ const APIKeySetup = ({ onKeySet, onClose }) => {
                 <p>Enter your API key below. The system will store it securely in your browser.</p>
               </div>
             </div>
+
+            {/* Advanced Configuration */}
+            <div className="form-group">
+              <button
+                type="button"
+                className="advanced-toggle"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+              >
+                <Settings size={16} />
+                {showAdvanced ? 'Hide' : 'Show'} Advanced Settings
+              </button>
+            </div>
+
+            {showAdvanced && (
+              <div className="advanced-settings">
+                <div className="form-group">
+                  <label htmlFor="endpoint">API Endpoint</label>
+                  <input
+                    id="endpoint"
+                    type="url"
+                    value={endpoint}
+                    onChange={(e) => setEndpoint(e.target.value)}
+                    placeholder={`Default: ${apiKeyManager.getDefaultEndpoint(provider)}`}
+                    disabled={isLoading}
+                    className="endpoint-input"
+                  />
+                  <small className="field-help">
+                    Custom API endpoint URL. Leave empty to use default.
+                  </small>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="model">Model</label>
+                  {provider === 'openrouter' ? (
+                    <select
+                      id="model"
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      disabled={isLoading}
+                      className="model-select"
+                    >
+                      <option value="">Select a model...</option>
+                      {apiKeyManager.getOpenRouterModels().map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.provider})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id="model"
+                      type="text"
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      placeholder={`Default: ${apiKeyManager.getDefaultModel(provider)}`}
+                      disabled={isLoading}
+                      className="model-input"
+                    />
+                  )}
+                  <small className="field-help">
+                    {provider === 'openrouter' 
+                      ? 'Choose from 200+ available models on OpenRouter.'
+                      : 'Model name/ID to use for API calls. Leave empty to use default.'
+                    }
+                  </small>
+                </div>
+              </div>
+            )}
 
             <div className="form-group">
               <label htmlFor="apiKey">API Key</label>
