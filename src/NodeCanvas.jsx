@@ -2704,7 +2704,7 @@ function NodeCanvas() {
     }
     
     return () => cancelAnimationFrame(animationFrameId);
-  }, [viewportSize, canvasSize, canvasWorker, nodeNamePrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused]);
+  }, [viewportSize, canvasSize, canvasWorker, nodeNamePrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused]); // Note: zoomLevel and panOffset intentionally NOT included to avoid infinite loop
 
     // Add ref for dialog container
   const dialogContainerRef = useRef(null);

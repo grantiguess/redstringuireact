@@ -31,6 +31,10 @@ const MCPBridge = () => {
             description: 'Remove a node instance from a graph',
             parameters: ['graphId', 'instanceId']
           },
+          updateNodePrototype: {
+            description: 'Update a node prototype',
+            parameters: ['prototypeId', 'updates']
+          },
           setActiveGraph: {
             description: 'Set the active graph',
             parameters: ['graphId']
@@ -50,7 +54,9 @@ const MCPBridge = () => {
           window.redstringStoreActions = {
             addNodePrototype: async (prototypeId, prototypeData) => {
               console.log('MCPBridge: Calling addNodePrototype', prototypeId, prototypeData);
-              state.addNodePrototype(prototypeId, prototypeData);
+              // Ensure the prototypeData has the correct id
+              const dataWithId = { ...prototypeData, id: prototypeId };
+              state.addNodePrototype(dataWithId);
               return { success: true, prototypeId };
             },
             addNodeInstance: async (graphId, prototypeId, position, instanceId) => {
@@ -62,6 +68,13 @@ const MCPBridge = () => {
               console.log('MCPBridge: Calling removeNodeInstance', graphId, instanceId);
               state.removeNodeInstance(graphId, instanceId);
               return { success: true, instanceId };
+            },
+            updateNodePrototype: async (prototypeId, updates) => {
+              console.log('MCPBridge: Calling updateNodePrototype', prototypeId, updates);
+              state.updateNodePrototype(prototypeId, (prototype) => {
+                Object.assign(prototype, updates);
+              });
+              return { success: true, prototypeId };
             },
             setActiveGraph: async (graphId) => {
               console.log('MCPBridge: Calling setActiveGraph', graphId);

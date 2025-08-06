@@ -11,7 +11,8 @@ import {
   Send,
   Bot,
   User,
-  Key
+  Key,
+  Square
 } from 'lucide-react';
 import mcpClient from './services/mcpClient.js';
 import apiKeyManager from './services/apiKeyManager.js';
@@ -28,6 +29,8 @@ const AICollaborationPanel = () => {
   const [showAPIKeySetup, setShowAPIKeySetup] = useState(false);
   const [hasAPIKey, setHasAPIKey] = useState(false);
   const [apiKeyInfo, setApiKeyInfo] = useState(null);
+  const [isAutonomousMode, setIsAutonomousMode] = useState(true);
+  const [currentAgentRequest, setCurrentAgentRequest] = useState(null);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -135,13 +138,97 @@ const AICollaborationPanel = () => {
         }
       }
 
-      // Analyze user input to determine intent
-      await handleQuestion(userMessage);
+      // Choose between autonomous agent mode or single-call mode
+      if (isAutonomousMode) {
+        await handleAutonomousAgent(userMessage);
+      } else {
+        await handleQuestion(userMessage);
+      }
     } catch (error) {
       console.error('[AI Collaboration] Error processing message:', error);
       addMessage('system', `Error: ${error.message}`);
     } finally {
       setIsProcessing(false);
+      setCurrentAgentRequest(null);
+    }
+  };
+
+  const handleStopAgent = () => {
+    if (currentAgentRequest) {
+      currentAgentRequest.abort();
+      setCurrentAgentRequest(null);
+      setIsProcessing(false);
+      addMessage('system', '🛑 Agent execution stopped by user.');
+    }
+  };
+
+  const handleAutonomousAgent = async (question) => {
+    try {
+      // Get API configuration and actual API key
+      const apiConfig = await apiKeyManager.getAPIKeyInfo();
+      const apiKey = await apiKeyManager.getAPIKey();
+      
+      if (!apiKey) {
+        addMessage('ai', 'No API key found. Please set up your API key first.');
+        return;
+      }
+      
+      // Prepare conversation history (last 10 messages for context)
+      const conversationHistory = messages.slice(-10).map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      }));
+
+      // Create abort controller for stop functionality
+      const abortController = new AbortController();
+      setCurrentAgentRequest(abortController);
+
+      // Call the autonomous agent endpoint
+      const response = await fetch('http://localhost:3001/api/ai/agent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          message: question,
+          systemPrompt: 'You are an AI assistant with access to Redstring knowledge graph tools.',
+          context: {
+            activeGraphId: activeGraphId,
+            graphCount: graphs.size,
+            hasAPIKey: hasAPIKey,
+            apiConfig: apiConfig ? {
+              provider: apiConfig.provider,
+              endpoint: apiConfig.endpoint,
+              model: apiConfig.model,
+              settings: apiConfig.settings
+            } : null
+          }
+        }),
+        signal: abortController.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`Agent request failed: ${response.status} ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      // Add the final response with all tool calls
+      addMessage('ai', result.response, {
+        toolCalls: result.toolCalls || [],
+        iterations: result.iterations,
+        mode: 'autonomous',
+        isComplete: result.isComplete
+      });
+
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('[Agent] Request was aborted');
+      } else {
+        console.error('[AI Collaboration] Autonomous agent failed:', error);
+        addMessage('ai', `Agent error: ${error.message}`);
+      }
     }
   };
 
@@ -302,13 +389,27 @@ const AICollaborationPanel = () => {
         </div>
       </div>
 
-      {/* Graph Context */}
+      {/* Graph Context & Agent Mode */}
       <div className="ai-graph-context">
         <div className="ai-graph-info">
           <span className="ai-graph-name">{graphInfo.name}</span>
           <span className="ai-graph-stats">
             {graphInfo.nodeCount} nodes • {graphInfo.edgeCount} edges
           </span>
+        </div>
+        <div className="ai-mode-toggle">
+          <label className="ai-toggle-label">
+            <input
+              type="checkbox"
+              checked={isAutonomousMode}
+              onChange={(e) => setIsAutonomousMode(e.target.checked)}
+              className="ai-toggle-input"
+            />
+            <span className="ai-toggle-slider"></span>
+            <span className="ai-toggle-text">
+              {isAutonomousMode ? '🤖 Autonomous Agent' : '🔧 Single Tool Mode'}
+            </span>
+          </label>
         </div>
       </div>
 
@@ -403,18 +504,30 @@ const AICollaborationPanel = () => {
               value={currentInput}
               onChange={(e) => setCurrentInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask me anything about your knowledge graph..."
+              placeholder={isAutonomousMode ? 
+                "Tell me what you want to accomplish (I'll use multiple tools to complete it)..." : 
+                "Ask me anything about your knowledge graph..."}
               disabled={isProcessing}
               className="ai-input"
               rows={2}
             />
-            <button
-              onClick={handleSendMessage}
-              disabled={!currentInput.trim() || isProcessing}
-              className="ai-send-button"
-            >
-              <Send size={16} />
-            </button>
+            {isProcessing && currentAgentRequest ? (
+              <button
+                onClick={handleStopAgent}
+                className="ai-stop-button"
+                title="Stop Agent"
+              >
+                <Square size={16} />
+              </button>
+            ) : (
+              <button
+                onClick={handleSendMessage}
+                disabled={!currentInput.trim() || isProcessing}
+                className="ai-send-button"
+              >
+                <Send size={16} />
+              </button>
+            )}
           </div>
         </div>
       </div>

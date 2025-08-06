@@ -120,12 +120,15 @@
   padding: 12px 20px;
   background: #f0f0f0;
   border-bottom: 1px solid #260000;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .ai-graph-info {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 4px;
   font-size: 13px;
 }
 
@@ -135,6 +138,59 @@
 }
 
 .ai-graph-stats {
+  color: #260000;
+}
+
+/* Agent Mode Toggle */
+.ai-mode-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.ai-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ai-toggle-input {
+  display: none;
+}
+
+.ai-toggle-slider {
+  position: relative;
+  width: 40px;
+  height: 20px;
+  background: #ccc;
+  border-radius: 20px;
+  transition: background 0.3s;
+}
+
+.ai-toggle-slider::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.3s;
+}
+
+.ai-toggle-input:checked + .ai-toggle-slider {
+  background: #007acc;
+}
+
+.ai-toggle-input:checked + .ai-toggle-slider::before {
+  transform: translateX(20px);
+}
+
+.ai-toggle-text {
+  font-size: 12px;
+  font-weight: 500;
   color: #260000;
 }
 
@@ -378,6 +434,27 @@
   background: #d1d5db;
   cursor: not-allowed;
   transform: none;
+}
+
+/* Stop Button */
+.ai-stop-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 8px;
+  background: #dc2626;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.ai-stop-button:hover {
+  background: #b91c1c;
+  transform: translateY(-1px);
 }
 
 /* Operations Mode */
