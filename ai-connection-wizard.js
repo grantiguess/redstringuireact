@@ -8,7 +8,7 @@
  * - Sets up MCP servers
  * - Configures bridges
  * - Validates connections
- * - Provides status monitoring
+ * - Provides status monitoring with improved retry logic
  */
 
 import { spawn } from 'child_process';
@@ -27,12 +27,21 @@ class AIConnectionWizard {
       bridge: false,
       mcpServer: false,
       redstring: false,
+      data: false,
       aiClient: null
     };
     this.config = {
       redstringPort: 4000,
       bridgePort: 3001,
-      mcpServerPath: join(__dirname, 'redstring-mcp-server.js')
+      mcpServerPath: join(__dirname, 'redstring-mcp-server.js'),
+      maxRetries: 5,
+      retryDelay: 2000,
+      startupTimeout: 10000
+    };
+    this.retryCounts = {
+      bridge: 0,
+      mcpServer: 0,
+      data: 0
     };
   }
 
@@ -44,11 +53,11 @@ class AIConnectionWizard {
       // Step 1: Check if Redstring is running
       await this.checkRedstringStatus();
       
-      // Step 2: Start bridge server
-      await this.startBridgeServer();
+      // Step 2: Start bridge server with retry logic
+      await this.startBridgeServerWithRetry();
       
-      // Step 3: Start MCP server
-      await this.startMCPServer();
+      // Step 3: Start MCP server with retry logic
+      await this.startMCPServerWithRetry();
       
       // Step 4: Detect AI clients
       await this.detectAIClients();
@@ -56,7 +65,7 @@ class AIConnectionWizard {
       // Step 5: Provide connection instructions
       await this.provideInstructions();
       
-      // Step 6: Start monitoring
+      // Step 6: Start monitoring with improved retry logic
       this.startMonitoring();
       
     } catch (error) {
@@ -70,7 +79,7 @@ class AIConnectionWizard {
     console.log('🔍 Checking Redstring status...');
     
     return new Promise((resolve, reject) => {
-      get(`http://localhost:${this.config.redstringPort}`, (res) => {
+      const request = get(`http://localhost:${this.config.redstringPort}`, (res) => {
         if (res.statusCode === 200) {
           console.log('✅ Redstring is running on localhost:4000');
           this.status.redstring = true;
@@ -78,46 +87,100 @@ class AIConnectionWizard {
         } else {
           reject(new Error(`HTTP ${res.statusCode}`));
         }
-      }).on('error', (error) => {
+      });
+      
+      request.on('error', (error) => {
         console.log('⚠️  Redstring not detected on localhost:4000');
         console.log('   Please start Redstring first: npm run dev');
         console.log('   Then run this wizard again.\n');
         reject(new Error('Redstring not running'));
       });
+      
+      request.setTimeout(5000, () => {
+        request.destroy();
+        reject(new Error('Redstring connection timeout'));
+      });
     });
   }
 
-  async startBridgeServer() {
+  async startBridgeServerWithRetry() {
     console.log('🌉 Starting bridge server...');
     
-    // First check if bridge is already running
+    for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {
+      try {
+        await this.startBridgeServer();
+        console.log(`✅ Bridge server started successfully (attempt ${attempt})`);
+        return;
+      } catch (error) {
+        console.log(`   Attempt ${attempt}/${this.config.maxRetries} failed: ${error.message}`);
+        
+        if (attempt < this.config.maxRetries) {
+          console.log(`   Waiting ${this.config.retryDelay}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, this.config.retryDelay));
+          
+          // Kill any existing bridge processes before retry
+          this.killProcess('bridge');
+        } else {
+          throw new Error(`Bridge server failed to start after ${this.config.maxRetries} attempts`);
+        }
+      }
+    }
+  }
+
+  async startBridgeServer() {
     return new Promise((resolve, reject) => {
-      get(`http://localhost:${this.config.bridgePort}/api/bridge/state`, (res) => {
+      // First check if bridge is already running
+      const checkRequest = get(`http://localhost:${this.config.bridgePort}/api/bridge/state`, (res) => {
         console.log('✅ Bridge server already running on localhost:3001');
         this.status.bridge = true;
         resolve();
-      }).on('error', (error) => {
+      });
+      
+      checkRequest.on('error', (error) => {
         // Bridge not running, start it
         console.log('   Bridge not responding, starting new instance...');
         
         const bridgeProcess = spawn('node', ['server.js'], {
           cwd: __dirname,
-          stdio: ['pipe', 'pipe', 'pipe']
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: { ...process.env, NODE_ENV: 'production' }
         });
+
+        let startupTimeout = setTimeout(() => {
+          if (!this.status.bridge) {
+            bridgeProcess.kill();
+            reject(new Error('Bridge server startup timeout'));
+          }
+        }, this.config.startupTimeout);
+
+        // Check if bridge is ready by polling the health endpoint
+        const checkBridgeReady = () => {
+          get(`http://localhost:${this.config.bridgePort}/health`, (res) => {
+            if (res.statusCode === 200) {
+              clearTimeout(startupTimeout);
+              console.log('✅ Bridge server started on localhost:3001');
+              this.status.bridge = true;
+              this.processes.set('bridge', bridgeProcess);
+              resolve();
+            }
+          }).on('error', () => {
+            // Bridge not ready yet, check again in 500ms
+            setTimeout(checkBridgeReady, 500);
+          });
+        };
+
+        // Start checking after a short delay
+        setTimeout(checkBridgeReady, 1000);
 
         bridgeProcess.stdout.on('data', (data) => {
           const output = data.toString();
-          if (output.includes('Server running')) {
-            console.log('✅ Bridge server started on localhost:3001');
-            this.status.bridge = true;
-            this.processes.set('bridge', bridgeProcess);
-            resolve();
-          }
+          console.log('Bridge:', output.trim());
         });
 
         bridgeProcess.stderr.on('data', (data) => {
           const error = data.toString();
           if (error.includes('EADDRINUSE')) {
+            clearTimeout(startupTimeout);
             console.log('✅ Bridge server already running');
             this.status.bridge = true;
             resolve();
@@ -127,42 +190,90 @@ class AIConnectionWizard {
         });
 
         bridgeProcess.on('error', (error) => {
+          clearTimeout(startupTimeout);
           console.error('❌ Failed to start bridge server:', error.message);
           reject(error);
         });
 
-        // Timeout after 5 seconds
-        setTimeout(() => {
-          if (!this.status.bridge) {
-            reject(new Error('Bridge server startup timeout'));
+        bridgeProcess.on('exit', (code) => {
+          if (code !== 0 && !this.status.bridge) {
+            clearTimeout(startupTimeout);
+            reject(new Error(`Bridge server exited with code ${code}`));
           }
-        }, 5000);
+        });
+      });
+      
+      checkRequest.setTimeout(3000, () => {
+        checkRequest.destroy();
+        // Continue with starting new instance
       });
     });
   }
 
-  async startMCPServer() {
+  async startMCPServerWithRetry() {
     console.log('🔌 Starting MCP server...');
     
+    for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {
+      try {
+        await this.startMCPServer();
+        console.log(`✅ MCP server started successfully (attempt ${attempt})`);
+        return;
+      } catch (error) {
+        console.log(`   Attempt ${attempt}/${this.config.maxRetries} failed: ${error.message}`);
+        
+        if (attempt < this.config.maxRetries) {
+          console.log(`   Waiting ${this.config.retryDelay}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, this.config.retryDelay));
+          
+          // Kill any existing MCP processes before retry
+          this.killProcess('mcp');
+        } else {
+          throw new Error(`MCP server failed to start after ${this.config.maxRetries} attempts`);
+        }
+      }
+    }
+  }
+
+  async startMCPServer() {
     return new Promise((resolve, reject) => {
       const mcpProcess = spawn('node', [this.config.mcpServerPath], {
         cwd: __dirname,
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, NODE_ENV: 'production' }
       });
+      
+      // Share the MCP process globally so the bridge can access it
+      global.mcpProcess = mcpProcess;
+
+      let startupTimeout = setTimeout(() => {
+        if (!this.status.mcpServer) {
+          mcpProcess.kill();
+          reject(new Error('MCP server startup timeout'));
+        }
+      }, this.config.startupTimeout);
+
+      // For MCP server, we'll use a timeout-based approach since it doesn't have a health endpoint
+      const mcpStartupCheck = () => {
+        // MCP server typically starts quickly, so we'll assume it's ready after a delay
+        clearTimeout(startupTimeout);
+        console.log('✅ MCP server started');
+        this.status.mcpServer = true;
+        this.processes.set('mcp', mcpProcess);
+        resolve();
+      };
+
+      // Give MCP server 3 seconds to start
+      setTimeout(mcpStartupCheck, 3000);
 
       mcpProcess.stdout.on('data', (data) => {
         const output = data.toString();
-        if (output.includes('MCP Server running')) {
-          console.log('✅ MCP server started');
-          this.status.mcpServer = true;
-          this.processes.set('mcp', mcpProcess);
-          resolve();
-        }
+        console.log('MCP:', output.trim());
       });
 
       mcpProcess.stderr.on('data', (data) => {
         const error = data.toString();
         if (error.includes('Waiting for Redstring store bridge')) {
+          clearTimeout(startupTimeout);
           console.log('✅ MCP server started (waiting for bridge)');
           this.status.mcpServer = true;
           this.processes.set('mcp', mcpProcess);
@@ -171,16 +282,17 @@ class AIConnectionWizard {
       });
 
       mcpProcess.on('error', (error) => {
+        clearTimeout(startupTimeout);
         console.error('❌ Failed to start MCP server:', error.message);
         reject(error);
       });
 
-      // Timeout after 5 seconds
-      setTimeout(() => {
-        if (!this.status.mcpServer) {
-          reject(new Error('MCP server startup timeout'));
+      mcpProcess.on('exit', (code) => {
+        if (code !== 0 && !this.status.mcpServer) {
+          clearTimeout(startupTimeout);
+          reject(new Error(`MCP server exited with code ${code}`));
         }
-      }, 5000);
+      });
     });
   }
 
@@ -295,82 +407,45 @@ class AIConnectionWizard {
     let consecutiveFailures = 0;
     const maxFailures = 3;
     const timeout = 5000; // 5 second timeout
-    let lastRedstringStatus = true; // Track last known status
+    let lastStatus = { bridge: false, redstring: false, data: false };
 
-    const monitor = setInterval(() => {
-      // Check bridge status with timeout
-      const bridgeRequest = get(`http://localhost:${this.config.bridgePort}/api/bridge/state`, (res) => {
-        let data = '';
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
-        res.on('end', () => {
-          try {
-            const bridgeData = JSON.parse(data);
-            const hasData = bridgeData.graphs?.length > 0;
-            consecutiveFailures = 0; // Reset failure counter on success
-            
-            // Check if bridge has recent data from Redstring (more reliable than direct check)
-            const hasRecentData = bridgeData.summary?.lastUpdate && 
-              (Date.now() - bridgeData.summary.lastUpdate) < 30000; // Within 30 seconds
-            
-            if (hasRecentData) {
-              lastRedstringStatus = true;
-              process.stdout.write('\r');
-              process.stdout.write(`Status: Bridge ✅ | Redstring ✅ | Data ${hasData ? '✅' : '❌'}`);
-            } else {
-              // Fallback: try direct Redstring check
-              const redstringRequest = get(`http://localhost:${this.config.redstringPort}`, (redstringRes) => {
-                lastRedstringStatus = true;
-                process.stdout.write('\r');
-                process.stdout.write(`Status: Bridge ✅ | Redstring ✅ | Data ${hasData ? '✅' : '❌'}`);
-              });
-              
-              redstringRequest.on('error', () => {
-                lastRedstringStatus = false;
-                process.stdout.write('\r');
-                process.stdout.write(`Status: Bridge ✅ | Redstring ❌ | Data ${hasData ? '✅' : '❌'}`);
-              });
-              
-              redstringRequest.setTimeout(2000, () => {
-                redstringRequest.destroy();
-                lastRedstringStatus = false;
-                process.stdout.write('\r');
-                process.stdout.write(`Status: Bridge ✅ | Redstring ❌ | Data ${hasData ? '✅' : '❌'}`);
-              });
+    const monitor = setInterval(async () => {
+      try {
+        const currentStatus = await this.checkAllServices();
+        
+        // Update status display
+        this.updateStatusDisplay(currentStatus);
+        
+        // Check for changes that require reconnection
+        if (this.hasServiceChanged(lastStatus, currentStatus)) {
+          console.log('\n🔄 Service status changed, checking connections...');
+          
+          if (!currentStatus.bridge || !currentStatus.redstring) {
+            consecutiveFailures++;
+            if (consecutiveFailures >= maxFailures) {
+              console.log('\n⚠️  Connection issues detected! Attempting to reconnect...');
+              await this.attemptReconnection();
+              consecutiveFailures = 0; // Reset after reconnection attempt
             }
-            
-          } catch (error) {
-            process.stdout.write('\r');
-            process.stdout.write(`Status: Bridge ✅ | Redstring ❌ | Data ❌`);
+          } else {
+            consecutiveFailures = 0; // Reset on success
           }
-        });
-      });
-      
-      bridgeRequest.on('error', () => {
+        }
+        
+        lastStatus = currentStatus;
+        
+      } catch (error) {
         consecutiveFailures++;
         process.stdout.write('\r');
-        process.stdout.write(`Status: Bridge ❌ | Redstring ❌ | Data ❌ (Attempt ${consecutiveFailures}/${maxFailures})`);
+        process.stdout.write(`Status: Bridge ❌ | Redstring ❌ | Data ❌ (Error: ${error.message})`);
         
         if (consecutiveFailures >= maxFailures) {
           console.log('\n\n⚠️  Connection lost! Attempting to reconnect...');
           this.attemptReconnection();
+          consecutiveFailures = 0;
         }
-      });
-      
-      // Set timeout for bridge request
-      bridgeRequest.setTimeout(timeout, () => {
-        bridgeRequest.destroy();
-        consecutiveFailures++;
-        process.stdout.write('\r');
-        process.stdout.write(`Status: Bridge ❌ | Redstring ❌ | Data ❌ (Timeout, Attempt ${consecutiveFailures}/${maxFailures})`);
-        
-        if (consecutiveFailures >= maxFailures) {
-          console.log('\n\n⚠️  Connection lost! Attempting to reconnect...');
-          this.attemptReconnection();
-        }
-      });
-    }, 5000); // Check every 5 seconds instead of 2 seconds
+      }
+    }, 5000); // Check every 5 seconds
 
     // Handle cleanup on exit
     process.on('SIGINT', () => {
@@ -388,6 +463,88 @@ class AIConnectionWizard {
     });
   }
 
+  async checkAllServices() {
+    const status = { bridge: false, redstring: false, data: false };
+    
+    // Check bridge status
+    try {
+      const bridgeData = await this.checkBridgeStatus();
+      status.bridge = true;
+      status.data = bridgeData.hasData;
+      status.redstring = bridgeData.hasRecentData;
+    } catch (error) {
+      // Bridge failed, try direct Redstring check
+      try {
+        await this.checkRedstringDirect();
+        status.redstring = true;
+      } catch (redstringError) {
+        // Both failed
+      }
+    }
+    
+    return status;
+  }
+
+  async checkBridgeStatus() {
+    return new Promise((resolve, reject) => {
+      const request = get(`http://localhost:${this.config.bridgePort}/api/bridge/state`, (res) => {
+        let data = '';
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          try {
+            const bridgeData = JSON.parse(data);
+            const hasData = bridgeData.graphs?.length > 0;
+            const hasRecentData = bridgeData.summary?.lastUpdate && 
+              (Date.now() - bridgeData.summary.lastUpdate) < 30000; // Within 30 seconds
+            
+            resolve({ hasData, hasRecentData });
+          } catch (error) {
+            reject(new Error('Invalid bridge response'));
+          }
+        });
+      });
+      
+      request.on('error', () => {
+        reject(new Error('Bridge connection failed'));
+      });
+      
+      request.setTimeout(3000, () => {
+        request.destroy();
+        reject(new Error('Bridge timeout'));
+      });
+    });
+  }
+
+  async checkRedstringDirect() {
+    return new Promise((resolve, reject) => {
+      const request = get(`http://localhost:${this.config.redstringPort}`, (res) => {
+        resolve();
+      });
+      
+      request.on('error', () => {
+        reject(new Error('Redstring connection failed'));
+      });
+      
+      request.setTimeout(2000, () => {
+        request.destroy();
+        reject(new Error('Redstring timeout'));
+      });
+    });
+  }
+
+  updateStatusDisplay(status) {
+    process.stdout.write('\r');
+    process.stdout.write(`Status: Bridge ${status.bridge ? 'OK' : 'FAIL'} | Redstring ${status.redstring ? 'OK' : 'FAIL'} | Data ${status.data ? 'OK' : 'FAIL'}`);
+  }
+
+  hasServiceChanged(lastStatus, currentStatus) {
+    return lastStatus.bridge !== currentStatus.bridge ||
+           lastStatus.redstring !== currentStatus.redstring ||
+           lastStatus.data !== currentStatus.data;
+  }
+
   async attemptReconnection() {
     console.log('🔄 Attempting to reconnect...');
     
@@ -395,51 +552,56 @@ class AIConnectionWizard {
       // Wait a moment before attempting reconnection
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // Check if services are back up
-      const bridgeCheck = new Promise((resolve) => {
-        get(`http://localhost:${this.config.bridgePort}/api/bridge/state`, (res) => {
-          resolve(true);
-        }).on('error', () => {
-          resolve(false);
-        }).setTimeout(3000, () => {
-          resolve(false);
-        });
-      });
+      // Check current status
+      const currentStatus = await this.checkAllServices();
       
-      const redstringCheck = new Promise((resolve) => {
-        get(`http://localhost:${this.config.redstringPort}`, (res) => {
-          resolve(true);
-        }).on('error', () => {
-          resolve(false);
-        }).setTimeout(3000, () => {
-          resolve(false);
-        });
-      });
-      
-      const [bridgeUp, redstringUp] = await Promise.all([bridgeCheck, redstringCheck]);
-      
-      if (bridgeUp && redstringUp) {
+      if (currentStatus.bridge && currentStatus.redstring) {
         console.log('✅ Reconnection successful! Services are back online.');
         return;
       }
       
-      if (!bridgeUp) {
+      // Try to restart bridge if it's down
+      if (!currentStatus.bridge) {
         console.log('🔄 Bridge server down, attempting to restart...');
-        // Try to restart bridge server
         try {
-          await this.startBridgeServer();
+          await this.startBridgeServerWithRetry();
           console.log('✅ Bridge server restarted successfully');
         } catch (error) {
           console.log('❌ Failed to restart bridge server:', error.message);
         }
       }
       
-      if (!redstringUp) {
+      // Check if Redstring is down
+      if (!currentStatus.redstring) {
         console.log('⚠️  Redstring appears to be down. Please restart it manually.');
+        console.log('   Run: npm run dev');
+      }
+      
+      // Wait a bit and check again
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      const finalStatus = await this.checkAllServices();
+      
+      if (finalStatus.bridge && finalStatus.redstring) {
+        console.log('✅ Reconnection completed successfully!');
+      } else {
+        console.log('⚠️  Some services still unavailable. Manual intervention may be needed.');
       }
       
     } catch (error) {
       console.log('❌ Reconnection attempt failed:', error.message);
+    }
+  }
+
+  killProcess(name) {
+    const process = this.processes.get(name);
+    if (process) {
+      try {
+        process.kill();
+        this.processes.delete(name);
+        console.log(`   Killed ${name} process`);
+      } catch (error) {
+        // Process might already be dead
+      }
     }
   }
 

@@ -96,7 +96,9 @@ let bridgeStoreData = null;
 // Function to call actual Redstring store actions
 async function callRedstringStoreAction(action, params) {
   try {
-    // Store the action to be executed by the MCPBridge
+    // Queue all actions for MCPBridge execution
+    console.log(`[Bridge] Queuing action ${action} for MCPBridge`);
+    
     if (!global.pendingActions) {
       global.pendingActions = [];
     }
@@ -111,9 +113,9 @@ async function callRedstringStoreAction(action, params) {
     saveTriggerTimestamp = Date.now();
     
     console.log(`✅ Bridge: Queued action ${action} for execution by MCPBridge`);
-    return { success: true, queued: true };
+    return `Action ${action} queued for execution`;
   } catch (error) {
-    console.error(`Failed to queue Redstring store action ${action}:`, error);
+    console.error(`Failed to handle Redstring store action ${action}:`, error);
     throw error;
   }
 }
@@ -897,6 +899,185 @@ app.get('/api/bridge/action-errors', (req, res) => {
   } catch (error) {
     console.error('Bridge action errors error:', error);
     res.status(500).json({ error: 'Failed to get action errors' });
+  }
+});
+
+// MCP Request endpoint for the AI chat panel
+app.post('/api/mcp/request', async (req, res) => {
+  try {
+    const { method, params, id } = req.body;
+    
+    console.log('[Bridge] MCP request received:', { method, id });
+    
+    let response;
+
+    // Get the MCP process from the AI connection wizard
+    const mcpProcess = global.mcpProcess;
+    
+    if (mcpProcess) {
+      try {
+        // Forward the request to the MCP server through stdio
+        mcpProcess.stdin.write(JSON.stringify(req.body) + '\n');
+        
+        // Wait for response from stdout
+        response = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('MCP server response timeout'));
+          }, 10000); // 10 second timeout
+          
+          mcpProcess.stdout.once('data', (data) => {
+            clearTimeout(timeout);
+            try {
+              resolve(JSON.parse(data.toString()));
+            } catch (error) {
+              reject(new Error('Invalid JSON response from MCP server'));
+            }
+          });
+          
+          mcpProcess.stderr.once('data', (data) => {
+            console.error('[Bridge] MCP server error:', data.toString());
+          });
+        });
+        
+        if (response.error) {
+          throw new Error(response.error.message || 'MCP server error');
+        }
+        
+        return res.json(response);
+      } catch (error) {
+        console.error('[Bridge] Error communicating with MCP server:', error);
+        throw error;
+      }
+    }
+    
+    // Fallback to handling requests if MCP server isn't available
+    switch (method) {
+      case 'initialize':
+        response = {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            protocolVersion: '2024-11-05',
+            capabilities: { tools: { listChanged: true } },
+            serverInfo: {
+              name: 'redstring',
+              version: '1.0.0',
+              capabilities: { resources: {}, tools: {} }
+            }
+          }
+        };
+        break;
+        
+      case 'tools/list':
+        response = {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            tools: [
+              {
+                name: 'chat',
+                description: 'Send a message to the AI model and get a response',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    message: { type: 'string' },
+                    context: {
+                      type: 'object',
+                      properties: {
+                        activeGraphId: { type: ['string', 'null'] },
+                        graphCount: { type: 'number' },
+                        hasAPIKey: { type: 'boolean' }
+                      }
+                    }
+                  },
+                  required: ['message']
+                }
+              },
+              {
+                name: 'verify_state',
+                description: 'Verify the current state of the Redstring store',
+                inputSchema: { type: 'object', properties: {}, additionalProperties: false }
+              },
+              {
+                name: 'list_available_graphs',
+                description: 'List all available knowledge graphs',
+                inputSchema: { type: 'object', properties: {}, additionalProperties: false }
+              },
+              {
+                name: 'get_active_graph',
+                description: 'Get currently active graph information',
+                inputSchema: { type: 'object', properties: {}, additionalProperties: false }
+              },
+              {
+                name: 'addNodeToGraph',
+                description: 'Add a concept/node to the active graph',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    conceptName: { type: 'string' },
+                    position: { type: 'object' }
+                  },
+                  required: ['conceptName', 'position']
+                }
+              },
+              {
+                name: 'search_nodes',
+                description: 'Search for nodes by name or description',
+                inputSchema: {
+                  type: 'object',
+                  properties: { query: { type: 'string' } },
+                  required: ['query']
+                }
+              }
+            ]
+          }
+        };
+        break;
+        
+      case 'tools/call':
+        const toolName = params.name;
+        const toolArgs = params.arguments || {};
+        
+        console.log('[Bridge] MCP tool call:', toolName, toolArgs);
+        
+        // Call the actual Redstring store action
+        const result = await callRedstringStoreAction(toolName, toolArgs);
+        
+        response = {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{
+              type: 'text',
+              text: result || `Tool ${toolName} executed successfully`
+            }]
+          }
+        };
+        break;
+        
+      default:
+        response = {
+          jsonrpc: '2.0',
+          id,
+          error: {
+            code: -32601,
+            message: 'Method not found'
+          }
+        };
+    }
+    
+    res.json(response);
+    
+  } catch (error) {
+    console.error('[Bridge] MCP request error:', error);
+    res.status(500).json({
+      jsonrpc: '2.0',
+      id: req.body.id,
+      error: {
+        code: -32603,
+        message: error.message
+      }
+    });
   }
 });
 

@@ -38,6 +38,10 @@ const MCPBridge = () => {
           openGraph: {
             description: 'Open a graph',
             parameters: ['graphId']
+          },
+          chat: {
+            description: 'Send a message to the AI model',
+            parameters: ['message', 'context']
           }
         };
 
@@ -68,6 +72,11 @@ const MCPBridge = () => {
               console.log('MCPBridge: Calling openGraph', graphId);
               state.openGraph(graphId);
               return { success: true, graphId };
+            },
+            chat: async (message, context) => {
+              console.log('MCPBridge: Forwarding chat message to AI model', { message, context });
+              // The actual chat handling happens in the MCP server
+              return { success: true, message, context };
             }
           };
         }
@@ -268,7 +277,16 @@ const MCPBridge = () => {
                     }
                   }
                   
-                  const result = await window.redstringStoreActions[pendingAction.action](...pendingAction.params);
+                  // Execute the action and get result
+                  let result;
+                  if (pendingAction.action === 'chat') {
+                    const { message, context } = pendingAction.params;
+                    result = await window.redstringStoreActions[pendingAction.action](message, context);
+                    console.log('✅ MCP Bridge: Chat message forwarded:', result);
+                  } else {
+                    // For other actions that use array parameters
+                    result = await window.redstringStoreActions[pendingAction.action](...(Array.isArray(pendingAction.params) ? pendingAction.params : [pendingAction.params]));
+                  }
                   console.log('✅ MCP Bridge: Action completed successfully:', pendingAction.action, result);
                 } else {
                   console.error('❌ MCP Bridge: Action not found:', pendingAction.action);

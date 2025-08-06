@@ -392,6 +392,82 @@ async function getGraphData() {
 
 // Register MCP tools
 server.tool(
+  "chat",
+  "Send a message to the AI model and get a response",
+  {
+    message: z.string().describe("The user's message"),
+    context: z.object({
+      activeGraphId: z.string().nullable().describe("Currently active graph ID"),
+      graphCount: z.number().describe("Total number of graphs"),
+      hasAPIKey: z.boolean().describe("Whether the user has set up their API key")
+    }).optional().describe("Current context for the AI model")
+  },
+  async ({ message, context = {} }) => {
+    try {
+      const state = await getRealRedstringState();
+      
+      // Format the current state for the AI
+      const stateContext = {
+        activeGraph: state.activeGraphId ? {
+          id: state.activeGraphId,
+          name: state.graphs.get(state.activeGraphId)?.name,
+          instanceCount: state.graphs.get(state.activeGraphId)?.instances?.size || 0
+        } : null,
+        graphCount: state.graphs.size,
+        graphNames: Array.from(state.graphs.values()).map(g => g.name),
+        prototypeCount: state.nodePrototypes.size,
+        prototypeNames: Array.from(state.nodePrototypes.values()).map(p => p.name)
+      };
+
+      // Forward the message to the AI through stdio
+      const response = await server.transport.request({
+        jsonrpc: "2.0",
+        method: "chat",
+        params: {
+          messages: [
+            {
+              role: "system",
+              content: `You are assisting with a Redstring knowledge graph. Current state:
+- Active Graph: ${stateContext.activeGraph ? `${stateContext.activeGraph.name} (${stateContext.activeGraph.instanceCount} instances)` : 'None'}
+- Total Graphs: ${stateContext.graphCount}
+- Available Graphs: ${stateContext.graphNames.join(', ')}
+- Total Prototypes: ${stateContext.prototypeCount}
+- Available Concepts: ${stateContext.prototypeNames.join(', ')}
+
+You can help with:
+1. Exploring and searching the knowledge graph
+2. Adding new concepts and relationships
+3. Managing graphs and their contents
+4. Understanding the current state`
+            },
+            {
+              role: "user",
+              content: message
+            }
+          ]
+        }
+      });
+
+      // Return the AI's response in MCP format
+      return {
+        content: [{
+          type: "text",
+          text: response.result.content
+        }]
+      };
+    } catch (error) {
+      console.error('Error in chat tool:', error);
+      return {
+        content: [{
+          type: "text",
+          text: `I encountered an error communicating with the AI: ${error.message}. Please try again.`
+        }]
+      };
+    }
+  }
+);
+
+server.tool(
   "get_graph_instances",
   "Get detailed information about all instances in a specific graph",
   {
@@ -1794,6 +1870,93 @@ server.tool(
 );
 
 // AI-Guided Workflow Tool
+server.tool(
+  "chat",
+  "Send a message to the AI model and get a response",
+  {
+    message: z.string().describe("The user's message"),
+    context: z.object({
+      activeGraphId: z.string().nullable().describe("Currently active graph ID"),
+      graphCount: z.number().describe("Total number of graphs"),
+      hasAPIKey: z.boolean().describe("Whether the user has set up their API key")
+    }).describe("Current context for the AI model")
+  },
+  async ({ message, context }) => {
+    try {
+      // First, get the current state to provide context
+      const state = await getRealRedstringState();
+      
+      // Format the message for the AI model
+      const aiMessage = `User Message: ${message}
+
+Current Context:
+- Active Graph: ${context.activeGraphId ? state.graphs.get(context.activeGraphId)?.name : 'None'}
+- Total Graphs: ${context.graphCount}
+- API Key Status: ${context.hasAPIKey ? 'Set up' : 'Not set up'}
+
+Available Tools:
+- verify_state: Check current Redstring state
+- list_available_graphs: List all graphs
+- get_active_graph: Get active graph details
+- addNodeToGraph: Add a new concept
+- search_nodes: Search for concepts
+- and more...`;
+
+      // Forward the message to the AI through stdio
+      const response = await server.transport.request({
+        jsonrpc: "2.0",
+        method: "chat",
+        params: {
+          messages: [
+            {
+              role: "system",
+              content: `You are assisting with a Redstring knowledge graph. Current state:
+- Active Graph: ${state.activeGraphId ? `${state.graphs.get(state.activeGraphId)?.name} (${state.graphs.get(state.activeGraphId)?.instances?.size || 0} instances)` : 'None'}
+- Total Graphs: ${state.graphs.size}
+- Available Graphs: ${Array.from(state.graphs.values()).map(g => g.name).join(', ')}
+- Total Prototypes: ${state.nodePrototypes.size}
+- Available Concepts: ${Array.from(state.nodePrototypes.values()).map(p => p.name).join(', ')}`
+            },
+            {
+              role: "user",
+              content: message
+            }
+          ]
+        }
+      });
+
+      // The AI response comes back in the result.content field
+      if (!response || !response.result || !response.result.content) {
+        throw new Error('Invalid response from AI model');
+      }
+
+      // Return the AI's response in the expected MCP format
+      return {
+        content: [
+          {
+            type: "text",
+            text: response.result.content
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `I encountered an error processing your message: ${error.message}
+
+Let me know if you'd like to:
+1. Try a different question
+2. See available graphs
+3. Get help with a specific task`
+          }
+        ]
+      };
+    }
+  }
+);
+
 server.tool(
   "ai_guided_workflow",
   "Walk a human user through the complete process of adding a node, creating a graph definition, and building connections. This tool orchestrates the full workflow that a human would do manually.",

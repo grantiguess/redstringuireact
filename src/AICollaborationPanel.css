@@ -69,17 +69,50 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: none;
+  border: 1px solid #260000;
   border-radius: 6px;
-  background: transparent;
+  background: #bdb5b5;
   color: #260000;
   cursor: pointer;
   transition: all 0.2s ease;
+  padding: 0;
+  margin: 0;
 }
 
 .ai-header-button:hover {
   background: #260000;
   color: #bdb5b5;
+}
+
+.ai-header-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-color: #666;
+  color: #666;
+}
+
+.ai-connect-button {
+  background: #8B0000;
+  color: #bdb5b5;
+  border-color: #8B0000;
+}
+
+.ai-connect-button:hover:not(:disabled) {
+  background: #260000;
+  border-color: #260000;
+}
+
+.ai-refresh-button {
+  background: #260000;
+  color: #bdb5b5;
+  border-color: #260000;
+  transition: transform 0.2s ease;
+}
+
+.ai-refresh-button:hover:not(:disabled) {
+  background: #8B0000;
+  border-color: #8B0000;
+  transform: rotate(-180deg);
 }
 
 /* Graph Context */
@@ -689,4 +722,50 @@
 .ai-insights-mode::-webkit-scrollbar-thumb:hover,
 .ai-advanced-options::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* API Key Modal */
+.api-key-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.api-key-modal {
+  max-width: 350px;
+  width: 90%;
+  max-height: 90vh;
+  overflow: auto;
+  margin: 0 auto;
+}
+
+/* API Key Button */
+.api-key-button {
+  position: relative;
+  color: #260000 !important;
+}
+
+.api-key-button:hover {
+  background: #260000 !important;
+  color: #bdb5b5 !important;
+}
+
+.api-key-button::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  background: #059669;
+  border-radius: 50%;
+  border: 2px solid #bdb5b5;
 } 
