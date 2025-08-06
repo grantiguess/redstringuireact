@@ -861,6 +861,8 @@
   width: 100% !important;
   box-sizing: border-box !important;
   max-width: none !important;
+  color: #000 !important;
+  background: white !important;
 }
 
 .api-key-setup-inline .key-input-container {

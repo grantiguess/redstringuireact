@@ -2501,15 +2501,71 @@ app.post('/api/mcp/request', async (req, res) => {
                 inputSchema: { type: 'object', properties: {}, additionalProperties: false }
               },
               {
-                name: 'addNodeToGraph',
-                description: 'Add a concept/node to the active graph',
+                name: 'get_graph_instances',
+                description: 'Get detailed information about all instances in a specific graph',
                 inputSchema: {
                   type: 'object',
                   properties: {
-                    conceptName: { type: 'string' },
-                    position: { type: 'object' }
+                    graphId: { type: 'string', description: 'Graph ID to check (default: active graph)' }
+                  }
+                }
+              },
+              {
+                name: 'addNodeToGraph',
+                description: 'Add a concept/node to the active graph - automatically handles prototypes and instances',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    conceptName: { type: 'string', description: 'Name of the concept to add (e.g., "Person", "Car", "Idea")' },
+                    description: { type: 'string', description: 'Optional description of the concept' },
+                    position: {
+                      type: 'object',
+                      properties: {
+                        x: { type: 'number', description: 'X coordinate' },
+                        y: { type: 'number', description: 'Y coordinate' }
+                      },
+                      required: ['x', 'y'],
+                      description: 'Position where to place the node'
+                    },
+                    color: { type: 'string', description: 'Optional color for the node (hex code)' }
                   },
                   required: ['conceptName', 'position']
+                }
+              },
+              {
+                name: 'removeNodeFromGraph',
+                description: 'Remove a concept/node from the active graph',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    conceptName: { type: 'string', description: 'Name of the concept to remove' },
+                    instanceId: { type: 'string', description: 'Optional specific instance ID to remove (if multiple instances exist)' }
+                  },
+                  required: ['conceptName']
+                }
+              },
+              {
+                name: 'open_graph',
+                description: 'Open a graph and make it the active graph in the real Redstring UI',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    graphId: { type: 'string', description: 'The ID of the graph to open' },
+                    bringToFront: { type: 'boolean', description: 'Bring graph to front of open tabs (default: true)' },
+                    autoExpand: { type: 'boolean', description: 'Auto-expand the graph in the open things list (default: true)' }
+                  },
+                  required: ['graphId']
+                }
+              },
+              {
+                name: 'set_active_graph',
+                description: 'Set a graph as the active graph in the real Redstring UI (graph must already be open)',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    graphId: { type: 'string', description: 'The ID of the graph to make active' }
+                  },
+                  required: ['graphId']
                 }
               },
               {
@@ -2517,8 +2573,174 @@ app.post('/api/mcp/request', async (req, res) => {
                 description: 'Search for nodes by name or description',
                 inputSchema: {
                   type: 'object',
-                  properties: { query: { type: 'string' } },
+                  properties: {
+                    query: { type: 'string', description: 'Search query to match against node names and descriptions' },
+                    graphId: { type: 'string', description: 'Optional graph ID to search only within that graph' }
+                  },
                   required: ['query']
+                }
+              },
+              {
+                name: 'add_node_prototype',
+                description: '⚠️ LEGACY: Add a new node prototype to the real Redstring store (use addNodeToGraph instead)',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string', description: 'Name of the prototype' },
+                    description: { type: 'string', description: 'Description of the prototype' },
+                    color: { type: 'string', description: 'Color for the prototype (hex code)' },
+                    typeNodeId: { type: 'string', description: 'Parent type node ID (optional)' }
+                  },
+                  required: ['name', 'description']
+                }
+              },
+              {
+                name: 'add_node_instance',
+                description: '⚠️ LEGACY: Add a new instance of a prototype to the active graph in the real Redstring store (use addNodeToGraph instead)',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    prototypeName: { type: 'string', description: 'Name of the prototype to create an instance of' },
+                    position: {
+                      type: 'object',
+                      properties: {
+                        x: { type: 'number', description: 'X coordinate for the instance' },
+                        y: { type: 'number', description: 'Y coordinate for the instance' }
+                      },
+                      required: ['x', 'y'],
+                      description: 'Position coordinates for the instance'
+                    },
+                    graphId: { type: 'string', description: 'Specific graph to add to (default: active graph)' }
+                  },
+                  required: ['prototypeName', 'position']
+                }
+              },
+              {
+                name: 'update_node_prototype',
+                description: 'Update properties of an existing node prototype',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    prototypeId: { type: 'string', description: 'The ID of the prototype to update' },
+                    updates: {
+                      type: 'object',
+                      properties: {
+                        name: { type: 'string', description: 'New name for the prototype' },
+                        description: { type: 'string', description: 'New description for the prototype' },
+                        color: { type: 'string', description: 'New color for the prototype (hex format)' }
+                      },
+                      description: 'Properties to update'
+                    }
+                  },
+                  required: ['prototypeId', 'updates']
+                }
+              },
+              {
+                name: 'delete_node_instance',
+                description: 'Remove a node instance from a graph',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    graphId: { type: 'string', description: 'The ID of the graph containing the instance' },
+                    instanceId: { type: 'string', description: 'The ID of the instance to delete' }
+                  },
+                  required: ['graphId', 'instanceId']
+                }
+              },
+              {
+                name: 'create_edge',
+                description: 'Create a connection between two nodes',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    graphId: { type: 'string', description: 'The ID of the graph to add the edge to' },
+                    sourceId: { type: 'string', description: 'The ID of the source node' },
+                    targetId: { type: 'string', description: 'The ID of the target node' },
+                    edgeType: { type: 'string', description: 'Type of the edge (optional)' },
+                    weight: { type: 'number', description: 'Weight of the edge (optional, default 1)' }
+                  },
+                  required: ['graphId', 'sourceId', 'targetId']
+                }
+              },
+              {
+                name: 'create_edge_definition',
+                description: 'Create a new edge type definition',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string', description: 'Name of the edge type' },
+                    description: { type: 'string', description: 'Description of the edge type' },
+                    color: { type: 'string', description: 'Color for the edge type (hex format, optional)' },
+                    typeNodeId: { type: 'string', description: 'Type node ID (optional)' }
+                  },
+                  required: ['name', 'description']
+                }
+              },
+              {
+                name: 'move_node_instance',
+                description: 'Move a node instance to a new position',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    graphId: { type: 'string', description: 'The ID of the graph containing the instance' },
+                    instanceId: { type: 'string', description: 'The ID of the instance to move' },
+                    position: {
+                      type: 'object',
+                      properties: {
+                        x: { type: 'number', description: 'New X coordinate' },
+                        y: { type: 'number', description: 'New Y coordinate' }
+                      },
+                      required: ['x', 'y'],
+                      description: 'New position for the node'
+                    }
+                  },
+                  required: ['graphId', 'instanceId', 'position']
+                }
+              },
+              {
+                name: 'ai_guided_workflow',
+                description: 'Walk a human user through the complete process of adding a node, creating a graph definition, and building connections. This tool orchestrates the full workflow that a human would do manually.',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    workflowType: {
+                      type: 'string',
+                      enum: ['create_prototype_and_definition', 'add_instance_to_graph', 'create_connections', 'full_workflow'],
+                      description: 'Type of workflow to guide the user through'
+                    },
+                    prototypeName: { type: 'string', description: 'Name for the new prototype (required for create_prototype_and_definition and full_workflow)' },
+                    prototypeDescription: { type: 'string', description: 'Description for the new prototype' },
+                    prototypeColor: { type: 'string', description: 'Color for the prototype (hex code)' },
+                    targetGraphId: { type: 'string', description: 'Target graph ID for adding instances or creating connections' },
+                    instancePositions: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          prototypeName: { type: 'string', description: 'Name of prototype to create instance of' },
+                          x: { type: 'number', description: 'X coordinate' },
+                          y: { type: 'number', description: 'Y coordinate' }
+                        },
+                        required: ['prototypeName', 'x', 'y']
+                      },
+                      description: 'Array of instances to create with positions'
+                    },
+                    connections: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          sourceName: { type: 'string', description: 'Name of source node' },
+                          targetName: { type: 'string', description: 'Name of target node' },
+                          edgeType: { type: 'string', description: 'Type of connection' },
+                          weight: { type: 'number', description: 'Connection weight' }
+                        },
+                        required: ['sourceName', 'targetName']
+                      },
+                      description: 'Array of connections to create'
+                    },
+                    enableUserGuidance: { type: 'boolean', description: 'Enable step-by-step user guidance (default: true)' }
+                  }
                 }
               }
             ]
@@ -2535,10 +2757,10 @@ app.post('/api/mcp/request', async (req, res) => {
         // Execute the tool directly since we have access to everything
         let toolResult;
         
-        switch (toolName) {
-          case 'chat':
-            // Handle chat directly - make actual AI API calls
-            try {
+        try {
+          switch (toolName) {
+            case 'chat':
+              // Handle chat directly - make actual AI API calls
               const { message, context } = toolArgs;
               
               // Check if user has API key
@@ -2561,6 +2783,24 @@ Current Context:
 - Total Graphs: ${state.graphs.size}
 - Available Concepts: ${state.nodePrototypes.size}
 - Available Graphs: ${Array.from(state.graphs.values()).map(g => g.name).join(', ')}
+
+You have access to these tools that you can call directly:
+- verify_state: Check the current state of the Redstring store
+- list_available_graphs: List all available knowledge graphs
+- get_active_graph: Get information about the currently active graph
+- addNodeToGraph: Add a concept/node to the active graph (RECOMMENDED)
+- removeNodeFromGraph: Remove a concept/node from the active graph
+- open_graph: Open a graph and make it active
+- set_active_graph: Set a graph as active
+- search_nodes: Search for nodes by name or description
+- get_graph_instances: Get detailed information about instances in a graph
+
+When a user asks you to:
+1. Add something to a graph → Use addNodeToGraph
+2. List graphs → Use list_available_graphs
+3. Check current state → Use verify_state
+4. Search for nodes → Use search_nodes
+5. Open a graph → Use open_graph
 
 You can help users:
 1. Add concepts to their graphs
@@ -2597,28 +2837,142 @@ Be helpful, concise, and focused on graph-related tasks. If they ask about addin
               }
 
               const aiResult = await aiResponse.json();
-              toolResult = aiResult.response || "I'm having trouble generating a response. Please try again.";
+              let aiResponseText = aiResult.response || "I'm having trouble generating a response. Please try again.";
               
-            } catch (error) {
-              console.error('[MCP] Chat error:', error);
-              toolResult = `I encountered an error: ${error.message}. Please check your API key configuration and try again.`;
-            }
-            break;
-            
-          default:
-            // Queue action for MCPBridge to execute
-            const actionId = `action-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-            pendingActions.push({
-              id: actionId,
-              action: toolName,
-              params: toolArgs,
-              timestamp: Date.now()
-            });
-            
-            // Wait a bit for the action to be processed
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            toolResult = `Tool ${toolName} queued for execution`;
+              // Check if the AI response indicates it wants to call a tool
+              if (aiResponseText.includes('I should call') || aiResponseText.includes('Let me call') || aiResponseText.includes('I need to call')) {
+                // The AI wants to call a tool, so let's help it
+                if (aiResponseText.includes('addNodeToGraph') || aiResponseText.includes('add a concept') || aiResponseText.includes('add a node')) {
+                  // Extract concept name from the response
+                  const conceptMatch = aiResponseText.match(/add\s+(?:a\s+)?([a-zA-Z]+)/i);
+                  if (conceptMatch) {
+                    const conceptName = conceptMatch[1];
+                    try {
+                      const addResult = await server.tools.get('addNodeToGraph').handler({
+                        conceptName: conceptName,
+                        position: { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 },
+                        description: `A ${conceptName.toLowerCase()} added by AI`
+                      });
+                      toolResult = `I've added "${conceptName}" to your active graph! ${addResult.content[0].text}`;
+                    } catch (error) {
+                      toolResult = `I tried to add "${conceptName}" but encountered an error: ${error.message}`;
+                    }
+                  } else {
+                    toolResult = aiResponseText + "\n\nTo add a concept, please specify what you'd like to add (e.g., 'add a person', 'add a car').";
+                  }
+                } else if (aiResponseText.includes('list_available_graphs') || aiResponseText.includes('list graphs')) {
+                  try {
+                    const listResult = await server.tools.get('list_available_graphs').handler({});
+                    toolResult = listResult.content[0].text;
+                  } catch (error) {
+                    toolResult = `I tried to list the graphs but encountered an error: ${error.message}`;
+                  }
+                } else if (aiResponseText.includes('verify_state') || aiResponseText.includes('check state')) {
+                  try {
+                    const stateResult = await server.tools.get('verify_state').handler({});
+                    toolResult = stateResult.content[0].text;
+                  } catch (error) {
+                    toolResult = `I tried to check the state but encountered an error: ${error.message}`;
+                  }
+                } else {
+                  toolResult = aiResponseText;
+                }
+              } else {
+                toolResult = aiResponseText;
+              }
+              break;
+              
+            case 'verify_state':
+              const verifyResult = await server.tools.get('verify_state').handler({});
+              toolResult = verifyResult.content[0].text;
+              break;
+              
+            case 'list_available_graphs':
+              const listResult = await server.tools.get('list_available_graphs').handler({});
+              toolResult = listResult.content[0].text;
+              break;
+              
+            case 'get_active_graph':
+              const activeResult = await server.tools.get('get_active_graph').handler({});
+              toolResult = activeResult.content[0].text;
+              break;
+              
+            case 'addNodeToGraph':
+              const addResult = await server.tools.get('addNodeToGraph').handler(toolArgs);
+              toolResult = addResult.content[0].text;
+              break;
+              
+            case 'removeNodeFromGraph':
+              const removeResult = await server.tools.get('removeNodeFromGraph').handler(toolArgs);
+              toolResult = removeResult.content[0].text;
+              break;
+              
+            case 'open_graph':
+              const openResult = await server.tools.get('open_graph').handler(toolArgs);
+              toolResult = openResult.content[0].text;
+              break;
+              
+            case 'set_active_graph':
+              const setActiveResult = await server.tools.get('set_active_graph').handler(toolArgs);
+              toolResult = setActiveResult.content[0].text;
+              break;
+              
+            case 'search_nodes':
+              const searchResult = await server.tools.get('search_nodes').handler(toolArgs);
+              toolResult = searchResult.content[0].text;
+              break;
+              
+            case 'get_graph_instances':
+              const instancesResult = await server.tools.get('get_graph_instances').handler(toolArgs);
+              toolResult = instancesResult.content[0].text;
+              break;
+              
+            case 'add_node_prototype':
+              const prototypeResult = await server.tools.get('add_node_prototype').handler(toolArgs);
+              toolResult = prototypeResult.content[0].text;
+              break;
+              
+            case 'add_node_instance':
+              const instanceResult = await server.tools.get('add_node_instance').handler(toolArgs);
+              toolResult = instanceResult.content[0].text;
+              break;
+              
+            case 'update_node_prototype':
+              const updateResult = await server.tools.get('update_node_prototype').handler(toolArgs);
+              toolResult = updateResult.content[0].text;
+              break;
+              
+            case 'delete_node_instance':
+              const deleteResult = await server.tools.get('delete_node_instance').handler(toolArgs);
+              toolResult = deleteResult.content[0].text;
+              break;
+              
+            case 'create_edge':
+              const edgeResult = await server.tools.get('create_edge').handler(toolArgs);
+              toolResult = edgeResult.content[0].text;
+              break;
+              
+            case 'create_edge_definition':
+              const edgeDefResult = await server.tools.get('create_edge_definition').handler(toolArgs);
+              toolResult = edgeDefResult.content[0].text;
+              break;
+              
+            case 'move_node_instance':
+              const moveResult = await server.tools.get('move_node_instance').handler(toolArgs);
+              toolResult = moveResult.content[0].text;
+              break;
+              
+            case 'ai_guided_workflow':
+              const workflowResult = await server.tools.get('ai_guided_workflow').handler(toolArgs);
+              toolResult = workflowResult.content[0].text;
+              break;
+              
+            default:
+              toolResult = `Tool "${toolName}" not found or not implemented. Available tools: verify_state, list_available_graphs, get_active_graph, addNodeToGraph, removeNodeFromGraph, open_graph, set_active_graph, search_nodes, get_graph_instances, add_node_prototype, add_node_instance, update_node_prototype, delete_node_instance, create_edge, create_edge_definition, move_node_instance, ai_guided_workflow`;
+          }
+        } catch (error) {
+          console.error(`[MCP] Tool ${toolName} error:`, error);
+          toolResult = `Error executing tool "${toolName}": ${error.message}`;
         }
         
         response = {
