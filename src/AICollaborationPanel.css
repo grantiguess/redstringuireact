@@ -779,7 +779,7 @@
 /* Inline API Key Setup */
 .ai-api-setup-section {
   border-bottom: 1px solid #e5e7eb;
-  background: #fafafa;
+  background: #BDB5B5;
   width: 100%;
   overflow: hidden;
 }
@@ -824,18 +824,21 @@
 }
 
 .collapse-button {
-  background: none;
-  border: none;
-  color: #6b7280;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid #d1d5db;
+  color: #374151;
   cursor: pointer;
-  padding: 4px;
+  padding: 6px;
   border-radius: 4px;
   transition: all 0.2s;
+  font-weight: 500;
 }
 
 .collapse-button:hover {
-  background: #f3f4f6;
-  color: #374151;
+  background: white;
+  color: #260000;
+  border-color: #260000;
+  transform: scale(1.05);
 }
 
 .api-key-setup-inline .form-group {
@@ -902,10 +905,16 @@
   border: 1px solid #d1d5db;
   border-radius: 6px;
   font-size: 13px !important;
-  background: white;
+  background: white !important;
+  color: #000 !important;
   transition: border-color 0.2s;
   box-sizing: border-box !important;
   max-width: none !important;
+}
+
+.api-key-setup-inline select option {
+  background: white !important;
+  color: #000 !important;
 }
 
 .api-key-setup-inline .endpoint-input:focus,
