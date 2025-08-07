@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { produce, enableMapSet } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
-import { NODE_WIDTH, NODE_HEIGHT, NODE_DEFAULT_COLOR } from '../constants';
+import { NODE_WIDTH, NODE_HEIGHT, NODE_DEFAULT_COLOR } from '../constants.js';
 import { getFileStatus, restoreLastSession, clearSession, notifyChanges } from './fileStorage.js';
 import { importFromRedstring } from '../formats/redstringFormat.js';
 

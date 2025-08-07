@@ -173,6 +173,11 @@ const AICollaborationPanel = () => {
         return;
       }
       
+      if (!apiConfig) {
+        addMessage('ai', 'API configuration not found. Please set up your API key first.');
+        return;
+      }
+      
       // Prepare conversation history (last 10 messages for context)
       const conversationHistory = messages.slice(-10).map(msg => ({
         role: msg.sender === 'user' ? 'user' : 'assistant',
@@ -214,8 +219,8 @@ const AICollaborationPanel = () => {
 
       const result = await response.json();
       
-      // Add the final response with all tool calls
-      addMessage('ai', result.response, {
+      // Add streamed-like messages: assistant thought then tool calls
+      addMessage('ai', result.response || '', {
         toolCalls: result.toolCalls || [],
         iterations: result.iterations,
         mode: 'autonomous',
@@ -243,73 +248,97 @@ const AICollaborationPanel = () => {
       // Get API configuration for the chat request
       const apiConfig = await apiKeyManager.getAPIKeyInfo();
       
+      if (!apiConfig) {
+        addMessage('ai', 'Please set up your API key first by clicking the key icon in the header.');
+        return;
+      }
+      
       // Prepare conversation history (last 10 messages for context)
       const conversationHistory = messages.slice(-10).map(msg => ({
         role: msg.sender === 'user' ? 'user' : 'assistant',
         content: msg.content
       }));
       
-      // Send the message to the AI model through the MCP server
-      const result = await mcpClient.callTool('chat', { 
-        message: question,
-        conversationHistory: conversationHistory,
-        context: {
-          activeGraphId: activeGraphId,
-          graphCount: graphs.size,
-          hasAPIKey: hasAPIKey,
-          apiConfig: apiConfig ? {
-            provider: apiConfig.provider,
-            endpoint: apiConfig.endpoint,
-            model: apiConfig.model,
-            settings: apiConfig.settings
-          } : null
-        }
+      // Get the actual API key
+      const apiKey = await apiKeyManager.getAPIKey();
+      
+      // Send the message to the AI model through the HTTP endpoint
+      const response = await fetch('http://localhost:3001/api/ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          message: question,
+          systemPrompt: `You are Claude, a **knowledge graph architect** with advanced spatial reasoning, helping with Redstring - a visual knowledge graph system for emergent human-AI cognition.
+
+## **🧠 Your Identity**
+You facilitate **emergent knowledge** - complex understanding that emerges from simple connections between ideas. You help humans discover hidden patterns, model complex systems, and visualize abstract concepts through intelligent spatial organization.
+
+## **🌌 Spatial Intelligence**
+You can "see" and reason about canvas layouts:
+- **\`get_spatial_map\`** - View coordinates, clusters, empty regions, and layout analysis
+- **Cluster detection** - Understand semantic groupings and relationships  
+- **Smart positioning** - Place concepts to create visual flow and logical organization
+- **Panel awareness** - Avoid UI constraints (left panel: 0-300px, header: 0-80px)
+
+## **🔧 Core Tools**
+**High-Level (Recommended):**
+- **\`generate_knowledge_graph\`** - Create entire graphs with multiple concepts and intelligent layouts 🚀
+- **\`addNodeToGraph\`** - Add individual concepts with intelligent spatial positioning
+- **\`get_spatial_map\`** - Understand current layout and find optimal placement
+- **\`verify_state\`** - Check system state and debug issues
+- **\`search_nodes\`** - Find existing concepts to connect or reference
+
+**Graph Navigation:**
+- **\`list_available_graphs\`** - Explore knowledge spaces
+- **\`get_active_graph\`** - Understand current context
+- **\`create_edge\`** - Connect related concepts
+
+## **🎯 Spatial-Semantic Workflow**
+1. **Assess** → Use \`get_spatial_map\` to understand current layout
+2. **Plan** → Consider both semantic relationships and visual organization  
+3. **Position** → Place concepts near related clusters or in optimal empty regions
+4. **Connect** → Create meaningful relationships that enhance understanding
+5. **Explain** → Describe your spatial reasoning and layout decisions
+
+## **📍 Context**
+- Active graph: ${activeGraphId ? 'Yes' : 'No'}  
+- Total graphs: ${graphs.size}
+- Mode: Interactive collaboration
+
+**Think systemically. Organize spatially. Build knowledge together.** 🚀`,
+          context: {
+            activeGraphId: activeGraphId,
+            graphCount: graphs.size,
+            hasAPIKey: hasAPIKey,
+            apiConfig: {
+              provider: apiConfig.provider,
+              endpoint: apiConfig.endpoint,
+              model: apiConfig.model,
+              settings: apiConfig.settings
+            }
+          }
+        })
       });
       
-      // Parse the response and extract tool call information
-      let aiResponse = '';
-      let toolCalls = [];
-      
-      if (result && typeof result === 'string') {
-        // Direct string response - parse for tool call patterns
-        aiResponse = result;
-        
-        // Extract tool calls from the response using pattern matching
-        const toolCallPattern = /\*\*([^*]+)\*\*:\s*(.+?)(?=\n\n\*\*|$)/gs;
-        let match;
-        while ((match = toolCallPattern.exec(result)) !== null) {
-          const toolName = match[1].trim();
-          const toolResult = match[2].trim();
-          
-          // Skip if it's not a tool call (contains spaces or doesn't look like a tool)
-          if (!toolName.includes(' ') && ['open_graph', 'search_nodes', 'list_available_graphs', 'verify_state', 'get_active_graph', 'addNodeToGraph', 'removeNodeFromGraph'].includes(toolName)) {
-            const status = toolResult.startsWith('✅') ? 'completed' : 
-                          toolResult.startsWith('❌') ? 'failed' : 'completed';
-            
-            toolCalls.push({
-              name: toolName,
-              status: status,
-              result: toolResult
-            });
-          }
-        }
-        
-      } else if (result?.content && Array.isArray(result.content)) {
-        // Content array response
-        for (const content of result.content) {
-          if (content && typeof content.text === 'string') {
-            aiResponse += content.text + '\n';
-          }
-        }
-      } else if (result?.content && typeof result.content === 'string') {
-        // Single content string
-        aiResponse = result.content;
-      } else {
-        aiResponse = "I'm having trouble understanding. Could you rephrase your question?";
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`HTTP ${response.status}: ${errorData.error || response.statusText}`);
       }
       
-      // Add the message with tool call metadata
-      addMessage('ai', aiResponse.trim(), { toolCalls });
+      const result = await response.json();
+      
+      // Prefer structured toolCalls if provided by server
+      if (result && typeof result === 'object' && 'response' in result) {
+        addMessage('ai', (result.response || '').trim(), { toolCalls: result.toolCalls || [] });
+        return;
+      }
+      
+      // Fallback: string-only response
+      const aiResponse = typeof result === 'string' ? result : 'I had trouble forming a response.';
+      addMessage('ai', aiResponse.trim(), { toolCalls: [] });
     } catch (error) {
       console.error('[AI Collaboration] Question handling failed:', error);
       addMessage('ai', 'I encountered an error while processing your question. Please try again or check your connection to the MCP server.');
@@ -471,7 +500,9 @@ const AICollaborationPanel = () => {
                   )}
                   
                   {/* Regular Message Content */}
-                  <div className="ai-message-text">{message.content}</div>
+                  <div className="ai-message-text" style={{ userSelect: 'text', cursor: 'text' }}>
+                    {message.content}
+                  </div>
                   <div className="ai-message-timestamp">
                     {new Date(message.timestamp).toLocaleTimeString()}
                   </div>
@@ -489,6 +520,9 @@ const AICollaborationPanel = () => {
                       <span></span>
                       <span></span>
                       <span></span>
+                    </div>
+                    <div className="ai-processing-status">
+                      {isAutonomousMode ? 'Agent thinking and using tools...' : 'Thinking...'}
                     </div>
                   </div>
                 </div>

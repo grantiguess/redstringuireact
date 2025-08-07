@@ -44,8 +44,486 @@ let bridgeStoreData = null;
 // MCP connection state (always true since we're the MCP server)
 let mcpConnected = true;
 
-// Function to get the real Redstring store state via HTTP request
-async function getRealRedstringState() {
+// Spatial analysis functions for intelligent layout
+function analyzeClusters(nodes) {
+  const clusters = {};
+  const clusterRadius = 150; // pixels
+  
+  // Group nodes by proximity
+  const processed = new Set();
+  let clusterIndex = 0;
+  
+  for (const node of nodes) {
+    if (processed.has(node.id)) continue;
+    
+    const clusterId = `cluster_${clusterIndex++}`;
+    const cluster = {
+      center: [node.x, node.y],
+      nodes: [node.id],
+      density: 1,
+      bounds: { minX: node.x, maxX: node.x, minY: node.y, maxY: node.y }
+    };
+    
+    // Find nearby nodes
+    for (const otherNode of nodes) {
+      if (otherNode.id === node.id || processed.has(otherNode.id)) continue;
+      
+      const distance = Math.sqrt(
+        Math.pow(node.x - otherNode.x, 2) + Math.pow(node.y - otherNode.y, 2)
+      );
+      
+      if (distance <= clusterRadius) {
+        cluster.nodes.push(otherNode.id);
+        cluster.bounds.minX = Math.min(cluster.bounds.minX, otherNode.x);
+        cluster.bounds.maxX = Math.max(cluster.bounds.maxX, otherNode.x);
+        cluster.bounds.minY = Math.min(cluster.bounds.minY, otherNode.y);
+        cluster.bounds.maxY = Math.max(cluster.bounds.maxY, otherNode.y);
+        processed.add(otherNode.id);
+      }
+    }
+    
+    // Calculate cluster center and density
+    if (cluster.nodes.length > 1) {
+      const centerX = (cluster.bounds.minX + cluster.bounds.maxX) / 2;
+      const centerY = (cluster.bounds.minY + cluster.bounds.maxY) / 2;
+      cluster.center = [centerX, centerY];
+      cluster.density = cluster.nodes.length / (clusterRadius * clusterRadius / 10000);
+      
+      clusters[clusterId] = cluster;
+    }
+    
+    processed.add(node.id);
+  }
+  
+  return clusters;
+}
+
+function findEmptyRegions(nodes, canvasSize) {
+  const regions = [];
+  const gridSize = 100;
+  const nodeRadius = 50; // Minimum distance from nodes
+  
+  // Create a grid and check for empty areas
+  for (let x = 350; x < canvasSize.width - 100; x += gridSize) {
+    for (let y = 100; y < canvasSize.height - 100; y += gridSize) {
+      let isEmpty = true;
+      
+      // Check if this grid cell is far enough from all nodes
+      for (const node of nodes) {
+        const distance = Math.sqrt(
+          Math.pow(x - node.x, 2) + Math.pow(y - node.y, 2)
+        );
+        if (distance < nodeRadius * 2) {
+          isEmpty = false;
+          break;
+        }
+      }
+      
+      if (isEmpty) {
+        regions.push({
+          x: x,
+          y: y,
+          width: gridSize,
+          height: gridSize,
+          suitability: x > 400 && x < 600 && y > 150 && y < 350 ? "high" : "medium"
+        });
+      }
+    }
+  }
+  
+  return regions;
+}
+
+function generateLayoutSuggestions(nodes, clusters) {
+  const suggestions = {
+    nextPlacement: null,
+    clusterExpansion: [],
+    layoutImprovements: []
+  };
+  
+  // Find best placement for next node
+  if (Object.keys(clusters).length > 0) {
+    // Suggest placement near existing clusters but not overlapping
+    const mainCluster = Object.values(clusters)[0];
+    suggestions.nextPlacement = {
+      x: mainCluster.center[0] + 200,
+      y: mainCluster.center[1],
+      reasoning: "Near main cluster but with spacing"
+    };
+  } else {
+    // No clusters, suggest center-right placement
+    suggestions.nextPlacement = {
+      x: 500,
+      y: 250,
+      reasoning: "Central placement for first node"
+    };
+  }
+  
+  // Suggest cluster expansion directions
+  for (const [clusterId, cluster] of Object.entries(clusters)) {
+    if (cluster.density > 0.5) {
+      suggestions.clusterExpansion.push({
+        clusterId,
+        direction: "southeast",
+        reasoning: "Cluster is getting dense, expand outward"
+      });
+    }
+  }
+  
+  return suggestions;
+}
+
+// Node dimension constants (matching constants.js)
+const NODE_WIDTH = 150;
+const NODE_HEIGHT = 100;
+const EXPANDED_NODE_WIDTH = 300; // For nodes with images
+const NODE_PADDING = 30;
+
+// Calculate actual node dimensions (simplified version of getNodeDimensions)
+function calculateNodeDimensions(conceptName, hasImage = false) {
+  // Basic dimension calculation
+  const baseWidth = hasImage ? EXPANDED_NODE_WIDTH : NODE_WIDTH;
+  const baseHeight = NODE_HEIGHT;
+  
+  // Text width estimation (rough approximation)
+  const avgCharWidth = 9;
+  const textWidth = conceptName.length * avgCharWidth;
+  const needsWrap = textWidth > (baseWidth - 2 * NODE_PADDING);
+  
+  return {
+    width: baseWidth,
+    height: needsWrap ? baseHeight + 20 : baseHeight, // Add height if text wraps
+    bounds: {
+      width: baseWidth,
+      height: needsWrap ? baseHeight + 20 : baseHeight
+    }
+  };
+}
+
+// Generate intelligent batch layout considering actual node boundaries
+function generateBatchLayout(clusters, spatialMap, layout, nodeSpacing) {
+  const positions = {};
+  const clusterNames = Object.keys(clusters);
+  
+  // Find starting position (avoid existing nodes and panels)
+  let startX = 400; // Past left panel
+  let startY = 150; // Below header
+  
+  // If there are existing nodes, find good placement area
+  if (spatialMap.nodes && spatialMap.nodes.length > 0) {
+    const existingBounds = calculateExistingBounds(spatialMap.nodes);
+    startX = Math.max(startX, existingBounds.maxX + nodeSpacing.clusterGap);
+  }
+  
+  // Use empty regions if available
+  if (spatialMap.emptyRegions && spatialMap.emptyRegions.length > 0) {
+    const bestRegion = spatialMap.emptyRegions.find(r => r.suitability === "high") || spatialMap.emptyRegions[0];
+    startX = bestRegion.x;
+    startY = bestRegion.y;
+  }
+  
+  switch (layout) {
+    case "hierarchical":
+      return generateHierarchicalLayout(clusters, startX, startY, nodeSpacing);
+    case "radial":
+      return generateRadialLayout(clusters, startX, startY, nodeSpacing);
+    case "linear":
+      return generateLinearLayout(clusters, startX, startY, nodeSpacing);
+    case "clustered":
+    default:
+      return generateClusteredLayout(clusters, startX, startY, nodeSpacing);
+  }
+}
+
+// Generate clustered layout with proper boundary consideration
+function generateClusteredLayout(clusters, startX, startY, nodeSpacing) {
+  const positions = {};
+  const clusterNames = Object.keys(clusters);
+  let currentClusterX = startX;
+  
+  clusterNames.forEach((clusterName, clusterIndex) => {
+    const concepts = clusters[clusterName];
+    let maxClusterWidth = 0;
+    let currentY = startY;
+    let currentX = currentClusterX;
+    let rowWidth = 0;
+    let maxRowHeight = 0;
+    
+    // Calculate optimal grid layout for this cluster
+    const conceptsPerRow = Math.ceil(Math.sqrt(concepts.length));
+    
+    concepts.forEach((concept, index) => {
+      const dimensions = calculateNodeDimensions(concept.name);
+      
+      // Check if we need to start a new row
+      if (index > 0 && index % conceptsPerRow === 0) {
+        currentY += maxRowHeight + nodeSpacing.vertical;
+        currentX = currentClusterX;
+        rowWidth = 0;
+        maxRowHeight = 0;
+      }
+      
+      positions[concept.name] = {
+        x: currentX,
+        y: currentY,
+        cluster: clusterName,
+        dimensions: dimensions
+      };
+      
+      // Update positioning for next node
+      currentX += dimensions.width + nodeSpacing.horizontal;
+      rowWidth += dimensions.width + nodeSpacing.horizontal;
+      maxRowHeight = Math.max(maxRowHeight, dimensions.height);
+      maxClusterWidth = Math.max(maxClusterWidth, rowWidth);
+    });
+    
+    // Move to next cluster position
+    currentClusterX += maxClusterWidth + nodeSpacing.clusterGap;
+  });
+  
+  return positions;
+}
+
+// Generate hierarchical layout (top-down tree structure)
+function generateHierarchicalLayout(clusters, startX, startY, nodeSpacing) {
+  const positions = {};
+  const clusterNames = Object.keys(clusters);
+  let currentY = startY;
+  
+  clusterNames.forEach((clusterName, clusterIndex) => {
+    const concepts = clusters[clusterName];
+    let currentX = startX;
+    
+    concepts.forEach((concept, index) => {
+      const dimensions = calculateNodeDimensions(concept.name);
+      
+      positions[concept.name] = {
+        x: currentX,
+        y: currentY,
+        cluster: clusterName,
+        level: clusterIndex, // Hierarchical level
+        dimensions: dimensions
+      };
+      
+      currentX += dimensions.width + nodeSpacing.horizontal;
+    });
+    
+    currentY += NODE_HEIGHT + nodeSpacing.vertical * 1.5; // Extra spacing between levels
+  });
+  
+  return positions;
+}
+
+// Generate radial layout (concepts arranged in circles)
+function generateRadialLayout(clusters, startX, startY, nodeSpacing) {
+  const positions = {};
+  const centerX = startX + 200;
+  const centerY = startY + 200;
+  const clusterNames = Object.keys(clusters);
+  
+  clusterNames.forEach((clusterName, clusterIndex) => {
+    const concepts = clusters[clusterName];
+    const radius = 150 + (clusterIndex * 100); // Expanding circles
+    const angleStep = (2 * Math.PI) / concepts.length;
+    
+    concepts.forEach((concept, index) => {
+      const angle = index * angleStep;
+      const x = centerX + radius * Math.cos(angle);
+      const y = centerY + radius * Math.sin(angle);
+      const dimensions = calculateNodeDimensions(concept.name);
+      
+      positions[concept.name] = {
+        x: x - dimensions.width / 2, // Center the node
+        y: y - dimensions.height / 2,
+        cluster: clusterName,
+        angle: angle,
+        radius: radius,
+        dimensions: dimensions
+      };
+    });
+  });
+  
+  return positions;
+}
+
+// Generate linear layout (concepts in rows)
+function generateLinearLayout(clusters, startX, startY, nodeSpacing) {
+  const positions = {};
+  let currentX = startX;
+  let currentY = startY;
+  
+  // Flatten all concepts into a single sequence
+  const allConcepts = [];
+  Object.keys(clusters).forEach(clusterName => {
+    clusters[clusterName].forEach(concept => {
+      allConcepts.push({ ...concept, cluster: clusterName });
+    });
+  });
+  
+  const conceptsPerRow = 4; // Fixed row width
+  
+  allConcepts.forEach((concept, index) => {
+    if (index > 0 && index % conceptsPerRow === 0) {
+      currentY += NODE_HEIGHT + nodeSpacing.vertical;
+      currentX = startX;
+    }
+    
+    const dimensions = calculateNodeDimensions(concept.name);
+    
+    positions[concept.name] = {
+      x: currentX,
+      y: currentY,
+      cluster: concept.cluster,
+      row: Math.floor(index / conceptsPerRow),
+      dimensions: dimensions
+    };
+    
+    currentX += dimensions.width + nodeSpacing.horizontal;
+  });
+  
+  return positions;
+}
+
+// Helper function to calculate bounds of existing nodes
+function calculateExistingBounds(nodes) {
+  if (!nodes.length) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  
+  nodes.forEach(node => {
+    // Estimate node dimensions (we don't have access to getNodeDimensions here)
+    const width = node.hasImage ? EXPANDED_NODE_WIDTH : NODE_WIDTH;
+    const height = NODE_HEIGHT;
+    
+    minX = Math.min(minX, node.x);
+    minY = Math.min(minY, node.y);
+    maxX = Math.max(maxX, node.x + width);
+    maxY = Math.max(maxY, node.y + height);
+  });
+  
+  return { minX, minY, maxX, maxY };
+}
+
+// Helper function to build spatial map directly from state
+async function buildSpatialMapFromState(state) {
+  const spatialMap = {
+    canvasSize: { width: 1000, height: 600 },
+    nodes: [],
+    clusters: {},
+    emptyRegions: [],
+    panelConstraints: {
+      leftPanel: { x: 0, width: 300, description: "Avoid placing nodes here" },
+      header: { y: 0, height: 80, description: "Keep nodes below this" },
+      rightPanel: { x: 750, width: 250, description: "Right panel may cover this area" }
+    }
+  };
+
+  if (!state || !state.activeGraphId) {
+    console.log('🔍 buildSpatialMapFromState: No state or activeGraphId');
+    spatialMap.emptyRegions = [{ x: 400, y: 150, width: 400, height: 300, suitability: "high" }];
+    return spatialMap;
+  }
+
+  const graph = state.graphs?.get ? state.graphs.get(state.activeGraphId) : null;
+  if (!graph) {
+    console.log('🔍 buildSpatialMapFromState: No graph found for activeGraphId:', state.activeGraphId);
+    spatialMap.emptyRegions = [{ x: 400, y: 150, width: 400, height: 300, suitability: "high" }];
+    return spatialMap;
+  }
+  
+  console.log('🔍 buildSpatialMapFromState: Found graph with instances:', {
+    graphId: state.activeGraphId,
+    hasInstances: !!graph.instances,
+    instancesType: typeof graph.instances,
+    instancesSize: graph.instances?.size,
+    isMap: graph.instances instanceof Map
+  });
+
+  // The bridge may not provide instance data, so handle that gracefully
+  const instances = graph.instances;
+  if (instances && typeof instances.values === 'function') {
+    // Extract node positions and metadata if instances exist
+    const nodeInstances = Array.from(instances.values());
+    console.log('🔍 buildSpatialMapFromState: Processing instances:', {
+      instancesCount: nodeInstances.length,
+      firstInstance: nodeInstances[0]
+    });
+    
+    for (const instance of nodeInstances) {
+      if (instance && instance.prototypeId) {
+        const prototype = state.nodePrototypes?.get ? state.nodePrototypes.get(instance.prototypeId) : null;
+        if (prototype) {
+          spatialMap.nodes.push({
+            id: instance.id,
+            name: prototype.name,
+            x: instance.x || 0,
+            y: instance.y || 0,
+            scale: instance.scale || 1,
+            color: prototype.color,
+            prototypeId: instance.prototypeId
+          });
+        }
+      }
+    }
+    
+    console.log('🔍 buildSpatialMapFromState: Final spatial nodes:', spatialMap.nodes.length);
+  } else {
+    console.log('🔍 buildSpatialMapFromState: No valid instances found:', {
+      hasInstances: !!instances,
+      hasValuesMethod: instances && typeof instances.values === 'function'
+    });
+  }
+
+  // Analyze clusters and find empty regions
+  spatialMap.clusters = analyzeClusters(spatialMap.nodes);
+  spatialMap.emptyRegions = findEmptyRegions(spatialMap.nodes, spatialMap.canvasSize);
+
+  return spatialMap;
+}
+
+// Helper function to create a concept with position
+async function createConceptWithPosition(targetGraphId, concept, positionData) {
+  const position = {
+    x: positionData.x,
+    y: positionData.y
+  };
+  
+  console.log(`📍 Creating "${concept.name}" at (${position.x}, ${position.y}) in cluster "${positionData.cluster}"`);
+  
+  // Use the existing addNodeToGraph logic
+  const prototypeId = `prototype-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  await actions.addNodePrototype(prototypeId, concept.name, concept.description || '', '#4A90E2');
+  await new Promise(resolve => setTimeout(resolve, 2500)); // Wait for prototype sync
+  
+  await actions.addNodeInstance(targetGraphId, prototypeId, position);
+  await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for instance sync
+  
+  return {
+    name: concept.name,
+    success: true,
+    position: position,
+    cluster: positionData.cluster,
+    prototypeId: prototypeId
+  };
+}
+
+// Helper function to check if bridge is responsive
+async function checkBridgeHealth() {
+  try {
+    const response = await fetch('http://localhost:3001/api/bridge/health');
+    return response.ok;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Function to get the real Redstring store state via HTTP request with intelligent retry
+async function getRealRedstringState(retryCount = 0) {
+  const maxRetries = 3;
+  const baseRetryDelay = 1000; // Base delay of 1 second
+  const retryDelay = baseRetryDelay * Math.pow(2, retryCount); // Exponential backoff
+  
   try {
     // Try to fetch from the bridge endpoint
     const response = await fetch('http://localhost:3001/api/bridge/state');
@@ -54,9 +532,38 @@ async function getRealRedstringState() {
     }
     const data = await response.json();
     
+    // Debug: Check what bridge is sending
+    console.log('🔍 Bridge data received:', {
+      totalGraphs: data.graphs?.length,
+      activeGraphId: data.activeGraphId,
+      activeGraphData: data.graphs?.find(g => g.id === data.activeGraphId)
+    });
+    
+    // Validate we got valid data
+    if (!data || typeof data !== 'object') {
+      throw new Error('Invalid data structure received from bridge');
+    }
+    
     // Convert the minimal data format back to the expected structure
     const state = {
-      graphs: new Map((data.graphs || []).map(graph => [graph.id, graph])),
+      graphs: new Map((data.graphs || []).map(graph => {
+        const instancesMap = graph.instances ? new Map(Object.entries(graph.instances)) : new Map();
+        
+        // Debug instances conversion for active graph
+        if (graph.id === data.activeGraphId) {
+          console.log(`🔍 Converting instances for active graph ${graph.id}:`, {
+            hasInstances: !!graph.instances,
+            instancesType: typeof graph.instances,
+            instancesKeys: graph.instances ? Object.keys(graph.instances) : 'none',
+            convertedMapSize: instancesMap.size
+          });
+        }
+        
+        return [graph.id, {
+          ...graph,
+          instances: instancesMap
+        }];
+      })),
       nodePrototypes: new Map((data.nodePrototypes || []).map(prototype => [prototype.id, prototype])),
       edges: new Map(), // We don't have edge data in the minimal format
       activeGraphId: data.activeGraphId,
@@ -67,9 +574,34 @@ async function getRealRedstringState() {
       summary: data.summary
     };
     
+    // If we get here, the fetch succeeded
+    if (retryCount > 0) {
+      console.log(`✅ Bridge state fetch succeeded after ${retryCount} retries`);
+    }
+    
     return state;
   } catch (error) {
-    throw new Error(`Redstring store bridge not available: ${error.message}. Make sure Redstring is running on localhost:4000 and the MCPBridge component is loaded.`);
+    const isNetworkError = error.message.includes('fetch') || 
+                          error.message.includes('ECONNREFUSED') ||
+                          error.message.includes('500') ||
+                          error.message.includes('503') ||
+                          error.message.includes('Invalid data structure');
+    
+    // Only retry on network/temporary errors, not on fundamental connection issues
+    if (isNetworkError && retryCount < maxRetries) {
+      console.log(`🔄 Bridge state fetch failed (attempt ${retryCount + 1}/${maxRetries + 1}): ${error.message}`);
+      console.log(`   Retrying in ${retryDelay}ms...`);
+      
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      return getRealRedstringState(retryCount + 1);
+    }
+    
+    // If we've exhausted retries or it's a fundamental error, throw
+    const errorPrefix = retryCount > 0 ? 
+      `After ${retryCount + 1} attempts, bridge` : 
+      'Redstring store bridge';
+      
+    throw new Error(`${errorPrefix} not available: ${error.message}. Make sure Redstring is running on localhost:4000 and the MCPBridge component is loaded.`);
   }
 }
 
@@ -81,6 +613,7 @@ function getRealRedstringActions() {
         // Use pending actions system instead of HTTP endpoints
         const prototypeId = `prototype-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const pendingAction = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
           action: 'addNodePrototype',
           params: [prototypeId, prototypeData],
           timestamp: Date.now()
@@ -102,6 +635,7 @@ function getRealRedstringActions() {
       try {
         // Use pending actions system instead of HTTP endpoints
         const pendingAction = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
           action: 'addNodeInstance',
           params: [graphId, prototypeId, position],
           timestamp: Date.now()
@@ -111,7 +645,7 @@ function getRealRedstringActions() {
         console.log(`✅ Bridge: Queued addNodeInstance action for graph ${graphId}, prototype ${prototypeId}`);
         
         // Wait a moment for the action to be processed
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
         return { success: true, instanceId: `pending-${Date.now()}` };
       } catch (error) {
@@ -123,6 +657,7 @@ function getRealRedstringActions() {
       try {
         // Use pending actions system instead of HTTP endpoints
         const pendingAction = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
           action: 'setActiveGraph',
           params: [graphId],
           timestamp: Date.now()
@@ -145,6 +680,7 @@ function getRealRedstringActions() {
       try {
         // Use pending actions system instead of HTTP endpoints
         const pendingAction = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
           action: 'openGraph',
           params: [graphId],
           timestamp: Date.now()
@@ -167,6 +703,7 @@ function getRealRedstringActions() {
       try {
         // Use pending actions system instead of HTTP endpoints
         const pendingAction = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
           action: 'openGraph',
           params: [graphId],
           timestamp: Date.now()
@@ -212,6 +749,7 @@ function getRealRedstringActions() {
       try {
         // Use pending actions system instead of HTTP endpoints
         const pendingAction = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
           action: 'updateNodePrototype',
           params: [prototypeId, updates],
           timestamp: Date.now()
@@ -234,6 +772,7 @@ function getRealRedstringActions() {
       try {
         // Use pending actions system instead of HTTP endpoints
         const pendingAction = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
           action: 'removeNodeInstance',
           params: [graphId, instanceId],
           timestamp: Date.now()
@@ -927,8 +1466,277 @@ server.tool(
 );
 
 server.tool(
+  "get_spatial_map",
+  "Get a detailed spatial map of the current graph with coordinates, clusters, and layout analysis",
+  {
+    includeMetadata: z.boolean().optional().describe("Include detailed clustering and layout analysis")
+  },
+  async ({ includeMetadata = true }) => {
+    try {
+      const state = await getRealRedstringState();
+      
+      // Debug: Check what we got from the bridge
+      console.log('🔍 get_spatial_map: Bridge state received:', {
+        hasState: !!state,
+        hasGraphs: !!state?.graphs,
+        graphsType: typeof state?.graphs,
+        isMap: state?.graphs instanceof Map,
+        activeGraphId: state?.activeGraphId,
+        openGraphIds: state?.openGraphIds,
+        graphsSize: state?.graphs?.size,
+        activeGraphExists: state?.activeGraphId ? !!state?.graphs?.get(state.activeGraphId) : false
+      });
+      
+      // Ensure we have a valid state with graphs
+      if (!state || !state.graphs) {
+        return JSON.stringify({
+          error: "Invalid bridge state - no graphs data",
+          canvasSize: { width: 1000, height: 600 },
+          nodes: [],
+          clusters: {},
+          emptyRegions: [{ x: 400, y: 150, width: 400, height: 300, suitability: "high" }]
+        });
+      }
+      
+      let targetGraphId = state.activeGraphId;
+      
+      // Use the same fallback logic as generate_knowledge_graph
+      if (!targetGraphId && state.openGraphIds && state.openGraphIds.length > 0) {
+        targetGraphId = state.openGraphIds[0];
+        console.log(`🗺️ get_spatial_map: Using first open graph as fallback: ${targetGraphId}`);
+      }
+      
+      if (!targetGraphId) {
+        return JSON.stringify({
+          error: "No active graph",
+          canvasSize: { width: 1000, height: 600 },
+          nodes: [],
+          clusters: {},
+          emptyRegions: [{ x: 400, y: 150, width: 400, height: 300, suitability: "high" }]
+        });
+      }
+
+      const graph = state.graphs.get(targetGraphId);
+      if (!graph || !graph.instances) {
+        return JSON.stringify({
+          canvasSize: { width: 1000, height: 600 },
+          nodes: [],
+          clusters: {},
+          emptyRegions: [{ x: 400, y: 150, width: 400, height: 300, suitability: "high" }]
+        });
+      }
+
+      // Build spatial map
+      const spatialMap = {
+        canvasSize: { width: 1000, height: 600 },
+        activeGraph: graph.name,
+        nodes: [],
+        clusters: {},
+        emptyRegions: [],
+        panelConstraints: {
+          leftPanel: { x: 0, width: 300, description: "Avoid placing nodes here" },
+          header: { y: 0, height: 80, description: "Keep nodes below this" },
+          rightPanel: { x: 750, width: 250, description: "Right panel may cover this area" }
+        }
+      };
+
+      // Extract node positions and metadata
+      const nodeInstances = Array.from(graph.instances.values());
+      for (const instance of nodeInstances) {
+        const prototype = state.nodePrototypes.get(instance.prototypeId);
+        if (prototype) {
+          spatialMap.nodes.push({
+            id: instance.id,
+            name: prototype.name,
+            x: instance.x || 0,
+            y: instance.y || 0,
+            scale: instance.scale || 1,
+            color: prototype.color,
+            prototypeId: instance.prototypeId
+          });
+        }
+      }
+
+      if (includeMetadata) {
+        // Cluster analysis
+        spatialMap.clusters = analyzeClusters(spatialMap.nodes);
+        
+        // Find empty regions
+        spatialMap.emptyRegions = findEmptyRegions(spatialMap.nodes, spatialMap.canvasSize);
+        
+        // Layout suggestions
+        spatialMap.layoutSuggestions = generateLayoutSuggestions(spatialMap.nodes, spatialMap.clusters);
+      }
+
+      return JSON.stringify(spatialMap, null, 2);
+    } catch (error) {
+      console.error('[Spatial Map] Error:', error);
+      return JSON.stringify({ error: error.message });
+    }
+  }
+);
+
+server.tool(
+  "generate_knowledge_graph",
+  "Generate an entire knowledge graph with multiple concepts and intelligent spatial layout",
+  {
+    topic: z.string().describe("Main topic/theme for the knowledge graph (e.g., 'renewable energy systems', 'web development')"),
+    concepts: z.array(z.object({
+      name: z.string().describe("Name of the concept"),
+      description: z.string().optional().describe("Optional description"),
+      cluster: z.string().optional().describe("Semantic cluster/group this belongs to"),
+      relationships: z.array(z.string()).optional().describe("Names of concepts this should connect to")
+    })).describe("Array of concepts to create"),
+    layout: z.enum(["hierarchical", "clustered", "radial", "linear"]).optional().describe("Overall layout strategy"),
+    spacing: z.enum(["compact", "normal", "spacious"]).optional().describe("Spacing between nodes")
+  },
+  async ({ topic, concepts, layout = "clustered", spacing = "normal" }) => {
+    try {
+      console.log(`🚀 Generating knowledge graph: "${topic}" with ${concepts.length} concepts`);
+      
+      const state = await getRealRedstringState();
+      
+      // Debug: Check what we got from the bridge
+      console.log('🔍 generate_knowledge_graph: Bridge state received:', {
+        hasState: !!state,
+        hasGraphs: !!state?.graphs,
+        graphsType: typeof state?.graphs,
+        isMap: state?.graphs instanceof Map,
+        activeGraphId: state?.activeGraphId,
+        openGraphIds: state?.openGraphIds,
+        graphsSize: state?.graphs?.size,
+        activeGraphExists: state?.activeGraphId ? !!state?.graphs?.get(state.activeGraphId) : false
+      });
+      
+      // Ensure we have a valid state with graphs
+      if (!state || !state.graphs) {
+        return JSON.stringify({
+          error: "Invalid bridge state - no graphs data available",
+          success: false,
+          debug: {
+            hasState: !!state,
+            hasGraphs: !!state?.graphs
+          }
+        });
+      }
+      
+      let targetGraphId = state.activeGraphId;
+      
+      console.log('🔍 State debug:', {
+        activeGraphId: state.activeGraphId,
+        totalGraphs: state.graphs.size,
+        openGraphIds: state.openGraphIds,
+        graphIds: Array.from(state.graphs.keys())
+      });
+      
+      // If no active graph but there are open graphs, use the first open one
+      // This handles the case where a graph is open in NodeCanvas but activeGraphId isn't set
+      if (!targetGraphId && state.openGraphIds && state.openGraphIds.length > 0) {
+        targetGraphId = state.openGraphIds[0];
+        console.log(`🔄 No active graph set, using first open graph as fallback: ${targetGraphId}`);
+        console.log(`   This suggests the graph is open in NodeCanvas but activeGraphId wasn't set properly`);
+      }
+      
+      if (!targetGraphId) {
+        return JSON.stringify({ 
+          error: "No active graph. Please create or open a graph first.",
+          success: false,
+          debug: {
+            totalGraphs: state.graphs.size,
+            openGraphIds: state.openGraphIds,
+            availableGraphIds: Array.from(state.graphs.keys())
+          }
+        });
+      }
+
+      // Build spatial map directly from current state
+      const spatialMap = await buildSpatialMapFromState(state);
+      
+      // Calculate node dimensions and spacing
+      const nodeSpacing = {
+        compact: { horizontal: 180, vertical: 120, clusterGap: 250 },
+        normal: { horizontal: 220, vertical: 140, clusterGap: 300 },
+        spacious: { horizontal: 280, vertical: 180, clusterGap: 400 }
+      }[spacing];
+
+      // Group concepts by cluster
+      const clusters = {};
+      concepts.forEach(concept => {
+        const clusterName = concept.cluster || 'main';
+        if (!clusters[clusterName]) clusters[clusterName] = [];
+        clusters[clusterName].push(concept);
+      });
+
+      // Generate positions using intelligent layout algorithms
+      const nodePositions = generateBatchLayout(clusters, spatialMap, layout, nodeSpacing);
+      
+      // Create all prototypes and instances
+      const results = [];
+      for (const concept of concepts) {
+        try {
+          const position = nodePositions[concept.name];
+          const result = await createConceptWithPosition(targetGraphId, concept, position);
+          results.push(result);
+          
+          // Wait briefly between creations to avoid overwhelming the bridge
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (error) {
+          const safeName = concept.name ? String(concept.name).replace(/["\n\r\t]/g, ' ').substring(0, 100) : 'Unknown';
+          console.error(`❌ Failed to create concept "${safeName}":`, error);
+          results.push({ name: safeName, success: false, error: error.message });
+        }
+      }
+
+      // TODO: Create connections between related concepts
+      // This would iterate through relationships and create edges
+
+      const successCount = results.filter(r => r.success).length;
+      
+      // Safely clean results to prevent JSON issues
+      const safeResults = results.map(result => ({
+        name: result.name ? String(result.name).replace(/["\n\r\t]/g, ' ').substring(0, 100) : 'Unknown',
+        success: result.success,
+        error: result.error ? String(result.error).replace(/["\n\r\t]/g, ' ').substring(0, 200) : undefined,
+        prototypeId: result.prototypeId,
+        instanceId: result.instanceId,
+        position: result.position
+      }));
+      
+      try {
+        return JSON.stringify({
+          success: true,
+          topic: String(topic).substring(0, 100), // Ensure topic is safe
+          conceptsCreated: successCount,
+          totalConcepts: concepts.length,
+          layout,
+          spacing,
+          results: safeResults,
+          message: `Successfully generated knowledge graph with ${successCount}/${concepts.length} concepts`
+        }, null, 2);
+      } catch (jsonError) {
+        console.error('❌ JSON stringify error:', jsonError);
+        return JSON.stringify({
+          success: true,
+          conceptsCreated: successCount,
+          totalConcepts: concepts.length,
+          message: `Knowledge graph created but response formatting failed. ${successCount}/${concepts.length} concepts added.`
+        });
+      }
+      
+    } catch (error) {
+      console.error('[Generate Knowledge Graph] Error:', error);
+      return JSON.stringify({ 
+        success: false, 
+        error: String(error.message || error).replace(/["\n\r\t]/g, ' ').substring(0, 200),
+        topic: String(topic || 'Unknown').replace(/["\n\r\t]/g, ' ').substring(0, 100)
+      });
+    }
+  }
+);
+
+server.tool(
   "addNodeToGraph",
-  "Add a concept/node to the active graph - automatically handles prototypes and instances",
+  "Add a concept/node to the active graph with intelligent spatial positioning",
   {
     conceptName: z.string().describe("Name of the concept to add (e.g., 'Person', 'Car', 'Idea')"),
     description: z.string().optional().describe("Optional description of the concept"),
@@ -948,7 +1756,7 @@ server.tool(
           content: [
             {
               type: "text",
-              text: `❌ No active graph. Use \`open_graph\` or \`set_active_graph\` to select a graph first.`
+              text: `No active graph. Use \`open_graph\` or \`set_active_graph\` to select a graph first.`
             }
           ]
         };
@@ -962,7 +1770,7 @@ server.tool(
           content: [
             {
               type: "text",
-              text: `❌ Active graph not found. Use \`list_available_graphs\` to see available graphs.`
+              text: `Active graph not found. Use \`list_available_graphs\` to see available graphs.`
             }
           ]
         };
@@ -987,7 +1795,7 @@ server.tool(
       if (existingPrototype) {
         // Use existing prototype
         prototypeId = existingPrototype.id;
-        console.log(`🔍 Found existing prototype: ${existingPrototype.name} (${prototypeId})`);
+        console.log(`Found existing prototype: ${existingPrototype.name} (${prototypeId})`);
       } else {
         // Create new prototype
         prototypeId = `prototype-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -999,18 +1807,18 @@ server.tool(
           typeNodeId: null
         };
         
-        console.log(`🆕 Creating new prototype: ${conceptName} (${prototypeId})`);
+        console.log(`Creating new prototype: ${conceptName} (${prototypeId})`);
         await actions.addNodePrototype(prototypeData);
         prototypeCreated = true;
         
         // Wait for prototype to be processed by MCPBridge (polls every 2 seconds)
-        console.log(`⏳ Waiting for prototype ${prototypeId} to be synced to store...`);
+        console.log(`Waiting for prototype ${prototypeId} to be synced to store...`);
         await new Promise(resolve => setTimeout(resolve, 2500)); // 2.5 seconds to ensure MCPBridge processes it
       }
       
       // Add instance to graph with retry mechanism
       const instanceId = `instance-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      console.log(`📍 Adding instance to graph: ${conceptName} at (${position.x}, ${position.y}) using prototype: ${prototypeId}`);
+      console.log(`Adding instance to graph: ${conceptName} at (${position.x}, ${position.y}) using prototype: ${prototypeId}`);
       
       // Retry mechanism to ensure prototype is synced
       let instanceAdded = false;
@@ -1024,7 +1832,7 @@ server.tool(
           const prototypeExists = currentState.nodePrototypes.has(prototypeId);
           
           if (!prototypeExists) {
-            console.log(`⚠️ Prototype ${prototypeId} not found in store, waiting for sync...`);
+            console.log(`Prototype ${prototypeId} not found in store, waiting for sync...`);
             await new Promise(resolve => setTimeout(resolve, 1000)); // Longer wait
             retryCount++;
             continue;
@@ -2243,6 +3051,13 @@ app.post('/api/github/oauth/token', async (req, res) => {
 });
 
 // Bridge state endpoints
+app.get('/api/bridge/health', (req, res) => {
+  try {
+    res.json({ ok: true, mcpConnected, hasStore: !!bridgeStoreData });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
 app.post('/api/bridge/state', (req, res) => {
   try {
     bridgeStoreData = req.body;
@@ -2277,12 +3092,17 @@ app.get('/api/bridge/check-save-trigger', (req, res) => {
 // Pending actions endpoint (for MCPBridge compatibility)
 let pendingActions = [];
 
+// Track in-flight actions by id to support ack-based clearing
+let inflightActionIds = new Set();
+
 app.get('/api/bridge/pending-actions', (req, res) => {
   try {
-    const actions = [...pendingActions];
-    console.log(`[Bridge] Pending actions requested - found ${actions.length} actions:`, actions.map(a => a.action));
-    pendingActions = []; // Clear after reading
-    res.json({ pendingActions: actions }); // Changed from 'actions' to 'pendingActions' to match bridge expectation
+    // Only return actions that are not already in-flight
+    const available = pendingActions.filter(a => !inflightActionIds.has(a.id));
+    // Mark returned actions as in-flight
+    available.forEach(a => inflightActionIds.add(a.id));
+    console.log(`[Bridge] Pending actions requested - returning ${available.length} actions:`, available.map(a => a.action));
+    res.json({ pendingActions: available });
   } catch (error) {
     console.error('Pending actions error:', error);
     res.status(500).json({ error: 'Failed to get pending actions' });
@@ -2292,6 +3112,11 @@ app.get('/api/bridge/pending-actions', (req, res) => {
 app.post('/api/bridge/action-completed', (req, res) => {
   try {
     const { actionId, result } = req.body;
+    if (actionId) {
+      // Remove the action from the queue and in-flight set
+      pendingActions = pendingActions.filter(a => a.id !== actionId);
+      inflightActionIds.delete(actionId);
+    }
     console.log('✅ Bridge: Action completed:', actionId, result);
     res.json({ success: true });
   } catch (error) {
@@ -2743,7 +3568,7 @@ async function runAutonomousAgent({ message, systemPrompt, context, requestedMod
   // Configuration logic (same as chat endpoint)
   let provider = 'openrouter';
   let endpoint = 'https://openrouter.ai/api/v1/chat/completions';
-  let model = 'anthropic/claude-3-sonnet-20240229';
+  let model = 'anthropic/claude-3-sonnet';
   
   const validOpenRouterModels = [
     'anthropic/claude-3-sonnet-20240229',
@@ -2767,34 +3592,45 @@ async function runAutonomousAgent({ message, systemPrompt, context, requestedMod
     console.log('[Agent] Using custom config:', { provider, endpoint, model });
   }
 
-  // Enhanced system prompt for autonomous behavior
-  const autonomousSystemPrompt = `${systemPrompt || 'You are a helpful AI assistant.'} 
+  // Enhanced system prompt for autonomous behavior with spatial reasoning
+  const autonomousSystemPrompt = `You are Claude, a **knowledge graph architect** with advanced spatial reasoning, operating in **AUTONOMOUS AGENT MODE** for Redstring - a visual knowledge graph system for emergent human-AI cognition.
 
-**AUTONOMOUS AGENT MODE:**
-You are operating in autonomous mode. This means you can chain multiple tool calls together to complete complex tasks. 
+## **🚀 Autonomous Intelligence**
+You can chain multiple actions together to complete complex knowledge-building tasks. You see the canvas, understand spatial relationships, and create beautifully organized, semantically meaningful knowledge graphs.
 
-**WORKFLOW:**
-1. **Analyze** the user's request to understand what they want
-2. **Plan** your approach by deciding what information you need first
-3. **Execute** your plan by calling tools in logical sequence
-4. **Verify** your work by checking the results
-5. **Continue** until the task is fully complete
-6. **Summarize** what you accomplished
+## **🌌 Spatial Superpowers**
+- **\`generate_knowledge_graph\`** - Create entire knowledge graphs with intelligent batch layouts 🚀
+- **\`get_spatial_map\`** - See coordinates, clusters, density patterns, and empty regions
+- **Cluster intelligence** - Detect semantic groupings and optimize layout flow
+- **Smart positioning** - Place concepts for maximum visual clarity and logical organization  
+- **Panel avoidance** - Respect UI constraints (left panel: 0-300px, header: 0-80px)
+- **Boundary awareness** - Consider actual node dimensions (width/height) for perfect spacing
 
-**DECISION MAKING:**
-- Start by gathering context (get_active_graph, list_available_graphs)
-- Use tool results to inform your next decisions
-- Chain tools logically: explore → plan → execute → verify
-- Continue until you've completed the user's request
-- Provide clear explanations of your process
+## **🎯 Autonomous Workflow**
+1. **🔍 Assess** → Start with \`get_spatial_map\` to understand current layout and context
+2. **🧠 Plan** → Design approach considering both semantic relationships and spatial organization
+3. **⚡ Execute** → Use intelligent positioning and create logical concept clusters  
+4. **✅ Verify** → Check both functional success AND spatial layout quality
+5. **🔄 Iterate** → Continue until task is complete with excellent visual organization
+6. **📋 Summarize** → Explain what you accomplished functionally and spatially
 
-**COMPLETION:**
-When you have successfully completed the user's request, respond with a final message summarizing what you accomplished. Do NOT make more tool calls after providing your final summary.
+## **🎨 Spatial Decision Framework**
+- **New concepts** → Find optimal empty regions or expand existing semantic clusters
+- **Related concepts** → Group spatially (e.g., energy concepts together, technology clusters)
+- **Topic transitions** → Create clear spatial boundaries between different domains
+- **Visual flow** → Consider reading patterns and logical concept progression
+- **Density management** → Avoid overcrowding, maintain clean spacing
 
-**SAFETY:**
+## **🛡️ Safety & Completion**
 - Maximum ${agentState.maxIterations} iterations to prevent infinite loops
-- If tools fail, try alternative approaches
-- Always explain your reasoning`;
+- If tools fail, try alternative approaches and explain your reasoning
+- **COMPLETION SIGNAL:** When task is done, provide final summary and STOP making tool calls
+- Always explain your spatial and semantic reasoning
+
+## **💫 Mission**
+Transform the user's request into a beautifully organized, spatially intelligent knowledge graph that reveals hidden connections and facilitates emergent understanding.
+
+**Think autonomously. Organize spatially. Build knowledge systematically.** 🚀`;
 
   // Initialize conversation
   agentState.conversationHistory = [
@@ -2831,7 +3667,10 @@ When you have successfully completed the user's request, respond with a final me
       });
 
       if (!response.ok) {
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        console.error(`[Agent] API Error: ${response.status} ${response.statusText}`, errorText);
+        console.error(`[Agent] Request details - Model: ${model}, Endpoint: ${endpoint}`);
+        throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const data = await response.json();
@@ -2902,6 +3741,24 @@ When you have successfully completed the user's request, respond with a final me
 async function executeToolFromChatEndpoint(toolName, toolArgs) {
   // This contains all the existing tool execution logic from the chat endpoint
   switch (toolName) {
+    case 'get_spatial_map':
+      try {
+        const spatialResult = await server.tools.get('get_spatial_map').handler({ includeMetadata: true });
+        return spatialResult.content[0].text;
+      } catch (error) {
+        console.error('[Spatial Map] Error:', error);
+        return JSON.stringify({ error: error.message });
+      }
+
+    case 'generate_knowledge_graph':
+      try {
+        const graphResult = await server.tools.get('generate_knowledge_graph').handler(toolArgs);
+        return graphResult.content[0].text;
+      } catch (error) {
+        console.error('[Generate Knowledge Graph] Error:', error);
+        return JSON.stringify({ error: error.message });
+      }
+
     case 'verify_state':
       try {
         const state = await getRealRedstringState();
@@ -3076,7 +3933,57 @@ ${graphData.openGraphIds.map((id, index) => {
           await new Promise(resolve => setTimeout(resolve, 2500)); // 2.5 seconds to ensure MCPBridge processes it
         }
         
-        await actions.addNodeInstance(targetGraphId, prototypeId, position);
+        // Intelligent positioning using spatial analysis
+        let instancePosition = position;
+        
+        if (!instancePosition) {
+          // Get spatial map to determine best placement
+          const spatialMapJson = await server.request({
+            method: "tools/call",
+            params: {
+              name: "get_spatial_map",
+              arguments: { includeMetadata: true }
+            }
+          });
+          
+          try {
+            const spatialMap = JSON.parse(spatialMapJson.content[0].text);
+            
+            if (spatialMap.layoutSuggestions?.nextPlacement) {
+              instancePosition = {
+                x: spatialMap.layoutSuggestions.nextPlacement.x,
+                y: spatialMap.layoutSuggestions.nextPlacement.y
+              };
+              console.log(`🎯 Intelligent placement: (${instancePosition.x}, ${instancePosition.y}) - ${spatialMap.layoutSuggestions.nextPlacement.reasoning}`);
+            } else if (spatialMap.emptyRegions?.length > 0) {
+              // Use first high-suitability empty region
+              const bestRegion = spatialMap.emptyRegions.find(r => r.suitability === "high") || spatialMap.emptyRegions[0];
+              instancePosition = {
+                x: bestRegion.x + bestRegion.width / 2,
+                y: bestRegion.y + bestRegion.height / 2
+              };
+              console.log(`🎯 Empty region placement: (${instancePosition.x}, ${instancePosition.y})`);
+            } else {
+              // Fallback to smart random placement
+              instancePosition = { 
+                x: 400 + Math.random() * 300,
+                y: 150 + Math.random() * 200
+              };
+              console.log(`🎯 Fallback placement: (${instancePosition.x}, ${instancePosition.y})`);
+            }
+          } catch (error) {
+            console.error('❌ Spatial analysis failed, using fallback:', error);
+            instancePosition = { 
+              x: 400 + Math.random() * 300,
+              y: 150 + Math.random() * 200
+            };
+          }
+        }
+        await actions.addNodeInstance(targetGraphId, prototypeId, instancePosition);
+        
+        // Wait longer for the instance to be processed
+        console.log(`⏳ Waiting for instance to be created...`);
+        await new Promise(resolve => setTimeout(resolve, 3000)); // 3 seconds for instance
         
         const updatedState = await getRealRedstringState();
         const updatedGraph = updatedState.graphs.get(targetGraphId);
@@ -3148,6 +4055,7 @@ ${allGraphs.join(', ')}
         try {
           // Queue a pending action for the bridge to execute
           const pendingAction = {
+            id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
             action: 'openGraph',
             params: [targetGraphId],
             timestamp: Date.now()
@@ -3234,6 +4142,70 @@ ${index + 1}. **${result.name}** in "${result.graphName}"
 
 function getAllToolDefinitions() {
   return [
+    {
+      type: "function",
+      function: {
+        name: "get_spatial_map",
+        description: "Get a detailed spatial map of the current graph with coordinates, clusters, and layout analysis",
+        parameters: {
+          type: "object",
+          properties: {
+            includeMetadata: { 
+              type: "boolean", 
+              description: "Include detailed clustering and layout analysis",
+              default: true
+            }
+          }
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "generate_knowledge_graph",
+        description: "Generate an entire knowledge graph with multiple concepts and intelligent spatial layout",
+        parameters: {
+          type: "object",
+          properties: {
+            topic: {
+              type: "string",
+              description: "Main topic/theme for the knowledge graph (e.g., 'renewable energy systems', 'web development')"
+            },
+            concepts: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string", description: "Name of the concept" },
+                  description: { type: "string", description: "Optional description" },
+                  cluster: { type: "string", description: "Semantic cluster/group this belongs to" },
+                  relationships: { 
+                    type: "array", 
+                    items: { type: "string" },
+                    description: "Names of concepts this should connect to" 
+                  }
+                },
+                required: ["name"]
+              },
+              description: "Array of concepts to create"
+            },
+            layout: {
+              type: "string",
+              enum: ["hierarchical", "clustered", "radial", "linear"],
+              description: "Overall layout strategy",
+              default: "clustered"
+            },
+            spacing: {
+              type: "string", 
+              enum: ["compact", "normal", "spacious"],
+              description: "Spacing between nodes",
+              default: "normal"
+            }
+          },
+          required: ["topic", "concepts"]
+        }
+      }
+    },
     {
       type: "function",
       function: {
@@ -3533,6 +4505,7 @@ app.post('/api/ai/chat', async (req, res) => {
       // Handle tool calls if the AI wants to use tools
       if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
         let toolResults = [];
+        const toolCallsAgg = [];
         
         for (const toolCall of assistantMessage.tool_calls) {
           const toolName = toolCall.function.name;
@@ -3541,6 +4514,7 @@ app.post('/api/ai/chat', async (req, res) => {
           console.log(`[AI] Calling tool: ${toolName} with args:`, toolArgs);
           
           try {
+            const startedAt = Date.now();
             let toolResult;
             switch (toolName) {
               case 'verify_state':
@@ -3913,9 +4887,12 @@ ${allGraphs.join(', ')}
                 toolResult = `Tool ${toolName} not implemented`;
             }
             
+            const durationMs = Date.now() - startedAt;
             toolResults.push(`**${toolName}**: ${toolResult}`);
+            toolCallsAgg.push({ name: toolName, args: toolArgs, result: toolResult, status: 'completed', durationMs });
           } catch (error) {
             console.error(`Error calling tool ${toolName}:`, error);
+            toolCallsAgg.push({ name: toolName, args: toolArgs, result: `Error: ${error.message}` , status: 'failed' });
             toolResults.push(`**${toolName}**: Error - ${error.message}`);
           }
         }
@@ -3923,16 +4900,15 @@ ${allGraphs.join(', ')}
         // Combine AI response with tool results
         const baseResponse = assistantMessage.content || "I've called some tools for you:";
         aiResponse = `${baseResponse}\n\n${toolResults.join('\n\n')}`;
+        
+        // Return structured tool calls for the UI
+        return res.json({ response: aiResponse, provider: provider, toolCalls: toolCallsAgg });
       } else {
         // No tool calls, just return the text response
         aiResponse = assistantMessage.content;
+        return res.json({ response: aiResponse, provider: provider, toolCalls: [] });
       }
     }
-
-    res.json({ 
-      response: aiResponse,
-      provider: provider
-    });
 
   } catch (error) {
     console.error('[AI Chat API] Error:', error);
