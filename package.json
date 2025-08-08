@@ -4,7 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "bridge": "node bridge-daemon.js",
+    "bridge": "node scripts/bridge-restart.js",
+    "bridge:start": "node bridge-daemon.js",
+    "bridge:restart": "node scripts/bridge-restart.js",
+    "bridge:kill": "node scripts/bridge-restart.js --kill-only",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",

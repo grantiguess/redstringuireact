@@ -39,30 +39,37 @@ class MCPClient {
       // Mark connected for in-app HTTP mode regardless of stdio/MCP
       this._isConnected = true;
 
+      // Check if MCP JSON-RPC endpoint exists; if not, quietly use HTTP bridge
+      let hasMcpRpc = false;
       try {
-        // Attempt real MCP JSON-RPC over HTTP
-        await this.initialize();
-        await this.listTools();
-        console.log('[MCP Client] Successfully connected to MCP server');
-        return { success: true, tools: this.tools, sessionInfo: this.sessionInfo };
-      } catch (error) {
-        // Fall back to HTTP-only simulated MCP when /api/mcp/request is absent
-        console.warn('[MCP Client] Using HTTP bridge (no /api/mcp/request present):', error?.message || error);
-        this.isSimulated = false;
-        this.tools = [
-          { name: 'verify_state', description: 'Verify the current Redstring state' },
-          { name: 'list_available_graphs', description: 'List all graphs' },
-          { name: 'get_active_graph', description: 'Get active graph info' },
-          { name: 'addNodeToGraph', description: 'Add a concept/node to the active graph' },
-          { name: 'search_nodes', description: 'Search for nodes by name/description' }
-        ];
-        this.sessionInfo = {
-          protocolVersion: '2024-11-05',
-          capabilities: { tools: { listChanged: true } },
-          serverInfo: { name: 'redstring-http', version: '1.0.0', capabilities: { resources: {}, tools: {} } }
-        };
-        return { success: true, tools: this.tools, sessionInfo: this.sessionInfo };
+        const probe = await fetch('http://localhost:3001/api/mcp/request', { method: 'HEAD' });
+        hasMcpRpc = probe.ok;
+      } catch {}
+
+      if (hasMcpRpc) {
+        try {
+          await this.initialize();
+          await this.listTools();
+          console.log('[MCP Client] Successfully connected to MCP server');
+          return { success: true, tools: this.tools, sessionInfo: this.sessionInfo };
+        } catch {}
       }
+
+      // HTTP-bridge mode (no MCP endpoint)
+      this.isSimulated = false;
+      this.tools = [
+        { name: 'verify_state', description: 'Verify the current Redstring state' },
+        { name: 'list_available_graphs', description: 'List all graphs' },
+        { name: 'get_active_graph', description: 'Get active graph info' },
+        { name: 'addNodeToGraph', description: 'Add a concept/node to the active graph' },
+        { name: 'search_nodes', description: 'Search for nodes by name/description' }
+      ];
+      this.sessionInfo = {
+        protocolVersion: '2024-11-05',
+        capabilities: { tools: { listChanged: true } },
+        serverInfo: { name: 'redstring-http', version: '1.0.0', capabilities: { resources: {}, tools: {} } }
+      };
+      return { success: true, tools: this.tools, sessionInfo: this.sessionInfo };
     } catch (error) {
       console.error('[MCP Client] Connection failed:', error);
       // As a last resort, stay connected via HTTP bridge
@@ -246,6 +253,10 @@ class MCPClient {
       });
 
       if (!response.ok) {
+        // Silently fall back if MCP endpoint is missing
+        if (response.status === 404) {
+          throw new Error('MCP endpoint not available');
+        }
         const errorText = await response.text();
         throw new Error(`MCP request failed: ${response.status} - ${errorText}`);
       }
@@ -258,8 +269,7 @@ class MCPClient {
 
       return data;
     } catch (error) {
-      console.error('[MCP Client] Request failed:', error);
-      // Don't fall back to simulation anymore - throw the error
+      // Quiet fallback path; callers (connect) decide whether to surface
       throw error;
     }
   }

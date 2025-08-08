@@ -16,6 +16,8 @@ const BridgeClient = () => {
     reconnectAttempts: 0,
     maxReconnectAttempts: 5
   });
+  // Track last telemetry timestamp sent to UI to avoid spam
+  const lastTelemetryTsRef = useRef(0);
 
   useEffect(() => {
     // Function to check bridge server health
@@ -511,16 +513,7 @@ const BridgeClient = () => {
     // Set up a listener for save triggers and pending actions from the bridge server
     const checkForBridgeUpdates = async () => {
       try {
-        // Check for save triggers
-        const saveResponse = await fetch('http://localhost:3001/api/bridge/check-save-trigger');
-        if (saveResponse.ok) {
-          const saveData = await saveResponse.json();
-          if (saveData.shouldSave) {
-            console.log('✅ MCP Bridge: Save trigger received, notifying changes');
-            const { notifyChanges } = await import('./store/fileStorage.js');
-            notifyChanges();
-          }
-        }
+        // Check for save triggers (legacy noop) — disabled to avoid 404 spam
         
         // Check for bridge state changes and sync them back to Redstring
         // DISABLED: This was causing conflicts with Redstring state restoration
@@ -674,13 +667,23 @@ const BridgeClient = () => {
           }
         }
 
-        // Check telemetry and broadcast to UI
+        // Check telemetry and broadcast only NEW items
         try {
-          const telRes = await fetch('http://localhost:3001/api/bridge/telemetry');
-          if (telRes.ok) {
-            const tel = await telRes.json();
-            if (Array.isArray(tel.telemetry) && tel.telemetry.length > 0) {
-              window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: tel.telemetry.slice(-10) }));
+          if (!connectionStateRef.current.isConnected) {
+            // Skip polling telemetry while disconnected
+          } else {
+            const telRes = await fetch('http://localhost:3001/api/bridge/telemetry');
+            if (telRes.ok) {
+              const tel = await telRes.json();
+              if (Array.isArray(tel.telemetry) && tel.telemetry.length > 0) {
+                const lastTs = lastTelemetryTsRef.current || 0;
+                const newItems = tel.telemetry.filter(t => typeof t?.ts === 'number' && t.ts > lastTs);
+                if (newItems.length > 0) {
+                  window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: newItems }));
+                  const maxTs = Math.max(...tel.telemetry.map(t => typeof t?.ts === 'number' ? t.ts : 0));
+                  lastTelemetryTsRef.current = Math.max(lastTs, maxTs);
+                }
+              }
             }
           }
         } catch {}
