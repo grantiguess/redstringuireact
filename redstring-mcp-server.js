@@ -9,6 +9,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import express from 'express';
 import cors from 'cors';
+import { RolePrompts, ToolAllowlists } from './src/services/roles.js';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 
@@ -4977,7 +4978,7 @@ Safety & quality
 // AI Chat API endpoint - handles actual AI provider calls (original single-call version)
 app.post('/api/ai/chat', async (req, res) => {
   try {
-    const { message, systemPrompt, context, model: requestedModel } = req.body;
+    const { message, systemPrompt, context, model: requestedModel, role } = req.body;
     
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
@@ -5034,8 +5035,11 @@ app.post('/api/ai/chat', async (req, res) => {
       }
     }
 
-    // Compose effective system prompt (hidden + optional user-provided)
-    const effectiveSystemPrompt = [HIDDEN_SYSTEM_PROMPT, systemPrompt].filter(Boolean).join('\n\n');
+    // Compose effective system prompt (hidden + role + optional user-provided)
+    const rolePrompt = role && RolePrompts[role] ? RolePrompts[role] : null;
+    const allowlist = role && ToolAllowlists[role] ? ToolAllowlists[role] : null;
+    const policyBlock = allowlist ? `\n\nAllowed tools for this role: ${allowlist.join(', ')}. Only call these.` : '';
+    const effectiveSystemPrompt = [HIDDEN_SYSTEM_PROMPT, rolePrompt, systemPrompt].filter(Boolean).join('\n\n') + policyBlock;
 
     let aiResponse;
     

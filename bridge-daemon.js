@@ -3,6 +3,10 @@
 
 import express from 'express';
 import cors from 'cors';
+import { exec } from 'node:child_process';
+import queueManager from './src/services/queue/Queue.js';
+import eventLog from './src/services/EventLog.js';
+import committer from './src/services/Committer.js';
 
 const app = express();
 const PORT = process.env.BRIDGE_PORT || 3001;
@@ -258,9 +262,278 @@ app.post('/api/ai/agent', (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`✅ Bridge daemon listening on http://localhost:${PORT}`);
+  // Start committer loop
+  committer.start();
+});
+
+async function killOnPort(port) {
+  return new Promise((resolve) => {
+    exec(`lsof -nP -t -iTCP:${port} -sTCP:LISTEN`, (err, stdout) => {
+      if (err || !stdout) return resolve([]);
+      const pids = stdout.toString().trim().split(/\s+/).filter(Boolean);
+      if (pids.length === 0) return resolve([]);
+      exec(`echo "${pids.join(' ')}" | xargs -r kill -9`, () => resolve(pids));
+    });
+  });
+}
+
+server.on('error', async (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`❌ Port ${PORT} is already in use. Attempting automatic recovery...`);
+    const killed = await killOnPort(PORT);
+    if (killed.length > 0) {
+      console.log(`🔪 Killed processes on :${PORT}: ${killed.join(', ')}`);
+    } else {
+      console.log(`ℹ️ No killable listeners found on :${PORT}. Will retry bind.`);
+    }
+    setTimeout(() => {
+      try {
+        const retry = app.listen(PORT, () => {
+          console.log(`✅ Bridge daemon recovered and listening on http://localhost:${PORT}`);
+          committer.start();
+        });
+        retry.on('error', (e2) => {
+          console.error('❌ Failed to recover bridge daemon:', e2?.message || e2);
+          process.exit(1);
+        });
+      } catch (e) {
+        console.error('❌ Unexpected failure during recovery:', e?.message || e);
+        process.exit(1);
+      }
+    }, 500);
+  } else {
+    console.error('❌ HTTP server failed to start:', err?.message || err);
+    process.exit(1);
+  }
+});
+
+// -----------------------
+// Orchestration Endpoints
+// -----------------------
+
+// Enqueue goals (Planner output not required here; server will fan out tasks if desired)
+app.post('/queue/goals.enqueue', (req, res) => {
+  try {
+    const { goal, dag, threadId } = req.body || {};
+    const id = queueManager.enqueue('goalQueue', { type: 'goal', goal, dag, threadId, partitionKey: threadId || 'default' });
+    eventLog.append({ type: 'GOAL_ENQUEUED', id, threadId });
+    res.json({ ok: true, id });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Executors pull tasks
+app.post('/queue/tasks.pull', (req, res) => {
+  try {
+    const { threadId, max } = req.body || {};
+    const items = queueManager.pull('taskQueue', { partitionKey: threadId, max: Number(max) || 1 });
+    res.json({ ok: true, items });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Executors submit patches
+app.post('/queue/patches.submit', (req, res) => {
+  try {
+    const { patch } = req.body || {};
+    if (!patch?.graphId) return res.status(400).json({ ok: false, error: 'graphId required' });
+    const id = queueManager.enqueue('patchQueue', { ...patch, partitionKey: patch.threadId || 'default' });
+    eventLog.append({ type: 'PATCH_SUBMITTED', patchId: id, graphId: patch.graphId, threadId: patch.threadId });
+    // Hand off to Auditor stream by mirroring into an audit queue (pull-based auditing)
+    res.json({ ok: true, patchId: id });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Auditors pull patches to review
+app.post('/queue/reviews.pull', (req, res) => {
+  try {
+    const { max } = req.body || {};
+    const items = queueManager.pull('patchQueue', { max: Number(max) || 10 });
+    res.json({ ok: true, items });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Auditors submit reviews (approved/rejected) which Committer will consume
+app.post('/queue/reviews.submit', (req, res) => {
+  try {
+    const { leaseId, decision, reasons, graphId, patch, patches } = req.body || {};
+    if (!leaseId) return res.status(400).json({ ok: false, error: 'leaseId required' });
+    // Ack the pulled patch
+    queueManager.ack('patchQueue', leaseId);
+    // Enqueue review item
+    const id = queueManager.enqueue('reviewQueue', { status: decision, reasons, graphId, patch, patches });
+    eventLog.append({ type: 'REVIEW_ENQUEUED', id, decision, graphId });
+    res.json({ ok: true, id });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Manual trigger to force commit apply cycle (mostly for testing)
+app.post('/commit/apply', (_req, res) => {
+  try {
+    // The committer loop runs continuously; this endpoint is a no-op acknowledge
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Server-Sent Events stream for UI/EventLog
+app.get('/events/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive'
+  });
+  const send = (evt) => {
+    res.write(`event: ${evt.type}\n`);
+    res.write(`data: ${JSON.stringify(evt)}\n\n`);
+  };
+  const unsub = eventLog.subscribe(send);
+  req.on('close', () => unsub());
+});
+
+// Allow server components (Committer) to enqueue UI pending actions
+app.post('/api/bridge/pending-actions/enqueue', (req, res) => {
+  try {
+    const { actions } = req.body || {};
+    if (!Array.isArray(actions) || actions.length === 0) {
+      return res.status(400).json({ ok: false, error: 'actions[] required' });
+    }
+    const id = (suffix) => `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}-${suffix}`;
+    for (const a of actions) {
+      pendingActions.push({ id: id(a.action || 'act'), action: a.action, params: a.params, timestamp: Date.now() });
+      telemetry.push({ ts: Date.now(), type: 'tool_call', name: a.action, args: a.params });
+    }
+    res.json({ ok: true, enqueued: actions.length });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// -----------------------
+// Test/Inspection Utilities
+// -----------------------
+
+// Queue metrics for easy inspection by IDE agents
+app.get('/queue/metrics', (req, res) => {
+  try {
+    const { name } = req.query || {};
+    if (!name) return res.status(400).json({ ok: false, error: 'name required' });
+    const m = queueManager.metrics(String(name));
+    res.json({ ok: true, name, metrics: m });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Peek queue items without leasing
+app.get('/queue/peek', (req, res) => {
+  try {
+    const { name, head = 10 } = req.query || {};
+    if (!name) return res.status(400).json({ ok: false, error: 'name required' });
+    const q = queueManager.getQueue(String(name));
+    const sample = q.items.filter(it => it.status === 'queued').slice(0, Number(head) || 10);
+    res.json({ ok: true, name, sample });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Approve the next patch for rapid commit testing
+app.post('/queue/patches.approve-next', (req, res) => {
+  try {
+    const pulled = queueManager.pull('patchQueue', { max: 1 });
+    if (pulled.length === 0) return res.json({ ok: false, error: 'no patches available' });
+    const item = pulled[0];
+    // Mirror to reviewQueue as approved and ack original
+    const id = queueManager.enqueue('reviewQueue', { status: 'approved', graphId: item.graphId, patch: item });
+    queueManager.ack('patchQueue', item.leaseId);
+    eventLog.append({ type: 'REVIEW_ENQUEUED', id, decision: 'approved', graphId: item.graphId });
+    res.json({ ok: true, reviewId: id, patchId: item.id });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Seed a single task into the task queue for executors
+app.post('/test/create-task', (req, res) => {
+  try {
+    const { threadId = 'default', toolName = 'verify_state', args = {} } = req.body || {};
+    const id = queueManager.enqueue('taskQueue', { threadId, toolName, args, partitionKey: threadId });
+    eventLog.append({ type: 'TASK_ENQUEUED', id, threadId, toolName });
+    res.json({ ok: true, id });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Submit ops as an immediately-approved patch (fast path to drive Committer)
+app.post('/test/commit-ops', (req, res) => {
+  try {
+    const { graphId, ops = [], threadId = 'default', baseHash = null } = req.body || {};
+    if (!graphId) return res.status(400).json({ ok: false, error: 'graphId required' });
+    const patch = { id: `patch-${Date.now()}`, patchId: `patch-${Date.now()}`, graphId, threadId, baseHash, ops };
+    const reviewId = queueManager.enqueue('reviewQueue', { status: 'approved', graphId, patch });
+    eventLog.append({ type: 'REVIEW_ENQUEUED', id: reviewId, decision: 'approved', graphId });
+    res.json({ ok: true, reviewId });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// -----------------------
+// Self-Documenting Help
+// -----------------------
+app.get('/orchestration/help', (_req, res) => {
+  res.json({
+    name: 'Redstring Orchestration HTTP Guide',
+    summary: 'Planner → Executor → Auditor → Committer with single-writer Committer. Use these endpoints to enqueue, inspect, and commit without any LLM training.',
+    queues: {
+      endpoints: [
+        { method: 'POST', path: '/queue/goals.enqueue', body: { goal: 'string', dag: 'optional DAG', threadId: 'string' } },
+        { method: 'POST', path: '/queue/tasks.pull', body: { threadId: 'string', max: 1 } },
+        { method: 'POST', path: '/queue/patches.submit', body: { patch: { patchId: 'string', graphId: 'string', threadId: 'string', baseHash: 'string|null', ops: [] } } },
+        { method: 'POST', path: '/queue/reviews.pull', body: { max: 10 } },
+        { method: 'POST', path: '/queue/reviews.submit', body: { leaseId: 'string', decision: 'approved|rejected', reasons: 'optional', graphId: 'string', patch: 'object or patches[]' } }
+      ]
+    },
+    commit: {
+      endpoints: [
+        { method: 'POST', path: '/commit/apply', note: 'Committer loop runs continuously; this endpoint is a safe no-op trigger.' }
+      ]
+    },
+    ui: {
+      endpoints: [
+        { method: 'GET', path: '/events/stream', note: 'SSE stream (events like PATCH_APPLIED).' },
+        { method: 'POST', path: '/api/bridge/pending-actions/enqueue', body: { actions: [ { action: 'applyMutations', params: [ 'ops[]' ] } ] } }
+      ]
+    },
+    testing: {
+      endpoints: [
+        { method: 'GET', path: '/queue/metrics?name=patchQueue', note: 'Inspect depth and counters.' },
+        { method: 'GET', path: '/queue/peek?name=patchQueue&head=10', note: 'Peek queued items.' },
+        { method: 'POST', path: '/queue/patches.approve-next', note: 'Approve the next queued patch for quick commits.' },
+        { method: 'POST', path: '/test/create-task', body: { threadId: 'string', toolName: 'verify_state', args: {} } },
+        { method: 'POST', path: '/test/commit-ops', body: { graphId: 'string', ops: [ { type: 'addNodeInstance', graphId: 'string', prototypeId: 'string', position: { x: 400, y: 200 }, instanceId: 'string' } ] } }
+      ]
+    },
+    guarantees: [
+      'Single-writer Committer applies only approved patches',
+      'Idempotent patchIds prevent double-apply',
+      'UI updates only via applyMutations emitted after commit'
+    ]
+  });
 });
 
 

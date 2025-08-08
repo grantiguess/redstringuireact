@@ -20,6 +20,18 @@ const BridgeClient = () => {
   const lastTelemetryTsRef = useRef(0);
 
   useEffect(() => {
+    // Subscribe to EventLog SSE for projection refresh triggers
+    try {
+      const es = new EventSource('http://localhost:3001/events/stream');
+      es.addEventListener('PATCH_APPLIED', () => {
+        // Projection refresh is intentionally minimal here because applyMutations are already executed
+        // This hook is future-proof for wholesale projection replacement once canonical snapshots are streamed
+      });
+      return () => { try { es.close(); } catch {} };
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     // Function to check bridge server health
     const checkBridgeHealth = async () => {
       try {
