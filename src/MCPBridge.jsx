@@ -162,6 +162,30 @@ const MCPBridge = () => {
             description: 'Update edge directionality arrowsToward list',
             parameters: ['edgeId', 'arrowsToward']
           },
+          applyMutations: {
+            description: 'Apply a batch of store mutations in one shot',
+            parameters: ['operations']
+          },
+          addToAbstractionChain: {
+            description: 'Add a node to an abstraction chain',
+            parameters: ['nodeId', 'dimension', 'direction', 'newNodeId', 'insertRelativeToNodeId']
+          },
+          removeFromAbstractionChain: {
+            description: 'Remove a node from an abstraction chain',
+            parameters: ['nodeId', 'dimension', 'nodeToRemove']
+          },
+          swapNodeInChain: {
+            description: 'Swap a node in an abstraction chain',
+            parameters: ['currentNodeId', 'newNodeId']
+          },
+          setNodeType: {
+            description: 'Set the type of a node prototype',
+            parameters: ['nodeId', 'typeNodeId']
+          },
+          closeGraphTab: {
+            description: 'Close a graph tab',
+            parameters: ['graphId']
+          },
           chat: {
             description: 'Send a message to the AI model',
             parameters: ['message', 'context']
@@ -236,10 +260,109 @@ const MCPBridge = () => {
                 });
                 return { success: true, edgeId };
               },
+              addToAbstractionChain: async (nodeId, dimension, direction, newNodeId, insertRelativeToNodeId) => {
+                console.log('MCPBridge: Calling addToAbstractionChain', { nodeId, dimension, direction, newNodeId, insertRelativeToNodeId });
+                state.addToAbstractionChain(nodeId, dimension, direction, newNodeId, insertRelativeToNodeId);
+                return { success: true };
+              },
+              removeFromAbstractionChain: async (nodeId, dimension, nodeToRemove) => {
+                console.log('MCPBridge: Calling removeFromAbstractionChain', { nodeId, dimension, nodeToRemove });
+                state.removeFromAbstractionChain(nodeId, dimension, nodeToRemove);
+                return { success: true };
+              },
+              swapNodeInChain: async (currentNodeId, newNodeId) => {
+                console.log('MCPBridge: Calling swapNodeInChain', currentNodeId, newNodeId);
+                state.swapNodeInChain(currentNodeId, newNodeId);
+                return { success: true };
+              },
+              setNodeType: async (nodeId, typeNodeId) => {
+                console.log('MCPBridge: Calling setNodeType', nodeId, typeNodeId);
+                state.setNodeType(nodeId, typeNodeId);
+                return { success: true };
+              },
+              closeGraphTab: async (graphId) => {
+                console.log('MCPBridge: Calling closeGraphTab', graphId);
+                state.closeGraphTab(graphId);
+                return { success: true };
+              },
             chat: async (message, context) => {
               console.log('MCPBridge: Forwarding chat message to AI model', { message, context });
               // The actual chat handling happens in the MCP server
               return { success: true, message, context };
+              },
+              applyMutations: async (operations) => {
+                console.log('MCPBridge: Applying batch mutations', operations?.length || 0);
+                const store = useGraphStore.getState();
+                const results = [];
+                for (const op of (operations || [])) {
+                  try {
+                    switch (op.type) {
+                      case 'addNodeInstance':
+                        store.addNodeInstance(op.graphId, op.prototypeId, op.position, op.instanceId);
+                        results.push({ type: op.type, ok: true, id: op.instanceId });
+                        break;
+                      case 'addEdge':
+                        store.addEdge(op.graphId, op.edgeData);
+                        results.push({ type: op.type, ok: true, id: op.edgeData?.id });
+                        break;
+                      case 'moveNodeInstance':
+                        store.updateNodeInstance(op.graphId, op.instanceId, (inst) => { inst.x = op.position.x; inst.y = op.position.y; });
+                        results.push({ type: op.type, ok: true, id: op.instanceId });
+                        break;
+                      case 'updateEdgeDirectionality':
+                        store.updateEdge(op.edgeId, (edge) => {
+                          edge.directionality = { arrowsToward: new Set(Array.isArray(op.arrowsToward) ? op.arrowsToward : []) };
+                        });
+                        results.push({ type: op.type, ok: true, id: op.edgeId });
+                        break;
+                      case 'updateNodePrototype':
+                        store.updateNodePrototype(op.prototypeId, (prototype) => {
+                          if (typeof op.updates?.name === 'string') prototype.name = op.updates.name;
+                          if (typeof op.updates?.color === 'string') prototype.color = op.updates.color;
+                          if (typeof op.updates?.description === 'string') prototype.description = op.updates.description;
+                        });
+                        results.push({ type: op.type, ok: true, id: op.prototypeId });
+                        break;
+                      case 'openRightPanelNodeTab':
+                        store.openRightPanelNodeTab(op.nodeId);
+                        results.push({ type: op.type, ok: true, id: op.nodeId });
+                        break;
+                      case 'addToAbstractionChain':
+                        store.addToAbstractionChain(op.nodeId, op.dimension, op.direction, op.newNodeId, op.insertRelativeToNodeId);
+                        results.push({ type: op.type, ok: true });
+                        break;
+                      case 'removeFromAbstractionChain':
+                        store.removeFromAbstractionChain(op.nodeId, op.dimension, op.nodeToRemove);
+                        results.push({ type: op.type, ok: true });
+                        break;
+                      case 'swapNodeInChain':
+                        store.swapNodeInChain(op.currentNodeId, op.newNodeId);
+                        results.push({ type: op.type, ok: true });
+                        break;
+                      case 'setNodeType':
+                        store.setNodeType(op.nodeId, op.typeNodeId);
+                        results.push({ type: op.type, ok: true });
+                        break;
+                      case 'closeGraphTab':
+                        store.closeGraphTab(op.graphId);
+                        results.push({ type: op.type, ok: true });
+                        break;
+                      case 'createNewGraph':
+                        store.createNewGraph(op.initialData || {});
+                        results.push({ type: op.type, ok: true });
+                        break;
+                      case 'createAndAssignGraphDefinition':
+                        store.createAndAssignGraphDefinition(op.prototypeId);
+                        results.push({ type: op.type, ok: true, id: op.prototypeId });
+                        break;
+                      default:
+                        results.push({ type: op.type, ok: false, error: 'Unknown operation type' });
+                    }
+                  } catch (err) {
+                    results.push({ type: op.type, ok: false, error: String(err?.message || err) });
+                  }
+                }
+                return { success: true, results };
             }
           };
         }

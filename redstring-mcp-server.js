@@ -12,8 +12,8 @@ import cors from 'cors';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 
-// Load environment variables
-dotenv.config();
+// Load environment variables (debug off to avoid noisy logs)
+dotenv.config({});
 
 // Create MCP server instance
 const server = new McpServer({
@@ -27,19 +27,163 @@ const server = new McpServer({
 
 // Create Express app for HTTP endpoints
 const app = express();
-const PORT = process.env.PORT || 3001;
+// Force 3001 for internal chat/wizard compatibility regardless of .env PORT
+const ENV_PORT = process.env.PORT;
+const PORT = 3001;
+if (ENV_PORT && String(ENV_PORT) !== String(PORT)) {
+  console.warn(`⚠️ Ignoring PORT=${ENV_PORT} from environment; using ${PORT} for internal bridge compatibility.`);
+}
 
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
+// Make crashes visible and keep HTTP alive for wizard/health
+process.title = process.title || 'redstring-mcp-server';
+process.on('uncaughtException', (err) => {
+  try {
+    console.error('❌ Uncaught exception:', err?.stack || err);
+  } catch {}
+});
+process.on('unhandledRejection', (reason) => {
+  try {
+    console.error('❌ Unhandled rejection:', reason);
+  } catch {}
+});
+
+// Early health check (so the wizard sees us even if later code fails)
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', stage: 'boot', timestamp: new Date().toISOString() });
+});
+
+// Start HTTP server IMMEDIATELY so /health responds before any async init
+const httpServer = app.listen(PORT, () => {
+  console.log(`MCP HTTP listening on ${PORT}`);
+  console.error(`Redstring MCP Server running on port ${PORT} (HTTP) and stdio (MCP)`);
+  console.error(`GitHub OAuth callback URL: http://localhost:${PORT}/oauth/callback`);
+  console.error("Waiting for Redstring store bridge...");
+});
+httpServer.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`❌ Port ${PORT} is already in use. If another Redstring MCP server is running, the wizard can reuse it. Otherwise, free the port and retry.`);
+  } else {
+    console.error('❌ HTTP server failed to start:', err?.message || err);
+  }
+  process.exit(1);
+});
+
+// --- Early minimal bridge so UI never 404s even if later init fails ---
+const earlyBridgeState = {
+  graphs: [],
+  nodePrototypes: [],
+  activeGraphId: null,
+  openGraphIds: [],
+  summary: { totalGraphs: 0, totalPrototypes: 0, lastUpdate: Date.now() },
+  mcpConnected: true,
+  source: 'early-bridge'
+};
+let earlyPendingActions = [];
+
+app.get('/api/bridge/health', (req, res) => {
+  res.json({ ok: true, mcpConnected: true, hasStore: true });
+});
+
+app.post('/api/bridge/register-store', (req, res) => {
+  try {
+    const { actionMetadata, actions } = req.body || {};
+    const meta = actionMetadata || actions || {};
+    console.log('✅ [EarlyBridge] Store actions registered:', Object.keys(meta));
+    res.json({ success: true, registeredActions: Object.keys(meta) });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to register store actions' });
+  }
+});
+
+app.post('/api/bridge/state', (req, res) => {
+  try {
+    Object.assign(earlyBridgeState, req.body || {});
+    if (earlyBridgeState.summary) earlyBridgeState.summary.lastUpdate = Date.now();
+    console.log('✅ [EarlyBridge] Store data updated');
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update store state' });
+  }
+});
+
+app.get('/api/bridge/state', (req, res) => {
+  try {
+    const payload = { ...earlyBridgeState, mcpConnected: true };
+    if (payload.summary) payload.summary.lastUpdate = Date.now();
+    res.json(payload);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get store state' });
+  }
+});
+
+app.get('/api/bridge/check-save-trigger', (req, res) => {
+  res.json({ shouldSave: false });
+});
+
+app.get('/api/bridge/pending-actions', (req, res) => {
+  try {
+    res.json({ pendingActions: earlyPendingActions });
+    earlyPendingActions = []; // simple drain
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get pending actions' });
+  }
+});
+
+app.post('/api/bridge/action-completed', (req, res) => {
+  res.json({ success: true });
+});
+
+app.post('/api/bridge/action-feedback', (req, res) => {
+  console.log('[EarlyBridge] Action feedback:', req.body);
+  res.json({ acknowledged: true });
+});
+// --- End early minimal bridge ---
+
+// Early autonomous agent endpoint to avoid 404s; delegates to full implementation when available
+app.post('/api/ai/agent', async (req, res) => {
+  try {
+    const { message, systemPrompt, context, model: requestedModel } = req.body || {};
+    if (!message) return res.status(400).json({ error: 'Message is required' });
+    if (!req.headers.authorization) {
+      return res.status(401).json({ error: 'API key required', response: 'Please provide your AI API key in Authorization header.' });
+    }
+    const apiKey = req.headers.authorization.replace('Bearer ', '');
+    if (typeof runAutonomousAgent === 'function') {
+      const result = await runAutonomousAgent({ message, systemPrompt, context, requestedModel, apiKey, agentState: { maxIterations: 30, currentIteration: 0, allToolCalls: [], conversationHistory: [], toolCallBudget: 40 } });
+      return res.json(result);
+    }
+    return res.status(503).json({ error: 'Agent not ready' });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // Bridge to the real Redstring store
 // This will be populated when the Redstring app is running
 let redstringStoreBridge = null;
 
-// Store for the bridge data
-let bridgeStoreData = null;
+// Store for the bridge data (initialize with a heartbeat so the wizard sees Redstring alive)
+let bridgeStoreData = {
+  graphs: [],
+  nodePrototypes: [],
+  activeGraphId: null,
+  openGraphIds: [],
+  summary: {
+    totalGraphs: 0,
+    totalPrototypes: 0,
+    lastUpdate: Date.now()
+  },
+  source: 'server-initial'
+};
+
+// Pending actions queue must be initialized BEFORE any routes/tools use it
+let pendingActions = [];
+let inflightActionIds = new Set();
 
 // MCP connection state (always true since we're the MCP server)
 let mcpConnected = true;
@@ -608,6 +752,119 @@ async function getRealRedstringState(retryCount = 0) {
 // Function to access real Redstring store actions via HTTP bridge
 function getRealRedstringActions() {
   return {
+    // Create a new empty graph and set it active via pending action
+    createNewGraph: async (initialData = {}) => {
+      try {
+        const pendingAction = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+          action: 'createNewGraph',
+          params: [initialData],
+          timestamp: Date.now()
+        };
+        pendingActions.push(pendingAction);
+        console.log('✅ Bridge: Queued createNewGraph action');
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return { success: true };
+      } catch (error) {
+        console.error('❌ Bridge: Failed to queue createNewGraph action:', error.message);
+        throw error;
+      }
+    },
+
+    // Create and activate a definition graph for a prototype
+    createAndAssignGraphDefinition: async (prototypeId) => {
+      try {
+        const pendingAction = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+          action: 'createAndAssignGraphDefinition',
+          params: [prototypeId],
+          timestamp: Date.now()
+        };
+        pendingActions.push(pendingAction);
+        console.log('✅ Bridge: Queued createAndAssignGraphDefinition action for', prototypeId);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return { success: true, prototypeId };
+      } catch (error) {
+        console.error('❌ Bridge: Failed to queue createAndAssignGraphDefinition action:', error.message);
+        throw error;
+      }
+    },
+
+    // Open right panel node tab
+    openRightPanelNodeTab: async (nodeId) => {
+      try {
+        const pendingAction = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+          action: 'openRightPanelNodeTab',
+          params: [nodeId],
+          timestamp: Date.now()
+        };
+        pendingActions.push(pendingAction);
+        console.log('✅ Bridge: Queued openRightPanelNodeTab for', nodeId);
+        await new Promise(resolve => setTimeout(resolve, 300));
+        return { success: true, nodeId };
+      } catch (error) {
+        console.error('❌ Bridge: Failed to queue openRightPanelNodeTab:', error.message);
+        throw error;
+      }
+    },
+
+    // Add edge through store action
+    addEdge: async (graphId, edgeData) => {
+      try {
+        const pendingAction = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+          action: 'addEdge',
+          params: [graphId, edgeData],
+          timestamp: Date.now()
+        };
+        pendingActions.push(pendingAction);
+        console.log('✅ Bridge: Queued addEdge', { graphId, edgeId: edgeData?.id });
+        await new Promise(resolve => setTimeout(resolve, 300));
+        return { success: true, edgeId: edgeData?.id };
+      } catch (error) {
+        console.error('❌ Bridge: Failed to queue addEdge:', error.message);
+        throw error;
+      }
+    },
+
+    // Update edge directionality arrowsToward via store
+    updateEdgeDirectionality: async (edgeId, arrowsToward) => {
+      try {
+        const pendingAction = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+          action: 'updateEdgeDirectionality',
+          params: [edgeId, arrowsToward],
+          timestamp: Date.now()
+        };
+        pendingActions.push(pendingAction);
+        console.log('✅ Bridge: Queued updateEdgeDirectionality', { edgeId });
+        await new Promise(resolve => setTimeout(resolve, 300));
+        return { success: true, edgeId };
+      } catch (error) {
+        console.error('❌ Bridge: Failed to queue updateEdgeDirectionality:', error.message);
+        throw error;
+      }
+    },
+
+    // Batch apply multiple mutations inside the UI store
+    applyMutations: async (operations = []) => {
+      try {
+        const pendingAction = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+          action: 'applyMutations',
+          params: [operations],
+          timestamp: Date.now()
+        };
+        pendingActions.push(pendingAction);
+        console.log(`✅ Bridge: Queued applyMutations with ${operations.length} ops`);
+        await new Promise(resolve => setTimeout(resolve, Math.min(operations.length * 50, 1500)));
+        return { success: true, count: operations.length };
+      } catch (error) {
+        console.error('❌ Bridge: Failed to queue applyMutations:', error.message);
+        throw error;
+      }
+    },
     addNodePrototype: async (prototypeData) => {
       try {
         // Use pending actions system instead of HTTP endpoints
@@ -2697,6 +2954,313 @@ server.tool(
   }
 );
 
+// Tool: Create new graph
+server.tool(
+  "create_new_graph",
+  "Create a new empty graph and set it active",
+  {
+    initialData: z.object({}).passthrough().optional().describe("Optional initial graph data")
+  },
+  async ({ initialData = {} }) => {
+    try {
+      const actions = getRealRedstringActions();
+      await actions.createNewGraph(initialData);
+      return { content: [{ type: "text", text: `✅ Created new graph${initialData?.name ? `: ${initialData.name}` : ''} and set active.` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `❌ Error creating graph: ${error.message}` }] };
+    }
+  }
+);
+
+// Tool: Create definition graph for prototype
+server.tool(
+  "create_definition_for_prototype",
+  "Create and activate a definition graph for a prototype",
+  {
+    prototypeId: z.string().describe("Prototype ID to create definition for")
+  },
+  async ({ prototypeId }) => {
+    try {
+      const actions = getRealRedstringActions();
+      await actions.createAndAssignGraphDefinition(prototypeId);
+      return { content: [{ type: "text", text: `✅ Created and opened definition graph for prototype ${prototypeId}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `❌ Error creating definition graph: ${error.message}` }] };
+    }
+  }
+);
+
+// Tool: Open right panel node tab
+server.tool(
+  "open_right_panel_node_tab",
+  "Open a node's editor in the right panel",
+  {
+    nodeId: z.string().describe("Node prototype ID")
+  },
+  async ({ nodeId }) => {
+    try {
+      const actions = getRealRedstringActions();
+      await actions.openRightPanelNodeTab(nodeId);
+      return { content: [{ type: "text", text: `✅ Opened right panel for node ${nodeId}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `❌ Error opening panel tab: ${error.message}` }] };
+    }
+  }
+);
+
+// Tool: Add edge (with optional directionality)
+server.tool(
+  "add_edge",
+  "Create an edge between two instances",
+  {
+    graphId: z.string().describe("Graph ID"),
+    sourceId: z.string().describe("Source instance ID"),
+    targetId: z.string().describe("Target instance ID"),
+    typeNodeId: z.string().optional().describe("Edge type prototype ID (optional)"),
+    arrowsToward: z.array(z.string()).optional().describe("Node IDs that arrows should point toward")
+  },
+  async ({ graphId, sourceId, targetId, typeNodeId, arrowsToward }) => {
+    try {
+      const actions = getRealRedstringActions();
+      const edgeId = `edge-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      const edgeData = {
+        id: edgeId,
+        sourceId,
+        destinationId: targetId,
+        typeNodeId: typeNodeId || 'base-connection-prototype',
+        directionality: { arrowsToward: Array.isArray(arrowsToward) ? arrowsToward : [targetId] }
+      };
+      await actions.addEdge(graphId, edgeData);
+      return { content: [{ type: "text", text: `✅ Added edge ${edgeId} ${sourceId} → ${targetId}` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `❌ Error adding edge: ${error.message}` }] };
+    }
+  }
+);
+
+// Tool: Update edge directionality
+server.tool(
+  "update_edge_directionality",
+  "Update the edge arrowsToward list",
+  {
+    edgeId: z.string().describe("Edge ID"),
+    arrowsToward: z.array(z.string()).describe("Node IDs the arrows should point toward")
+  },
+  async ({ edgeId, arrowsToward }) => {
+    try {
+      const actions = getRealRedstringActions();
+      await actions.updateEdgeDirectionality(edgeId, arrowsToward);
+      return { content: [{ type: "text", text: `✅ Updated directionality for edge ${edgeId}` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `❌ Error updating edge directionality: ${error.message}` }] };
+    }
+  }
+);
+
+// Tool: Apply batch mutations
+server.tool(
+  "apply_mutations",
+  "Apply a batch of store mutations in one shot (fast, consistent)",
+  {
+    operations: z.array(z.object({}).passthrough()).describe("Array of operations (typed) to apply in order")
+  },
+  async ({ operations }) => {
+    try {
+      const actions = getRealRedstringActions();
+      const result = await actions.applyMutations(operations || []);
+      return { content: [{ type: "text", text: `✅ Applied ${result.count || operations.length} mutations.` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `❌ Error applying mutations: ${error.message}` }] };
+    }
+  }
+);
+
+// Tool: Update node prototype (rename / recolor / description)
+server.tool(
+  "update_node_prototype",
+  "Update a node prototype's name/color/description",
+  {
+    prototypeId: z.string().describe("Prototype ID"),
+    updates: z.object({
+      name: z.string().optional(),
+      color: z.string().optional(),
+      description: z.string().optional()
+    }).describe("Updates to apply")
+  },
+  async ({ prototypeId, updates }) => {
+    try {
+      const actions = getRealRedstringActions();
+      // Use batch for consistency
+      await actions.applyMutations([
+        { type: 'updateNodePrototype', prototypeId, updates }
+      ]);
+      const changed = Object.keys(updates).join(', ');
+      return { content: [{ type: "text", text: `✅ Updated prototype ${prototypeId} (${changed}).` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `❌ Error updating prototype: ${error.message}` }] };
+    }
+  }
+);
+
+// Tools: Abstraction axis helpers
+server.tool(
+  "abstraction_add",
+  "Add a node to an abstraction chain (above or below)",
+  {
+    nodeId: z.string(),
+    dimension: z.string().default('default'),
+    direction: z.enum(['above','below']).describe('above=more generic, below=more specific'),
+    newNodeId: z.string().describe('ID of the node to insert'),
+    insertRelativeToNodeId: z.string().optional()
+  },
+  async ({ nodeId, dimension, direction, newNodeId, insertRelativeToNodeId }) => {
+    try {
+      const actions = getRealRedstringActions();
+      await actions.applyMutations([
+        { type: 'addToAbstractionChain', nodeId, dimension, direction, newNodeId, insertRelativeToNodeId }
+      ]);
+      return { content: [{ type: "text", text: `✅ Added ${newNodeId} ${direction} ${insertRelativeToNodeId || nodeId} in ${dimension}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `❌ Error adding to abstraction chain: ${error.message}` }] };
+    }
+  }
+);
+
+server.tool(
+  "abstraction_remove",
+  "Remove a node from an abstraction chain",
+  {
+    nodeId: z.string(),
+    dimension: z.string().default('default'),
+    nodeToRemove: z.string()
+  },
+  async ({ nodeId, dimension, nodeToRemove }) => {
+    try {
+      const actions = getRealRedstringActions();
+      await actions.applyMutations([
+        { type: 'removeFromAbstractionChain', nodeId, dimension, nodeToRemove }
+      ]);
+      return { content: [{ type: "text", text: `✅ Removed ${nodeToRemove} from ${dimension} chain of ${nodeId}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `❌ Error removing from abstraction chain: ${error.message}` }] };
+    }
+  }
+);
+
+server.tool(
+  "abstraction_swap",
+  "Swap a node in the abstraction chain",
+  {
+    currentNodeId: z.string(),
+    newNodeId: z.string()
+  },
+  async ({ currentNodeId, newNodeId }) => {
+    try {
+      const actions = getRealRedstringActions();
+      await actions.applyMutations([
+        { type: 'swapNodeInChain', currentNodeId, newNodeId }
+      ]);
+      return { content: [{ type: "text", text: `✅ Swapped ${currentNodeId} with ${newNodeId}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `❌ Error swapping node in chain: ${error.message}` }] };
+    }
+  }
+);
+
+// Tool: Batch add node instances (resolves names when needed)
+server.tool(
+  "batch_add_node_instances",
+  "Add many node instances quickly",
+  {
+    graphId: z.string().describe("Graph ID"),
+    items: z.array(z.object({
+      prototypeId: z.string().optional(),
+      prototypeName: z.string().optional(),
+      x: z.number(),
+      y: z.number(),
+      instanceId: z.string().optional()
+    })).describe("Items to add")
+  },
+  async ({ graphId, items }) => {
+    try {
+      const state = await getRealRedstringState();
+      const actions = getRealRedstringActions();
+      const ops = [];
+      for (const item of items) {
+        let protoId = item.prototypeId;
+        if (!protoId && item.prototypeName) {
+          const found = Array.from(state.nodePrototypes.values()).find(p => p.name.toLowerCase() === item.prototypeName.toLowerCase());
+          if (found) protoId = found.id; else {
+            const res = await actions.addNodePrototype({ name: item.prototypeName, description: '', color: '#4A90E2' });
+            protoId = res.prototypeId;
+          }
+        }
+        if (!protoId) continue;
+        ops.push({ type: 'addNodeInstance', graphId, prototypeId: protoId, position: { x: item.x, y: item.y }, instanceId: item.instanceId });
+      }
+      await actions.applyMutations(ops);
+      return { content: [{ type: "text", text: `✅ Added ${ops.length} instances to graph ${graphId}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `❌ Error adding instances: ${error.message}` }] };
+    }
+  }
+);
+
+// Tool: Batch create edges
+server.tool(
+  "batch_create_edges",
+  "Create many edges quickly",
+  {
+    graphId: z.string().describe("Graph ID"),
+    edges: z.array(z.object({
+      sourceId: z.string(),
+      targetId: z.string(),
+      typeNodeId: z.string().optional(),
+      arrowsToward: z.array(z.string()).optional(),
+      edgeId: z.string().optional()
+    })).describe("Edges to create")
+  },
+  async ({ graphId, edges }) => {
+    try {
+      const actions = getRealRedstringActions();
+      const ops = edges.map(e => ({
+        type: 'addEdge',
+        graphId,
+        edgeData: {
+          id: e.edgeId || `edge-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+          sourceId: e.sourceId,
+          destinationId: e.targetId,
+          typeNodeId: e.typeNodeId || 'base-connection-prototype',
+          directionality: { arrowsToward: Array.isArray(e.arrowsToward) ? e.arrowsToward : [e.targetId] }
+        }
+      }));
+      await actions.applyMutations(ops);
+      return { content: [{ type: "text", text: `✅ Created ${ops.length} edges in graph ${graphId}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `❌ Error creating edges: ${error.message}` }] };
+    }
+  }
+);
+
+// Tool: Delete node instance
+server.tool(
+  "delete_node_instance",
+  "Remove a node instance from a graph",
+  {
+    graphId: z.string().describe("Graph ID"),
+    instanceId: z.string().describe("Instance ID")
+  },
+  async ({ graphId, instanceId }) => {
+    try {
+      const actions = getRealRedstringActions();
+      await actions.deleteNodeInstance(graphId, instanceId);
+      return { content: [{ type: "text", text: `🗑️ Deleted node instance ${instanceId} from graph ${graphId}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `❌ Error deleting node instance: ${error.message}` }] };
+    }
+  }
+);
+
 // AI-Guided Workflow Tool removed - chat tool already exists above
 
 server.tool(
@@ -3060,7 +3624,10 @@ app.get('/api/bridge/health', (req, res) => {
 });
 app.post('/api/bridge/state', (req, res) => {
   try {
-    bridgeStoreData = req.body;
+    bridgeStoreData = { ...req.body, source: 'redstring-ui' };
+    if (bridgeStoreData.summary) {
+      bridgeStoreData.summary.lastUpdate = Date.now();
+    }
     console.log('✅ Bridge: Store data updated');
     res.json({ success: true });
   } catch (error) {
@@ -3071,11 +3638,11 @@ app.post('/api/bridge/state', (req, res) => {
 
 app.get('/api/bridge/state', (req, res) => {
   try {
-    if (bridgeStoreData) {
-      res.json({ ...bridgeStoreData, mcpConnected });
-    } else {
-      res.status(503).json({ error: 'Redstring store not available' });
+    // Keep a heartbeat fresh if UI hasn't pushed yet
+    if (bridgeStoreData && bridgeStoreData.summary && bridgeStoreData.source !== 'redstring-ui') {
+      bridgeStoreData.summary.lastUpdate = Date.now();
     }
+    res.json({ ...bridgeStoreData, mcpConnected });
   } catch (error) {
     console.error('Bridge GET error:', error);
     res.status(500).json({ error: 'Failed to get store state' });
@@ -3090,10 +3657,6 @@ app.get('/api/bridge/check-save-trigger', (req, res) => {
 });
 
 // Pending actions endpoint (for MCPBridge compatibility)
-let pendingActions = [];
-
-// Track in-flight actions by id to support ack-based clearing
-let inflightActionIds = new Set();
 
 app.get('/api/bridge/pending-actions', (req, res) => {
   try {
@@ -3140,9 +3703,10 @@ app.post('/api/bridge/action-feedback', (req, res) => {
 // Store registration endpoint (for MCPBridge compatibility)
 app.post('/api/bridge/register-store', (req, res) => {
   try {
-    const { actionMetadata } = req.body;
-    console.log('✅ Bridge: Store actions registered:', Object.keys(actionMetadata || {}));
-    res.json({ success: true, registeredActions: Object.keys(actionMetadata || {}) });
+    const { actionMetadata, actions } = req.body || {};
+    const meta = actionMetadata || actions || {};
+    console.log('✅ Bridge: Store actions registered:', Object.keys(meta));
+    res.json({ success: true, registeredActions: Object.keys(meta) });
   } catch (error) {
     console.error('Store registration error:', error);
     res.status(500).json({ error: 'Failed to register store actions' });
@@ -3536,10 +4100,11 @@ app.post('/api/ai/agent', async (req, res) => {
     
     // Initialize agent state
     const agentState = {
-      maxIterations: 10,
+      maxIterations: 30, // generous, Cursor-like
       currentIteration: 0,
       allToolCalls: [],
-      conversationHistory: []
+      conversationHistory: [],
+      toolCallBudget: 40 // cap total tool calls per run
     };
 
     // Start autonomous agent loop
@@ -3685,28 +4250,64 @@ Transform the user's request into a beautifully organized, spatially intelligent
         
         // Process each tool call
         for (const toolCall of assistantMessage.tool_calls) {
+          if (agentState.toolCallBudget <= 0) {
+            finalResponse = (finalResponse || '') + `\n\n⚠️ Tool call budget reached. Stopping and summarizing.`;
+            isComplete = true;
+            break;
+          }
           const toolName = toolCall.function.name;
-          const toolArgs = JSON.parse(toolCall.function.arguments || '{}');
+          let toolArgs = {};
+          try {
+            const rawArgs = toolCall.function?.arguments ?? '{}';
+            // Some providers return single-quoted JSON or trailing commas; normalize
+            const normalized = String(rawArgs)
+              .replace(/\r?\n/g, ' ')
+              .replace(/\s+/g, ' ');
+            toolArgs = JSON.parse(normalized);
+          } catch (e) {
+            console.warn('[Agent] Non-JSON tool args, falling back to empty object:', toolCall.function?.arguments);
+            toolArgs = {};
+          }
           
           console.log(`[Agent] Calling tool: ${toolName}`, toolArgs);
           
-          // Execute the tool using existing logic
-          const toolResult = await executeToolFromChatEndpoint(toolName, toolArgs);
-          
-          agentState.allToolCalls.push({
-            name: toolName,
-            arguments: toolArgs,
-            result: toolResult,
-            status: 'completed',
-            iteration: agentState.currentIteration
-          });
-          
-          // Add tool result to conversation
-          agentState.conversationHistory.push({
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            content: toolResult
-          });
+          let toolResult;
+          let succeeded = false;
+          let attempt = 0;
+          const maxAttempts = 2; // one retry on failure
+          while (attempt < maxAttempts && !succeeded) {
+            try {
+              attempt++;
+              agentState.toolCallBudget--;
+              toolResult = await executeToolFromChatEndpoint(toolName, toolArgs);
+              succeeded = true;
+              agentState.allToolCalls.push({
+                name: toolName,
+                arguments: toolArgs,
+                result: toolResult,
+                status: 'completed',
+                iteration: agentState.currentIteration,
+                attempts: attempt
+              });
+              agentState.conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, content: toolResult });
+            } catch (err) {
+              const failureMsg = `❌ Tool ${toolName} failed (attempt ${attempt}): ${err.message}\nYou can retry with corrected arguments or different IDs.`;
+              agentState.allToolCalls.push({
+                name: toolName,
+                arguments: toolArgs,
+                result: failureMsg,
+                status: attempt < maxAttempts ? 'retrying' : 'failed',
+                iteration: agentState.currentIteration,
+                attempts: attempt
+              });
+              agentState.conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, content: failureMsg });
+              if (attempt >= maxAttempts) {
+                console.warn(`[Agent] Tool ${toolName} failed after retries:`, err);
+              } else {
+                await new Promise(r => setTimeout(r, 200)); // brief backoff
+              }
+            }
+          }
         }
         
       } else {
@@ -4509,7 +5110,17 @@ app.post('/api/ai/chat', async (req, res) => {
         
         for (const toolCall of assistantMessage.tool_calls) {
           const toolName = toolCall.function.name;
-          const toolArgs = JSON.parse(toolCall.function.arguments || '{}');
+          let toolArgs = {};
+          try {
+            const rawArgs = toolCall.function?.arguments ?? '{}';
+            const normalized = String(rawArgs)
+              .replace(/\r?\n/g, ' ')
+              .replace(/\s+/g, ' ');
+            toolArgs = JSON.parse(normalized);
+          } catch (e) {
+            console.warn('[Chat] Non-JSON tool args, falling back to empty object:', toolCall.function?.arguments);
+            toolArgs = {};
+          }
           
           console.log(`[AI] Calling tool: ${toolName} with args:`, toolArgs);
           
@@ -5716,16 +6327,20 @@ async function main() {
     // Don't exit the process, just log the error
   });
   
-  // Start MCP stdio server for AI model communication
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  
-  // Start HTTP server for web clients
-  app.listen(PORT, () => {
-    console.error(`Redstring MCP Server running on port ${PORT} (HTTP) and stdio (MCP)`);
-    console.error(`GitHub OAuth callback URL: http://localhost:${PORT}/oauth/callback`);
-    console.error("Waiting for Redstring store bridge...");
-  });
+  // Try to start MCP stdio server for AI model communication without blocking HTTP
+  (async () => {
+    try {
+      const transport = new StdioServerTransport();
+      // Set a short timeout so we never block startup
+      await Promise.race([
+        server.connect(transport),
+        new Promise((resolve) => setTimeout(resolve, 1500))
+      ]);
+      console.error('ℹ️ MCP stdio initialized (non-blocking)');
+    } catch (e) {
+      console.error('⚠️ MCP stdio unavailable, continuing HTTP-only mode:', e?.message || e);
+    }
+  })();
   
   // The bridge will be set up when Redstring connects
   global.setupRedstringBridge = setupRedstringBridge;

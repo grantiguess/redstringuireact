@@ -559,6 +559,7 @@ const Panel = forwardRef(
     const [lastCustomWidth, setLastCustomWidth] = useState(INITIAL_PANEL_WIDTH);
     const [isWidthInitialized, setIsWidthInitialized] = useState(false);
     const [isAnimatingWidth, setIsAnimatingWidth] = useState(false);
+    const [isHandleHover, setIsHandleHover] = useState(false);
     
     // Editing state
     const [editingTitle, setEditingTitle] = useState(false); // Used by right panel node tabs
@@ -817,31 +818,38 @@ const Panel = forwardRef(
     }));
 
     // --- Resize Handlers (Reordered definitions) ---
-    const handleResizeMouseMove = useCallback((e) => {
-      if (!isResizing.current) return;
-
-      const currentX = e.clientX;
-      const dx = currentX - resizeStartX.current;
+    const updateWidthForClientX = useCallback((clientX) => {
+      const dx = clientX - resizeStartX.current;
       let newWidth;
-
       if (side === 'left') {
         newWidth = resizeStartWidth.current + dx;
-      } else { // side === 'right'
+      } else {
         newWidth = resizeStartWidth.current - dx;
       }
-
-      // Clamp width
       const maxWidth = window.innerWidth / 2;
       const clampedWidth = Math.max(MIN_PANEL_WIDTH, Math.min(newWidth, maxWidth));
-      
       setPanelWidth(clampedWidth);
-    }, [side]); // Dependency on `side`
+    }, [side]);
+
+    const handleResizeMouseMove = useCallback((e) => {
+      if (!isResizing.current) return;
+      updateWidthForClientX(e.clientX);
+    }, [updateWidthForClientX]);
+
+    const handleResizeTouchMove = useCallback((e) => {
+      if (!isResizing.current) return;
+      if (e.touches && e.touches.length > 0) {
+        updateWidthForClientX(e.touches[0].clientX);
+      }
+    }, [updateWidthForClientX]);
 
     const handleResizeMouseUp = useCallback(() => {
       if (isResizing.current) {
         isResizing.current = false;
         window.removeEventListener('mousemove', handleResizeMouseMove);
+        window.removeEventListener('touchmove', handleResizeTouchMove);
         window.removeEventListener('mouseup', handleResizeMouseUp);
+        window.removeEventListener('touchend', handleResizeMouseUp);
         document.body.style.userSelect = ''; 
         document.body.style.cursor = ''; 
 
@@ -863,19 +871,34 @@ const Panel = forwardRef(
             }
         });
       }
-    }, [side, handleResizeMouseMove, lastCustomWidth]); // <<< Added lastCustomWidth to dependencies
+    }, [side, handleResizeMouseMove, handleResizeTouchMove, lastCustomWidth]); // <<< Added lastCustomWidth to dependencies
 
     const handleResizeMouseDown = useCallback((e) => {
-      e.preventDefault(); // Prevent text selection during drag
-      e.stopPropagation(); // Stop propagation if needed
+      e.preventDefault();
+      e.stopPropagation();
       isResizing.current = true;
       resizeStartX.current = e.clientX;
-      resizeStartWidth.current = panelRef.current?.offsetWidth || panelWidth; // Get current width accurately
+      resizeStartWidth.current = panelRef.current?.offsetWidth || panelWidth;
       window.addEventListener('mousemove', handleResizeMouseMove);
       window.addEventListener('mouseup', handleResizeMouseUp);
+      window.addEventListener('touchmove', handleResizeTouchMove, { passive: false });
+      window.addEventListener('touchend', handleResizeMouseUp);
       document.body.style.userSelect = 'none';
       document.body.style.cursor = 'col-resize';
-    }, [handleResizeMouseMove, handleResizeMouseUp]); // Dependencies are defined above
+    }, [handleResizeMouseMove, handleResizeMouseUp, handleResizeTouchMove, panelWidth]);
+
+    const handleResizeTouchStart = useCallback((e) => {
+      if (!(e.touches && e.touches.length > 0)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      isResizing.current = true;
+      resizeStartX.current = e.touches[0].clientX;
+      resizeStartWidth.current = panelRef.current?.offsetWidth || panelWidth;
+      window.addEventListener('touchmove', handleResizeTouchMove, { passive: false });
+      window.addEventListener('touchend', handleResizeMouseUp);
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+    }, [handleResizeTouchMove, handleResizeMouseUp, panelWidth]);
 
     // --- Double Click Handler ---
     const handleHeaderDoubleClick = useCallback((e) => {
@@ -2977,21 +3000,24 @@ const Panel = forwardRef(
     // Dynamically build transition string, removing backgroundColor
     const transitionStyle = `transform 0.2s ease${isAnimatingWidth ? ', width 0.2s ease' : ''}`;
 
+    const handleBaseColor = '#260000'; // header maroon
+    const handleOpacity = isResizing.current ? 1 : (isHandleHover ? 0.18 : 0.08);
     const handleStyle = {
         position: 'absolute',
         top: 0,
         bottom: 0,
-        width: '5px', // Width of the handle
+        width: '14px',
         cursor: 'col-resize',
-        zIndex: 10000, // Above panel content, below toggle button maybe?
-        backgroundColor: 'transparent', // Make it invisible initially
-        // Add visual feedback on hover if desired
-        // 'transition': 'background-color 0.2s ease',
+        zIndex: 10001,
+        backgroundColor: `rgba(38,0,0,${handleOpacity})`,
+        transition: 'background-color 0.15s ease, opacity 0.15s ease',
+        borderRadius: '2px',
+        touchAction: 'none'
     };
     if (side === 'left') {
-        handleStyle.right = '-2px'; // Position slightly outside on the right
+        handleStyle.right = '-6px';
     } else { // side === 'right'
-        handleStyle.left = '-2px'; // Position slightly outside on the left
+        handleStyle.left = '-6px';
     }
 
     // --- Tab Bar Scroll Handler ---
@@ -3079,9 +3105,10 @@ const Panel = forwardRef(
                 {/* Resize Handle */}
                 <div 
                     style={handleStyle}
-                    onMouseDown={handleResizeMouseDown} // Uncommented
-                    // Add hover effect inline if needed
-                    // onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.1)'}
+                    onMouseDown={handleResizeMouseDown}
+                    onTouchStart={handleResizeTouchStart}
+                    onMouseEnter={() => setIsHandleHover(true)}
+                    onMouseLeave={() => setIsHandleHover(false)}
                 />
 
                 {/* Main Header Row Container */}

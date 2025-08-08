@@ -50,8 +50,13 @@ class AIConnectionWizard {
     console.log('=====================================\n');
 
     try {
-      // Step 1: Check if Redstring is running
-      await this.checkRedstringStatus();
+      // Step 1: Check if Redstring is running (non-fatal)
+      try {
+        await this.checkRedstringStatus();
+      } catch (e) {
+        console.log('⚠️  Proceeding without Redstring running on :4000 yet. You can start it anytime (npm run dev).');
+        this.status.redstring = false;
+      }
       
       // Step 2: Start MCP server (now includes HTTP functionality)
       await this.startMCPServerWithRetry();
@@ -107,6 +112,14 @@ class AIConnectionWizard {
   async startMCPServerWithRetry() {
     console.log('🔌 Starting MCP server...');
     
+    // If an MCP server is already running on the expected port, reuse it
+    const existing = await this._pingHealthOnce();
+    if (existing) {
+      console.log('✅ MCP server already running on localhost:3001');
+      this.status.mcpServer = true;
+      return;
+    }
+
     for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {
       try {
         await this.startMCPServer();
@@ -181,6 +194,13 @@ class AIConnectionWizard {
           this.status.mcpServer = true;
           this.processes.set('mcp', mcpProcess);
           resolve();
+        } else if (error.includes('EADDRINUSE')) {
+          // Port in use: treat as already running and proceed
+          clearTimeout(startupTimeout);
+          console.log('⚠️  Port 3001 already in use. Assuming MCP server is already running.');
+          this.status.mcpServer = true;
+          this.processes.set('mcp', mcpProcess);
+          resolve();
         }
       });
 
@@ -196,6 +216,16 @@ class AIConnectionWizard {
           reject(new Error(`MCP server exited with code ${code}`));
         }
       });
+    });
+  }
+
+  _pingHealthOnce() {
+    return new Promise((resolve) => {
+      const req = get('http://localhost:3001/health', (res) => {
+        resolve(res.statusCode === 200);
+      });
+      req.on('error', () => resolve(false));
+      req.setTimeout(1000, () => { req.destroy(); resolve(false); });
     });
   }
 

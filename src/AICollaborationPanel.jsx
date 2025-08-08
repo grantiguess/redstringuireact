@@ -75,20 +75,7 @@ const AICollaborationPanel = () => {
       const result = await mcpClient.connect();
       setIsConnected(true);
       
-      // Add welcome message
-      if (mcpClient.isSimulated) {
-        addMessage('ai', `🤖 **Redstring AI (Simulated)**\nThis is a simulated environment. For full functionality, connect to the live Redstring MCP server.`);
-      } else {
-        addMessage('ai', `🤖 **Redstring AI Chat Connected!**\nNow connected to the live Redstring store via **${mcpClient.sessionInfo.serverInfo.name} v${mcpClient.sessionInfo.serverInfo.version}**.`);
-      }
-
-      // Show available tools
-      if (hasAPIKey) {
-        const toolList = result.tools.map(tool => `• **${tool.name}** - ${tool.description}`).join('\n');
-        addMessage('ai', `**Available MCP Tools (Real Redstring Store):**\n\n${toolList}\n\nI can work with your REAL Redstring knowledge graphs! 🚀\n\nTry asking me to:\n• "Show me all available graphs"\n• "What's the current active graph?"`);
-      } else {
-        addMessage('ai', `Please set up your API key by clicking the key icon (🔑) in the header to start collaborating.`);
-      }
+      // No banner messages; keep panel clean on connect
       
     } catch (error) {
       console.error('[AI Collaboration] Connection failed:', error);
@@ -457,9 +444,21 @@ You can "see" and reason about canvas layouts:
 
       {/* Main Content */}
       <div className="ai-panel-content">
-        <div className="ai-chat-mode">
+          <div className="ai-chat-mode">
           {/* Messages */}
           <div className="ai-messages">
+              {/* Empty connected state */}
+              {isConnected && messages.length === 0 && (
+                <div style={{
+                  textAlign: 'center',
+                  color: '#555',
+                  padding: '40px 0',
+                  fontFamily: "'EmOne', sans-serif",
+                  fontSize: '14px'
+                }}>
+                  What will we make today?
+                </div>
+              )}
             {messages.map((message) => (
               <div key={message.id} className={`ai-message ai-message-${message.sender}`}>
                 <div className="ai-message-avatar">
