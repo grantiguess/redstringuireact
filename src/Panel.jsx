@@ -866,6 +866,10 @@ const Panel = forwardRef(
                       setLastCustomWidth(finalWidth); // Update state inside RAF only if different
                       localStorage.setItem(`lastCustomPanelWidth_${side}`, JSON.stringify(finalWidth));
                     }
+                    // Notify global listeners (e.g., NodeCanvas overlay resizers)
+                    try {
+                      window.dispatchEvent(new CustomEvent('panelWidthChanged', { detail: { side, width: finalWidth } }));
+                    } catch {}
                 }
             } catch (error) {
                 console.error(`Error saving panelWidth_${side} to localStorage:`, error);
@@ -940,6 +944,10 @@ const Panel = forwardRef(
         setPanelWidth(newWidth);
         try {
           localStorage.setItem(`panelWidth_${side}`, JSON.stringify(newWidth));
+          // Broadcast change so external overlays can sync
+          try {
+            window.dispatchEvent(new CustomEvent('panelWidthChanged', { detail: { side, width: newWidth } }));
+          } catch {}
         } catch (error) {
           console.error(`Error saving panelWidth_${side} after double click:`, error);
         }
@@ -947,6 +955,33 @@ const Panel = forwardRef(
         // console.log('[Panel DblClick] Width did not change, no update needed.');
       }
     }, [panelWidth, lastCustomWidth, side]);
+
+    // Listen for external resizer overlay updates from NodeCanvas for low-latency sync
+    useEffect(() => {
+      const onChanging = (e) => {
+        if (!e?.detail) return;
+        const { side: evtSide, width } = e.detail;
+        if (evtSide === side && typeof width === 'number') {
+          setPanelWidth(width);
+        }
+      };
+      const onChanged = (e) => {
+        if (!e?.detail) return;
+        const { side: evtSide, width } = e.detail;
+        if (evtSide === side && typeof width === 'number') {
+          setPanelWidth(width);
+          try {
+            localStorage.setItem(`panelWidth_${side}`, JSON.stringify(width));
+          } catch {}
+        }
+      };
+      window.addEventListener('panelWidthChanging', onChanging);
+      window.addEventListener('panelWidthChanged', onChanged);
+      return () => {
+        window.removeEventListener('panelWidthChanging', onChanging);
+        window.removeEventListener('panelWidthChanged', onChanged);
+      };
+    }, [side]);
 
     // Effect for cleanup
     useEffect(() => {
@@ -3103,13 +3138,7 @@ const Panel = forwardRef(
                     transition: transitionStyle, // Animate transform and width
                 }}
             >
-                {/* Resize Handle */}
-                <PanelResizerHandle
-                  side={side}
-                  onMouseDown={handleResizeMouseDown}
-                  onTouchStart={handleResizeTouchStart}
-                  isActive={isResizing.current}
-                />
+                {/* Resize Handle disabled; handled by NodeCanvas overlay */}
 
                 {/* Main Header Row Container */}
                 <div 

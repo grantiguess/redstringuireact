@@ -98,6 +98,19 @@ const AICollaborationPanel = () => {
     setMessages(prev => [...prev, message]);
   };
 
+  // Subscribe to server telemetry and surface as chat items
+  useEffect(() => {
+    const handler = (e) => {
+      const items = Array.isArray(e.detail) ? e.detail : [];
+      items.forEach((t) => {
+        const summary = `${t.status?.toUpperCase?.() || 'INFO'}: ${t.name || 'tool'}${t.args ? ' ' + JSON.stringify(t.args) : ''}`;
+        addMessage('ai', summary, { isTelemetry: true });
+      });
+    };
+    window.addEventListener('rs-telemetry', handler);
+    return () => window.removeEventListener('rs-telemetry', handler);
+  }, []);
+
   const handleSendMessage = async () => {
     if (!currentInput.trim() || isProcessing) return;
 
@@ -461,7 +474,11 @@ You can "see" and reason about canvas layouts:
                 </div>
               )}
             {messages.map((message) => (
-              <div key={message.id} className={`ai-message ai-message-${message.sender}`}>
+              <div
+                key={message.id}
+                className={`ai-message ai-message-${message.sender}`}
+                style={{ alignSelf: message.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}
+              >
                 <div className="ai-message-avatar">
                   {message.sender === 'user' ? <User size={16} /> : <Bot size={16} />}
                 </div>
@@ -510,17 +527,13 @@ You can "see" and reason about canvas layouts:
               </div>
             ))}
             {isProcessing && (
-              <div className="ai-message ai-message-ai">
+              <div className="ai-message ai-message-ai" style={{ alignSelf: 'flex-start' }}>
                 <div className="ai-message-avatar">
                   <Bot size={16} />
                 </div>
                 <div className="ai-message-content">
                   <div className="ai-message-text">
-                    <div className="ai-typing-indicator">
-                      <span></span>
-                      <span></span>
-                      <span></span>
-                    </div>
+                    <div className="ai-typing-spinner" aria-label="AI is thinking" />
                     <div className="ai-processing-status">
                       {isAutonomousMode ? 'Agent thinking and using tools...' : 'Thinking...'}
                     </div>

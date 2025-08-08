@@ -115,6 +115,200 @@ function NodeCanvas() {
   const removeFromAbstractionChain = useGraphStore((state) => state.removeFromAbstractionChain);
   const updateGraphView = useGraphStore((state) => state.updateGraphView);
 
+  // Panel overlay resizers rendered in canvas (do not overlap panel DOM)
+  const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('panelWidth_left') || '280'); } catch { return 280; }
+  });
+  const [rightPanelWidth, setRightPanelWidth] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('panelWidth_right') || '280'); } catch { return 280; }
+  });
+  const isDraggingLeft = useRef(false);
+  const isDraggingRight = useRef(false);
+  const dragStartXRef = useRef(0);
+  const startWidthRef = useRef(0);
+  const [isHoveringLeftResizer, setIsHoveringLeftResizer] = useState(false);
+  const [isHoveringRightResizer, setIsHoveringRightResizer] = useState(false);
+  // Track latest widths in refs to avoid stale closures in global listeners
+  const leftWidthRef = useRef(leftPanelWidth);
+  const rightWidthRef = useRef(rightPanelWidth);
+  useEffect(() => { leftWidthRef.current = leftPanelWidth; }, [leftPanelWidth]);
+  useEffect(() => { rightWidthRef.current = rightPanelWidth; }, [rightPanelWidth]);
+
+  useEffect(() => {
+    const onPanelChanged = (e) => {
+      const { side, width } = e.detail || {};
+      if (side === 'left' && typeof width === 'number') setLeftPanelWidth(width);
+      if (side === 'right' && typeof width === 'number') setRightPanelWidth(width);
+    };
+    window.addEventListener('panelWidthChanged', onPanelChanged);
+    return () => window.removeEventListener('panelWidthChanged', onPanelChanged);
+  }, []);
+
+  const MIN_WIDTH = 180;
+  const MAX_WIDTH = Math.max(240, Math.round(window.innerWidth / 2));
+
+  const beginDrag = (side, clientX) => {
+    if (side === 'left') {
+      isDraggingLeft.current = true;
+      dragStartXRef.current = clientX;
+      startWidthRef.current = leftPanelWidth;
+    } else {
+      isDraggingRight.current = true;
+      dragStartXRef.current = clientX;
+      startWidthRef.current = rightPanelWidth;
+    }
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    // Prevent page overscroll while resizing
+    try { document.body.style.overscrollBehavior = 'none'; } catch {}
+  };
+
+  const onDragMove = (e) => {
+    const clientX = e.touches?.[0]?.clientX ?? e.clientX;
+    if (isDraggingLeft.current) {
+      const dx = clientX - dragStartXRef.current;
+      const w = Math.max(MIN_WIDTH, Math.min(startWidthRef.current + dx, MAX_WIDTH));
+      setLeftPanelWidth(w);
+      try { window.dispatchEvent(new CustomEvent('panelWidthChanging', { detail: { side: 'left', width: w } })); } catch {}
+    } else if (isDraggingRight.current) {
+      const dx = clientX - dragStartXRef.current;
+      const w = Math.max(MIN_WIDTH, Math.min(startWidthRef.current - dx, MAX_WIDTH));
+      setRightPanelWidth(w);
+      try { window.dispatchEvent(new CustomEvent('panelWidthChanging', { detail: { side: 'right', width: w } })); } catch {}
+    }
+  };
+
+  const endDrag = () => {
+    if (isDraggingLeft.current) {
+      isDraggingLeft.current = false;
+      try {
+        // Persist and broadcast
+        const finalLeftWidth = leftWidthRef.current;
+        localStorage.setItem('panelWidth_left', JSON.stringify(finalLeftWidth));
+        window.dispatchEvent(new CustomEvent('panelWidthChanged', { detail: { side: 'left', width: finalLeftWidth } }));
+      } catch {}
+    }
+    if (isDraggingRight.current) {
+      isDraggingRight.current = false;
+      try {
+        // Persist and broadcast
+        const finalRightWidth = rightWidthRef.current;
+        localStorage.setItem('panelWidth_right', JSON.stringify(finalRightWidth));
+        window.dispatchEvent(new CustomEvent('panelWidthChanged', { detail: { side: 'right', width: finalRightWidth } }));
+      } catch {}
+    }
+    // Clear any hover state at the end of a drag (helps on touch devices)
+    setIsHoveringLeftResizer(false);
+    setIsHoveringRightResizer(false);
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    try { document.body.style.overscrollBehavior = ''; } catch {}
+  };
+
+  // Render overlay resizer bars that sit just outside panels
+  const renderPanelResizers = () => {
+    const barHeightPct = 0.25;
+    const barHeight = `${Math.round(barHeightPct * 100)}%`;
+    const HITBOX_WIDTH = 28; // wider invisible hitbox
+    const VISIBLE_WIDTH = 6; // thin visible bar
+    const extraHitboxPx = 24; // slightly taller than the visual bar
+    const wrapperHeight = `calc(${barHeight} + ${extraHitboxPx}px)`;
+    const wrapperMinHeight = 60 + extraHitboxPx;
+    const wrapperMaxHeight = 280 + extraHitboxPx;
+    const wrapperCommon = {
+      position: 'fixed',
+      top: '50%',
+      transform: 'translateY(-50%)',
+      height: wrapperHeight,
+      minHeight: wrapperMinHeight,
+      maxHeight: wrapperMaxHeight,
+      width: HITBOX_WIDTH,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      cursor: 'col-resize',
+      zIndex: 10002,
+      touchAction: 'none',
+      pointerEvents: 'auto',
+      backgroundColor: 'transparent'
+    };
+    const handleVisualCommon = {
+      width: VISIBLE_WIDTH,
+      height: barHeight,
+      minHeight: 60,
+      maxHeight: 280,
+      borderRadius: 999,
+      boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+      transition: 'background-color 120ms ease, opacity 160ms ease'
+    };
+    const inset = 14; // spacing inside from panel edges
+    const leftActive = isDraggingLeft.current || isHoveringLeftResizer;
+    const rightActive = isDraggingRight.current || isHoveringRightResizer;
+    const baseColor = (active) => `rgba(38,0,0,${active ? 1 : 0.18})`;
+    const leftWrapperLeft = Math.max(0, (leftPanelWidth + inset) - (HITBOX_WIDTH / 2));
+    const rightWrapperRight = Math.max(0, (rightPanelWidth + inset) - (HITBOX_WIDTH / 2));
+    // Use optional chaining with defaults so we don't depend on early state initialization
+    const leftCollapsed = !(typeof leftPanelExpanded === 'boolean' ? leftPanelExpanded : true);
+    const rightCollapsed = !(typeof rightPanelExpanded === 'boolean' ? rightPanelExpanded : true);
+    return (
+      <>
+        {/* Left resizer wrapper (full-height hitbox) */}
+        <div
+          style={{
+            ...wrapperCommon,
+            left: leftWrapperLeft,
+            pointerEvents: leftCollapsed ? 'none' : 'auto'
+          }}
+          onMouseDown={(e) => beginDrag('left', e.clientX)}
+          onTouchStart={(e) => e.touches?.[0] && beginDrag('left', e.touches[0].clientX)}
+          onWheel={(e) => {
+            // Only block scroll when actively dragging to avoid interfering with canvas scrolling
+            if ((isDraggingLeft.current || isDraggingRight.current) && e && e.cancelable) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
+          onTouchMove={(e) => {
+            if ((isDraggingLeft.current || isDraggingRight.current) && e && e.cancelable) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
+          onMouseEnter={() => setIsHoveringLeftResizer(true)}
+          onMouseLeave={() => setIsHoveringLeftResizer(false)}
+        >
+          <div style={{ ...handleVisualCommon, backgroundColor: baseColor(leftActive), opacity: leftCollapsed ? 0 : 1 }} />
+        </div>
+        {/* Right resizer wrapper (full-height hitbox) */}
+        <div
+          style={{
+            ...wrapperCommon,
+            right: rightWrapperRight,
+            pointerEvents: rightCollapsed ? 'none' : 'auto'
+          }}
+          onMouseDown={(e) => beginDrag('right', e.clientX)}
+          onTouchStart={(e) => e.touches?.[0] && beginDrag('right', e.touches[0].clientX)}
+          onWheel={(e) => {
+            if ((isDraggingLeft.current || isDraggingRight.current) && e && e.cancelable) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
+          onTouchMove={(e) => {
+            if ((isDraggingLeft.current || isDraggingRight.current) && e && e.cancelable) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
+          onMouseEnter={() => setIsHoveringRightResizer(true)}
+          onMouseLeave={() => setIsHoveringRightResizer(false)}
+        >
+          <div style={{ ...handleVisualCommon, backgroundColor: baseColor(rightActive), opacity: rightCollapsed ? 0 : 1 }} />
+        </div>
+      </>
+    );
+  };
+
   // Create a stable actions object only when needed for props
   const storeActions = useMemo(() => ({
     updateNodePrototype,
@@ -3004,6 +3198,43 @@ function NodeCanvas() {
     }
   };
 
+  // Global listeners for resizer drag to keep latency low
+  useEffect(() => {
+    const move = (e) => {
+      if (!isDraggingLeft.current && !isDraggingRight.current) return;
+      // Prevent page scroll/pinch on touchmove while dragging
+      if (e && e.cancelable) {
+        try { e.preventDefault(); } catch {}
+        if (typeof e.stopPropagation === 'function') e.stopPropagation();
+      }
+      onDragMove(e);
+    };
+    const up = () => {
+      if (!isDraggingLeft.current && !isDraggingRight.current) return;
+      endDrag();
+    };
+    const blockWheelWhileDragging = (e) => {
+      // Only block global wheel when dragging to avoid interfering with normal scroll
+      if (!isDraggingLeft.current && !isDraggingRight.current) return;
+      if (e && e.cancelable) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('touchmove', move, { passive: false });
+    window.addEventListener('mouseup', up);
+    window.addEventListener('touchend', up);
+    window.addEventListener('wheel', blockWheelWhileDragging, { passive: false });
+    return () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('mouseup', up);
+      window.removeEventListener('touchend', up);
+      window.removeEventListener('wheel', blockWheelWhileDragging);
+    };
+  }, []);
+
   // Effect to manage PieMenu visibility and data for animations
   useEffect(() => {
     console.log(`[NodeCanvas] selectedInstanceIds changed:`, {
@@ -4535,6 +4766,9 @@ function NodeCanvas() {
                )}
             </svg>
           )}
+
+          {/* Overlay panel resizers (outside panels) */}
+          {renderPanelResizers()}
 
           {/* Unified Node Creation Selector */}
           <UnifiedSelector

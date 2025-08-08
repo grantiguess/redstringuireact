@@ -625,6 +625,43 @@ async function buildSpatialMapFromState(state) {
   return spatialMap;
 }
 
+// Normalize bridge state into Map-like structures expected by server tooling
+function normalizeStateFromBridge(raw) {
+  if (!raw || typeof raw !== 'object') return raw;
+  const normalized = { ...raw };
+  // Graphs
+  if (!(raw.graphs instanceof Map)) {
+    const graphEntries = Array.isArray(raw.graphs) ? raw.graphs : [];
+    const graphsMap = new Map();
+    for (const g of graphEntries) {
+      const instancesMap = g && g.instances && typeof g.instances === 'object' && !(g.instances instanceof Map)
+        ? new Map(Object.entries(g.instances || {}))
+        : (g?.instances instanceof Map ? g.instances : new Map());
+      graphsMap.set(g.id, { ...g, instances: instancesMap });
+    }
+    normalized.graphs = graphsMap;
+  }
+  // Node prototypes
+  if (!(raw.nodePrototypes instanceof Map)) {
+    const protoEntries = Array.isArray(raw.nodePrototypes) ? raw.nodePrototypes : [];
+    const protosMap = new Map();
+    for (const p of protoEntries) {
+      if (p && p.id) protosMap.set(p.id, p);
+    }
+    normalized.nodePrototypes = protosMap;
+  }
+  // Edges (optional)
+  if (raw.edges && !(raw.edges instanceof Map)) {
+    const edgeEntries = Array.isArray(raw.edges) ? raw.edges : [];
+    const edgesMap = new Map();
+    for (const e of edgeEntries) {
+      if (e && e.id) edgesMap.set(e.id, e);
+    }
+    normalized.edges = edgesMap;
+  }
+  return normalized;
+}
+
 // Helper function to create a concept with position
 async function createConceptWithPosition(targetGraphId, concept, positionData) {
   const position = {
@@ -1216,6 +1253,8 @@ server.tool(
   },
   async ({ message, context = {} }) => {
     try {
+      if (!global.__rsTelemetry) global.__rsTelemetry = [];
+      global.__rsTelemetry.push({ ts: Date.now(), type: 'tool_call', name: 'chat', args: { message }, status: 'started' });
       const state = await getRealRedstringState();
       
       // Format the current state for the AI
@@ -1261,13 +1300,17 @@ You can help with:
       });
 
       // Return the AI's response in MCP format
-      return {
+      const out = {
         content: [{
           type: "text",
           text: response.result.content
         }]
       };
+      global.__rsTelemetry.push({ ts: Date.now(), type: 'tool_call', name: 'chat', status: 'completed' });
+      return out;
     } catch (error) {
+      if (!global.__rsTelemetry) global.__rsTelemetry = [];
+      global.__rsTelemetry.push({ ts: Date.now(), type: 'tool_call', name: 'chat', status: 'error', error: String(error?.message || error) });
       console.error('Error in chat tool:', error);
       return {
         content: [{
@@ -1278,6 +1321,13 @@ You can help with:
     }
   }
 );
+
+// Expose telemetry via bridge
+try {
+  app.get('/api/bridge/telemetry', (req, res) => {
+    res.json({ telemetry: global.__rsTelemetry || [] });
+  });
+} catch {}
 
 server.tool(
   "get_graph_instances",
@@ -4498,7 +4548,11 @@ ${graphData.openGraphIds.map((id, index) => {
       
     case 'addNodeToGraph':
       try {
-        const { conceptName, description, position, color } = toolArgs;
+        const { conceptName, description, position, color } = toolArgs || {};
+        console.log('[addNodeToGraph] start', { conceptName, hasPosition: !!position });
+        if (typeof conceptName !== 'string' || conceptName.trim() === '') {
+          return '❌ Missing conceptName (string)';
+        }
         const state = await getRealRedstringState();
         const actions = getRealRedstringActions();
         
@@ -4516,7 +4570,8 @@ ${graphData.openGraphIds.map((id, index) => {
         const originalInstanceCount = graph.instances?.size || 0;
         const originalPrototypeCount = state.nodePrototypes.size;
         
-        let existingPrototype = Array.from(state.nodePrototypes.values()).find(p => p.name.toLowerCase() === conceptName.toLowerCase());
+        const safeLower = (v) => (typeof v === 'string' ? v.toLowerCase() : '');
+        let existingPrototype = Array.from(state.nodePrototypes.values()).find(p => safeLower(p?.name) === safeLower(conceptName));
         
         let prototypeId;
         let prototypeCreated = false;
@@ -4580,17 +4635,29 @@ ${graphData.openGraphIds.map((id, index) => {
             };
           }
         }
+        // Force instance creation via pending action and batch mutation fallback
         await actions.addNodeInstance(targetGraphId, prototypeId, instancePosition);
+        try {
+          const instanceId = `inst-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+          await fetch('http://localhost:3001/api/bridge/action-feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'debug-note', status: 'info', params: { forcingBatch: true } }) });
+          // Apply batch mutation path (UI will accept and write directly to store)
+          await fetch('http://localhost:3001/api/bridge/pending-actions', { method: 'GET' }); // nudge
+          // No dedicated batch endpoint available; rely on MCPBridge.applyMutations polling path by queueing an explicit op
+          // IMPORTANT: params must be an array containing ONE element (the operations array),
+          // because the runner spreads params into arguments.
+          pendingActions.push({ id: `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}`, action: 'applyMutations', params: [[{ type: 'addNodeInstance', graphId: targetGraphId, prototypeId, position: instancePosition, instanceId }]] });
+        } catch {}
         
-        // Wait longer for the instance to be processed
+        // Wait for the instance to be processed
         console.log(`⏳ Waiting for instance to be created...`);
-        await new Promise(resolve => setTimeout(resolve, 3000)); // 3 seconds for instance
+        await new Promise(resolve => setTimeout(resolve, 3500));
         
         const updatedState = await getRealRedstringState();
         const updatedGraph = updatedState.graphs.get(targetGraphId);
         const newInstanceCount = updatedGraph?.instances?.size || 0;
         const newPrototypeCount = updatedState.nodePrototypes.size;
         
+        console.log('[addNodeToGraph] done', { newInstanceCount, newPrototypeCount });
         return `**Concept Added Successfully (VERIFIED)**
 - **Name:** ${conceptName}
 - **Graph:** ${graph.name}
