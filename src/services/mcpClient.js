@@ -167,7 +167,14 @@ class MCPClient {
       params: {}
     };
 
-    const response = await this.sendRequest(listRequest);
+      let response;
+      try {
+        response = await this.sendRequest(listRequest);
+      } catch (err) {
+        console.info('[MCP Client] tools/list unavailable; continuing with HTTP bridge only');
+        this.isSimulated = false;
+        return;
+      }
     
     if (response.result && response.result.tools) {
       this.tools = response.result.tools;
@@ -196,7 +203,7 @@ class MCPClient {
       }
     };
 
-    const response = await this.sendRequest(toolRequest);
+      const response = await this.sendRequest(toolRequest);
     
     if (response.result) {
       // For chat responses, return the actual content

@@ -446,17 +446,18 @@ You can "see" and reason about canvas layouts:
       <div className="ai-panel-content">
           <div className="ai-chat-mode">
           {/* Messages */}
-          <div className="ai-messages">
+            <div className="ai-messages" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
               {/* Empty connected state */}
               {isConnected && messages.length === 0 && (
-                <div style={{
-                  textAlign: 'center',
-                  color: '#555',
-                  padding: '40px 0',
-                  fontFamily: "'EmOne', sans-serif",
-                  fontSize: '14px'
-                }}>
-                  What will we make today?
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{
+                    textAlign: 'center',
+                    color: '#555',
+                    fontFamily: "'EmOne', sans-serif",
+                    fontSize: '14px'
+                  }}>
+                    What will we make today?
+                  </div>
                 </div>
               )}
             {messages.map((message) => (

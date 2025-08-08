@@ -9,6 +9,8 @@ class APIKeyManager {
   constructor() {
     this.STORAGE_KEY = 'redstring_ai_api_key';
     this.ENCRYPTION_KEY = 'redstring_ai_encryption_key';
+    this.STORAGE_PROFILES = 'redstring_ai_api_profiles';
+    this.ACTIVE_PROFILE = 'redstring_ai_active_profile';
   }
 
   /**
@@ -36,13 +38,22 @@ class APIKeyManager {
           ...config.settings
         },
         timestamp: Date.now(),
-        version: '2.0'
+        version: '2.0',
+        name: (config.profileName || provider)
       };
 
+      // Save into profiles list
+      const profiles = await this._getProfilesInternal();
+      const id = (config.profileId) || `prof_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+      profiles[id] = keyData;
+      localStorage.setItem(this.STORAGE_PROFILES, JSON.stringify(profiles));
+      localStorage.setItem(this.ACTIVE_PROFILE, id);
+
+      console.log('[API Key Manager] API profile stored successfully');
+      // Maintain legacy single-key for backward compat
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(keyData));
       
-      console.log('[API Key Manager] API configuration stored successfully');
-      return { success: true, provider, endpoint: keyData.endpoint, model: keyData.model };
+      return { success: true, id, name: keyData.name, provider, endpoint: keyData.endpoint, model: keyData.model };
     } catch (error) {
       console.error('[API Key Manager] Failed to store API configuration:', error);
       throw new Error('Failed to store API configuration');
@@ -55,12 +66,8 @@ class APIKeyManager {
    */
   async getAPIKey() {
     try {
-      const stored = localStorage.getItem(this.STORAGE_KEY);
-      if (!stored) {
-        return null;
-      }
-
-      const keyData = JSON.parse(stored);
+      const keyData = await this._getActiveProfileData();
+      if (!keyData) return null;
       const deobfuscatedKey = this.deobfuscate(keyData.key);
       
       console.log('[API Key Manager] API key retrieved successfully');
@@ -77,12 +84,8 @@ class APIKeyManager {
    */
   async getAPIKeyInfo() {
     try {
-      const stored = localStorage.getItem(this.STORAGE_KEY);
-      if (!stored) {
-        return null;
-      }
-
-      const keyData = JSON.parse(stored);
+      const keyData = await this._getActiveProfileData();
+      if (!keyData) return null;
       
       // Handle legacy format (version 1.0)
       if (keyData.version === '1.0') {
@@ -100,13 +103,15 @@ class APIKeyManager {
       
       // Current format (version 2.0+)
       return {
+        name: keyData.name,
         provider: keyData.provider,
         endpoint: keyData.endpoint,
         model: keyData.model,
         settings: keyData.settings,
         timestamp: keyData.timestamp,
         version: keyData.version,
-        hasKey: true
+        hasKey: true,
+        activeProfileId: localStorage.getItem(this.ACTIVE_PROFILE) || null
       };
     } catch (error) {
       console.error('[API Key Manager] Failed to get API key info:', error);
@@ -128,13 +133,73 @@ class APIKeyManager {
    */
   async removeAPIKey() {
     try {
-      localStorage.removeItem(this.STORAGE_KEY);
+      // Remove active profile only
+      const activeId = localStorage.getItem(this.ACTIVE_PROFILE);
+      const profiles = await this._getProfilesInternal();
+      if (activeId && profiles[activeId]) {
+        delete profiles[activeId];
+        localStorage.setItem(this.STORAGE_PROFILES, JSON.stringify(profiles));
+      }
+      localStorage.removeItem(this.ACTIVE_PROFILE);
+      // Keep legacy key for safety
       console.log('[API Key Manager] API key removed successfully');
       return { success: true };
     } catch (error) {
       console.error('[API Key Manager] Failed to remove API key:', error);
       throw new Error('Failed to remove API key');
     }
+  }
+
+  // Multiple profiles API
+  async listProfiles() {
+    const profiles = await this._getProfilesInternal();
+    return Object.entries(profiles).map(([id, data]) => ({ id, name: data.name, provider: data.provider, model: data.model, endpoint: data.endpoint, timestamp: data.timestamp }));
+  }
+
+  async setActiveProfile(profileId) {
+    const profiles = await this._getProfilesInternal();
+    if (!profiles[profileId]) throw new Error('Profile not found');
+    localStorage.setItem(this.ACTIVE_PROFILE, profileId);
+    // Update legacy key mirror
+    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(profiles[profileId]));
+    return { success: true };
+  }
+
+  async deleteProfile(profileId) {
+    const profiles = await this._getProfilesInternal();
+    if (profiles[profileId]) {
+      delete profiles[profileId];
+      localStorage.setItem(this.STORAGE_PROFILES, JSON.stringify(profiles));
+      if (localStorage.getItem(this.ACTIVE_PROFILE) === profileId) {
+        localStorage.removeItem(this.ACTIVE_PROFILE);
+      }
+      return { success: true };
+    }
+    throw new Error('Profile not found');
+  }
+
+  // Internal helpers
+  async _getActiveProfileData() {
+    const profiles = await this._getProfilesInternal();
+    const activeId = localStorage.getItem(this.ACTIVE_PROFILE);
+    if (activeId && profiles[activeId]) return profiles[activeId];
+    // Migrate legacy single key if present
+    const legacy = localStorage.getItem(this.STORAGE_KEY);
+    if (legacy) {
+      const data = JSON.parse(legacy);
+      const id = `prof_legacy`;
+      profiles[id] = data;
+      localStorage.setItem(this.STORAGE_PROFILES, JSON.stringify(profiles));
+      localStorage.setItem(this.ACTIVE_PROFILE, id);
+      return data;
+    }
+    return null;
+  }
+
+  async _getProfilesInternal() {
+    const raw = localStorage.getItem(this.STORAGE_PROFILES);
+    if (!raw) return {};
+    try { return JSON.parse(raw) || {}; } catch { return {}; }
   }
 
   /**

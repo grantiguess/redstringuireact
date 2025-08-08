@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
 import ToggleButton from './ToggleButton'; // Import the new component
+import PanelResizerHandle from './components/PanelResizerHandle.jsx';
 import ColorPicker from './ColorPicker'; // Import the new ColorPicker component
 import NodeSelectionGrid from './NodeSelectionGrid'; // Import NodeSelectionGrid for type selection
 import useGraphStore, {
@@ -3103,12 +3104,11 @@ const Panel = forwardRef(
                 }}
             >
                 {/* Resize Handle */}
-                <div 
-                    style={handleStyle}
-                    onMouseDown={handleResizeMouseDown}
-                    onTouchStart={handleResizeTouchStart}
-                    onMouseEnter={() => setIsHandleHover(true)}
-                    onMouseLeave={() => setIsHandleHover(false)}
+                <PanelResizerHandle
+                  side={side}
+                  onMouseDown={handleResizeMouseDown}
+                  onTouchStart={handleResizeTouchStart}
+                  isActive={isResizing.current}
                 />
 
                 {/* Main Header Row Container */}
