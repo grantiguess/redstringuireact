@@ -259,8 +259,15 @@ function NodeCanvas() {
             left: leftWrapperLeft,
             pointerEvents: leftCollapsed ? 'none' : 'auto'
           }}
-          onMouseDown={(e) => beginDrag('left', e.clientX)}
-          onTouchStart={(e) => e.touches?.[0] && beginDrag('left', e.touches[0].clientX)}
+          onMouseDown={(e) => {
+            // prevent canvas panning on resizer mouse down
+            e.stopPropagation();
+            beginDrag('left', e.clientX);
+          }}
+          onTouchStart={(e) => {
+            e.stopPropagation();
+            if (e.touches?.[0]) beginDrag('left', e.touches[0].clientX);
+          }}
           onWheel={(e) => {
             // Only block scroll when actively dragging to avoid interfering with canvas scrolling
             if ((isDraggingLeft.current || isDraggingRight.current) && e && e.cancelable) {
@@ -286,8 +293,14 @@ function NodeCanvas() {
             right: rightWrapperRight,
             pointerEvents: rightCollapsed ? 'none' : 'auto'
           }}
-          onMouseDown={(e) => beginDrag('right', e.clientX)}
-          onTouchStart={(e) => e.touches?.[0] && beginDrag('right', e.touches[0].clientX)}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            beginDrag('right', e.clientX);
+          }}
+          onTouchStart={(e) => {
+            e.stopPropagation();
+            if (e.touches?.[0]) beginDrag('right', e.touches[0].clientX);
+          }}
           onWheel={(e) => {
             if ((isDraggingLeft.current || isDraggingRight.current) && e && e.cancelable) {
               e.preventDefault();
@@ -2274,6 +2287,8 @@ function NodeCanvas() {
 
   const handleMouseDown = (e) => {
     if (isPaused || !activeGraphId || abstractionCarouselVisible) return;
+    // If user started on a resizer, do not start canvas panning
+    if (isDraggingLeft.current || isDraggingRight.current) return;
     // Clear any pending single click on a node
     if (clickTimeoutIdRef.current) {
         clearTimeout(clickTimeoutIdRef.current);

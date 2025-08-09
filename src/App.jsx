@@ -3,7 +3,7 @@ import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import NodeCanvas from './NodeCanvas';
 import SpawningNodeDragLayer from './SpawningNodeDragLayer';
-import MCPBridge from './BridgeClient';
+import BridgeClient from './BridgeClient';
 import './App.css';
 
 function App() {
@@ -11,7 +11,7 @@ function App() {
     <DndProvider backend={HTML5Backend}>
       <NodeCanvas />
       <SpawningNodeDragLayer />
-      <MCPBridge />
+      <BridgeClient />
     </DndProvider>
   );
 }

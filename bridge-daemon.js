@@ -7,6 +7,8 @@ import { exec } from 'node:child_process';
 import queueManager from './src/services/queue/Queue.js';
 import eventLog from './src/services/EventLog.js';
 import committer from './src/services/Committer.js';
+// Lazily import the scheduler to avoid pulling UI store modules at startup
+let scheduler = null;
 
 const app = express();
 const PORT = process.env.BRIDGE_PORT || 3001;
@@ -111,7 +113,8 @@ app.get('/api/bridge/telemetry', (_req, res) => {
 
 // Satisfy MCP client probe to avoid 404 noise
 app.head('/api/mcp/request', (_req, res) => {
-  res.status(200).end();
+  // Return 404 so MCP client does not assume an MCP endpoint is available on this daemon
+  res.status(404).end();
 });
 
 // Legacy compatibility endpoint used by BridgeClient polling; no-op save trigger
@@ -210,19 +213,22 @@ app.post('/api/ai/agent', (req, res) => {
     const body = req.body || {};
     const args = body.args || {};
     const conceptName = args.conceptName || body.conceptName || body.message || 'New Concept';
+    const cid = `cid-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
     const x = Number(args.x ?? (args.position && args.position.x));
     const y = Number(args.y ?? (args.position && args.position.y));
     const color = args.color || '#3B82F6';
 
     // Basic arg validation
     const postedGraphs = Array.isArray(bridgeStoreData?.graphs) ? bridgeStoreData.graphs : [];
+    const contextGraphId = body?.context?.activeGraphId;
     const targetGraphId = args.graphId
+      || contextGraphId
       || bridgeStoreData?.activeGraphId
       || (Array.isArray(bridgeStoreData?.openGraphIds) && bridgeStoreData.openGraphIds[0])
       || (postedGraphs[0] && postedGraphs[0].id)
       || null;
     if (!targetGraphId) {
-      return res.status(400).json({ success: false, error: 'No active graph in bridge state' });
+      return res.status(200).json({ success: false, response: 'I need an active graph to add concepts. Open a graph first, or tell me the graph name.' });
     }
     const position = {
       x: Number.isFinite(x) ? x : 400,
@@ -238,25 +244,55 @@ app.post('/api/ai/agent', (req, res) => {
     const actionId = id => `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}-${id}`;
     let ensuredPrototypeId = proto?.id;
 
+    // Light conversational preface
+    let responseText = '';
+    const lowerMsg = String(body.message || '').trim().toLowerCase();
+    if (lowerMsg === 'hello' || lowerMsg === 'hi') {
+      responseText = `Hello! I can add concepts to your active graph and connect them. I’ll place things in open canvas space and summarize what I did.`;
+    } else if (lowerMsg === 'test') {
+      responseText = `Test acknowledged. I’ll add a concept to demonstrate the tool flow and report back.`;
+    } else if (lowerMsg) {
+      responseText = `Okay — I’ll add “${conceptName}” to the active graph and report back. If you want a different position or name, just say so.`;
+    }
+
+    // Correlate request for debugging
+    telemetry.push({ ts: Date.now(), type: 'agent_request', cid, message: body.message, resolvedGraphId: targetGraphId });
+
     if (!proto) {
-      // Queue prototype creation via window action
       ensuredPrototypeId = `prototype-${Date.now()}-${Math.random().toString(36).substr(2,9)}`;
-      pendingActions.push({
-        id: actionId('addProto'),
-        action: 'addNodePrototype',
-        params: [{ id: ensuredPrototypeId, name: String(conceptName), description: '', color, typeNodeId: null, definitionGraphIds: [] }]
-      });
+      pendingActions.push({ id: actionId('addProto'), action: 'addNodePrototype', params: [{ id: ensuredPrototypeId, name: String(conceptName), description: '', color, typeNodeId: null, definitionGraphIds: [] }], meta: { cid } });
       opsQueued.push('addNodePrototype');
-      telemetry.push({ ts: Date.now(), type: 'tool_call', name: 'addNodePrototype', args: { name: conceptName } });
+      telemetry.push({ ts: Date.now(), type: 'tool_call', cid, name: 'addNodePrototype', args: { name: conceptName } });
+    }
+
+    // Ensure active graph is set in UI if different
+    if (bridgeStoreData?.activeGraphId !== targetGraphId) {
+      pendingActions.push({ id: actionId('setActive'), action: 'setActiveGraph', params: [targetGraphId], meta: { cid } });
+      opsQueued.push('setActiveGraph');
+      telemetry.push({ ts: Date.now(), type: 'tool_call', cid, name: 'setActiveGraph', args: { graphId: targetGraphId } });
     }
 
     // Always queue instance creation via batch applyMutations for reliability
     const instanceOp = [{ type: 'addNodeInstance', graphId: targetGraphId, prototypeId: ensuredPrototypeId || args.prototypeId, position, instanceId: `inst-${Date.now()}-${Math.random().toString(36).slice(2,8)}` }];
-    pendingActions.push({ id: actionId('apply'), action: 'applyMutations', params: [instanceOp] });
+    pendingActions.push({ id: actionId('apply'), action: 'applyMutations', params: [instanceOp], meta: { cid } });
     opsQueued.push('applyMutations:addNodeInstance');
-    telemetry.push({ ts: Date.now(), type: 'tool_call', name: 'applyMutations', args: instanceOp[0] });
+    telemetry.push({ ts: Date.now(), type: 'tool_call', cid, name: 'applyMutations', args: instanceOp[0] });
 
-    return res.json({ success: true, queued: opsQueued, graphId: targetGraphId, conceptName, position });
+    // Return chat-style response plus structured toolCalls
+    telemetry.push({ ts: Date.now(), type: 'agent_queued', cid, queued: opsQueued, graphId: targetGraphId, conceptName, position });
+    return res.json({
+      success: true,
+      response: responseText || `I queued changes to add “${conceptName}”. I’ll report once they’re applied.`,
+      toolCalls: [
+        { name: 'addNodePrototype', status: proto ? 'skipped' : 'queued', args: proto ? undefined : { name: conceptName } },
+        { name: 'applyMutations(addNodeInstance)', status: 'queued', args: instanceOp[0] }
+      ],
+      queued: opsQueued,
+      graphId: targetGraphId,
+      conceptName,
+      position,
+      cid
+    });
   } catch (err) {
     return res.status(500).json({ success: false, error: String(err?.message || err) });
   }
@@ -267,6 +303,8 @@ const server = app.listen(PORT, () => {
   console.log(`✅ Bridge daemon listening on http://localhost:${PORT}`);
   // Start committer loop
   committer.start();
+  // Lazy-load scheduler after server starts to avoid import-time side effects
+  import('./src/services/orchestrator/Scheduler.js').then(mod => { scheduler = mod.default; }).catch(() => {});
 });
 
 async function killOnPort(port) {
@@ -528,12 +566,119 @@ app.get('/orchestration/help', (_req, res) => {
         { method: 'POST', path: '/test/commit-ops', body: { graphId: 'string', ops: [ { type: 'addNodeInstance', graphId: 'string', prototypeId: 'string', position: { x: 400, y: 200 }, instanceId: 'string' } ] } }
       ]
     },
+    scheduler: {
+      endpoints: [
+        { method: 'POST', path: '/orchestration/scheduler/start', body: { cadenceMs: 250, planner: true, executor: true, auditor: true, maxPerTick: { planner: 1, executor: 2, auditor: 2 } } },
+        { method: 'POST', path: '/orchestration/scheduler/stop' },
+        { method: 'GET', path: '/orchestration/scheduler/status' }
+      ],
+      note: 'Start/stop the lightweight in-process loop that drains goal/task/patch queues. Safe defaults and per-tick caps prevent runaway activity.'
+    },
     guarantees: [
       'Single-writer Committer applies only approved patches',
       'Idempotent patchIds prevent double-apply',
       'UI updates only via applyMutations emitted after commit'
     ]
   });
+});
+
+// -----------------------
+// Orchestrator Scheduler Controls
+// -----------------------
+app.post('/orchestration/scheduler/start', async (req, res) => {
+  try {
+    if (!scheduler) {
+      const mod = await import('./src/services/orchestrator/Scheduler.js');
+      scheduler = mod.default;
+    }
+    scheduler.start(req.body || {});
+    res.json({ ok: true, status: scheduler.status() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+app.post('/orchestration/scheduler/stop', async (_req, res) => {
+  try {
+    if (!scheduler) {
+      const mod = await import('./src/services/orchestrator/Scheduler.js');
+      scheduler = mod.default;
+    }
+    scheduler.stop();
+    res.json({ ok: true, status: scheduler.status() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+app.get('/orchestration/scheduler/status', async (_req, res) => {
+  try {
+    if (!scheduler) {
+      const mod = await import('./src/services/orchestrator/Scheduler.js');
+      scheduler = mod.default;
+    }
+    res.json({ ok: true, status: scheduler.status() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// -----------------------
+// Telemetry Inspection
+// -----------------------
+// Filter telemetry by correlation id or type
+app.get('/telemetry', (req, res) => {
+  try {
+    const { cid, type, limit = 200 } = req.query || {};
+    let items = telemetry;
+    if (cid) items = items.filter(t => String(t?.cid) === String(cid));
+    if (type) items = items.filter(t => String(t?.type) === String(type));
+    const last = items.slice(-Number(limit || 200));
+    res.json({ ok: true, count: last.length, items: last });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Live SSE stream of telemetry with optional filters (cid, type)
+app.get('/telemetry/stream', (req, res) => {
+  try {
+    const { cid, type, from = 0 } = req.query || {};
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive'
+    });
+    let idx = Math.max(0, Number(from) || 0);
+    const passes = (item) => {
+      if (cid && String(item?.cid) !== String(cid)) return false;
+      if (type && String(item?.type) !== String(type)) return false;
+      return true;
+    };
+    // Immediately flush the tail since idx may be 0
+    const flush = () => {
+      while (idx < telemetry.length) {
+        const item = telemetry[idx++];
+        if (!passes(item)) continue;
+        res.write(`event: telemetry\n`);
+        res.write(`data: ${JSON.stringify({ idx: idx - 1, item })}\n\n`);
+      }
+    };
+    flush();
+    const interval = setInterval(() => {
+      try {
+        flush();
+        // keep-alive comment
+        res.write(`: keep-alive ${Date.now()}\n\n`);
+      } catch {}
+    }, 500);
+    req.on('close', () => {
+      clearInterval(interval);
+      try { res.end(); } catch {}
+    });
+  } catch (e) {
+    res.status(500).end();
+  }
 });
 
 

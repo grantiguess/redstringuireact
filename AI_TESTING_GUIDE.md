@@ -12,6 +12,72 @@ The AI integration consists of several components:
 
 ## Quick Start Testing
 
+### A. Zero-LLM flow checks (HTTP only)
+
+Use these to validate queues, committer and UI path without an AI model.
+
+1) Open help:
+
+GET http://localhost:3001/orchestration/help
+
+2) Enqueue and commit an instance directly (fast path):
+
+POST http://localhost:3001/test/commit-ops
+{
+  "graphId": "<active-graph-id>",
+  "ops": [
+    { "type": "addNodeInstance", "graphId": "<active-graph-id>", "prototypeId": "<existing-prototype-id>", "position": { "x": 420, "y": 220 }, "instanceId": "inst-smoketest-1" }
+  ]
+}
+
+Expect: applyMutations executed in the app; a friendly chat line confirming the node was added.
+
+3) Inspect queues/telemetry:
+
+GET http://localhost:3001/queue/metrics?name=reviewQueue
+
+GET http://localhost:3001/telemetry?limit=50
+
+### B. Chat/Agent end-to-end (with friendly text + tool calls)
+
+Goal: verify the user-facing chatbot returns text first, then queues the tool path that lands in UI via pending actions.
+
+1) Send agent request:
+
+POST http://localhost:3001/api/ai/agent
+Headers: Authorization: Bearer <your-ai-key> (not strictly required for local testing)
+Body:
+{
+  "message": "Add Solar Energy",
+  "context": { "activeGraphId": "<active-graph-id>" }
+}
+
+Expect:
+- response: conversational text
+- toolCalls: array including addNodePrototype (skipped or queued) and applyMutations(addNodeInstance)
+- cid: correlation id for this flow
+
+2) Trace the flow with cid:
+
+GET http://localhost:3001/telemetry?cid=<cid>
+
+Expect: tool_call entries for addNodePrototype, setActiveGraph (if needed), applyMutations, and an agent_queued summary.
+
+3) Confirm UI execution:
+
+In the app chat: see friendly messages like “Created concept …”, “Switched to graph …”, “Added … to … at (x, y)”.
+
+### C. Pending action path (ordered execution)
+
+Actions are executed in this order to avoid race conditions:
+1) createNewGraph
+2) addNodePrototype
+3) openGraph
+4) setActiveGraph
+5) applyMutations
+
+This ensures prototypes exist and the correct graph is active before instances are added.
+
 ### 1. Start the AI Connection Wizard
 
 ```bash
@@ -152,6 +218,9 @@ The MCP server provides these tools for AI clients:
 ### Debug Commands
 
 ```bash
+# Bridge daemon logs
+curl 'http://localhost:3001/telemetry?limit=100' | jq '.items[] | {ts, type, name, cid, args, message}'
+
 # Check all processes
 ps aux | grep node
 
