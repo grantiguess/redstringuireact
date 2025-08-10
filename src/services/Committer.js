@@ -94,6 +94,19 @@ class CommitterService {
         const ops = coalesceOps(unseen);
         // Emit to UI; UI will apply and persist via its Git engines
         await emitApplyMutations(ops);
+        // If we created any graphs, enqueue openGraph to ensure UI switches to them
+        try {
+          const created = Array.isArray(ops) ? ops.filter(o => o && o.type === 'createNewGraph' && o.initialData && o.initialData.id) : [];
+          if (created.length > 0) {
+            const actions = created.map(o => ({ action: 'openGraph', params: [o.initialData.id] }));
+            const { bridgeFetch } = await import('./bridgeConfig.js');
+            await bridgeFetch('/api/bridge/pending-actions/enqueue', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ actions })
+            });
+          }
+        } catch {}
         // Mark ids
         unseen.forEach(p => this.idempotency.add(p.patchId));
         // Persist via Git engine snapshot if available

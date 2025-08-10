@@ -205,13 +205,15 @@ const AICollaborationPanel = () => {
       }
       const msg = { ...updated[idx] };
       const calls = Array.isArray(msg.toolCalls) ? [...msg.toolCalls] : [];
-      // Try to match by name or cid if provided
-      const matchIndex = calls.findIndex(c => (toolUpdate.cid && c.cid === toolUpdate.cid && c.name === toolUpdate.name) || (!toolUpdate.cid && c.name === toolUpdate.name));
+      // Try to match by id first, then (cid+name), then by name
+      const matchIndex = calls.findIndex(c => (toolUpdate.id && c.id === toolUpdate.id)
+        || (toolUpdate.cid && c.cid === toolUpdate.cid && c.name === toolUpdate.name)
+        || (!toolUpdate.cid && c.name === toolUpdate.name));
       if (matchIndex >= 0) {
         const merged = { ...calls[matchIndex], ...toolUpdate };
         calls[matchIndex] = merged;
       } else {
-        calls.push({ expanded: false, status: 'running', ...toolUpdate });
+        calls.push({ expanded: false, status: toolUpdate.status || 'running', ...toolUpdate });
       }
       msg.toolCalls = calls;
       updated[idx] = msg;
@@ -226,7 +228,8 @@ const AICollaborationPanel = () => {
       items.forEach((t) => {
         // Map telemetry to tool call updates
         if (t.type === 'tool_call') {
-          upsertToolCall({ name: t.name || 'tool', status: 'running', args: t.args, cid: t.cid });
+          const status = t.status || (t.leased ? 'running' : 'running');
+          upsertToolCall({ id: t.id, name: t.name || 'tool', status, args: t.args, cid: t.cid });
           return;
         }
         if (t.type === 'agent_queued') {

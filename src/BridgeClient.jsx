@@ -136,6 +136,10 @@ const BridgeClient = () => {
         // Create a wrapper for store actions that can be called remotely
         // Create action metadata (not functions, since they can't be serialized)
         const actionMetadata = {
+          ensureGraph: {
+            description: 'Ensure a graph exists (create if missing) without switching context',
+            parameters: ['graphId', 'initialData']
+          },
           addNodePrototype: {
             description: 'Add a new node prototype',
             parameters: ['prototypeId', 'prototypeData']
@@ -213,6 +217,14 @@ const BridgeClient = () => {
         // Store the actual functions in a global variable that the bridge server can access
         if (typeof window !== 'undefined') {
           window.redstringStoreActions = {
+            ensureGraph: async (graphId, initialData) => {
+              console.log('MCPBridge: Calling ensureGraph', graphId, initialData);
+              const st = useGraphStore.getState();
+              if (!st.graphs.has(graphId)) {
+                st.createGraphWithId(graphId, initialData || {});
+              }
+              return { success: true, graphId };
+            },
             addNodePrototype: async (prototypeId, prototypeData) => {
               console.log('MCPBridge: Calling addNodePrototype', prototypeId, prototypeData);
               // Ensure the prototypeData has the correct id
@@ -549,8 +561,14 @@ const BridgeClient = () => {
                         store.closeGraphTab(op.graphId);
                         results.push({ type: op.type, ok: true });
                         break;
-                      case 'createNewGraph':
-                        store.createNewGraph(op.initialData || {});
+                      case 'createNewGraph': {
+                        const init = op.initialData || {};
+                        if (init.id) {
+                          store.createGraphWithId(init.id, init);
+                          try { store.openGraphTab(init.id); } catch {}
+                        } else {
+                          store.createNewGraph(init);
+                        }
                         try {
                           const s2 = useGraphStore.getState();
                           const gid = s2.activeGraphId;
@@ -560,6 +578,7 @@ const BridgeClient = () => {
                         } catch {}
                         results.push({ type: op.type, ok: true });
                         break;
+                      }
                       case 'createAndAssignGraphDefinition':
                         store.createAndAssignGraphDefinition(op.prototypeId);
                         results.push({ type: op.type, ok: true, id: op.prototypeId });
@@ -765,12 +784,16 @@ const BridgeClient = () => {
             console.log('✅ MCP Bridge: Found pending actions:', actionsData.pendingActions.length);
             // Execute actions in a stable dependency-friendly order
             const priority = (act) => {
+              if (act.action === 'applyMutations') {
+                const ops = Array.isArray(act.params?.[0]) ? act.params[0] : [];
+                const creates = ops.some(o => o && o.type === 'createNewGraph');
+                return creates ? 1 : 4;
+              }
               switch (act.action) {
                 case 'createNewGraph': return 0;
                 case 'addNodePrototype': return 1;
                 case 'openGraph': return 2;
                 case 'setActiveGraph': return 3;
-                case 'applyMutations': return 4;
                 default: return 5;
               }
             };
@@ -782,9 +805,58 @@ const BridgeClient = () => {
                 try {
                   window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: [{ ts: Date.now(), type: 'tool_call', name: pendingAction.action, args: pendingAction.params, status: 'running', id: pendingAction.id }] }));
                 } catch {}
+                // Also emit a brief chat update before executing
+                try {
+                  const preText = (() => {
+                    if (pendingAction.action === 'applyMutations' && Array.isArray(pendingAction.params?.[0])) {
+                      const ops = pendingAction.params[0];
+                      const createCount = ops.filter(o => o?.type === 'createNewGraph').length;
+                      if (createCount > 0) return `Starting: create ${createCount} graph(s).`;
+                      return `Starting: apply ${ops.length} change(s).`;
+                    }
+                    if (pendingAction.action === 'openGraph') return 'Opening graph...';
+                    if (pendingAction.action === 'addNodePrototype') return 'Creating a new concept...';
+                    return `Starting: ${pendingAction.action}...`;
+                  })();
+                  window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: [{ ts: Date.now(), type: 'agent_answer', text: preText, cid: pendingAction.meta?.cid, id: pendingAction.id }] }));
+                } catch {}
                 if (window.redstringStoreActions && window.redstringStoreActions[pendingAction.action]) {
                   console.log('✅ MCP Bridge: Executing action:', pendingAction.action, pendingAction.params);
                   
+                  // Special handling: openGraph with missing graph should be deferred
+                  if (pendingAction.action === 'openGraph') {
+                    try {
+                      const gid = Array.isArray(pendingAction.params) ? pendingAction.params[0] : pendingAction.params;
+                      const stBefore = useGraphStore.getState();
+                      if (!stBefore.graphs.has(gid)) {
+                        // Try ensureGraph based on bridge data
+                        const bridgeResponse = await bridgeFetch('/api/bridge/state');
+                        if (bridgeResponse.ok) {
+                          const b = await bridgeResponse.json();
+                          const existsInBridge = Array.isArray(b.graphs) && b.graphs.some(g => g.id === gid);
+                          if (existsInBridge && window.redstringStoreActions.ensureGraph) {
+                            await window.redstringStoreActions.ensureGraph(gid, { name: (b.graphs.find(g => g.id===gid)?.name)||'New Graph' });
+                          }
+                        }
+                        const stAfter = useGraphStore.getState();
+                        if (!stAfter.graphs.has(gid)) {
+                          // Re-enqueue with short backoff and skip now
+                          try {
+                            setTimeout(async () => {
+                              await bridgeFetch('/api/bridge/pending-actions/enqueue', {
+                                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ actions: [ { action: 'openGraph', params: [gid] } ] })
+                              });
+                            }, 400);
+                          } catch {}
+                          // Mark as completed-noop so chat doesn't hang
+                          try { window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: [{ ts: Date.now(), type: 'tool_call', name: 'openGraph', status: 'completed', id: pendingAction.id }] })); } catch {}
+                          continue;
+                        }
+                      }
+                    } catch {}
+                  }
+
                   // For addNodeInstance, ensure the graph and prototype exist in the store first
                   if (pendingAction.action === 'addNodeInstance') {
                     const [graphId, prototypeId, position, instanceId] = pendingAction.params;
@@ -822,9 +894,16 @@ const BridgeClient = () => {
                               });
                             }
                           }
-                          
-                          // NOTE: No direct addGraph action exists; cannot instantiate a graph with arbitrary id from here.
-                          // If graph is missing, we will skip instance creation and send feedback below.
+
+                          // Ensure graph exists using ensureGraph if absent
+                          if (!graphExists) {
+                            try {
+                              const gName = (bridgeData.graphs || []).find(g => g.id === graphId)?.name || 'New Graph';
+                              await window.redstringStoreActions.ensureGraph(graphId, { name: gName });
+                            } catch (egErr) {
+                              console.warn('⚠️ MCP Bridge: ensureGraph failed:', egErr);
+                            }
+                          }
                         }
                       } catch (syncError) {
                         console.error('❌ MCP Bridge: Failed to sync from bridge:', syncError);
@@ -848,7 +927,20 @@ const BridgeClient = () => {
                             params: pendingAction.params
                           })
                         });
-                        continue; // Skip this action
+                        // Re-enqueue with exponential backoff (client-side timer)
+                        try {
+                          const backoff = Math.min(30000, ((pendingAction.meta?.retryDelayMs) || 1000) * 2);
+                          setTimeout(async () => {
+                            try {
+                              await bridgeFetch('/api/bridge/pending-actions/enqueue', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ actions: [ { action: pendingAction.action, params: pendingAction.params } ] })
+                              });
+                            } catch {}
+                          }, backoff);
+                        } catch {}
+                        continue; // Skip this action for now
                       } else {
                         console.log('✅ MCP Bridge: Successfully synced missing data, proceeding with instance creation');
                       }
@@ -868,6 +960,25 @@ const BridgeClient = () => {
                   console.log('✅ MCP Bridge: Action completed successfully:', pendingAction.action, result);
                   try {
                     window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: [{ ts: Date.now(), type: 'tool_call', name: pendingAction.action, args: pendingAction.params, status: 'completed', id: pendingAction.id }] }));
+                  } catch {}
+                  // Emit a brief chat update after executing
+                  try {
+                    const postText = (() => {
+                      if (pendingAction.action === 'applyMutations' && Array.isArray(pendingAction.params?.[0])) {
+                        const ops = pendingAction.params[0];
+                        const created = ops.filter(o => o?.type === 'createNewGraph');
+                        if (created.length > 0) {
+                          const names = created.map(o => o?.initialData?.name).filter(Boolean);
+                          if (names.length === 1) return `Created graph "${names[0]}".`;
+                          if (names.length > 1) return `Created ${names.length} graphs.`;
+                        }
+                        return `Applied ${ops.length} change(s).`;
+                      }
+                      if (pendingAction.action === 'openGraph') return 'Opened the graph.';
+                      if (pendingAction.action === 'addNodePrototype') return 'Created a new concept.';
+                      return `Completed: ${pendingAction.action}.`;
+                    })();
+                    window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: [{ ts: Date.now(), type: 'agent_answer', text: postText, cid: pendingAction.meta?.cid, id: pendingAction.id }] }));
                   } catch {}
 
                   // Acknowledge completion to bridge server if id exists

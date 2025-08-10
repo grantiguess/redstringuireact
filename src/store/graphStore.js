@@ -527,7 +527,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     }
   })),
 
-  // Creates a new, empty graph and sets it as active
+    // Creates a new, empty graph and sets it as active
   createNewGraph: (initialData = {}) => set(produce((draft) => {
     console.log('[Store createNewGraph] Creating new empty graph');
     const newGraphId = uuidv4();
@@ -574,6 +574,42 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     
     console.log(`[Store] Created and activated new empty graph: ${newGraphId} ('${newGraphName}') defined by prototype ${definingPrototypeId}.`);
   })),
+
+    // Deterministic graph creation with provided id (no-op if exists)
+    createGraphWithId: (graphId, initialData = {}) => set(produce((draft) => {
+      if (!graphId) return;
+      if (draft.graphs.has(graphId)) return;
+      const name = initialData.name || 'New Graph';
+      const definingPrototypeId = uuidv4();
+      draft.nodePrototypes.set(definingPrototypeId, {
+        id: definingPrototypeId,
+        name,
+        description: initialData.description || '',
+        color: initialData.color || NODE_DEFAULT_COLOR,
+        typeNodeId: initialData.typeNodeId || null,
+        definitionGraphIds: [graphId]
+      });
+      const newGraphData = {
+        id: graphId,
+        name,
+        description: initialData.description || '',
+        picture: initialData.picture || null,
+        color: initialData.color || NODE_DEFAULT_COLOR,
+        directed: initialData.directed !== undefined ? initialData.directed : false,
+        instances: new Map(),
+        edgeIds: [],
+        definingNodeIds: [definingPrototypeId],
+        panOffset: null,
+        zoomLevel: null,
+      };
+      draft.graphs.set(graphId, newGraphData);
+      if (!draft.openGraphIds.includes(graphId)) {
+        draft.openGraphIds.unshift(graphId);
+      }
+      draft.expandedGraphIds.add(graphId);
+      draft.activeGraphId = graphId;
+      console.log(`[Store createGraphWithId] Created and activated graph ${graphId} ('${name}')`);
+    })),
 
   // Creates a new graph, assigns it as a definition to a prototype, and makes it active
   createAndAssignGraphDefinition: (prototypeId) => {

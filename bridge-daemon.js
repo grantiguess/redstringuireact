@@ -178,6 +178,20 @@ app.get('/api/bridge/pending-actions', (_req, res) => {
       inflightActionIds.add(a.id);
       inflightMeta.set(a.id, { ts: Date.now(), action: a.action, params: a.params });
       telemetry.push({ ts: Date.now(), type: 'tool_call', name: a.action, args: a.params, leased: true, id: a.id });
+      // Emit pre-action chat summary for visibility
+      try {
+        let preText = `Starting: ${a.action}...`;
+        if (a.action === 'applyMutations' && Array.isArray(a.params?.[0])) {
+          const ops = a.params[0];
+          const createCount = ops.filter(o => o?.type === 'createNewGraph').length;
+          preText = createCount > 0 ? `Starting: create ${createCount} graph(s).` : `Starting: apply ${ops.length} change(s).`;
+        } else if (a.action === 'openGraph') {
+          preText = 'Starting: open graph...';
+        } else if (a.action === 'addNodePrototype') {
+          preText = 'Starting: create a concept...';
+        }
+        telemetry.push({ ts: Date.now(), type: 'agent_answer', text: preText });
+      } catch {}
     });
     res.json({ pendingActions: available });
   } catch (err) {
@@ -194,6 +208,25 @@ app.post('/api/bridge/action-completed', (req, res) => {
       const meta = inflightMeta.get(actionId);
       if (meta) {
         telemetry.push({ ts: Date.now(), type: 'tool_call', name: meta.action, args: meta.params, status: 'completed', id: actionId });
+        // Emit post-action chat summary with specifics when possible
+        try {
+          let postText = `Completed: ${meta.action}.`;
+          if (meta.action === 'applyMutations' && Array.isArray(meta.params?.[0])) {
+            const ops = meta.params[0];
+            const created = ops.filter(o => o?.type === 'createNewGraph');
+            if (created.length > 0) {
+              const names = created.map(o => o?.initialData?.name).filter(Boolean);
+              postText = names.length === 1 ? `Created graph "${names[0]}".` : `Created ${names.length} graphs.`;
+            } else {
+              postText = `Applied ${ops.length} change(s).`;
+            }
+          } else if (meta.action === 'openGraph') {
+            postText = 'Opened the graph.';
+          } else if (meta.action === 'addNodePrototype') {
+            postText = 'Created a new concept.';
+          }
+          telemetry.push({ ts: Date.now(), type: 'agent_answer', text: postText });
+        } catch {}
         inflightMeta.delete(actionId);
       }
     }
