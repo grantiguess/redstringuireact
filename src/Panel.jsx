@@ -478,6 +478,12 @@ const Panel = forwardRef(
     // <<< ADD: Select rightPanelTabs reactively >>>
     const rightPanelTabs = useGraphStore(state => state.rightPanelTabs);
 
+    // Reserve bottom space for TypeList footer bar when visible
+    const typeListMode = useGraphStore(state => state.typeListMode);
+    const isTypeListVisible = typeListMode !== 'closed';
+    const bottomSafeArea = isTypeListVisible ? HEADER_HEIGHT + 10 : 0; // footer height + small gap
+    let effectiveBottomPadding = isTypeListVisible ? bottomSafeArea : 0; // refined after leftViewActive initializes
+
     // Derive saved nodes array reactively
     const savedNodes = useMemo(() => {
         return Array.from(savedNodeIds).map(id => nodePrototypesMap.get(id)).filter(Boolean);
@@ -570,6 +576,10 @@ const Panel = forwardRef(
 
     // Left panel view state and collapsed sections
     const [leftViewActive, setLeftViewActive] = useState('library'); // 'library', 'grid', 'federation', or 'ai'
+    // Now that leftViewActive is initialized, refine the padding to avoid raising AI view
+    if (side === 'left' && leftViewActive === 'ai') {
+        effectiveBottomPadding = 0;
+    }
     const [sectionCollapsed, setSectionCollapsed] = useState({});
     const [sectionMaxHeights, setSectionMaxHeights] = useState({});
 
@@ -3268,7 +3278,7 @@ const Panel = forwardRef(
                 {/* Content Area */} 
                 <div 
                     className={`panel-content ${isScrolling ? 'scrolling' : ''} ${isHoveringScrollbar ? 'hovering-scrollbar' : ''}`}
-                    style={{ flex: 1 }}
+                    style={{ flex: 1, paddingBottom: effectiveBottomPadding }}
                     onScroll={() => {
                         setIsScrolling(true);
                         if (scrollTimeoutRef.current) {

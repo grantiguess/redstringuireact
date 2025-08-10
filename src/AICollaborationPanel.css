@@ -64,6 +64,10 @@
   opacity: 0.8;
 }
 
+.ai-file-status {
+  margin-top: 2px;
+}
+
 .ai-status-indicator {
   width: 8px;
   height: 8px;
@@ -339,11 +343,14 @@
 }
 
 .ai-tool-call {
-  background: rgba(189, 181, 181, 0.02);
-  border: 1px solid rgba(189, 181, 181, 0.1);
-  border-radius: 8px;
-  padding: 12px;
+  background: #bdb5b5;
+  border: 1px solid #260000;
+  border-radius: 0;
+  padding: 8px 10px;
   font-size: 12px;
+  display: grid;
+  grid-template-columns: auto 1fr auto; /* icon, name, status */
+  align-items: center;
 }
 
 .ai-tool-call-completed {
@@ -357,42 +364,45 @@
 }
 
 .ai-tool-call-running {
-  border-color: rgba(255, 193, 7, 0.3);
-  background: rgba(255, 193, 7, 0.05);
-  animation: pulse 2s infinite;
+  border-color: #260000;
+  background: #bdb5b5;
 }
 
 .ai-tool-call-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  display: contents; /* layout handled by grid */
 }
 
 .ai-tool-call-icon {
-  font-size: 14px;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .ai-tool-call-name {
   font-weight: 600;
-  color: #bdb5b5;
+  color: #260000;
   font-family: 'EmOne', sans-serif;
 }
 
 .ai-tool-call-status {
   margin-left: auto;
   font-size: 11px;
-  opacity: 0.7;
+  opacity: 0.9;
+  color: #260000;
 }
 
 .ai-tool-call-args {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
+  grid-column: 1 / -1;
+  background: rgba(38, 0, 0, 0.06);
+  border: 1px solid #260000;
+  border-radius: 0;
   padding: 8px;
-  margin-bottom: 8px;
-  font-family: 'Courier New', monospace;
+  margin-top: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 11px;
-  color: rgba(189, 181, 181, 0.8);
+  color: #260000;
 }
 
 .ai-tool-call-result {
@@ -400,7 +410,9 @@
 }
 
 .ai-tool-call-result-content {
-  background: rgba(38, 0, 0, 0.05);
+  grid-column: 1 / -1;
+  background: rgba(38, 0, 0, 0.06);
+  border: 1px solid #260000;
   border-radius: 0;
   padding: 8px;
   font-size: 12px;
@@ -408,6 +420,7 @@
   user-select: text;
   cursor: text;
   white-space: pre-wrap;
+  color: #260000;
 }
 
 /* Typing Indicator */
@@ -449,7 +462,7 @@
   border-top: 1px solid #260000;
   display: flex;
   gap: 12px;
-  align-items: flex-end;
+  align-items: stretch; /* Make button match textarea height */
 }
 
 .ai-input {
@@ -484,9 +497,9 @@
 
 .ai-send-button,
 .ai-stop-button {
-  width: 40px;
-  height: 40px;
-  border-radius: 0;
+  width: 48px;
+  height: auto; /* stretch to match textarea */
+  border-radius: 8px; /* less rounded */
   border: 1px solid #260000;
   display: flex;
   align-items: center;
@@ -497,12 +510,12 @@
 }
 
 .ai-send-button {
-  background: #F00000;
-  color: white;
+  background: #260000; /* header maroon */
+  color: #bdb5b5; /* canvas text color */
 }
 
 .ai-send-button:hover:not(:disabled) {
-  background: #D00000;
+  background: #3b0000; /* slightly lighter/darker variant */
   transform: translateY(-1px);
 }
 

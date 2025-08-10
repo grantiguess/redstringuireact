@@ -15,10 +15,12 @@ import {
   Square
 } from 'lucide-react';
 import mcpClient from './services/mcpClient.js';
+import { bridgeFetch } from './services/bridgeConfig.js';
 import apiKeyManager from './services/apiKeyManager.js';
 import APIKeySetup from './components/APIKeySetup.jsx';
 import useGraphStore from './store/graphStore.js';
 import './AICollaborationPanel.css';
+import { HEADER_HEIGHT } from './constants';
 
 const AICollaborationPanel = () => {
   const [isConnected, setIsConnected] = useState(false);
@@ -35,6 +37,9 @@ const AICollaborationPanel = () => {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
+  // Persist chat history in localStorage so it survives tab switches/mounts
+  const STORAGE_KEY = 'rs.aiChat.messages.v1';
+
   // Get store state
   const activeGraphId = useGraphStore((state) => state.activeGraphId);
   const graphs = useGraphStore((state) => state.graphs);
@@ -46,6 +51,32 @@ const AICollaborationPanel = () => {
   // Auto-scroll to bottom of messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Restore connection state and chat history on mount
+  useEffect(() => {
+    try {
+      // Retain connection if the client is already connected (singleton)
+      if (mcpClient && mcpClient.isConnected) {
+        setIsConnected(true);
+      }
+    } catch {}
+    try {
+      const cached = localStorage.getItem(STORAGE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          setMessages(parsed);
+        }
+      }
+    } catch {}
+  }, []);
+
+  // Persist chat history on every change
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    } catch {}
   }, [messages]);
 
   // Check for API key on component mount
@@ -86,6 +117,63 @@ const AICollaborationPanel = () => {
     }
   };
 
+  // Manual refresh: push current store projection to the bridge and re-init MCP connection
+  const refreshBridgeConnection = async () => {
+    try {
+      setIsProcessing(true);
+      // 1) Push current store snapshot to the bridge immediately
+      const s = useGraphStore.getState();
+      const bridgeData = {
+        graphs: Array.from(s.graphs.entries()).map(([id, graph]) => ({
+          id,
+          name: graph.name,
+          description: graph.description || '',
+          instanceCount: graph.instances?.size || 0,
+          instances: id === s.activeGraphId && graph.instances ?
+            Object.fromEntries(Array.from(graph.instances.entries()).map(([instanceId, instance]) => [
+              instanceId, {
+                id: instance.id,
+                prototypeId: instance.prototypeId,
+                x: instance.x || 0,
+                y: instance.y || 0,
+                scale: instance.scale || 1
+              }
+            ])) : undefined
+        })),
+        nodePrototypes: Array.from(s.nodePrototypes.entries()).map(([nid, prototype]) => ({ id: nid, name: prototype.name })),
+        activeGraphId: s.activeGraphId,
+        activeGraphName: s.activeGraphId ? (s.graphs.get(s.activeGraphId)?.name || null) : null,
+        openGraphIds: s.openGraphIds,
+        summary: {
+          totalGraphs: s.graphs.size,
+          totalPrototypes: s.nodePrototypes.size,
+          lastUpdate: Date.now()
+        }
+      };
+      try {
+        const resp = await bridgeFetch('/api/bridge/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bridgeData)
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      } catch (e) {
+        console.warn('[AI Panel] Bridge state refresh failed:', e);
+      }
+
+      // 2) Re-establish MCP connection (without wiping local history)
+      await initializeConnection();
+
+      // 3) Reset the visible chat area to blank prompt per UX request
+      setMessages([]);
+      addMessage('system', '🔄 Bridge refreshed.');
+    } catch (e) {
+      addMessage('system', `Refresh failed: ${e.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const addMessage = (sender, content, metadata = {}) => {
     const message = {
       id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -93,23 +181,108 @@ const AICollaborationPanel = () => {
       content,
       timestamp: new Date().toISOString(),
       metadata,
-      toolCalls: metadata.toolCalls || []
+      toolCalls: (metadata.toolCalls || []).map(tc => ({ ...tc, expanded: false }))
     };
     setMessages(prev => [...prev, message]);
   };
 
-  // Subscribe to server telemetry and surface as chat items
+  const upsertToolCall = (toolUpdate) => {
+    setMessages(prev => {
+      const updated = [...prev];
+      // Find the last AI message
+      let idx = updated.length - 1;
+      while (idx >= 0 && updated[idx].sender !== 'ai') idx--;
+      if (idx < 0) {
+        // Create a new AI message container if none exists
+        updated.push({
+          id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          sender: 'ai',
+          content: '',
+          timestamp: new Date().toISOString(),
+          toolCalls: []
+        });
+        idx = updated.length - 1;
+      }
+      const msg = { ...updated[idx] };
+      const calls = Array.isArray(msg.toolCalls) ? [...msg.toolCalls] : [];
+      // Try to match by name or cid if provided
+      const matchIndex = calls.findIndex(c => (toolUpdate.cid && c.cid === toolUpdate.cid && c.name === toolUpdate.name) || (!toolUpdate.cid && c.name === toolUpdate.name));
+      if (matchIndex >= 0) {
+        const merged = { ...calls[matchIndex], ...toolUpdate };
+        calls[matchIndex] = merged;
+      } else {
+        calls.push({ expanded: false, status: 'running', ...toolUpdate });
+      }
+      msg.toolCalls = calls;
+      updated[idx] = msg;
+      return updated;
+    });
+  };
+
+  // Subscribe to server telemetry and surface as structured tool calls
   useEffect(() => {
     const handler = (e) => {
       const items = Array.isArray(e.detail) ? e.detail : [];
       items.forEach((t) => {
-        const summary = `${t.status?.toUpperCase?.() || 'INFO'}: ${t.name || 'tool'}${t.args ? ' ' + JSON.stringify(t.args) : ''}`;
-        addMessage('ai', summary, { isTelemetry: true });
+        // Map telemetry to tool call updates
+        if (t.type === 'tool_call') {
+          upsertToolCall({ name: t.name || 'tool', status: 'running', args: t.args, cid: t.cid });
+          return;
+        }
+        if (t.type === 'agent_queued') {
+          // Create a summary call entry for queued operations
+          upsertToolCall({ name: 'agent', status: 'queued', args: { queued: t.queued, graphId: t.graphId }, cid: t.cid });
+          return;
+        }
+        if (t.type === 'info') {
+          // Treat friendly info as the result of the last running tool
+          upsertToolCall({ name: t.name || 'info', status: 'completed', result: t.message, cid: t.cid });
+          return;
+        }
+        if (t.type === 'agent_answer') {
+          // Update the last AI message (created by agent_queued) with the final text
+          const finalText = (t.text || '').trim();
+          setMessages(prev => {
+            const updated = [...prev];
+            // Find the last AI message
+            let idx = updated.length - 1;
+            while (idx >= 0 && updated[idx].sender !== 'ai') idx--;
+            if (idx >= 0) {
+              const msg = { ...updated[idx], content: finalText };
+              updated[idx] = msg;
+              return updated;
+            }
+            // Fallback: no AI message yet, create one
+            return [
+              ...updated,
+              {
+                id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                sender: 'ai',
+                content: finalText,
+                timestamp: new Date().toISOString(),
+                toolCalls: []
+              }
+            ];
+          });
+          return;
+        }
       });
     };
     window.addEventListener('rs-telemetry', handler);
     return () => window.removeEventListener('rs-telemetry', handler);
   }, []);
+
+  // Auto-connect when API key is present and not connected
+  useEffect(() => {
+    if (hasAPIKey && !isConnected && !isProcessing) {
+      // If the underlying client is already connected, just reflect it
+      if (mcpClient && mcpClient.isConnected) {
+        setIsConnected(true);
+        return;
+      }
+      initializeConnection();
+    }
+  }, [hasAPIKey]);
 
   const handleSendMessage = async () => {
     if (!currentInput.trim() || isProcessing) return;
@@ -189,7 +362,7 @@ const AICollaborationPanel = () => {
       setCurrentAgentRequest(abortController);
 
       // Call the autonomous agent endpoint
-      const response = await fetch('http://localhost:3001/api/ai/agent', {
+      const response = await bridgeFetch('/api/ai/agent', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -263,7 +436,7 @@ const AICollaborationPanel = () => {
       const apiKey = await apiKeyManager.getAPIKey();
       
       // Send the message to the AI model through the HTTP endpoint
-      const response = await fetch('http://localhost:3001/api/ai/chat', {
+      const response = await bridgeFetch('/api/ai/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -377,6 +550,27 @@ You can "see" and reason about canvas layouts:
 
   const graphInfo = getGraphInfo();
 
+  // Clearance above the always‑visible TypeList toggle button
+  const toggleClearance = HEADER_HEIGHT + 14; // button height plus a small gap (static, independent of TypeList state)
+
+  // File status (optional, polled periodically)
+  const [fileStatus, setFileStatus] = useState(null);
+  useEffect(() => {
+    let mounted = true;
+    const fetchFileStatus = async () => {
+      try {
+        const mod = await import('./store/fileStorage.js');
+        if (typeof mod.getFileStatus === 'function') {
+          const status = mod.getFileStatus();
+          if (mounted) setFileStatus(status);
+        }
+      } catch {}
+    };
+    fetchFileStatus();
+    const t = setInterval(fetchFileStatus, 3000);
+    return () => { mounted = false; clearInterval(t); };
+  }, []);
+
   return (
     <div className="ai-collaboration-panel">
       {/* Header */}
@@ -389,6 +583,13 @@ You can "see" and reason about canvas layouts:
               <div className={`ai-status-indicator ${isConnected ? 'connected' : 'disconnected'}`} />
               <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
             </div>
+            {fileStatus && (
+              <div className="ai-file-status" title={fileStatus.fileName ? `Saving to ${fileStatus.fileName}` : 'No universe file selected'}>
+                <span style={{ fontSize: '11px', color: '#9aa' }}>
+                  {fileStatus.hasFileHandle ? `Auto‑save: ${fileStatus.autoSaveEnabled ? 'on' : 'off'}` : 'No universe file'}
+                </span>
+              </div>
+            )}
           </div>
         </div>
         <div className="ai-header-actions">
@@ -407,9 +608,9 @@ You can "see" and reason about canvas layouts:
             <Settings size={16} />
           </button>
 
-          <button
+          <button 
             className={`ai-header-button ${isConnected ? 'ai-refresh-button' : 'ai-connect-button'}`}
-            onClick={initializeConnection}
+            onClick={refreshBridgeConnection}
             title={isConnected ? "Refresh Connection" : "Connect to MCP Server"}
             disabled={isProcessing}
           >
@@ -488,10 +689,17 @@ You can "see" and reason about canvas layouts:
                     <div className="ai-tool-calls">
                       {message.toolCalls.map((toolCall, index) => (
                         <div key={index} className={`ai-tool-call ai-tool-call-${toolCall.status || 'running'}`}>
-                          <div className="ai-tool-call-header">
-                            <div className="ai-tool-call-icon">
-                              {toolCall.status === 'completed' ? '✅' : 
-                               toolCall.status === 'failed' ? '❌' : '🔄'}
+                          <div className="ai-tool-call-header" style={{ cursor: 'pointer' }} onClick={() => {
+                            setMessages(prev => prev.map(m => {
+                              if (m.id !== message.id) return m;
+                              const copy = { ...m };
+                              copy.toolCalls = copy.toolCalls.map((c, ci) => ci === index ? { ...c, expanded: !c.expanded } : c);
+                              return copy;
+                            }));
+                          }}>
+                            <div className="ai-tool-call-icon" aria-hidden>
+                              {toolCall.status === 'completed' ? <Square style={{ transform: 'rotate(45deg)' }} size={12} /> :
+                               toolCall.status === 'failed' ? <Square size={12} /> : <RotateCcw size={12} />}
                             </div>
                             <span className="ai-tool-call-name">{toolCall.name}</span>
                             <span className="ai-tool-call-status">
@@ -499,12 +707,12 @@ You can "see" and reason about canvas layouts:
                                toolCall.status === 'failed' ? 'Failed' : 'Running...'}
                             </span>
                           </div>
-                          {toolCall.args && (
+                          {toolCall.args && toolCall.expanded && (
                             <div className="ai-tool-call-args">
                               <small>{JSON.stringify(toolCall.args, null, 2)}</small>
                             </div>
                           )}
-                          {toolCall.result && (
+                          {toolCall.result && toolCall.expanded && (
                             <div className="ai-tool-call-result">
                               <div className="ai-tool-call-result-content">
                                 {toolCall.result}
@@ -545,7 +753,7 @@ You can "see" and reason about canvas layouts:
           </div>
 
           {/* Input */}
-          <div className="ai-input-container">
+          <div className="ai-input-container" style={{ marginBottom: toggleClearance }}>
             <textarea
               ref={inputRef}
               value={currentInput}
@@ -572,7 +780,7 @@ You can "see" and reason about canvas layouts:
                 disabled={!currentInput.trim() || isProcessing}
                 className="ai-send-button"
               >
-                <Send size={16} />
+                <Send size={32} />
               </button>
             )}
           </div>

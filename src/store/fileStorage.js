@@ -32,11 +32,69 @@ const STORAGE_KEYS = {
   PREFERRED_DIRECTORY: 'redstring_preferred_directory',
 };
 
+// Browser-storage fallback (IndexedDB) for mobile/tablet
+const BROWSER_DB_NAME = 'RedstringBrowserUniverse';
+const BROWSER_STORE_NAME = 'universe';
+const BROWSER_KEY = 'current';
+
+const openBrowserUniverseDB = () => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(BROWSER_DB_NAME, 1);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(BROWSER_STORE_NAME)) {
+        db.createObjectStore(BROWSER_STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = (event) => resolve(event.target.result);
+    request.onerror = () => reject(request.error);
+  });
+};
+
+const storeBrowserUniverse = async (redstringData) => {
+  const db = await openBrowserUniverseDB();
+  const tx = db.transaction([BROWSER_STORE_NAME], 'readwrite');
+  const store = tx.objectStore(BROWSER_STORE_NAME);
+  store.put({ id: BROWSER_KEY, data: redstringData, savedAt: Date.now() });
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+};
+
+const loadBrowserUniverse = async () => {
+  try {
+    const db = await openBrowserUniverseDB();
+    const tx = db.transaction([BROWSER_STORE_NAME], 'readonly');
+    const store = tx.objectStore(BROWSER_STORE_NAME);
+    const req = store.get(BROWSER_KEY);
+    const result = await new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return result ? result.data : null;
+  } catch (e) {
+    console.warn('[FileStorage] Failed to load browser-stored universe:', e);
+    return null;
+  }
+};
+
 /**
  * Check if File System Access API is supported
  */
 export const isFileSystemSupported = () => {
   return 'showSaveFilePicker' in window && 'showOpenFilePicker' in window;
+};
+
+// Fallback mode for browsers without the File System Access API (e.g., many mobile/tablet browsers)
+const isBrowserStorageMode = () => {
+  try {
+    return !('showSaveFilePicker' in window && 'showOpenFilePicker' in window);
+  } catch {
+    return true;
+  }
 };
 
 /**
@@ -350,34 +408,28 @@ const setupAutoSave = (getStoreStateFn) => {
   if (autoSaveInterval) {
     clearInterval(autoSaveInterval);
   }
-  
-  if (isAutoSaveEnabled && fileHandle && getStoreStateFn) {
-    autoSaveInterval = setInterval(async () => {
-      try {
-        const now = Date.now();
-        
-        // Only save if:
-        // 1. There have been changes since last save (lastChangeTime > lastSaveTime)
-        // 2. Enough time has passed since the last change (debounce)
-        if (lastChangeTime <= lastSaveTime) {
-          return; // No changes since last save
-        }
-        
-        if (now - lastChangeTime < DEBOUNCE_DELAY) {
-          return; // Too soon after last change (debounce)
-        }
-        const storeState = getStoreStateFn();
-        const success = await saveToFile(storeState, false); // false = silent auto-save
-        if (!success) {
-          console.warn('[FileStorage] Auto-save failed');
-        }
-      } catch (error) {
-        console.error('[FileStorage] Auto-save failed:', error);
+  if (!isAutoSaveEnabled || !getStoreStateFn) return;
+  autoSaveInterval = setInterval(async () => {
+    try {
+      const now = Date.now();
+      if (lastChangeTime <= lastSaveTime) return;
+      if (now - lastChangeTime < DEBOUNCE_DELAY) return;
+      const storeState = getStoreStateFn();
+      const redstringData = exportToRedstring(storeState);
+      if (isBrowserStorageMode() || !fileHandle) {
+        await storeBrowserUniverse(redstringData);
+        lastSaveTime = Date.now();
+        return;
       }
-    }, AUTO_SAVE_INTERVAL);
-    
-    console.log(`[FileStorage] Auto-save enabled (every ${AUTO_SAVE_INTERVAL}ms)`);
-  }
+      const success = await saveToFile(storeState, false);
+      if (!success) {
+        console.warn('[FileStorage] Auto-save failed');
+      }
+    } catch (error) {
+      console.error('[FileStorage] Auto-save failed:', error);
+    }
+  }, AUTO_SAVE_INTERVAL);
+  console.log(`[FileStorage] Auto-save enabled (every ${AUTO_SAVE_INTERVAL}ms) [mode=${isBrowserStorageMode() ? 'browser' : 'file'}]`);
 };
 
 /**
@@ -422,8 +474,14 @@ const createEmptyState = () => {
  * Create the universe.redstring file (or let user choose location)
  */
 export const createUniverseFile = async () => {
-  if (!isFileSystemSupported()) {
-    throw new Error('File System Access API not supported in this browser');
+  if (isBrowserStorageMode()) {
+    // Mobile/tablet fallback: create in IndexedDB
+    const initialState = createEmptyState();
+    const redstringData = exportToRedstring(initialState);
+    await storeBrowserUniverse(redstringData);
+    lastSaveTime = Date.now();
+    console.log('[FileStorage] Created browser-stored universe (fallback mode)');
+    return initialState;
   }
 
   try {
@@ -480,8 +538,13 @@ export const createUniverseFile = async () => {
  * Open existing universe.redstring file
  */
 export const openUniverseFile = async () => {
-  if (!isFileSystemSupported()) {
-    throw new Error('File System Access API not supported');
+  if (isBrowserStorageMode()) {
+    // Try to open from browser storage
+    const data = await loadBrowserUniverse();
+    if (!data) return null;
+    const importResult = importFromRedstring(data);
+    console.log('[FileStorage] Opened browser-stored universe');
+    return importResult.storeState;
   }
 
   try {
@@ -545,8 +608,14 @@ export const openUniverseFile = async () => {
  * Smart auto-connect that tries multiple strategies to find universe.redstring
  */
 export const autoConnectToUniverse = async () => {
-  if (!isFileSystemSupported()) {
-    throw new Error('File System Access API not supported');
+  if (isBrowserStorageMode()) {
+    const data = await loadBrowserUniverse();
+    if (data) {
+      const importResult = importFromRedstring(data);
+      console.log('[FileStorage] Auto-connected (browser storage)');
+      return importResult.storeState;
+    }
+    return null;
   }
 
   console.log('[FileStorage] Starting auto-connect to universe...');
@@ -679,9 +748,17 @@ export const restoreLastSession = async () => {
  * Save current state to the universe file
  */
 export const saveToFile = async (storeState, showSuccess = true) => {
-  if (!fileHandle) {
-    console.warn('[FileStorage] No file handle available for saving');
-    return false;
+  if (isBrowserStorageMode() || !fileHandle) {
+    try {
+      const redstringData = exportToRedstring(storeState);
+      await storeBrowserUniverse(redstringData);
+      lastSaveTime = Date.now();
+      if (showSuccess) console.log('[FileStorage] Saved to browser storage');
+      return true;
+    } catch (e) {
+      console.error('[FileStorage] Failed to save to browser storage:', e);
+      return false;
+    }
   }
   
   try {

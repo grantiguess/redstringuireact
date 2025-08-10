@@ -26,11 +26,24 @@ This guide explains how AI models can integrate with Redstring's cognitive knowl
 ### Integration Points
 
 - **Graph Store**: Direct access to Redstring's Zustand store
+- **Search-first Orchestration (2025)**:
+  - The user-facing agent resolves graph/concept references via list/search before any create operations.
+  - If ambiguity remains, it reprompts for clarification instead of guessing IDs.
+  - The daemon exposes HTTP search at `/search` (fuzzy/regex/scoped) and chat-level `search ...` handling.
+
 - **Core Data Structures**: Integration with Node, Edge, and Graph classes
 - **Semantic Web**: RDF export capabilities for external AI processing
 - **Federation**: Connection to external knowledge sources
 
 ## MCP Tools Available
+### Orchestration Policy
+
+- Preferred order for create flows:
+  1. `verify_state`, `list_available_graphs`
+  2. `search_nodes` (and/or HTTP `/search` when needed)
+  3. If no match and user intent is explicit, `create_graph` / `create_node_prototype`
+  4. `create_node_instance` in the resolved target graph
+
 
 ### Graph Traversal Tools
 

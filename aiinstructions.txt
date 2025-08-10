@@ -56,6 +56,24 @@ When assisting with the Redstring project, please adhere to the following guidel
 
 By keeping these points in mind, you can effectively contribute to the development and refinement of Redstring, ensuring it stays true to its unique vision and technical architecture.
 
+## User-Agent Planning (2025)
+
+- The user-facing agent must operate planning-first and is stateless per call.
+- For greetings/questions, respond briefly (qa intent) without mutations and, when helpful, mention the active graph name/id.
+- For create intents:
+  - create_graph: enqueue a goal DAG with `create_graph` and let the orchestrator run (Planner → Executor → Auditor → Committer). Do not claim that the graph exists until committed.
+  - create_node: include a prototype+instance plan. If the target graph is unclear, first resolve via `list_available_graphs` / `search_nodes` (or the HTTP `/search` endpoint). The system may route instance placement via `applyMutations` until full queue coverage is complete.
+- For analyze intents: enqueue read-only tasks (verify_state, list_available_graphs, get_graph_instances, identify_patterns). No direct mutations.
+- The Committer is the single writer; UI updates only after `applyMutations`.
+
+## Redstring Domain Quick Reference
+
+- Graph: workspace/tab that contains node instances and edges
+- Node prototype (concept): reusable definition (name/color/optional definition graph)
+- Node instance: placement of a prototype (x,y,scale) inside a graph
+- Edge: connection between instances with a type (prototype) and directionality (arrowsToward)
+- Definition graph: a graph assigned to a prototype to define/elaborate it
+
 ## Advanced Interaction Patterns & Recent Developments:
 
 Beyond the general guidelines, recent development has focused on more complex UI interactions, particularly concerning the PieMenu, node preview/expansion states, and animation synchronization. Key points to be aware of:

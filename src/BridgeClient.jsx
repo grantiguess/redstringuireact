@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import useGraphStore from './store/graphStore';
+import { bridgeEventSource, bridgeFetch } from './services/bridgeConfig.js';
 
 /**
  * Bridge Client Component (formerly MCPBridge)
@@ -9,6 +10,9 @@ import useGraphStore from './store/graphStore';
  */
 const BridgeClient = () => {
   const intervalRef = useRef(null);
+  // Separate interval refs to avoid accidental overlap/mismanagement
+  const dataIntervalRef = useRef(null);
+  const bridgeIntervalRef = useRef(null);
   const reconnectIntervalRef = useRef(null);
   const connectionStateRef = useRef({
     isConnected: false,
@@ -22,7 +26,7 @@ const BridgeClient = () => {
   useEffect(() => {
     // Subscribe to EventLog SSE for projection refresh triggers
     try {
-      const es = new EventSource('http://localhost:3001/events/stream');
+      const es = bridgeEventSource('/events/stream');
       es.addEventListener('PATCH_APPLIED', () => {
         // Projection refresh is intentionally minimal here because applyMutations are already executed
         // This hook is future-proof for wholesale projection replacement once canonical snapshots are streamed
@@ -35,7 +39,7 @@ const BridgeClient = () => {
     // Function to check bridge server health
     const checkBridgeHealth = async () => {
       try {
-        const response = await fetch('http://localhost:3001/api/bridge/health');
+        const response = await bridgeFetch('/api/bridge/health');
         return response.ok;
       } catch (error) {
         return false;
@@ -58,22 +62,22 @@ const BridgeClient = () => {
         connectionState.lastSuccessfulConnection = Date.now();
         connectionState.reconnectAttempts = 0;
         
-        // Clear reconnection interval
-        if (reconnectIntervalRef.current) {
-          clearInterval(reconnectIntervalRef.current);
-          reconnectIntervalRef.current = null;
-        }
+         // Clear reconnection interval
+         if (reconnectIntervalRef.current) {
+           clearInterval(reconnectIntervalRef.current);
+           reconnectIntervalRef.current = null;
+         }
         
         // Re-register actions and restart polling
         try {
           await registerStoreActions();
           await sendStoreToServer();
           
-          // Restart normal polling
-          if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-          }
-          intervalRef.current = setInterval(sendStoreToServer, 10000);
+           // Restart normal polling
+           if (dataIntervalRef.current) {
+             clearInterval(dataIntervalRef.current);
+           }
+           dataIntervalRef.current = setInterval(sendStoreToServer, 10000);
           
           console.log('🎉 MCP Bridge: Connection fully restored!');
         } catch (error) {
@@ -106,9 +110,9 @@ const BridgeClient = () => {
       }
       
       // Stop normal polling
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+      if (dataIntervalRef.current) {
+        clearInterval(dataIntervalRef.current);
+        dataIntervalRef.current = null;
       }
       
       // Start reconnection attempts if not already running
@@ -257,6 +261,41 @@ const BridgeClient = () => {
                 const g = s.graphs.get(graphId);
                 const friendly = `Opened graph "${g?.name || graphId}"`;
                 window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: [{ ts: Date.now(), type: 'info', name: 'openGraph', message: friendly }] }));
+                // Immediately sync bridge state so /api/ai/agent sees the active graph without delay
+                try {
+                  const bridgeData = {
+                    graphs: Array.from(s.graphs.entries()).map(([id, graph]) => ({
+                      id,
+                      name: graph.name,
+                      description: graph.description || '',
+                      instanceCount: graph.instances?.size || 0,
+                      instances: id === s.activeGraphId && graph.instances ?
+                        Object.fromEntries(Array.from(graph.instances.entries()).map(([instanceId, instance]) => [
+                          instanceId, {
+                            id: instance.id,
+                            prototypeId: instance.prototypeId,
+                            x: instance.x || 0,
+                            y: instance.y || 0,
+                            scale: instance.scale || 1
+                          }
+                        ])) : undefined
+                    })),
+                    nodePrototypes: Array.from(s.nodePrototypes.entries()).map(([nid, prototype]) => ({ id: nid, name: prototype.name })),
+                    activeGraphId: s.activeGraphId,
+                    activeGraphName: s.activeGraphId ? (s.graphs.get(s.activeGraphId)?.name || null) : null,
+                    openGraphIds: s.openGraphIds,
+                    summary: {
+                      totalGraphs: s.graphs.size,
+                      totalPrototypes: s.nodePrototypes.size,
+                      lastUpdate: Date.now()
+                    }
+                  };
+                  await bridgeFetch('/api/bridge/state', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bridgeData)
+                  });
+                } catch {}
               } catch {}
               return { success: true, graphId };
             },
@@ -265,6 +304,12 @@ const BridgeClient = () => {
                 const beforeId = state.activeGraphId;
                 state.createNewGraph(initialData || {});
                 const afterId = useGraphStore.getState().activeGraphId;
+                try {
+                  const s2 = useGraphStore.getState();
+                  const g = afterId ? s2.graphs.get(afterId) : null;
+                  const friendly = `Created graph "${g?.name || 'New Thing'}" (${afterId || 'unknown'})`;
+                  window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: [{ ts: Date.now(), type: 'info', name: 'createNewGraph', message: friendly, graphId: afterId }] }));
+                } catch {}
                 return { success: true, graphId: afterId || beforeId };
               },
               createAndAssignGraphDefinition: async (prototypeId) => {
@@ -332,7 +377,7 @@ const BridgeClient = () => {
                   const st = useGraphStore.getState();
                   if (st.nodePrototypes.has(prototypeId)) return true;
                   try {
-                    const resp = await fetch('http://localhost:3001/api/bridge/state');
+                    const resp = await bridgeFetch('/api/bridge/state');
                     if (!resp.ok) return false;
                     const b = await resp.json();
                     const p = Array.isArray(b.nodePrototypes) ? b.nodePrototypes.find(x => x.id === prototypeId) : null;
@@ -439,6 +484,26 @@ const BridgeClient = () => {
                         results.push({ type: op.type, ok: true, id: op.edgeId });
                         break;
                       }
+                      case 'updateGraph': {
+                        const st = useGraphStore.getState();
+                        const g = st.graphs.get(op.graphId);
+                        if (!g) {
+                          results.push({ type: op.type, ok: false, id: op.graphId, error: 'Missing graph' });
+                          break;
+                        }
+                        st.updateGraph(op.graphId, (graph) => {
+                          if (typeof op.updates?.name === 'string') graph.name = op.updates.name;
+                          if (typeof op.updates?.color === 'string') graph.color = op.updates.color;
+                        });
+                        try {
+                          const s2 = useGraphStore.getState();
+                          const g2 = s2.graphs.get(op.graphId);
+                          const friendly = `Updated graph "${g2?.name || op.graphId}"`;
+                          window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: [{ ts: Date.now(), type: 'info', name: 'applyMutations', message: friendly }] }));
+                        } catch {}
+                        results.push({ type: op.type, ok: true, id: op.graphId });
+                        break;
+                      }
                       case 'updateNodePrototype': {
                         const st = useGraphStore.getState();
                         const exists = st.nodePrototypes.has(op.prototypeId);
@@ -486,6 +551,13 @@ const BridgeClient = () => {
                         break;
                       case 'createNewGraph':
                         store.createNewGraph(op.initialData || {});
+                        try {
+                          const s2 = useGraphStore.getState();
+                          const gid = s2.activeGraphId;
+                          const g = gid ? s2.graphs.get(gid) : null;
+                          const friendly = `Created graph "${g?.name || 'New Graph'}"`;
+                          window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: [{ ts: Date.now(), type: 'info', name: 'applyMutations', message: friendly }] }));
+                        } catch {}
                         results.push({ type: op.type, ok: true });
                         break;
                       case 'createAndAssignGraphDefinition':
@@ -516,7 +588,7 @@ const BridgeClient = () => {
         // Register action metadata with bridge server
         console.log('MCPBridge: About to register action metadata:', Object.keys(actionMetadata));
         
-        const response = await fetch('http://localhost:3001/api/bridge/register-store', {
+        const response = await bridgeFetch('/api/bridge/register-store', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -545,6 +617,14 @@ const BridgeClient = () => {
     const sendStoreToServer = async () => {
       try {
         const state = useGraphStore.getState();
+        // Include file status for debugging/persistence visibility
+        let fileStatus = null;
+        try {
+          const mod = await import('./store/fileStorage.js');
+          if (typeof mod.getFileStatus === 'function') {
+            fileStatus = mod.getFileStatus();
+          }
+        } catch {}
         
         // Send only minimal essential data to keep payload small
         const bridgeData = {
@@ -575,7 +655,10 @@ const BridgeClient = () => {
           
           // UI state
           activeGraphId: state.activeGraphId,
+          activeGraphName: state.activeGraphId ? (state.graphs.get(state.activeGraphId)?.name || null) : null,
           openGraphIds: state.openGraphIds,
+          // File status (optional)
+          fileStatus,
           
           // Summary stats
           summary: {
@@ -586,7 +669,7 @@ const BridgeClient = () => {
         };
 
         // Send to server
-        const response = await fetch('http://localhost:3001/api/bridge/state', {
+        const response = await bridgeFetch('/api/bridge/state', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -633,10 +716,31 @@ const BridgeClient = () => {
       }
     };
     
+    // Attempt immediate connection, then retry a few times quickly if needed
     initializeConnection();
+    let quickRetries = 0;
+    const quickRetryTimer = setInterval(async () => {
+      if (connectionStateRef.current.isConnected) {
+        clearInterval(quickRetryTimer);
+        return;
+      }
+      if (quickRetries >= 5) {
+        clearInterval(quickRetryTimer);
+        return;
+      }
+      quickRetries++;
+      try {
+        await registerStoreActions();
+        await sendStoreToServer();
+        connectionStateRef.current.isConnected = true;
+        connectionStateRef.current.lastSuccessfulConnection = Date.now();
+        console.log('✅ MCP Bridge: Quick retry connected');
+        clearInterval(quickRetryTimer);
+      } catch {}
+    }, 1000);
 
     // Set up a polling mechanism to keep the bridge updated
-    intervalRef.current = setInterval(sendStoreToServer, 10000); // Update every 10 seconds
+    dataIntervalRef.current = setInterval(sendStoreToServer, 10000); // Update every 10 seconds
 
     // Set up a listener for save triggers and pending actions from the bridge server
     const checkForBridgeUpdates = async () => {
@@ -647,14 +751,14 @@ const BridgeClient = () => {
         // DISABLED: This was causing conflicts with Redstring state restoration
         // TODO: Re-implement this as a one-way sync only when AI tools make explicit changes
         // 
-        // const bridgeResponse = await fetch('http://localhost:3001/api/bridge/state');
+        // const bridgeResponse = await bridgeFetch('/api/bridge/state');
         // if (bridgeResponse.ok) {
         //   const bridgeData = await bridgeResponse.json();
         //   // ... sync logic disabled for now
         // }
 
         // Check for pending actions
-        const actionsResponse = await fetch('http://localhost:3001/api/bridge/pending-actions');
+        const actionsResponse = await bridgeFetch('/api/bridge/pending-actions');
         if (actionsResponse.ok) {
           const actionsData = await actionsResponse.json();
           if (actionsData.pendingActions && actionsData.pendingActions.length > 0) {
@@ -674,6 +778,10 @@ const BridgeClient = () => {
             
             for (const pendingAction of orderedActions) {
               try {
+                // Emit running status to telemetry so chat shows non-stalled progress
+                try {
+                  window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: [{ ts: Date.now(), type: 'tool_call', name: pendingAction.action, args: pendingAction.params, status: 'running', id: pendingAction.id }] }));
+                } catch {}
                 if (window.redstringStoreActions && window.redstringStoreActions[pendingAction.action]) {
                   console.log('✅ MCP Bridge: Executing action:', pendingAction.action, pendingAction.params);
                   
@@ -694,7 +802,7 @@ const BridgeClient = () => {
                       
                       // Try to sync missing data from bridge server
                       try {
-                        const bridgeResponse = await fetch('http://localhost:3001/api/bridge/state');
+                        const bridgeResponse = await bridgeFetch('/api/bridge/state');
                         if (bridgeResponse.ok) {
                           const bridgeData = await bridgeResponse.json();
                           
@@ -730,7 +838,7 @@ const BridgeClient = () => {
                       if (!graphExistsAfterSync || !prototypeExistsAfterSync) {
                         console.warn('⚠️ MCP Bridge: Graph or prototype still not found after sync, skipping instance creation');
                         // Send warning feedback
-                        await fetch('http://localhost:3001/api/bridge/action-feedback', {
+                        await bridgeFetch('/api/bridge/action-feedback', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
@@ -758,11 +866,14 @@ const BridgeClient = () => {
                     result = await window.redstringStoreActions[pendingAction.action](...(Array.isArray(pendingAction.params) ? pendingAction.params : [pendingAction.params]));
                   }
                   console.log('✅ MCP Bridge: Action completed successfully:', pendingAction.action, result);
+                  try {
+                    window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: [{ ts: Date.now(), type: 'tool_call', name: pendingAction.action, args: pendingAction.params, status: 'completed', id: pendingAction.id }] }));
+                  } catch {}
 
                   // Acknowledge completion to bridge server if id exists
                   try {
                     if (pendingAction.id) {
-                      await fetch('http://localhost:3001/api/bridge/action-completed', {
+                      await bridgeFetch('/api/bridge/action-completed', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ actionId: pendingAction.id, result })
@@ -774,7 +885,7 @@ const BridgeClient = () => {
                 } else {
                   console.error('❌ MCP Bridge: Action not found:', pendingAction.action);
                   // Send error feedback to bridge server
-                  await fetch('http://localhost:3001/api/bridge/action-feedback', {
+                  await bridgeFetch('/api/bridge/action-feedback', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -783,12 +894,15 @@ const BridgeClient = () => {
                       error: 'Action not found in window.redstringStoreActions'
                     })
                   });
+                  try {
+                    window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: [{ ts: Date.now(), type: 'tool_call', name: pendingAction.action, args: pendingAction.params, status: 'failed', id: pendingAction.id }] }));
+                  } catch {}
                 }
               } catch (error) {
                 console.error('❌ MCP Bridge: Failed to execute action:', pendingAction.action, error);
                 // Send error feedback to bridge server
                 try {
-                  await fetch('http://localhost:3001/api/bridge/action-feedback', {
+                  await bridgeFetch('/api/bridge/action-feedback', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -801,6 +915,9 @@ const BridgeClient = () => {
                 } catch (feedbackError) {
                   console.error('❌ MCP Bridge: Failed to send error feedback:', feedbackError);
                 }
+                try {
+                  window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: [{ ts: Date.now(), type: 'tool_call', name: pendingAction.action, args: pendingAction.params, status: 'failed', id: pendingAction.id }] }));
+                } catch {}
               }
             }
           }
@@ -811,7 +928,7 @@ const BridgeClient = () => {
           if (!connectionStateRef.current.isConnected) {
             // Skip polling telemetry while disconnected
           } else {
-            const telRes = await fetch('http://localhost:3001/api/bridge/telemetry');
+            const telRes = await bridgeFetch('/api/bridge/telemetry');
             if (telRes.ok) {
               const tel = await telRes.json();
               if (Array.isArray(tel.telemetry) && tel.telemetry.length > 0) {
@@ -832,21 +949,17 @@ const BridgeClient = () => {
     };
     
     // Check for bridge updates every 2 seconds
-    const bridgeUpdateInterval = setInterval(checkForBridgeUpdates, 2000);
-    
-    // Store the interval for cleanup
-    intervalRef.current = { dataInterval: intervalRef.current, bridgeInterval: bridgeUpdateInterval };
+    bridgeIntervalRef.current = setInterval(checkForBridgeUpdates, 2000);
 
     // Cleanup function
     return () => {
-      if (intervalRef.current) {
-        if (intervalRef.current.dataInterval) {
-          clearInterval(intervalRef.current.dataInterval);
-        }
-        if (intervalRef.current.bridgeInterval) {
-          clearInterval(intervalRef.current.bridgeInterval);
-        }
-        intervalRef.current = null;
+      if (dataIntervalRef.current) {
+        clearInterval(dataIntervalRef.current);
+        dataIntervalRef.current = null;
+      }
+      if (bridgeIntervalRef.current) {
+        clearInterval(bridgeIntervalRef.current);
+        bridgeIntervalRef.current = null;
       }
       
       // Clean up reconnection interval

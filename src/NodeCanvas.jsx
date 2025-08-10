@@ -122,6 +122,16 @@ function NodeCanvas() {
   const [rightPanelWidth, setRightPanelWidth] = useState(() => {
     try { return JSON.parse(localStorage.getItem('panelWidth_right') || '280'); } catch { return 280; }
   });
+  // Track last touch coordinates for touchend where touches are empty
+  const lastTouchRef = useRef({ x: 0, y: 0 });
+  const touchMultiPanRef = useRef(false);
+  const pinchRef = useRef({
+    active: false,
+    startDist: 0,
+    startZoom: 1,
+    centerClient: { x: 0, y: 0 },
+    centerWorld: { x: 0, y: 0 },
+  });
   const isDraggingLeft = useRef(false);
   const isDraggingRight = useRef(false);
   const dragStartXRef = useRef(0);
@@ -265,8 +275,16 @@ function NodeCanvas() {
             beginDrag('left', e.clientX);
           }}
           onTouchStart={(e) => {
+            if (e && e.cancelable) { e.preventDefault(); }
             e.stopPropagation();
             if (e.touches?.[0]) beginDrag('left', e.touches[0].clientX);
+          }}
+          onPointerDown={(e) => {
+            if (e.pointerType !== 'mouse') {
+              e.preventDefault();
+              e.stopPropagation();
+              beginDrag('left', e.clientX);
+            }
           }}
           onWheel={(e) => {
             // Only block scroll when actively dragging to avoid interfering with canvas scrolling
@@ -298,8 +316,16 @@ function NodeCanvas() {
             beginDrag('right', e.clientX);
           }}
           onTouchStart={(e) => {
+            if (e && e.cancelable) { e.preventDefault(); }
             e.stopPropagation();
             if (e.touches?.[0]) beginDrag('right', e.touches[0].clientX);
+          }}
+          onPointerDown={(e) => {
+            if (e.pointerType !== 'mouse') {
+              e.preventDefault();
+              e.stopPropagation();
+              beginDrag('right', e.clientX);
+            }
           }}
           onWheel={(e) => {
             if ((isDraggingLeft.current || isDraggingRight.current) && e && e.cancelable) {
@@ -320,6 +346,140 @@ function NodeCanvas() {
         </div>
       </>
     );
+  };
+
+  // --- Touch helpers for canvas interactions (pan, node drag, connections) ---
+  const normalizeTouchEvent = (e) => {
+    const t = e.touches?.[0] || e.changedTouches?.[0];
+    const clientX = t?.clientX ?? lastTouchRef.current.x;
+    const clientY = t?.clientY ?? lastTouchRef.current.y;
+    return { clientX, clientY };
+  };
+
+  const handleTouchStartCanvas = (e) => {
+    if (e && e.cancelable) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    // One-finger pan by default on touch, but also synthesize a mousedown for node hit-testing/long-press
+    if (e.touches && e.touches.length === 1) {
+      const t = e.touches[0];
+      lastTouchRef.current = { x: t.clientX, y: t.clientY };
+      isMouseDown.current = true;
+      startedOnNode.current = false;
+      mouseMoved.current = false;
+      setPanStart({ x: t.clientX, y: t.clientY });
+      const synthetic = {
+        clientX: t.clientX,
+        clientY: t.clientY,
+        detail: 1,
+        preventDefault: () => { try { e.preventDefault(); } catch {} },
+        stopPropagation: () => { try { e.stopPropagation(); } catch {} }
+      };
+      handleMouseDown(synthetic);
+    }
+    if (e.touches && e.touches.length >= 2) {
+      // Pinch-to-zoom setup
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const dx = t2.clientX - t1.clientX;
+      const dy = t2.clientY - t1.clientY;
+      const dist = Math.hypot(dx, dy) || 1;
+      const centerX = (t1.clientX + t2.clientX) / 2;
+      const centerY = (t1.clientY + t2.clientY) / 2;
+      const rect = containerRef.current.getBoundingClientRect();
+      const worldX = (centerX - rect.left - panOffset.x) / zoomLevel;
+      const worldY = (centerY - rect.top - panOffset.y) / zoomLevel;
+      pinchRef.current = {
+        active: true,
+        startDist: dist,
+        startZoom: zoomLevel,
+        centerClient: { x: centerX, y: centerY },
+        centerWorld: { x: worldX, y: worldY },
+      };
+      return;
+    }
+    const { clientX, clientY } = normalizeTouchEvent(e);
+    lastTouchRef.current = { x: clientX, y: clientY };
+    // Synthesize minimal mouse-like event for existing handlers
+    const synthetic = {
+      clientX,
+      clientY,
+      ctrlKey: false,
+      metaKey: false,
+      preventDefault: () => { try { e.preventDefault(); } catch {} },
+      stopPropagation: () => { try { e.stopPropagation(); } catch {} }
+    };
+    handleMouseDown(synthetic);
+  };
+
+  const handleTouchMoveCanvas = (e) => {
+    if (e && e.cancelable) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (e.touches && e.touches.length >= 2 && pinchRef.current.active) {
+      // Pinch-to-zoom update
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const dx = t2.clientX - t1.clientX;
+      const dy = t2.clientY - t1.clientY;
+      const dist = Math.hypot(dx, dy) || 1;
+      const ratio = dist / (pinchRef.current.startDist || 1);
+      let newZoom = pinchRef.current.startZoom * ratio;
+      newZoom = Math.min(Math.max(newZoom, MIN_ZOOM), MAX_ZOOM);
+      // Recompute center (allow pinch centroid to move)
+      const centerX = (t1.clientX + t2.clientX) / 2;
+      const centerY = (t1.clientY + t2.clientY) / 2;
+      const rect = containerRef.current.getBoundingClientRect();
+      // Keep the original world point under the fingers stable in screen space
+      const newPanX = centerX - rect.left - pinchRef.current.centerWorld.x * newZoom;
+      const newPanY = centerY - rect.top - pinchRef.current.centerWorld.y * newZoom;
+      // Clamp pan within bounds
+      const currentCanvasWidth = canvasSize.width * newZoom;
+      const currentCanvasHeight = canvasSize.height * newZoom;
+      const minX = viewportSize.width - currentCanvasWidth;
+      const minY = viewportSize.height - currentCanvasHeight;
+      const maxX = 0;
+      const maxY = 0;
+      const clampedPan = {
+        x: Math.min(Math.max(newPanX, minX), maxX),
+        y: Math.min(Math.max(newPanY, minY), maxY),
+      };
+      setZoomLevel(newZoom);
+      setPanOffset(clampedPan);
+      return;
+    }
+    const { clientX, clientY } = normalizeTouchEvent(e);
+    lastTouchRef.current = { x: clientX, y: clientY };
+    const synthetic = {
+      clientX,
+      clientY,
+      preventDefault: () => { try { e.preventDefault(); } catch {} },
+      stopPropagation: () => { try { e.stopPropagation(); } catch {} }
+    };
+    handleMouseMove(synthetic);
+  };
+
+  const handleTouchEndCanvas = (e) => {
+    if (e && e.cancelable) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    // End pinch if active
+    if (pinchRef.current.active) {
+      pinchRef.current.active = false;
+    }
+    const { clientX, clientY } = normalizeTouchEvent(e);
+    const synthetic = {
+      clientX,
+      clientY,
+      preventDefault: () => { try { e.preventDefault(); } catch {} },
+      stopPropagation: () => { try { e.stopPropagation(); } catch {} }
+    };
+    // Use existing mouse-up canvas handler to finalize panning/selection
+    handleMouseUpCanvas(synthetic);
+    touchMultiPanRef.current = false;
   };
 
   // Create a stable actions object only when needed for props
@@ -2196,8 +2356,8 @@ function NodeCanvas() {
         if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); clickTimeoutIdRef.current = null; potentialClickNodeRef.current = null;}
         // REMOVED: setSelectedNodeIdForPieMenu(null); 
 
-        // Start drawing connection
-        if (longPressingInstanceId && !draggingNodeInfo) { // Check longPressingInstanceId
+        // Start drawing connection ONLY if a long-press has been recognized
+        if (longPressingInstanceId && !draggingNodeInfo) {
              const longPressNodeData = nodes.find(n => n.id === longPressingInstanceId); // Get data
              if (longPressNodeData && !isInsideNode(longPressNodeData, e.clientX, e.clientY)) {
                  clearTimeout(longPressTimeout.current);
@@ -2212,14 +2372,15 @@ function NodeCanvas() {
                  setLongPressingInstanceId(null); // Clear ID
              }
         } else if (!draggingNodeInfo && !drawingConnectionFrom && !isPanning && !startedOnNode.current) {
-            isPanningOrZooming.current = true;
-            setIsPanning(true);
-            setPanStart({ x: e.clientX, y: e.clientY });
+          // Start panning after threshold exceeded
+          isPanningOrZooming.current = true;
+          setIsPanning(true);
+          setPanStart({ x: e.clientX, y: e.clientY });
         }
       }
     }
 
-    // Dragging Node Logic
+    // Dragging Node Logic (only after long-press has set draggingNodeInfo)
     if (draggingNodeInfo) {
         requestAnimationFrame(() => { // Keep RAF
             // Multi-node drag
@@ -2283,10 +2444,16 @@ function NodeCanvas() {
             });
         });
     }
+
+    // (Removed per-move extra smoothing to avoid double updates)
   };
 
   const handleMouseDown = (e) => {
     if (isPaused || !activeGraphId || abstractionCarouselVisible) return;
+    // On touch/mobile: allow two-finger pan to bypass resizer/canvas checks
+    if (e.touches && e.touches.length >= 2) {
+      return;
+    }
     // If user started on a resizer, do not start canvas panning
     if (isDraggingLeft.current || isDraggingRight.current) return;
     // Clear any pending single click on a node
@@ -2388,6 +2555,33 @@ function NodeCanvas() {
     }
 
     // Finalize panning state
+    if (isPanning && panStart) {
+      // Inertia on release: continue motion briefly based on last deltas
+      let vx = (e.clientX - panStart.x) * 0.14; // velocity scale tuned for feel
+      let vy = (e.clientY - panStart.y) * 0.14;
+      let remaining = 260; // ms decay duration
+      const friction = 0.9; // decay factor per frame
+      const step = () => {
+        if (remaining <= 0) return;
+        setPanOffset(prevOff => {
+          const currentCanvasWidth = canvasSize.width * zoomLevel;
+          const currentCanvasHeight = canvasSize.height * zoomLevel;
+          const minX = viewportSize.width - currentCanvasWidth;
+          const minY = viewportSize.height - currentCanvasHeight;
+          const maxX = 0;
+          const maxY = 0;
+          const nx = Math.min(Math.max(prevOff.x + vx, minX), maxX);
+          const ny = Math.min(Math.max(prevOff.y + vy, minY), maxY);
+          return { x: nx, y: ny };
+        });
+        remaining -= 16;
+        // decay velocity
+        vx *= friction;
+        vy *= friction;
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
     setIsPanning(false);
     isPanningOrZooming.current = false; // Clear the flag when panning ends
     isMouseDown.current = false;
@@ -3238,14 +3432,18 @@ function NodeCanvas() {
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('touchmove', move, { passive: false });
+    window.addEventListener('pointermove', move, { passive: false });
     window.addEventListener('mouseup', up);
     window.addEventListener('touchend', up);
+    window.addEventListener('pointerup', up);
     window.addEventListener('wheel', blockWheelWhileDragging, { passive: false });
     return () => {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('touchmove', move);
+      window.removeEventListener('pointermove', move);
       window.removeEventListener('mouseup', up);
       window.removeEventListener('touchend', up);
+      window.removeEventListener('pointerup', up);
       window.removeEventListener('wheel', blockWheelWhileDragging);
     };
   }, []);
@@ -3808,6 +4006,9 @@ function NodeCanvas() {
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUpCanvas}
           onClick={handleCanvasClick}
+          onTouchStart={handleTouchStartCanvas}
+          onTouchMove={handleTouchMoveCanvas}
+          onTouchEnd={handleTouchEndCanvas}
         >
           {isUniverseLoading ? (
             // Show loading state while checking for universe file

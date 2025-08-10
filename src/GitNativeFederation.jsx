@@ -38,6 +38,7 @@ import {
   Key
 } from 'lucide-react';
 import { SemanticProviderFactory } from './services/gitNativeProvider.js';
+import { bridgeFetch } from './services/bridgeConfig.js';
 import { SemanticSyncEngine } from './services/semanticSyncEngine.js';
 import { SemanticFederation } from './services/semanticFederation.js';
 import { GitSyncEngine, SOURCE_OF_TRUTH } from './services/gitSyncEngine.js';
@@ -294,7 +295,7 @@ const GitNativeFederation = () => {
           console.log('[GitNativeFederation] Exchanging code for token...');
           
           // Exchange code for access token
-          const tokenResponse = await fetch('http://localhost:3001/api/github/oauth/token', {
+          const tokenResponse = await bridgeFetch('/api/github/oauth/token', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

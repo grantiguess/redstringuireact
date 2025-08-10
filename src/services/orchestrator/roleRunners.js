@@ -1,5 +1,5 @@
 import queueManager from '../queue/Queue.js';
-import toolRegistry from '../toolRegistry.js';
+// Avoid calling UI store from the daemon; generate ops directly here
 import toolValidator from '../toolValidator.js';
 import { RolePrompts, ToolAllowlists } from '../roles.js';
 
@@ -30,18 +30,20 @@ export async function runExecutorOnce() {
     if (!allow.has(task.toolName)) throw new Error(`Tool not allowed for executor: ${task.toolName}`);
     const validation = toolValidator.validateToolArgs(task.toolName, task.args || {});
     if (!validation.valid) throw new Error(`Validation failed: ${validation.error}`);
-    const result = await toolRegistry.executeTool(task.toolName, validation.sanitized, { role: 'executor' });
-    // Convert result to ops (minimal: when we know exact op mapping)
-    // For core create_node_instance, produce addNodeInstance op
+    // Convert task into ops without touching UI store (Committer + UI will apply)
     const ops = [];
     if (task.toolName === 'create_node_instance') {
-      ops.push({ type: 'addNodeInstance', graphId: task.args.graph_id, prototypeId: task.args.prototype_id, position: { x: task.args.x, y: task.args.y }, instanceId: result?.result?.instance_id });
+      const instanceId = `inst-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      ops.push({ type: 'addNodeInstance', graphId: validation.sanitized.graph_id, prototypeId: validation.sanitized.prototype_id, position: { x: validation.sanitized.x, y: validation.sanitized.y }, instanceId });
+    } else if (task.toolName === 'create_graph') {
+      const newGraphId = `graph-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      ops.push({ type: 'createNewGraph', initialData: { id: newGraphId, name: validation.sanitized.name, description: validation.sanitized.description || '', color: validation.sanitized.color || '#4A90E2' } });
     }
     // Fallback: executor could be richer; keep empty ops acceptable
     const patch = {
       patchId: `patch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       threadId: task.threadId,
-      graphId: task.args?.graph_id || result?.result?.graph_id || 'unknown',
+      graphId: validation.sanitized.graph_id || 'unknown',
       baseHash: null,
       ops
     };
@@ -61,7 +63,8 @@ export async function runAuditorOnce() {
     // Basic checks: ops schema-compatible, references present, etc.
     const ok = Array.isArray(item.ops);
     const decision = ok ? 'approved' : 'rejected';
-    queueManager.enqueue('reviewQueue', { status: decision, graphId: item.graphId, patch: item });
+    // Use a distinct field that won't be overwritten by queue wrapper
+    queueManager.enqueue('reviewQueue', { reviewStatus: decision, graphId: item.graphId, patch: item });
     // Ack original patch item now that mirrored
     queueManager.ack('patchQueue', item.leaseId);
   } catch (e) {

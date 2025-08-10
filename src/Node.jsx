@@ -198,6 +198,14 @@ const Node = ({
     <g
       className={`node ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isPreviewing ? 'previewing' : ''}`}
       onMouseDown={onMouseDown}
+      onTouchStart={(e) => {
+        // Prevent OS text selection/callout and long-press gestures
+        if (e && e.cancelable) { e.preventDefault(); e.stopPropagation(); }
+        const t = e.touches?.[0];
+        if (!t) return;
+        const synthetic = { clientX: t.clientX, clientY: t.clientY, detail: 1, preventDefault: () => { try { e.preventDefault(); } catch {} }, stopPropagation: () => { try { e.stopPropagation(); } catch {} } };
+        onMouseDown?.(synthetic);
+      }}
       role="graphics-symbol"
       aria-label={nodeName}
       style={{

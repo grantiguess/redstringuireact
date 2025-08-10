@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import useGraphStore from '../store/graphStore.js';
+import { bridgeEventSource, bridgeFetch } from '../services/bridgeConfig.js';
 
 // Projection store: replaces UI state wholesale upon commit events
 export default function useProjectionStore() {
@@ -8,14 +9,14 @@ export default function useProjectionStore() {
 
   useEffect(() => {
     try {
-      const es = new EventSource('http://localhost:3001/events/stream');
+      const es = bridgeEventSource('/events/stream');
       sseRef.current = es;
       es.onopen = () => setConnected(true);
       es.onerror = () => setConnected(false);
       es.addEventListener('PATCH_APPLIED', async (e) => {
         try {
           // On commit, ask bridge for full canonical projection (fallback until we host snapshots)
-          const resp = await fetch('http://localhost:3001/api/bridge/state');
+          const resp = await bridgeFetch('/api/bridge/state');
           if (!resp.ok) return;
           const bridge = await resp.json();
           // Replace UI projection wholesale where possible

@@ -6,6 +6,7 @@
  */
 
 import apiKeyManager from './apiKeyManager.js';
+import { bridgeFetch } from './bridgeConfig.js';
 
 class MCPClient {
   constructor() {
@@ -42,7 +43,7 @@ class MCPClient {
       // Check if MCP JSON-RPC endpoint exists; if not, quietly use HTTP bridge
       let hasMcpRpc = false;
       try {
-        const probe = await fetch('http://localhost:3001/api/mcp/request', { method: 'HEAD' });
+        const probe = await bridgeFetch('/api/mcp/request', { method: 'HEAD' });
         hasMcpRpc = probe.ok;
       } catch {}
 
@@ -95,13 +96,13 @@ class MCPClient {
     return new Promise(async (resolve, reject) => {
       try {
         // First check if bridge server is running
-        const bridgeResponse = await fetch('http://localhost:3001/health');
+        const bridgeResponse = await bridgeFetch('/health');
         if (!bridgeResponse.ok) {
           throw new Error('Bridge server not running');
         }
 
         // Now check if MCP server is connected through bridge
-        const stateResponse = await fetch('http://localhost:3001/api/bridge/state');
+        const stateResponse = await bridgeFetch('/api/bridge/state');
         if (!stateResponse.ok) {
           throw new Error('Bridge state endpoint not available');
         }
@@ -116,7 +117,7 @@ class MCPClient {
           // Wait a bit and retry once
           await new Promise(r => setTimeout(r, 2000));
           
-          const retryResponse = await fetch('http://localhost:3001/api/bridge/state');
+          const retryResponse = await bridgeFetch('/api/bridge/state');
           const retryState = await retryResponse.json();
           
           if (retryState.summary && retryState.summary.lastUpdate) {
@@ -210,7 +211,7 @@ class MCPClient {
       }
     };
 
-      const response = await this.sendRequest(toolRequest);
+    const response = await this.sendRequest(toolRequest);
     
     if (response.result) {
       // For chat responses, return the actual content
@@ -246,7 +247,7 @@ class MCPClient {
       }
       
       // Send request through the bridge server's MCP endpoint
-      const response = await fetch('http://localhost:3001/api/mcp/request', {
+      const response = await bridgeFetch('/api/mcp/request', {
         method: 'POST',
         headers: headers,
         body: JSON.stringify(request)
