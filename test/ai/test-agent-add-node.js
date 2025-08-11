@@ -27,6 +27,13 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 (async function main() {
   console.log('🤖 Agent Add-Node Test');
 
+  // 0) Drain any existing pending actions to avoid cross-test leakage
+  for (let i = 0; i < 10; i++) {
+    const leased = await get('/api/bridge/pending-actions');
+    if (!leased.pendingActions || leased.pendingActions.length === 0) break;
+    await sleep(100);
+  }
+
   // 1) Create a target graph via fast path
   const gid = `graph-agent-${Date.now()}`;
   await post('/test/commit-ops', {
