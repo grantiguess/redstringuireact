@@ -10,6 +10,7 @@ import { bridgeEventSource, bridgeFetch } from './services/bridgeConfig.js';
  */
 const BridgeClient = () => {
   const intervalRef = useRef(null);
+  const mountedRef = useRef(false);
   // Separate interval refs to avoid accidental overlap/mismanagement
   const dataIntervalRef = useRef(null);
   const bridgeIntervalRef = useRef(null);
@@ -24,6 +25,7 @@ const BridgeClient = () => {
   const lastTelemetryTsRef = useRef(0);
 
   useEffect(() => {
+    mountedRef.current = true;
     // Subscribe to EventLog SSE for projection refresh triggers
     try {
       const es = bridgeEventSource('/events/stream');
@@ -33,6 +35,7 @@ const BridgeClient = () => {
       });
       return () => { try { es.close(); } catch {} };
     } catch {}
+    return () => { mountedRef.current = false; };
   }, []);
 
   useEffect(() => {
@@ -803,6 +806,13 @@ const BridgeClient = () => {
               try {
                 // Emit running status to telemetry so chat shows non-stalled progress
                 try {
+                  // Inform bridge about start to produce ordered telemetry with seq
+                  try {
+                    await bridgeFetch('/api/bridge/action-started', {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ actionId: pendingAction.id, action: pendingAction.action, params: pendingAction.params })
+                    });
+                  } catch {}
                   window.dispatchEvent(new CustomEvent('rs-telemetry', { detail: [{ ts: Date.now(), type: 'tool_call', name: pendingAction.action, args: pendingAction.params, status: 'running', id: pendingAction.id }] }));
                 } catch {}
                 // Also emit a brief chat update before executing
@@ -1059,8 +1069,10 @@ const BridgeClient = () => {
       }
     };
     
-    // Check for bridge updates every 2 seconds
-    bridgeIntervalRef.current = setInterval(checkForBridgeUpdates, 2000);
+    // Check for bridge updates every 1s; guard with mountedRef to auto-resume after remounts
+    bridgeIntervalRef.current = setInterval(() => {
+      if (mountedRef.current) checkForBridgeUpdates();
+    }, 1000);
 
     // Cleanup function
     return () => {

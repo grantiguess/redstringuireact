@@ -4,11 +4,11 @@ This guide shows you how to test the AI integration with Redstring, including ho
 
 ## Overview
 
-The AI integration consists of several components:
-1. **Redstring** - The main application (localhost:4000)
-2. **Bridge Server** - HTTP bridge between Redstring and MCP (localhost:3001)
-3. **MCP Server** - Model Context Protocol server for AI clients
-4. **AI Client** - Claude Desktop, Tome, or other MCP-compatible clients
+Components and how they fit together:
+- **Redstring UI (localhost:4000)**: the graph app with a projection store.
+- **Bridge Daemon (localhost:3001)**: authoritative HTTP API for tests and for binding UI ←→ daemon.
+- **Optional MCP shim (/api/mcp/request)**: minimal MCP endpoint the AI panel uses for basic read-only tools.
+- **Agent**: HTTP endpoint at `/api/ai/agent` that turns chat into queued tool intent; actual writes flow through queues → Committer → UI `pending-actions`.
 
 ## Quick Start Testing
 
@@ -76,7 +76,12 @@ Actions are executed in this order to avoid race conditions:
 4) setActiveGraph
 5) applyMutations
 
-This ensures prototypes exist and the correct graph is active before instances are added.
+This ensures prototypes exist and the correct graph is active before instances are added. The daemon also auto-inserts `openGraph` before any `applyMutations` that reference graphIds to avoid UI timing races. The client defers `openGraph` if the target graph hasn’t been created in the store yet and re-enqueues it shortly (with ensureGraph fallback).
+
+### D. MCP vs HTTP: what to use when
+- Use HTTP bridge endpoints for end-to-end write tests and orchestration (pending actions, queues, commit), no LLM required.
+- Use MCP shim tools for quick, read-only checks in the AI chat panel (verify_state, list_available_graphs, search_nodes). The shim intentionally does not expose write tools.
+- The agent uses HTTP internally. MCP is optional for external AI clients.
 
 ### 1. Start the AI Connection Wizard
 
@@ -152,25 +157,28 @@ curl -X POST http://localhost:3001/api/bridge/actions/add-node-prototype \
   }'
 ```
 
-## Available MCP Tools
+## Tools catalog
 
-The MCP server provides these tools for AI clients:
+### MCP shim tools (/api/mcp/request)
+- `verify_state`
+- `list_available_graphs`
+- `search_nodes`
 
-### Core Tools
-- `verify_state` - Check if Redstring store is available
-- `get_graph_instances` - Get all graph instances
-- `list_available_graphs` - List available graphs
-- `get_active_graph` - Get the currently active graph
-- `open_graph` - Open a specific graph
-- `set_active_graph` - Set the active graph
+Note: The shim is read-only by design. Write paths go through HTTP pending-actions.
 
-### Node Operations (RECOMMENDED)
-- `addNodeToGraph` - Add a node to a graph
-- `removeNodeFromGraph` - Remove a node from a graph
+### Bridge pending-action actions (/api/bridge/pending-actions/enqueue)
+- `openGraph` [graphId]
+- `addNodePrototype` [prototypeObject]
+- `applyMutations` [[ops]] where each op is one of:
+  - `createNewGraph` { initialData: { id?, name, description, color } }
+  - `addNodeInstance` { graphId, prototypeId, position, instanceId }
+  - `moveNodeInstance` { graphId, instanceId, position }
+  - `addEdge` { graphId, edgeData }
+  - `updateNodePrototype` { prototypeId, updates }
 
-### Legacy Tools
-- `add_node_prototype` - Add a node prototype (legacy)
-- `add_node_instance` - Add a node instance (legacy)
+Compatibility endpoints for older tests:
+- POST `/api/bridge/actions/add-node-prototype`
+- POST `/api/bridge/actions/add-node-instance`
 
 ## Testing with Real AI Clients
 
@@ -192,6 +200,13 @@ The MCP server provides these tools for AI clients:
    - **Command**: `node /path/to/redstringuireact/redstring-mcp-server.js`
 4. Test the connection
 5. Try: "List the graphs in my Redstring workspace"
+
+## Agent orchestration (how the agent works)
+
+1) Chat hits `/api/ai/agent`; the agent plans intent (create_graph / create_node / analyze / qa).
+2) For write intents it enqueues goals or directly populates `pendingActions` (openGraph, addNodePrototype, applyMutations).
+3) The in-process Scheduler drains goals → tasks → patches → reviews. The Committer emits `applyMutations` back to UI.
+4) The UI `BridgeClient` executes pending actions in priority order with ensureGraph and pre/post chat updates so the panel always says what it will do and what it did.
 
 ## Troubleshooting
 

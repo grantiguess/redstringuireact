@@ -23,6 +23,7 @@ const inflightActionIds = new Set();
 const inflightMeta = new Map(); // id -> { ts, action, params }
 let telemetry = [];
 let chatLog = [];
+let actionSequence = 0; // monotonically increasing sequence for action ordering
 
 function appendChat(role, text, extra = {}) {
   try {
@@ -30,10 +31,23 @@ function appendChat(role, text, extra = {}) {
     chatLog.push(entry);
     if (chatLog.length > 1000) chatLog = chatLog.slice(-800);
     telemetry.push({ ts: entry.ts, type: 'chat', role, text: entry.text, ...extra });
+    try { eventLog.append({ type: 'chat', role, text: entry.text, ...extra }); } catch {}
     // eslint-disable-next-line no-console
     console.log(`[Chat][${role}] ${entry.text}`);
   } catch {}
 }
+
+// Reload recent chat history from the event log so chat persists across restarts
+try {
+  const since = Date.now() - 48 * 60 * 60 * 1000; // last 48 hours
+  const past = eventLog.replaySince(since).filter(e => e && e.type === 'chat');
+  if (past.length) {
+    // Keep order and limit size
+    chatLog = past.map(e => ({ ts: e.ts, role: e.role, text: e.text, cid: e.cid, channel: e.channel })).slice(-1000);
+    // Seed telemetry with the restored chat snapshot for API consumers
+    telemetry.push(...chatLog.map(e => ({ ts: e.ts, type: 'chat', role: e.role, text: e.text, cid: e.cid })));
+  }
+} catch {}
 
 // Ensure orchestrator scheduler is running with safe defaults
 async function ensureSchedulerStarted() {
@@ -55,8 +69,12 @@ function extractEntityName(text, fallback = 'New Concept') {
   if (quoted && quoted[1]) return quoted[1].trim();
   const mCalled = text.match(/\b(called|named)\s+"([^\"]+)"/i);
   if (mCalled && mCalled[2]) return mCalled[2].trim();
-  const mCalledNoQuotes = text.match(/\b(called|named)\s+([A-Za-z0-9][A-Za-z0-9' _-]{0,63})\b/i);
+  // Capture unquoted name after 'called'/'named' but stop at a preposition or punctuation
+  const mCalledNoQuotes = text.match(/\b(called|named)\s+([A-Za-z0-9][A-Za-z0-9' _-]{0,63}?)(?=\s+(?:to|in|into|on|at|for|of|with)\b|[.,!?]|$)/i);
   if (mCalledNoQuotes && mCalledNoQuotes[2]) return mCalledNoQuotes[2].trim();
+  // Also try 'add/make a (node|concept) NAME' variants (unquoted), stopping before prepositions
+  const mAfterNoun = text.match(/\b(?:add|create|make|insert|place|spawn)\b[\s\S]*?\b(?:node|concept|thing|idea)\b\s+([A-Za-z0-9][A-Za-z0-9' _-]{0,63}?)(?=\s+(?:to|in|into|on|at|for|of|with)\b|[.,!?]|$)/i);
+  if (mAfterNoun && mAfterNoun[1]) return mAfterNoun[1].trim();
   // If very short, treat as name; otherwise use a sane default
   const trimmed = text.trim();
   if (trimmed.length > 0 && trimmed.length <= 24 && !/[?!.]/.test(trimmed)) {
@@ -207,7 +225,7 @@ app.post('/api/bridge/action-completed', (req, res) => {
       inflightActionIds.delete(actionId);
       const meta = inflightMeta.get(actionId);
       if (meta) {
-        telemetry.push({ ts: Date.now(), type: 'tool_call', name: meta.action, args: meta.params, status: 'completed', id: actionId });
+        telemetry.push({ ts: Date.now(), type: 'tool_call', name: meta.action, args: meta.params, status: 'completed', id: actionId, seq: ++actionSequence });
         // Emit post-action chat summary with specifics when possible
         try {
           let postText = `Completed: ${meta.action}.`;
@@ -239,7 +257,7 @@ app.post('/api/bridge/action-completed', (req, res) => {
 app.post('/api/bridge/action-feedback', (req, res) => {
   try {
     const { action, status, error, params } = req.body || {};
-    telemetry.push({ ts: Date.now(), type: 'action_feedback', action, status, error, params });
+    telemetry.push({ ts: Date.now(), type: 'action_feedback', action, status, error, params, seq: ++actionSequence });
     res.json({ acknowledged: true });
   } catch (err) {
     res.status(500).json({ error: String(err?.message || err) });
@@ -574,6 +592,8 @@ app.post('/api/ai/agent', async (req, res) => {
     const explicitCreateGraph = /(\b(create|make|add|new)\b\s+(graph|perspective|view)\b)/i.test(lower);
     const explicitCreateNode = /(\b(create|make|add|place|insert|spawn)\b\s+(node|concept|thing|idea)\b)/i.test(lower);
     const wantsAddToGraph = /(\b(create|make|add|place|insert|spawn)\b)[\s\S]*\b(to|into)\b[\s\S]*\b(current\s+graph|graph)\b/i.test(lower);
+    // Populate intent needs to be defined before any branches reference it
+    const wantsPopulate = /(fill\s*out|populate|flesh\s*out|expand)\b[\s\S]*\bgraph\b/i.test(msgText) || /components\s+of/i.test(msgText);
 
     let resolvedIntent = planned?.intent || null;
     if (resolvedIntent === 'create_graph' && (mentionsNode || wantsAddToGraph) && !explicitCreateGraph) {
@@ -912,7 +932,6 @@ app.post('/api/ai/agent', async (req, res) => {
     };
 
     // 0) Populate/fill current graph with components/concepts
-    const wantsPopulate = /(fill\s*out|populate|flesh\s*out|expand)\b[\s\S]*\bgraph\b/i.test(msgText) || /components\s+of/i.test(msgText);
     if (wantsPopulate && targetGraphId) {
       // Prefer planner-provided graphSpec if available
       if (Array.isArray(planned?.graphSpec?.nodes) && planned.graphSpec.nodes.length > 0) {
@@ -1460,14 +1479,69 @@ app.post('/api/bridge/pending-actions/enqueue', (req, res) => {
     if (!Array.isArray(actions) || actions.length === 0) {
       return res.status(400).json({ ok: false, error: 'actions[] required' });
     }
-    const id = (suffix) => `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}-${suffix}`;
+    // Prepend openGraph actions inferred from any applyMutations ops to avoid UI timing races
+    const expanded = [];
     for (const a of actions) {
+      if (a && a.action === 'applyMutations' && Array.isArray(a.params?.[0])) {
+        const ops = a.params[0];
+        const graphIds = new Set();
+        for (const op of ops) {
+          if (op && typeof op.graphId === 'string' && op.graphId) graphIds.add(op.graphId);
+        }
+        for (const gid of graphIds) expanded.push({ action: 'openGraph', params: [gid] });
+      }
+      expanded.push(a);
+    }
+    const id = (suffix) => `pa-${Date.now()}-${Math.random().toString(36).slice(2,8)}-${suffix}`;
+    for (const a of expanded) {
       pendingActions.push({ id: id(a.action || 'act'), action: a.action, params: a.params, timestamp: Date.now() });
-      telemetry.push({ ts: Date.now(), type: 'tool_call', name: a.action, args: a.params });
+      telemetry.push({ ts: Date.now(), type: 'tool_call', name: a.action, args: a.params, status: 'queued' });
     }
     res.json({ ok: true, enqueued: actions.length });
+    // Nudge any listeners to lease immediately
+    try { eventLog.append({ type: 'PENDING_ACTIONS_ENQUEUED', count: expanded.length }); } catch {}
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Compatibility action endpoints for older tests
+app.post('/api/bridge/actions/add-node-prototype', (req, res) => {
+  try {
+    const body = req.body || {};
+    const id = body.id || `prototype-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+    const proto = {
+      id,
+      name: String(body.name || 'New Concept'),
+      description: String(body.description || ''),
+      color: String(body.color || '#3B82F6'),
+      typeNodeId: body.typeNodeId || null,
+      definitionGraphIds: Array.isArray(body.definitionGraphIds) ? body.definitionGraphIds : []
+    };
+    pendingActions.push({ id: `pa-${Date.now()}-anp`, action: 'addNodePrototype', params: [proto] });
+    telemetry.push({ ts: Date.now(), type: 'tool_call', name: 'addNodePrototype', args: proto });
+    return res.json({ success: true, prototype: proto });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: String(e?.message || e) });
+  }
+});
+
+app.post('/api/bridge/actions/add-node-instance', (req, res) => {
+  try {
+    const body = req.body || {};
+    const graphId = String(body.graphId || '');
+    const prototypeId = String(body.prototypeId || '');
+    const position = body.position && typeof body.position === 'object' ? body.position : { x: 400, y: 200 };
+    const instanceId = body.instanceId || `inst-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+    if (!graphId || !prototypeId) {
+      return res.status(400).json({ success: false, error: 'graphId and prototypeId required' });
+    }
+    const ops = [ { type: 'addNodeInstance', graphId, prototypeId, position, instanceId } ];
+    pendingActions.push({ id: `pa-${Date.now()}-ani`, action: 'applyMutations', params: [ops] });
+    telemetry.push({ ts: Date.now(), type: 'tool_call', name: 'applyMutations', args: ops[0] });
+    return res.json({ success: true, instance: { id: instanceId, graphId, prototypeId, position } });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: String(e?.message || e) });
   }
 });
 

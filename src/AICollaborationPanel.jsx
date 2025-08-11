@@ -39,6 +39,7 @@ const AICollaborationPanel = () => {
 
   // Persist chat history in localStorage so it survives tab switches/mounts
   const STORAGE_KEY = 'rs.aiChat.messages.v1';
+  const RESET_TS_KEY = 'rs.aiChat.resetTs';
 
   // Get store state
   const activeGraphId = useGraphStore((state) => state.activeGraphId);
@@ -53,7 +54,7 @@ const AICollaborationPanel = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Restore connection state and chat history on mount
+  // Restore connection state and chat history on mount (from localStorage, then bridge fallback)
   useEffect(() => {
     try {
       // Retain connection if the client is already connected (singleton)
@@ -61,8 +62,11 @@ const AICollaborationPanel = () => {
         setIsConnected(true);
       }
     } catch {}
+    let resetTs = 0;
     try {
       const cached = localStorage.getItem(STORAGE_KEY);
+      const rt = localStorage.getItem(RESET_TS_KEY);
+      resetTs = rt ? Number(rt) || 0 : 0;
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) {
@@ -70,6 +74,29 @@ const AICollaborationPanel = () => {
         }
       }
     } catch {}
+    // If no local messages, try to hydrate from bridge telemetry chat history
+    (async () => {
+      try {
+        if (messages.length > 0) return;
+        const res = await bridgeFetch('/api/bridge/telemetry');
+        if (res.ok) {
+          const data = await res.json();
+          const chat = Array.isArray(data?.chat) ? data.chat : [];
+          if (chat.length > 0) {
+            const hydrated = chat
+              .filter((c) => !resetTs || (typeof c.ts === 'number' && c.ts >= resetTs))
+              .map((c) => ({
+              id: `${c.ts || Date.now()}_${Math.random().toString(36).slice(2,9)}`,
+              sender: c.role === 'user' ? 'user' : (c.role === 'ai' ? 'ai' : 'system'),
+              content: c.text || '',
+              timestamp: new Date(c.ts || Date.now()).toISOString(),
+              metadata: {}
+            }));
+            setMessages((prev) => (prev.length === 0 ? hydrated : prev));
+          }
+        }
+      } catch {}
+    })();
   }, []);
 
   // Persist chat history on every change
@@ -161,12 +188,15 @@ const AICollaborationPanel = () => {
         console.warn('[AI Panel] Bridge state refresh failed:', e);
       }
 
-      // 2) Re-establish MCP connection (without wiping local history)
+      // 2) Re-establish MCP connection, then show centered placeholder by leaving messages empty
       await initializeConnection();
-
-      // 3) Reset the visible chat area to blank prompt per UX request
+      // 3) Hard reset local chat state so page refresh does NOT restore old history
+      try {
+        const now = Date.now();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+        localStorage.setItem(RESET_TS_KEY, String(now));
+      } catch {}
       setMessages([]);
-      addMessage('system', '🔄 Bridge refreshed.');
     } catch (e) {
       addMessage('system', `Refresh failed: ${e.message}`);
     } finally {
@@ -233,8 +263,10 @@ const AICollaborationPanel = () => {
           return;
         }
         if (t.type === 'agent_queued') {
-          // Create a summary call entry for queued operations
-          upsertToolCall({ name: 'agent', status: 'queued', args: { queued: t.queued, graphId: t.graphId }, cid: t.cid });
+          // Only create a summary entry when we already have a visible AI message thread
+          if (messages.length > 0) {
+            upsertToolCall({ name: 'agent', status: 'queued', args: { queued: t.queued, graphId: t.graphId }, cid: t.cid });
+          }
           return;
         }
         if (t.type === 'info') {
@@ -246,6 +278,9 @@ const AICollaborationPanel = () => {
           // Update the last AI message (created by agent_queued) with the final text
           const finalText = (t.text || '').trim();
           setMessages(prev => {
+            // If the chat is empty and the answer is just the default placeholder, do not inject a bot message
+            const isDefaultPlaceholderA = /\bwhat will we (make|build) today\?/i.test(finalText);
+            if (prev.length === 0 && isDefaultPlaceholderA) return prev;
             const updated = [...prev];
             // Find the last AI message
             let idx = updated.length - 1;
@@ -256,16 +291,10 @@ const AICollaborationPanel = () => {
               return updated;
             }
             // Fallback: no AI message yet, create one
-            return [
-              ...updated,
-              {
-                id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                sender: 'ai',
-                content: finalText,
-                timestamp: new Date().toISOString(),
-                toolCalls: []
-              }
-            ];
+            // If it's the default placeholder and no prior messages, do not create a bot bubble
+            const isDefaultPlaceholderB = /\bwhat will we (make|build) today\?/i.test(finalText);
+            if (updated.length === 0 && isDefaultPlaceholderB) return updated;
+            return [...updated, { id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, sender: 'ai', content: finalText, timestamp: new Date().toISOString(), toolCalls: [] }];
           });
           return;
         }
@@ -673,7 +702,7 @@ You can "see" and reason about canvas layouts:
                     fontFamily: "'EmOne', sans-serif",
                     fontSize: '14px'
                   }}>
-                    What will we make today?
+                    What will we build today?
                   </div>
                 </div>
               )}
