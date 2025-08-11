@@ -18,9 +18,9 @@ This guide explains how AI models can integrate with Redstring's cognitive knowl
    - Handles session management and context tracking
    - Implements collaborative reasoning workflows
 
-3. **AI Collaboration Panel (`src/AICollaborationPanel.jsx`)**
-   - User interface for human-AI collaboration
-   - Real-time chat, operation execution, and insight tracking
+3. **AI Collaboration Panel (inline in `src/Panel.jsx`)**
+   - User interface for human-AI collaboration, rendered as the left panel "AI" tab
+   - Real-time chat, operation execution, and insight tracking; styles in `src/ai/AICollaborationPanel.css`
    - Visual feedback for AI reasoning processes
 
 ### Integration Points

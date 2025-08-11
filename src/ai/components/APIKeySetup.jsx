@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Key, Eye, EyeOff, CheckCircle, AlertCircle, ExternalLink, Settings, Trash2 } from 'lucide-react';
-import apiKeyManager from '../services/apiKeyManager.js';
+import apiKeyManager from '../../services/apiKeyManager.js';
 import './APIKeySetup.css';
 
 const APIKeySetup = ({ onKeySet, onClose, inline = false }) => {

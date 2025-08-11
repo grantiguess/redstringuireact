@@ -102,3 +102,8 @@
 {"id":"1754874269436-daatc5ri","ts":1754874269436,"type":"chat","role":"ai","text":"Hello! How can I assist you today?","cid":"cid-1754874266523-u8i5em","channel":"agent"}
 {"id":"1754875025941-6z8zdnie","ts":1754875025941,"type":"chat","role":"user","text":"hello","channel":"agent"}
 {"id":"1754875027790-6dbp5574","ts":1754875027790,"type":"chat","role":"ai","text":"Hello! How can I assist you today","cid":"cid-1754875025944-pla9ae","channel":"agent"}
+{"id":"1754875280345-30trdw13","ts":1754875280345,"type":"chat","role":"user","text":"make a new graph called Coffee","channel":"agent"}
+{"id":"itm-1754875280506-avz0xy9c","ts":1754875280507,"type":"GOAL_ENQUEUED","threadId":"cid-1754875280348-pfqdv2"}
+{"id":"1754875280843-cdhrxpd9","ts":1754875280843,"type":"PENDING_ACTIONS_ENQUEUED","count":1}
+{"id":"1754875280846-h0eucf7w","ts":1754875280846,"type":"PENDING_ACTIONS_ENQUEUED","count":1}
+{"id":"1754875280846-r287b6ju","ts":1754875280846,"type":"PATCH_APPLIED","graphId":"unknown","opsCount":1}

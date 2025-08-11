@@ -3,7 +3,7 @@ import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import NodeCanvas from './NodeCanvas';
 import SpawningNodeDragLayer from './SpawningNodeDragLayer';
-import BridgeClient from './BridgeClient';
+import BridgeClient from './ai/BridgeClient.jsx';
 import './App.css';
 
 function App() {

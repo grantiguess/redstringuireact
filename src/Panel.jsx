@@ -2,7 +2,7 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, us
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR } from './constants';
-import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Brain } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Brain, Settings, RotateCcw, Send, Bot, User, Key, Square } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
@@ -20,7 +20,12 @@ import useGraphStore, {
 import { shallow } from 'zustand/shallow';
 import GraphListItem from './GraphListItem'; // <<< Import the new component
 import GitNativeFederation from './GitNativeFederation'; // Import Git-Native Federation component
-import AICollaborationPanel from './AICollaborationPanel'; // Import AI Collaboration Panel
+// Inline AI Collaboration Panel as internal component below
+import './ai/AICollaborationPanel.css';
+import APIKeySetup from './ai/components/APIKeySetup.jsx';
+import mcpClient from './services/mcpClient.js';
+import { bridgeFetch } from './services/bridgeConfig.js';
+import apiKeyManager from './services/apiKeyManager.js';
 
 // Helper function to determine the correct article ("a" or "an")
 const getArticleFor = (word) => {
@@ -204,6 +209,624 @@ const SavedNodeItem = ({ node, onClick, onDoubleClick, onUnsave, isActive }) => 
           />
         </div>
       )}
+    </div>
+  );
+};
+
+// Internal Left Library View (Saved Things)
+const LeftLibraryView = ({
+  savedNodesByType,
+  sectionCollapsed,
+  sectionMaxHeights,
+  toggleSection,
+  panelWidth,
+  sectionContentRefs,
+  activeDefinitionNodeId,
+  openGraphTab,
+  createAndAssignGraphDefinition,
+  toggleSavedNode,
+  openRightPanelNodeTab,
+}) => {
+  return (
+    <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
+        <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
+          Saved Things
+        </h2>
+      </div>
+
+      {savedNodesByType.size === 0 ? (
+        <div style={{ color: '#666', fontSize: '0.9rem', fontFamily: "'EmOne', sans-serif", textAlign: 'center', marginTop: '20px' }}>
+          No saved nodes.
+        </div>
+      ) : (
+        Array.from(savedNodesByType.entries()).map(([typeId, group], index, array) => {
+          const { typeInfo, nodes } = group;
+          const isCollapsed = sectionCollapsed[typeId] ?? false;
+          const maxHeight = sectionMaxHeights[typeId] || '0px';
+          const isLastSection = index === array.length - 1;
+          return (
+            <div key={typeId}>
+              <div style={{ marginBottom: '10px' }}>
+                <div
+                  onClick={() => toggleSection(typeId)}
+                  style={{
+                    backgroundColor: typeInfo.color,
+                    padding: '8px 12px',
+                    cursor: 'pointer',
+                    color: '#bdb5b5',
+                    fontWeight: 'bold',
+                    userSelect: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    borderRadius: '12px',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                    fontFamily: "'EmOne', sans-serif"
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(1.1)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.filter = 'brightness(1)'; e.currentTarget.style.transform = 'translateY(0px)'; }}
+                >
+                  <span>{typeInfo.name} ({nodes.length})</span>
+                  <span style={{ display: 'inline-block', transition: 'transform 0.2s ease', transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)', fontSize: '14px', fontFamily: "'EmOne', sans-serif" }}>▶</span>
+                </div>
+
+                {!isCollapsed && (
+                  <div style={{ overflow: 'hidden', transition: 'max-height 0.2s ease-out', maxHeight }}>
+                    <div
+                      ref={(el) => {
+                        if (el) { sectionContentRefs.current.set(typeId, el); } else { sectionContentRefs.current.delete(typeId); }
+                      }}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: panelWidth > 250 ? '1fr 1fr' : '1fr',
+                        gap: panelWidth > 250 ? '8px' : '0px',
+                        marginTop: '8px',
+                        paddingBottom: '8px',
+                      }}
+                    >
+                      {nodes.map(node => {
+                        const handleSingleClick = () => {
+                          if (node.definitionGraphIds && node.definitionGraphIds.length > 0) {
+                            const graphIdToOpen = node.definitionGraphIds[0];
+                            openGraphTab?.(graphIdToOpen, node.id);
+                          } else if (createAndAssignGraphDefinition) {
+                            createAndAssignGraphDefinition(node.id);
+                          } else {
+                            console.error('[Panel Saved Node Click] Missing required actions');
+                          }
+                        };
+                        const handleDoubleClick = () => { openRightPanelNodeTab?.(node.id); };
+                        const handleUnsave = () => { toggleSavedNode?.(node.id); };
+                        return (
+                          <SavedNodeItem
+                            key={node.id}
+                            node={node}
+                            onClick={handleSingleClick}
+                            onDoubleClick={handleDoubleClick}
+                            onUnsave={handleUnsave}
+                            isActive={node.id === activeDefinitionNodeId}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {!isLastSection && (<div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>)}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+};
+
+// Internal Left Grid View (Open Things)
+const LeftGridView = ({
+  openGraphsForList,
+  panelWidth,
+  listContainerRef,
+  activeGraphId,
+  expandedGraphIds,
+  handleGridItemClick,
+  closeGraph,
+  toggleGraphExpanded,
+}) => {
+  return (
+    <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
+        <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
+          Open Things
+        </h2>
+      </div>
+
+      <div
+        ref={listContainerRef}
+        className="hide-scrollbar"
+        style={{ flexGrow: 1, overflowY: 'auto', paddingLeft: '5px', paddingRight: '5px', paddingBottom: '30px', minHeight: 0 }}
+      >
+        {openGraphsForList.map((graph) => (
+          <GraphListItem
+            key={graph.id}
+            graphData={graph}
+            panelWidth={panelWidth}
+            isActive={graph.id === activeGraphId}
+            isExpanded={expandedGraphIds.has(graph.id)}
+            onClick={handleGridItemClick}
+            onClose={closeGraph}
+            onToggleExpand={toggleGraphExpanded}
+          />
+        ))}
+        {openGraphsForList.length === 0 && (
+          <div style={{ color: '#666', textAlign: 'center', marginTop: '20px', fontFamily: "'EmOne', sans-serif" }}>No graphs currently open.</div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Internal AI Collaboration View component (migrated from src/ai/AICollaborationPanel.jsx)
+const LeftAIView = () => {
+  const [isConnected, setIsConnected] = React.useState(false);
+  const [messages, setMessages] = React.useState([]);
+  const [currentInput, setCurrentInput] = React.useState('');
+  const [isProcessing, setIsProcessing] = React.useState(false);
+  const [showAdvanced, setShowAdvanced] = React.useState(false);
+  const [showAPIKeySetup, setShowAPIKeySetup] = React.useState(false);
+  const [hasAPIKey, setHasAPIKey] = React.useState(false);
+  const [apiKeyInfo, setApiKeyInfo] = React.useState(null);
+  const [isAutonomousMode, setIsAutonomousMode] = React.useState(true);
+  const [currentAgentRequest, setCurrentAgentRequest] = React.useState(null);
+  const messagesEndRef = React.useRef(null);
+  const inputRef = React.useRef(null);
+
+  const STORAGE_KEY = 'rs.aiChat.messages.v1';
+  const RESET_TS_KEY = 'rs.aiChat.resetTs';
+
+  const activeGraphId = useGraphStore((state) => state.activeGraphId);
+  const graphs = useGraphStore((state) => state.graphs);
+
+  React.useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  React.useEffect(() => {
+    try {
+      if (mcpClient && mcpClient.isConnected) setIsConnected(true);
+    } catch {}
+    let resetTs = 0;
+    try {
+      const cached = localStorage.getItem(STORAGE_KEY);
+      const rt = localStorage.getItem(RESET_TS_KEY);
+      resetTs = rt ? Number(rt) || 0 : 0;
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) setMessages(parsed);
+      }
+    } catch {}
+    (async () => {
+      try {
+        if (messages.length > 0) return;
+        const res = await bridgeFetch('/api/bridge/telemetry');
+        if (res.ok) {
+          const data = await res.json();
+          const chat = Array.isArray(data?.chat) ? data.chat : [];
+          if (chat.length > 0) {
+            const hydrated = chat
+              .filter((c) => !resetTs || (typeof c.ts === 'number' && c.ts >= resetTs))
+              .map((c) => ({
+                id: `${c.ts || Date.now()}_${Math.random().toString(36).slice(2,9)}`,
+                sender: c.role === 'user' ? 'user' : (c.role === 'ai' ? 'ai' : 'system'),
+                content: c.text || '',
+                timestamp: new Date(c.ts || Date.now()).toISOString(),
+                metadata: {}
+              }));
+            setMessages((prev) => (prev.length === 0 ? hydrated : prev));
+          }
+        }
+      } catch {}
+    })();
+  }, []);
+
+  React.useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(messages)); } catch {}
+  }, [messages]);
+
+  React.useEffect(() => { checkAPIKey(); }, []);
+  const checkAPIKey = async () => {
+    try {
+      const hasKey = await apiKeyManager.hasAPIKey();
+      const keyInfo = await apiKeyManager.getAPIKeyInfo();
+      setHasAPIKey(hasKey);
+      setApiKeyInfo(keyInfo);
+    } catch (error) { console.error('Failed to check API key:', error); }
+  };
+
+  const addMessage = (sender, content, metadata = {}) => {
+    const message = {
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      sender,
+      content,
+      timestamp: new Date().toISOString(),
+      metadata,
+      toolCalls: (metadata.toolCalls || []).map(tc => ({ ...tc, expanded: false }))
+    };
+    setMessages(prev => [...prev, message]);
+  };
+
+  const upsertToolCall = (toolUpdate) => {
+    setMessages(prev => {
+      const updated = [...prev];
+      let idx = updated.length - 1;
+      while (idx >= 0 && updated[idx].sender !== 'ai') idx--;
+      if (idx < 0) {
+        updated.push({ id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, sender: 'ai', content: '', timestamp: new Date().toISOString(), toolCalls: [] });
+        idx = updated.length - 1;
+      }
+      const msg = { ...updated[idx] };
+      const calls = Array.isArray(msg.toolCalls) ? [...msg.toolCalls] : [];
+      const matchIndex = calls.findIndex(c => (toolUpdate.id && c.id === toolUpdate.id)
+        || (toolUpdate.cid && c.cid === toolUpdate.cid && c.name === toolUpdate.name)
+        || (!toolUpdate.cid && c.name === toolUpdate.name));
+      if (matchIndex >= 0) {
+        calls[matchIndex] = { ...calls[matchIndex], ...toolUpdate };
+      } else {
+        calls.push({ expanded: false, status: toolUpdate.status || 'running', ...toolUpdate });
+      }
+      msg.toolCalls = calls;
+      updated[idx] = msg;
+      return updated;
+    });
+  };
+
+  React.useEffect(() => {
+    const handler = (e) => {
+      const items = Array.isArray(e.detail) ? e.detail : [];
+      items.forEach((t) => {
+        if (t.type === 'tool_call') {
+          const status = t.status || (t.leased ? 'running' : 'running');
+          upsertToolCall({ id: t.id, name: t.name || 'tool', status, args: t.args, cid: t.cid });
+          return;
+        }
+        if (t.type === 'agent_queued') {
+          if (messages.length > 0) upsertToolCall({ name: 'agent', status: 'queued', args: { queued: t.queued, graphId: t.graphId }, cid: t.cid });
+          return;
+        }
+        if (t.type === 'info') {
+          upsertToolCall({ name: t.name || 'info', status: 'completed', result: t.message, cid: t.cid });
+          return;
+        }
+        if (t.type === 'agent_answer') {
+          const finalText = (t.text || '').trim();
+          setMessages(prev => {
+            const isDefault = /\bwhat will we (make|build) today\?/i.test(finalText);
+            if (prev.length === 0 && isDefault) return prev;
+            const updated = [...prev];
+            let idx = updated.length - 1;
+            while (idx >= 0 && updated[idx].sender !== 'ai') idx--;
+            if (idx >= 0) {
+              updated[idx] = { ...updated[idx], content: finalText };
+              return updated;
+            }
+            if (updated.length === 0 && isDefault) return updated;
+            return [...updated, { id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, sender: 'ai', content: finalText, timestamp: new Date().toISOString(), toolCalls: [] }];
+          });
+          return;
+        }
+      });
+    };
+    window.addEventListener('rs-telemetry', handler);
+    return () => window.removeEventListener('rs-telemetry', handler);
+  }, []);
+
+  React.useEffect(() => {
+    if (hasAPIKey && !isConnected && !isProcessing) {
+      if (mcpClient && mcpClient.isConnected) { setIsConnected(true); return; }
+      initializeConnection();
+    }
+  }, [hasAPIKey]);
+
+  const initializeConnection = async () => {
+    try {
+      setIsProcessing(true);
+      await mcpClient.connect();
+      setIsConnected(true);
+    } catch (error) {
+      console.error('[AI Collaboration] Connection failed:', error);
+      setIsConnected(false);
+      addMessage('system', `Connection failed: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const refreshBridgeConnection = async () => {
+    try {
+      setIsProcessing(true);
+      const s = useGraphStore.getState();
+      const bridgeData = {
+        graphs: Array.from(s.graphs.entries()).map(([id, graph]) => ({
+          id,
+          name: graph.name,
+          description: graph.description || '',
+          instanceCount: graph.instances?.size || 0,
+          instances: id === s.activeGraphId && graph.instances ?
+            Object.fromEntries(Array.from(graph.instances.entries()).map(([instanceId, instance]) => [
+              instanceId, { id: instance.id, prototypeId: instance.prototypeId, x: instance.x || 0, y: instance.y || 0, scale: instance.scale || 1 }
+            ])) : undefined
+        })),
+        nodePrototypes: Array.from(s.nodePrototypes.entries()).map(([nid, prototype]) => ({ id: nid, name: prototype.name })),
+        activeGraphId: s.activeGraphId,
+        activeGraphName: s.activeGraphId ? (s.graphs.get(s.activeGraphId)?.name || null) : null,
+        openGraphIds: s.openGraphIds,
+        summary: { totalGraphs: s.graphs.size, totalPrototypes: s.nodePrototypes.size, lastUpdate: Date.now() }
+      };
+      try {
+        const resp = await bridgeFetch('/api/bridge/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bridgeData) });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      } catch (e) { console.warn('[AI Panel] Bridge state refresh failed:', e); }
+      await initializeConnection();
+      try {
+        const now = Date.now();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+        localStorage.setItem(RESET_TS_KEY, String(now));
+      } catch {}
+      setMessages([]);
+    } catch (e) {
+      addMessage('system', `Refresh failed: ${e.message}`);
+    } finally { setIsProcessing(false); }
+  };
+
+  const handleSendMessage = async () => {
+    if (!currentInput.trim() || isProcessing) return;
+    const userMessage = currentInput.trim();
+    addMessage('user', userMessage);
+    setCurrentInput('');
+    setIsProcessing(true);
+    try {
+      if (!hasAPIKey) { addMessage('ai', 'Please set up your API key first by clicking the key icon (🔑) in the header.'); setIsProcessing(false); return; }
+      if (!mcpClient.isConnected) { await initializeConnection(); if (!mcpClient.isConnected) { setIsProcessing(false); return; } }
+      if (isAutonomousMode) { await handleAutonomousAgent(userMessage); } else { await handleQuestion(userMessage); }
+    } catch (error) {
+      console.error('[AI Collaboration] Error processing message:', error);
+      addMessage('system', `Error: ${error.message}`);
+    } finally { setIsProcessing(false); setCurrentAgentRequest(null); }
+  };
+
+  const handleStopAgent = () => {
+    if (currentAgentRequest) {
+      currentAgentRequest.abort();
+      setCurrentAgentRequest(null);
+      setIsProcessing(false);
+      addMessage('system', '🛑 Agent execution stopped by user.');
+    }
+  };
+
+  const handleAutonomousAgent = async (question) => {
+    try {
+      const apiConfig = await apiKeyManager.getAPIKeyInfo();
+      const apiKey = await apiKeyManager.getAPIKey();
+      if (!apiKey) { addMessage('ai', 'No API key found. Please set up your API key first.'); return; }
+      if (!apiConfig) { addMessage('ai', 'API configuration not found. Please set up your API key first.'); return; }
+      const abortController = new AbortController();
+      setCurrentAgentRequest(abortController);
+      const response = await bridgeFetch('/api/ai/agent', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({ message: question, systemPrompt: 'You are an AI assistant with access to Redstring knowledge graph tools.', context: { activeGraphId, graphCount: graphs.size, hasAPIKey, apiConfig: apiConfig ? { provider: apiConfig.provider, endpoint: apiConfig.endpoint, model: apiConfig.model, settings: apiConfig.settings } : null } }),
+        signal: abortController.signal
+      });
+      if (!response.ok) throw new Error(`Agent request failed: ${response.status} ${response.statusText}`);
+      const result = await response.json();
+      addMessage('ai', result.response || '', { toolCalls: result.toolCalls || [], iterations: result.iterations, mode: 'autonomous', isComplete: result.isComplete });
+    } catch (error) {
+      if (error.name !== 'AbortError') { console.error('[AI Collaboration] Autonomous agent failed:', error); addMessage('ai', `Agent error: ${error.message}`); }
+    }
+  };
+
+  const handleQuestion = async (question) => {
+    try {
+      const apiConfig = await apiKeyManager.getAPIKeyInfo();
+      if (!apiConfig) { addMessage('ai', 'Please set up your API key first by clicking the key icon in the header.'); return; }
+      const apiKey = await apiKeyManager.getAPIKey();
+      const response = await bridgeFetch('/api/ai/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }, body: JSON.stringify({ message: question, systemPrompt: `You are Claude, a **knowledge graph architect** with advanced spatial reasoning, helping with Redstring - a visual knowledge graph system for emergent human-AI cognition.
+
+## **🧠 Your Identity**
+You facilitate **emergent knowledge** - complex understanding that emerges from simple connections between ideas. You help humans discover hidden patterns, model complex systems, and visualize abstract concepts through intelligent spatial organization.
+
+## **🌌 Spatial Intelligence**
+You can "see" and reason about canvas layouts:
+- **\`get_spatial_map\`** - View coordinates, clusters, empty regions, and layout analysis
+- **Cluster detection** - Understand semantic groupings and relationships  
+- **Smart positioning** - Place concepts to create visual flow and logical organization
+- **Panel awareness** - Avoid UI constraints (left panel: 0-300px, header: 0-80px)
+
+## **🔧 Core Tools**
+**High-Level (Recommended):**
+- **\`generate_knowledge_graph\`** - Create entire graphs with multiple concepts and intelligent layouts 🚀
+- **\`addNodeToGraph\`** - Add individual concepts with intelligent spatial positioning
+- **\`get_spatial_map\`** - Understand current layout and find optimal placement
+- **\`verify_state\`** - Check system state and debug issues
+- **\`search_nodes\`** - Find existing concepts to connect or reference
+
+**Graph Navigation:**
+- **\`list_available_graphs\`** - Explore knowledge spaces
+- **\`get_active_graph\`** - Understand current context
+- **\`create_edge\`** - Connect related concepts
+
+## **🎯 Spatial-Semantic Workflow**
+1. **Assess** → Use \`get_spatial_map\` to understand current layout
+2. **Plan** → Consider both semantic relationships and visual organization  
+3. **Position** → Place concepts near related clusters or in optimal empty regions
+4. **Connect** → Create meaningful relationships that enhance understanding
+5. **Explain** → Describe your spatial reasoning and layout decisions
+
+## **📍 Context**
+- Active graph: ${activeGraphId ? 'Yes' : 'No'}  
+- Total graphs: ${graphs.size}
+- Mode: Interactive collaboration
+
+**Think systemically. Organize spatially. Build knowledge together.** 🚀`, context: { activeGraphId, graphCount: graphs.size, hasAPIKey, apiConfig: { provider: apiConfig.provider, endpoint: apiConfig.endpoint, model: apiConfig.model, settings: apiConfig.settings } } }) });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`HTTP ${response.status}: ${errorData.error || response.statusText}`);
+      }
+      const result = await response.json();
+      if (result && typeof result === 'object' && 'response' in result) { addMessage('ai', (result.response || '').trim(), { toolCalls: result.toolCalls || [] }); return; }
+      const aiResponse = typeof result === 'string' ? result : 'I had trouble forming a response.';
+      addMessage('ai', aiResponse.trim(), { toolCalls: [] });
+    } catch (error) {
+      console.error('[AI Collaboration] Question handling failed:', error);
+      addMessage('ai', 'I encountered an error while processing your question. Please try again or check your connection to the MCP server.');
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }
+  };
+
+  const getGraphInfo = () => {
+    if (!activeGraphId || !graphs.has(activeGraphId)) { return { name: 'No active graph', nodeCount: 0, edgeCount: 0 }; }
+    const graph = graphs.get(activeGraphId);
+    return { name: graph.name, nodeCount: graph.instances.size, edgeCount: graph.edgeIds.length };
+  };
+  const graphInfo = getGraphInfo();
+  const toggleClearance = HEADER_HEIGHT + 14;
+  const [fileStatus, setFileStatus] = React.useState(null);
+  React.useEffect(() => {
+    let mounted = true;
+    const fetchFileStatus = async () => {
+      try {
+        const mod = await import('./store/fileStorage.js');
+        if (typeof mod.getFileStatus === 'function') {
+          const status = mod.getFileStatus();
+          if (mounted) setFileStatus(status);
+        }
+      } catch {}
+    };
+    fetchFileStatus();
+    const t = setInterval(fetchFileStatus, 3000);
+    return () => { mounted = false; clearInterval(t); };
+  }, []);
+
+  return (
+    <div className="ai-collaboration-panel">
+      <div className="ai-panel-header">
+        <div className="ai-header-left">
+          <Brain className="ai-header-icon" />
+          <div className="ai-header-info">
+            <h3>AI Collaboration</h3>
+            <div className="ai-connection-status">
+              <div className={`ai-status-indicator ${isConnected ? 'connected' : 'disconnected'}`} />
+              <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+            </div>
+            {fileStatus && (
+              <div className="ai-file-status" title={fileStatus.fileName ? `Saving to ${fileStatus.fileName}` : 'No universe file selected'}>
+                <span style={{ fontSize: '11px', color: '#9aa' }}>
+                  {fileStatus.hasFileHandle ? `Auto‑save: ${fileStatus.autoSaveEnabled ? 'on' : 'off'}` : 'No universe file'}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="ai-header-actions">
+          <button className={`ai-header-button api-key-button ${showAPIKeySetup ? 'active' : ''}`} onClick={() => setShowAPIKeySetup(!showAPIKeySetup)} title={hasAPIKey ? 'Manage API Key' : 'Setup API Key'}>
+            <Key size={16} />
+          </button>
+          <button className="ai-header-button" onClick={() => setShowAdvanced(!showAdvanced)} title="Advanced Options">
+            <Settings size={16} />
+          </button>
+          <button className={`ai-header-button ${isConnected ? 'ai-refresh-button' : 'ai-connect-button'}`} onClick={refreshBridgeConnection} title={isConnected ? 'Refresh Connection' : 'Connect to MCP Server'} disabled={isProcessing}>
+            <RotateCcw size={16} />
+          </button>
+        </div>
+      </div>
+
+      <div className="ai-graph-context">
+        <div className="ai-graph-info">
+          <span className="ai-graph-name">{graphInfo.name}</span>
+          <span className="ai-graph-stats">{graphInfo.nodeCount} nodes • {graphInfo.edgeCount} edges</span>
+        </div>
+        <div className="ai-mode-toggle">
+          <label className="ai-toggle-label">
+            <input type="checkbox" checked={isAutonomousMode} onChange={(e) => setIsAutonomousMode(e.target.checked)} className="ai-toggle-input" />
+            <span className="ai-toggle-slider"></span>
+            <span className="ai-toggle-text">{isAutonomousMode ? '🤖 Autonomous Agent' : '🔧 Single Tool Mode'}</span>
+          </label>
+        </div>
+      </div>
+
+      {showAPIKeySetup && (
+        <div className="ai-api-setup-section">
+          <APIKeySetup onKeySet={() => checkAPIKey()} onClose={() => setShowAPIKeySetup(false)} inline={true} />
+        </div>
+      )}
+
+      <div className="ai-panel-content">
+        <div className="ai-chat-mode">
+          <div className="ai-messages" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {isConnected && messages.length === 0 && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ textAlign: 'center', color: '#555', fontFamily: "'EmOne', sans-serif", fontSize: '14px' }}>What will we build today?</div>
+              </div>
+            )}
+            {messages.map((message) => (
+              <div key={message.id} className={`ai-message ai-message-${message.sender}`} style={{ alignSelf: message.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                <div className="ai-message-avatar">{message.sender === 'user' ? <User size={16} /> : <Bot size={16} />}</div>
+                <div className="ai-message-content">
+                  {message.toolCalls && message.toolCalls.length > 0 && (
+                    <div className="ai-tool-calls">
+                      {message.toolCalls.map((toolCall, index) => (
+                        <div key={index} className={`ai-tool-call ai-tool-call-${toolCall.status || 'running'}`}>
+                          <div className="ai-tool-call-header" style={{ cursor: 'pointer' }} onClick={() => {
+                            setMessages(prev => prev.map(m => {
+                              if (m.id !== message.id) return m;
+                              const copy = { ...m };
+                              copy.toolCalls = copy.toolCalls.map((c, ci) => ci === index ? { ...c, expanded: !c.expanded } : c);
+                              return copy;
+                            }));
+                          }}>
+                            <div className="ai-tool-call-icon" aria-hidden>
+                              {toolCall.status === 'completed' ? <Square style={{ transform: 'rotate(45deg)' }} size={12} /> : toolCall.status === 'failed' ? <Square size={12} /> : <RotateCcw size={12} />}
+                            </div>
+                            <span className="ai-tool-call-name">{toolCall.name}</span>
+                            <span className="ai-tool-call-status">{toolCall.status === 'completed' ? 'Completed' : toolCall.status === 'failed' ? 'Failed' : 'Running...'}</span>
+                          </div>
+                          {toolCall.args && toolCall.expanded && (<div className="ai-tool-call-args"><small>{JSON.stringify(toolCall.args, null, 2)}</small></div>)}
+                          {toolCall.result && toolCall.expanded && (<div className="ai-tool-call-result"><div className="ai-tool-call-result-content">{toolCall.result}</div></div>)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="ai-message-text" style={{ userSelect: 'text', cursor: 'text' }}>{message.content}</div>
+                  <div className="ai-message-timestamp">{new Date(message.timestamp).toLocaleTimeString()}</div>
+                </div>
+              </div>
+            ))}
+            {isProcessing && (
+              <div className="ai-message ai-message-ai" style={{ alignSelf: 'flex-start' }}>
+                <div className="ai-message-avatar"><Bot size={16} /></div>
+                <div className="ai-message-content">
+                  <div className="ai-message-text">
+                    <div className="ai-typing-spinner" aria-label="AI is thinking" />
+                    <div className="ai-processing-status">{isAutonomousMode ? 'Agent thinking and using tools...' : 'Thinking...'}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+          <div className="ai-input-container" style={{ marginBottom: toggleClearance }}>
+            <textarea ref={inputRef} value={currentInput} onChange={(e) => setCurrentInput(e.target.value)} onKeyPress={handleKeyPress} placeholder={isAutonomousMode ? "Tell me what you want to accomplish (I'll use multiple tools to complete it)..." : "Ask me anything about your knowledge graph..."} disabled={isProcessing} className="ai-input" rows={2} />
+            {isProcessing && currentAgentRequest ? (
+              <button onClick={handleStopAgent} className="ai-stop-button" title="Stop Agent"><Square size={16} /></button>
+            ) : (
+              <button onClick={handleSendMessage} disabled={!currentInput.trim() || isProcessing} className="ai-send-button"><Send size={32} /></button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -1329,210 +1952,33 @@ const Panel = forwardRef(
     if (side === 'left') {
         if (leftViewActive === 'library') {
             panelContent = (
-                <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
-                        <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
-                            Saved Things
-                        </h2>
-                    </div>
-
-                    {/* --- Type Sections --- */}
-                    {savedNodesByType.size === 0 ? (
-                        <div style={{ color: '#666', fontSize: '0.9rem', fontFamily: "'EmOne', sans-serif", textAlign: 'center', marginTop: '20px' }}>
-                            No saved nodes.
-                        </div>
-                    ) : (
-                        Array.from(savedNodesByType.entries()).map(([typeId, group], index, array) => {
-                            const { typeInfo, nodes } = group;
-                            const isCollapsed = sectionCollapsed[typeId] ?? false; // Default to expanded
-                            const maxHeight = sectionMaxHeights[typeId] || '0px';
-                            const isLastSection = index === array.length - 1;
-
-                            return (
-                                <div key={typeId}>
-                    <div style={{ marginBottom: '10px' }}>
-                                        {/* Section Header with rounded corners and type color */}
-                        <div
-                                            onClick={() => toggleSection(typeId)}
-                            style={{
-                                                backgroundColor: typeInfo.color,
-                                                padding: '8px 12px',
-                                cursor: 'pointer',
-                                                color: '#bdb5b5',
-                                fontWeight: 'bold',
-                                userSelect: 'none',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                                borderRadius: '12px', // Rounded corners
-                                                transition: 'all 0.2s ease',
-                                                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-                                                fontFamily: "'EmOne', sans-serif"
-                                            }}
-                                            onMouseEnter={(e) => {
-                                                e.currentTarget.style.filter = 'brightness(1.1)';
-                                                e.currentTarget.style.transform = 'translateY(-1px)';
-                                            }}
-                                            onMouseLeave={(e) => {
-                                                e.currentTarget.style.filter = 'brightness(1)';
-                                                e.currentTarget.style.transform = 'translateY(0px)';
-                            }}
-                        >
-                                            <span>{typeInfo.name} ({nodes.length})</span>
-                            <span style={{
-                                                display: 'inline-block',
-                                                transition: 'transform 0.2s ease',
-                                                transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
-                                                fontSize: '14px',
-                                                fontFamily: "'EmOne', sans-serif"
-                            }}>▶</span>
-                        </div>
-
-                        {/* Section Content */}
-                                        {!isCollapsed && (
-                            <div // Outer container for overflow
-                                style={{
-                                    overflow: 'hidden',
-                                                    transition: 'max-height 0.2s ease-out',
-                                                    maxHeight: maxHeight,
-                                }}
-                            >
-                                                <div // Inner container for content
-                                                    ref={(el) => {
-                                                        if (el) {
-                                                            sectionContentRefs.current.set(typeId, el);
-                                                        } else {
-                                                            sectionContentRefs.current.delete(typeId);
-                                                        }
-                                                    }}
-                                    style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: panelWidth > 250 ? '1fr 1fr' : '1fr',
-                                        gap: panelWidth > 250 ? '8px' : '0px',
-                                        marginTop: '8px',
-                                                        paddingBottom: '8px',
-                                    }}
-                                >
-                                                    {nodes.map(node => {
-                                        // Single click opens the graph definition OR creates one
-                                        const handleSingleClick = () => {
-                                            // Use openGraphTab to handle opening and setting definition node
-                                            if (node.definitionGraphIds && node.definitionGraphIds.length > 0) {
-                                                const graphIdToOpen = node.definitionGraphIds[0]; // Open the first definition
-                                                console.log(`[Panel Saved Node Click] Opening existing graph ${graphIdToOpen} defined by node ${node.id}`);
-                                                openGraphTab(graphIdToOpen, node.id); // Pass both graph and node ID
-                                            } else if (createAndAssignGraphDefinition) {
-                                                // Node has no definitions, create one
-                                                console.warn(`[Panel Saved Node Click] Node ${node.id} has no graph definitions. Creating one.`);
-                                                createAndAssignGraphDefinition(node.id);
-                                            } else {
-                                                console.error('[Panel Saved Node Click] Missing required actions (openGraphTab or createAndAssignGraphDefinition)');
-                                            }
-                                        };
-
-                                        // Double click opens the node tab
-                                        const handleDoubleClick = () => {
-                                            console.log(`[Panel Saved Node DblClick] Opening node tab for ${node.id}`);
-                                            openRightPanelNodeTab(node.id);
-                                        };
-
-                                        const handleUnsave = () => {
-                                            toggleSavedNode(node.id);
-                                        };
-
-                                        return (
-                                          <SavedNodeItem
-                                            key={node.id}
-                                            node={node}
-                                            onClick={handleSingleClick}
-                                            onDoubleClick={handleDoubleClick}
-                                            onUnsave={handleUnsave}
-                                            isActive={node.id === activeDefinitionNodeId}
-                                          />
-                                        );
-                                    })}
-                                </div>
-                            </div> // Close outer container
-                        )}
-                    </div>
-                                    
-                                    {/* Divider between sections - only show if not the last section */}
-                                    {!isLastSection && (
-                                        <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
-                                    )}
-                                </div>
-                            );
-                        })
-                    )}
-                </div>
+              <LeftLibraryView
+                savedNodesByType={savedNodesByType}
+                sectionCollapsed={sectionCollapsed}
+                sectionMaxHeights={sectionMaxHeights}
+                toggleSection={toggleSection}
+                panelWidth={panelWidth}
+                sectionContentRefs={sectionContentRefs}
+                activeDefinitionNodeId={activeDefinitionNodeId}
+                openGraphTab={openGraphTab}
+                createAndAssignGraphDefinition={createAndAssignGraphDefinition}
+                toggleSavedNode={toggleSavedNode}
+                openRightPanelNodeTab={openRightPanelNodeTab}
+              />
             );
         } else if (leftViewActive === 'grid') {
-            // Define the click handler ONLY when grid is active
-            const handleGridItemClick = (graphId) => {
-                if (leftViewActive === 'grid') { // Double check view is still grid
-                    setActiveGraph(graphId);
-                } else {
-                    console.warn("[Panel] Grid item click handler called while view was not grid!");
-                }
-            };
-
-            // Render Tabs view using graphStore data
+            const handleGridItemClick = (graphId) => { if (leftViewActive === 'grid') setActiveGraph(graphId); };
             panelContent = (
-                <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}> 
-                    {/* Title Row with Plus button (No flexGrow) */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}> 
-                        <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
-                            Open Things
-                        </h2>
-                        <button 
-                            onClick={createNewGraph} // Uses store action
-                            title="Create New Graph"
-                            style={{
-                                background: 'none',
-                                border: 'none',
-                                padding: '4px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                            }}
-                        >
-                            <Plus size={20} color="#260000" />
-                        </button>
-                    </div>
-
-                    {/* === Scrollable List (Takes remaining space) === */}
-                    <div
-                        ref={listContainerRef} // <<< Attach ref to the container
-                        className="hide-scrollbar"
-                        style={{
-                            flexGrow: 1, // <<< Takes up remaining vertical space
-                            overflowY: 'auto', // Make it scrollable
-                            paddingLeft: '5px', // <<< Add left padding
-                            paddingRight: '5px', // <<< Add right padding
-                            paddingBottom: '30px',
-                            minHeight: 0, // <<< Add min-height to help flex calculation
-                            // Remove maxHeight, rely on flexGrow
-                            // maxHeight: 'calc(100vh - 120px)', 
-                        }}
-                    >
-                        {openGraphsForList.map((graph) => (
-                            <GraphListItem
-                                key={graph.id}
-                                graphData={graph} // Pass full graph data (name, nodes, edges)
-                                panelWidth={panelWidth} // Pass current panel width
-                                isActive={graph.id === activeGraphId} // Check if it's the active graph
-                                isExpanded={expandedGraphIds.has(graph.id)} // <<< Pass derived expanded state
-                                onClick={handleGridItemClick} // <<< Use the guarded handler
-                                onClose={closeGraph} 
-                                onToggleExpand={toggleGraphExpanded} // <<< Pass toggle action
-                            />
-                        ))}
-                         {openGraphsForList.length === 0 && (
-                            <div style={{ color: '#666', textAlign: 'center', marginTop: '20px', fontFamily: "'EmOne', sans-serif" }}>No graphs currently open.</div>
-                        )}
-                    </div>
-                </div>
+              <LeftGridView
+                openGraphsForList={openGraphsForList}
+                panelWidth={panelWidth}
+                listContainerRef={listContainerRef}
+                activeGraphId={activeGraphId}
+                expandedGraphIds={expandedGraphIds}
+                handleGridItemClick={handleGridItemClick}
+                closeGraph={closeGraph}
+                toggleGraphExpanded={toggleGraphExpanded}
+              />
             );
         } else if (leftViewActive === 'federation') {
             // Git-Native Federation view for revolutionary protocol
@@ -1542,7 +1988,7 @@ const Panel = forwardRef(
                 </div>
             );
         } else if (leftViewActive === 'ai') {
-            // AI Collaboration view
+            // AI Collaboration view (inlined)
             panelContent = (
                 <div className="panel-content-inner ai-panel" style={{ 
                     display: 'flex', 
@@ -1550,7 +1996,7 @@ const Panel = forwardRef(
                     height: '100%', 
                     padding: 0
                 }}>
-                    <AICollaborationPanel />
+                    <LeftAIView />
                 </div>
             );
         }

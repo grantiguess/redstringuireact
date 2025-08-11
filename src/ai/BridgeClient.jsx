@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import useGraphStore from './store/graphStore';
-import { bridgeEventSource, bridgeFetch } from './services/bridgeConfig.js';
+import useGraphStore from '../store/graphStore';
+import { bridgeEventSource, bridgeFetch } from '../services/bridgeConfig.js';
 
 /**
  * Bridge Client Component (formerly MCPBridge)
@@ -642,7 +642,7 @@ const BridgeClient = () => {
         // Include file status for debugging/persistence visibility
         let fileStatus = null;
         try {
-          const mod = await import('./store/fileStorage.js');
+          const mod = await import('../store/fileStorage.js');
           if (typeof mod.getFileStatus === 'function') {
             fileStatus = mod.getFileStatus();
           }

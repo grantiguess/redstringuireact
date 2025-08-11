@@ -19,7 +19,7 @@
 
 **Solutions**:
 1. **Check Console**: Open browser dev tools (F12) and look for errors
-2. **Verify Import**: Make sure `AICollaborationPanel.jsx` exists in `src/`
+2. **Verify Import**: The AI panel is now inline in `src/Panel.jsx` (left tab: AI)
 3. **Check State**: Verify `showAICollaboration` state is properly initialized
 4. **Refresh Page**: Sometimes React state gets stuck
 
@@ -82,7 +82,7 @@ import('./src/store/graphStore.js').then(module => {
 **Symptoms**: Panel appears but looks broken or unstyled
 
 **Solutions**:
-1. **Check CSS Import**: Verify `AICollaborationPanel.css` is imported
+1. **Check CSS Import**: Verify `src/ai/AICollaborationPanel.css` is imported in `src/Panel.jsx`
 2. **Check CSS Classes**: Verify CSS classes are properly applied
 3. **Check Z-Index**: Panel might be behind other elements
 
@@ -162,8 +162,8 @@ If you're still having issues:
 ### File Structure Check
 ```
 src/
-├── AICollaborationPanel.jsx ✅
-├── AICollaborationPanel.css ✅
+├── Panel.jsx (contains inline AI panel) ✅
+├── ai/AICollaborationPanel.css ✅
 ├── services/
 │   ├── mcpProvider.js ✅
 │   └── mcpClient.js ✅

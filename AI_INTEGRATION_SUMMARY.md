@@ -53,8 +53,8 @@ Today, August 4th, 2025, marks a historic milestone in the evolution of human-AI
 - Session persistence and context tracking
 - Helper functions for text analysis and similarity calculation
 
-### 3. AI Collaboration Panel (`src/AICollaborationPanel.jsx`)
-**Purpose**: User interface for human-AI collaboration with real-time interaction.
+### 3. AI Collaboration Panel (inline in `src/Panel.jsx`)
+**Purpose**: User interface for human-AI collaboration with real-time interaction. Styles in `src/ai/AICollaborationPanel.css`.
 
 **Key Features**:
 - **Chat Mode**: Natural language interaction with AI
