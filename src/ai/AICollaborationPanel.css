@@ -24,190 +24,139 @@
   overflow: hidden;
 }
 
-/* Header - Canvas colored, no rounded corners */
+/* Header - Three column layout */
 .ai-panel-header {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto 1fr auto; /* Wizard, graph info, actions */
   align-items: center;
-  padding: 16px 20px;
+  padding: 12px 20px;
   background: #bdb5b5;
   border-bottom: 1px solid #260000;
   position: relative;
+  gap: 16px;
 }
 
-.ai-header-left {
+/* Mode dropdown styling */
+.ai-mode-dropdown {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-.ai-header-icon {
-  color: #260000;
-  width: 24px;
-  height: 24px;
+.ai-status-indicator-wrapper {
+  display: flex;
+  align-items: center;
 }
 
-.ai-header-info h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #260000;
+.ai-mode-select {
+  background: #260000;
+  color: #bdb5b5;
+  border: none;
+  padding: 8px 20px 8px 10px; /* more right padding for arrow, less left */
+  border-radius: 6px;
   font-family: 'EmOne', sans-serif;
+  font-size: 14px;
+  cursor: pointer;
+  outline: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+.ai-mode-dropdown { position: relative; }
+.ai-mode-dropdown::after {
+  content: '▾';
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #bdb5b5;
+  pointer-events: none;
 }
 
-.ai-connection-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #260000;
-  opacity: 0.8;
+.ai-mode-select:hover {
+  background: #3b0000;
 }
 
-.ai-file-status {
-  margin-top: 2px;
+.ai-mode-select option {
+  background: #260000;
+  color: #bdb5b5;
 }
 
 .ai-status-indicator {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  background: #2e2e2e;
+  border: 1px solid #260000;
   transition: all 0.25s ease;
 }
 
 .ai-status-indicator.connected {
-  background: #4CAF50;
-  box-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
+  background: #260000; /* Maroon color for connected state */
 }
 
 .ai-status-indicator.disconnected {
   background: #f44336;
-  box-shadow: 0 0 8px rgba(244, 67, 54, 0.4);
 }
 
-.ai-header-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.ai-header-button {
-  background: transparent;
-  border: 1px solid #260000;
-  color: #260000;
-  padding: 8px;
-  border-radius: 0;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'EmOne', sans-serif;
-}
-
-.ai-header-button:hover {
-  background: #260000;
-  color: #bdb5b5;
-  transform: translateY(-1px);
-}
-
-.ai-header-button:active {
-  transform: translateY(0);
-}
-
-.ai-header-button.active {
-  background: #F00000;
-  color: #bdb5b5;
-  border-color: #F00000;
-}
-
-.api-key-button.active {
-  background: #4CAF50;
-  color: #bdb5b5;
-  border-color: #4CAF50;
-}
-
-/* Graph Context & Mode Toggle */
-.ai-graph-context {
-  padding: 12px 20px;
-  background: #bdb5b5;
-  border-bottom: 1px solid #260000;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.ai-graph-info {
+/* Graph info next to Wizard (left of actions) */
+.ai-graph-info-left {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  align-items: flex-start;
+  gap: 2px;
 }
 
-.ai-graph-name {
+.ai-graph-info-left .ai-graph-name {
   font-weight: 600;
   font-size: 14px;
   color: #260000;
 }
 
-.ai-graph-stats {
+.ai-graph-info-left .ai-graph-stats {
   font-size: 12px;
   color: rgba(38, 0, 0, 0.7);
 }
 
-.ai-mode-toggle {
+/* Header actions - buttons in header (right aligned) */
+.ai-header-actions {
   display: flex;
-  align-items: center;
-}
-
-.ai-toggle-label {
-  display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
+  justify-self: end;
+}
+
+.ai-flat-button {
+  background: none;
+  border: none;
+  padding: 4px;
   cursor: pointer;
-  font-size: 12px;
-  user-select: none;
-}
-
-.ai-toggle-input {
-  display: none;
-}
-
-.ai-toggle-slider {
-  position: relative;
-  width: 44px;
-  height: 24px;
-  background: rgba(189, 181, 181, 0.2);
-  border-radius: 12px;
-  transition: all 0.3s ease;
-  border: 1px solid rgba(189, 181, 181, 0.3);
-}
-
-.ai-toggle-slider::before {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  background: #bdb5b5;
-  border-radius: 50%;
-  transition: all 0.3s ease;
-}
-
-.ai-toggle-input:checked + .ai-toggle-slider {
-  background: rgba(240, 0, 0, 0.3);
-  border-color: #F00000;
-}
-
-.ai-toggle-input:checked + .ai-toggle-slider::before {
-  transform: translateX(20px);
-  background: #F00000;
-}
-
-.ai-toggle-text {
-  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: #260000;
+  font-family: 'EmOne', sans-serif;
+  transition: opacity 0.2s ease;
 }
+
+.ai-flat-button:hover {
+  opacity: 0.7;
+}
+
+.ai-flat-button:active {
+  opacity: 0.5;
+}
+
+.ai-flat-button.active {
+  color: #F00000;
+}
+
+.ai-flat-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Old styles removed and replaced with flat button positioning */
 
 /* API Key Setup Section - Full integration */
 .ai-api-setup-section {
@@ -469,7 +418,7 @@
   flex: 1;
   background: rgba(38, 0, 0, 0.05);
   border: 1px solid #260000;
-  border-radius: 0;
+  border-radius: 6px;
   padding: 12px 16px;
   color: #260000;
   font-family: 'EmOne', sans-serif;

@@ -2,7 +2,7 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, us
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR } from './constants';
-import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Brain, Settings, RotateCcw, Send, Bot, User, Key, Square } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Wand, Settings, RotateCcw, Send, Bot, User, Key, Square } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
@@ -713,49 +713,50 @@ You can "see" and reason about canvas layouts:
   return (
     <div className="ai-collaboration-panel">
       <div className="ai-panel-header">
-        <div className="ai-header-left">
-          <Brain className="ai-header-icon" />
-          <div className="ai-header-info">
-            <h3>AI Collaboration</h3>
-            <div className="ai-connection-status">
-              <div className={`ai-status-indicator ${isConnected ? 'connected' : 'disconnected'}`} />
-              <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
-            </div>
-            {fileStatus && (
-              <div className="ai-file-status" title={fileStatus.fileName ? `Saving to ${fileStatus.fileName}` : 'No universe file selected'}>
-                <span style={{ fontSize: '11px', color: '#9aa' }}>
-                  {fileStatus.hasFileHandle ? `Auto‑save: ${fileStatus.autoSaveEnabled ? 'on' : 'off'}` : 'No universe file'}
-                </span>
-              </div>
-            )}
+        <div className="ai-mode-dropdown">
+          <div className="ai-status-indicator-wrapper">
+            <div className={`ai-status-indicator ${isConnected ? 'connected' : 'disconnected'}`} />
           </div>
+          <select className="ai-mode-select" value={isAutonomousMode ? 'wizard' : 'chat'} onChange={(e) => setIsAutonomousMode(e.target.value === 'wizard')} aria-label="Mode">
+            <option value="wizard">Wizard</option>
+            <option value="chat">Chat</option>
+          </select>
         </div>
+
+        {/* Left aligned graph info next to Wizard */}
+        <div className="ai-graph-info-left">
+          <span className="ai-graph-name">{graphInfo.name}</span>
+          <span className="ai-graph-stats">{graphInfo.nodeCount} nodes • {graphInfo.edgeCount} edges</span>
+        </div>
+
+        {/* Right aligned header actions */}
         <div className="ai-header-actions">
-          <button className={`ai-header-button api-key-button ${showAPIKeySetup ? 'active' : ''}`} onClick={() => setShowAPIKeySetup(!showAPIKeySetup)} title={hasAPIKey ? 'Manage API Key' : 'Setup API Key'}>
-            <Key size={16} />
+          <button 
+            className={`ai-flat-button ${showAPIKeySetup ? 'active' : ''}`} 
+            onClick={() => setShowAPIKeySetup(!showAPIKeySetup)} 
+            title={hasAPIKey ? 'Manage API Key' : 'Setup API Key'}
+          >
+            <Key size={20} />
           </button>
-          <button className="ai-header-button" onClick={() => setShowAdvanced(!showAdvanced)} title="Advanced Options">
-            <Settings size={16} />
+          <button 
+            className="ai-flat-button" 
+            onClick={() => setShowAdvanced(!showAdvanced)} 
+            title="Advanced Options"
+          >
+            <Settings size={20} />
           </button>
-          <button className={`ai-header-button ${isConnected ? 'ai-refresh-button' : 'ai-connect-button'}`} onClick={refreshBridgeConnection} title={isConnected ? 'Refresh Connection' : 'Connect to MCP Server'} disabled={isProcessing}>
-            <RotateCcw size={16} />
+          <button 
+            className={`ai-flat-button ${isConnected ? 'ai-refresh-button' : 'ai-connect-button'}`} 
+            onClick={refreshBridgeConnection} 
+            title={isConnected ? 'Refresh Connection' : 'Connect to MCP Server'} 
+            disabled={isProcessing}
+          >
+            <RotateCcw size={20} />
           </button>
         </div>
       </div>
 
-      <div className="ai-graph-context">
-        <div className="ai-graph-info">
-          <span className="ai-graph-name">{graphInfo.name}</span>
-          <span className="ai-graph-stats">{graphInfo.nodeCount} nodes • {graphInfo.edgeCount} edges</span>
-        </div>
-        <div className="ai-mode-toggle">
-          <label className="ai-toggle-label">
-            <input type="checkbox" checked={isAutonomousMode} onChange={(e) => setIsAutonomousMode(e.target.checked)} className="ai-toggle-input" />
-            <span className="ai-toggle-slider"></span>
-            <span className="ai-toggle-text">{isAutonomousMode ? '🤖 Autonomous Agent' : '🔧 Single Tool Mode'}</span>
-          </label>
-        </div>
-      </div>
+
 
       {showAPIKeySetup && (
         <div className="ai-api-setup-section">
@@ -765,11 +766,9 @@ You can "see" and reason about canvas layouts:
 
       <div className="ai-panel-content">
         <div className="ai-chat-mode">
-          <div className="ai-messages" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div className="ai-messages" style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: messages.length === 0 ? 'center' : 'flex-start' }}>
             {isConnected && messages.length === 0 && (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ textAlign: 'center', color: '#555', fontFamily: "'EmOne', sans-serif", fontSize: '14px' }}>What will we build today?</div>
-              </div>
+              <div style={{ textAlign: 'center', color: '#555', fontFamily: "'EmOne', sans-serif", fontSize: '14px' }}>What will we build today?</div>
             )}
             {messages.map((message) => (
               <div key={message.id} className={`ai-message ai-message-${message.sender}`} style={{ alignSelf: message.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
@@ -822,11 +821,12 @@ You can "see" and reason about canvas layouts:
             {isProcessing && currentAgentRequest ? (
               <button onClick={handleStopAgent} className="ai-stop-button" title="Stop Agent"><Square size={16} /></button>
             ) : (
-              <button onClick={handleSendMessage} disabled={!currentInput.trim() || isProcessing} className="ai-send-button"><Send size={32} /></button>
+              <button onClick={handleSendMessage} disabled={!currentInput.trim() || isProcessing} className="ai-send-button"><Send size={24} /></button>
             )}
           </div>
         </div>
       </div>
+      
     </div>
   );
 };
@@ -994,6 +994,7 @@ const getInitialLastCustomWidth = (side, defaultValue) => {
   };
 
 let panelRenderCount = 0; // Add counter outside component
+
 
 const Panel = forwardRef(
   ({
@@ -3638,11 +3639,11 @@ const Panel = forwardRef(
 
                             {/* AI Collaboration Button */}
                             <div 
-                                title="AI Collaboration" 
+                                title="Wizard" 
                                 style={{ /* Common Button Styles */ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backgroundColor: leftViewActive === 'ai' ? '#bdb5b5' : '#979090', zIndex: 2 }}
                                 onClick={() => setLeftViewActive('ai')}
                             >
-                                <Brain size={20} color="#260000" />
+                                <Wand size={20} color="#260000" />
                             </div>
                         </div>
                     ) : (
@@ -3877,6 +3878,8 @@ const Panel = forwardRef(
                 searchTerm={typeNamePrompt.name}
               />
             )}
+
+
         </>
     );
 }
