@@ -3665,6 +3665,16 @@ app.post('/api/github/oauth/token', async (req, res) => {
   }
 });
 
+// Expose GitHub OAuth client ID to the frontend (no secret)
+app.get('/api/github/oauth/client-id', (req, res) => {
+  try {
+    const clientId = process.env.GITHUB_CLIENT_ID || null;
+    res.json({ clientId, configured: !!clientId });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get client id' });
+  }
+});
+
 // Bridge state endpoints
 app.get('/api/bridge/health', (req, res) => {
   try {

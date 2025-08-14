@@ -106,12 +106,19 @@ const GitNativeFederation = () => {
         status: 'Restoring saved connection...'
       });
       
-      // Restore provider config
-      setProviderConfig(gitConnection);
-      setSelectedProvider(gitConnection.type);
+      // Restore provider config (use session token for OAuth if available)
+      let restoredConfig = gitConnection;
+      try {
+        const sessionToken = sessionStorage.getItem('github_access_token');
+        if ((!gitConnection.token || gitConnection.authMethod === 'oauth') && sessionToken) {
+          restoredConfig = { ...gitConnection, token: sessionToken };
+        }
+      } catch {}
+      setProviderConfig(restoredConfig);
+      setSelectedProvider(restoredConfig.type);
       
-      // Create provider from saved config
-      const provider = SemanticProviderFactory.createProvider(gitConnection);
+      // Create provider from restored config
+      const provider = SemanticProviderFactory.createProvider(restoredConfig);
       setCurrentProvider(provider);
       setIsConnected(true);
       
@@ -319,6 +326,7 @@ const GitNativeFederation = () => {
           console.log('[GitNativeFederation] Token exchange successful');
           
           const accessToken = tokenData.access_token;
+          try { sessionStorage.setItem('github_access_token', accessToken); } catch {}
           
           console.log('[GitNativeFederation] Fetching user information...');
           
@@ -398,8 +406,8 @@ const GitNativeFederation = () => {
           setIsConnected(true);
           setError(null);
           
-          // Save connection to persistent store
-          setGitConnection(oauthConfig);
+          // Save connection to persistent store without token
+          setGitConnection({ ...oauthConfig, token: undefined });
           
           console.log('[GitNativeFederation] OAuth authentication successful!');
           
@@ -517,7 +525,16 @@ const GitNativeFederation = () => {
       setError(null);
       
       // Try real GitHub OAuth first, fallback to demo mode
-      const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID;
+      let clientId = import.meta.env.VITE_GITHUB_CLIENT_ID;
+      if (!clientId || clientId === 'your-github-client-id' || clientId === 'your-github-client-id-here') {
+        try {
+          const resp = await bridgeFetch('/api/github/oauth/client-id', { method: 'GET' });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data?.clientId) clientId = data.clientId;
+          }
+        } catch {}
+      }
       
       // If we have a real client ID, use real OAuth
       if (clientId && clientId !== 'your-github-client-id' && clientId !== 'your-github-client-id-here') {
