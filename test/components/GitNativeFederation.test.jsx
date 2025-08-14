@@ -141,15 +141,16 @@ describe('GitNativeFederation', () => {
       expect(screen.getByText(/Provider Configuration/)).toBeTruthy();
       expect(screen.getByText('GitHub')).toBeTruthy();
       expect(screen.getByText('Self-Hosted Gitea')).toBeTruthy();
-      expect(screen.getByText(/Connect to Git Provider/)).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Connect with GitHub/ })).toBeTruthy();
     });
 
-    it('should show GitHub configuration by default', () => {
+    it('should show GitHub OAuth configuration by default', () => {
       render(<GitNativeFederation />);
 
-      expect(screen.getByLabelText('GitHub Username:')).toBeTruthy();
-      expect(screen.getByLabelText('Repository Name:')).toBeTruthy();
-      expect(screen.getByLabelText('Personal Access Token:')).toBeTruthy();
+      expect(screen.getByText('Authentication Method:')).toBeTruthy();
+      expect(screen.getByText('OAuth')).toBeTruthy();
+      expect(screen.getByText('Token')).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Connect with GitHub/ })).toBeTruthy();
     });
 
     it('should show Gitea configuration when selected', () => {
@@ -166,11 +167,15 @@ describe('GitNativeFederation', () => {
   });
 
   describe('Provider Configuration', () => {
-    it('should handle GitHub configuration input', () => {
+    it('should handle GitHub configuration input when token mode is selected', () => {
       render(<GitNativeFederation />);
 
+      // Switch to token mode first
+      const tokenButton = screen.getByRole('button', { name: /Token/ });
+      fireEvent.click(tokenButton);
+
       const usernameInput = screen.getByLabelText('GitHub Username:');
-      const repoInput = screen.getByLabelText('Repository Name:');
+      const repoInput = screen.getByLabelText('Repository:');
       const tokenInput = screen.getByLabelText('Personal Access Token:');
 
       fireEvent.change(usernameInput, { target: { value: 'testuser' } });
@@ -219,12 +224,16 @@ describe('GitNativeFederation', () => {
   });
 
   describe('Connection Management', () => {
-    it('should connect to provider successfully', async () => {
+    it('should connect to provider successfully with token method', async () => {
       render(<GitNativeFederation />);
+
+      // Switch to token mode
+      const tokenButton = screen.getByRole('button', { name: /Token/ });
+      fireEvent.click(tokenButton);
 
       // Fill in GitHub configuration
       fireEvent.change(screen.getByLabelText('GitHub Username:'), { target: { value: 'testuser' } });
-      fireEvent.change(screen.getByLabelText('Repository Name:'), { target: { value: 'testrepo' } });
+      fireEvent.change(screen.getByLabelText('Repository:'), { target: { value: 'testrepo' } });
       fireEvent.change(screen.getByLabelText('Personal Access Token:'), { target: { value: 'ghp_testtoken123' } });
 
       // Click connect
@@ -250,9 +259,13 @@ describe('GitNativeFederation', () => {
 
       render(<GitNativeFederation />);
 
+      // Switch to token mode
+      const tokenButton = screen.getByRole('button', { name: /Token/ });
+      fireEvent.click(tokenButton);
+
       // Fill in configuration
       fireEvent.change(screen.getByLabelText('GitHub Username:'), { target: { value: 'testuser' } });
-      fireEvent.change(screen.getByLabelText('Repository Name:'), { target: { value: 'testrepo' } });
+      fireEvent.change(screen.getByLabelText('Repository:'), { target: { value: 'testrepo' } });
       fireEvent.change(screen.getByLabelText('Personal Access Token:'), { target: { value: 'invalid-token' } });
 
       // Click connect
@@ -282,7 +295,7 @@ describe('GitNativeFederation', () => {
 
       // This would require more complex state management testing
       // For now, we'll test the disconnect functionality exists
-      expect(screen.getByText(/Connect to Git Provider/)).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Connect with GitHub/ })).toBeTruthy();
     });
   });
 
@@ -328,9 +341,13 @@ describe('GitNativeFederation', () => {
 
       render(<GitNativeFederation />);
 
+      // Switch to token mode
+      const tokenButton = screen.getByRole('button', { name: /Token/ });
+      fireEvent.click(tokenButton);
+
       // Fill in configuration
       fireEvent.change(screen.getByLabelText('GitHub Username:'), { target: { value: 'testuser' } });
-      fireEvent.change(screen.getByLabelText('Repository Name:'), { target: { value: 'testrepo' } });
+      fireEvent.change(screen.getByLabelText('Repository:'), { target: { value: 'testrepo' } });
       fireEvent.change(screen.getByLabelText('Personal Access Token:'), { target: { value: 'invalid-token' } });
 
       // Click connect
@@ -353,13 +370,17 @@ describe('GitNativeFederation', () => {
   });
 
   describe('Integration with Services', () => {
-    it('should initialize sync engine when provider is set', async () => {
+    it('should initialize sync engine when provider is set with token', async () => {
       render(<GitNativeFederation />);
 
+      // Switch to token mode
+      const tokenButton = screen.getByRole('button', { name: /Token/ });
+      fireEvent.click(tokenButton);
+
       // Fill in and connect
-      fireEvent.change(screen.getByPlaceholderText('your-username'), { target: { value: 'testuser' } });
-      fireEvent.change(screen.getByPlaceholderText('semantic-knowledge'), { target: { value: 'testrepo' } });
-      fireEvent.change(screen.getByPlaceholderText('ghp_...'), { target: { value: 'ghp_testtoken123' } });
+      fireEvent.change(screen.getByLabelText('GitHub Username:'), { target: { value: 'testuser' } });
+      fireEvent.change(screen.getByLabelText('Repository:'), { target: { value: 'testrepo' } });
+      fireEvent.change(screen.getByLabelText('Personal Access Token:'), { target: { value: 'ghp_testtoken123' } });
 
       fireEvent.click(screen.getByText(/Connect to Git Provider/));
 
@@ -377,10 +398,14 @@ describe('GitNativeFederation', () => {
     it('should initialize federation when sync engine is set', async () => {
       render(<GitNativeFederation />);
 
+      // Switch to token mode
+      const tokenButton = screen.getByRole('button', { name: /Token/ });
+      fireEvent.click(tokenButton);
+
       // Fill in and connect
-      fireEvent.change(screen.getByPlaceholderText('your-username'), { target: { value: 'testuser' } });
-      fireEvent.change(screen.getByPlaceholderText('semantic-knowledge'), { target: { value: 'testrepo' } });
-      fireEvent.change(screen.getByPlaceholderText('ghp_...'), { target: { value: 'ghp_testtoken123' } });
+      fireEvent.change(screen.getByLabelText('GitHub Username:'), { target: { value: 'testuser' } });
+      fireEvent.change(screen.getByLabelText('Repository:'), { target: { value: 'testrepo' } });
+      fireEvent.change(screen.getByLabelText('Personal Access Token:'), { target: { value: 'ghp_testtoken123' } });
 
       fireEvent.click(screen.getByText(/Connect to Git Provider/));
 
@@ -392,10 +417,14 @@ describe('GitNativeFederation', () => {
     it('should subscribe to status updates', async () => {
       render(<GitNativeFederation />);
 
+      // Switch to token mode
+      const tokenButton = screen.getByRole('button', { name: /Token/ });
+      fireEvent.click(tokenButton);
+
       // Fill in and connect
-      fireEvent.change(screen.getByPlaceholderText('your-username'), { target: { value: 'testuser' } });
-      fireEvent.change(screen.getByPlaceholderText('semantic-knowledge'), { target: { value: 'testrepo' } });
-      fireEvent.change(screen.getByPlaceholderText('ghp_...'), { target: { value: 'ghp_testtoken123' } });
+      fireEvent.change(screen.getByLabelText('GitHub Username:'), { target: { value: 'testuser' } });
+      fireEvent.change(screen.getByLabelText('Repository:'), { target: { value: 'testrepo' } });
+      fireEvent.change(screen.getByLabelText('Personal Access Token:'), { target: { value: 'ghp_testtoken123' } });
 
       fireEvent.click(screen.getByText(/Connect to Git Provider/));
 
@@ -406,26 +435,31 @@ describe('GitNativeFederation', () => {
   });
 
   describe('Accessibility', () => {
-    it('should have proper labels for form inputs', () => {
+    it('should have proper labels for OAuth mode', () => {
       render(<GitNativeFederation />);
 
-      expect(screen.getByText('GitHub Username:')).toBeTruthy();
-      expect(screen.getByText('Repository Name:')).toBeTruthy();
-      expect(screen.getByText('Personal Access Token:')).toBeTruthy();
+      expect(screen.getByText('Authentication Method:')).toBeTruthy();
+      expect(screen.getByText('GitHub OAuth:')).toBeTruthy();
+      expect(screen.getByRole('button', { name: /OAuth/ })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Token/ })).toBeTruthy();
     });
 
     it('should have proper button text', () => {
       render(<GitNativeFederation />);
 
-      expect(screen.getByText(/Connect to Git Provider/)).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Connect with GitHub/ })).toBeTruthy();
       expect(screen.getByText(/Show Advanced/)).toBeTruthy();
     });
 
-    it('should handle keyboard navigation', () => {
+    it('should handle keyboard navigation in token mode', () => {
       render(<GitNativeFederation />);
 
-      const usernameInput = screen.getByPlaceholderText('your-username');
-      const repoInput = screen.getByPlaceholderText('semantic-knowledge');
+      // Switch to token mode
+      const tokenButton = screen.getByRole('button', { name: /Token/ });
+      fireEvent.click(tokenButton);
+
+      const usernameInput = screen.getByLabelText('GitHub Username:');
+      const repoInput = screen.getByLabelText('Repository:');
 
       // Tab navigation
       usernameInput.focus();

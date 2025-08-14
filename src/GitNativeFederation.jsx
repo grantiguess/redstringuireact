@@ -38,7 +38,7 @@ import {
   Key
 } from 'lucide-react';
 import { SemanticProviderFactory } from './services/gitNativeProvider.js';
-import { bridgeFetch } from './services/bridgeConfig.js';
+import { bridgeFetch, oauthFetch } from './services/bridgeConfig.js';
 import { SemanticSyncEngine } from './services/semanticSyncEngine.js';
 import { SemanticFederation } from './services/semanticFederation.js';
 import { GitSyncEngine, SOURCE_OF_TRUTH } from './services/gitSyncEngine.js';
@@ -100,6 +100,13 @@ const GitNativeFederation = () => {
     if (gitConnection && !currentProvider) {
       console.log('[GitNativeFederation] Restoring saved Git connection:', gitConnection);
       
+      // Check if this is a demo connection - clear it and don't restore
+      if (gitConnection.token === 'demo_token_secure' || gitConnection.user === 'demo-user') {
+        console.log('[GitNativeFederation] Clearing saved demo connection');
+        clearGitConnection();
+        return;
+      }
+      
       // Show restoring status
       setSyncStatus({
         type: 'success',
@@ -129,7 +136,7 @@ const GitNativeFederation = () => {
         setSyncStatus(null);
       }, 3000);
     }
-  }, [gitConnection, currentProvider]);
+  }, [gitConnection, currentProvider, clearGitConnection]);
 
   // Initialize sync engine, federation, and Git storage when provider changes
   useEffect(() => {
@@ -281,13 +288,14 @@ const GitNativeFederation = () => {
       }
       
       if (code && state) {
-        // Prevent duplicate handling (StrictMode/double-run)
-        const handledKey = `github_oauth_handled_${code}`;
-        if (sessionStorage.getItem(handledKey) === '1') {
-          console.log('[GitNativeFederation] OAuth callback already handled, skipping');
+        // Simple duplicate prevention for React StrictMode
+        const handledKey = `oauth_handled_${code}`;
+        if (sessionStorage.getItem(handledKey)) {
+          console.log('[GitNativeFederation] OAuth already handled, skipping duplicate');
           window.history.replaceState({}, document.title, window.location.pathname);
           return;
         }
+        
         const storedState = sessionStorage.getItem('github_oauth_state');
         console.log('[GitNativeFederation] State validation:', { received: state, stored: storedState });
         
@@ -299,7 +307,9 @@ const GitNativeFederation = () => {
           return;
         }
         
-        // Clear the state
+        // Mark as handled before processing to prevent duplicate runs
+        sessionStorage.setItem(handledKey, '1');
+        // Clear the OAuth state
         sessionStorage.removeItem('github_oauth_state');
         
         try {
@@ -308,44 +318,35 @@ const GitNativeFederation = () => {
           
           console.log('[GitNativeFederation] Exchanging code for token...');
           
-          // Exchange code for access token with retry to handle bridge cooldowns
-          const exchangeTokenWithRetry = async (attempts = 4) => {
-            let lastErr;
-            for (let i = 1; i <= attempts; i++) {
-              try {
-                const resp = await bridgeFetch('/api/github/oauth/token', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    code,
-                    state,
-                    redirect_uri: window.location.origin + '/oauth/callback'
-                  })
-                });
-                if (resp.ok) return await resp.json();
-                const txt = await resp.text();
-                lastErr = new Error(txt || `http_${resp.status}`);
-              } catch (e) {
-                lastErr = e;
-              }
-              const msg = String(lastErr?.message || '');
-              if (msg.includes('bridge_unavailable') || msg.includes('cooldown') || msg.includes('ECONNREFUSED')) {
-                const delay = Math.min(1800, 300 * i);
-                await new Promise(r => setTimeout(r, delay));
-                continue;
-              } else {
-                break;
-              }
-            }
-            throw lastErr || new Error('token_exchange_failed');
-          };
-
-          const tokenData = await exchangeTokenWithRetry(4);
+          // Exchange code for access token (with simple bridge retry)
+          let tokenResponse;
+          let lastError;
+          
+          tokenResponse = await oauthFetch('/api/github/oauth/token', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              code,
+              state,
+              redirect_uri: window.location.origin + '/oauth/callback'
+            })
+          });
+          
+          console.log('[GitNativeFederation] Token response status:', tokenResponse.status);
+          
+          if (!tokenResponse.ok) {
+            const errorText = await tokenResponse.text();
+            console.error('[GitNativeFederation] Token exchange failed:', errorText);
+            
+            throw new Error(`Failed to exchange code for token: ${tokenResponse.status} ${errorText}`);
+          }
+          
+          const tokenData = await tokenResponse.json();
           console.log('[GitNativeFederation] Token exchange successful');
           
           const accessToken = tokenData.access_token;
-          // Mark this code as handled
-          try { sessionStorage.setItem(`github_oauth_handled_${code}`, '1'); } catch {}
           try { sessionStorage.setItem('github_access_token', accessToken); } catch {}
           
           console.log('[GitNativeFederation] Fetching user information...');
@@ -431,15 +432,8 @@ const GitNativeFederation = () => {
           
           console.log('[GitNativeFederation] OAuth authentication successful!');
           
-          console.log('[GitNativeFederation] OAuth authentication successful!');
-          
-          // Clean up URL immediately
+          // Clean up URL and redirect
           window.history.replaceState({}, document.title, window.location.pathname);
-          
-          // Also clean up on component mount if URL still has OAuth params
-          if (window.location.search.includes('code=') || window.location.search.includes('error=')) {
-            window.history.replaceState({}, document.title, window.location.pathname);
-          }
           
         } catch (err) {
           console.error('[GitNativeFederation] OAuth callback failed:', err);
@@ -548,7 +542,7 @@ const GitNativeFederation = () => {
       let clientId = import.meta.env.VITE_GITHUB_CLIENT_ID;
       if (!clientId || clientId === 'your-github-client-id' || clientId === 'your-github-client-id-here') {
         try {
-          const resp = await bridgeFetch('/api/github/oauth/client-id', { method: 'GET' });
+          const resp = await oauthFetch('/api/github/oauth/client-id', { method: 'GET' });
           if (resp.ok) {
             const data = await resp.json();
             if (data?.clientId) clientId = data.clientId;
@@ -571,124 +565,11 @@ const GitNativeFederation = () => {
         return;
       }
       
-      // Fallback to demo mode
-      console.log('[GitNativeFederation] Using demo OAuth flow');
-      
-      try {
-        setIsConnecting(true);
-        setError(null);
-        
-        // Simulate OAuth process with realistic timing
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        // Generate realistic mock data based on common GitHub patterns
-        const mockUserData = {
-          login: 'demo-user',
-          name: 'Demo User',
-          email: 'demo@example.com',
-          avatar_url: 'https://avatars.githubusercontent.com/u/123456?v=4',
-          public_repos: 15,
-          followers: 42,
-          following: 23
-        };
-        
-        const mockRepositories = [
-          { 
-            name: 'semantic-knowledge', 
-            full_name: 'demo-user/semantic-knowledge', 
-            description: 'Personal knowledge base using semantic web technologies', 
-            private: false,
-            created_at: '2024-01-15T10:30:00Z',
-            updated_at: new Date().toISOString()
-          },
-          { 
-            name: 'my-project', 
-            full_name: 'demo-user/my-project', 
-            description: 'A sample project for demonstration', 
-            private: false,
-            created_at: '2024-02-20T14:15:00Z',
-            updated_at: new Date().toISOString()
-          },
-          { 
-            name: 'private-notes', 
-            full_name: 'demo-user/private-notes', 
-            description: 'Private notes and thoughts', 
-            private: true,
-            created_at: '2024-03-10T09:45:00Z',
-            updated_at: new Date().toISOString()
-          },
-          { 
-            name: 'learning-notes', 
-            full_name: 'demo-user/learning-notes', 
-            description: 'Notes from various learning resources', 
-            private: false,
-            created_at: '2024-01-05T16:20:00Z',
-            updated_at: new Date().toISOString()
-          }
-        ];
-        
-        // Create provider with realistic configuration
-        const mockProvider = {
-          name: 'GitHub (Demo Mode)',
-          config: {
-            type: 'github',
-            user: 'demo-user',
-            repo: 'semantic-knowledge',
-            token: 'demo_token_secure',
-            authMethod: 'oauth',
-            semanticPath: 'schema'
-          },
-          userData: mockUserData,
-          repositories: mockRepositories,
-          isAvailable: async () => true,
-          // Add realistic provider methods
-          getUserInfo: async () => mockUserData,
-          getRepositories: async () => mockRepositories,
-          createRepository: async (name, description, isPrivate = false) => {
-            const newRepo = {
-              name,
-              full_name: `demo-user/${name}`,
-              description,
-              private: isPrivate,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            };
-            mockRepositories.push(newRepo);
-            return newRepo;
-          }
-        };
-        
-        setCurrentProvider(mockProvider);
-        setProviderConfig(mockProvider.config);
-        setUserRepositories(mockRepositories);
-        setShowRepositorySelector(true);
-        setIsConnected(true);
-        setError(null);
-        
-        // Save connection to persistent store
-        setGitConnection(mockProvider.config);
-        
-        console.log('[GitNativeFederation] Zero-config OAuth successful! Ready to use.');
-        return;
-        
-      } catch (err) {
-        console.error('[GitNativeFederation] OAuth failed:', err);
-        setError(`OAuth authentication failed: ${err.message}`);
-        setIsConnecting(false);
-        return;
-      }
-      
-      const redirectUri = encodeURIComponent(window.location.origin + '/oauth/callback');
-      const scope = encodeURIComponent('repo');
-      const state = Math.random().toString(36).substring(7); // CSRF protection
-      
-      // Store state for verification
-      sessionStorage.setItem('github_oauth_state', state);
-      
-      const githubOAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
-      
-      // Redirect to GitHub OAuth
-      window.location.href = githubOAuthUrl;
+      // If no client ID available, show error
+      console.log('[GitNativeFederation] No GitHub client ID configured');
+      setError('GitHub OAuth is not configured. Please use Token authentication or configure OAuth in the bridge server.');
+      setIsConnecting(false);
+      return;
       
     } catch (err) {
       console.error('[GitNativeFederation] OAuth failed:', err);
@@ -1078,26 +959,9 @@ const GitNativeFederation = () => {
                 </>
               )}
 
-              {/* OAuth Configuration */}
-              {authMethod === 'oauth' && (
-                <div style={{ 
-                  padding: '12px', 
-                  backgroundColor: '#e8f5e8', 
-                  borderRadius: '6px', 
-                  fontSize: '0.8rem',
-                  color: '#2e7d32',
-                  marginBottom: '15px',
-                  border: '1px solid #4caf50'
-                }}>
-                  <strong>✅ Zero-Config OAuth:</strong> Click "Connect with GitHub" below to instantly connect with demo data. No GitHub setup required!
-                </div>
-              )}
-
-
-              
               {/* Authentication Method Selection */}
               <div style={{ marginBottom: '15px' }}>
-                <InfoTooltip tooltip="Choose between Personal Access Token (manual) or OAuth (automatic). OAuth is easier but requires app setup.">
+                <InfoTooltip tooltip="Choose between Personal Access Token (recommended) or OAuth (requires server configuration). Token method is easier to set up.">
                   <label style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
                     Authentication Method:
                   </label>
@@ -1177,37 +1041,50 @@ const GitNativeFederation = () => {
                 </div>
               )}
 
-              {/* OAuth Button */}
+              {/* OAuth Configuration */}
               {authMethod === 'oauth' && (
-                <div style={{ marginBottom: '10px' }}>
-                  <InfoTooltip tooltip="Click to connect with GitHub OAuth. Works immediately with demo data - no setup required!">
-                    <label style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
-                      GitHub OAuth:
-                    </label>
-                  </InfoTooltip>
-                  <button
-                    onClick={handleGitHubOAuth}
-                    disabled={isConnecting}
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      backgroundColor: isConnecting ? '#ccc' : '#260000',
-                      color: '#bdb5b5',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: isConnecting ? 'not-allowed' : 'pointer',
-                      fontSize: '0.9rem',
-                      fontFamily: "'EmOne', sans-serif",
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px'
-                    }}
-                  >
-                    <Github size={16} />
-                    {isConnecting ? 'Authenticating...' : 'Connect with GitHub'}
-                  </button>
-                </div>
+                <>
+                  <div style={{ 
+                    padding: '12px', 
+                    backgroundColor: '#fff3e0', 
+                    borderRadius: '6px', 
+                    fontSize: '0.8rem',
+                    color: '#e65100',
+                    marginBottom: '15px',
+                    border: '1px solid #ff9800'
+                  }}>
+                    <strong>⚠️ OAuth Setup Required:</strong> GitHub OAuth requires GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables in the OAuth server (port 3002). Use Token method for easier setup.
+                  </div>
+                  <div style={{ marginBottom: '10px' }}>
+                    <InfoTooltip tooltip="GitHub OAuth requires proper configuration. Only use if you have set up OAuth credentials in the bridge server.">
+                      <label style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
+                        GitHub OAuth:
+                      </label>
+                    </InfoTooltip>
+                    <button
+                      onClick={handleGitHubOAuth}
+                      disabled={isConnecting}
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        backgroundColor: isConnecting ? '#ccc' : '#260000',
+                        color: '#bdb5b5',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: isConnecting ? 'not-allowed' : 'pointer',
+                        fontSize: '0.9rem',
+                        fontFamily: "'EmOne', sans-serif",
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px'
+                      }}
+                    >
+                      <Github size={16} />
+                      {isConnecting ? 'Authenticating...' : 'Connect with GitHub'}
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           )}

@@ -4,6 +4,7 @@
 import express from 'express';
 import cors from 'cors';
 import { exec } from 'node:child_process';
+import fetch from 'node-fetch';
 import queueManager from './src/services/queue/Queue.js';
 import eventLog from './src/services/EventLog.js';
 import committer from './src/services/Committer.js';
@@ -1986,6 +1987,7 @@ function collectSearchItems({ scope = 'all', graphId = null } = {}) {
   }
   return items;
 }
+
 
 app.get('/search', (req, res) => {
   try {
