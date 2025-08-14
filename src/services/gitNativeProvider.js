@@ -94,6 +94,20 @@ export class SemanticProvider {
   async getStatus() {
     throw new Error('getStatus() must be implemented by provider');
   }
+
+  /**
+   * Raw file write (no semantic path or TTL extension assumptions)
+   */
+  async writeFileRaw(path, content) {
+    throw new Error('writeFileRaw() must be implemented by provider');
+  }
+
+  /**
+   * Raw file read (no semantic path or TTL extension assumptions)
+   */
+  async readFileRaw(path) {
+    throw new Error('readFileRaw() must be implemented by provider');
+  }
 }
 
 /**
@@ -112,6 +126,40 @@ export class GitHubSemanticProvider extends SemanticProvider {
     this.repo = config.repo;
     this.token = config.token;
     this.semanticPath = config.semanticPath || 'schema';
+  }
+
+  // UTF-8 safe base64 helpers
+  utf8ToBase64(str) {
+    try {
+      const bytes = new TextEncoder().encode(str);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      if (typeof btoa !== 'undefined') return btoa(binary);
+      // eslint-disable-next-line no-undef
+      return Buffer.from(bytes).toString('base64');
+    } catch (e) {
+      if (typeof btoa !== 'undefined') return btoa(str);
+      // eslint-disable-next-line no-undef
+      return Buffer.from(str, 'utf8').toString('base64');
+    }
+  }
+
+  base64ToUtf8(b64) {
+    try {
+      let binary;
+      if (typeof atob !== 'undefined') {
+        binary = atob(b64);
+      } else {
+        // eslint-disable-next-line no-undef
+        binary = Buffer.from(b64, 'base64').toString('binary');
+      }
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    } catch (e) {
+      // eslint-disable-next-line no-undef
+      return Buffer.from(b64, 'base64').toString('utf8');
+    }
   }
 
   async authenticate() {
@@ -163,8 +211,8 @@ This repository was automatically initialized by RedString UI React. You can now
 `;
 
       console.log('[GitHubSemanticProvider] Creating README file...');
-      // Create the semantic path directory
-      await this.writeSemanticFile('README', readmeContent);
+      // Write a README at repo root (not inside semantic path)
+      await this.writeFileRaw('README.md', readmeContent);
       
       console.log('[GitHubSemanticProvider] Creating standard directory structure...');
       
@@ -198,7 +246,7 @@ This repository was automatically initialized by RedString UI React. You can now
       
       const requestBody = {
         message: `Update ${path} semantic data`,
-        content: btoa(ttlContent)
+        content: this.utf8ToBase64(ttlContent)
       };
       
       // Only include SHA if file exists (for updates)
@@ -303,7 +351,7 @@ This repository was automatically initialized by RedString UI React. You can now
         throw new Error(`File not found: ${path}`);
       }
       
-      const content = atob(fileInfo.content);
+      const content = this.base64ToUtf8(fileInfo.content);
       return content;
     } catch (error) {
       console.error('[GitHubProvider] Read failed:', error);
@@ -413,6 +461,44 @@ This repository was automatically initialized by RedString UI React. You can now
     }
   }
 
+  async writeFileRaw(path, content) {
+    try {
+      const existingFile = await this.getFileInfo(path);
+      const body = {
+        message: `Update ${path}`,
+        content: this.utf8ToBase64(content)
+      };
+      if (existingFile?.sha) body.sha = existingFile.sha;
+      const response = await fetch(`${this.rootUrl}/${path}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `token ${this.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`GitHub writeFileRaw failed: ${response.status} ${text}`);
+      }
+      return await response.json();
+    } catch (e) {
+      console.error('[GitHubSemanticProvider] writeFileRaw failed:', e);
+      throw e;
+    }
+  }
+
+  async readFileRaw(path) {
+    try {
+      const info = await this.getFileInfo(path);
+      if (!info) throw new Error(`File not found: ${path}`);
+      return this.base64ToUtf8(info.content);
+    } catch (e) {
+      console.error('[GitHubSemanticProvider] readFileRaw failed:', e);
+      throw e;
+    }
+  }
+
   async listSemanticFiles() {
     try {
       const response = await fetch(`${this.rootUrl}/${this.semanticPath}`, {
@@ -494,6 +580,40 @@ export class GiteaSemanticProvider extends SemanticProvider {
     this.semanticPath = config.semanticPath || 'schema';
   }
 
+  // UTF-8 safe base64 helpers (match GitHub implementation)
+  utf8ToBase64(str) {
+    try {
+      const bytes = new TextEncoder().encode(str);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      if (typeof btoa !== 'undefined') return btoa(binary);
+      // eslint-disable-next-line no-undef
+      return Buffer.from(bytes).toString('base64');
+    } catch (e) {
+      if (typeof btoa !== 'undefined') return btoa(str);
+      // eslint-disable-next-line no-undef
+      return Buffer.from(str, 'utf8').toString('base64');
+    }
+  }
+
+  base64ToUtf8(b64) {
+    try {
+      let binary;
+      if (typeof atob !== 'undefined') {
+        binary = atob(b64);
+      } else {
+        // eslint-disable-next-line no-undef
+        binary = Buffer.from(b64, 'base64').toString('binary');
+      }
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    } catch (e) {
+      // eslint-disable-next-line no-undef
+      return Buffer.from(b64, 'base64').toString('utf8');
+    }
+  }
+
   async authenticate() {
     if (!this.token) {
       throw new Error('Gitea token required for authentication');
@@ -526,21 +646,26 @@ export class GiteaSemanticProvider extends SemanticProvider {
       : `${this.semanticPath}/${path}.ttl`;
     
     try {
+      // Determine if file exists to choose POST (create) vs PUT (update)
+      const fileInfo = await this.getFileInfo(fullPath);
+      const method = fileInfo?.sha ? 'PUT' : 'POST';
       const response = await fetch(`${this.rootUrl}/${fullPath}`, {
-        method: 'POST',
+        method,
         headers: {
           'Authorization': `token ${this.token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           message: `Update ${path} semantic data`,
-          content: btoa(ttlContent),
-          branch: 'main'
+          content: this.utf8ToBase64(ttlContent),
+          branch: 'main',
+          sha: fileInfo?.sha
         })
       });
 
       if (!response.ok) {
-        throw new Error(`Gitea API error: ${response.statusText}`);
+        const text = await response.text();
+        throw new Error(`Gitea API error: ${response.status} ${text}`);
       }
 
       return await response.json();
@@ -568,7 +693,7 @@ export class GiteaSemanticProvider extends SemanticProvider {
       }
       
       const fileInfo = await response.json();
-      const content = atob(fileInfo.content);
+      const content = this.base64ToUtf8(fileInfo.content);
       return content;
     } catch (error) {
       console.error('[GiteaProvider] Read failed:', error);
@@ -657,6 +782,60 @@ export class GiteaSemanticProvider extends SemanticProvider {
       return await response.json();
     } catch (error) {
       return [];
+    }
+  }
+
+  async getFileInfo(path) {
+    try {
+      const response = await fetch(`${this.rootUrl}/${path}?ref=main`, {
+        headers: {
+          'Authorization': `token ${this.token}`
+        }
+      });
+      if (response.status === 404) return null;
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async writeFileRaw(path, content) {
+    try {
+      const fileInfo = await this.getFileInfo(path);
+      const method = fileInfo?.sha ? 'PUT' : 'POST';
+      const response = await fetch(`${this.rootUrl}/${path}`, {
+        method,
+        headers: {
+          'Authorization': `token ${this.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: `Update ${path}`,
+          content: this.utf8ToBase64(content),
+          branch: 'main',
+          sha: fileInfo?.sha
+        })
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Gitea writeFileRaw failed: ${response.status} ${text}`);
+      }
+      return await response.json();
+    } catch (e) {
+      console.error('[GiteaSemanticProvider] writeFileRaw failed:', e);
+      throw e;
+    }
+  }
+
+  async readFileRaw(path) {
+    try {
+      const info = await this.getFileInfo(path);
+      if (!info) throw new Error(`File not found: ${path}`);
+      return this.base64ToUtf8(info.content);
+    } catch (e) {
+      console.error('[GiteaSemanticProvider] readFileRaw failed:', e);
+      throw e;
     }
   }
 

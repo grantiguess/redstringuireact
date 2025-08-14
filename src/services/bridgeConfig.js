@@ -31,8 +31,53 @@ export function bridgeUrl(path = '') {
   return normalized.startsWith('/') ? `${base}${normalized}` : `${base}/${normalized}`;
 }
 
+// Simple connectivity circuit breaker to avoid console/network spam when bridge is down
+const __bridgeHealth = {
+  consecutiveFailures: 0,
+  cooldownUntil: 0
+};
+
+export function resetBridgeBackoff() {
+  __bridgeHealth.consecutiveFailures = 0;
+  __bridgeHealth.cooldownUntil = 0;
+}
+
+function isLikelyNetworkRefusal(err) {
+  try {
+    const msg = String(err && (err.message || err)).toLowerCase();
+    return (
+      msg.includes('failed to fetch') ||
+      msg.includes('networkerror') ||
+      msg.includes('net::err_connection_refused') ||
+      msg.includes('econnrefused')
+    );
+  } catch { return false; }
+}
+
 export function bridgeFetch(path, options) {
-  return fetch(bridgeUrl(path), options);
+  const now = Date.now();
+  if (__bridgeHealth.cooldownUntil && now < __bridgeHealth.cooldownUntil) {
+    // Short-circuit without hitting the network to prevent console spam
+    return Promise.reject(new Error('bridge_unavailable_cooldown'));
+  }
+  return fetch(bridgeUrl(path), options)
+    .then((res) => {
+      // Any response means the listener exists; reset failures
+      __bridgeHealth.consecutiveFailures = 0;
+      __bridgeHealth.cooldownUntil = 0;
+      return res;
+    })
+    .catch((err) => {
+      if (isLikelyNetworkRefusal(err)) {
+        __bridgeHealth.consecutiveFailures += 1;
+        if (__bridgeHealth.consecutiveFailures >= 3) {
+          // Stop trying for a while; panel Refresh/manual reconnect can reset this
+          __bridgeHealth.cooldownUntil = Date.now() + 60_000; // 60s cooldown
+        }
+      }
+      // Re-throw so callers can handle softly; no network call will be attempted during cooldown
+      throw err;
+    });
 }
 
 export function bridgeEventSource(path) {

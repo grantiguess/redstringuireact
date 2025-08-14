@@ -567,6 +567,7 @@ const LeftAIView = () => {
         const resp = await bridgeFetch('/api/bridge/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bridgeData) });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       } catch (e) { console.warn('[AI Panel] Bridge state refresh failed:', e); }
+      try { if (typeof window !== 'undefined' && typeof window.rsBridgeManualReconnect === 'function') { window.rsBridgeManualReconnect(); } } catch {}
       await initializeConnection();
       try {
         const now = Date.now();

@@ -169,10 +169,11 @@ describe('Git-Native Semantic Web Provider', () => {
 
       expect(isAvailable).toBe(true);
       expect(fetch).toHaveBeenCalledWith(
-        'https://api.github.com/repos/testuser/testrepo/contents',
+        'https://api.github.com/repos/testuser/testrepo',
         expect.objectContaining({
           headers: {
-            'Authorization': 'token ghp_testtoken123'
+            'Authorization': 'token ghp_testtoken123',
+            'Accept': 'application/vnd.github.v3+json'
           }
         })
       );
@@ -378,16 +379,10 @@ describe('Git-Native Semantic Web Provider', () => {
       });
 
       // Mock file existence check to return null (file doesn't exist)
-      global.fetch.mockResolvedValueOnce({
-        ok: false,
-        status: 404
-      });
+      global.fetch.mockResolvedValueOnce({ ok: false, status: 404 });
 
       // Mock the actual write operation to fail
-      global.fetch.mockResolvedValueOnce({
-        ok: false,
-        statusText: 'Not Found'
-      });
+      global.fetch.mockResolvedValueOnce({ ok: false, text: () => Promise.resolve('Not Found') });
 
       await expect(provider.writeSemanticFile('test', 'content'))
         .rejects.toThrow('GitHub API error: Not Found');
@@ -401,10 +396,7 @@ describe('Git-Native Semantic Web Provider', () => {
         token: 'testtoken123'
       });
 
-      global.fetch.mockResolvedValueOnce({
-        ok: false,
-        statusText: 'Unauthorized'
-      });
+      global.fetch.mockResolvedValueOnce({ ok: false, text: () => Promise.resolve('Unauthorized') });
 
       await expect(provider.writeSemanticFile('test', 'content'))
         .rejects.toThrow('Gitea API error: Unauthorized');
@@ -455,7 +447,7 @@ describe('Git-Native Semantic Web Provider', () => {
       expect(archive.user).toBe('testuser');
       expect(archive.repo).toBe('testrepo');
       expect(archive.exportedAt).toBeDefined();
-      expect(archive.files).toHaveProperty('schema/vocabulary/concepts/test.ttl');
+      expect(archive.files).toHaveProperty('semantic/vocabulary/concepts/test.ttl');
     });
 
     it('should import full graph to GitHub', async () => {

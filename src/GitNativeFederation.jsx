@@ -75,7 +75,7 @@ const GitNativeFederation = () => {
   const [error, setError] = useState(null);
   const [newSubscriptionUrl, setNewSubscriptionUrl] = useState('');
   const [isAddingSubscription, setIsAddingSubscription] = useState(false);
-  const [authMethod, setAuthMethod] = useState('oauth'); // 'token' or 'oauth'
+  const [authMethod, setAuthMethod] = useState('token'); // 'token' or 'oauth'
   const [userRepositories, setUserRepositories] = useState([]);
   const [showRepositorySelector, setShowRepositorySelector] = useState(false);
   // Get the actual RedString store
@@ -281,6 +281,13 @@ const GitNativeFederation = () => {
       }
       
       if (code && state) {
+        // Prevent duplicate handling (StrictMode/double-run)
+        const handledKey = `github_oauth_handled_${code}`;
+        if (sessionStorage.getItem(handledKey) === '1') {
+          console.log('[GitNativeFederation] OAuth callback already handled, skipping');
+          window.history.replaceState({}, document.title, window.location.pathname);
+          return;
+        }
         const storedState = sessionStorage.getItem('github_oauth_state');
         console.log('[GitNativeFederation] State validation:', { received: state, stored: storedState });
         
@@ -301,31 +308,44 @@ const GitNativeFederation = () => {
           
           console.log('[GitNativeFederation] Exchanging code for token...');
           
-          // Exchange code for access token
-          const tokenResponse = await bridgeFetch('/api/github/oauth/token', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              code,
-              state,
-              redirect_uri: window.location.origin + '/oauth/callback'
-            })
-          });
-          
-          console.log('[GitNativeFederation] Token response status:', tokenResponse.status);
-          
-          if (!tokenResponse.ok) {
-            const errorText = await tokenResponse.text();
-            console.error('[GitNativeFederation] Token exchange failed:', errorText);
-            throw new Error(`Failed to exchange code for token: ${tokenResponse.status} ${errorText}`);
-          }
-          
-          const tokenData = await tokenResponse.json();
+          // Exchange code for access token with retry to handle bridge cooldowns
+          const exchangeTokenWithRetry = async (attempts = 4) => {
+            let lastErr;
+            for (let i = 1; i <= attempts; i++) {
+              try {
+                const resp = await bridgeFetch('/api/github/oauth/token', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    code,
+                    state,
+                    redirect_uri: window.location.origin + '/oauth/callback'
+                  })
+                });
+                if (resp.ok) return await resp.json();
+                const txt = await resp.text();
+                lastErr = new Error(txt || `http_${resp.status}`);
+              } catch (e) {
+                lastErr = e;
+              }
+              const msg = String(lastErr?.message || '');
+              if (msg.includes('bridge_unavailable') || msg.includes('cooldown') || msg.includes('ECONNREFUSED')) {
+                const delay = Math.min(1800, 300 * i);
+                await new Promise(r => setTimeout(r, delay));
+                continue;
+              } else {
+                break;
+              }
+            }
+            throw lastErr || new Error('token_exchange_failed');
+          };
+
+          const tokenData = await exchangeTokenWithRetry(4);
           console.log('[GitNativeFederation] Token exchange successful');
           
           const accessToken = tokenData.access_token;
+          // Mark this code as handled
+          try { sessionStorage.setItem(`github_oauth_handled_${code}`, '1'); } catch {}
           try { sessionStorage.setItem('github_access_token', accessToken); } catch {}
           
           console.log('[GitNativeFederation] Fetching user information...');

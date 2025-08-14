@@ -15,26 +15,18 @@ const BridgeClient = () => {
   const dataIntervalRef = useRef(null);
   const bridgeIntervalRef = useRef(null);
   const reconnectIntervalRef = useRef(null);
+  const eventSourceRef = useRef(null);
   const connectionStateRef = useRef({
     isConnected: false,
     lastSuccessfulConnection: null,
     reconnectAttempts: 0,
-    maxReconnectAttempts: 5
+    maxReconnectAttempts: 3
   });
   // Track last telemetry timestamp sent to UI to avoid spam
   const lastTelemetryTsRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
-    // Subscribe to EventLog SSE for projection refresh triggers
-    try {
-      const es = bridgeEventSource('/events/stream');
-      es.addEventListener('PATCH_APPLIED', () => {
-        // Projection refresh is intentionally minimal here because applyMutations are already executed
-        // This hook is future-proof for wholesale projection replacement once canonical snapshots are streamed
-      });
-      return () => { try { es.close(); } catch {} };
-    } catch {}
     return () => { mountedRef.current = false; };
   }, []);
 
@@ -83,6 +75,15 @@ const BridgeClient = () => {
            dataIntervalRef.current = setInterval(sendStoreToServer, 10000);
           
           console.log('🎉 MCP Bridge: Connection fully restored!');
+          // Ensure SSE is established only when connected
+          try {
+            if (!eventSourceRef.current) {
+              const es = bridgeEventSource('/events/stream');
+              eventSourceRef.current = es;
+              es.addEventListener('PATCH_APPLIED', () => {});
+              es.onerror = () => { try { es.close(); } catch {}; eventSourceRef.current = null; };
+            }
+          } catch {}
         } catch (error) {
           console.error('❌ MCP Bridge: Failed to re-establish full connection:', error);
           connectionState.isConnected = false;
@@ -117,6 +118,13 @@ const BridgeClient = () => {
         clearInterval(dataIntervalRef.current);
         dataIntervalRef.current = null;
       }
+      // Tear down SSE while disconnected to avoid network spam
+      try {
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+        }
+      } catch {}
       
       // Start reconnection attempts if not already running
       if (!reconnectIntervalRef.current) {
@@ -731,6 +739,15 @@ const BridgeClient = () => {
           activeGraphId: useGraphStore.getState().activeGraphId,
           openGraphIds: useGraphStore.getState().openGraphIds.length
         });
+        // Establish SSE now that we know server is reachable
+        try {
+          if (!eventSourceRef.current) {
+            const es = bridgeEventSource('/events/stream');
+            eventSourceRef.current = es;
+            es.addEventListener('PATCH_APPLIED', () => {});
+            es.onerror = () => { try { es.close(); } catch {}; eventSourceRef.current = null; };
+          }
+        } catch {}
       } catch (error) {
         console.error('❌ MCP Bridge: Failed to initialize connection:', error);
         connectionStateRef.current.isConnected = false;
@@ -738,6 +755,28 @@ const BridgeClient = () => {
       }
     };
     
+    // Expose a manual reconnect hook so the panel Refresh button can restart attempts
+    try {
+      window.rsBridgeManualReconnect = () => {
+        try {
+          if (reconnectIntervalRef.current) {
+            clearInterval(reconnectIntervalRef.current);
+            reconnectIntervalRef.current = null;
+          }
+        } catch {}
+        try {
+          const mod = require('../services/bridgeConfig.js');
+          if (mod && typeof mod.resetBridgeBackoff === 'function') {
+            mod.resetBridgeBackoff();
+          }
+        } catch {}
+        const st = connectionStateRef.current;
+        st.reconnectAttempts = 0;
+        st.isConnected = false;
+        startReconnection();
+      };
+    } catch {}
+
     // Attempt immediate connection, then retry a few times quickly if needed
     initializeConnection();
     let quickRetries = 0;
@@ -767,6 +806,10 @@ const BridgeClient = () => {
     // Set up a listener for save triggers and pending actions from the bridge server
     const checkForBridgeUpdates = async () => {
       try {
+        // Skip all bridge polling while disconnected to avoid console spam
+        if (!connectionStateRef.current.isConnected) {
+          return;
+        }
         // Check for save triggers (legacy noop) — disabled to avoid 404 spam
         
         // Check for bridge state changes and sync them back to Redstring

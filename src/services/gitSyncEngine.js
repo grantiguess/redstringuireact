@@ -283,17 +283,17 @@ class GitSyncEngine {
       const latestState = this.pendingCommits[this.pendingCommits.length - 1].data;
       const latestHash = this.pendingCommits[this.pendingCommits.length - 1].hash;
       
-      // Export to RedString format
+      // Export to RedString format (raw JSON write, not TTL)
       const redstringData = exportToRedstring(latestState);
       const jsonString = JSON.stringify(redstringData, null, 2);
       
-      // Save to Git repository with small delay between writes to reduce conflicts
-      await this.provider.writeSemanticFile('universe.redstring', jsonString);
+      // Save to Git repository (no .ttl suffix)
+      await this.provider.writeFileRaw('universe.redstring', jsonString);
       
       // Small delay to reduce race conditions
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      await this.provider.writeSemanticFile('backup.redstring', jsonString);
+      await this.provider.writeFileRaw('backup.redstring', jsonString);
       
       // Update tracking
       this.lastCommittedHash = latestHash;
@@ -335,12 +335,12 @@ class GitSyncEngine {
       const redstringData = exportToRedstring(storeState);
       const jsonString = JSON.stringify(redstringData, null, 2);
       
-      await this.provider.writeSemanticFile('universe.redstring', jsonString);
+      await this.provider.writeFileRaw('universe.redstring', jsonString);
       
       // Small delay to reduce race conditions
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      await this.provider.writeSemanticFile('backup.redstring', jsonString);
+      await this.provider.writeFileRaw('backup.redstring', jsonString);
       
       // Update tracking for force commit
       const currentHash = this.generateStateHash(storeState);
@@ -365,15 +365,15 @@ class GitSyncEngine {
     try {
       console.log('[GitSyncEngine] Loading from Git repository...');
       
-      // Try to load the main universe file
+      // Try to load the main universe file (raw JSON)
       let content;
       try {
-        content = await this.provider.readSemanticFile('universe.redstring');
+        content = await this.provider.readFileRaw('universe.redstring');
         console.log('[GitSyncEngine] Loaded main universe file');
       } catch (error) {
         console.log('[GitSyncEngine] Main file not found, trying backup...');
         try {
-          content = await this.provider.readSemanticFile('backup.redstring');
+          content = await this.provider.readFileRaw('backup.redstring');
           console.log('[GitSyncEngine] Loaded backup file');
         } catch (backupError) {
           console.log('[GitSyncEngine] No existing files found, starting fresh');
