@@ -64,7 +64,7 @@ const isMac = /Mac/i.test(navigator.userAgent);
 
 // Sensitivity constants
 const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1;        // Sensitivity for standard mouse wheel zooming
-const KEYBOARD_PAN_BASE_SPEED = 4;              // base movement speed
+const KEYBOARD_PAN_BASE_SPEED = 10;             // constant movement speed (no acceleration)
 const KEYBOARD_PAN_MAX_SPEED = 20;              // max movement speed with acceleration
 const KEYBOARD_ZOOM_BASE_SPEED = 0.008;         // base zoom speed
 const KEYBOARD_ZOOM_MAX_SPEED = 0.04;           // max zoom speed with acceleration
@@ -3208,25 +3208,13 @@ function NodeCanvas() {
       const rightPressed = keysPressed.current['ArrowRight'] || keysPressed.current['d'];
       const upPressed = keysPressed.current['ArrowUp'] || keysPressed.current['w'];
       const downPressed = keysPressed.current['ArrowDown'] || keysPressed.current['s'];
-      
-      // Clear acceleration for unpressed movement keys
-      if (!leftPressed && !rightPressed) delete keyHoldStartTimes.current['horizontal'];
-      if (!upPressed && !downPressed) delete keyHoldStartTimes.current['vertical'];
 
-      // Calculate movement with smooth acceleration
+      // Calculate movement with constant speed (no acceleration)
       let panDx = 0, panDy = 0;
-      if (leftPressed || rightPressed) {
-        const acceleration = getSmoothAcceleration('horizontal', timestamp);
-        const speed = Math.min(KEYBOARD_PAN_BASE_SPEED * acceleration, KEYBOARD_PAN_MAX_SPEED);
-        if (leftPressed) panDx += speed;
-        if (rightPressed) panDx -= speed;
-      }
-      if (upPressed || downPressed) {
-        const acceleration = getSmoothAcceleration('vertical', timestamp);
-        const speed = Math.min(KEYBOARD_PAN_BASE_SPEED * acceleration, KEYBOARD_PAN_MAX_SPEED);
-        if (upPressed) panDy += speed;
-        if (downPressed) panDy -= speed;
-      }
+      if (leftPressed) panDx += KEYBOARD_PAN_BASE_SPEED;
+      if (rightPressed) panDx -= KEYBOARD_PAN_BASE_SPEED;
+      if (upPressed) panDy += KEYBOARD_PAN_BASE_SPEED;
+      if (downPressed) panDy -= KEYBOARD_PAN_BASE_SPEED;
 
       // Apply movement immediately - no thresholds
       if (panDx !== 0 || panDy !== 0) {
