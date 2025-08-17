@@ -2188,6 +2188,24 @@ function NodeCanvas() {
     return 'undetermined';
   };
 
+  // Heuristic: detect macOS trackpad momentum "flick" pans that sometimes produce
+  // large vertical wheel deltas and can be misclassified as a mouse. We inspect
+  // recent history for small/fractional deltas preceding a large spike and strong
+  // vertical dominance without Ctrl (no pinch-to-zoom).
+  const looksLikeTrackpadMomentumFlick = (deltaX, deltaY, wheelEvent) => {
+    if (!isMac || wheelEvent.ctrlKey) return false;
+    const absY = Math.abs(deltaY);
+    const absX = Math.abs(deltaX);
+
+    // Prior few samples, excluding the current one (which has already been pushed)
+    const recent = deltaHistoryRef.current.slice(1, 6);
+    const hadFractional = recent.some(d => Math.abs(d.deltaY) % 1 !== 0);
+    const hadSmallBeforeBig = recent.some(d => Math.abs(d.deltaY) < 30) && absY >= 50;
+    const verticalDominance = absY > Math.max(60, 3 * absX) && absX < 2; // mostly vertical
+
+    return verticalDominance && (hadFractional || hadSmallBeforeBig);
+  };
+
   const handleWheel = async (e) => {
     const rect = containerRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
@@ -2200,8 +2218,10 @@ function NodeCanvas() {
     if (e.deltaMode === 1) { deltaX *= 33; }
     else if (e.deltaMode === 2) { deltaX *= window.innerWidth; } 
 
-    // Analyze input device type
-    const deviceType = analyzeInputDevice(deltaX, deltaY);
+    // Analyze input device type (raw), then apply mac momentum flick override
+    const rawDeviceType = analyzeInputDevice(deltaX, deltaY);
+    const momentumFlick = looksLikeTrackpadMomentumFlick(deltaX, deltaY, e);
+    const deviceType = (isMac && !e.ctrlKey && momentumFlick) ? 'trackpad' : rawDeviceType;
 
     setDebugData((prev) => ({
       ...prev,
@@ -2212,8 +2232,9 @@ function NodeCanvas() {
       isMac: isMac.toString(),
       deltaMode: e.deltaMode.toString(),
       wheelDeltaY: (e.wheelDeltaY || 0).toFixed(2),
-      detectedDevice: deviceType,
+      detectedDevice: deviceType !== rawDeviceType ? `${deviceType} (override)` : deviceType,
       historyLength: deltaHistoryRef.current.length.toString(),
+      momentumFlick: momentumFlick.toString(),
     }));
 
     // 1. Mac Pinch-to-Zoom (Ctrl key pressed) - always zoom regardless of device
@@ -2265,7 +2286,11 @@ function NodeCanvas() {
     if (abstractionCarouselVisible) return;
 
     // 2. Trackpad Two-Finger Pan (based on device detection)
-    if (deviceType === 'trackpad' || (deviceType === 'undetermined' && isMac && (Math.abs(deltaX) > 0.05 || Math.abs(deltaY) < 30))) {
+    if (
+        deviceType === 'trackpad' ||
+        // Broaden macOS fallback: treat undetermined (no Ctrl) as pan to avoid accidental zooms
+        (isMac && !e.ctrlKey && deviceType === 'undetermined')
+      ) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
         const dx = -deltaX * PAN_DRAG_SENSITIVITY;
@@ -2302,7 +2327,7 @@ function NodeCanvas() {
     }
 
     // 3. Mouse Wheel Zoom (based on device detection or fallback)
-    if (deviceType === 'mouse' || (deviceType === 'undetermined' && deltaY !== 0)) {
+    if (deviceType === 'mouse' || (!isMac && deviceType === 'undetermined' && deltaY !== 0)) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
         const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
