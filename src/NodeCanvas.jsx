@@ -737,6 +737,29 @@ function NodeCanvas() {
     return graphEdgeIds.map(id => edgesMap.get(id)).filter(Boolean);
   }, [graphEdgeIds, edgesMap]);
 
+  // --- Performance: Precompute reusable maps and viewport bounds ---
+  const nodeById = useMemo(() => {
+    const map = new Map();
+    for (const n of nodes) map.set(n.id, n);
+    return map;
+  }, [nodes]);
+
+  // Base dimensions for nodes (non-preview) for fast edge math and visibility checks
+  const baseDimsById = useMemo(() => {
+    const map = new Map();
+    for (const n of nodes) {
+      // Use non-preview dimensions for consistent edge center calculations
+      map.set(n.id, getNodeDimensions(n, false, null));
+    }
+    return map;
+  }, [nodes]);
+
+  // Defer viewport-dependent culling until pan/zoom state is initialized below
+  const [visibleNodeIds, setVisibleNodeIds] = useState(() => new Set());
+  const [visibleEdges, setVisibleEdges] = useState(() => []);
+
+  
+
   // --- Local UI State (Keep these) ---
   const [selectedInstanceIds, setSelectedInstanceIds] = useState(new Set());
   const [draggingNodeInfo, setDraggingNodeInfo] = useState(null); // Renamed, structure might change
@@ -764,6 +787,61 @@ function NodeCanvas() {
     viewportSize.width / canvasSize.width,
     viewportSize.height / canvasSize.height
   );
+
+  // Compute and update culling sets when pan/zoom or graph state changes
+  useEffect(() => {
+    // Guard until basic view state is present
+    if (!viewportSize || !canvasSize) return;
+    // Derive canvas-space viewport
+    const minX = (-panOffset.x) / zoomLevel;
+    const minY = (-panOffset.y) / zoomLevel;
+    const maxX = minX + viewportSize.width / zoomLevel;
+    const maxY = minY + viewportSize.height / zoomLevel;
+    const padding = 400;
+    const expanded = {
+      minX: minX - padding,
+      minY: minY - padding,
+      maxX: maxX + padding,
+      maxY: maxY + padding,
+    };
+
+    // Visible nodes
+    const nextVisibleNodeIds = new Set();
+    for (const n of nodes) {
+      const dims = baseDimsById.get(n.id);
+      if (!dims) continue;
+      const nx1 = n.x;
+      const ny1 = n.y;
+      const nx2 = n.x + dims.currentWidth;
+      const ny2 = n.y + dims.currentHeight;
+      if (!(nx2 < expanded.minX || nx1 > expanded.maxX || ny2 < expanded.minY || ny1 > expanded.maxY)) {
+        nextVisibleNodeIds.add(n.id);
+      }
+    }
+
+    // Visible edges
+    const nextVisibleEdges = [];
+    for (const edge of edges) {
+      const s = nodeById.get(edge.sourceId);
+      const d = nodeById.get(edge.destinationId);
+      if (!s || !d) continue;
+      const sDims = baseDimsById.get(s.id);
+      const dDims = baseDimsById.get(d.id);
+      if (!sDims || !dDims) continue;
+      const sx = s.x + sDims.currentWidth / 2;
+      const sy = s.y + sDims.currentHeight / 2;
+      const dx = d.x + dDims.currentWidth / 2;
+      const dy = d.y + dDims.currentHeight / 2;
+      const sIn = sx >= expanded.minX && sx <= expanded.maxX && sy >= expanded.minY && sy <= expanded.maxY;
+      const dIn = dx >= expanded.minX && dx <= expanded.maxX && dy >= expanded.minY && dy <= expanded.maxY;
+      if (sIn || dIn || lineIntersectsRect(sx, sy, dx, dy, expanded)) {
+        nextVisibleEdges.push(edge);
+      }
+    }
+
+    setVisibleNodeIds(nextVisibleNodeIds);
+    setVisibleEdges(nextVisibleEdges);
+  }, [panOffset, zoomLevel, viewportSize, canvasSize, nodes, edges, baseDimsById, nodeById]);
 
   // Store view states per graph (graphId -> {panOffset, zoomLevel})
   // const [graphViewStates, setGraphViewStates] = useState(new Map());
@@ -1804,6 +1882,39 @@ function NodeCanvas() {
     return { x: boundedX, y: boundedY };
   };
 
+  // Fast line-rectangle intersection for edge culling
+  const lineIntersectsRect = (x1, y1, x2, y2, rect) => {
+    // Cohen–Sutherland-like quick reject/accept
+    const left = rect.minX, right = rect.maxX, top = rect.minY, bottom = rect.maxY;
+    // Trivial accept if any endpoint inside
+    if (x1 >= left && x1 <= right && y1 >= top && y1 <= bottom) return true;
+    if (x2 >= left && x2 <= right && y2 >= top && y2 <= bottom) return true;
+    // Compute line deltas
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    // Helper to test intersection with a vertical or horizontal boundary
+    const intersectsVertical = (x) => {
+      if (dx === 0) return false;
+      const t = (x - x1) / dx;
+      if (t < 0 || t > 1) return false;
+      const y = y1 + t * dy;
+      return y >= top && y <= bottom;
+    };
+    const intersectsHorizontal = (y) => {
+      if (dy === 0) return false;
+      const t = (y - y1) / dy;
+      if (t < 0 || t > 1) return false;
+      const x = x1 + t * dx;
+      return x >= left && x <= right;
+    };
+    return (
+      intersectsVertical(left) ||
+      intersectsVertical(right) ||
+      intersectsHorizontal(top) ||
+      intersectsHorizontal(bottom)
+    );
+  };
+
   // Helper function to get description content for a node when previewing
   const getNodeDescriptionContent = (node, isNodePreviewing) => {
     if (!isNodePreviewing || !node.definitionGraphIds || node.definitionGraphIds.length === 0) {
@@ -2245,6 +2356,10 @@ function NodeCanvas() {
   }, []);
 
   // --- Mouse Drag Panning (unchanged) ---
+  // Throttle edge-hover detection to reduce per-frame work
+  const lastHoverCheckRef = useRef(0);
+  const HOVER_CHECK_INTERVAL_MS = 24; // ~40 Hz
+
   const handleMouseMove = async (e) => {
     if (isPaused || !activeGraphId) return;
     const rect = containerRef.current.getBoundingClientRect();
@@ -2254,66 +2369,53 @@ function NodeCanvas() {
 
     // Edge hover detection (only when not dragging/panning)
     if (!isMouseDown.current && !draggingNodeInfo && !isPanning) {
-      // Check if mouse is over any node first
-      const hoveredNode = nodes.find(node => isInsideNode(node, e.clientX, e.clientY));
-      
-      if (!hoveredNode) {
-        // Not over a node, check for edge hover - find closest edge to mouse
-        let foundHoveredEdgeInfo = null;
-        let closestDistance = Infinity;
-        
-        for (const edge of edges) {
-          const sourceNode = nodes.find(n => n.id === edge.sourceId);
-          const destNode = nodes.find(n => n.id === edge.destinationId);
-          
-          if (sourceNode && destNode) {
-            const sNodeDims = getNodeDimensions(sourceNode, false, null);
-            const eNodeDims = getNodeDimensions(destNode, false, null);
-            
-            const isSNodePreviewing = previewingNodeId === sourceNode.id;
-            const isENodePreviewing = previewingNodeId === destNode.id;
-            
-            const x1 = sourceNode.x + sNodeDims.currentWidth / 2;
-            const y1 = sourceNode.y + (isSNodePreviewing ? NODE_HEIGHT / 2 : sNodeDims.currentHeight / 2);
-            const x2 = destNode.x + eNodeDims.currentWidth / 2;
-            const y2 = destNode.y + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
-            
-            // Calculate distance from point to line segment
+      const now = performance.now();
+      if (now - lastHoverCheckRef.current >= HOVER_CHECK_INTERVAL_MS) {
+        lastHoverCheckRef.current = now;
+        // Check if mouse is over any node first
+        const hoveredNode = nodes.find(node => visibleNodeIds.has(node.id) && isInsideNode(node, e.clientX, e.clientY));
+        if (!hoveredNode) {
+          // Search only among visible edges
+          let foundHoveredEdgeInfo = null;
+          let closestDistance = Infinity;
+          for (const edge of visibleEdges) {
+            const sourceNode = nodeById.get(edge.sourceId);
+            const destNode = nodeById.get(edge.destinationId);
+            if (!sourceNode || !destNode) continue;
+            const sDims = baseDimsById.get(sourceNode.id);
+            const dDims = baseDimsById.get(destNode.id);
+            if (!sDims || !dDims) continue;
+            const isSPrev = previewingNodeId === sourceNode.id;
+            const isDPrev = previewingNodeId === destNode.id;
+            const x1 = sourceNode.x + sDims.currentWidth / 2;
+            const y1 = sourceNode.y + (isSPrev ? NODE_HEIGHT / 2 : sDims.currentHeight / 2);
+            const x2 = destNode.x + dDims.currentWidth / 2;
+            const y2 = destNode.y + (isDPrev ? NODE_HEIGHT / 2 : dDims.currentHeight / 2);
             const A = currentX - x1;
             const B = currentY - y1;
             const C = x2 - x1;
             const D = y2 - y1;
-
             const dot = A * C + B * D;
             const lenSq = C * C + D * D;
-            
             if (lenSq > 0) {
               let param = dot / lenSq;
-              
-              // Clamp to line segment
               if (param < 0) param = 0;
               else if (param > 1) param = 1;
-              
               const xx = x1 + param * C;
               const yy = y1 + param * D;
-              
               const dx = currentX - xx;
               const dy = currentY - yy;
               const distance = Math.sqrt(dx * dx + dy * dy);
-              
-              // Only consider edges within hover threshold and pick the closest one
               if (distance <= 40 && distance < closestDistance) {
                 closestDistance = distance;
                 foundHoveredEdgeInfo = { edgeId: edge.id };
               }
             }
           }
+          setHoveredEdgeInfo(foundHoveredEdgeInfo);
+        } else {
+          setHoveredEdgeInfo(null);
         }
-        
-        setHoveredEdgeInfo(foundHoveredEdgeInfo);
-      } else {
-        // Over a node, clear edge hover
-        setHoveredEdgeInfo(null);
       }
     }
 
@@ -4136,15 +4238,15 @@ function NodeCanvas() {
               {isViewReady && (
                 <>
               <g className="base-layer">
-                {edges.map((edge, idx) => {
+                {visibleEdges.map((edge, idx) => {
                   const sourceNode = nodes.find(n => n.id === edge.sourceId);
                   const destNode = nodes.find(n => n.id === edge.destinationId);
 
                   if (!sourceNode || !destNode) {
                      return null;
                   }
-                  const sNodeDims = getNodeDimensions(sourceNode, false, null);
-                  const eNodeDims = getNodeDimensions(destNode, false, null);
+                  const sNodeDims = baseDimsById.get(sourceNode.id) || getNodeDimensions(sourceNode, false, null);
+                  const eNodeDims = baseDimsById.get(destNode.id) || getNodeDimensions(destNode, false, null);
                   const isSNodePreviewing = previewingNodeId === sourceNode.id;
                   const isENodePreviewing = previewingNodeId === destNode.id;
                   const x1 = sourceNode.x + sNodeDims.currentWidth / 2;
@@ -4573,7 +4675,8 @@ function NodeCanvas() {
 
                    const otherNodes = nodes.filter(node => 
                      node.id !== nodeIdToKeepActiveForStacking && 
-                     node.id !== draggingNodeId
+                     node.id !== draggingNodeId &&
+                     visibleNodeIds.has(node.id)
                    );
 
                    const activeNodeToRender = nodeIdToKeepActiveForStacking 
@@ -4753,7 +4856,7 @@ function NodeCanvas() {
 
 
                        {/* Render the "Active" Node (if it exists and not being dragged) */} 
-                       {activeNodeToRender && (
+                       {activeNodeToRender && visibleNodeIds.has(activeNodeToRender.id) && (
                          (() => {
                            const isPreviewing = previewingNodeId === activeNodeToRender.id;
                            const descriptionContent = getNodeDescriptionContent(activeNodeToRender, isPreviewing);
@@ -4834,7 +4937,7 @@ function NodeCanvas() {
                        )}
 
                        {/* Render the Dragging Node last (on top) */} 
-                       {draggingNodeToRender && (
+                       {draggingNodeToRender && visibleNodeIds.has(draggingNodeToRender.id) && (
                          (() => {
                            const isPreviewing = previewingNodeId === draggingNodeToRender.id;
                            const descriptionContent = getNodeDescriptionContent(draggingNodeToRender, isPreviewing);
