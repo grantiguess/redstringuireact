@@ -64,8 +64,8 @@ const isMac = /Mac/i.test(navigator.userAgent);
 
 // Sensitivity constants
 const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1;        // Sensitivity for standard mouse wheel zooming
-const KEYBOARD_PAN_SPEED = 0.115;                // for keyboard panning
-const KEYBOARD_ZOOM_SPEED = 0.15;               // for keyboard zooming
+const KEYBOARD_PAN_SPEED = 12;                  // for keyboard panning (much faster)
+const KEYBOARD_ZOOM_SPEED = 0.01;               // for keyboard zooming (extra smooth)
 
 function NodeCanvas() {
   const svgRef = useRef(null);
@@ -2987,127 +2987,87 @@ function NodeCanvas() {
     }
   }, [currentPieMenuData, selectedNodeIdForPieMenu]);
 
+
+
+  // Simple keyboard controls using requestAnimationFrame - synced to display refresh rate
   useEffect(() => {
-    // Restore effect body
-    let animationFrameId;
-    const keyboardLoop = async () => {
-      // --- Wait for initial mount before processing --- 
-      if (!isMountedRef.current) {
-        animationFrameId = requestAnimationFrame(keyboardLoop);
+    let lastFrameTime = 0;
+    
+    const handleKeyboardMovement = (currentTime = performance.now()) => {
+      // Throttle to ensure consistent timing regardless of refresh rate
+      if (currentTime - lastFrameTime < 8) { // ~120fps max to keep it smooth even on high refresh displays
         return;
       }
-      // --- End Wait --- 
+      lastFrameTime = currentTime;
+      // Check for conditions that should disable keyboard controls
+      const shouldDisableKeyboard = 
+        isPaused ||
+        nodeNamePrompt.visible || 
+        connectionNamePrompt.visible || 
+        abstractionPrompt.visible ||
+        isHeaderEditing || 
+        isRightPanelInputFocused || 
+        isLeftPanelInputFocused ||
+        !activeGraphId;
 
-      if (nodeNamePrompt.visible || isHeaderEditing || isRightPanelInputFocused) {
-        animationFrameId = requestAnimationFrame(keyboardLoop);
-        return;
-      }
+      if (shouldDisableKeyboard) return;
 
-      // 1. Calculate desired pan delta
+      // Calculate movement (use lowercase only to avoid shift conflicts)
       let panDx = 0, panDy = 0;
-      if (keysPressed.current['ArrowLeft'] || keysPressed.current['a'] || keysPressed.current['A']) { panDx += KEYBOARD_PAN_SPEED; }
-      if (keysPressed.current['ArrowRight'] || keysPressed.current['d'] || keysPressed.current['D']) { panDx -= KEYBOARD_PAN_SPEED; }
-      if (keysPressed.current['ArrowUp'] || keysPressed.current['w'] || keysPressed.current['W']) { panDy += KEYBOARD_PAN_SPEED; }
-      if (keysPressed.current['ArrowDown'] || keysPressed.current['s'] || keysPressed.current['S']) { panDy -= KEYBOARD_PAN_SPEED; }
-      
-      // Set flag if there's keyboard panning
+      if (keysPressed.current['ArrowLeft'] || keysPressed.current['a']) panDx += KEYBOARD_PAN_SPEED;
+      if (keysPressed.current['ArrowRight'] || keysPressed.current['d']) panDx -= KEYBOARD_PAN_SPEED;
+      if (keysPressed.current['ArrowUp'] || keysPressed.current['w']) panDy += KEYBOARD_PAN_SPEED;
+      if (keysPressed.current['ArrowDown'] || keysPressed.current['s']) panDy -= KEYBOARD_PAN_SPEED;
+
+      // Apply movement
       if (panDx !== 0 || panDy !== 0) {
-        isPanningOrZooming.current = true;
-      }
-
-      // 2. Calculate desired zoom delta
-      let zoomDelta = 0;
-      if (keysPressed.current[' ']) { zoomDelta = KEYBOARD_ZOOM_SPEED; }
-      if (keysPressed.current['Shift']) { zoomDelta = -KEYBOARD_ZOOM_SPEED; }
-
-
-
-      // 3. Perform Zoom Calculation (if needed)
-      let zoomResult = null;
-      if (zoomDelta !== 0 && !isKeyboardZooming.current) {
-        isPanningOrZooming.current = true;
-        isKeyboardZooming.current = true;
-        try {
-          const mousePos = { x: viewportSize.width / 2, y: viewportSize.height / 2 };
-          zoomResult = await canvasWorker.calculateZoom({
-            deltaY: -zoomDelta, // Negated for keyboard
-            currentZoom: zoomLevel,
-            mousePos,
-            panOffset,
-            viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM
-          });
-        } catch (error) {
-          console.error('Keyboard zoom calculation failed:', error);
-        } finally {
-          isKeyboardZooming.current = false;
-          // Clear the panning/zooming flag after a delay for keyboard operations
-          setTimeout(() => { isPanningOrZooming.current = false; }, 100);
-        }
-      }
-
-      // 4. Apply Updates Functionally if needed
-      if (zoomResult || panDx !== 0 || panDy !== 0) {
-        // Update Zoom Level Functionally
-        if (zoomResult) {
-            // FIX: Round zoom level to prevent float issues triggering dependency loop
-            const roundedZoom = parseFloat(zoomResult.zoomLevel.toFixed(4)); // Round to 4 decimal places
-            setZoomLevel(roundedZoom);
-        }
-
-        // Update Pan Offset Functionally
         setPanOffset(prevPan => {
-          // Determine the target zoom level for clamping
-          // Use the rounded zoom if available, otherwise current state zoom
-          const targetZoomLevel = zoomResult ? parseFloat(zoomResult.zoomLevel.toFixed(4)) : zoomLevel;
-
-          // Start with the pan offset from zoom result (includes centering) or previous pan state
-          const basePan = zoomResult ? zoomResult.panOffset : prevPan;
-
-          // Apply keyboard pan delta to the base pan
-          let finalX = basePan.x + panDx;
-          let finalY = basePan.y + panDy;
-
-          // Clamp using the target zoom level
-          const maxX = 0, maxY = 0;
-          const minX = viewportSize.width - canvasSize.width * targetZoomLevel;
-          const minY = viewportSize.height - canvasSize.height * targetZoomLevel;
-          finalX = Math.min(Math.max(finalX, minX), maxX);
-          finalY = Math.min(Math.max(finalY, minY), maxY);
-
-          // FIX: Round final pan values and compare rounded values to prevent float issues
-          const roundedX = parseFloat(finalX.toFixed(2)); // Round to 2 decimal places
-          const roundedY = parseFloat(finalY.toFixed(2));
-          const roundedPrevX = parseFloat(prevPan.x.toFixed(2));
-          const roundedPrevY = parseFloat(prevPan.y.toFixed(2));
-
-          // Return the new state only if it has actually changed (after rounding)
-          if (roundedX !== roundedPrevX || roundedY !== roundedPrevY) {
-            return { x: roundedX, y: roundedY }; // Set rounded values
-          }
-
-          // Otherwise, return the previous state to prevent unnecessary re-renders
-          return prevPan;
+          const newX = Math.max(viewportSize.width - canvasSize.width * zoomLevel, Math.min(0, prevPan.x + panDx));
+          const newY = Math.max(viewportSize.height - canvasSize.height * zoomLevel, Math.min(0, prevPan.y + panDy));
+          return { x: newX, y: newY };
         });
       }
 
-      // Continue the loop ONLY if keys are actively being pressed
-      if (panDx !== 0 || panDy !== 0 || zoomDelta !== 0) {
-          animationFrameId = requestAnimationFrame(keyboardLoop);
-      } else {
-         // Clear the panning/zooming flag when keyboard operations stop
-         setTimeout(() => { isPanningOrZooming.current = false; }, 100);
-         // Otherwise, let the effect rest until a dependency changes or keys are pressed again
-         // (The useKeyboardShortcuts hook likely handles waking the component)
+      // Handle zoom (simple direct approach - no async calculations)
+      let zoomDelta = 0;
+      if (keysPressed.current[' ']) zoomDelta = -KEYBOARD_ZOOM_SPEED; // Space = zoom out
+      if (keysPressed.current['Shift']) zoomDelta = KEYBOARD_ZOOM_SPEED; // Shift = zoom in
+      
+      if (zoomDelta !== 0) {
+        setZoomLevel(prevZoom => {
+          const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom + zoomDelta));
+          
+          // Simple pan adjustment to keep view centered
+          if (newZoom !== prevZoom) {
+            const zoomRatio = newZoom / prevZoom;
+            const centerX = viewportSize.width / 2;
+            const centerY = viewportSize.height / 2;
+            
+            setPanOffset(prevPan => ({
+              x: centerX - (centerX - prevPan.x) * zoomRatio,
+              y: centerY - (centerY - prevPan.y) * zoomRatio
+            }));
+          }
+          
+          return newZoom;
+        });
       }
     };
 
-    // Only run the keyboard loop in a browser environment, not JSDOM
-    if (typeof window !== 'undefined' && !window.navigator.userAgent?.includes('jsdom')) {
-        keyboardLoop();
-    }
+    // Use requestAnimationFrame to sync with display refresh rate
+    let animationFrameId;
+    const keyboardLoop = (timestamp) => {
+      handleKeyboardMovement(timestamp);
+      animationFrameId = requestAnimationFrame(keyboardLoop);
+    };
     
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [viewportSize, canvasSize, canvasWorker, nodeNamePrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused]); // Note: zoomLevel and panOffset intentionally NOT included to avoid infinite loop
+    animationFrameId = requestAnimationFrame(keyboardLoop);
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [isPaused, nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, activeGraphId, viewportSize, canvasSize, zoomLevel]);
 
     // Add ref for dialog container
   const dialogContainerRef = useRef(null);
