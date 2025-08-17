@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
+import { unstable_batchedUpdates } from 'react-dom';
 import './NodeCanvas.css';
 import { X } from 'lucide-react';
 import Header from './Header.jsx';
@@ -844,8 +845,10 @@ function NodeCanvas() {
         }
       }
 
-      setVisibleNodeIds(nextVisibleNodeIds);
-      setVisibleEdges(nextVisibleEdges);
+      unstable_batchedUpdates(() => {
+        setVisibleNodeIds(nextVisibleNodeIds);
+        setVisibleEdges(nextVisibleEdges);
+      });
     };
 
     rafId = requestAnimationFrame(compute);
@@ -2100,6 +2103,8 @@ function NodeCanvas() {
   // Guard against brief zoom flicker after macOS momentum pans
   const lastMacPanAtRef = useRef(0);
   const consecutiveZoomEligibleRef = useRef(0);
+  // Accumulator to add a small deadzone for mac pinch-zoom jitter
+  const macZoomAccumRef = useRef({ sum: 0, lastSign: 0, lastTs: 0 });
 
   // Improved trackpad vs mouse wheel detection based on industry patterns
   const analyzeInputDevice = (deltaX, deltaY) => {
@@ -2247,7 +2252,28 @@ function NodeCanvas() {
     if (isMac && e.ctrlKey) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
-        const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
+        // Apply a small deadzone with accumulation to prevent micro jiggle zooming
+        const nowTs = Date.now();
+        const accum = macZoomAccumRef.current;
+        const currentSign = Math.sign(deltaY);
+        if (currentSign !== 0 && currentSign !== accum.lastSign) {
+          accum.sum = 0; // reset on direction change
+        }
+        accum.lastSign = currentSign;
+        accum.sum += deltaY;
+        accum.lastTs = nowTs;
+
+        // Threshold in wheel delta units before we apply a zoom
+        const DEADZONE_THRESHOLD = 0.6; // small, tuned for light finger shake
+        if (Math.abs(accum.sum) < DEADZONE_THRESHOLD) {
+          // Below threshold: do not zoom, but mark operation done soon
+          setTimeout(() => { isPanningOrZooming.current = false; }, 60);
+          return; // prevent tiny back/forth zooms
+        }
+
+        const effectiveDeltaY = accum.sum;
+        accum.sum = 0; // consume accumulated delta
+        const zoomDelta = effectiveDeltaY * TRACKPAD_ZOOM_SENSITIVITY;
         const currentZoomForWorker = zoomLevel;
         const currentPanOffsetForWorker = panOffset;
         const opId = ++zoomOpIdRef.current;
@@ -2260,8 +2286,10 @@ function NodeCanvas() {
             viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
           });
           if (opId === zoomOpIdRef.current) {
-          setPanOffset(result.panOffset);
-          setZoomLevel(result.zoomLevel);
+            unstable_batchedUpdates(() => {
+              setPanOffset(result.panOffset);
+              setZoomLevel(result.zoomLevel);
+            });
           }
           setDebugData((prev) => ({
             ...prev,
@@ -2399,8 +2427,10 @@ function NodeCanvas() {
             });
             // Drop stale results (older ops) to avoid "ghost frames"
             if (opId === zoomOpIdRef.current) {
-            setPanOffset(result.panOffset);
-            setZoomLevel(result.zoomLevel);
+              unstable_batchedUpdates(() => {
+                setPanOffset(result.panOffset);
+                setZoomLevel(result.zoomLevel);
+              });
             }
             setDebugData((prev) => ({
                 ...prev,
