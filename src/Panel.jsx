@@ -377,7 +377,7 @@ const LeftGridView = ({
 };
 
 // Internal AI Collaboration View component (migrated from src/ai/AICollaborationPanel.jsx)
-const LeftAIView = () => {
+const LeftAIView = ({ compact = false }) => {
   const [isConnected, setIsConnected] = React.useState(false);
   const [messages, setMessages] = React.useState([]);
   const [currentInput, setCurrentInput] = React.useState('');
@@ -720,53 +720,78 @@ You can "see" and reason about canvas layouts:
     return () => { mounted = false; clearInterval(t); };
   }, []);
 
+  const headerActionsEl = (
+    <div className="ai-header-actions">
+      <button 
+        className={`ai-flat-button ${showAPIKeySetup ? 'active' : ''}`} 
+        onClick={() => setShowAPIKeySetup(!showAPIKeySetup)} 
+        title={hasAPIKey ? 'Manage API Key' : 'Setup API Key'}
+      >
+        <Key size={20} />
+      </button>
+      <button 
+        className="ai-flat-button" 
+        onClick={() => setShowAdvanced(!showAdvanced)} 
+        title="Advanced Options"
+      >
+        <Settings size={20} />
+      </button>
+      <button 
+        className={`ai-flat-button ${isConnected ? 'ai-refresh-button' : 'ai-connect-button'}`} 
+        onClick={refreshBridgeConnection} 
+        title={isConnected ? 'Refresh Connection' : 'Connect to MCP Server'} 
+        disabled={isProcessing}
+      >
+        <RotateCcw size={20} />
+      </button>
+    </div>
+  );
+
   return (
     <div className="ai-collaboration-panel">
       <div className="ai-panel-header">
-        <div className="ai-mode-dropdown">
-          <div className="ai-status-indicator-wrapper">
-            <div className={`ai-status-indicator ${isConnected ? 'connected' : 'disconnected'}`} />
+        {!compact ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gridColumn: '1 / -1' }}>
+            <div className="ai-mode-dropdown">
+              <div className="ai-status-indicator-wrapper">
+                <div className={`ai-status-indicator ${isConnected ? 'connected' : 'disconnected'}`} />
+              </div>
+              <select className="ai-mode-select" value={isAutonomousMode ? 'wizard' : 'chat'} onChange={(e) => setIsAutonomousMode(e.target.value === 'wizard')} aria-label="Mode">
+                <option value="wizard">Wizard</option>
+                <option value="chat">Chat</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              {headerActionsEl}
+            </div>
           </div>
-          <select className="ai-mode-select" value={isAutonomousMode ? 'wizard' : 'chat'} onChange={(e) => setIsAutonomousMode(e.target.value === 'wizard')} aria-label="Mode">
-            <option value="wizard">Wizard</option>
-            <option value="chat">Chat</option>
-          </select>
-        </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gridColumn: '1 / -1' }}>
+            <div className="ai-mode-dropdown">
+              <div className="ai-status-indicator-wrapper">
+                <div className={`ai-status-indicator ${isConnected ? 'connected' : 'disconnected'}`} />
+              </div>
+              <select className="ai-mode-select" value={isAutonomousMode ? 'wizard' : 'chat'} onChange={(e) => setIsAutonomousMode(e.target.value === 'wizard')} aria-label="Mode">
+                <option value="wizard">Wizard</option>
+                <option value="chat">Chat</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 8, paddingLeft: 6 }}>
+              {headerActionsEl}
+            </div>
+          </div>
+        )}
+      </div>
 
-        {/* Left aligned graph info next to Wizard */}
-        <div className="ai-graph-info-left">
+      {/* Dedicated graph info section below the header so layout is consistent across widths */}
+      <div className="ai-graph-info-section" style={{ padding: '12px 0 12px 0' }}>
+        <div className="ai-graph-info-left" style={{ paddingLeft: '6px' }}>
           <span className="ai-graph-name">{graphInfo.name}</span>
           <span className="ai-graph-stats">{graphInfo.nodeCount} nodes • {graphInfo.edgeCount} edges</span>
         </div>
-
-        {/* Right aligned header actions */}
-        <div className="ai-header-actions">
-          <button 
-            className={`ai-flat-button ${showAPIKeySetup ? 'active' : ''}`} 
-            onClick={() => setShowAPIKeySetup(!showAPIKeySetup)} 
-            title={hasAPIKey ? 'Manage API Key' : 'Setup API Key'}
-          >
-            <Key size={20} />
-          </button>
-          <button 
-            className="ai-flat-button" 
-            onClick={() => setShowAdvanced(!showAdvanced)} 
-            title="Advanced Options"
-          >
-            <Settings size={20} />
-          </button>
-          <button 
-            className={`ai-flat-button ${isConnected ? 'ai-refresh-button' : 'ai-connect-button'}`} 
-            onClick={refreshBridgeConnection} 
-            title={isConnected ? 'Refresh Connection' : 'Connect to MCP Server'} 
-            disabled={isProcessing}
-          >
-            <RotateCcw size={20} />
-          </button>
-        </div>
       </div>
-
-
+      {/* Dividing line below graph info section */}
+      <div style={{ borderTop: '1px solid #260000', margin: 0 }}></div>
 
       {showAPIKeySetup && (
         <div className="ai-api-setup-section">
@@ -1707,6 +1732,7 @@ const Panel = forwardRef(
     // --- End Resize Handlers & related effects ---
 
     // --- Determine Active View/Tab --- 
+    const isUltraSlim = panelWidth <= 275;
     // Get tabs reactively if side is 'right'
     const activeRightPanelTab = useMemo(() => {
         if (side !== 'right') return null;
@@ -2007,7 +2033,7 @@ const Panel = forwardRef(
                     height: '100%', 
                     padding: 0
                 }}>
-                    <LeftAIView />
+                    <LeftAIView compact={panelWidth <= 250} />
                 </div>
             );
         }
@@ -2068,6 +2094,70 @@ const Panel = forwardRef(
             const firstDefinitionGraphId = definingNodeData?.definitionGraphIds?.[0];
             const isExpandDisabled = firstDefinitionGraphId === activeGraphId;
 
+            // Build action buttons block for reuse
+            const homeActionButtons = (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
+                <Palette
+                  size={20}
+                  color="#260000"
+                  style={{ cursor: 'pointer', flexShrink: 0 }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (definingNodeId) {
+                      handleOpenColorPicker(definingNodeId, e.currentTarget, e);
+                    }
+                  }}
+                  title="Change color"
+                />
+                <ArrowUpFromDot
+                  size={20}
+                  color="#260000"
+                  style={{ 
+                    cursor: isExpandDisabled ? 'not-allowed' : 'pointer', 
+                    flexShrink: 0,
+                    opacity: isExpandDisabled ? 0.3 : 1,
+                    transition: 'opacity 0.2s ease',
+                  }}
+                  onClick={(e) => {
+                    if (isExpandDisabled || !definingNodeId) return;
+                    if (hasDefinitions) {
+                      if (onStartHurtleAnimationFromPanel && firstDefinitionGraphId) {
+                        const iconRect = e.currentTarget.getBoundingClientRect();
+                        onStartHurtleAnimationFromPanel(definingNodeId, firstDefinitionGraphId, definingNodeId, iconRect);
+                      } else if (storeActions?.openGraphTabAndBringToTop && firstDefinitionGraphId) {
+                        storeActions.openGraphTabAndBringToTop(firstDefinitionGraphId, definingNodeId);
+                      }
+                    } else {
+                      const iconRect = e.currentTarget.getBoundingClientRect();
+                      storeActions.createAndAssignGraphDefinitionWithoutActivation(definingNodeId);
+                      setTimeout(() => {
+                        const currentState = useGraphStore.getState();
+                        const updatedNodeData = currentState.nodePrototypes.get(definingNodeId);
+                        if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                          const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                          onStartHurtleAnimationFromPanel(definingNodeId, newGraphId, definingNodeId, iconRect);
+                        }
+                      }, 150);
+                    }
+                  }}
+                  title={
+                    isExpandDisabled 
+                      ? "This graph is already open" 
+                      : hasDefinitions 
+                        ? "Open definition in new tab" 
+                        : "Create new definition"
+                  }
+                />
+                <ImagePlus
+                  size={20}
+                  color="#260000"
+                  style={{ cursor: 'pointer', flexShrink: 0 }}
+                  onClick={() => definingNodeId && handleAddImage(definingNodeId)}
+                />
+              </div>
+            );
+
             panelContent = (
                 <div className="panel-content-inner home-tab">
                     {/* Header with title and buttons - same layout as node tabs */}
@@ -2123,71 +2213,7 @@ const Panel = forwardRef(
                             </div>
                         )}
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
-                            {/* Color Picker Icon */}
-                            <Palette
-                                size={20}
-                                color="#260000"
-                                style={{ cursor: 'pointer', flexShrink: 0 }}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (definingNodeId) {
-                                        handleOpenColorPicker(definingNodeId, e.currentTarget, e);
-                                    }
-                                }}
-                                title="Change color"
-                            />
-                            {/* Expand Icon - Unified logic: always show, handle both cases */}
-                            <ArrowUpFromDot
-                                size={20}
-                                color="#260000"
-                                style={{ 
-                                    cursor: isExpandDisabled ? 'not-allowed' : 'pointer', 
-                                    flexShrink: 0,
-                                    opacity: isExpandDisabled ? 0.3 : 1,
-                                    transition: 'opacity 0.2s ease',
-                                }}
-                                onClick={(e) => {
-                                    if (isExpandDisabled || !definingNodeId) return;
-
-                                    if (hasDefinitions) {
-                                        // Has definitions - animate to existing definition
-                                        if (onStartHurtleAnimationFromPanel && firstDefinitionGraphId) {
-                                            const iconRect = e.currentTarget.getBoundingClientRect();
-                                            onStartHurtleAnimationFromPanel(definingNodeId, firstDefinitionGraphId, definingNodeId, iconRect);
-                                        } else if (storeActions?.openGraphTabAndBringToTop && firstDefinitionGraphId) {
-                                            storeActions.openGraphTabAndBringToTop(firstDefinitionGraphId, definingNodeId);
-                                        }
-                                    } else {
-                                        // No definitions - create one first, then animate (with delay like node tab)
-                                        const iconRect = e.currentTarget.getBoundingClientRect();
-                                        storeActions.createAndAssignGraphDefinitionWithoutActivation(definingNodeId);
-                                        setTimeout(() => {
-                                            const currentState = useGraphStore.getState();
-                                            const updatedNodeData = currentState.nodePrototypes.get(definingNodeId);
-                                            if (updatedNodeData?.definitionGraphIds?.length > 0) {
-                                                const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
-                                                onStartHurtleAnimationFromPanel(definingNodeId, newGraphId, definingNodeId, iconRect);
-                                            }
-                                        }, 150);
-                                    }
-                                }}
-                                title={
-                                    isExpandDisabled 
-                                        ? "This graph is already open" 
-                                        : hasDefinitions 
-                                            ? "Open definition in new tab"
-                                            : "Create new definition"
-                                }
-                            />
-                            <ImagePlus
-                                size={20}
-                                color="#260000"
-                                style={{ cursor: 'pointer', flexShrink: 0 }}
-                                onClick={() => definingNodeId && handleAddImage(definingNodeId)}
-                            />
-                        </div>
+                        {!isUltraSlim && homeActionButtons}
                     </div>
 
                     {/* Type information */}
@@ -2234,6 +2260,10 @@ const Panel = forwardRef(
                             {typeName}
                         </span>
                     </div>
+
+                    {isUltraSlim && (
+                      <div style={{ marginTop: '12px' }}>{homeActionButtons}</div>
+                    )}
 
                     {/* Divider above bio */}
                     <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
@@ -2982,7 +3012,7 @@ const Panel = forwardRef(
                                     </div>
                                 )}
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
+                                <div style={{ display: isUltraSlim ? 'none' : 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
                                     {/* Color Picker Icon */}
                                     <Palette
                                         size={20}
@@ -3114,6 +3144,58 @@ const Panel = forwardRef(
                                     </div>
                                 );
                             })()}
+                            {isUltraSlim && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '12px 0 0 0' }}>
+                                <Palette
+                                  size={20}
+                                  color="#260000"
+                                  style={{ cursor: 'pointer', flexShrink: 0 }}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenColorPicker(nodeId, e.currentTarget, e);
+                                  }}
+                                  title="Change color"
+                                />
+                                <ArrowUpFromDot
+                                  size={20}
+                                  color="#260000"
+                                  style={{ cursor: isExpandDisabled ? 'not-allowed' : 'pointer', flexShrink: 0, opacity: isExpandDisabled ? 0.3 : 1, transition: 'opacity 0.2s ease' }}
+                                  onClick={(e) => {
+                                    if (isExpandDisabled) return;
+                                    if (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
+                                      const contextKey = `${nodeId}-${activeGraphId}`;
+                                      const currentIndex = nodeDefinitionIndices.get(contextKey) || 0;
+                                      const gid = nodeData.definitionGraphIds[currentIndex] || nodeData.definitionGraphIds[0];
+                                      if (onStartHurtleAnimationFromPanel) {
+                                        const iconRect = e.currentTarget.getBoundingClientRect();
+                                        onStartHurtleAnimationFromPanel(nodeId, gid, nodeId, iconRect);
+                                      } else if (storeActions?.openGraphTabAndBringToTop) {
+                                        storeActions.openGraphTabAndBringToTop(gid, nodeId);
+                                      }
+                                    } else {
+                                      const iconRect = e.currentTarget.getBoundingClientRect();
+                                      storeActions.createAndAssignGraphDefinitionWithoutActivation(nodeId);
+                                      setTimeout(() => {
+                                        const currentState = useGraphStore.getState();
+                                        const updated = currentState.nodePrototypes.get(nodeId);
+                                        if (updated?.definitionGraphIds?.length > 0) {
+                                          const newGid = updated.definitionGraphIds[updated.definitionGraphIds.length - 1];
+                                          onStartHurtleAnimationFromPanel(nodeId, newGid, nodeId, iconRect);
+                                        }
+                                      }, 150);
+                                    }
+                                  }}
+                                  title={isExpandDisabled ? 'This graph is already open' : ((nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) ? 'Open definition in new tab' : 'Create new definition')}
+                                />
+                                <ImagePlus
+                                  size={20}
+                                  color="#260000"
+                                  style={{ cursor: 'pointer', flexShrink: 0 }}
+                                  onClick={() => handleAddImage(nodeId)}
+                                />
+                              </div>
+                            )}
                         </div>
 
                         {/* Divider above bio */}
