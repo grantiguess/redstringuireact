@@ -23,17 +23,12 @@ export const useKeyboardShortcuts = () => {
       
       // Only track keys if not in a text input
       if (!isTextInput) {
-        keysPressed.current[e.key] = true;
+        // Normalize single-character keys to lowercase so Shift+W stores as 'w'
+        const key = e.key && e.key.length === 1 ? e.key.toLowerCase() : e.key;
+        keysPressed.current[key] = true;
         
         // Prevent default behavior for navigation keys to avoid page scrolling
-        if (
-          e.key === ' ' ||
-          e.key === 'Shift' ||
-          e.key === 'ArrowUp' ||
-          e.key === 'ArrowDown' ||
-          e.key === 'ArrowLeft' ||
-          e.key === 'ArrowRight'
-        ) {
+        if (key === ' ' || key === 'Shift' || key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight') {
           e.preventDefault();
         }
       }
@@ -41,17 +36,9 @@ export const useKeyboardShortcuts = () => {
     
     const handleKeyUp = (e) => {
       // Always track key releases to prevent stuck keys
-      keysPressed.current[e.key] = false;
-      
-      // Also clear any modifier key combinations that might be stuck
-      if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') {
-        // Clear all keys when modifier keys are released to prevent stuck states
-        Object.keys(keysPressed.current).forEach(key => {
-          if (key !== e.key) {
-            keysPressed.current[key] = false;
-          }
-        });
-      }
+      const key = e.key && e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      keysPressed.current[key] = false;
+      // Do NOT clear other keys on modifier release; this breaks combos like Shift+W
     };
 
     const handleWindowBlur = () => {
@@ -63,7 +50,6 @@ export const useKeyboardShortcuts = () => {
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('blur', handleWindowBlur);
-    window.addEventListener('focus', handleWindowBlur); // Also clear on focus to start fresh
 
     // Cleanup listeners on unmount
     return () => {
@@ -71,7 +57,6 @@ export const useKeyboardShortcuts = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleWindowBlur);
-      window.removeEventListener('focus', handleWindowBlur);
       keysPressed.current = {}; // Reset keys on unmount
     };
   }, []); // Empty dependency array ensures this runs only once on mount/unmount

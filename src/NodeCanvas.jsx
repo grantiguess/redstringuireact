@@ -65,9 +65,9 @@ const isMac = /Mac/i.test(navigator.userAgent);
 
 // Sensitivity constants
 const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1;        // Sensitivity for standard mouse wheel zooming
-const KEYBOARD_PAN_BASE_SPEED = 10;             // constant movement speed (no acceleration)
+const KEYBOARD_PAN_BASE_SPEED = 12;             // constant movement speed (no acceleration) - balanced speed
 const KEYBOARD_PAN_MAX_SPEED = 20;              // max movement speed with acceleration
-const KEYBOARD_ZOOM_BASE_SPEED = 0.008;         // base zoom speed
+const KEYBOARD_ZOOM_BASE_SPEED = 0.010;         // base zoom speed - balanced responsiveness
 const KEYBOARD_ZOOM_MAX_SPEED = 0.04;           // max zoom speed with acceleration
 
 function NodeCanvas() {
@@ -3301,10 +3301,11 @@ function NodeCanvas() {
       };
 
       // Check movement keys
-      const leftPressed = keysPressed.current['ArrowLeft'] || keysPressed.current['a'];
-      const rightPressed = keysPressed.current['ArrowRight'] || keysPressed.current['d'];
-      const upPressed = keysPressed.current['ArrowUp'] || keysPressed.current['w'];
-      const downPressed = keysPressed.current['ArrowDown'] || keysPressed.current['s'];
+      // Normalize to lowercase letters since the hook stores single chars as lowercase
+      const leftPressed = keysPressed.current['ArrowLeft'] || keysPressed.current['a'] === true;
+      const rightPressed = keysPressed.current['ArrowRight'] || keysPressed.current['d'] === true;
+      const upPressed = keysPressed.current['ArrowUp'] || keysPressed.current['w'] === true;
+      const downPressed = keysPressed.current['ArrowDown'] || keysPressed.current['s'] === true;
 
       // Calculate movement with constant speed (no acceleration)
       let panDx = 0, panDy = 0;
@@ -3315,6 +3316,7 @@ function NodeCanvas() {
 
       // Apply movement immediately - no thresholds
       if (panDx !== 0 || panDy !== 0) {
+        // If zoom was active very recently, do not suppress movement
         setPanOffset(prevPan => {
           const currentZoom = currentZoomRef.current;
           const newX = Math.max(viewportSize.width - canvasSize.width * currentZoom, Math.min(0, prevPan.x + panDx));
@@ -3330,10 +3332,10 @@ function NodeCanvas() {
       // Clear zoom acceleration for unpressed keys
       if (!spacePressed && !shiftPressed) delete keyHoldStartTimes.current['zoom'];
 
-      // Handle zoom with smooth acceleration
+      // Handle zoom with flat rate (no acceleration)
       if (spacePressed || shiftPressed) {
-        const zoomAcceleration = getSmoothAcceleration('zoom', timestamp);
-        const zoomSpeed = Math.min(KEYBOARD_ZOOM_BASE_SPEED * zoomAcceleration, KEYBOARD_ZOOM_MAX_SPEED);
+        // Simple flat rate zoom - consistent and predictable
+        const zoomSpeed = KEYBOARD_ZOOM_BASE_SPEED;
         
       let zoomDelta = 0;
         if (spacePressed) zoomDelta -= zoomSpeed; // Space = zoom out
