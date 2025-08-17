@@ -158,6 +158,14 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     
     // UI Settings
     showConnectionNames: false,
+    // Connections visualization/layout settings
+    autoLayoutSettings: {
+      defaultSpacing: 15,
+      nodeClearance: 20,
+      enableAutoRouting: false,
+      showConnectionLabels: true,
+      routingStyle: 'straight' // 'straight' | 'manhattan'
+    },
 
     // Git Federation State
     gitConnection: (() => {
@@ -926,6 +934,38 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   // Toggle connection names visibility
   toggleShowConnectionNames: () => set(produce((draft) => {
     draft.showConnectionNames = !draft.showConnectionNames;
+  })),
+
+  // Toggle global auto-routing enablement
+  toggleEnableAutoRouting: () => set(produce((draft) => {
+    if (!draft.autoLayoutSettings) {
+      draft.autoLayoutSettings = {
+        defaultSpacing: 15,
+        nodeClearance: 20,
+        enableAutoRouting: false,
+        showConnectionLabels: true,
+        routingStyle: 'straight'
+      };
+    }
+    draft.autoLayoutSettings.enableAutoRouting = !draft.autoLayoutSettings.enableAutoRouting;
+  })),
+
+  // Set the global routing style
+  setRoutingStyle: (style) => set(produce((draft) => {
+    if (!draft.autoLayoutSettings) {
+      draft.autoLayoutSettings = {
+        defaultSpacing: 15,
+        nodeClearance: 20,
+        enableAutoRouting: false,
+        showConnectionLabels: true,
+        routingStyle: 'straight'
+      };
+    }
+    if (style === 'straight' || style === 'manhattan') {
+      draft.autoLayoutSettings.routingStyle = style;
+    } else {
+      console.warn(`[setRoutingStyle] Invalid routing style: ${style}`);
+    }
   })),
 
   // Explicitly set active definition node (e.g., when switching graphs)

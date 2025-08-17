@@ -26,6 +26,11 @@ const Header = ({
   // Connection names props
   showConnectionNames,
   onToggleShowConnectionNames,
+  // Connections menu props
+  enableAutoRouting,
+  routingStyle,
+  onToggleEnableAutoRouting,
+  onSetRoutingStyle,
   // File management actions
   onNewUniverse,
   onOpenUniverse,
@@ -262,6 +267,10 @@ const Header = ({
             setDebugMode={setDebugMode}
             showConnectionNames={showConnectionNames}
             onToggleShowConnectionNames={onToggleShowConnectionNames}
+            enableAutoRouting={enableAutoRouting}
+            routingStyle={routingStyle}
+            onToggleEnableAutoRouting={onToggleEnableAutoRouting}
+            onSetRoutingStyle={onSetRoutingStyle}
             onNewUniverse={onNewUniverse}
             onOpenUniverse={onOpenUniverse}
             onSaveUniverse={onSaveUniverse}
@@ -312,6 +321,10 @@ const Header = ({
           setDebugMode={setDebugMode}
           showConnectionNames={showConnectionNames}
           onToggleShowConnectionNames={onToggleShowConnectionNames}
+          enableAutoRouting={enableAutoRouting}
+          routingStyle={routingStyle}
+          onToggleEnableAutoRouting={onToggleEnableAutoRouting}
+          onSetRoutingStyle={onSetRoutingStyle}
           onNewUniverse={onNewUniverse}
           onOpenUniverse={onOpenUniverse}
           onSaveUniverse={onSaveUniverse}

@@ -10,6 +10,11 @@ const RedstringMenu = ({
   setDebugMode,
   showConnectionNames,
   onToggleShowConnectionNames,
+  // Connections visualization controls
+  enableAutoRouting,
+  routingStyle,
+  onToggleEnableAutoRouting,
+  onSetRoutingStyle,
   // Universe management actions
   onNewUniverse,
   onOpenUniverse,
@@ -23,7 +28,7 @@ const RedstringMenu = ({
   const [recentFiles, setRecentFiles] = useState([]);
   // Track timeouts to cancel them when needed
   const [closeTimeout, setCloseTimeout] = useState(null);
-  const menuItems = ['File', 'Edit', 'View', 'Help'];
+  const menuItems = ['File', 'Edit', 'View', 'Connections', 'Help'];
 
   useEffect(() => {
     if (isOpen) {
@@ -240,6 +245,48 @@ const RedstringMenu = ({
                                 >
                                   {showConnectionNames ? 'Hide Connection Names' : 'Show Connection Names'}
                                 </button>
+                            </div>
+                          )}
+                      </div>
+                  );
+              } else if(item === 'Connections'){
+                  return (
+                      <div 
+                        key={index} 
+                        onMouseEnter={() => handleMenuItemHover('Connections')}
+                        onMouseLeave={handleMenuItemLeave}
+                        style={{ position: 'relative', width: '100%' }}
+                      >
+                          <button className="menu-item">
+                              <span>{item}</span>
+                              <ChevronRight size={16} className="menu-item-chevron" />
+                          </button>
+                          {openSubmenu === 'Connections' && (
+                            <div 
+                              className="submenu-container"
+                              onMouseEnter={handleSubmenuEnter}
+                              onMouseLeave={handleMenuItemLeave}
+                            >
+                              <button
+                                className="submenu-item"
+                                onClick={() => onToggleEnableAutoRouting?.()}
+                              >
+                                {enableAutoRouting ? 'Disable Auto-Routing' : 'Enable Auto-Routing'}
+                              </button>
+                              <button
+                                className="submenu-item"
+                                onClick={() => onSetRoutingStyle?.('straight')}
+                                style={{ opacity: routingStyle === 'straight' ? 1 : 0.8 }}
+                              >
+                                Routing: Straight {routingStyle === 'straight' ? '✓' : ''}
+                              </button>
+                              <button
+                                className="submenu-item"
+                                onClick={() => onSetRoutingStyle?.('manhattan')}
+                                style={{ opacity: routingStyle === 'manhattan' ? 1 : 0.8 }}
+                              >
+                                Routing: Manhattan {routingStyle === 'manhattan' ? '✓' : ''}
+                              </button>
                             </div>
                           )}
                       </div>

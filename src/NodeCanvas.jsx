@@ -105,6 +105,8 @@ function NodeCanvas() {
   const toggleSavedNode = useGraphStore((state) => state.toggleSavedNode);
   const toggleSavedGraph = useGraphStore((state) => state.toggleSavedGraph);
   const toggleShowConnectionNames = useGraphStore((state) => state.toggleShowConnectionNames);
+  const toggleEnableAutoRouting = useGraphStore((state) => state.toggleEnableAutoRouting);
+  const setRoutingStyle = useGraphStore((state) => state.setRoutingStyle);
   const updateMultipleNodeInstancePositions = useGraphStore((state) => state.updateMultipleNodeInstancePositions);
   const removeDefinitionFromNode = useGraphStore((state) => state.removeFromDefinitionFromNode);
   const openGraphTabAndBringToTop = useGraphStore((state) => state.openGraphTabAndBringToTop);
@@ -525,6 +527,8 @@ function NodeCanvas() {
     removeSelectedEdgeId,
     clearSelectedEdgeIds,
     toggleShowConnectionNames,
+    toggleEnableAutoRouting,
+    setRoutingStyle,
     updateGraphView,
   }), [
     updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance, removeEdge, updateGraph, createNewGraph,
@@ -535,7 +539,7 @@ function NodeCanvas() {
     openGraphTabAndBringToTop, cleanupOrphanedData, restoreFromSession,
     loadUniverseFromFile, setUniverseError, clearUniverse, setUniverseConnected,
     setSelectedEdgeIds, addSelectedEdgeId, removeSelectedEdgeId, clearSelectedEdgeIds, toggleShowConnectionNames,
-    updateGraphView
+    toggleEnableAutoRouting, setRoutingStyle, updateGraphView
   ]);
 
   // <<< SELECT STATE DIRECTLY >>>
@@ -548,6 +552,8 @@ function NodeCanvas() {
   const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
   const edgePrototypesMap = useGraphStore(state => state.edgePrototypes);
   const showConnectionNames = useGraphStore(state => state.showConnectionNames);
+  const enableAutoRouting = useGraphStore(state => state.autoLayoutSettings?.enableAutoRouting);
+  const routingStyle = useGraphStore(state => state.autoLayoutSettings?.routingStyle || 'straight');
   const edgesMap = useGraphStore(state => state.edges);
   const savedNodeIds = useGraphStore(state => state.savedNodeIds);
   const savedGraphIds = useGraphStore(state => state.savedGraphIds);
@@ -4128,6 +4134,10 @@ function NodeCanvas() {
          onBookmarkToggle={handleToggleBookmark}
          showConnectionNames={showConnectionNames}
          onToggleShowConnectionNames={storeActions.toggleShowConnectionNames}
+         enableAutoRouting={enableAutoRouting}
+         routingStyle={routingStyle}
+         onToggleEnableAutoRouting={storeActions.toggleEnableAutoRouting}
+         onSetRoutingStyle={storeActions.setRoutingStyle}
 
          onNewUniverse={async () => {
            try {
