@@ -64,8 +64,10 @@ const isMac = /Mac/i.test(navigator.userAgent);
 
 // Sensitivity constants
 const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1;        // Sensitivity for standard mouse wheel zooming
-const KEYBOARD_PAN_SPEED = 12;                  // for keyboard panning (much faster)
-const KEYBOARD_ZOOM_SPEED = 0.01;               // for keyboard zooming (extra smooth)
+const KEYBOARD_PAN_BASE_SPEED = 4;              // base movement speed
+const KEYBOARD_PAN_MAX_SPEED = 20;              // max movement speed with acceleration
+const KEYBOARD_ZOOM_BASE_SPEED = 0.008;         // base zoom speed
+const KEYBOARD_ZOOM_MAX_SPEED = 0.04;           // max zoom speed with acceleration
 
 function NodeCanvas() {
   const svgRef = useRef(null);
@@ -114,6 +116,7 @@ function NodeCanvas() {
   const addToAbstractionChain = useGraphStore((state) => state.addToAbstractionChain);
   const removeFromAbstractionChain = useGraphStore((state) => state.removeFromAbstractionChain);
   const updateGraphView = useGraphStore((state) => state.updateGraphView);
+  const setTypeListMode = useGraphStore((state) => state.setTypeListMode);
 
   // Panel overlay resizers rendered in canvas (do not overlap panel DOM)
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
@@ -2254,8 +2257,8 @@ function NodeCanvas() {
             viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
           });
           if (opId === zoomOpIdRef.current) {
-            setPanOffset(result.panOffset);
-            setZoomLevel(result.zoomLevel);
+          setPanOffset(result.panOffset);
+          setZoomLevel(result.zoomLevel);
           }
           setDebugData((prev) => ({
             ...prev,
@@ -2344,8 +2347,8 @@ function NodeCanvas() {
             });
             // Drop stale results (older ops) to avoid "ghost frames"
             if (opId === zoomOpIdRef.current) {
-              setPanOffset(result.panOffset);
-              setZoomLevel(result.zoomLevel);
+            setPanOffset(result.panOffset);
+            setZoomLevel(result.zoomLevel);
             }
             setDebugData((prev) => ({
                 ...prev,
@@ -2420,12 +2423,12 @@ function NodeCanvas() {
       const now = performance.now();
       if (now - lastHoverCheckRef.current >= HOVER_CHECK_INTERVAL_MS) {
         lastHoverCheckRef.current = now;
-        // Check if mouse is over any node first
+      // Check if mouse is over any node first
         const hoveredNode = nodes.find(node => visibleNodeIds.has(node.id) && isInsideNode(node, e.clientX, e.clientY));
-        if (!hoveredNode) {
+      if (!hoveredNode) {
           // Search only among visible edges
-          let foundHoveredEdgeInfo = null;
-          let closestDistance = Infinity;
+        let foundHoveredEdgeInfo = null;
+        let closestDistance = Infinity;
           for (const edge of visibleEdges) {
             const sourceNode = nodeById.get(edge.sourceId);
             const destNode = nodeById.get(edge.destinationId);
@@ -2460,9 +2463,9 @@ function NodeCanvas() {
               }
             }
           }
-          setHoveredEdgeInfo(foundHoveredEdgeInfo);
-        } else {
-          setHoveredEdgeInfo(null);
+        setHoveredEdgeInfo(foundHoveredEdgeInfo);
+      } else {
+        setHoveredEdgeInfo(null);
         }
       }
     }
@@ -3139,16 +3142,21 @@ function NodeCanvas() {
 
 
 
-  // Simple keyboard controls using requestAnimationFrame - synced to display refresh rate
+  // Refs for keyboard acceleration tracking
+  const keyHoldStartTimes = useRef({});
+  const accelerationMultipliers = useRef({});
+  
+  // Track zoom level in ref to prevent useEffect restarts during zoom
+  const currentZoomRef = useRef(zoomLevel);
   useEffect(() => {
-    let lastFrameTime = 0;
+    currentZoomRef.current = zoomLevel;
+  }, [zoomLevel]);
+
+  // Video game-style keyboard controls with smooth acceleration
+  useEffect(() => {
+    let animationFrameId;
     
-    const handleKeyboardMovement = (currentTime = performance.now()) => {
-      // Throttle to ensure consistent timing regardless of refresh rate
-      if (currentTime - lastFrameTime < 8) { // ~120fps max to keep it smooth even on high refresh displays
-        return;
-      }
-      lastFrameTime = currentTime;
+    const gameLoop = (timestamp) => {
       // Check for conditions that should disable keyboard controls
       const shouldDisableKeyboard = 
         isPaused ||
@@ -3160,64 +3168,181 @@ function NodeCanvas() {
         isLeftPanelInputFocused ||
         !activeGraphId;
 
-      if (shouldDisableKeyboard) return;
+      if (shouldDisableKeyboard) {
+        // Clear all acceleration when disabled
+        keyHoldStartTimes.current = {};
+        accelerationMultipliers.current = {};
+        animationFrameId = requestAnimationFrame(gameLoop);
+        return;
+      }
 
-      // Calculate movement (use lowercase only to avoid shift conflicts)
+      // Smooth acceleration function - like video games
+      const getSmoothAcceleration = (keyType, currentTime) => {
+        if (!keyHoldStartTimes.current[keyType]) {
+          keyHoldStartTimes.current[keyType] = currentTime;
+          return 1;
+        }
+        
+        const holdDuration = currentTime - keyHoldStartTimes.current[keyType];
+        
+        // Smooth acceleration curve: starts at 1x, ramps up smoothly
+        if (holdDuration < 300) {
+          // First 300ms: stay at base speed for precision
+          return 1;
+        } else if (holdDuration < 800) {
+          // 300-800ms: smooth ramp to 2x speed
+          const progress = (holdDuration - 300) / 500;
+          return 1 + progress; // 1x to 2x
+        } else if (holdDuration < 1500) {
+          // 800-1500ms: ramp to 3x speed
+          const progress = (holdDuration - 800) / 700;
+          return 2 + progress; // 2x to 3x
+        } else {
+          // 1500ms+: max speed
+          return 3;
+        }
+      };
+
+      // Check movement keys
+      const leftPressed = keysPressed.current['ArrowLeft'] || keysPressed.current['a'];
+      const rightPressed = keysPressed.current['ArrowRight'] || keysPressed.current['d'];
+      const upPressed = keysPressed.current['ArrowUp'] || keysPressed.current['w'];
+      const downPressed = keysPressed.current['ArrowDown'] || keysPressed.current['s'];
+      
+      // Clear acceleration for unpressed movement keys
+      if (!leftPressed && !rightPressed) delete keyHoldStartTimes.current['horizontal'];
+      if (!upPressed && !downPressed) delete keyHoldStartTimes.current['vertical'];
+
+      // Calculate movement with smooth acceleration
       let panDx = 0, panDy = 0;
-      if (keysPressed.current['ArrowLeft'] || keysPressed.current['a']) panDx += KEYBOARD_PAN_SPEED;
-      if (keysPressed.current['ArrowRight'] || keysPressed.current['d']) panDx -= KEYBOARD_PAN_SPEED;
-      if (keysPressed.current['ArrowUp'] || keysPressed.current['w']) panDy += KEYBOARD_PAN_SPEED;
-      if (keysPressed.current['ArrowDown'] || keysPressed.current['s']) panDy -= KEYBOARD_PAN_SPEED;
+      if (leftPressed || rightPressed) {
+        const acceleration = getSmoothAcceleration('horizontal', timestamp);
+        const speed = Math.min(KEYBOARD_PAN_BASE_SPEED * acceleration, KEYBOARD_PAN_MAX_SPEED);
+        if (leftPressed) panDx += speed;
+        if (rightPressed) panDx -= speed;
+      }
+      if (upPressed || downPressed) {
+        const acceleration = getSmoothAcceleration('vertical', timestamp);
+        const speed = Math.min(KEYBOARD_PAN_BASE_SPEED * acceleration, KEYBOARD_PAN_MAX_SPEED);
+        if (upPressed) panDy += speed;
+        if (downPressed) panDy -= speed;
+      }
 
-      // Apply movement
+      // Apply movement immediately - no thresholds
       if (panDx !== 0 || panDy !== 0) {
         setPanOffset(prevPan => {
-          const newX = Math.max(viewportSize.width - canvasSize.width * zoomLevel, Math.min(0, prevPan.x + panDx));
-          const newY = Math.max(viewportSize.height - canvasSize.height * zoomLevel, Math.min(0, prevPan.y + panDy));
+          const currentZoom = currentZoomRef.current;
+          const newX = Math.max(viewportSize.width - canvasSize.width * currentZoom, Math.min(0, prevPan.x + panDx));
+          const newY = Math.max(viewportSize.height - canvasSize.height * currentZoom, Math.min(0, prevPan.y + panDy));
           return { x: newX, y: newY };
         });
       }
 
-      // Handle zoom (simple direct approach - no async calculations)
-      let zoomDelta = 0;
-      if (keysPressed.current[' ']) zoomDelta = -KEYBOARD_ZOOM_SPEED; // Space = zoom out
-      if (keysPressed.current['Shift']) zoomDelta = KEYBOARD_ZOOM_SPEED; // Shift = zoom in
+      // Check zoom keys (independent of movement)
+      const spacePressed = keysPressed.current[' '];
+      const shiftPressed = keysPressed.current['Shift'];
       
-      if (zoomDelta !== 0) {
-        setZoomLevel(prevZoom => {
-          const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom + zoomDelta));
-          
-          // Simple pan adjustment to keep view centered
-          if (newZoom !== prevZoom) {
-            const zoomRatio = newZoom / prevZoom;
-            const centerX = viewportSize.width / 2;
-            const centerY = viewportSize.height / 2;
+      // Clear zoom acceleration for unpressed keys
+      if (!spacePressed && !shiftPressed) delete keyHoldStartTimes.current['zoom'];
+
+      // Handle zoom with smooth acceleration
+      if (spacePressed || shiftPressed) {
+        const zoomAcceleration = getSmoothAcceleration('zoom', timestamp);
+        const zoomSpeed = Math.min(KEYBOARD_ZOOM_BASE_SPEED * zoomAcceleration, KEYBOARD_ZOOM_MAX_SPEED);
+        
+        let zoomDelta = 0;
+        if (spacePressed) zoomDelta -= zoomSpeed; // Space = zoom out
+        if (shiftPressed) zoomDelta += zoomSpeed; // Shift = zoom in
+        
+        if (zoomDelta !== 0) {
+          setZoomLevel(prevZoom => {
+            const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom + zoomDelta));
             
-            setPanOffset(prevPan => ({
-              x: centerX - (centerX - prevPan.x) * zoomRatio,
-              y: centerY - (centerY - prevPan.y) * zoomRatio
-            }));
-          }
-          
-          return newZoom;
-        });
+            // Keep view centered during zoom
+            if (newZoom !== prevZoom) {
+              const zoomRatio = newZoom / prevZoom;
+              const centerX = viewportSize.width / 2;
+              const centerY = viewportSize.height / 2;
+              
+              setPanOffset(prevPan => ({
+                x: centerX - (centerX - prevPan.x) * zoomRatio,
+                y: centerY - (centerY - prevPan.y) * zoomRatio
+              }));
+            }
+            
+            return newZoom;
+          });
+        }
       }
+
+      // Continue the game loop
+      animationFrameId = requestAnimationFrame(gameLoop);
     };
 
-    // Use requestAnimationFrame to sync with display refresh rate
-    let animationFrameId;
-    const keyboardLoop = (timestamp) => {
-      handleKeyboardMovement(timestamp);
-      animationFrameId = requestAnimationFrame(keyboardLoop);
-    };
+    // Start the game loop
+    animationFrameId = requestAnimationFrame(gameLoop);
     
-    animationFrameId = requestAnimationFrame(keyboardLoop);
     return () => {
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
       }
     };
-  }, [isPaused, nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, activeGraphId, viewportSize, canvasSize, zoomLevel]);
+  }, [isPaused, nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, activeGraphId, viewportSize, canvasSize]);
+
+  // Panel and type list keyboard shortcuts
+  useEffect(() => {
+    const handlePanelShortcuts = (e) => {
+      // Check if focus is on a text input or if any prompts are visible
+      const activeElement = document.activeElement;
+      const isTextInput = activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.contentEditable === 'true' ||
+        activeElement.type === 'text' ||
+        activeElement.type === 'search' ||
+        activeElement.type === 'password' ||
+        activeElement.type === 'email' ||
+        activeElement.type === 'number'
+      );
+      
+      const shouldDisableShortcuts = 
+        isTextInput ||
+        nodeNamePrompt.visible || 
+        connectionNamePrompt.visible || 
+        abstractionPrompt.visible ||
+        isHeaderEditing || 
+        isRightPanelInputFocused || 
+        isLeftPanelInputFocused ||
+        !activeGraphId;
+
+      if (shouldDisableShortcuts) return;
+
+      // Panel shortcuts
+      if (e.key === '1') {
+        e.preventDefault();
+        setLeftPanelExpanded(prev => !prev);
+      } else if (e.key === '2') {
+        e.preventDefault();
+        setRightPanelExpanded(prev => !prev);
+      } else if (e.key === '3') {
+        e.preventDefault();
+        // Cycle type list through all three states: connection -> node -> closed -> connection
+        const currentMode = useGraphStore.getState().typeListMode;
+        let newMode;
+        if (currentMode === 'connection') {
+          newMode = 'node';
+        } else if (currentMode === 'node') {
+          newMode = 'closed';
+        } else {
+          newMode = 'connection';
+        }
+        setTypeListMode(newMode);
+      }
+    };
+
+    window.addEventListener('keydown', handlePanelShortcuts);
+    return () => window.removeEventListener('keydown', handlePanelShortcuts);
+  }, [nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, activeGraphId, setTypeListMode]);
 
     // Add ref for dialog container
   const dialogContainerRef = useRef(null);

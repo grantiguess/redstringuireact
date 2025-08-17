@@ -20,7 +20,9 @@ const NodeSelectionGrid = ({
   // Convert to array and sort by name
   const availablePrototypes = useMemo(() => {
     const prototypes = Array.from(nodePrototypesMap.values());
-    const sorted = prototypes.sort((a, b) => a.name.localeCompare(b.name));
+    // Filter out prototypes without names first, then sort
+    const validPrototypes = prototypes.filter(p => p.name);
+    const sorted = validPrototypes.sort((a, b) => a.name.localeCompare(b.name));
 
     if (!searchTerm?.trim()) {
         return sorted;
