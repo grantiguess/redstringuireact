@@ -788,59 +788,65 @@ function NodeCanvas() {
     viewportSize.height / canvasSize.height
   );
 
-  // Compute and update culling sets when pan/zoom or graph state changes
+  // Compute and update culling sets when pan/zoom or graph state changes (batch to next frame)
   useEffect(() => {
     // Guard until basic view state is present
     if (!viewportSize || !canvasSize) return;
-    // Derive canvas-space viewport
-    const minX = (-panOffset.x) / zoomLevel;
-    const minY = (-panOffset.y) / zoomLevel;
-    const maxX = minX + viewportSize.width / zoomLevel;
-    const maxY = minY + viewportSize.height / zoomLevel;
-    const padding = 400;
-    const expanded = {
-      minX: minX - padding,
-      minY: minY - padding,
-      maxX: maxX + padding,
-      maxY: maxY + padding,
+    let rafId = null;
+    const compute = () => {
+      // Derive canvas-space viewport
+      const minX = (-panOffset.x) / zoomLevel;
+      const minY = (-panOffset.y) / zoomLevel;
+      const maxX = minX + viewportSize.width / zoomLevel;
+      const maxY = minY + viewportSize.height / zoomLevel;
+      const padding = 400;
+      const expanded = {
+        minX: minX - padding,
+        minY: minY - padding,
+        maxX: maxX + padding,
+        maxY: maxY + padding,
+      };
+
+      // Visible nodes
+      const nextVisibleNodeIds = new Set();
+      for (const n of nodes) {
+        const dims = baseDimsById.get(n.id);
+        if (!dims) continue;
+        const nx1 = n.x;
+        const ny1 = n.y;
+        const nx2 = n.x + dims.currentWidth;
+        const ny2 = n.y + dims.currentHeight;
+        if (!(nx2 < expanded.minX || nx1 > expanded.maxX || ny2 < expanded.minY || ny1 > expanded.maxY)) {
+          nextVisibleNodeIds.add(n.id);
+        }
+      }
+
+      // Visible edges
+      const nextVisibleEdges = [];
+      for (const edge of edges) {
+        const s = nodeById.get(edge.sourceId);
+        const d = nodeById.get(edge.destinationId);
+        if (!s || !d) continue;
+        const sDims = baseDimsById.get(s.id);
+        const dDims = baseDimsById.get(d.id);
+        if (!sDims || !dDims) continue;
+        const sx = s.x + sDims.currentWidth / 2;
+        const sy = s.y + sDims.currentHeight / 2;
+        const dx = d.x + dDims.currentWidth / 2;
+        const dy = d.y + dDims.currentHeight / 2;
+        const sIn = sx >= expanded.minX && sx <= expanded.maxX && sy >= expanded.minY && sy <= expanded.maxY;
+        const dIn = dx >= expanded.minX && dx <= expanded.maxX && dy >= expanded.minY && dy <= expanded.maxY;
+        if (sIn || dIn || lineIntersectsRect(sx, sy, dx, dy, expanded)) {
+          nextVisibleEdges.push(edge);
+        }
+      }
+
+      setVisibleNodeIds(nextVisibleNodeIds);
+      setVisibleEdges(nextVisibleEdges);
     };
 
-    // Visible nodes
-    const nextVisibleNodeIds = new Set();
-    for (const n of nodes) {
-      const dims = baseDimsById.get(n.id);
-      if (!dims) continue;
-      const nx1 = n.x;
-      const ny1 = n.y;
-      const nx2 = n.x + dims.currentWidth;
-      const ny2 = n.y + dims.currentHeight;
-      if (!(nx2 < expanded.minX || nx1 > expanded.maxX || ny2 < expanded.minY || ny1 > expanded.maxY)) {
-        nextVisibleNodeIds.add(n.id);
-      }
-    }
-
-    // Visible edges
-    const nextVisibleEdges = [];
-    for (const edge of edges) {
-      const s = nodeById.get(edge.sourceId);
-      const d = nodeById.get(edge.destinationId);
-      if (!s || !d) continue;
-      const sDims = baseDimsById.get(s.id);
-      const dDims = baseDimsById.get(d.id);
-      if (!sDims || !dDims) continue;
-      const sx = s.x + sDims.currentWidth / 2;
-      const sy = s.y + sDims.currentHeight / 2;
-      const dx = d.x + dDims.currentWidth / 2;
-      const dy = d.y + dDims.currentHeight / 2;
-      const sIn = sx >= expanded.minX && sx <= expanded.maxX && sy >= expanded.minY && sy <= expanded.maxY;
-      const dIn = dx >= expanded.minX && dx <= expanded.maxX && dy >= expanded.minY && dy <= expanded.maxY;
-      if (sIn || dIn || lineIntersectsRect(sx, sy, dx, dy, expanded)) {
-        nextVisibleEdges.push(edge);
-      }
-    }
-
-    setVisibleNodeIds(nextVisibleNodeIds);
-    setVisibleEdges(nextVisibleEdges);
+    rafId = requestAnimationFrame(compute);
+    return () => { if (rafId) cancelAnimationFrame(rafId); };
   }, [panOffset, zoomLevel, viewportSize, canvasSize, nodes, edges, baseDimsById, nodeById]);
 
   // Store view states per graph (graphId -> {panOffset, zoomLevel})
@@ -1312,6 +1318,8 @@ function NodeCanvas() {
   const canvasWorker = useCanvasWorker();
   const isKeyboardZooming = useRef(false);
   const resizeTimeoutRef = useRef(null);
+  // Ensure async zoom results apply in order to avoid ghost frames
+  const zoomOpIdRef = useRef(0);
   const selectionBaseRef = useRef(new Set());
   const wasSelectionBox = useRef(false);
   const wasDrawingConnection = useRef(false);
@@ -2215,6 +2223,7 @@ function NodeCanvas() {
         const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
         const currentZoomForWorker = zoomLevel;
         const currentPanOffsetForWorker = panOffset;
+        const opId = ++zoomOpIdRef.current;
         try {
           const result = await canvasWorker.calculateZoom({
             deltaY: zoomDelta, 
@@ -2223,8 +2232,10 @@ function NodeCanvas() {
             panOffset: currentPanOffsetForWorker, 
             viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
           });
-          setPanOffset(result.panOffset);
-          setZoomLevel(result.zoomLevel);
+          if (opId === zoomOpIdRef.current) {
+            setPanOffset(result.panOffset);
+            setZoomLevel(result.zoomLevel);
+          }
           setDebugData((prev) => ({
             ...prev,
             inputDevice: 'Trackpad (Mac)',
@@ -2237,7 +2248,11 @@ function NodeCanvas() {
             panOffsetY: result.panOffset.y.toFixed(2),
           }));
           // Clear the flag after a delay
-          setTimeout(() => { isPanningOrZooming.current = false; }, 100);
+          setTimeout(() => { 
+            if (opId === zoomOpIdRef.current) {
+              isPanningOrZooming.current = false; 
+            }
+          }, 100);
         } catch (error) {
           console.error('Mac pinch zoom calculation failed:', error);
           setDebugData((prev) => ({ ...prev, info: 'Mac pinch zoom error', error: error.message }));
@@ -2293,6 +2308,7 @@ function NodeCanvas() {
         const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
         const currentZoomForWorker = zoomLevel;
         const currentPanOffsetForWorker = panOffset;
+        const opId = ++zoomOpIdRef.current;
         try {
             const result = await canvasWorker.calculateZoom({
                 deltaY: zoomDelta, 
@@ -2301,8 +2317,11 @@ function NodeCanvas() {
                 panOffset: currentPanOffsetForWorker, 
                 viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
             });
-            setPanOffset(result.panOffset);
-            setZoomLevel(result.zoomLevel);
+            // Drop stale results (older ops) to avoid "ghost frames"
+            if (opId === zoomOpIdRef.current) {
+              setPanOffset(result.panOffset);
+              setZoomLevel(result.zoomLevel);
+            }
             setDebugData((prev) => ({
                 ...prev,
                 inputDevice: 'Mouse Wheel',
@@ -2316,7 +2335,11 @@ function NodeCanvas() {
                 panOffsetY: result.panOffset.y.toFixed(2),
             }));
             // Clear the flag after a delay
-            setTimeout(() => { isPanningOrZooming.current = false; }, 100);
+            setTimeout(() => { 
+              if (opId === zoomOpIdRef.current) {
+                isPanningOrZooming.current = false; 
+              }
+            }, 100);
         } catch (error) {
             console.error('Wheel zoom calculation failed:', error);
             setDebugData((prev) => ({ ...prev, info: 'Wheel zoom error', error: error.message }));
