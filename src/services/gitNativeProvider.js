@@ -463,24 +463,77 @@ This repository was automatically initialized by RedString UI React. You can now
 
   async writeFileRaw(path, content) {
     try {
-      const existingFile = await this.getFileInfo(path);
+      // First try to get the current file info to get the latest SHA
+      let existingFile = null;
+      try {
+        existingFile = await this.getFileInfo(path);
+      } catch (error) {
+        // File doesn't exist, that's fine for new files
+        console.log(`[GitHubSemanticProvider] File ${path} doesn't exist, will create new`);
+      }
+
       const body = {
         message: `Update ${path}`,
         content: this.utf8ToBase64(content)
       };
-      if (existingFile?.sha) body.sha = existingFile.sha;
+
+      // Only include SHA if we have a valid existing file
+      if (existingFile?.sha) {
+        body.sha = existingFile.sha;
+        console.log(`[GitHubSemanticProvider] Updating existing file ${path} with SHA: ${existingFile.sha}`);
+      } else {
+        console.log(`[GitHubSemanticProvider] Creating new file ${path}`);
+      }
+
       const response = await fetch(`${this.rootUrl}/${path}`, {
         method: 'PUT',
         headers: {
           'Authorization': `token ${this.token}`,
+          'Accept': 'application/vnd.github.v3+json',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(body)
       });
+
       if (!response.ok) {
         const text = await response.text();
+        
+        // Handle 409 conflict by retrying with fresh SHA
+        if (response.status === 409) {
+          console.log(`[GitHubSemanticProvider] 409 conflict for ${path}, retrying with fresh SHA...`);
+          
+          try {
+            // Get the latest SHA and retry once
+            const freshFile = await this.getFileInfo(path);
+            if (freshFile?.sha) {
+              body.sha = freshFile.sha;
+              console.log(`[GitHubSemanticProvider] Retrying with fresh SHA: ${freshFile.sha}`);
+              
+              const retryResponse = await fetch(`${this.rootUrl}/${path}`, {
+                method: 'PUT',
+                headers: {
+                  'Authorization': `token ${this.token}`,
+                  'Accept': 'application/vnd.github.v3+json',
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(body)
+              });
+              
+              if (!retryResponse.ok) {
+                const retryText = await retryResponse.text();
+                throw new Error(`GitHub writeFileRaw retry failed: ${retryResponse.status} ${retryText}`);
+              }
+              
+              return await retryResponse.json();
+            }
+          } catch (retryError) {
+            console.error(`[GitHubSemanticProvider] Retry failed for ${path}:`, retryError);
+          }
+        }
+        
         throw new Error(`GitHub writeFileRaw failed: ${response.status} ${text}`);
       }
+
       return await response.json();
     } catch (e) {
       console.error('[GitHubSemanticProvider] writeFileRaw failed:', e);
@@ -802,25 +855,77 @@ export class GiteaSemanticProvider extends SemanticProvider {
 
   async writeFileRaw(path, content) {
     try {
-      const fileInfo = await this.getFileInfo(path);
+      // First try to get the current file info to get the latest SHA
+      let fileInfo = null;
+      try {
+        fileInfo = await this.getFileInfo(path);
+      } catch (error) {
+        // File doesn't exist, that's fine for new files
+        console.log(`[GiteaSemanticProvider] File ${path} doesn't exist, will create new`);
+      }
+
       const method = fileInfo?.sha ? 'PUT' : 'POST';
+      const body = {
+        message: `Update ${path}`,
+        content: this.utf8ToBase64(content),
+        branch: 'main'
+      };
+
+      // Only include SHA if we have a valid existing file
+      if (fileInfo?.sha) {
+        body.sha = fileInfo.sha;
+        console.log(`[GiteaSemanticProvider] Updating existing file ${path} with SHA: ${fileInfo.sha}`);
+      } else {
+        console.log(`[GiteaSemanticProvider] Creating new file ${path}`);
+      }
+
       const response = await fetch(`${this.rootUrl}/${path}`, {
         method,
         headers: {
           'Authorization': `token ${this.token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          message: `Update ${path}`,
-          content: this.utf8ToBase64(content),
-          branch: 'main',
-          sha: fileInfo?.sha
-        })
+        body: JSON.stringify(body)
       });
+
       if (!response.ok) {
         const text = await response.text();
+        
+        // Handle 409 conflict by retrying with fresh SHA
+        if (response.status === 409) {
+          console.log(`[GiteaSemanticProvider] 409 conflict for ${path}, retrying with fresh SHA...`);
+          
+          try {
+            // Get the latest SHA and retry once
+            const freshFile = await this.getFileInfo(path);
+            if (freshFile?.sha) {
+              body.sha = freshFile.sha;
+              console.log(`[GiteaSemanticProvider] Retrying with fresh SHA: ${freshFile.sha}`);
+              
+              const retryResponse = await fetch(`${this.rootUrl}/${path}`, {
+                method: 'PUT',
+                headers: {
+                  'Authorization': `token ${this.token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(body)
+              });
+              
+              if (!retryResponse.ok) {
+                const retryText = await retryResponse.text();
+                throw new Error(`Gitea writeFileRaw retry failed: ${retryResponse.status} ${retryText}`);
+              }
+              
+              return await retryResponse.json();
+            }
+          } catch (retryError) {
+            console.error(`[GiteaSemanticProvider] Retry failed for ${path}:`, retryError);
+          }
+        }
+        
         throw new Error(`Gitea writeFileRaw failed: ${response.status} ${text}`);
       }
+
       return await response.json();
     } catch (e) {
       console.error('[GiteaSemanticProvider] writeFileRaw failed:', e);

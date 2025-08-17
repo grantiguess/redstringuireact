@@ -132,6 +132,7 @@ const CustomDragLayer = ({ tabBarRef }) => {
 };
 
 const SavedNodeItem = ({ node, onClick, onDoubleClick, onUnsave, isActive }) => {
+  const [isHovered, setIsHovered] = React.useState(false);
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: ItemTypes.SPAWNABLE_NODE,
     item: { prototypeId: node.id },
@@ -151,6 +152,8 @@ const SavedNodeItem = ({ node, onClick, onDoubleClick, onUnsave, isActive }) => 
       title={node.name}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{
         position: 'relative',
         backgroundColor: node.color || NODE_DEFAULT_COLOR,
@@ -161,9 +164,7 @@ const SavedNodeItem = ({ node, onClick, onDoubleClick, onUnsave, isActive }) => 
         fontWeight: 'bold',
         textAlign: 'center',
         cursor: 'pointer',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
+        overflow: 'visible',
         userSelect: 'none',
         borderWidth: '4px',
         borderStyle: 'solid',
@@ -176,39 +177,47 @@ const SavedNodeItem = ({ node, onClick, onDoubleClick, onUnsave, isActive }) => 
         fontFamily: "'EmOne', sans-serif",
       }}
     >
-      {node.name || 'Unnamed'}
-      {isActive && (
-        <div
+      <span style={{
+        display: 'block',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap'
+      }}>
+        {node.name || 'Unnamed'}
+      </span>
+      <div
+        style={{
+          position: 'absolute',
+          top: '-6px',
+          right: '-6px',
+          cursor: 'pointer',
+          zIndex: 10,
+          backgroundColor: '#000000', 
+          borderRadius: '50%',
+          padding: '2px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: isHovered ? 1 : 0,
+          transition: 'opacity 0.2s ease',
+          pointerEvents: isHovered ? 'auto' : 'none',
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onUnsave(node.id);
+        }}
+        title="Unsave this item"
+      >
+        <XCircle 
+          size={16}
           style={{
-            position: 'absolute',
-            top: '-6px',
-            right: '-6px',
-            cursor: 'pointer',
-            zIndex: 10,
-            backgroundColor: '#000000', 
-            borderRadius: '50%',
-            padding: '2px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            color: '#999999',
+            transition: 'color 0.2s ease',
           }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onUnsave(node.id);
-          }}
-          title="Unsave this item"
-        >
-          <XCircle 
-            size={16}
-            style={{
-              color: '#999999',
-              transition: 'color 0.2s ease',
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.color = '#ffffff'}
-            onMouseLeave={(e) => e.currentTarget.style.color = '#999999'}
-          />
-        </div>
-      )}
+          onMouseEnter={(e) => e.currentTarget.style.color = '#ffffff'}
+          onMouseLeave={(e) => e.currentTarget.style.color = '#999999'}
+        />
+      </div>
     </div>
   );
 };

@@ -290,8 +290,8 @@ class GitSyncEngine {
       // Save to Git repository (no .ttl suffix)
       await this.provider.writeFileRaw('universe.redstring', jsonString);
       
-      // Small delay to reduce race conditions
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Small delay to reduce race conditions and allow GitHub to process the first write
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       await this.provider.writeFileRaw('backup.redstring', jsonString);
       
@@ -306,11 +306,18 @@ class GitSyncEngine {
     } catch (error) {
       console.error('[GitSyncEngine] Failed to commit:', error);
       
-      // Don't clear pending commits on error - they'll be retried
-      // But limit the queue size to prevent memory issues
-      if (this.pendingCommits.length > 20) {
-        console.warn('[GitSyncEngine] Too many pending commits, keeping only latest 10');
-        this.pendingCommits = this.pendingCommits.slice(-10);
+      // Check if it's a 409 conflict (file modified since last read)
+      if (error.message && error.message.includes('409')) {
+        console.log('[GitSyncEngine] 409 conflict detected, will retry on next cycle');
+        // Keep the commits for retry, but add a small delay to avoid rapid retries
+        this.lastCommitTime = Date.now() - 4000; // Allow retry in 1 second
+      } else {
+        // For other errors, don't clear pending commits - they'll be retried
+        // But limit the queue size to prevent memory issues
+        if (this.pendingCommits.length > 20) {
+          console.warn('[GitSyncEngine] Too many pending commits, keeping only latest 10');
+          this.pendingCommits = this.pendingCommits.slice(-10);
+        }
       }
     }
   }
@@ -337,8 +344,8 @@ class GitSyncEngine {
       
       await this.provider.writeFileRaw('universe.redstring', jsonString);
       
-      // Small delay to reduce race conditions
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Small delay to reduce race conditions and allow GitHub to process the first write
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       await this.provider.writeFileRaw('backup.redstring', jsonString);
       

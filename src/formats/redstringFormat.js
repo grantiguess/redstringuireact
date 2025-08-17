@@ -90,7 +90,8 @@ export const exportToRedstring = (storeState, userDomain = null) => {
     expandedGraphIds,
     rightPanelTabs,
     savedNodeIds,
-    savedGraphIds
+    savedGraphIds,
+    showConnectionNames
   } = storeState;
 
   // Convert Maps to objects for serialization
@@ -198,6 +199,23 @@ export const exportToRedstring = (storeState, userDomain = null) => {
     //   definitionNodeIds: edge.definitionNodeIds
     // });
 
+    // Prepare a JSON-serializable directionality (convert Set -> Array)
+    const serializedDirectionality = (() => {
+      if (!edge.directionality) {
+        return { arrowsToward: [] };
+      }
+      const maybeSetOrArray = edge.directionality.arrowsToward;
+      let arrowsArray;
+      if (maybeSetOrArray instanceof Set) {
+        arrowsArray = Array.from(maybeSetOrArray);
+      } else if (Array.isArray(maybeSetOrArray)) {
+        arrowsArray = maybeSetOrArray;
+      } else {
+        arrowsArray = [];
+      }
+      return { ...edge.directionality, arrowsToward: arrowsArray };
+    })();
+
     // Store both native Redstring format and RDF format
     edgesObj[id] = {
       // Native Redstring format (for application use)
@@ -208,7 +226,7 @@ export const exportToRedstring = (storeState, userDomain = null) => {
       "description": edge.description,
       "typeNodeId": edge.typeNodeId,
       "definitionNodeIds": edge.definitionNodeIds,
-      "directionality": edge.directionality,
+      "directionality": serializedDirectionality,
       
       // RDF format (for semantic web integration)
       "rdfStatements": sourcePrototypeId && destinationPrototypeId && predicatePrototypeId ? (() => {
@@ -282,7 +300,8 @@ export const exportToRedstring = (storeState, userDomain = null) => {
       "expandedGraphIds": [...expandedGraphIds],
       "rightPanelTabs": [...rightPanelTabs],
       "savedNodeIds": [...savedNodeIds],
-      "savedGraphIds": [...savedGraphIds]
+      "savedGraphIds": [...savedGraphIds],
+      "showConnectionNames": !!showConnectionNames
     }
   };
 };
@@ -408,7 +427,8 @@ export const importFromRedstring = (redstringData, storeActions) => {
     expandedGraphIds: new Set(userInterface.expandedGraphIds || []),
     rightPanelTabs: userInterface.rightPanelTabs || [],
     savedNodeIds: new Set(userInterface.savedNodeIds || []),
-    savedGraphIds: new Set(userInterface.savedGraphIds || [])
+    savedGraphIds: new Set(userInterface.savedGraphIds || []),
+    showConnectionNames: !!userInterface.showConnectionNames
   };
 
   const importedTabs = userInterface.rightPanelTabs;
