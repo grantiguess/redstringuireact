@@ -2097,6 +2097,9 @@ function NodeCanvas() {
   const DELTA_HISTORY_SIZE = 10;
   const DELTA_TIMEOUT = 500; // Clear history after 500ms of inactivity
   const deltaTimeoutRef = useRef(null);
+  // Guard against brief zoom flicker after macOS momentum pans
+  const lastMacPanAtRef = useRef(0);
+  const consecutiveZoomEligibleRef = useRef(0);
 
   // Improved trackpad vs mouse wheel detection based on industry patterns
   const analyzeInputDevice = (deltaX, deltaY) => {
@@ -2324,6 +2327,11 @@ function NodeCanvas() {
           }));
           return { x: newX, y: newY };
         });
+        // Mark recent macOS pan to guard against immediate zoom flicker
+        if (isMac && !e.ctrlKey) {
+          lastMacPanAtRef.current = Date.now();
+          consecutiveZoomEligibleRef.current = 0;
+        }
         // Clear the flag after a delay
         setTimeout(() => { isPanningOrZooming.current = false; }, 100);
         return; // Processed
@@ -2331,6 +2339,50 @@ function NodeCanvas() {
 
     // 3. Mouse Wheel Zoom (based on device detection or fallback)
     if (deviceType === 'mouse' || (!isMac && deviceType === 'undetermined' && deltaY !== 0)) {
+        // macOS anti-flicker: require stability or consecutive eligibility before zooming
+        if (isMac && !e.ctrlKey) {
+          const nowTs = Date.now();
+          const guardActive = (nowTs - lastMacPanAtRef.current) < 140; // brief guard window
+          if (guardActive || consecutiveZoomEligibleRef.current < 1) {
+            // Treat this single event as a pan to absorb momentum and confirm intent
+            e.stopPropagation();
+            isPanningOrZooming.current = true;
+            const dx = -deltaX * PAN_DRAG_SENSITIVITY;
+            const dy = -deltaY * PAN_DRAG_SENSITIVITY;
+            const currentCanvasWidth = canvasSize.width * zoomLevel;
+            const currentCanvasHeight = canvasSize.height * zoomLevel;
+            const minX = viewportSize.width - currentCanvasWidth;
+            const minY = viewportSize.height - currentCanvasHeight;
+            const maxX = 0;
+            const maxY = 0;
+
+            setPanOffset((prev) => {
+              const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
+              const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
+              setDebugData((prevData) => ({
+                ...prevData,
+                inputDevice: 'Trackpad (guard)',
+                gesture: 'two-finger pan (guarded)',
+                zooming: false,
+                panning: true,
+                sensitivity: PAN_DRAG_SENSITIVITY,
+                deltaX: deltaX.toFixed(2),
+                deltaY: deltaY.toFixed(2),
+                panOffsetX: newX.toFixed(2),
+                panOffsetY: newY.toFixed(2),
+                zoomGuard: 'active',
+                zoomEligibleCount: consecutiveZoomEligibleRef.current.toString(),
+              }));
+              return { x: newX, y: newY };
+            });
+            lastMacPanAtRef.current = nowTs;
+            consecutiveZoomEligibleRef.current = guardActive ? 0 : (consecutiveZoomEligibleRef.current + 1);
+            setTimeout(() => { isPanningOrZooming.current = false; }, 100);
+            return; // do not zoom this event
+          }
+          // Passed guard and had a prior eligible event; allow zoom and reset counter
+          consecutiveZoomEligibleRef.current = 0;
+        }
         e.stopPropagation();
         isPanningOrZooming.current = true;
         const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
