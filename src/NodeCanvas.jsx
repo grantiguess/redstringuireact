@@ -2287,8 +2287,8 @@ function NodeCanvas() {
           });
           if (opId === zoomOpIdRef.current) {
             unstable_batchedUpdates(() => {
-              setPanOffset(result.panOffset);
-              setZoomLevel(result.zoomLevel);
+          setPanOffset(result.panOffset);
+          setZoomLevel(result.zoomLevel);
             });
           }
           setDebugData((prev) => ({
@@ -2428,8 +2428,8 @@ function NodeCanvas() {
             // Drop stale results (older ops) to avoid "ghost frames"
             if (opId === zoomOpIdRef.current) {
               unstable_batchedUpdates(() => {
-                setPanOffset(result.panOffset);
-                setZoomLevel(result.zoomLevel);
+            setPanOffset(result.panOffset);
+            setZoomLevel(result.zoomLevel);
               });
             }
             setDebugData((prev) => ({
@@ -3235,7 +3235,22 @@ function NodeCanvas() {
   }, [zoomLevel]);
 
   // Video game-style keyboard controls with smooth acceleration
+  // Robust key state: if window loses focus, clear all pressed keys to avoid stuck states
   useEffect(() => {
+    const clearKeysOnBlur = () => {
+      if (keysPressed.current) {
+        Object.keys(keysPressed.current).forEach((k) => (keysPressed.current[k] = false));
+      }
+      // Also clear acceleration timing so next press starts fresh
+      keyHoldStartTimes.current = {};
+      accelerationMultipliers.current = {};
+    };
+
+    window.addEventListener('blur', clearKeysOnBlur);
+    window.addEventListener('visibilitychange', () => {
+      if (document.hidden) clearKeysOnBlur();
+    });
+
     let animationFrameId;
     
     const gameLoop = (timestamp) => {
@@ -3308,9 +3323,9 @@ function NodeCanvas() {
         });
       }
 
-      // Check zoom keys (independent of movement)
-      const spacePressed = keysPressed.current[' '];
-      const shiftPressed = keysPressed.current['Shift'];
+      // Check zoom keys (independent of movement) - ensure modifiers do not suppress motion
+      const spacePressed = !!keysPressed.current[' '];
+      const shiftPressed = !!keysPressed.current['Shift'];
       
       // Clear zoom acceleration for unpressed keys
       if (!spacePressed && !shiftPressed) delete keyHoldStartTimes.current['zoom'];
@@ -3320,7 +3335,7 @@ function NodeCanvas() {
         const zoomAcceleration = getSmoothAcceleration('zoom', timestamp);
         const zoomSpeed = Math.min(KEYBOARD_ZOOM_BASE_SPEED * zoomAcceleration, KEYBOARD_ZOOM_MAX_SPEED);
         
-        let zoomDelta = 0;
+      let zoomDelta = 0;
         if (spacePressed) zoomDelta -= zoomSpeed; // Space = zoom out
         if (shiftPressed) zoomDelta += zoomSpeed; // Shift = zoom in
         
@@ -3334,10 +3349,23 @@ function NodeCanvas() {
               const centerX = viewportSize.width / 2;
               const centerY = viewportSize.height / 2;
               
-              setPanOffset(prevPan => ({
-                x: centerX - (centerX - prevPan.x) * zoomRatio,
-                y: centerY - (centerY - prevPan.y) * zoomRatio
-              }));
+              setPanOffset(prevPan => {
+                // Keep the center stable and clamp pan to bounds to avoid jumpiness
+                const nextPan = {
+                  x: centerX - (centerX - prevPan.x) * zoomRatio,
+                  y: centerY - (centerY - prevPan.y) * zoomRatio
+                };
+                const currentCanvasWidth = canvasSize.width * newZoom;
+                const currentCanvasHeight = canvasSize.height * newZoom;
+                const minX = viewportSize.width - currentCanvasWidth;
+                const minY = viewportSize.height - currentCanvasHeight;
+                const maxX = 0;
+                const maxY = 0;
+                return {
+                  x: Math.min(Math.max(nextPan.x, minX), maxX),
+                  y: Math.min(Math.max(nextPan.y, minY), maxY)
+                };
+              });
             }
             
             return newZoom;
@@ -3356,6 +3384,8 @@ function NodeCanvas() {
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
       }
+      window.removeEventListener('blur', clearKeysOnBlur);
+      window.removeEventListener('visibilitychange', clearKeysOnBlur);
     };
   }, [isPaused, nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, activeGraphId, viewportSize, canvasSize]);
 
@@ -3403,7 +3433,7 @@ function NodeCanvas() {
           newMode = 'node';
         } else if (currentMode === 'node') {
           newMode = 'closed';
-        } else {
+      } else {
           newMode = 'connection';
         }
         setTypeListMode(newMode);

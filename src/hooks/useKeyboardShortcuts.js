@@ -25,8 +25,15 @@ export const useKeyboardShortcuts = () => {
       if (!isTextInput) {
         keysPressed.current[e.key] = true;
         
-        // Prevent default behavior for space and shift keys
-        if (e.key === ' ' || e.key === 'Shift') {
+        // Prevent default behavior for navigation keys to avoid page scrolling
+        if (
+          e.key === ' ' ||
+          e.key === 'Shift' ||
+          e.key === 'ArrowUp' ||
+          e.key === 'ArrowDown' ||
+          e.key === 'ArrowLeft' ||
+          e.key === 'ArrowRight'
+        ) {
           e.preventDefault();
         }
       }
