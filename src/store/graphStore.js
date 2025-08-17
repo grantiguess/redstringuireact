@@ -164,7 +164,8 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       nodeClearance: 20,
       enableAutoRouting: false,
       showConnectionLabels: true,
-      routingStyle: 'straight' // 'straight' | 'manhattan'
+      routingStyle: 'straight', // 'straight' | 'manhattan'
+      manhattanBends: 'auto' // 'auto' | 'one' | 'two'
     },
 
     // Git Federation State
@@ -965,6 +966,25 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       draft.autoLayoutSettings.routingStyle = style;
     } else {
       console.warn(`[setRoutingStyle] Invalid routing style: ${style}`);
+    }
+  })),
+
+  // Set number of bends preference for Manhattan routing
+  setManhattanBends: (mode) => set(produce((draft) => {
+    if (!draft.autoLayoutSettings) {
+      draft.autoLayoutSettings = {
+        defaultSpacing: 15,
+        nodeClearance: 20,
+        enableAutoRouting: false,
+        showConnectionLabels: true,
+        routingStyle: 'straight',
+        manhattanBends: 'auto'
+      };
+    }
+    if (mode === 'auto' || mode === 'one' || mode === 'two') {
+      draft.autoLayoutSettings.manhattanBends = mode;
+    } else {
+      console.warn(`[setManhattanBends] Invalid bends mode: ${mode}`);
     }
   })),
 

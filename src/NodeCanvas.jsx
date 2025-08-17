@@ -554,6 +554,7 @@ function NodeCanvas() {
   const showConnectionNames = useGraphStore(state => state.showConnectionNames);
   const enableAutoRouting = useGraphStore(state => state.autoLayoutSettings?.enableAutoRouting);
   const routingStyle = useGraphStore(state => state.autoLayoutSettings?.routingStyle || 'straight');
+  const manhattanBends = useGraphStore(state => state.autoLayoutSettings?.manhattanBends || 'auto');
   const edgesMap = useGraphStore(state => state.edges);
   const savedNodeIds = useGraphStore(state => state.savedNodeIds);
   const savedGraphIds = useGraphStore(state => state.savedGraphIds);
@@ -4136,8 +4137,10 @@ function NodeCanvas() {
          onToggleShowConnectionNames={storeActions.toggleShowConnectionNames}
          enableAutoRouting={enableAutoRouting}
          routingStyle={routingStyle}
+         manhattanBends={manhattanBends}
          onToggleEnableAutoRouting={storeActions.toggleEnableAutoRouting}
          onSetRoutingStyle={storeActions.setRoutingStyle}
+         onSetManhattanBends={storeActions.setManhattanBends}
 
          onNewUniverse={async () => {
            try {
@@ -4630,40 +4633,170 @@ function NodeCanvas() {
                       const shouldShortenSource = isHovered || arrowsToward.has(sourceNode.id);
                       const shouldShortenDest = isHovered || arrowsToward.has(destNode.id);
 
+                      // Determine actual start/end points for rendering
+                      let startX = shouldShortenSource ? (sourceIntersection?.x || x1) : x1;
+                      let startY = shouldShortenSource ? (sourceIntersection?.y || y1) : y1;
+                      let endX = shouldShortenDest ? (destIntersection?.x || x2) : x2;
+                      let endY = shouldShortenDest ? (destIntersection?.y || y2) : y2;
+
+                      // When using Manhattan routing, snap to 4 node ports (midpoints of each side)
+                      if (enableAutoRouting && routingStyle === 'manhattan') {
+                        const sCenterX = sourceNode.x + sNodeDims.currentWidth / 2;
+                        const sCenterY = sourceNode.y + sNodeDims.currentHeight / 2;
+                        const dCenterX = destNode.x + eNodeDims.currentWidth / 2;
+                        const dCenterY = destNode.y + eNodeDims.currentHeight / 2;
+
+                        const sPorts = {
+                          top: { x: sCenterX, y: sourceNode.y },
+                          bottom: { x: sCenterX, y: sourceNode.y + sNodeDims.currentHeight },
+                          left: { x: sourceNode.x, y: sCenterY },
+                          right: { x: sourceNode.x + sNodeDims.currentWidth, y: sCenterY },
+                        };
+                        const dPorts = {
+                          top: { x: dCenterX, y: destNode.y },
+                          bottom: { x: dCenterX, y: destNode.y + eNodeDims.currentHeight },
+                          left: { x: destNode.x, y: dCenterY },
+                          right: { x: destNode.x + eNodeDims.currentWidth, y: dCenterY },
+                        };
+
+                        const relDx = dCenterX - sCenterX;
+                        const relDy = dCenterY - sCenterY;
+                        let sPort, dPort;
+                        if (Math.abs(relDx) >= Math.abs(relDy)) {
+                          // Prefer horizontal ports
+                          sPort = relDx >= 0 ? sPorts.right : sPorts.left;
+                          dPort = relDx >= 0 ? dPorts.left : dPorts.right;
+                        } else {
+                          // Prefer vertical ports
+                          sPort = relDy >= 0 ? sPorts.bottom : sPorts.top;
+                          dPort = relDy >= 0 ? dPorts.top : dPorts.bottom;
+                        }
+                        startX = sPort.x;
+                        startY = sPort.y;
+                        endX = dPort.x;
+                        endY = dPort.y;
+                      }
+
+                      // Helper to render rounded Manhattan (L-shaped) path
+                      const cornerRadius = 8;
+                      const getRoundedLPath = (sx, sy, ex, ey, r) => {
+                        // Straight line cases
+                        if (sx === ex || sy === ey) {
+                          return `M ${sx},${sy} L ${ex},${ey}`;
+                        }
+                        const signX = ex > sx ? 1 : -1;
+                        const signY = ey > sy ? 1 : -1;
+                        const cornerX = ex;
+                        const cornerY = sy;
+                        const hx = cornerX - signX * r;
+                        const hy = cornerY;
+                        const vx = cornerX;
+                        const vy = cornerY + signY * r;
+                        // Use quadratic curve at the corner for a rounded bend
+                        return `M ${sx},${sy} L ${hx},${hy} Q ${cornerX},${cornerY} ${vx},${vy} L ${ex},${ey}`;
+                      };
+
+                      // Two-bend rounded Manhattan path ensuring perpendicular entry/exit
+                      const getRoundedZPath = (sx, sy, ex, ey, r) => {
+                        if (sx === ex || sy === ey) {
+                          return `M ${sx},${sy} L ${ex},${ey}`;
+                        }
+                        const midX = (sx + ex) / 2;
+                        const midY = (sy + ey) / 2;
+                        const signX1 = Math.sign(midX - sx) || 1;
+                        const signY1 = Math.sign(midY - sy) || 1;
+                        const signX2 = Math.sign(ex - midX) || 1;
+                        const signY2 = Math.sign(ey - midY) || 1;
+
+                        // First corner at (midX, sy)
+                        const c1x = midX, c1y = sy;
+                        const h1x = c1x - signX1 * r, h1y = c1y;
+                        const v1x = c1x, v1y = c1y + signY1 * r;
+
+                        // Second corner at (midX, ey)
+                        const c2x = midX, c2y = ey;
+                        const h2x = c2x, h2y = c2y - signY2 * r;
+                        const v2x = ex - signX2 * r, v2y = ey;
+
+                        return `M ${sx},${sy} L ${h1x},${h1y} Q ${c1x},${c1y} ${v1x},${v1y} L ${h2x},${h2y} Q ${c2x},${c2y} ${v2x},${v2y} L ${ex},${ey}`;
+                      };
+
                   return (
                         <g key={`edge-${edge.id}-${idx}`}>
                                                  {/* Main edge line - always same thickness */}
                     {/* Glow effect for selected or hovered edge */}
                     {(isSelected || isHovered) && (
-                      <line
-                        x1={shouldShortenSource ? (sourceIntersection?.x || x1) : x1}
-                        y1={shouldShortenSource ? (sourceIntersection?.y || y1) : y1}
-                        x2={shouldShortenDest ? (destIntersection?.x || x2) : x2}
-                        y2={shouldShortenDest ? (destIntersection?.y || y2) : y2}
-                        stroke={edgeColor}
-                        strokeWidth="12"
-                        opacity={isSelected ? "0.3" : "0.2"}
-                        style={{ 
-                          filter: `blur(3px) drop-shadow(0 0 8px ${edgeColor})`
-                        }}
-                      />
+                      (enableAutoRouting && routingStyle === 'manhattan') ? (
+                        <path
+                          d={(manhattanBends === 'two') ? getRoundedZPath(startX, startY, endX, endY, cornerRadius) : getRoundedLPath(startX, startY, endX, endY, cornerRadius)}
+                          fill="none"
+                          stroke={edgeColor}
+                          strokeWidth="12"
+                          opacity={isSelected ? "0.3" : "0.2"}
+                          style={{ 
+                            filter: `blur(3px) drop-shadow(0 0 8px ${edgeColor})`
+                          }}
+                          strokeLinecap="round"
+                        />
+                      ) : (
+                        <line
+                          x1={startX}
+                          y1={startY}
+                          x2={endX}
+                          y2={endY}
+                          stroke={edgeColor}
+                          strokeWidth="12"
+                          opacity={isSelected ? "0.3" : "0.2"}
+                          style={{ 
+                            filter: `blur(3px) drop-shadow(0 0 8px ${edgeColor})`
+                          }}
+                        />
+                      )
                     )}
                     
-                    <line
-                             x1={shouldShortenSource ? (sourceIntersection?.x || x1) : x1}
-                             y1={shouldShortenSource ? (sourceIntersection?.y || y1) : y1}
-                             x2={shouldShortenDest ? (destIntersection?.x || x2) : x2}
-                             y2={shouldShortenDest ? (destIntersection?.y || y2) : y2}
-                      stroke={edgeColor}
-                             strokeWidth={showConnectionNames ? "16" : "6"}
-                             style={{ transition: 'stroke 0.2s ease' }}
-                           />
+                    {(enableAutoRouting && routingStyle === 'manhattan') ? (
+                      <path
+                        d={(manhattanBends === 'two') ? getRoundedZPath(startX, startY, endX, endY, cornerRadius) : getRoundedLPath(startX, startY, endX, endY, cornerRadius)}
+                        fill="none"
+                        stroke={edgeColor}
+                        strokeWidth={showConnectionNames ? "16" : "6"}
+                        style={{ transition: 'stroke 0.2s ease' }}
+                        strokeLinecap="round"
+                      />
+                    ) : (
+                      <line
+                        x1={startX}
+                        y1={startY}
+                        x2={endX}
+                        y2={endY}
+                        stroke={edgeColor}
+                        strokeWidth={showConnectionNames ? "16" : "6"}
+                        style={{ transition: 'stroke 0.2s ease' }}
+                      />
+                    )}
                            
                            {/* Connection name text - only show when enabled */}
                            {showConnectionNames && (() => {
-                             const midX = (x1 + x2) / 2;
-                             const midY = (y1 + y2) / 2;
-                             const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+                             let midX;
+                             let midY;
+                             let angle;
+                             if (enableAutoRouting && routingStyle === 'manhattan') {
+                               const horizontalLen = Math.abs(endX - startX);
+                               const verticalLen = Math.abs(endY - startY);
+                               if (horizontalLen >= verticalLen) {
+                                 midX = (startX + endX) / 2;
+                                 midY = startY;
+                                 angle = 0;
+                               } else {
+                                 midX = endX;
+                                 midY = (startY + endY) / 2;
+                                 angle = 90;
+                               }
+                             } else {
+                               midX = (x1 + x2) / 2;
+                               midY = (y1 + y2) / 2;
+                               angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+                             }
                              
                              // Determine connection name to display
                              let connectionName = 'Connection';
@@ -4708,51 +4841,97 @@ function NodeCanvas() {
                            })()}
                            
                            {/* Invisible click area for edge selection - matches hover detection */}
-                           <line
-                             x1={x1}
-                             y1={y1}
-                             x2={x2}
-                             y2={y2}
-                             stroke="transparent"
-                             strokeWidth="40"
-                             style={{ cursor: 'pointer' }}
-                             onClick={(e) => {
-                               e.stopPropagation();
-                               
-                               // Handle multiple selection with Ctrl/Cmd key
-                               if (e.ctrlKey || e.metaKey) {
-                                 // Toggle this edge in the multiple selection
-                                 if (selectedEdgeIds.has(edge.id)) {
-                                   removeSelectedEdgeId(edge.id);
+                           {(enableAutoRouting && routingStyle === 'manhattan') ? (
+                             <path
+                               d={(manhattanBends === 'two') ? getRoundedZPath(x1, y1, endX, endY, cornerRadius) : getRoundedLPath(x1, y1, endX, endY, cornerRadius)}
+                               fill="none"
+                               stroke="transparent"
+                               strokeWidth="40"
+                               style={{ cursor: 'pointer' }}
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 
+                                 // Handle multiple selection with Ctrl/Cmd key
+                                 if (e.ctrlKey || e.metaKey) {
+                                   // Toggle this edge in the multiple selection
+                                   if (selectedEdgeIds.has(edge.id)) {
+                                     removeSelectedEdgeId(edge.id);
+                                   } else {
+                                     addSelectedEdgeId(edge.id);
+                                   }
                                  } else {
-                                   addSelectedEdgeId(edge.id);
+                                   // Single selection - clear multiple selection and set single edge
+                                   clearSelectedEdgeIds();
+                                   setSelectedEdgeId(edge.id);
                                  }
-                               } else {
-                                 // Single selection - clear multiple selection and set single edge
-                                 clearSelectedEdgeIds();
-                                 setSelectedEdgeId(edge.id);
-                               }
-                             }}
-                             onDoubleClick={(e) => {
-                               e.stopPropagation();
-                               
-                               // Find the defining node for this edge's connection type
-                               let definingNodeId = null;
-                               
-                               // Check definitionNodeIds first (for custom connection types)
-                               if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
-                                 definingNodeId = edge.definitionNodeIds[0];
-                               } else if (edge.typeNodeId) {
-                                 // Fallback to typeNodeId (for base connection type)
-                                 definingNodeId = edge.typeNodeId;
-                               }
-                               
-                               // Open the panel tab for the defining node
-                               if (definingNodeId) {
-                                 openRightPanelNodeTab(definingNodeId);
-                               }
-                             }}
-                           />
+                               }}
+                               onDoubleClick={(e) => {
+                                 e.stopPropagation();
+                                 
+                                 // Find the defining node for this edge's connection type
+                                 let definingNodeId = null;
+                                 
+                                 // Check definitionNodeIds first (for custom connection types)
+                                 if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+                                   definingNodeId = edge.definitionNodeIds[0];
+                                 } else if (edge.typeNodeId) {
+                                   // Fallback to typeNodeId (for base connection type)
+                                   definingNodeId = edge.typeNodeId;
+                                 }
+                                 
+                                 // Open the panel tab for the defining node
+                                 if (definingNodeId) {
+                                   openRightPanelNodeTab(definingNodeId);
+                                 }
+                               }}
+                             />
+                           ) : (
+                             <line
+                               x1={x1}
+                               y1={y1}
+                               x2={x2}
+                               y2={y2}
+                               stroke="transparent"
+                               strokeWidth="40"
+                               style={{ cursor: 'pointer' }}
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 
+                                 // Handle multiple selection with Ctrl/Cmd key
+                                 if (e.ctrlKey || e.metaKey) {
+                                   // Toggle this edge in the multiple selection
+                                   if (selectedEdgeIds.has(edge.id)) {
+                                     removeSelectedEdgeId(edge.id);
+                                   } else {
+                                     addSelectedEdgeId(edge.id);
+                                   }
+                                 } else {
+                                   // Single selection - clear multiple selection and set single edge
+                                   clearSelectedEdgeIds();
+                                   setSelectedEdgeId(edge.id);
+                                 }
+                               }}
+                               onDoubleClick={(e) => {
+                                 e.stopPropagation();
+                                 
+                                 // Find the defining node for this edge's connection type
+                                 let definingNodeId = null;
+                                 
+                                 // Check definitionNodeIds first (for custom connection types)
+                                 if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+                                   definingNodeId = edge.definitionNodeIds[0];
+                                 } else if (edge.typeNodeId) {
+                                   // Fallback to typeNodeId (for base connection type)
+                                   definingNodeId = edge.typeNodeId;
+                                 }
+                                 
+                                 // Open the panel tab for the defining node
+                                 if (definingNodeId) {
+                                   openRightPanelNodeTab(definingNodeId);
+                                 }
+                               }}
+                             />
+                           )}
                           
                                                                                                                   {/* Smart directional arrows with clickable toggle */}
                            {(() => {
@@ -4770,22 +4949,45 @@ function NodeCanvas() {
                                sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
                                destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
                              } else {
-                               // Precise intersection positioning - adjust based on slope for visual consistency
-                               const angle = Math.abs(Math.atan2(dy, dx) * (180 / Math.PI));
-                               const normalizedAngle = angle > 90 ? 180 - angle : angle;
-                               
-                               // Shorter distance for quantized slopes (hitting node sides) vs diagonal (hitting corners)
-                               const isQuantizedSlope = normalizedAngle < 15 || normalizedAngle > 75;
-                               const baseLength = showConnectionNames ? 6 : 
-                                                (shouldShortenSource || shouldShortenDest ? 3 : 5);
-                               const arrowLength = isQuantizedSlope ? baseLength * 0.6 : baseLength;
-                               
-                               sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
-                               sourceArrowX = sourceIntersection.x + (dx / length) * arrowLength;
-                               sourceArrowY = sourceIntersection.y + (dy / length) * arrowLength;
-                               destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
-                               destArrowX = destIntersection.x - (dx / length) * arrowLength;
-                               destArrowY = destIntersection.y - (dy / length) * arrowLength;
+                               // Manhattan-aware arrow placement; falls back to straight orientation
+                               const offset = showConnectionNames ? 6 : (shouldShortenSource || shouldShortenDest ? 3 : 5);
+                               if (enableAutoRouting && routingStyle === 'manhattan') {
+                                 // Destination arrow aligns to terminal segment into destination
+                                 const horizontalTerminal = Math.abs(endX - startX) > Math.abs(endY - startY);
+                                 if (horizontalTerminal) {
+                                   destArrowAngle = (endX >= startX) ? 0 : 180;
+                                   destArrowX = endX + ((endX >= startX) ? -offset : offset);
+                                   destArrowY = endY;
+                                 } else {
+                                   destArrowAngle = (endY >= startY) ? 90 : -90;
+                                   destArrowX = endX;
+                                   destArrowY = endY + ((endY >= startY) ? -offset : offset);
+                                 }
+                                 // Source arrow aligns to initial segment out of source (pointing back toward source)
+                                 const horizontalInitial = Math.abs(endX - startX) > Math.abs(endY - startY);
+                                 if (horizontalInitial) {
+                                   sourceArrowAngle = (endX - startX) >= 0 ? 180 : 0;
+                                   sourceArrowX = startX + ((endX - startX) >= 0 ? offset : -offset);
+                                   sourceArrowY = startY;
+                                 } else {
+                                   sourceArrowAngle = (endY - startY) >= 0 ? -90 : 90;
+                                   sourceArrowX = startX;
+                                   sourceArrowY = startY + ((endY - startY) >= 0 ? offset : -offset);
+                                 }
+                               } else {
+                                 // Precise intersection positioning - adjust based on slope for visual consistency
+                                 const angle = Math.abs(Math.atan2(dy, dx) * (180 / Math.PI));
+                                 const normalizedAngle = angle > 90 ? 180 - angle : angle;
+                                 // Shorter distance for quantized slopes (hitting node sides) vs diagonal (hitting corners)
+                                 const isQuantizedSlope = normalizedAngle < 15 || normalizedAngle > 75;
+                                 const arrowLength = isQuantizedSlope ? offset * 0.6 : offset;
+                                 sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
+                                 sourceArrowX = sourceIntersection.x + (dx / length) * arrowLength;
+                                 sourceArrowY = sourceIntersection.y + (dy / length) * arrowLength;
+                                 destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+                                 destArrowX = destIntersection.x - (dx / length) * arrowLength;
+                                 destArrowY = destIntersection.y - (dy / length) * arrowLength;
+                               }
                              }
                              
                              const handleArrowClick = (nodeId, e) => {

@@ -13,8 +13,10 @@ const RedstringMenu = ({
   // Connections visualization controls
   enableAutoRouting,
   routingStyle,
+  manhattanBends,
   onToggleEnableAutoRouting,
   onSetRoutingStyle,
+  onSetManhattanBends,
   // Universe management actions
   onNewUniverse,
   onOpenUniverse,
@@ -287,6 +289,31 @@ const RedstringMenu = ({
                               >
                                 Routing: Manhattan {routingStyle === 'manhattan' ? '✓' : ''}
                               </button>
+                              {routingStyle === 'manhattan' && (
+                                <>
+                                  <button
+                                    className="submenu-item"
+                                    onClick={() => onSetManhattanBends?.('auto')}
+                                    style={{ opacity: manhattanBends === 'auto' ? 1 : 0.8 }}
+                                  >
+                                    Bends: Auto {manhattanBends === 'auto' ? '✓' : ''}
+                                  </button>
+                                  <button
+                                    className="submenu-item"
+                                    onClick={() => onSetManhattanBends?.('one')}
+                                    style={{ opacity: manhattanBends === 'one' ? 1 : 0.8 }}
+                                  >
+                                    Bends: One {manhattanBends === 'one' ? '✓' : ''}
+                                  </button>
+                                  <button
+                                    className="submenu-item"
+                                    onClick={() => onSetManhattanBends?.('two')}
+                                    style={{ opacity: manhattanBends === 'two' ? 1 : 0.8 }}
+                                  >
+                                    Bends: Two {manhattanBends === 'two' ? '✓' : ''}
+                                  </button>
+                                </>
+                              )}
                             </div>
                           )}
                       </div>
