@@ -167,43 +167,47 @@ const RedstringMenu = ({
                               onMouseEnter={handleSubmenuEnter}
                               onMouseLeave={handleMenuItemLeave}
                             >
-                                <button
+                                <div
                                   className="submenu-item"
                                   onClick={() => {
                                     // console.log('[RedstringMenu] New Universe clicked');
                                     onNewUniverse?.();
                                   }}
+                                  style={{ cursor: 'pointer' }}
                                 >
-                                  <FileText size={16} style={{ marginRight: '8px' }} />
+                                  <FileText size={16} style={{ marginRight: '8px', minWidth: '16px', flexShrink: 0 }} />
                                   New Universe
-                                </button>
-                                <button
+                                </div>
+                                <div
                                   className="submenu-item"
                                   onClick={() => {
                                     // console.log('[RedstringMenu] Save Universe clicked');
                                     onSaveUniverse?.();
                                   }}
+                                  style={{ cursor: 'pointer' }}
                                 >
-                                  <Save size={16} style={{ marginRight: '8px' }} />
+                                  <Save size={16} style={{ marginRight: '8px', minWidth: '16px', flexShrink: 0 }} />
                                   Save Universe
-                                </button>
-                                <button
+                                </div>
+                                <div
                                   className="submenu-item"
                                   onClick={() => {
                                     // console.log('[RedstringMenu] Export as RDF/Turtle clicked');
                                     onExportRdf?.();
                                   }}
+                                  style={{ cursor: 'pointer' }}
                                 >
-                                  <FileText size={16} style={{ marginRight: '8px' }} />
+                                  <FileText size={16} style={{ marginRight: '8px', minWidth: '16px', flexShrink: 0 }} />
                                   Export as RDF/Turtle
-                                </button>
-                                <button
+                                </div>
+                                <div
                                     className={`submenu-item has-submenu ${openSubmenu === 'RecentFiles' ? 'active-submenu-parent' : ''}`}
                                     onClick={() => onOpenUniverse?.()}
                                     onMouseEnter={handleRecentFilesEnter}
                                     onMouseLeave={handleMenuItemLeave}
+                                    style={{ cursor: 'pointer' }}
                                 >
-                                    <FolderOpen size={16} style={{ marginRight: '8px' }} />
+                                    <FolderOpen size={16} style={{ marginRight: '8px', minWidth: '16px', flexShrink: 0 }} />
                                     Open...
                                     <ChevronRight size={14} style={{ marginLeft: 'auto', opacity: 0.7 }} />
 
@@ -235,7 +239,7 @@ const RedstringMenu = ({
                                             )}
                                         </div>
                                     )}
-                                </button>
+                                </div>
                             </div>
                           )}
                       </div>
@@ -258,18 +262,20 @@ const RedstringMenu = ({
                               onMouseEnter={handleSubmenuEnter}
                               onMouseLeave={handleMenuItemLeave}
                             >
-                                <button
+                                <div
                                   className="submenu-item"
                                   onClick={() => setDebugMode(!debugMode)}
+                                  style={{ cursor: 'pointer' }}
                                 >
                                   {debugMode ? 'Hide Debug Overlay' : 'Show Debug Overlay'}
-                                </button>
-                                <button
+                                </div>
+                                <div
                                   className="submenu-item"
                                   onClick={() => onToggleShowConnectionNames?.()}
+                                  style={{ cursor: 'pointer' }}
                                 >
                                   {showConnectionNames ? 'Hide Connection Names' : 'Show Connection Names'}
-                                </button>
+                                </div>
                             </div>
                           )}
                       </div>
@@ -292,26 +298,27 @@ const RedstringMenu = ({
                               onMouseEnter={handleSubmenuEnter}
                               onMouseLeave={handleMenuItemLeave}
                             >
-                              <button
+                              <div
                                 className="submenu-item"
                                 onClick={() => onToggleEnableAutoRouting?.()}
+                                style={{ cursor: 'pointer' }}
                               >
                                 {enableAutoRouting ? 'Disable Auto-Routing' : 'Enable Auto-Routing'}
-                              </button>
-                              <button
+                              </div>
+                              <div
                                 className="submenu-item"
                                 onClick={() => onSetRoutingStyle?.('straight')}
-                                style={{ opacity: routingStyle === 'straight' ? 1 : 0.8 }}
+                                style={{ opacity: routingStyle === 'straight' ? 1 : 0.8, cursor: 'pointer' }}
                               >
                                 Routing: Straight {routingStyle === 'straight' ? '✓' : ''}
-                              </button>
-                              <button
+                              </div>
+                              <div
                                 className="submenu-item"
                                 onClick={() => onSetRoutingStyle?.('manhattan')}
-                                style={{ opacity: routingStyle === 'manhattan' ? 1 : 0.8 }}
+                                style={{ opacity: routingStyle === 'manhattan' ? 1 : 0.8, cursor: 'pointer' }}
                               >
                                 Routing: Manhattan {routingStyle === 'manhattan' ? '✓' : ''}
-                              </button>
+                              </div>
                             </div>
                           )}
                       </div>

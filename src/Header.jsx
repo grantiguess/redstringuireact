@@ -195,6 +195,11 @@ const Header = ({
     await animateFrames(opening);
   };
 
+  const closeMenu = async () => {
+    if (isAnimating || !isMenuOpen) return;
+    await animateFrames(false);
+  };
+
   const handleTitleDoubleClick = () => {
     if (activeGraph) {
       setTempTitle(activeGraph.name); // Start editing with current prop value
@@ -265,7 +270,13 @@ const Header = ({
           {/* Pass debug props to RedstringMenu here */}
           <RedstringMenu 
             isOpen={isMenuOpen} 
-            onHoverView={(open) => setIsMenuOpen(open)}
+            onHoverView={(open) => {
+              if (!open) {
+                closeMenu();
+              } else {
+                setIsMenuOpen(true);
+              }
+            }}
             debugMode={debugMode} 
             setDebugMode={setDebugMode}
             showConnectionNames={showConnectionNames}
@@ -322,7 +333,13 @@ const Header = ({
         {/* Pass debug props to RedstringMenu here */}
         <RedstringMenu 
           isOpen={isMenuOpen} 
-          onHoverView={(open) => setIsMenuOpen(open)}
+          onHoverView={(open) => {
+            if (!open) {
+              closeMenu();
+            } else {
+              setIsMenuOpen(true);
+            }
+          }}
           debugMode={debugMode} 
           setDebugMode={setDebugMode}
           showConnectionNames={showConnectionNames}

@@ -118,6 +118,13 @@ to {
     background-color: #F00000;
 }
 
+/* Ensure div elements with submenu-item class get the same styling as buttons */
+div.submenu-item {
+    border: none;
+    background: none;
+    outline: none;
+}
+
 /* Recent files submenu */
 .submenu-item.has-submenu {
     position: relative;
