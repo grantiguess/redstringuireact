@@ -841,14 +841,68 @@ function NodeCanvas() {
         const sDims = baseDimsById.get(s.id);
         const dDims = baseDimsById.get(d.id);
         if (!sDims || !dDims) continue;
-        const sx = s.x + sDims.currentWidth / 2;
-        const sy = s.y + sDims.currentHeight / 2;
-        const dx = d.x + dDims.currentWidth / 2;
-        const dy = d.y + dDims.currentHeight / 2;
-        const sIn = sx >= expanded.minX && sx <= expanded.maxX && sy >= expanded.minY && sy <= expanded.maxY;
-        const dIn = dx >= expanded.minX && dx <= expanded.maxX && dy >= expanded.minY && dy <= expanded.maxY;
-        if (sIn || dIn || lineIntersectsRect(sx, sy, dx, dy, expanded)) {
+        if (enableAutoRouting && routingStyle === 'manhattan') {
+          // Approximate Manhattan path bbox using snapped ports and midpoints
+          const sCenterX = s.x + sDims.currentWidth / 2;
+          const sCenterY = s.y + sDims.currentHeight / 2;
+          const dCenterX = d.x + dDims.currentWidth / 2;
+          const dCenterY = d.y + dDims.currentHeight / 2;
+          const sPorts = {
+            top: { x: sCenterX, y: s.y },
+            bottom: { x: sCenterX, y: s.y + sDims.currentHeight },
+            left: { x: s.x, y: sCenterY },
+            right: { x: s.x + sDims.currentWidth, y: sCenterY },
+          };
+          const dPorts = {
+            top: { x: dCenterX, y: d.y },
+            bottom: { x: dCenterX, y: d.y + dDims.currentHeight },
+            left: { x: d.x, y: dCenterY },
+            right: { x: d.x + dDims.currentWidth, y: dCenterY },
+          };
+          const relDx = dCenterX - sCenterX;
+          const relDy = dCenterY - sCenterY;
+          let sPort, dPort;
+          if (Math.abs(relDx) >= Math.abs(relDy)) {
+            sPort = relDx >= 0 ? sPorts.right : sPorts.left;
+            dPort = relDx >= 0 ? dPorts.left : dPorts.right;
+          } else {
+            sPort = relDy >= 0 ? sPorts.bottom : sPorts.top;
+            dPort = relDy >= 0 ? dPorts.top : dPorts.bottom;
+          }
+          const start = sPort, end = dPort;
+          const sSide = (Math.abs(start.y - s.y) < 0.5) ? 'top' : (Math.abs(start.y - (s.y + sDims.currentHeight)) < 0.5) ? 'bottom' : (Math.abs(start.x - s.x) < 0.5) ? 'left' : 'right';
+          const dSide = (Math.abs(end.y - d.y) < 0.5) ? 'top' : (Math.abs(end.y - (d.y + dDims.currentHeight)) < 0.5) ? 'bottom' : (Math.abs(end.x - d.x) < 0.5) ? 'left' : 'right';
+          const initOrient = (sSide === 'left' || sSide === 'right') ? 'H' : 'V';
+          const finalOrient = (dSide === 'left' || dSide === 'right') ? 'H' : 'V';
+          const eff = (manhattanBends === 'auto') ? (initOrient === finalOrient ? 'two' : 'one') : manhattanBends;
+          let pts;
+          if (eff === 'two' && initOrient === finalOrient) {
+            if (initOrient === 'H') {
+              const midX = (start.x + end.x) / 2;
+              pts = [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end];
+            } else {
+              const midY = (start.y + end.y) / 2;
+              pts = [start, { x: start.x, y: midY }, { x: end.x, y: midY }, end];
+            }
+          } else {
+            pts = initOrient === 'H' ? [start, { x: end.x, y: start.y }, end] : [start, { x: start.x, y: end.y }, end];
+          }
+          const minX = Math.min(...pts.map(p => p.x));
+          const maxX = Math.max(...pts.map(p => p.x));
+          const minY = Math.min(...pts.map(p => p.y));
+          const maxY = Math.max(...pts.map(p => p.y));
+          const intersects = !(maxX < expanded.minX || minX > expanded.maxX || maxY < expanded.minY || minY > expanded.maxY);
+          if (intersects) nextVisibleEdges.push(edge);
+        } else {
+          const sx = s.x + sDims.currentWidth / 2;
+          const sy = s.y + sDims.currentHeight / 2;
+          const dx = d.x + dDims.currentWidth / 2;
+          const dy = d.y + dDims.currentHeight / 2;
+          const sIn = sx >= expanded.minX && sx <= expanded.maxX && sy >= expanded.minY && sy <= expanded.maxY;
+          const dIn = dx >= expanded.minX && dx <= expanded.maxX && dy >= expanded.minY && dy <= expanded.maxY;
+          if (sIn || dIn || lineIntersectsRect(sx, sy, dx, dy, expanded)) {
           nextVisibleEdges.push(edge);
+          }
         }
       }
 
@@ -4639,6 +4693,11 @@ function NodeCanvas() {
                       let endX = shouldShortenDest ? (destIntersection?.x || x2) : x2;
                       let endY = shouldShortenDest ? (destIntersection?.y || y2) : y2;
 
+                      // Predeclare Manhattan path info for safe use below
+                      let manhattanPathD = null;
+                      let manhattanSourceSide = null;
+                      let manhattanDestSide = null;
+
                       // When using Manhattan routing, snap to 4 node ports (midpoints of each side)
                       if (enableAutoRouting && routingStyle === 'manhattan') {
                         const sCenterX = sourceNode.x + sNodeDims.currentWidth / 2;
@@ -4675,6 +4734,83 @@ function NodeCanvas() {
                         startY = sPort.y;
                         endX = dPort.x;
                         endY = dPort.y;
+
+                        // Determine sides for perpendicular entry/exit
+                        const sSide = (Math.abs(startY - sourceNode.y) < 0.5) ? 'top'
+                                        : (Math.abs(startY - (sourceNode.y + sNodeDims.currentHeight)) < 0.5) ? 'bottom'
+                                        : (Math.abs(startX - sourceNode.x) < 0.5) ? 'left' : 'right';
+                        const dSide = (Math.abs(endY - destNode.y) < 0.5) ? 'top'
+                                        : (Math.abs(endY - (destNode.y + eNodeDims.currentHeight)) < 0.5) ? 'bottom'
+                                        : (Math.abs(endX - destNode.x) < 0.5) ? 'left' : 'right';
+                        const initOrient = (sSide === 'left' || sSide === 'right') ? 'H' : 'V';
+                        const finalOrient = (dSide === 'left' || dSide === 'right') ? 'H' : 'V';
+
+                        const effectiveBends = (manhattanBends === 'auto')
+                          ? (initOrient === finalOrient ? 'two' : 'one')
+                          : manhattanBends;
+
+                        // Local helpers declared before use to avoid hoisting issues
+                        const cornerRadiusLocal = 8;
+                        const buildRoundedLPathOriented = (sx, sy, ex, ey, r, firstOrientation /* 'H' | 'V' */) => {
+                          if (firstOrientation === 'H') {
+                            if (sx === ex || sy === ey) {
+                              return `M ${sx},${sy} L ${ex},${ey}`;
+                            }
+                            const signX = ex > sx ? 1 : -1;
+                            const signY = ey > sy ? 1 : -1;
+                            const cornerX = ex;
+                            const cornerY = sy;
+                            const hx = cornerX - signX * r;
+                            const hy = cornerY;
+                            const vx = cornerX;
+                            const vy = cornerY + signY * r;
+                            return `M ${sx},${sy} L ${hx},${hy} Q ${cornerX},${cornerY} ${vx},${vy} L ${ex},${ey}`;
+                          } else {
+                            if (sx === ex || sy === ey) {
+                              return `M ${sx},${sy} L ${ex},${ey}`;
+                            }
+                            const signX = ex > sx ? 1 : -1;
+                            const signY = ey > sy ? 1 : -1;
+                            const cornerX = sx;
+                            const cornerY = ey;
+                            const vx = cornerX;
+                            const vy = cornerY - signY * r;
+                            const hx = cornerX + signX * r;
+                            const hy = cornerY;
+                            return `M ${sx},${sy} L ${vx},${vy} Q ${cornerX},${cornerY} ${hx},${hy} L ${ex},${ey}`;
+                          }
+                        };
+                        const buildRoundedZPathOriented = (sx, sy, ex, ey, r, pattern /* 'HVH' | 'VHV' */) => {
+                          if (sx === ex || sy === ey) {
+                            return `M ${sx},${sy} L ${ex},${ey}`;
+                          }
+                          if (pattern === 'HVH') {
+                            const midX = (sx + ex) / 2;
+                            const a1 = buildRoundedLPathOriented(sx, sy, midX, ey, r, 'H');
+                            const signX = ex > midX ? 1 : -1;
+                            const preX = midX + signX * r;
+                            return `${a1} L ${preX},${ey} Q ${midX},${ey} ${midX},${ey} L ${ex},${ey}`;
+                          } else {
+                            const midY = (sy + ey) / 2;
+                            const a1 = buildRoundedLPathOriented(sx, sy, ex, midY, r, 'V');
+                            const signY = ey > midY ? 1 : -1;
+                            const preY = midY + signY * r;
+                            return `${a1} L ${ex},${preY} Q ${ex},${midY} ${ex},${midY} L ${ex},${ey}`;
+                          }
+                        };
+                        let pathD;
+                        if (effectiveBends === 'two' && initOrient === finalOrient) {
+                          pathD = (initOrient === 'H')
+                            ? buildRoundedZPathOriented(startX, startY, endX, endY, cornerRadiusLocal, 'HVH')
+                            : buildRoundedZPathOriented(startX, startY, endX, endY, cornerRadiusLocal, 'VHV');
+                        } else {
+                          pathD = buildRoundedLPathOriented(startX, startY, endX, endY, cornerRadiusLocal, initOrient);
+                        }
+
+                        // Assign for rendering and arrow logic
+                        manhattanPathD = pathD;
+                        manhattanSourceSide = sSide;
+                        manhattanDestSide = dSide;
                       }
 
                       // Helper to render rounded Manhattan (L-shaped) path
@@ -4721,6 +4857,51 @@ function NodeCanvas() {
                         return `M ${sx},${sy} L ${h1x},${h1y} Q ${c1x},${c1y} ${v1x},${v1y} L ${h2x},${h2y} Q ${c2x},${c2y} ${v2x},${v2y} L ${ex},${ey}`;
                       };
 
+                      // Oriented one-bend L path (H then V or V then H)
+                      const getRoundedLPathOriented = (sx, sy, ex, ey, r, firstOrientation /* 'H' | 'V' */) => {
+                        if (firstOrientation === 'H') {
+                          // Horizontal then Vertical: corner at (ex, sy)
+                          return getRoundedLPath(sx, sy, ex, ey, r);
+                        } else {
+                          // Vertical then Horizontal: corner at (sx, ey)
+                          if (sx === ex || sy === ey) {
+                            return `M ${sx},${sy} L ${ex},${ey}`;
+                          }
+                          const signX = ex > sx ? 1 : -1;
+                          const signY = ey > sy ? 1 : -1;
+                          const cornerX = sx;
+                          const cornerY = ey;
+                          const vx = cornerX;
+                          const vy = cornerY - signY * r;
+                          const hx = cornerX + signX * r;
+                          const hy = cornerY;
+                          return `M ${sx},${sy} L ${vx},${vy} Q ${cornerX},${cornerY} ${hx},${hy} L ${ex},${ey}`;
+                        }
+                      };
+
+                      // Oriented two-bend Z path: 'HVH' or 'VHV'
+                      const getRoundedZPathOriented = (sx, sy, ex, ey, r, pattern /* 'HVH' | 'VHV' */) => {
+                        if (sx === ex || sy === ey) {
+                          return `M ${sx},${sy} L ${ex},${ey}`;
+                        }
+                        if (pattern === 'HVH') {
+                          const midX = (sx + ex) / 2;
+                          const a1 = getRoundedLPathOriented(sx, sy, midX, ey, r, 'H'); // H then V to mid
+                          // Continue from (midX, ey) to (ex, ey) horizontally with rounding at the join
+                          const signX = ex > midX ? 1 : -1;
+                          const preX = midX + signX * r;
+                          const d = `${a1} L ${preX},${ey} Q ${midX},${ey} ${midX},${ey} L ${ex},${ey}`;
+                          return d;
+                        } else { // 'VHV'
+                          const midY = (sy + ey) / 2;
+                          const a1 = getRoundedLPathOriented(sx, sy, ex, midY, r, 'V'); // V then H to mid
+                          const signY = ey > midY ? 1 : -1;
+                          const preY = midY + signY * r;
+                          const d = `${a1} L ${ex},${preY} Q ${ex},${midY} ${ex},${midY} L ${ex},${ey}`;
+                          return d;
+                        }
+                      };
+
                   return (
                         <g key={`edge-${edge.id}-${idx}`}>
                                                  {/* Main edge line - always same thickness */}
@@ -4728,7 +4909,7 @@ function NodeCanvas() {
                     {(isSelected || isHovered) && (
                       (enableAutoRouting && routingStyle === 'manhattan') ? (
                         <path
-                          d={(manhattanBends === 'two') ? getRoundedZPath(startX, startY, endX, endY, cornerRadius) : getRoundedLPath(startX, startY, endX, endY, cornerRadius)}
+                          d={manhattanPathD}
                           fill="none"
                           stroke={edgeColor}
                           strokeWidth="12"
@@ -4756,7 +4937,7 @@ function NodeCanvas() {
                     
                     {(enableAutoRouting && routingStyle === 'manhattan') ? (
                       <path
-                        d={(manhattanBends === 'two') ? getRoundedZPath(startX, startY, endX, endY, cornerRadius) : getRoundedLPath(startX, startY, endX, endY, cornerRadius)}
+                        d={manhattanPathD}
                         fill="none"
                         stroke={edgeColor}
                         strokeWidth={showConnectionNames ? "16" : "6"}
@@ -4843,7 +5024,7 @@ function NodeCanvas() {
                            {/* Invisible click area for edge selection - matches hover detection */}
                            {(enableAutoRouting && routingStyle === 'manhattan') ? (
                              <path
-                               d={(manhattanBends === 'two') ? getRoundedZPath(x1, y1, endX, endY, cornerRadius) : getRoundedLPath(x1, y1, endX, endY, cornerRadius)}
+                               d={manhattanPathD}
                                fill="none"
                                stroke="transparent"
                                strokeWidth="40"
