@@ -265,6 +265,7 @@ const Header = ({
           {/* Pass debug props to RedstringMenu here */}
           <RedstringMenu 
             isOpen={isMenuOpen} 
+            onHoverView={(open) => setIsMenuOpen(open)}
             debugMode={debugMode} 
             setDebugMode={setDebugMode}
             showConnectionNames={showConnectionNames}
@@ -321,6 +322,7 @@ const Header = ({
         {/* Pass debug props to RedstringMenu here */}
         <RedstringMenu 
           isOpen={isMenuOpen} 
+          onHoverView={(open) => setIsMenuOpen(open)}
           debugMode={debugMode} 
           setDebugMode={setDebugMode}
           showConnectionNames={showConnectionNames}

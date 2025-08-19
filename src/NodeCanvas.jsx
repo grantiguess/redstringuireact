@@ -798,7 +798,6 @@ function NodeCanvas() {
     viewportSize.width / canvasSize.width,
     viewportSize.height / canvasSize.height
   );
-
   // Compute and update culling sets when pan/zoom or graph state changes (batch to next frame)
   useEffect(() => {
     // Guard until basic view state is present
@@ -915,59 +914,6 @@ function NodeCanvas() {
     rafId = requestAnimationFrame(compute);
     return () => { if (rafId) cancelAnimationFrame(rafId); };
   }, [panOffset, zoomLevel, viewportSize, canvasSize, nodes, edges, baseDimsById, nodeById]);
-
-  // Store view states per graph (graphId -> {panOffset, zoomLevel})
-  // const [graphViewStates, setGraphViewStates] = useState(new Map());
-
-  // Load view states from localStorage on mount
-  /*
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('redstring_graph_view_states');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const viewStatesMap = new Map();
-        Object.entries(parsed).forEach(([graphId, state]) => {
-          viewStatesMap.set(graphId, state);
-        });
-        setGraphViewStates(viewStatesMap);
-      }
-    } catch (error) {
-      console.error('Error loading graph view states:', error);
-    }
-  }, []);
-  */
-
-  // Save view states to localStorage (debounced)
-  /*
-  const saveViewStatesToStorage = useCallback((viewStates) => {
-    try {
-      const stateObject = Object.fromEntries(viewStates);
-      localStorage.setItem('redstring_graph_view_states', JSON.stringify(stateObject));
-    } catch (error) {
-      console.error('Error saving graph view states:', error);
-    }
-  }, []);
-  */
-
-  // Debounced save to localStorage
-  /*
-  const debouncedSaveViewStates = useRef(null);
-  useEffect(() => {
-    if (debouncedSaveViewStates.current) {
-      clearTimeout(debouncedSaveViewStates.current);
-    }
-    debouncedSaveViewStates.current = setTimeout(() => {
-      saveViewStatesToStorage(graphViewStates);
-    }, 500); // Save after 500ms of inactivity
-
-    return () => {
-      if (debouncedSaveViewStates.current) {
-        clearTimeout(debouncedSaveViewStates.current);
-      }
-    };
-  }, [graphViewStates, saveViewStatesToStorage]);
-  */
 
   const [debugMode, setDebugMode] = useState(false);
   const [debugData, setDebugData] = useState({
@@ -1427,7 +1373,6 @@ function NodeCanvas() {
       }
     }
   }, [activePieMenuColorNodeId, nodes, storeActions]);
-
   // Pie Menu Button Configuration - now targetPieMenuButtons and dynamic
   const targetPieMenuButtons = useMemo(() => {
     const selectedNode = selectedNodeIdForPieMenu ? nodes.find(n => n.id === selectedNodeIdForPieMenu) : null;
@@ -2166,7 +2111,6 @@ function NodeCanvas() {
   const consecutiveZoomEligibleRef = useRef(0);
   // Accumulator to add a small deadzone for mac pinch-zoom jitter
   const macZoomAccumRef = useRef({ sum: 0, lastSign: 0, lastTs: 0 });
-
   // Improved trackpad vs mouse wheel detection based on industry patterns
   const analyzeInputDevice = (deltaX, deltaY) => {
     // Add current deltas to history
@@ -2916,7 +2860,6 @@ function NodeCanvas() {
     isMouseDown.current = false;
     // setHasMouseMovedSinceDown(false); // Reset on next mousedown
   };
-
   const handleCanvasClick = (e) => {
       if (wasDrawingConnection.current) {
           wasDrawingConnection.current = false;
@@ -3714,7 +3657,6 @@ function NodeCanvas() {
       </>
     );
   };
-
   const handleToggleRightPanel = useCallback(() => {
     setRightPanelExpanded(prev => !prev);
   }, []);
@@ -4160,7 +4102,6 @@ function NodeCanvas() {
       }
     };
   }, []);
-
   return (
     <div
       className="node-canvas-container"
@@ -5194,6 +5135,47 @@ function NodeCanvas() {
                                }
                              }
                              
+                             // Override arrow orientation deterministically by Manhattan sides
+                             if (enableAutoRouting && routingStyle === 'manhattan') {
+                               const sideOffset = showConnectionNames ? 6 : (shouldShortenSource || shouldShortenDest ? 3 : 5);
+                               // Destination arrow strictly based on destination side
+                               if (manhattanDestSide === 'left') {
+                                 destArrowAngle = 0; // rightwards
+                                 destArrowX = endX - sideOffset;
+                                 destArrowY = endY;
+                               } else if (manhattanDestSide === 'right') {
+                                 destArrowAngle = 180; // leftwards
+                                 destArrowX = endX + sideOffset;
+                                 destArrowY = endY;
+                               } else if (manhattanDestSide === 'top') {
+                                 destArrowAngle = 90; // downwards
+                                 destArrowX = endX;
+                                 destArrowY = endY - sideOffset;
+                               } else if (manhattanDestSide === 'bottom') {
+                                 destArrowAngle = -90; // upwards
+                                 destArrowX = endX;
+                                 destArrowY = endY + sideOffset;
+                               }
+                               // Source arrow strictly based on source side (points toward the source node)
+                               if (manhattanSourceSide === 'left') {
+                                 sourceArrowAngle = 0; // rightwards
+                                 sourceArrowX = startX - sideOffset;
+                                 sourceArrowY = startY;
+                               } else if (manhattanSourceSide === 'right') {
+                                 sourceArrowAngle = 180; // leftwards
+                                 sourceArrowX = startX + sideOffset;
+                                 sourceArrowY = startY;
+                               } else if (manhattanSourceSide === 'top') {
+                                 sourceArrowAngle = 90; // downwards
+                                 sourceArrowX = startX;
+                                 sourceArrowY = startY - sideOffset;
+                               } else if (manhattanSourceSide === 'bottom') {
+                                 sourceArrowAngle = -90; // upwards
+                                 sourceArrowX = startX;
+                                 sourceArrowY = startY + sideOffset;
+                               }
+                             }
+                             
                              const handleArrowClick = (nodeId, e) => {
                                e.stopPropagation();
                                
@@ -5353,7 +5335,6 @@ function NodeCanvas() {
                     strokeWidth="8"
                   />
                 )}
-
                 {(() => {
                    const draggingNodeId = draggingNodeInfo?.primaryId || draggingNodeInfo?.instanceId;
 

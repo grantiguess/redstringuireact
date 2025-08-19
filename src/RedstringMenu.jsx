@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChevronRight, FileText, FolderOpen, Save, Clock } from 'lucide-react';
 import './RedstringMenu.css';
 import DebugOverlay from './DebugOverlay';
@@ -31,6 +31,7 @@ const RedstringMenu = ({
   // Track timeouts to cancel them when needed
   const [closeTimeout, setCloseTimeout] = useState(null);
   const menuItems = ['File', 'Edit', 'View', 'Connections', 'Help'];
+  const menuRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -56,6 +57,28 @@ const RedstringMenu = ({
       return () => clearTimeout(timer);
     }
   }, [isOpen, closeTimeout]);
+
+  // Handle clicks outside the menu
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (isOpen && menuRef.current && !menuRef.current.contains(event.target)) {
+        // Check if the click is not on any submenu or its children
+        const isSubmenuClick = event.target.closest('.submenu-container') || 
+                              event.target.closest('.recent-files-submenu');
+        
+        if (!isSubmenuClick) {
+          onHoverView?.(false); // Close the menu
+        }
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [isOpen, onHoverView]);
 
   // Debug effect to log submenu state changes
   useEffect(() => {
@@ -123,7 +146,7 @@ const RedstringMenu = ({
 
   return (
     <>
-      <div className={`menu-container ${isExiting ? 'exiting' : 'entering'}`}>
+      <div ref={menuRef} className={`menu-container ${isExiting ? 'exiting' : 'entering'}`}>
           <div className="menu-items">
           {menuItems.map((item, index) => {
               if (item === 'File') {
@@ -289,31 +312,6 @@ const RedstringMenu = ({
                               >
                                 Routing: Manhattan {routingStyle === 'manhattan' ? '✓' : ''}
                               </button>
-                              {routingStyle === 'manhattan' && (
-                                <>
-                                  <button
-                                    className="submenu-item"
-                                    onClick={() => onSetManhattanBends?.('auto')}
-                                    style={{ opacity: manhattanBends === 'auto' ? 1 : 0.8 }}
-                                  >
-                                    Bends: Auto {manhattanBends === 'auto' ? '✓' : ''}
-                                  </button>
-                                  <button
-                                    className="submenu-item"
-                                    onClick={() => onSetManhattanBends?.('one')}
-                                    style={{ opacity: manhattanBends === 'one' ? 1 : 0.8 }}
-                                  >
-                                    Bends: One {manhattanBends === 'one' ? '✓' : ''}
-                                  </button>
-                                  <button
-                                    className="submenu-item"
-                                    onClick={() => onSetManhattanBends?.('two')}
-                                    style={{ opacity: manhattanBends === 'two' ? 1 : 0.8 }}
-                                  >
-                                    Bends: Two {manhattanBends === 'two' ? '✓' : ''}
-                                  </button>
-                                </>
-                              )}
                             </div>
                           )}
                       </div>

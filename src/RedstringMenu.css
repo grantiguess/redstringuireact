@@ -2,7 +2,7 @@
     position: absolute;
     top: 100%; /* Remove the negative offset, align exactly with bottom of header */
     left: 0;
-    width: 100px;
+    width: 175px;
     background-color: #260000;
     border-bottom-right-radius: 25px;
     box-shadow: 2px 2px 10px rgba(0,0,0,0.2);
