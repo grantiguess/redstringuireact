@@ -555,6 +555,7 @@ function NodeCanvas() {
   const enableAutoRouting = useGraphStore(state => state.autoLayoutSettings?.enableAutoRouting);
   const routingStyle = useGraphStore(state => state.autoLayoutSettings?.routingStyle || 'straight');
   const manhattanBends = useGraphStore(state => state.autoLayoutSettings?.manhattanBends || 'auto');
+  const cleanLaneSpacing = useGraphStore(state => state.autoLayoutSettings?.cleanLaneSpacing || 24);
   const edgesMap = useGraphStore(state => state.edges);
   const savedNodeIds = useGraphStore(state => state.savedNodeIds);
   const savedGraphIds = useGraphStore(state => state.savedGraphIds);
@@ -914,6 +915,57 @@ function NodeCanvas() {
     rafId = requestAnimationFrame(compute);
     return () => { if (rafId) cancelAnimationFrame(rafId); };
   }, [panOffset, zoomLevel, viewportSize, canvasSize, nodes, edges, baseDimsById, nodeById]);
+
+  // Group-based lane offsets for clean routing to reduce parallel overlaps
+  const cleanLaneOffsets = useMemo(() => {
+    const offsets = new Map();
+    if (!enableAutoRouting || routingStyle !== 'clean' || !visibleEdges?.length) return offsets;
+    try {
+      const groups = new Map();
+      const laneStep = Math.max(3, Math.floor((cleanLaneSpacing || 24) / 4));
+      const bucketSize = Math.max(6, laneStep); // quantization bucket
+      for (const edge of visibleEdges) {
+        const s = nodeById.get(edge.sourceId);
+        const d = nodeById.get(edge.destinationId);
+        if (!s || !d) continue;
+        const sDims = baseDimsById.get(s.id) || getNodeDimensions(s, false, null);
+        const dDims = baseDimsById.get(d.id) || getNodeDimensions(d, false, null);
+        // Build obstacles excluding endpoints
+        const obstacleRects = [];
+        for (const n of nodes) {
+          if (n.id === s.id || n.id === d.id) continue;
+          const nd = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
+          const rect = { minX: n.x, minY: n.y, maxX: n.x + nd.currentWidth, maxY: n.y + nd.currentHeight };
+          obstacleRects.push(inflateRect(rect, 8));
+        }
+        // Compute a quick polyline to get the first segment
+        const pts = computeCleanPathBetweenNodes(s, sDims, d, dDims, obstacleRects, cleanLaneSpacing || 24);
+        if (!pts || pts.length < 2) continue;
+        const a = pts[0];
+        const b = pts[1];
+        const isVertical = Math.abs(b.x - a.x) < Math.abs(b.y - a.y);
+        const coord = isVertical ? a.x : a.y;
+        const bucket = Math.round(coord / bucketSize);
+        const key = `${isVertical ? 'V' : 'H'}:${bucket}`;
+        if (!groups.has(key)) groups.set(key, { isVertical, ids: [] });
+        groups.get(key).ids.push(edge.id);
+      }
+      // Assign symmetric offsets per group
+      groups.forEach(({ isVertical, ids }) => {
+        ids.sort();
+        const n = ids.length;
+        for (let i = 0; i < n; i++) {
+          const center = (n - 1) / 2;
+          const laneIndex = i - center; // symmetric around 0
+          const delta = laneIndex * laneStep * 2; // spread more aggressively
+          offsets.set(ids[i], isVertical ? { dx: delta, dy: 0 } : { dx: 0, dy: delta });
+        }
+      });
+      return offsets;
+    } catch {
+      return offsets;
+    }
+  }, [enableAutoRouting, routingStyle, visibleEdges, nodes, baseDimsById, cleanLaneSpacing, getNodeDimensions]);
 
   const [debugMode, setDebugMode] = useState(false);
   const [debugData, setDebugData] = useState({
@@ -2100,7 +2152,6 @@ function NodeCanvas() {
         Object.assign(draft, newData);
     });
   };
-
   // Delta history for better trackpad/mouse detection
   const deltaHistoryRef = useRef([]);
   const DELTA_HISTORY_SIZE = 10;
@@ -2493,6 +2544,234 @@ function NodeCanvas() {
     }
   }, []);
 
+  // --- Clean routing helpers (orthogonal, low-bend path with simple detours) ---
+  // Inflate a rectangle by padding
+  const inflateRect = (rect, pad) => ({
+    minX: rect.minX - pad,
+    minY: rect.minY - pad,
+    maxX: rect.maxX + pad,
+    maxY: rect.maxY + pad,
+  });
+
+  // Check if a single segment intersects any rect (using existing lineIntersectsRect)
+  const segmentIntersectsAnyRect = (x1, y1, x2, y2, rects) => {
+    for (let i = 0; i < rects.length; i++) {
+      if (lineIntersectsRect(x1, y1, x2, y2, rects[i])) return true;
+    }
+    return false;
+  };
+
+  // Build a rounded SVG path from ordered polyline points
+  const buildRoundedPathFromPoints = (pts, r = 8) => {
+    if (!pts || pts.length === 0) return '';
+    if (pts.length === 1) return `M ${pts[0].x},${pts[0].y}`;
+    let d = `M ${pts[0].x},${pts[0].y}`;
+    for (let i = 1; i < pts.length; i++) {
+      const prev = pts[i - 1];
+      const curr = pts[i];
+      // For first and last segments, just draw straight line; corners handled via quadratic joins
+      if (i < pts.length - 1) {
+        const next = pts[i + 1];
+        // Determine the approach point before the corner and the exit point after the corner
+        // Move back from curr by radius along prev->curr, and forward from curr by radius along curr->next
+        const dx1 = curr.x - prev.x;
+        const dy1 = curr.y - prev.y;
+        const len1 = Math.max(1, Math.abs(dx1) + Math.abs(dy1)); // Manhattan length (orthogonal)
+        const backX = curr.x - Math.sign(dx1) * Math.min(r, Math.abs(dx1)) - (dx1 === 0 ? 0 : 0);
+        const backY = curr.y - Math.sign(dy1) * Math.min(r, Math.abs(dy1)) - (dy1 === 0 ? 0 : 0);
+
+        const dx2 = next.x - curr.x;
+        const dy2 = next.y - curr.y;
+        const fwdX = curr.x + Math.sign(dx2) * Math.min(r, Math.abs(dx2));
+        const fwdY = curr.y + Math.sign(dy2) * Math.min(r, Math.abs(dy2));
+
+        d += ` L ${backX},${backY} Q ${curr.x},${curr.y} ${fwdX},${fwdY}`;
+      } else {
+        d += ` L ${curr.x},${curr.y}`;
+      }
+    }
+    return d;
+  };
+
+  // Compute an orthogonal path that prefers straight/L/Z and tries small detours as needed
+  const computeCleanPolylineFromPorts = (start, end, obstacleRects, laneSpacing = 24) => {
+    const candidates = [];
+
+    const isStraight = (start.x === end.x) || (start.y === end.y);
+    if (isStraight) {
+      candidates.push([start, end]);
+    }
+
+    // L candidates (HV and VH)
+    const L_HV = [start, { x: end.x, y: start.y }, end];
+    const L_VH = [start, { x: start.x, y: end.y }, end];
+    candidates.push(L_HV, L_VH);
+
+    // Z candidates (HVH and VHV) using mid lines
+    const midX = Math.round((start.x + end.x) / 2);
+    const midY = Math.round((start.y + end.y) / 2);
+    const Z_HVH = [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end];
+    const Z_VHV = [start, { x: start.x, y: midY }, { x: end.x, y: midY }, end];
+    candidates.push(Z_HVH, Z_VHV);
+
+    const pathBlocked = (pts) => {
+      for (let i = 1; i < pts.length; i++) {
+        if (segmentIntersectsAnyRect(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y, obstacleRects)) return true;
+      }
+      return false;
+    };
+
+    const scorePath = (pts) => {
+      const bends = Math.max(0, pts.length - 2);
+      // Manhattan length
+      let length = 0;
+      for (let i = 1; i < pts.length; i++) {
+        length += Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
+      }
+      const BEND_PENALTY = 1000;
+      const LENGTH_WEIGHT = 1;
+      return bends * BEND_PENALTY + length * LENGTH_WEIGHT;
+    };
+
+    // Evaluate simple candidates
+    let best = null;
+    for (const cand of candidates) {
+      if (!pathBlocked(cand)) {
+        const sc = scorePath(cand);
+        if (!best || sc < best.score) best = { pts: cand, score: sc };
+      }
+    }
+
+    if (best) return best.pts;
+
+    // Detour attempt: offset corridor in +/- direction, up to 3 lanes
+    const offsets = [laneSpacing, laneSpacing * 2, laneSpacing * 3];
+    const tryDetour = (dir) => {
+      for (const off of offsets) {
+        // Horizontal-first detour
+        const d1 = [
+          start,
+          { x: start.x + dir * off, y: start.y },
+          { x: start.x + dir * off, y: end.y },
+          end,
+        ];
+        if (!pathBlocked(d1)) return d1;
+        // Vertical-first detour
+        const d2 = [
+          start,
+          { x: start.x, y: start.y + dir * off },
+          { x: end.x, y: start.y + dir * off },
+          end,
+        ];
+        if (!pathBlocked(d2)) return d2;
+      }
+      return null;
+    };
+
+    let detour = tryDetour(1) || tryDetour(-1);
+    if (detour) return detour;
+
+    // Absolute last resort: return basic Z path (may overlap)
+    return Z_HVH;
+  };
+
+  // Deterministic tiny lane offset to reduce parallel overlaps for clean routing
+  const hashString = (str) => {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) {
+      h = ((h << 5) - h) + str.charCodeAt(i);
+      h |= 0;
+    }
+    return Math.abs(h);
+  };
+
+  const computeCleanLaneTransform = (start, end, obstacleRects, laneSpacingPx, edgeId) => {
+    try {
+      const pts = computeCleanPolylineFromPorts(start, end, obstacleRects, laneSpacingPx);
+      if (!pts || pts.length < 2) return { dx: 0, dy: 0 };
+      const a = pts[0];
+      const b = pts[1];
+      const isVertical = Math.abs(b.x - a.x) < Math.abs(b.y - a.y);
+      const coord = isVertical ? Math.round(a.x) : Math.round(a.y);
+      // Map hash to symmetric lane indices: ..., -2, -1, 0, 1, 2 ...
+      const base = hashString(`${edgeId}:${coord}`);
+      const lane = (base % 5) - 2; // range [-2,2]
+      const offset = lane * Math.max(3, Math.floor(laneSpacingPx / 4));
+      return isVertical ? { dx: offset, dy: 0 } : { dx: 0, dy: offset };
+    } catch {
+      return { dx: 0, dy: 0 };
+    }
+  };
+
+  // Clean routing: pick anchors along node edge segments (excluding rounded corners)
+  const getEdgeSegmentsForNode = (node, dims, cornerRadius) => {
+    const x = node.x;
+    const y = node.y;
+    const w = dims.currentWidth;
+    const h = dims.currentHeight;
+    const r = Math.max(0, Math.min(cornerRadius || 0, Math.floor(Math.min(w, h) / 2)));
+    return [
+      { side: 'top', x1: x + r, y1: y, x2: x + w - r, y2: y },
+      { side: 'bottom', x1: x + r, y1: y + h, x2: x + w - r, y2: y + h },
+      { side: 'left', x1: x, y1: y + r, x2: x, y2: y + h - r },
+      { side: 'right', x1: x + w, y1: y + r, x2: x + w, y2: y + h - r },
+    ];
+  };
+
+  const projectPointOntoSegment = (seg, target) => {
+    if (seg.y1 === seg.y2) {
+      // horizontal
+      const minX = Math.min(seg.x1, seg.x2);
+      const maxX = Math.max(seg.x1, seg.x2);
+      const clampedX = Math.min(Math.max(target.x, minX), maxX);
+      return { x: clampedX, y: seg.y1 };
+    } else {
+      // vertical
+      const minY = Math.min(seg.y1, seg.y2);
+      const maxY = Math.max(seg.y1, seg.y2);
+      const clampedY = Math.min(Math.max(target.y, minY), maxY);
+      return { x: seg.x1, y: clampedY };
+    }
+  };
+
+  const scorePolyline = (pts) => {
+    const bends = Math.max(0, (pts?.length || 0) - 2);
+    let length = 0;
+    for (let i = 1; i < (pts?.length || 0); i++) {
+      length += Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
+    }
+    return bends * 1000 + length;
+  };
+
+  const computeCleanPathBetweenNodes = (sourceNode, sDims, destNode, dDims, obstacleRects, laneSpacing = 24) => {
+    const sSegs = getEdgeSegmentsForNode(sourceNode, sDims, NODE_CORNER_RADIUS);
+    const dSegs = getEdgeSegmentsForNode(destNode, dDims, NODE_CORNER_RADIUS);
+
+    const sCenter = { x: sourceNode.x + sDims.currentWidth / 2, y: sourceNode.y + sDims.currentHeight / 2 };
+    const dCenter = { x: destNode.x + dDims.currentWidth / 2, y: destNode.y + dDims.currentHeight / 2 };
+    const dx = dCenter.x - sCenter.x;
+    const dy = dCenter.y - sCenter.y;
+    const preferHorizontal = Math.abs(dx) >= Math.abs(dy);
+
+    // Candidate side pairs in order of preference
+    const sidePairs = preferHorizontal
+      ? [ ['right','left'], ['left','right'], ['top','bottom'], ['bottom','top'] ]
+      : [ ['bottom','top'], ['top','bottom'], ['right','left'], ['left','right'] ];
+
+    let best = null;
+    for (const [sSide, dSide] of sidePairs) {
+      const sSeg = sSegs.find(s => s.side === sSide);
+      const dSeg = dSegs.find(s => s.side === dSide);
+      if (!sSeg || !dSeg) continue;
+      const sAnchor = projectPointOntoSegment(sSeg, dCenter);
+      const dAnchor = projectPointOntoSegment(dSeg, sCenter);
+      const pts = computeCleanPolylineFromPorts(sAnchor, dAnchor, obstacleRects, laneSpacing);
+      const sc = scorePolyline(pts);
+      if (!best || sc < best.score) best = { pts, score: sc };
+    }
+
+    return best ? best.pts : computeCleanPolylineFromPorts(sCenter, dCenter, obstacleRects, laneSpacing);
+  };
   // --- Mouse Drag Panning (unchanged) ---
   // Throttle edge-hover detection to reduce per-frame work
   const lastHoverCheckRef = useRef(0);
@@ -3237,7 +3516,6 @@ function NodeCanvas() {
   useEffect(() => {
     currentZoomRef.current = zoomLevel;
   }, [zoomLevel]);
-
   // Video game-style keyboard controls with smooth acceleration
   // Robust key state: if window loses focus, clear all pressed keys to avoid stuck states
   useEffect(() => {
@@ -3974,7 +4252,6 @@ function NodeCanvas() {
 
     hurtleAnimationRef.current = requestAnimationFrame(animate);
   }, [storeActions]);
-
   // Simple Particle Transfer Animation - always use fresh coordinates
   const startHurtleAnimation = useCallback((nodeId, targetGraphId, definitionNodeId, sourceGraphId = null) => {
     const currentState = useGraphStore.getState();
@@ -4136,6 +4413,8 @@ function NodeCanvas() {
          onToggleEnableAutoRouting={storeActions.toggleEnableAutoRouting}
          onSetRoutingStyle={storeActions.setRoutingStyle}
          onSetManhattanBends={storeActions.setManhattanBends}
+         onSetCleanLaneSpacing={(v) => useGraphStore.getState().setCleanLaneSpacing(v)}
+         cleanLaneSpacing={cleanLaneSpacing}
 
          onNewUniverse={async () => {
            try {
@@ -4319,7 +4598,6 @@ function NodeCanvas() {
            }
          }}
       />
-
       <div style={{ display: 'flex', flexGrow: 1, position: 'relative', overflow: 'hidden' }}> 
         <Panel
           key="left-panel"
@@ -4857,15 +5135,28 @@ function NodeCanvas() {
                           return d;
                         }
                       };
-
                   return (
                         <g key={`edge-${edge.id}-${idx}`}>
                                                  {/* Main edge line - always same thickness */}
                     {/* Glow effect for selected or hovered edge */}
                     {(isSelected || isHovered) && (
-                      (enableAutoRouting && routingStyle === 'manhattan') ? (
+                      (enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) ? (
                         <path
-                          d={manhattanPathD}
+                          d={(routingStyle === 'manhattan') ? manhattanPathD : (() => {
+                            const startPt = { x: startX, y: startY };
+                            const endPt = { x: endX, y: endY };
+                            const obstacleRects = [];
+                            for (const n of nodes) {
+                              if (n.id === sourceNode.id || n.id === destNode.id) continue;
+                              const dims = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
+                              const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
+                              obstacleRects.push(inflateRect(rect, 8));
+                            }
+                            const basePts = computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
+                            const lane = cleanLaneOffsets.get(edge.id) || computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
+                            const shifted = basePts.map(p => ({ x: p.x + (lane.dx||0), y: p.y + (lane.dy||0) }));
+                            return buildRoundedPathFromPoints(shifted, 8);
+                          })()}
                           fill="none"
                           stroke={edgeColor}
                           strokeWidth="12"
@@ -4891,16 +5182,30 @@ function NodeCanvas() {
                       )
                     )}
                     
-                    {(enableAutoRouting && routingStyle === 'manhattan') ? (
+                    {(enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) ? (
                       <>
-                        {!arrowsToward.has(sourceNode.id) && (
+                        {routingStyle === 'manhattan' && !arrowsToward.has(sourceNode.id) && (
                           <line x1={x1} y1={y1} x2={startX} y2={startY} stroke={edgeColor} strokeWidth={showConnectionNames ? "16" : "6"} strokeLinecap="round" />
                         )}
-                        {!arrowsToward.has(destNode.id) && (
+                        {routingStyle === 'manhattan' && !arrowsToward.has(destNode.id) && (
                           <line x1={endX} y1={endY} x2={x2} y2={y2} stroke={edgeColor} strokeWidth={showConnectionNames ? "16" : "6"} strokeLinecap="round" />
                         )}
                         <path
-                          d={manhattanPathD}
+                          d={(routingStyle === 'manhattan') ? manhattanPathD : (() => {
+                            const startPt = { x: startX, y: startY };
+                            const endPt = { x: endX, y: endY };
+                            const obstacleRects = [];
+                            for (const n of nodes) {
+                              if (n.id === sourceNode.id || n.id === destNode.id) continue;
+                              const dims = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
+                              const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
+                              obstacleRects.push(inflateRect(rect, 8));
+                            }
+                            const basePts = computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
+                            const lane = cleanLaneOffsets.get(edge.id) || computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
+                            const shifted = basePts.map(p => ({ x: p.x + (lane.dx||0), y: p.y + (lane.dy||0) }));
+                            return buildRoundedPathFromPoints(shifted, 8);
+                          })()}
                           fill="none"
                           stroke={edgeColor}
                           strokeWidth={showConnectionNames ? "16" : "6"}
@@ -4986,9 +5291,23 @@ function NodeCanvas() {
                            })()}
                            
                            {/* Invisible click area for edge selection - matches hover detection */}
-                           {(enableAutoRouting && routingStyle === 'manhattan') ? (
+                           {(enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) ? (
                              <path
-                               d={manhattanPathD}
+                               d={(routingStyle === 'manhattan') ? manhattanPathD : (() => {
+                                 const startPt = { x: startX, y: startY };
+                                 const endPt = { x: endX, y: endY };
+                                 const obstacleRects = [];
+                                 for (const n of nodes) {
+                                   if (n.id === sourceNode.id || n.id === destNode.id) continue;
+                                   const dims = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
+                                   const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
+                                   obstacleRects.push(inflateRect(rect, 8));
+                                 }
+                                 const basePts = computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
+                                 const lane = computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
+                                 const shifted = basePts.map(p => ({ x: p.x + lane.dx, y: p.y + lane.dy }));
+                                 return buildRoundedPathFromPoints(shifted, 8);
+                               })()}
                                fill="none"
                                stroke="transparent"
                                strokeWidth="40"
@@ -5083,7 +5402,41 @@ function NodeCanvas() {
                              // Calculate arrow positions (use fallback if intersections fail)
                              let sourceArrowX, sourceArrowY, destArrowX, destArrowY, sourceArrowAngle, destArrowAngle;
                              
-                             if (!sourceIntersection || !destIntersection) {
+                             if (enableAutoRouting && routingStyle === 'clean') {
+                               // Clean mode: infer arrow directions from first/last segment of the clean polyline
+                               const offset = showConnectionNames ? 6 : (shouldShortenSource || shouldShortenDest ? 3 : 5);
+                               const startPt = { x: startX, y: startY };
+                               const endPt = { x: endX, y: endY };
+                               const obstacleRects = [];
+                               for (const n of nodes) {
+                                 if (n.id === sourceNode.id || n.id === destNode.id) continue;
+                                 const dims = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
+                                 const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
+                                 obstacleRects.push(inflateRect(rect, 8));
+                               }
+                               const basePts = computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
+                               const lane = cleanLaneOffsets.get(edge.id) || computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
+                               const cleanPts = basePts.map(p => ({ x: p.x + (lane.dx||0), y: p.y + (lane.dy||0) }));
+                               const first = cleanPts[0];
+                               const second = cleanPts[Math.min(1, cleanPts.length - 1)];
+                               const beforeLast = cleanPts[Math.max(cleanPts.length - 2, 0)];
+                               const last = cleanPts[cleanPts.length - 1];
+
+                               const v1x = second.x - first.x;
+                               const v1y = second.y - first.y;
+                               const v2x = last.x - beforeLast.x;
+                               const v2y = last.y - beforeLast.y;
+
+                               // Source arrow points back toward the source node (opposite of initial direction)
+                               sourceArrowX = first.x - Math.sign(v1x) * offset;
+                               sourceArrowY = first.y - Math.sign(v1y) * offset;
+                               sourceArrowAngle = Math.atan2(-v1y, -v1x) * (180 / Math.PI);
+
+                               // Destination arrow points into the destination (terminal direction)
+                               destArrowX = last.x - Math.sign(v2x) * offset;
+                               destArrowY = last.y - Math.sign(v2y) * offset;
+                               destArrowAngle = Math.atan2(v2y, v2x) * (180 / Math.PI);
+                             } else if (!sourceIntersection || !destIntersection) {
                                // Fallback positioning - arrows/dots closer to connection center  
                                const fallbackOffset = showConnectionNames ? 20 : 
                                                      (shouldShortenSource || shouldShortenDest ? 12 : 15);

@@ -164,8 +164,9 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       nodeClearance: 20,
       enableAutoRouting: false,
       showConnectionLabels: true,
-      routingStyle: 'straight', // 'straight' | 'manhattan'
-      manhattanBends: 'auto' // 'auto' | 'one' | 'two'
+      routingStyle: 'straight', // 'straight' | 'manhattan' | 'clean'
+      manhattanBends: 'auto', // 'auto' | 'one' | 'two'
+      cleanLaneSpacing: 24,
     },
 
     // Git Federation State
@@ -962,7 +963,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         routingStyle: 'straight'
       };
     }
-    if (style === 'straight' || style === 'manhattan') {
+    if (style === 'straight' || style === 'manhattan' || style === 'clean') {
       draft.autoLayoutSettings.routingStyle = style;
     } else {
       console.warn(`[setRoutingStyle] Invalid routing style: ${style}`);
@@ -986,6 +987,29 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     } else {
       console.warn(`[setManhattanBends] Invalid bends mode: ${mode}`);
     }
+  })),
+
+  // Set lane spacing for clean routing
+  setCleanLaneSpacing: (value) => set(produce((draft) => {
+    if (!draft.autoLayoutSettings) {
+      draft.autoLayoutSettings = {
+        defaultSpacing: 15,
+        nodeClearance: 20,
+        enableAutoRouting: false,
+        showConnectionLabels: true,
+        routingStyle: 'straight',
+        manhattanBends: 'auto',
+        cleanLaneSpacing: 24,
+      };
+    }
+    const v = Number(value);
+    if (!Number.isFinite(v)) {
+      console.warn(`[setCleanLaneSpacing] Invalid value: ${value}`);
+      return;
+    }
+    // Clamp for sanity
+    const clamped = Math.max(4, Math.min(96, Math.round(v)));
+    draft.autoLayoutSettings.cleanLaneSpacing = clamped;
   })),
 
   // Explicitly set active definition node (e.g., when switching graphs)

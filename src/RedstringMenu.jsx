@@ -17,6 +17,9 @@ const RedstringMenu = ({
   onToggleEnableAutoRouting,
   onSetRoutingStyle,
   onSetManhattanBends,
+  // Optional: expose clean lane spacing adjuster
+  onSetCleanLaneSpacing,
+  cleanLaneSpacing,
   // Universe management actions
   onNewUniverse,
   onOpenUniverse,
@@ -27,6 +30,7 @@ const RedstringMenu = ({
   const [isExiting, setIsExiting] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
   const [openSubmenu, setOpenSubmenu] = useState(null); // Track which submenu is open
+  const [isInteracting, setIsInteracting] = useState(false); // Guard to keep submenu open during slider drag
   const [recentFiles, setRecentFiles] = useState([]);
   // Track timeouts to cancel them when needed
   const [closeTimeout, setCloseTimeout] = useState(null);
@@ -110,6 +114,9 @@ const RedstringMenu = ({
   };
 
   const handleMenuItemLeave = () => {
+    if (isInteracting) {
+      return; // Do not close while interacting with embedded controls (e.g., slider)
+    }
     // Clear any existing timeout
     if (closeTimeout) {
       clearTimeout(closeTimeout);
@@ -319,6 +326,48 @@ const RedstringMenu = ({
                               >
                                 Routing: Manhattan {routingStyle === 'manhattan' ? '✓' : ''}
                               </div>
+                              <div
+                                className="submenu-item"
+                                onClick={() => onSetRoutingStyle?.('clean')}
+                                style={{ opacity: routingStyle === 'clean' ? 1 : 0.8, cursor: 'pointer' }}
+                              >
+                                Routing: Clean {routingStyle === 'clean' ? '✓' : ''}
+                              </div>
+                              {routingStyle === 'clean' && (
+                                <div style={{ padding: '6px 6px 0 6px', width: '100%' }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: '10px' }}>
+                                    <div style={{ fontSize: '12px', color: '#BDB6B5', opacity: 0.9 }}>Lane spacing</div>
+                                    <div style={{ fontSize: '12px', color: '#BDB6B5', opacity: 0.8 }}>{cleanLaneSpacing || 24}px</div>
+                                  </div>
+                                  <div
+                                    style={{ width: 'calc(100% - 16px)', margin: '6px 8px 0 8px' }}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onMouseUp={(e) => e.stopPropagation()}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onPointerUp={(e) => e.stopPropagation()}
+                                  >
+                                    <input
+                                      className="submenu-slider"
+                                      type="range"
+                                      min={4}
+                                      max={96}
+                                      step={1}
+                                      value={cleanLaneSpacing || 24}
+                                      onChange={(e) => onSetCleanLaneSpacing?.(Number(e.target.value))}
+                                      onInput={(e) => onSetCleanLaneSpacing?.(Number(e.target.value))}
+                                      draggable={false}
+                                      onMouseDown={(e) => { setIsInteracting(true); e.stopPropagation(); }}
+                                      onMouseUp={(e) => { setIsInteracting(false); e.stopPropagation(); }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onPointerDown={(e) => { setIsInteracting(true); e.stopPropagation(); }}
+                                      onPointerUp={(e) => { setIsInteracting(false); e.stopPropagation(); }}
+                                      onTouchStart={(e) => { setIsInteracting(true); e.stopPropagation(); }}
+                                      onTouchEnd={(e) => { setIsInteracting(false); e.stopPropagation(); }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
                       </div>

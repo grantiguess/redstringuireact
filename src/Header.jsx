@@ -33,6 +33,9 @@ const Header = ({
   onToggleEnableAutoRouting,
   onSetRoutingStyle,
   onSetManhattanBends,
+  // Clean routing controls
+  onSetCleanLaneSpacing,
+  cleanLaneSpacing,
   // File management actions
   onNewUniverse,
   onOpenUniverse,
@@ -287,6 +290,8 @@ const Header = ({
             onToggleEnableAutoRouting={onToggleEnableAutoRouting}
             onSetRoutingStyle={onSetRoutingStyle}
             onSetManhattanBends={onSetManhattanBends}
+            onSetCleanLaneSpacing={onSetCleanLaneSpacing}
+            cleanLaneSpacing={cleanLaneSpacing}
             onNewUniverse={onNewUniverse}
             onOpenUniverse={onOpenUniverse}
             onSaveUniverse={onSaveUniverse}
@@ -350,6 +355,8 @@ const Header = ({
           onToggleEnableAutoRouting={onToggleEnableAutoRouting}
           onSetRoutingStyle={onSetRoutingStyle}
           onSetManhattanBends={onSetManhattanBends}
+          onSetCleanLaneSpacing={onSetCleanLaneSpacing}
+          cleanLaneSpacing={cleanLaneSpacing}
           onNewUniverse={onNewUniverse}
           onOpenUniverse={onOpenUniverse}
           onSaveUniverse={onSaveUniverse}
