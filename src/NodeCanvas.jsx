@@ -4790,17 +4790,27 @@ function NodeCanvas() {
                             return `M ${sx},${sy} L ${ex},${ey}`;
                           }
                           if (pattern === 'HVH') {
+                            // Horizontal → Vertical → Horizontal with rounded corners at both bends
                             const midX = (sx + ex) / 2;
-                            const a1 = buildRoundedLPathOriented(sx, sy, midX, ey, r, 'H');
-                            const signX = ex > midX ? 1 : -1;
-                            const preX = midX + signX * r;
-                            return `${a1} L ${preX},${ey} Q ${midX},${ey} ${midX},${ey} L ${ex},${ey}`;
+                            const signX1 = midX >= sx ? 1 : -1; // initial horizontal direction
+                            const signY = ey >= sy ? 1 : -1;     // vertical direction
+                            const signX2 = ex >= midX ? 1 : -1;  // final horizontal direction
+                            const hx1 = midX - signX1 * r;       // before first corner
+                            const vy1 = sy + signY * r;          // after first corner
+                            const vy2 = ey - signY * r;          // before second corner
+                            const hx2 = midX + signX2 * r;       // after second corner
+                            return `M ${sx},${sy} L ${hx1},${sy} Q ${midX},${sy} ${midX},${vy1} L ${midX},${vy2} Q ${midX},${ey} ${hx2},${ey} L ${ex},${ey}`;
                           } else {
+                            // Vertical → Horizontal → Vertical with rounded corners at both bends
                             const midY = (sy + ey) / 2;
-                            const a1 = buildRoundedLPathOriented(sx, sy, ex, midY, r, 'V');
-                            const signY = ey > midY ? 1 : -1;
-                            const preY = midY + signY * r;
-                            return `${a1} L ${ex},${preY} Q ${ex},${midY} ${ex},${midY} L ${ex},${ey}`;
+                            const signY1 = midY >= sy ? 1 : -1;  // initial vertical direction
+                            const signX = ex >= sx ? 1 : -1;      // horizontal direction (same for both H segments)
+                            const signY2 = ey >= midY ? 1 : -1;   // final vertical direction
+                            const vy1 = midY - signY1 * r;        // before first corner
+                            const hx1 = sx + signX * r;           // after first corner
+                            const hx2 = ex - signX * r;           // before second corner
+                            const vy2 = midY + signY2 * r;        // after second corner
+                            return `M ${sx},${sy} L ${sx},${vy1} Q ${sx},${midY} ${hx1},${midY} L ${hx2},${midY} Q ${ex},${midY} ${ex},${vy2} L ${ex},${ey}`;
                           }
                         };
                         let pathD;
