@@ -2257,6 +2257,9 @@ function NodeCanvas() {
     const nowTs = performance.now();
     if (nowTs - (wheelStreamRef.current.lastTimestamp || 0) > WHEEL_STREAM_GAP_MS) {
       wheelStreamRef.current.lockedType = null;
+      wheelStreamRef.current.mouseEvidence = 0;
+      wheelStreamRef.current.trackpadEvidence = 0;
+      wheelStreamRef.current.candidate = { type: null, count: 0 };
       // Reset history between streams to avoid cross-gesture contamination
       deltaHistoryRef.current = [];
     }
@@ -2278,6 +2281,28 @@ function NodeCanvas() {
     if (!wheelStreamRef.current.lockedType && (lethargySense === 1 || lethargySense === -1) && Math.abs(deltaX) < 0.15) {
       wheelStreamRef.current.lockedType = 'mouse_wheel';
     }
+
+    // Evidence-based locking to stabilize fast wheel bursts
+    const absWheel = Math.abs(e.wheelDeltaY || 0);
+    if (absWheel >= 120 && absWheel % 120 === 0 && Math.abs(deltaX) < 0.05) {
+      wheelStreamRef.current.mouseEvidence = (wheelStreamRef.current.mouseEvidence || 0) + 1;
+    }
+    if (Math.abs(deltaX) < 0.03) {
+      wheelStreamRef.current.mouseEvidence = (wheelStreamRef.current.mouseEvidence || 0) + 1;
+    }
+    const fractionalPresent = ((Math.abs(e.deltaY) % 1) !== 0) || ((Math.abs(e.deltaX) % 1) !== 0);
+    const hasHorizontalDriftStrong = Math.abs(deltaX) > 0.2;
+    const hasHorizontalDriftMild = Math.abs(deltaX) > 0.08;
+    if (!e.ctrlKey && e.deltaMode === 0 && (hasHorizontalDriftStrong || (fractionalPresent && hasHorizontalDriftMild))) {
+      wheelStreamRef.current.trackpadEvidence = (wheelStreamRef.current.trackpadEvidence || 0) + 1;
+    }
+    if (!wheelStreamRef.current.lockedType) {
+      if ((wheelStreamRef.current.mouseEvidence || 0) >= 2) {
+        wheelStreamRef.current.lockedType = 'mouse_wheel';
+      } else if ((wheelStreamRef.current.trackpadEvidence || 0) >= 2) {
+        wheelStreamRef.current.lockedType = 'trackpad';
+      }
+    }
     // Otherwise, require two consistent samples before locking
     if (!wheelStreamRef.current.lockedType) {
       wheelStreamRef.current.candidate = wheelStreamRef.current.candidate || { type: null, count: 0 };
@@ -2297,10 +2322,8 @@ function NodeCanvas() {
       }
     }
     let deviceType = wheelStreamRef.current.lockedType || candidateType;
-    // Strong pan override: if this is pixel-mode, no ctrl/meta, and there is horizontal drift or fractional deltas, treat as trackpad
-    const fractionalPresent = ((Math.abs(e.deltaY) % 1) !== 0) || ((Math.abs(e.deltaX) % 1) !== 0);
-    const hasHorizontalDrift = Math.abs(deltaX) > 0.12;
-    if (!e.ctrlKey && e.deltaMode === 0 && (hasHorizontalDrift || (fractionalPresent && Math.abs(deltaX) > 0.02))) {
+    // Strong pan override: pixel-mode, no ctrl/meta, require meaningful horizontal drift
+    if (!e.ctrlKey && e.deltaMode === 0 && (hasHorizontalDriftStrong || (fractionalPresent && hasHorizontalDriftMild))) {
       deviceType = 'trackpad';
       if (!wheelStreamRef.current.lockedType) wheelStreamRef.current.lockedType = 'trackpad';
     }
@@ -2318,6 +2341,8 @@ function NodeCanvas() {
       detectedDeviceCandidate: candidateType,
       lethargySense: String(lethargySense),
       deviceLock: wheelStreamRef.current.lockedType || 'none',
+      mouseEvidence: String(wheelStreamRef.current.mouseEvidence || 0),
+      trackpadEvidence: String(wheelStreamRef.current.trackpadEvidence || 0),
       historyLength: deltaHistoryRef.current.length.toString(),
     }));
 
