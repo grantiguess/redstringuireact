@@ -913,56 +913,159 @@ function NodeCanvas() {
     return () => { if (rafId) cancelAnimationFrame(rafId); };
   }, [panOffset, zoomLevel, viewportSize, canvasSize, nodes, edges, baseDimsById, nodeById]);
 
-  // Group-based lane offsets for clean routing to reduce parallel overlaps
+  // Helper: Get base port position on a node side (respecting rounded corners)
+  const getPortPosition = (node, dims, side, cornerRadius) => {
+    const r = Math.min(cornerRadius, Math.min(dims.currentWidth, dims.currentHeight) / 2);
+    
+    // Position ports on the straight edge segments, avoiding rounded corners
+    switch (side) {
+      case 'top':
+        return { 
+          x: node.x + dims.currentWidth / 2, 
+          y: node.y,
+          // Available segment excludes corners
+          segmentStart: node.x + r,
+          segmentEnd: node.x + dims.currentWidth - r
+        };
+      case 'bottom':
+        return { 
+          x: node.x + dims.currentWidth / 2, 
+          y: node.y + dims.currentHeight,
+          segmentStart: node.x + r,
+          segmentEnd: node.x + dims.currentWidth - r
+        };
+      case 'left':
+        return { 
+          x: node.x, 
+          y: node.y + dims.currentHeight / 2,
+          segmentStart: node.y + r,
+          segmentEnd: node.y + dims.currentHeight - r
+        };
+      case 'right':
+        return { 
+          x: node.x + dims.currentWidth, 
+          y: node.y + dims.currentHeight / 2,
+          segmentStart: node.y + r,
+          segmentEnd: node.y + dims.currentHeight - r
+        };
+      default:
+        return { x: node.x + dims.currentWidth / 2, y: node.y + dims.currentHeight / 2 };
+    }
+  };
+
+  // Helper: Calculate staggered position along an edge to distribute connections
+  const calculateStaggeredPosition = (basePort, side, edgeIndex, dims, cornerRadius) => {
+    const staggerStep = Math.max(12, cleanLaneSpacing / 2);
+    
+    // Use the segment bounds from basePort to avoid rounded corners
+    const segmentLength = basePort.segmentEnd - basePort.segmentStart;
+    const availableLength = Math.max(staggerStep, segmentLength - 16); // 8px margin on each end
+    
+    // Center the distribution and stagger by index
+    const maxPorts = Math.max(1, Math.floor(availableLength / staggerStep));
+    const actualIndex = edgeIndex % maxPorts; // Wrap if too many edges
+    const centerOffset = (actualIndex - (maxPorts - 1) / 2) * staggerStep;
+    
+    switch (side) {
+      case 'top':
+      case 'bottom':
+        return {
+          x: Math.max(basePort.segmentStart + 8, 
+               Math.min(basePort.segmentEnd - 8, basePort.x + centerOffset)),
+          y: basePort.y
+        };
+      case 'left':
+      case 'right':
+        return {
+          x: basePort.x,
+          y: Math.max(basePort.segmentStart + 8, 
+               Math.min(basePort.segmentEnd - 8, basePort.y + centerOffset))
+        };
+      default:
+        return basePort;
+    }
+  };
+
+  // Port-based routing with intelligent edge distribution - inspired by circuit board routing
   const cleanLaneOffsets = useMemo(() => {
-    const offsets = new Map();
-    if (!enableAutoRouting || routingStyle !== 'clean' || !visibleEdges?.length) return offsets;
+    const portAssignments = new Map(); // edgeId -> { sourcePort, destPort }
+    if (!enableAutoRouting || routingStyle !== 'clean' || !visibleEdges?.length) return portAssignments;
+    
     try {
-      const groups = new Map();
-      const laneStep = Math.max(3, Math.floor((cleanLaneSpacing || 24) / 4));
-      const bucketSize = Math.max(6, laneStep); // quantization bucket
+      // Step 1: Group edges by node pairs and assign ports intelligently
+      const nodePortUsage = new Map(); // nodeId -> { top: [], bottom: [], left: [], right: [] }
+      
+      // Initialize port usage tracking for all nodes
+      for (const node of nodes) {
+        nodePortUsage.set(node.id, { top: [], bottom: [], left: [], right: [] });
+      }
+      
+      // Step 2: Assign ports for each edge based on direction and avoid clustering
       for (const edge of visibleEdges) {
         const s = nodeById.get(edge.sourceId);
         const d = nodeById.get(edge.destinationId);
         if (!s || !d) continue;
-        const sDims = baseDimsById.get(s.id) || getNodeDimensions(s, false, null);
-        const dDims = baseDimsById.get(d.id) || getNodeDimensions(d, false, null);
-        // Build obstacles excluding endpoints
-        const obstacleRects = [];
-        for (const n of nodes) {
-          if (n.id === s.id || n.id === d.id) continue;
-          const nd = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
-          const rect = { minX: n.x, minY: n.y, maxX: n.x + nd.currentWidth, maxY: n.y + nd.currentHeight };
-          obstacleRects.push(inflateRect(rect, 8));
+        
+        const sDims = baseDimsById.get(s.id);
+        const dDims = baseDimsById.get(d.id);
+        if (!sDims || !dDims) continue;
+        
+        // Calculate node centers
+        const sCenterX = s.x + sDims.currentWidth / 2;
+        const sCenterY = s.y + sDims.currentHeight / 2;
+        const dCenterX = d.x + dDims.currentWidth / 2;
+        const dCenterY = d.y + dDims.currentHeight / 2;
+        
+        // Determine optimal ports based on relative position - favor left/right sides
+        const deltaX = dCenterX - sCenterX;
+        const deltaY = dCenterY - sCenterY;
+        
+        let sourceSide, destSide;
+        
+        // Bias toward left/right sides (where text is) unless the connection is strongly vertical
+        const isStronglyVertical = Math.abs(deltaY) > Math.abs(deltaX) * 1.5; // 1.5x bias toward horizontal
+        
+        if (isStronglyVertical) {
+          // Strong vertical connection - use top/bottom
+          sourceSide = deltaY > 0 ? 'bottom' : 'top';
+          destSide = deltaY > 0 ? 'top' : 'bottom';
+        } else {
+          // Horizontal or diagonal - prefer left/right sides
+          sourceSide = deltaX > 0 ? 'right' : 'left';
+          destSide = deltaX > 0 ? 'left' : 'right';
         }
-        // Compute a quick polyline to get the first segment
-        const pts = computeCleanPathBetweenNodes(s, sDims, d, dDims, obstacleRects, cleanLaneSpacing || 24);
-        if (!pts || pts.length < 2) continue;
-        const a = pts[0];
-        const b = pts[1];
-        const isVertical = Math.abs(b.x - a.x) < Math.abs(b.y - a.y);
-        const coord = isVertical ? a.x : a.y;
-        const bucket = Math.round(coord / bucketSize);
-        const key = `${isVertical ? 'V' : 'H'}:${bucket}`;
-        if (!groups.has(key)) groups.set(key, { isVertical, ids: [] });
-        groups.get(key).ids.push(edge.id);
+        
+        // Calculate port positions on the non-rounded edge segments
+        const cornerRadius = NODE_CORNER_RADIUS || 8;
+        const sourcePortPos = getPortPosition(s, sDims, sourceSide, cornerRadius);
+        const destPortPos = getPortPosition(d, dDims, destSide, cornerRadius);
+        
+        // Distribute edges along the side to avoid clustering
+        const sourceUsage = nodePortUsage.get(s.id)[sourceSide];
+        const destUsage = nodePortUsage.get(d.id)[destSide];
+        
+        // Calculate staggered positions along the edge
+        const sourceStagger = calculateStaggeredPosition(sourcePortPos, sourceSide, sourceUsage.length, sDims, cornerRadius);
+        const destStagger = calculateStaggeredPosition(destPortPos, destSide, destUsage.length, dDims, cornerRadius);
+        
+        // Record port usage
+        sourceUsage.push(edge.id);
+        destUsage.push(edge.id);
+        
+        portAssignments.set(edge.id, {
+          sourcePort: sourceStagger,
+          destPort: destStagger,
+          sourceSide,
+          destSide
+        });
       }
-      // Assign symmetric offsets per group
-      groups.forEach(({ isVertical, ids }) => {
-        ids.sort();
-        const n = ids.length;
-        for (let i = 0; i < n; i++) {
-          const center = (n - 1) / 2;
-          const laneIndex = i - center; // symmetric around 0
-          const delta = laneIndex * laneStep * 2; // spread more aggressively
-          offsets.set(ids[i], isVertical ? { dx: delta, dy: 0 } : { dx: 0, dy: delta });
-        }
-      });
-      return offsets;
-    } catch {
-      return offsets;
+      
+      return portAssignments;
+    } catch (error) {
+      console.warn('Clean routing port assignment failed:', error);
+      return new Map();
     }
-  }, [enableAutoRouting, routingStyle, visibleEdges, nodes, baseDimsById, cleanLaneSpacing, getNodeDimensions]);
+  }, [enableAutoRouting, routingStyle, visibleEdges, nodeById, baseDimsById, nodes]);
 
   // Store view states per graph (graphId -> {panOffset, zoomLevel})
   // const [graphViewStates, setGraphViewStates] = useState(new Map());
@@ -2684,259 +2787,110 @@ function NodeCanvas() {
     return d;
   };
 
-  // Compute an orthogonal path that prefers straight/L/Z and tries small detours as needed
-  const computeCleanPolylineFromPorts = (start, end, obstacleRects, laneSpacing = 24) => {
-    // Helper: rectangle intersection
-    const rectsIntersect = (a, b) => !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY);
-    // Inflate obstacles by a small clearance so routes never graze nodes
-    const clearancePx = 6;
-    const inflated = obstacleRects.map(r => inflateRect(r, clearancePx));
-
-    // Determine routing bounds
-    const allXs = [start.x, end.x, ...inflated.flatMap(r => [r.minX, r.maxX])];
-    const allYs = [start.y, end.y, ...inflated.flatMap(r => [r.minY, r.maxY])];
-    const minX = Math.floor(Math.min(...allXs)) - 24;
-    const maxX = Math.ceil(Math.max(...allXs)) + 24;
-    const minY = Math.floor(Math.min(...allYs)) - 24;
-    const maxY = Math.ceil(Math.max(...allYs)) + 24;
-
-    // Grid resolution (adaptive-ish): coarser at larger lane spacing
-    const gridSize = Math.max(8, Math.min(24, Math.round(laneSpacing / 2)));
-    const cols = Math.max(4, Math.ceil((maxX - minX) / gridSize));
-    const rows = Math.max(4, Math.ceil((maxY - minY) / gridSize));
-
-    const toCell = (p) => ({
-      cx: Math.max(0, Math.min(cols - 1, Math.round((p.x - minX) / gridSize))),
-      cy: Math.max(0, Math.min(rows - 1, Math.round((p.y - minY) / gridSize))),
-    });
-    const toPoint = (cx, cy) => ({ x: minX + cx * gridSize, y: minY + cy * gridSize });
-
-    // Blocked grid
-    const blocked = new Array(rows);
-    for (let y = 0; y < rows; y++) {
-      blocked[y] = new Array(cols).fill(false);
-    }
-    // Mark blocked cells whose center lies inside any inflated rect
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        const cx = minX + x * gridSize;
-        const cy = minY + y * gridSize;
-        const cellRect = { minX: cx - gridSize / 2, maxX: cx + gridSize / 2, minY: cy - gridSize / 2, maxY: cy + gridSize / 2 };
-        for (const r of inflated) {
-          if (rectsIntersect(cellRect, r)) { blocked[y][x] = true; break; }
-        }
+  // Orthogonal routing with mandatory stems - always exit perpendicular to node edge
+  const computeCleanPolylineFromPorts = (start, end, obstacleRects, laneSpacing = 24, startSide = null, endSide = null) => {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    
+    // Minimum orthogonal stem length before bending
+    const minStemLength = Math.max(12, laneSpacing / 2);
+    
+    // Create stem points that exit orthogonally from the node edges
+    let stemStart, stemEnd;
+    
+    if (startSide) {
+      // Create orthogonal stem from start port
+      switch (startSide) {
+        case 'top':
+          stemStart = { x: start.x, y: start.y - minStemLength };
+          break;
+        case 'bottom':
+          stemStart = { x: start.x, y: start.y + minStemLength };
+          break;
+        case 'left':
+          stemStart = { x: start.x - minStemLength, y: start.y };
+          break;
+        case 'right':
+          stemStart = { x: start.x + minStemLength, y: start.y };
+          break;
+        default:
+          stemStart = start;
       }
-    }
-
-    // A* search (4-neighbor) with slight bend penalty
-    const startCell = toCell(start);
-    const endCell = toCell(end);
-    const key = (x, y) => `${x},${y}`;
-    const h = (x, y) => Math.abs(x - endCell.cx) + Math.abs(y - endCell.cy);
-    const gScore = new Map();
-    const fScore = new Map();
-    const cameFrom = new Map(); // key -> { px, py }
-    const cameDir = new Map();  // key -> dir 'U'|'D'|'L'|'R'
-    const open = new Set();
-
-    const push = (x, y, g, dir) => {
-      const k = key(x, y);
-      const old = gScore.get(k);
-      if (old === undefined || g < old) {
-        gScore.set(k, g);
-        fScore.set(k, g + h(x, y));
-        open.add(k);
-        cameDir.set(k, dir);
-      }
-    };
-
-    const neighbors = (x, y) => [
-      [x + 1, y, 'R'],
-      [x - 1, y, 'L'],
-      [x, y + 1, 'D'],
-      [x, y - 1, 'U'],
-    ];
-
-    const startKey = key(startCell.cx, startCell.cy);
-    gScore.set(startKey, 0);
-    fScore.set(startKey, h(startCell.cx, startCell.cy));
-    open.add(startKey);
-    cameDir.set(startKey, null);
-
-    const popLowest = () => {
-      let bestK = null; let bestF = Infinity;
-      for (const k of open) {
-        const f = fScore.get(k) ?? Infinity;
-        if (f < bestF) { bestF = f; bestK = k; }
-      }
-      if (bestK) open.delete(bestK);
-      return bestK;
-    };
-
-    let goalKey = null;
-    while (open.size) {
-      const currentK = popLowest();
-      if (!currentK) break;
-      const [cxS, cyS] = currentK.split(',').map(n => parseInt(n, 10));
-      if (cxS === endCell.cx && cyS === endCell.cy) { goalKey = currentK; break; }
-      const prevDir = cameDir.get(currentK);
-      for (const [nx, ny, ndir] of neighbors(cxS, cyS)) {
-        if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
-        if (blocked[ny][nx]) continue;
-        const bendPenalty = prevDir && prevDir !== ndir ? 0.3 : 0.0;
-        const stepCost = 1.0 + bendPenalty;
-        const tentativeG = (gScore.get(currentK) ?? Infinity) + stepCost;
-        const nk = key(nx, ny);
-        const gOld = gScore.get(nk);
-        if (gOld === undefined || tentativeG < gOld) {
-          gScore.set(nk, tentativeG);
-          fScore.set(nk, tentativeG + h(nx, ny));
-          cameFrom.set(nk, { px: cxS, py: cyS });
-          cameDir.set(nk, ndir);
-          open.add(nk);
-        }
-      }
-    }
-
-    // Reconstruct
-    const pathCells = [];
-    if (goalKey) {
-      let ck = goalKey;
-      while (ck) {
-        const [cx, cy] = ck.split(',').map(n => parseInt(n, 10));
-        pathCells.push({ cx, cy });
-        const prev = cameFrom.get(ck);
-        if (!prev) break;
-        ck = key(prev.px, prev.py);
-      }
-      pathCells.reverse();
-    }
-
-    // Fallback: simple Z if no path found
-    if (!pathCells.length) {
-      const midX = Math.round((start.x + end.x) / 2);
-      return [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end];
-    }
-
-    // Convert to polyline (axis-aligned) and simplify
-    const rawPts = [];
-    for (let i = 0; i < pathCells.length; i++) {
-      const p = toPoint(pathCells[i].cx, pathCells[i].cy);
-      rawPts.push({ x: Math.round(p.x), y: Math.round(p.y) });
-    }
-
-    // Insert start and end with orthogonal connectors to first/last
-    const points = [];
-    if (rawPts.length) {
-      const first = rawPts[0];
-      if (first.x !== start.x) points.push({ x: start.x, y: start.y }, { x: first.x, y: start.y });
-      else points.push({ x: start.x, y: start.y });
-      for (let i = 1; i < rawPts.length; i++) points.push(rawPts[i]);
-      const last = rawPts[rawPts.length - 1];
-      if (last.y !== end.y) points.push({ x: last.x, y: end.y }, { x: end.x, y: end.y });
-      else points.push({ x: end.x, y: end.y });
     } else {
-      points.push(start, end);
+      stemStart = start;
     }
-
-    // Simplify colinear
-    const simplified = [];
-    for (let i = 0; i < points.length; i++) {
-      if (i === 0 || i === points.length - 1) { simplified.push(points[i]); continue; }
-      const a = simplified[simplified.length - 1];
-      const b = points[i];
-      const c = points[i + 1];
-      const colinear = (a.x === b.x && b.x === c.x) || (a.y === b.y && b.y === c.y);
-      if (!colinear) simplified.push(b);
+    
+    if (endSide) {
+      // Create orthogonal stem to end port
+      switch (endSide) {
+        case 'top':
+          stemEnd = { x: end.x, y: end.y - minStemLength };
+          break;
+        case 'bottom':
+          stemEnd = { x: end.x, y: end.y + minStemLength };
+          break;
+        case 'left':
+          stemEnd = { x: end.x - minStemLength, y: end.y };
+          break;
+        case 'right':
+          stemEnd = { x: end.x + minStemLength, y: end.y };
+          break;
+        default:
+          stemEnd = end;
+      }
+    } else {
+      stemEnd = end;
     }
-    return simplified.length >= 2 ? simplified : points;
-  };
-
-  // --- Orthogonal visibility routing (many bends allowed, strictly 90°) ---
-  const buildOrthogonalRoute = (start, end, obstacleRects, clearance = 6) => {
-    // Build a set of waypoint candidates: start, end, and expanded obstacle corners
-    const nodes = [];
-    const addNode = (p) => { if (Number.isFinite(p.x) && Number.isFinite(p.y)) nodes.push({ x: Math.round(p.x), y: Math.round(p.y) }); };
-    addNode(start); addNode(end);
-    const expanded = obstacleRects.map(r => inflateRect(r, Math.max(1, clearance)));
-    for (const r of expanded) {
-      addNode({ x: r.minX, y: r.minY });
-      addNode({ x: r.minX, y: r.maxY });
-      addNode({ x: r.maxX, y: r.minY });
-      addNode({ x: r.maxX, y: r.maxY });
+    
+    // Route between stem points using simple L/Z logic
+    const stemDx = stemEnd.x - stemStart.x;
+    const stemDy = stemEnd.y - stemStart.y;
+    const preferHorizontal = Math.abs(stemDx) >= Math.abs(stemDy);
+    
+    let midPath;
+    if (Math.abs(stemDx) < 1 && Math.abs(stemDy) < 1) {
+      // Stems are very close - direct connection
+      midPath = [stemStart, stemEnd];
+    } else if (preferHorizontal) {
+      // Horizontal-first L path between stems
+      midPath = [stemStart, { x: stemEnd.x, y: stemStart.y }, stemEnd];
+    } else {
+      // Vertical-first L path between stems
+      midPath = [stemStart, { x: stemStart.x, y: stemEnd.y }, stemEnd];
     }
-    // Remove near-duplicates
-    const key = (p) => `${p.x}|${p.y}`;
-    const dedup = new Map();
-    for (const p of nodes) dedup.set(key(p), p);
-    const pts = Array.from(dedup.values());
-
-    // Visibility edges between colinear unobstructed pairs
-    const canConnect = (a, b) => {
-      if (a.x !== b.x && a.y !== b.y) return false; // must be orthogonal
-      return !segmentIntersectsAnyRect(a.x, a.y, b.x, b.y, expanded);
-    };
-    const adj = new Map();
-    const addEdge = (i, j, cost) => {
-      if (!adj.has(i)) adj.set(i, []);
-      adj.get(i).push({ j, cost });
-    };
-    for (let i = 0; i < pts.length; i++) {
-      for (let j = i + 1; j < pts.length; j++) {
-        const a = pts[i], b = pts[j];
-        if (!canConnect(a, b)) continue;
-        const c = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-        addEdge(i, j, c);
-        addEdge(j, i, c);
+    
+    // Assemble full path: start -> stem -> route -> stem -> end
+    const fullPath = [];
+    
+    // Add start segment if we have a stem
+    if (startSide && stemStart && (stemStart.x !== start.x || stemStart.y !== start.y)) {
+      fullPath.push(start, stemStart);
+    } else {
+      fullPath.push(start);
+    }
+    
+    // Add middle routing (skip first point if it's the same as last added point)
+    for (let i = 0; i < midPath.length; i++) {
+      const point = midPath[i];
+      const lastPoint = fullPath[fullPath.length - 1];
+      // Only add if it's different from the last point
+      if (!lastPoint || point.x !== lastPoint.x || point.y !== lastPoint.y) {
+        fullPath.push(point);
       }
     }
-
-    // Find indices of start/end
-    const sIdx = pts.findIndex(p => p.x === start.x && p.y === start.y);
-    const eIdx = pts.findIndex(p => p.x === end.x && p.y === end.y);
-    if (sIdx === -1 || eIdx === -1) return null;
-
-    // Dijkstra with slight bend penalty
-    const prev = new Array(pts.length).fill(-1);
-    const dist = new Array(pts.length).fill(Infinity);
-    const dir = new Array(pts.length).fill(null); // 'H' or 'V'
-    dist[sIdx] = 0;
-    const visited = new Array(pts.length).fill(false);
-    for (let iter = 0; iter < pts.length; iter++) {
-      let u = -1, best = Infinity;
-      for (let k = 0; k < pts.length; k++) if (!visited[k] && dist[k] < best) { best = dist[k]; u = k; }
-      if (u === -1) break;
-      visited[u] = true;
-      if (u === eIdx) break;
-      const neighbors = adj.get(u) || [];
-      for (const { j, cost } of neighbors) {
-        const a = pts[u], b = pts[j];
-        const ndir = (a.x === b.x) ? 'V' : 'H';
-        const bendPenalty = (dir[u] && dir[u] !== ndir) ? 5 : 0;
-        const nd = dist[u] + cost + bendPenalty;
-        if (nd < dist[j]) {
-          dist[j] = nd;
-          prev[j] = u;
-          dir[j] = ndir;
-        }
+    
+    // Add end segment if we have a stem and it's different from the last point
+    if (endSide && stemEnd && (stemEnd.x !== end.x || stemEnd.y !== end.y)) {
+      const lastPoint = fullPath[fullPath.length - 1];
+      if (!lastPoint || lastPoint.x !== end.x || lastPoint.y !== end.y) {
+        fullPath.push(end);
       }
     }
-    if (prev[eIdx] === -1 && eIdx !== sIdx) return null;
-    // Reconstruct path
-    const rev = [];
-    let cur = eIdx;
-    while (cur !== -1) { rev.push(pts[cur]); cur = prev[cur]; }
-    rev.reverse();
-    // Simplify colinear points
-    const simp = [];
-    for (let i = 0; i < rev.length; i++) {
-      if (i === 0 || i === rev.length - 1) { simp.push(rev[i]); continue; }
-      const a = simp[simp.length - 1], b = rev[i], c = rev[i + 1];
-      const colinear = (a.x === b.x && b.x === c.x) || (a.y === b.y && b.y === c.y);
-      if (!colinear) simp.push(b);
-    }
-    return simp;
+    
+    return fullPath;
   };
+
+
 
   // Deterministic tiny lane offset to reduce parallel overlaps for clean routing
   const hashString = (str) => {
@@ -2948,102 +2902,7 @@ function NodeCanvas() {
     return Math.abs(h);
   };
 
-  const computeCleanLaneTransform = (start, end, obstacleRects, laneSpacingPx, edgeId) => {
-    try {
-      const pts = computeCleanPolylineFromPorts(start, end, obstacleRects, laneSpacingPx);
-      if (!pts || pts.length < 2) return { dx: 0, dy: 0 };
-      const a = pts[0];
-      const b = pts[1];
-      const isVertical = Math.abs(b.x - a.x) < Math.abs(b.y - a.y);
-      const coord = isVertical ? Math.round(a.x) : Math.round(a.y);
-      // Map hash to symmetric lane indices: ..., -2, -1, 0, 1, 2 ...
-      const base = hashString(`${edgeId}:${coord}`);
-      const lane = (base % 5) - 2; // range [-2,2]
-      const offset = lane * Math.max(3, Math.floor(laneSpacingPx / 4));
-      return isVertical ? { dx: offset, dy: 0 } : { dx: 0, dy: offset };
-    } catch {
-      return { dx: 0, dy: 0 };
-    }
-  };
 
-  // Clean routing: pick anchors along node edge segments (excluding rounded corners)
-  const getEdgeSegmentsForNode = (node, dims, cornerRadius) => {
-    const x = node.x;
-    const y = node.y;
-    const w = dims.currentWidth;
-    const h = dims.currentHeight;
-    const r = Math.max(0, Math.min(cornerRadius || 0, Math.floor(Math.min(w, h) / 2)));
-    return [
-      { side: 'top', x1: x + r, y1: y, x2: x + w - r, y2: y },
-      { side: 'bottom', x1: x + r, y1: y + h, x2: x + w - r, y2: y + h },
-      { side: 'left', x1: x, y1: y + r, x2: x, y2: y + h - r },
-      { side: 'right', x1: x + w, y1: y + r, x2: x + w, y2: y + h - r },
-    ];
-  };
-
-  const projectPointOntoSegment = (seg, target) => {
-    if (seg.y1 === seg.y2) {
-      // horizontal
-      const minX = Math.min(seg.x1, seg.x2);
-      const maxX = Math.max(seg.x1, seg.x2);
-      const clampedX = Math.min(Math.max(target.x, minX), maxX);
-      return { x: clampedX, y: seg.y1 };
-    } else {
-      // vertical
-      const minY = Math.min(seg.y1, seg.y2);
-      const maxY = Math.max(seg.y1, seg.y2);
-      const clampedY = Math.min(Math.max(target.y, minY), maxY);
-      return { x: seg.x1, y: clampedY };
-    }
-  };
-
-  const scorePolyline = (pts) => {
-    const bends = Math.max(0, (pts?.length || 0) - 2);
-    let length = 0;
-    for (let i = 1; i < (pts?.length || 0); i++) {
-      length += Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
-    }
-    return bends * 1000 + length;
-  };
-
-  const computeCleanPathBetweenNodes = (sourceNode, sDims, destNode, dDims, obstacleRects, laneSpacing = 24, portGap = 3) => {
-    const sSegs = getEdgeSegmentsForNode(sourceNode, sDims, NODE_CORNER_RADIUS);
-    const dSegs = getEdgeSegmentsForNode(destNode, dDims, NODE_CORNER_RADIUS);
-
-    const sCenter = { x: sourceNode.x + sDims.currentWidth / 2, y: sourceNode.y + sDims.currentHeight / 2 };
-    const dCenter = { x: destNode.x + dDims.currentWidth / 2, y: destNode.y + dDims.currentHeight / 2 };
-    const dx = dCenter.x - sCenter.x;
-    const dy = dCenter.y - sCenter.y;
-    const preferHorizontal = Math.abs(dx) >= Math.abs(dy);
-
-    // Candidate side pairs in order of preference
-    const sidePairs = preferHorizontal
-      ? [ ['right','left'], ['left','right'], ['top','bottom'], ['bottom','top'] ]
-      : [ ['bottom','top'], ['top','bottom'], ['right','left'], ['left','right'] ];
-
-    let best = null;
-    for (const [sSide, dSide] of sidePairs) {
-      const sSeg = sSegs.find(s => s.side === sSide);
-      const dSeg = dSegs.find(s => s.side === dSide);
-      if (!sSeg || !dSeg) continue;
-      const sAnchor = projectPointOntoSegment(sSeg, dCenter);
-      const dAnchor = projectPointOntoSegment(dSeg, sCenter);
-      // Offset anchors outward from node by a small gap to avoid drawing on the edge line
-      if (sSide === 'left') sAnchor.x -= portGap; else if (sSide === 'right') sAnchor.x += portGap; else if (sSide === 'top') sAnchor.y -= portGap; else if (sSide === 'bottom') sAnchor.y += portGap;
-      if (dSide === 'left') dAnchor.x -= portGap; else if (dSide === 'right') dAnchor.x += portGap; else if (dSide === 'top') dAnchor.y -= portGap; else if (dSide === 'bottom') dAnchor.y += portGap;
-      const pts = computeCleanPolylineFromPorts(sAnchor, dAnchor, obstacleRects, laneSpacing);
-      const sc = scorePolyline(pts);
-      if (!best || sc < best.score) best = { pts, score: sc };
-    }
-
-    return best ? best.pts : computeCleanPolylineFromPorts(sCenter, dCenter, obstacleRects, laneSpacing);
-  };
-
-  // Apply lane offset only to interior points (keep endpoints attached to node sides)
-  const applyLaneToInnerPoints = (pts, lane) => {
-    if (!pts || !lane) return pts;
-    return pts.map((p, i) => (i === 0 || i === pts.length - 1) ? p : { x: p.x + (lane.dx || 0), y: p.y + (lane.dy || 0) });
-  };
 
   // --- Mouse Drag Panning (unchanged) ---
   // Throttle edge-hover detection to reduce per-frame work
@@ -5049,10 +4908,37 @@ function NodeCanvas() {
                       }
 
                       // Determine actual start/end points for rendering
-                      let startX = shouldShortenSource ? (sourceIntersection?.x || x1) : x1;
-                      let startY = shouldShortenSource ? (sourceIntersection?.y || y1) : y1;
-                      let endX = shouldShortenDest ? (destIntersection?.x || x2) : x2;
-                      let endY = shouldShortenDest ? (destIntersection?.y || y2) : y2;
+                      let startX, startY, endX, endY;
+                      
+                      // For clean routing, use assigned ports; otherwise use intersection-based positioning
+                      if (enableAutoRouting && routingStyle === 'clean') {
+                        const portAssignment = cleanLaneOffsets.get(edge.id);
+                        if (portAssignment) {
+                          const { sourcePort, destPort } = portAssignment;
+                          
+                          // Check if this edge has directional arrows
+                          const hasSourceArrow = arrowsToward.has(sourceNode.id);
+                          const hasDestArrow = arrowsToward.has(destNode.id);
+                          
+                          // Use ports for directional connections, centers for non-directional
+                          startX = hasSourceArrow ? sourcePort.x : x1;
+                          startY = hasSourceArrow ? sourcePort.y : y1;
+                          endX = hasDestArrow ? destPort.x : x2;
+                          endY = hasDestArrow ? destPort.y : y2;
+                        } else {
+                          // Fallback to node centers for clean routing
+                          startX = x1;
+                          startY = y1;
+                          endX = x2;
+                          endY = y2;
+                        }
+                      } else {
+                        // Use intersection-based positioning for other routing modes
+                        startX = shouldShortenSource ? (sourceIntersection?.x || x1) : x1;
+                        startY = shouldShortenSource ? (sourceIntersection?.y || y1) : y1;
+                        endX = shouldShortenDest ? (destIntersection?.x || x2) : x2;
+                        endY = shouldShortenDest ? (destIntersection?.y || y2) : y2;
+                      }
 
                       // Predeclare Manhattan path info for safe use below
                       let manhattanPathD = null;
@@ -5201,10 +5087,35 @@ function NodeCanvas() {
                               const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
                               obstacleRects.push(inflateRect(rect, 8));
                             }
-                            const basePts = buildOrthogonalRoute(startPt, endPt, obstacleRects, 6) || computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
-                            const lane = cleanLaneOffsets.get(edge.id) || computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
-                            const shifted = applyLaneToInnerPoints(basePts, lane);
-                            return buildRoundedPathFromPoints(shifted, 8);
+                            // Use intelligent port assignments for clean routing
+                            const portAssignment = cleanLaneOffsets.get(edge.id);
+                            if (portAssignment) {
+                              const { sourcePort, destPort, sourceSide, destSide } = portAssignment;
+                              
+                              // Check if this edge has directional arrows
+                              const hasSourceArrow = arrowsToward.has(sourceNode.id);
+                              const hasDestArrow = arrowsToward.has(destNode.id);
+                              
+                              // For non-directional connections, route to node centers
+                              const effectiveStart = hasSourceArrow ? sourcePort : { x: x1, y: y1 };
+                              const effectiveEnd = hasDestArrow ? destPort : { x: x2, y: y2 };
+                              const effectiveStartSide = hasSourceArrow ? sourceSide : null;
+                              const effectiveEndSide = hasDestArrow ? destSide : null;
+                              
+                              const cleanPts = computeCleanPolylineFromPorts(
+                                effectiveStart, 
+                                effectiveEnd, 
+                                [], 
+                                cleanLaneSpacing, 
+                                effectiveStartSide, 
+                                effectiveEndSide
+                              );
+                              return buildRoundedPathFromPoints(cleanPts, 8);
+                            } else {
+                              // Fallback to simple L-path from node centers
+                              const cleanPts = computeCleanPolylineFromPorts(startPt, endPt, [], cleanLaneSpacing);
+                              return buildRoundedPathFromPoints(cleanPts, 8);
+                            }
                           })()}
                           fill="none"
                           stroke={edgeColor}
@@ -5241,19 +5152,37 @@ function NodeCanvas() {
                         )}
                         <path
                           d={(routingStyle === 'manhattan') ? manhattanPathD : (() => {
-                            const startPt = { x: startX, y: startY };
-                            const endPt = { x: endX, y: endY };
-                            const obstacleRects = [];
-                            for (const n of nodes) {
-                              if (n.id === sourceNode.id || n.id === destNode.id) continue;
-                              const dims = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
-                              const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
-                              obstacleRects.push(inflateRect(rect, 8));
+                            // Use intelligent port assignments for clean routing
+                            const portAssignment = cleanLaneOffsets.get(edge.id);
+                            if (portAssignment) {
+                              const { sourcePort, destPort, sourceSide, destSide } = portAssignment;
+                              
+                              // Check if this edge has directional arrows
+                              const hasSourceArrow = arrowsToward.has(sourceNode.id);
+                              const hasDestArrow = arrowsToward.has(destNode.id);
+                              
+                              // For non-directional connections, route to node centers
+                              const effectiveStart = hasSourceArrow ? sourcePort : { x: x1, y: y1 };
+                              const effectiveEnd = hasDestArrow ? destPort : { x: x2, y: y2 };
+                              const effectiveStartSide = hasSourceArrow ? sourceSide : null;
+                              const effectiveEndSide = hasDestArrow ? destSide : null;
+                              
+                              const cleanPts = computeCleanPolylineFromPorts(
+                                effectiveStart, 
+                                effectiveEnd, 
+                                [], 
+                                cleanLaneSpacing, 
+                                effectiveStartSide, 
+                                effectiveEndSide
+                              );
+                              return buildRoundedPathFromPoints(cleanPts, 8);
+                            } else {
+                              // Fallback to simple L-path from node centers
+                              const startPt = { x: startX, y: startY };
+                              const endPt = { x: endX, y: endY };
+                              const cleanPts = computeCleanPolylineFromPorts(startPt, endPt, [], cleanLaneSpacing);
+                              return buildRoundedPathFromPoints(cleanPts, 8);
                             }
-                            const basePts = buildOrthogonalRoute(startPt, endPt, obstacleRects, 6) || computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
-                            const lane = cleanLaneOffsets.get(edge.id) || computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
-                            const shifted = applyLaneToInnerPoints(basePts, lane);
-                            return buildRoundedPathFromPoints(shifted, 8);
                           })()}
                           fill="none"
                           stroke={edgeColor}
@@ -5352,10 +5281,35 @@ function NodeCanvas() {
                                    const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
                                    obstacleRects.push(inflateRect(rect, 8));
                                  }
-                                 const basePts = computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
-                                 const lane = computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
-                                 const shifted = basePts.map(p => ({ x: p.x + lane.dx, y: p.y + lane.dy }));
-                                 return buildRoundedPathFromPoints(shifted, 8);
+                                 // Use intelligent port assignments for clean routing
+                                 const portAssignment = cleanLaneOffsets.get(edge.id);
+                                 if (portAssignment) {
+                                   const { sourcePort, destPort, sourceSide, destSide } = portAssignment;
+                                   
+                                   // Check if this edge has directional arrows
+                                   const hasSourceArrow = arrowsToward.has(sourceNode.id);
+                                   const hasDestArrow = arrowsToward.has(destNode.id);
+                                   
+                                   // For non-directional connections, route to node centers
+                                   const effectiveStart = hasSourceArrow ? sourcePort : { x: x1, y: y1 };
+                                   const effectiveEnd = hasDestArrow ? destPort : { x: x2, y: y2 };
+                                   const effectiveStartSide = hasSourceArrow ? sourceSide : null;
+                                   const effectiveEndSide = hasDestArrow ? destSide : null;
+                                   
+                                   const cleanPts = computeCleanPolylineFromPorts(
+                                     effectiveStart, 
+                                     effectiveEnd, 
+                                     [], 
+                                     cleanLaneSpacing, 
+                                     effectiveStartSide, 
+                                     effectiveEndSide
+                                   );
+                                   return buildRoundedPathFromPoints(cleanPts, 8);
+                                 } else {
+                                   // Fallback to simple L-path from node centers
+                                   const cleanPts = computeCleanPolylineFromPorts(startPt, endPt, [], cleanLaneSpacing);
+                                   return buildRoundedPathFromPoints(cleanPts, 8);
+                                 }
                                })()}
                                fill="none"
                                stroke="transparent"
@@ -5452,39 +5406,82 @@ function NodeCanvas() {
                              let sourceArrowX, sourceArrowY, destArrowX, destArrowY, sourceArrowAngle, destArrowAngle;
                              
                              if (enableAutoRouting && routingStyle === 'clean') {
-                               // Clean mode: infer arrow directions from first/last segment of the clean polyline
+                               // Clean mode: use actual port assignments for proper arrow positioning
                                const offset = showConnectionNames ? 6 : (shouldShortenSource || shouldShortenDest ? 3 : 5);
-                               const startPt = { x: startX, y: startY };
-                               const endPt = { x: endX, y: endY };
-                               const obstacleRects = [];
-                               for (const n of nodes) {
-                                 if (n.id === sourceNode.id || n.id === destNode.id) continue;
-                                 const dims = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
-                                 const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
-                                 obstacleRects.push(inflateRect(rect, 8));
+                               const portAssignment = cleanLaneOffsets.get(edge.id);
+                               
+                               if (portAssignment) {
+                                 const { sourcePort, destPort, sourceSide, destSide } = portAssignment;
+                                 
+                                 // Position arrows pointing TOWARD the target node (into the edge)
+                                 // Arrow tip points toward the node, positioned outside the edge
+                                 switch (sourceSide) {
+                                   case 'top':
+                                     sourceArrowAngle = 90; // Arrow points down toward node
+                                     sourceArrowX = sourcePort.x;
+                                     sourceArrowY = sourcePort.y - offset;
+                                     break;
+                                   case 'bottom':
+                                     sourceArrowAngle = -90; // Arrow points up toward node
+                                     sourceArrowX = sourcePort.x;
+                                     sourceArrowY = sourcePort.y + offset;
+                                     break;
+                                   case 'left':
+                                     sourceArrowAngle = 0; // Arrow points right toward node
+                                     sourceArrowX = sourcePort.x - offset;
+                                     sourceArrowY = sourcePort.y;
+                                     break;
+                                   case 'right':
+                                     sourceArrowAngle = 180; // Arrow points left toward node
+                                     sourceArrowX = sourcePort.x + offset;
+                                     sourceArrowY = sourcePort.y;
+                                     break;
+                                 }
+                                 
+                                 switch (destSide) {
+                                   case 'top':
+                                     destArrowAngle = 90; // Arrow points down toward node
+                                     destArrowX = destPort.x;
+                                     destArrowY = destPort.y - offset;
+                                     break;
+                                   case 'bottom':
+                                     destArrowAngle = -90; // Arrow points up toward node
+                                     destArrowX = destPort.x;
+                                     destArrowY = destPort.y + offset;
+                                     break;
+                                   case 'left':
+                                     destArrowAngle = 0; // Arrow points right toward node
+                                     destArrowX = destPort.x - offset;
+                                     destArrowY = destPort.y;
+                                     break;
+                                   case 'right':
+                                     destArrowAngle = 180; // Arrow points left toward node
+                                     destArrowX = destPort.x + offset;
+                                     destArrowY = destPort.y;
+                                     break;
+                                 }
+                               } else {
+                                 // Fallback to center-based positioning
+                                 const deltaX = endX - startX;
+                                 const deltaY = endY - startY;
+                                 const isMainlyVertical = Math.abs(deltaY) > Math.abs(deltaX);
+                                 
+                                 if (isMainlyVertical) {
+                                   sourceArrowAngle = deltaY > 0 ? -90 : 90;
+                                   sourceArrowX = startX;
+                                   sourceArrowY = startY + (deltaY > 0 ? offset : -offset);
+                                   destArrowAngle = deltaX > 0 ? 0 : 180;
+                                   destArrowX = endX + (deltaX > 0 ? -offset : offset);
+                                   destArrowY = endY;
+                                 } else {
+                                   sourceArrowAngle = deltaX > 0 ? 180 : 0;
+                                   sourceArrowX = startX + (deltaX > 0 ? offset : -offset);
+                                   sourceArrowY = startY;
+                                   destArrowAngle = deltaY > 0 ? 90 : -90;
+                                   destArrowX = endX;
+                                   destArrowY = endY + (deltaY > 0 ? -offset : offset);
+                                 }
                                }
-                               const basePts = buildOrthogonalRoute(startPt, endPt, obstacleRects, 6) || computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
-                               const lane = cleanLaneOffsets.get(edge.id) || computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
-                               const cleanPts = applyLaneToInnerPoints(basePts, lane);
-                               const first = cleanPts[0];
-                               const second = cleanPts[Math.min(1, cleanPts.length - 1)];
-                               const beforeLast = cleanPts[Math.max(cleanPts.length - 2, 0)];
-                               const last = cleanPts[cleanPts.length - 1];
-
-                               const v1x = second.x - first.x;
-                               const v1y = second.y - first.y;
-                               const v2x = last.x - beforeLast.x;
-                               const v2y = last.y - beforeLast.y;
-
-                               // Source arrow points back toward the source node (opposite of initial direction)
-                               sourceArrowX = first.x - Math.sign(v1x) * offset;
-                               sourceArrowY = first.y - Math.sign(v1y) * offset;
-                               sourceArrowAngle = Math.atan2(-v1y, -v1x) * (180 / Math.PI);
-
-                               // Destination arrow points into the destination (terminal direction)
-                               destArrowX = last.x - Math.sign(v2x) * offset;
-                               destArrowY = last.y - Math.sign(v2y) * offset;
-                               destArrowAngle = Math.atan2(v2y, v2x) * (180 / Math.PI);
                              } else if (!sourceIntersection || !destIntersection) {
                                // Fallback positioning - arrows/dots closer to connection center  
                                const fallbackOffset = showConnectionNames ? 20 : 
