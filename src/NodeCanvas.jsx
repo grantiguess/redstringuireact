@@ -2104,6 +2104,10 @@ function NodeCanvas() {
     // stability, sensitivity, tolerance tuned lightly for our use-case
     lethargyRef.current = new Lethargy(7, 100, 0.05);
   }
+  // Cooldown after zoom to avoid immediate misclassification of tiny trackpad pans
+  const lastZoomTsRef = useRef(0);
+  const POST_ZOOM_COOLDOWN_MS = 160;
+  const SMALL_PIXEL_DELTA_Y = 1.6; // very small pixel scrolls likely pan noise
 
   // Improved trackpad vs mouse wheel detection based on industry patterns
   // Returns one of: 'trackpad', 'trackpad_inertia', 'mouse', 'mouse_wheel', 'undetermined'
@@ -2328,6 +2332,17 @@ function NodeCanvas() {
       if (!wheelStreamRef.current.lockedType) wheelStreamRef.current.lockedType = 'trackpad';
     }
 
+    // Post-zoom cooldown bias: shortly after zoom, tiny pixel-mode deltas skew to pan unless strong mouse evidence
+    const withinZoomCooldown = (nowTs - (lastZoomTsRef.current || 0)) < POST_ZOOM_COOLDOWN_MS;
+    const strongMouseEvidence = (lethargySense === 1 || lethargySense === -1) || ((Math.abs(e.wheelDeltaY || 0) >= 120) && (Math.abs(e.wheelDeltaY || 0) % 120 === 0));
+    if (!e.ctrlKey && e.deltaMode === 0 && withinZoomCooldown && Math.abs(deltaY) <= SMALL_PIXEL_DELTA_Y && Math.abs(deltaX) < 0.15 && !strongMouseEvidence) {
+      deviceType = 'trackpad';
+      wheelStreamRef.current.trackpadEvidence = (wheelStreamRef.current.trackpadEvidence || 0) + 1;
+      if (!wheelStreamRef.current.lockedType && wheelStreamRef.current.trackpadEvidence >= 2) {
+        wheelStreamRef.current.lockedType = 'trackpad';
+      }
+    }
+
     setDebugData((prev) => ({
       ...prev,
       info: 'Wheel event',
@@ -2451,6 +2466,7 @@ function NodeCanvas() {
             if (opId === zoomOpIdRef.current) {
               setPanOffset(result.panOffset);
               setZoomLevel(result.zoomLevel);
+              lastZoomTsRef.current = nowTs;
             }
             setDebugData((prev) => ({
                 ...prev,
