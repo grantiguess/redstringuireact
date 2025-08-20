@@ -38,6 +38,7 @@
     "framer-motion": "^11.5.4",
     "immer": "^10.1.1",
     "jsonld": "^8.3.3",
+    "lethargy": "^1.0.9",
     "lucide-react": "^0.454.0",
     "node-fetch": "^3.3.2",
     "rdflib": "^2.2.37",

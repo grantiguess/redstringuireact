@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
+import { Lethargy } from 'lethargy';
 import './NodeCanvas.css';
 import { X } from 'lucide-react';
 import Header from './Header.jsx';
@@ -2094,11 +2095,21 @@ function NodeCanvas() {
   const DELTA_HISTORY_SIZE = 10;
   const DELTA_TIMEOUT = 500; // Clear history after 500ms of inactivity
   const deltaTimeoutRef = useRef(null);
+  // Lock the detected device type within a continuous wheel stream
+  const wheelStreamRef = useRef({ lockedType: null, lastTimestamp: 0 });
+  const WHEEL_STREAM_GAP_MS = 140; // gap after which a new stream starts
+  // Lethargy instance to classify intentful mouse wheel vs inertial trackpad
+  const lethargyRef = useRef(null);
+  if (!lethargyRef.current) {
+    // stability, sensitivity, tolerance tuned lightly for our use-case
+    lethargyRef.current = new Lethargy(7, 100, 0.05);
+  }
 
   // Improved trackpad vs mouse wheel detection based on industry patterns
-  const analyzeInputDevice = (deltaX, deltaY) => {
+  // Returns one of: 'trackpad', 'trackpad_inertia', 'mouse', 'mouse_wheel', 'undetermined'
+  const analyzeInputDevice = (deltaX, deltaY, deltaMode = 0, wheelDeltaY = 0, rawDeltaY = 0) => {
     // Add current deltas to history
-    deltaHistoryRef.current.unshift({ deltaX, deltaY, timestamp: Date.now() });
+    deltaHistoryRef.current.unshift({ deltaX, deltaY, deltaMode, wheelDeltaY, rawDeltaY, timestamp: Date.now() });
     if (deltaHistoryRef.current.length > DELTA_HISTORY_SIZE) {
       deltaHistoryRef.current.pop();
     }
@@ -2114,7 +2125,7 @@ function NodeCanvas() {
       return 'undetermined';
     }
 
-    const recentDeltas = deltaHistoryRef.current.slice(0, 5); // Use last 5 samples
+    const recentDeltas = deltaHistoryRef.current.slice(0, 6); // Use last 5-6 samples
     const deltaYValues = recentDeltas.map(d => Math.abs(d.deltaY)).filter(d => d > 0);
     
     if (deltaYValues.length === 0) return 'undetermined';
@@ -2159,6 +2170,45 @@ function NodeCanvas() {
       }
     }
 
+    // 5. Event frequency and inertia profile
+    const timestamps = recentDeltas.map(d => d.timestamp);
+    const intervals = [];
+    for (let i = 1; i < timestamps.length; i++) {
+      intervals.push(Math.max(0, timestamps[i-1] - timestamps[i]));
+    }
+    const avgInterval = intervals.length ? intervals.reduce((a,b) => a + b, 0) / intervals.length : 0;
+    const isHighFrequency = avgInterval > 0 && avgInterval <= 20; // ~50 Hz or faster → trackpad-like
+
+    // Inertial decaying pattern: magnitudes generally decreasing over recent samples
+    let isDecaying = false;
+    if (deltaYValues.length >= 4) {
+      let decays = 0;
+      for (let i = 1; i < Math.min(deltaYValues.length, 5); i++) {
+        if (deltaYValues[i] <= deltaYValues[i-1] * 1.05) decays++;
+      }
+      isDecaying = decays >= 2;
+    }
+
+    // Strong early signals based on browser-level fields
+    // 1) If deltamode is lines/pages, it's a mouse wheel
+    if (deltaMode === 1 || deltaMode === 2) {
+      return 'mouse_wheel';
+    }
+    // 2) Heuristic from StackOverflow: wheelDeltaY vs deltaY relationship and 120-step multiples
+    // Use as a bias signal, not an absolute decision
+    let biasMouseWheel = false;
+    if (typeof wheelDeltaY === 'number' && wheelDeltaY !== 0) {
+      const absWheel = Math.abs(wheelDeltaY);
+      // Exact relation often seen on trackpads: wheelDeltaY === rawDeltaY * -3 (browser dependent)
+      if (rawDeltaY && wheelDeltaY === rawDeltaY * -3) {
+        // Strong bias toward trackpad
+        biasMouseWheel = false;
+      } else if (absWheel >= 120 && absWheel % 120 === 0) {
+        // Typical mouse wheels report multiples of 120 per notch
+        biasMouseWheel = true;
+      }
+    }
+
     // Decision logic (prioritized)
     if (hasHorizontalMovement && !hasLargeDeltas) {
       return 'trackpad'; // Strong indicator: 2D scrolling with small deltas
@@ -2168,13 +2218,23 @@ function NodeCanvas() {
       return 'trackpad'; // Strong indicator: fractional + small values
     }
     
-    // NEW: On Mac, if deltas are small and not clearly mouse wheel pattern, prefer trackpad
-    if (isMac && hasSmallDeltas && !hasMouseWheelPattern) {
-      return 'trackpad'; // Mac bias: small deltas without wheel pattern = trackpad
+    // On Mac, small or fractional deltas + high frequency or horizontal drift → trackpad
+    if (isMac && (hasSmallDeltas || hasFractionalDeltas) && (isHighFrequency || hasHorizontalMovement) && !hasMouseWheelPattern) {
+      return 'trackpad';
+    }
+
+    // Inertial flick: require large deltas, pixel mode, decaying series, AND either fractional deltas or horizontal drift
+    if (isMac && hasLargeDeltas && isDecaying && !hasMouseWheelPattern && deltaMode === 0 && (hasFractionalDeltas || hasHorizontalMovement)) {
+      return 'trackpad_inertia';
     }
     
-    if (hasMouseWheelPattern && hasLargeDeltas && allIntegerDeltas) {
-      return 'mouse'; // Strong indicator: discrete wheel pattern
+    if ((hasMouseWheelPattern && hasLargeDeltas && allIntegerDeltas) || biasMouseWheel) {
+      return 'mouse'; // Strong indicator or bias toward discrete wheel
+    }
+
+    // Additional bias: integer-only deltas with negligible horizontal drift → mouse
+    if (allIntegerDeltas && !hasHorizontalMovement) {
+      return 'mouse';
     }
     
     if (hasSmallDeltas && hasVariedDeltas && !allIntegerDeltas) {
@@ -2193,6 +2253,15 @@ function NodeCanvas() {
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
+    // Maintain a lock per continuous stream of wheel events
+    const nowTs = performance.now();
+    if (nowTs - (wheelStreamRef.current.lastTimestamp || 0) > WHEEL_STREAM_GAP_MS) {
+      wheelStreamRef.current.lockedType = null;
+      // Reset history between streams to avoid cross-gesture contamination
+      deltaHistoryRef.current = [];
+    }
+    wheelStreamRef.current.lastTimestamp = nowTs;
+
     let deltaY = e.deltaY;
     if (e.deltaMode === 1) { deltaY *= 33; } 
     else if (e.deltaMode === 2) { deltaY *= window.innerHeight; }
@@ -2201,7 +2270,40 @@ function NodeCanvas() {
     else if (e.deltaMode === 2) { deltaX *= window.innerWidth; } 
 
     // Analyze input device type
-    const deviceType = analyzeInputDevice(deltaX, deltaY);
+    const candidateType = analyzeInputDevice(deltaX, deltaY, e.deltaMode, e.wheelDeltaY ?? 0, e.deltaY ?? 0);
+    // Lethargy check: returns 1/-1 for intentional wheel, false for inertial flick/nuance
+    let lethargySense = null;
+    try { lethargySense = lethargyRef.current?.check(e); } catch {}
+    // Per-stream lock: only consider Lethargy for mouse wheel when there is negligible horizontal motion
+    if (!wheelStreamRef.current.lockedType && (lethargySense === 1 || lethargySense === -1) && Math.abs(deltaX) < 0.15) {
+      wheelStreamRef.current.lockedType = 'mouse_wheel';
+    }
+    // Otherwise, require two consistent samples before locking
+    if (!wheelStreamRef.current.lockedType) {
+      wheelStreamRef.current.candidate = wheelStreamRef.current.candidate || { type: null, count: 0 };
+      const normType = (candidateType === 'mouse' || candidateType === 'mouse_wheel' || e.deltaMode === 1 || e.deltaMode === 2) ? 'mouse_wheel'
+                       : (candidateType === 'trackpad' || candidateType === 'trackpad_inertia') ? 'trackpad'
+                       : 'undetermined';
+      if (normType !== 'undetermined') {
+        if (wheelStreamRef.current.candidate.type === normType) {
+          wheelStreamRef.current.candidate.count += 1;
+        } else {
+          wheelStreamRef.current.candidate.type = normType;
+          wheelStreamRef.current.candidate.count = 1;
+        }
+        if (wheelStreamRef.current.candidate.count >= 2) {
+          wheelStreamRef.current.lockedType = wheelStreamRef.current.candidate.type;
+        }
+      }
+    }
+    let deviceType = wheelStreamRef.current.lockedType || candidateType;
+    // Strong pan override: if this is pixel-mode, no ctrl/meta, and there is horizontal drift or fractional deltas, treat as trackpad
+    const fractionalPresent = ((Math.abs(e.deltaY) % 1) !== 0) || ((Math.abs(e.deltaX) % 1) !== 0);
+    const hasHorizontalDrift = Math.abs(deltaX) > 0.12;
+    if (!e.ctrlKey && e.deltaMode === 0 && (hasHorizontalDrift || (fractionalPresent && Math.abs(deltaX) > 0.02))) {
+      deviceType = 'trackpad';
+      if (!wheelStreamRef.current.lockedType) wheelStreamRef.current.lockedType = 'trackpad';
+    }
 
     setDebugData((prev) => ({
       ...prev,
@@ -2213,6 +2315,9 @@ function NodeCanvas() {
       deltaMode: e.deltaMode.toString(),
       wheelDeltaY: (e.wheelDeltaY || 0).toFixed(2),
       detectedDevice: deviceType,
+      detectedDeviceCandidate: candidateType,
+      lethargySense: String(lethargySense),
+      deviceLock: wheelStreamRef.current.lockedType || 'none',
       historyLength: deltaHistoryRef.current.length.toString(),
     }));
 
@@ -2265,7 +2370,7 @@ function NodeCanvas() {
     if (abstractionCarouselVisible) return;
 
     // 2. Trackpad Two-Finger Pan (based on device detection)
-    if (deviceType === 'trackpad' || (deviceType === 'undetermined' && isMac && (Math.abs(deltaX) > 0.05 || Math.abs(deltaY) < 30))) {
+    if (deviceType === 'trackpad' || deviceType === 'trackpad_inertia' || (deviceType === 'undetermined' && isMac && (Math.abs(deltaX) > 0.05 || (Math.abs(deltaY) < 30 && Math.abs(deltaX) > 0)))) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
         const dx = -deltaX * PAN_DRAG_SENSITIVITY;
@@ -2302,7 +2407,7 @@ function NodeCanvas() {
     }
 
     // 3. Mouse Wheel Zoom (based on device detection or fallback)
-    if (deviceType === 'mouse' || (deviceType === 'undetermined' && deltaY !== 0)) {
+    if (deviceType === 'mouse' || deviceType === 'mouse_wheel' || (deviceType === 'undetermined' && deltaY !== 0 && Math.abs(deltaX) < 0.15)) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
         const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
