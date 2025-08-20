@@ -905,8 +905,8 @@ function NodeCanvas() {
         }
       }
 
-      setVisibleNodeIds(nextVisibleNodeIds);
-      setVisibleEdges(nextVisibleEdges);
+        setVisibleNodeIds(nextVisibleNodeIds);
+        setVisibleEdges(nextVisibleEdges);
     };
 
     rafId = requestAnimationFrame(compute);
@@ -915,38 +915,41 @@ function NodeCanvas() {
 
   // Helper: Get base port position on a node side (respecting rounded corners)
   const getPortPosition = (node, dims, side, cornerRadius) => {
+    // Ensure we respect the actual corner radius (40px) and don't allow ports too close to corners
     const r = Math.min(cornerRadius, Math.min(dims.currentWidth, dims.currentHeight) / 2);
+    const cornerBuffer = 8; // Additional buffer beyond the corner radius for visual clarity
+    const effectiveCornerSize = r + cornerBuffer;
     
-    // Position ports on the straight edge segments, avoiding rounded corners
+    // Position ports on the straight edge segments, with comprehensive corner avoidance
     switch (side) {
       case 'top':
         return { 
           x: node.x + dims.currentWidth / 2, 
           y: node.y,
-          // Available segment excludes corners
-          segmentStart: node.x + r,
-          segmentEnd: node.x + dims.currentWidth - r
+          // Available segment excludes corners with buffer
+          segmentStart: node.x + effectiveCornerSize,
+          segmentEnd: node.x + dims.currentWidth - effectiveCornerSize
         };
       case 'bottom':
         return { 
           x: node.x + dims.currentWidth / 2, 
           y: node.y + dims.currentHeight,
-          segmentStart: node.x + r,
-          segmentEnd: node.x + dims.currentWidth - r
+          segmentStart: node.x + effectiveCornerSize,
+          segmentEnd: node.x + dims.currentWidth - effectiveCornerSize
         };
       case 'left':
         return { 
           x: node.x, 
           y: node.y + dims.currentHeight / 2,
-          segmentStart: node.y + r,
-          segmentEnd: node.y + dims.currentHeight - r
+          segmentStart: node.y + effectiveCornerSize,
+          segmentEnd: node.y + dims.currentHeight - effectiveCornerSize
         };
       case 'right':
         return { 
           x: node.x + dims.currentWidth, 
           y: node.y + dims.currentHeight / 2,
-          segmentStart: node.y + r,
-          segmentEnd: node.y + dims.currentHeight - r
+          segmentStart: node.y + effectiveCornerSize,
+          segmentEnd: node.y + dims.currentHeight - effectiveCornerSize
         };
       default:
         return { x: node.x + dims.currentWidth / 2, y: node.y + dims.currentHeight / 2 };
@@ -955,31 +958,55 @@ function NodeCanvas() {
 
   // Helper: Calculate staggered position along an edge to distribute connections
   const calculateStaggeredPosition = (basePort, side, edgeIndex, dims, cornerRadius) => {
-    const staggerStep = Math.max(12, cleanLaneSpacing / 2);
-    
-    // Use the segment bounds from basePort to avoid rounded corners
+    // Calculate available straight-edge space (avoiding rounded corners)
     const segmentLength = basePort.segmentEnd - basePort.segmentStart;
-    const availableLength = Math.max(staggerStep, segmentLength - 16); // 8px margin on each end
+    const safeMargin = 12; // Additional margin from corners for visual clarity
+    const usableLength = segmentLength - (safeMargin * 2);
     
-    // Center the distribution and stagger by index
-    const maxPorts = Math.max(1, Math.floor(availableLength / staggerStep));
-    const actualIndex = edgeIndex % maxPorts; // Wrap if too many edges
-    const centerOffset = (actualIndex - (maxPorts - 1) / 2) * staggerStep;
+    if (usableLength <= 0) {
+      // Not enough space for distribution, use center
+      return basePort;
+    }
+    
+    // Use user spacing preference but adapt to available space
+    const preferredSpacing = Math.max(100, cleanLaneSpacing);
+    
+    // Calculate how many ports can fit with preferred spacing
+    const idealPortCount = Math.floor(usableLength / preferredSpacing) + 1;
+    const actualPortCount = Math.max(1, idealPortCount);
+    
+    // If we have multiple ports, distribute them evenly across available space
+    let position;
+    if (actualPortCount === 1) {
+      // Single port - use center
+      position = 0;
+    } else {
+      // Multiple ports - distribute evenly with slight variations to prevent perfect overlap
+      const evenSpacing = usableLength / (actualPortCount - 1);
+      const basePosition = (edgeIndex % actualPortCount) * evenSpacing;
+      
+      // Add small deterministic variation based on edge ID to prevent perfect alignment
+      const edgeHash = Math.abs(edgeIndex * 17 + edgeIndex * edgeIndex) % 7; // 0-6
+      const variation = (edgeHash - 3) * 2; // -6 to +6 pixel variation
+      
+      position = basePosition + variation;
+    }
+    
+    // Convert relative position to absolute coordinates
+    const offsetFromStart = Math.max(0, Math.min(usableLength, position));
     
     switch (side) {
       case 'top':
       case 'bottom':
         return {
-          x: Math.max(basePort.segmentStart + 8, 
-               Math.min(basePort.segmentEnd - 8, basePort.x + centerOffset)),
+          x: basePort.segmentStart + safeMargin + offsetFromStart,
           y: basePort.y
         };
       case 'left':
       case 'right':
         return {
           x: basePort.x,
-          y: Math.max(basePort.segmentStart + 8, 
-               Math.min(basePort.segmentEnd - 8, basePort.y + centerOffset))
+          y: basePort.segmentStart + safeMargin + offsetFromStart
         };
       default:
         return basePort;
@@ -2595,8 +2622,8 @@ function NodeCanvas() {
             viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
           });
           if (opId === zoomOpIdRef.current) {
-            setPanOffset(result.panOffset);
-            setZoomLevel(result.zoomLevel);
+          setPanOffset(result.panOffset);
+          setZoomLevel(result.zoomLevel);
           }
           setDebugData((prev) => ({
             ...prev,
@@ -2681,8 +2708,8 @@ function NodeCanvas() {
             });
             // Drop stale results (older ops) to avoid "ghost frames"
             if (opId === zoomOpIdRef.current) {
-              setPanOffset(result.panOffset);
-              setZoomLevel(result.zoomLevel);
+            setPanOffset(result.panOffset);
+            setZoomLevel(result.zoomLevel);
               lastZoomTsRef.current = nowTs;
             }
             setDebugData((prev) => ({
@@ -2792,8 +2819,9 @@ function NodeCanvas() {
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     
-    // Minimum orthogonal stem length before bending
-    const minStemLength = Math.max(12, laneSpacing / 2);
+    // Minimum orthogonal stem length - use generous minimum with spacing multiplier
+    // Minimum 100px ensures stems are always clearly visible
+    const minStemLength = Math.max(100, laneSpacing);
     
     // Create stem points that exit orthogonally from the node edges
     let stemStart, stemEnd;
@@ -2921,12 +2949,12 @@ function NodeCanvas() {
       const now = performance.now();
       if (now - lastHoverCheckRef.current >= HOVER_CHECK_INTERVAL_MS) {
         lastHoverCheckRef.current = now;
-        // Check if mouse is over any node first
+      // Check if mouse is over any node first
         const hoveredNode = nodes.find(node => visibleNodeIds.has(node.id) && isInsideNode(node, e.clientX, e.clientY));
-        if (!hoveredNode) {
+      if (!hoveredNode) {
           // Search only among visible edges
-          let foundHoveredEdgeInfo = null;
-          let closestDistance = Infinity;
+        let foundHoveredEdgeInfo = null;
+        let closestDistance = Infinity;
           for (const edge of visibleEdges) {
             const sourceNode = nodeById.get(edge.sourceId);
             const destNode = nodeById.get(edge.destinationId);
@@ -2961,9 +2989,9 @@ function NodeCanvas() {
               }
             }
           }
-          setHoveredEdgeInfo(foundHoveredEdgeInfo);
-        } else {
-          setHoveredEdgeInfo(null);
+        setHoveredEdgeInfo(foundHoveredEdgeInfo);
+      } else {
+        setHoveredEdgeInfo(null);
         }
       }
     }
@@ -3683,26 +3711,26 @@ function NodeCanvas() {
       let zoomDelta = 0;
       if (keysPressed.current[' ']) zoomDelta = -KEYBOARD_ZOOM_SPEED; // Space = zoom out
       if (keysPressed.current['Shift']) zoomDelta = KEYBOARD_ZOOM_SPEED; // Shift = zoom in
-      
-      if (zoomDelta !== 0) {
-        setZoomLevel(prevZoom => {
-          const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom + zoomDelta));
-          
-          // Simple pan adjustment to keep view centered
-          if (newZoom !== prevZoom) {
-            const zoomRatio = newZoom / prevZoom;
-            const centerX = viewportSize.width / 2;
-            const centerY = viewportSize.height / 2;
+        
+        if (zoomDelta !== 0) {
+          setZoomLevel(prevZoom => {
+            const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom + zoomDelta));
             
+          // Simple pan adjustment to keep view centered
+            if (newZoom !== prevZoom) {
+              const zoomRatio = newZoom / prevZoom;
+              const centerX = viewportSize.width / 2;
+              const centerY = viewportSize.height / 2;
+              
             setPanOffset(prevPan => ({
-              x: centerX - (centerX - prevPan.x) * zoomRatio,
-              y: centerY - (centerY - prevPan.y) * zoomRatio
+                  x: centerX - (centerX - prevPan.x) * zoomRatio,
+                  y: centerY - (centerY - prevPan.y) * zoomRatio
             }));
-          }
-          
-          return newZoom;
-        });
-      }
+            }
+            
+            return newZoom;
+          });
+        }
     };
 
     // Use requestAnimationFrame to sync with display refresh rate
@@ -5178,8 +5206,8 @@ function NodeCanvas() {
                               return buildRoundedPathFromPoints(cleanPts, 8);
                             } else {
                               // Fallback to simple L-path from node centers
-                              const startPt = { x: startX, y: startY };
-                              const endPt = { x: endX, y: endY };
+                            const startPt = { x: startX, y: startY };
+                            const endPt = { x: endX, y: endY };
                               const cleanPts = computeCleanPolylineFromPorts(startPt, endPt, [], cleanLaneSpacing);
                               return buildRoundedPathFromPoints(cleanPts, 8);
                             }

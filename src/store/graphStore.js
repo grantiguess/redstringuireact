@@ -166,7 +166,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       showConnectionLabels: true,
       routingStyle: 'straight', // 'straight' | 'manhattan' | 'clean'
       manhattanBends: 'auto', // 'auto' | 'one' | 'two'
-      cleanLaneSpacing: 24,
+      cleanLaneSpacing: 200,
     },
 
     // Git Federation State
@@ -999,7 +999,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         showConnectionLabels: true,
         routingStyle: 'straight',
         manhattanBends: 'auto',
-        cleanLaneSpacing: 24,
+        cleanLaneSpacing: 200,
       };
     }
     const v = Number(value);
@@ -1007,8 +1007,8 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       console.warn(`[setCleanLaneSpacing] Invalid value: ${value}`);
       return;
     }
-    // Clamp for sanity
-    const clamped = Math.max(4, Math.min(96, Math.round(v)));
+    // Clamp for sanity with new generous range
+    const clamped = Math.max(100, Math.min(400, Math.round(v)));
     draft.autoLayoutSettings.cleanLaneSpacing = clamped;
   })),
 

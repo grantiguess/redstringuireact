@@ -336,8 +336,8 @@ const RedstringMenu = ({
                               {routingStyle === 'clean' && (
                                 <div style={{ padding: '6px 6px 0 6px', width: '100%' }}>
                                   <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: '10px' }}>
-                                    <div style={{ fontSize: '12px', color: '#BDB6B5', opacity: 0.9 }}>Lane spacing</div>
-                                    <div style={{ fontSize: '12px', color: '#BDB6B5', opacity: 0.8 }}>{cleanLaneSpacing || 24}px</div>
+                                    <div style={{ fontSize: '12px', color: '#BDB6B5', opacity: 0.9 }}>Connection spacing</div>
+                                    <div style={{ fontSize: '12px', color: '#BDB6B5', opacity: 0.8 }}>{cleanLaneSpacing || 200}px</div>
                                   </div>
                                   <div
                                     style={{ width: 'calc(100% - 16px)', margin: '6px 8px 0 8px' }}
@@ -350,10 +350,10 @@ const RedstringMenu = ({
                                     <input
                                       className="submenu-slider"
                                       type="range"
-                                      min={4}
-                                      max={96}
-                                      step={1}
-                                      value={cleanLaneSpacing || 24}
+                                      min={100}
+                                      max={400}
+                                      step={10}
+                                      value={cleanLaneSpacing || 200}
                                       onChange={(e) => onSetCleanLaneSpacing?.(Number(e.target.value))}
                                       onInput={(e) => onSetCleanLaneSpacing?.(Number(e.target.value))}
                                       draggable={false}
