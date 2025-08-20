@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
-import { unstable_batchedUpdates } from 'react-dom';
+import { Lethargy } from 'lethargy';
 import './NodeCanvas.css';
 import { X } from 'lucide-react';
 import Header from './Header.jsx';
@@ -65,10 +65,8 @@ const isMac = /Mac/i.test(navigator.userAgent);
 
 // Sensitivity constants
 const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1;        // Sensitivity for standard mouse wheel zooming
-const KEYBOARD_PAN_BASE_SPEED = 12;             // constant movement speed (no acceleration) - balanced speed
-const KEYBOARD_PAN_MAX_SPEED = 20;              // max movement speed with acceleration
-const KEYBOARD_ZOOM_BASE_SPEED = 0.010;         // base zoom speed - balanced responsiveness
-const KEYBOARD_ZOOM_MAX_SPEED = 0.04;           // max zoom speed with acceleration
+const KEYBOARD_PAN_SPEED = 12;                  // for keyboard panning (much faster)
+const KEYBOARD_ZOOM_SPEED = 0.01;               // for keyboard zooming (extra smooth)
 
 function NodeCanvas() {
   const svgRef = useRef(null);
@@ -105,8 +103,6 @@ function NodeCanvas() {
   const toggleSavedNode = useGraphStore((state) => state.toggleSavedNode);
   const toggleSavedGraph = useGraphStore((state) => state.toggleSavedGraph);
   const toggleShowConnectionNames = useGraphStore((state) => state.toggleShowConnectionNames);
-  const toggleEnableAutoRouting = useGraphStore((state) => state.toggleEnableAutoRouting);
-  const setRoutingStyle = useGraphStore((state) => state.setRoutingStyle);
   const updateMultipleNodeInstancePositions = useGraphStore((state) => state.updateMultipleNodeInstancePositions);
   const removeDefinitionFromNode = useGraphStore((state) => state.removeFromDefinitionFromNode);
   const openGraphTabAndBringToTop = useGraphStore((state) => state.openGraphTabAndBringToTop);
@@ -120,6 +116,8 @@ function NodeCanvas() {
   const removeFromAbstractionChain = useGraphStore((state) => state.removeFromAbstractionChain);
   const updateGraphView = useGraphStore((state) => state.updateGraphView);
   const setTypeListMode = useGraphStore((state) => state.setTypeListMode);
+  const toggleEnableAutoRouting = useGraphStore((state) => state.toggleEnableAutoRouting);
+  const setRoutingStyle = useGraphStore((state) => state.setRoutingStyle);
 
   // Panel overlay resizers rendered in canvas (do not overlap panel DOM)
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
@@ -799,6 +797,7 @@ function NodeCanvas() {
     viewportSize.width / canvasSize.width,
     viewportSize.height / canvasSize.height
   );
+
   // Compute and update culling sets when pan/zoom or graph state changes (batch to next frame)
   useEffect(() => {
     // Guard until basic view state is present
@@ -906,10 +905,8 @@ function NodeCanvas() {
         }
       }
 
-      unstable_batchedUpdates(() => {
-        setVisibleNodeIds(nextVisibleNodeIds);
-        setVisibleEdges(nextVisibleEdges);
-      });
+      setVisibleNodeIds(nextVisibleNodeIds);
+      setVisibleEdges(nextVisibleEdges);
     };
 
     rafId = requestAnimationFrame(compute);
@@ -966,6 +963,59 @@ function NodeCanvas() {
       return offsets;
     }
   }, [enableAutoRouting, routingStyle, visibleEdges, nodes, baseDimsById, cleanLaneSpacing, getNodeDimensions]);
+
+  // Store view states per graph (graphId -> {panOffset, zoomLevel})
+  // const [graphViewStates, setGraphViewStates] = useState(new Map());
+
+  // Load view states from localStorage on mount
+  /*
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('redstring_graph_view_states');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const viewStatesMap = new Map();
+        Object.entries(parsed).forEach(([graphId, state]) => {
+          viewStatesMap.set(graphId, state);
+        });
+        setGraphViewStates(viewStatesMap);
+      }
+    } catch (error) {
+      console.error('Error loading graph view states:', error);
+    }
+  }, []);
+  */
+
+  // Save view states to localStorage (debounced)
+  /*
+  const saveViewStatesToStorage = useCallback((viewStates) => {
+    try {
+      const stateObject = Object.fromEntries(viewStates);
+      localStorage.setItem('redstring_graph_view_states', JSON.stringify(stateObject));
+    } catch (error) {
+      console.error('Error saving graph view states:', error);
+    }
+  }, []);
+  */
+
+  // Debounced save to localStorage
+  /*
+  const debouncedSaveViewStates = useRef(null);
+  useEffect(() => {
+    if (debouncedSaveViewStates.current) {
+      clearTimeout(debouncedSaveViewStates.current);
+    }
+    debouncedSaveViewStates.current = setTimeout(() => {
+      saveViewStatesToStorage(graphViewStates);
+    }, 500); // Save after 500ms of inactivity
+
+    return () => {
+      if (debouncedSaveViewStates.current) {
+        clearTimeout(debouncedSaveViewStates.current);
+      }
+    };
+  }, [graphViewStates, saveViewStatesToStorage]);
+  */
 
   const [debugMode, setDebugMode] = useState(false);
   const [debugData, setDebugData] = useState({
@@ -1425,6 +1475,7 @@ function NodeCanvas() {
       }
     }
   }, [activePieMenuColorNodeId, nodes, storeActions]);
+
   // Pie Menu Button Configuration - now targetPieMenuButtons and dynamic
   const targetPieMenuButtons = useMemo(() => {
     const selectedNode = selectedNodeIdForPieMenu ? nodes.find(n => n.id === selectedNodeIdForPieMenu) : null;
@@ -2152,20 +2203,31 @@ function NodeCanvas() {
         Object.assign(draft, newData);
     });
   };
+
   // Delta history for better trackpad/mouse detection
   const deltaHistoryRef = useRef([]);
   const DELTA_HISTORY_SIZE = 10;
   const DELTA_TIMEOUT = 500; // Clear history after 500ms of inactivity
   const deltaTimeoutRef = useRef(null);
-  // Guard against brief zoom flicker after macOS momentum pans
-  const lastMacPanAtRef = useRef(0);
-  const consecutiveZoomEligibleRef = useRef(0);
-  // Accumulator to add a small deadzone for mac pinch-zoom jitter
-  const macZoomAccumRef = useRef({ sum: 0, lastSign: 0, lastTs: 0 });
+  // Lock the detected device type within a continuous wheel stream
+  const wheelStreamRef = useRef({ lockedType: null, lastTimestamp: 0 });
+  const WHEEL_STREAM_GAP_MS = 140; // gap after which a new stream starts
+  // Lethargy instance to classify intentful mouse wheel vs inertial trackpad
+  const lethargyRef = useRef(null);
+  if (!lethargyRef.current) {
+    // stability, sensitivity, tolerance tuned lightly for our use-case
+    lethargyRef.current = new Lethargy(7, 100, 0.05);
+  }
+  // Cooldown after zoom to avoid immediate misclassification of tiny trackpad pans
+  const lastZoomTsRef = useRef(0);
+  const POST_ZOOM_COOLDOWN_MS = 160;
+  const SMALL_PIXEL_DELTA_Y = 1.6; // very small pixel scrolls likely pan noise
+
   // Improved trackpad vs mouse wheel detection based on industry patterns
-  const analyzeInputDevice = (deltaX, deltaY) => {
+  // Returns one of: 'trackpad', 'trackpad_inertia', 'mouse', 'mouse_wheel', 'undetermined'
+  const analyzeInputDevice = (deltaX, deltaY, deltaMode = 0, wheelDeltaY = 0, rawDeltaY = 0) => {
     // Add current deltas to history
-    deltaHistoryRef.current.unshift({ deltaX, deltaY, timestamp: Date.now() });
+    deltaHistoryRef.current.unshift({ deltaX, deltaY, deltaMode, wheelDeltaY, rawDeltaY, timestamp: Date.now() });
     if (deltaHistoryRef.current.length > DELTA_HISTORY_SIZE) {
       deltaHistoryRef.current.pop();
     }
@@ -2181,7 +2243,7 @@ function NodeCanvas() {
       return 'undetermined';
     }
 
-    const recentDeltas = deltaHistoryRef.current.slice(0, 5); // Use last 5 samples
+    const recentDeltas = deltaHistoryRef.current.slice(0, 6); // Use last 5-6 samples
     const deltaYValues = recentDeltas.map(d => Math.abs(d.deltaY)).filter(d => d > 0);
     
     if (deltaYValues.length === 0) return 'undetermined';
@@ -2226,6 +2288,45 @@ function NodeCanvas() {
       }
     }
 
+    // 5. Event frequency and inertia profile
+    const timestamps = recentDeltas.map(d => d.timestamp);
+    const intervals = [];
+    for (let i = 1; i < timestamps.length; i++) {
+      intervals.push(Math.max(0, timestamps[i-1] - timestamps[i]));
+    }
+    const avgInterval = intervals.length ? intervals.reduce((a,b) => a + b, 0) / intervals.length : 0;
+    const isHighFrequency = avgInterval > 0 && avgInterval <= 20; // ~50 Hz or faster → trackpad-like
+
+    // Inertial decaying pattern: magnitudes generally decreasing over recent samples
+    let isDecaying = false;
+    if (deltaYValues.length >= 4) {
+      let decays = 0;
+      for (let i = 1; i < Math.min(deltaYValues.length, 5); i++) {
+        if (deltaYValues[i] <= deltaYValues[i-1] * 1.05) decays++;
+      }
+      isDecaying = decays >= 2;
+    }
+
+    // Strong early signals based on browser-level fields
+    // 1) If deltamode is lines/pages, it's a mouse wheel
+    if (deltaMode === 1 || deltaMode === 2) {
+      return 'mouse_wheel';
+    }
+    // 2) Heuristic from StackOverflow: wheelDeltaY vs deltaY relationship and 120-step multiples
+    // Use as a bias signal, not an absolute decision
+    let biasMouseWheel = false;
+    if (typeof wheelDeltaY === 'number' && wheelDeltaY !== 0) {
+      const absWheel = Math.abs(wheelDeltaY);
+      // Exact relation often seen on trackpads: wheelDeltaY === rawDeltaY * -3 (browser dependent)
+      if (rawDeltaY && wheelDeltaY === rawDeltaY * -3) {
+        // Strong bias toward trackpad
+        biasMouseWheel = false;
+      } else if (absWheel >= 120 && absWheel % 120 === 0) {
+        // Typical mouse wheels report multiples of 120 per notch
+        biasMouseWheel = true;
+      }
+    }
+
     // Decision logic (prioritized)
     if (hasHorizontalMovement && !hasLargeDeltas) {
       return 'trackpad'; // Strong indicator: 2D scrolling with small deltas
@@ -2235,13 +2336,23 @@ function NodeCanvas() {
       return 'trackpad'; // Strong indicator: fractional + small values
     }
     
-    // NEW: On Mac, if deltas are small and not clearly mouse wheel pattern, prefer trackpad
-    if (isMac && hasSmallDeltas && !hasMouseWheelPattern) {
-      return 'trackpad'; // Mac bias: small deltas without wheel pattern = trackpad
+    // On Mac, small or fractional deltas + high frequency or horizontal drift → trackpad
+    if (isMac && (hasSmallDeltas || hasFractionalDeltas) && (isHighFrequency || hasHorizontalMovement) && !hasMouseWheelPattern) {
+      return 'trackpad';
+    }
+
+    // Inertial flick: require large deltas, pixel mode, decaying series, AND either fractional deltas or horizontal drift
+    if (isMac && hasLargeDeltas && isDecaying && !hasMouseWheelPattern && deltaMode === 0 && (hasFractionalDeltas || hasHorizontalMovement)) {
+      return 'trackpad_inertia';
     }
     
-    if (hasMouseWheelPattern && hasLargeDeltas && allIntegerDeltas) {
-      return 'mouse'; // Strong indicator: discrete wheel pattern
+    if ((hasMouseWheelPattern && hasLargeDeltas && allIntegerDeltas) || biasMouseWheel) {
+      return 'mouse'; // Strong indicator or bias toward discrete wheel
+    }
+
+    // Additional bias: integer-only deltas with negligible horizontal drift → mouse
+    if (allIntegerDeltas && !hasHorizontalMovement) {
+      return 'mouse';
     }
     
     if (hasSmallDeltas && hasVariedDeltas && !allIntegerDeltas) {
@@ -2255,28 +2366,22 @@ function NodeCanvas() {
     return 'undetermined';
   };
 
-  // Heuristic: detect macOS trackpad momentum "flick" pans that sometimes produce
-  // large vertical wheel deltas and can be misclassified as a mouse. We inspect
-  // recent history for small/fractional deltas preceding a large spike and strong
-  // vertical dominance without Ctrl (no pinch-to-zoom).
-  const looksLikeTrackpadMomentumFlick = (deltaX, deltaY, wheelEvent) => {
-    if (!isMac || wheelEvent.ctrlKey) return false;
-    const absY = Math.abs(deltaY);
-    const absX = Math.abs(deltaX);
-
-    // Prior few samples, excluding the current one (which has already been pushed)
-    const recent = deltaHistoryRef.current.slice(1, 6);
-    const hadFractional = recent.some(d => Math.abs(d.deltaY) % 1 !== 0);
-    const hadSmallBeforeBig = recent.some(d => Math.abs(d.deltaY) < 30) && absY >= 50;
-    const verticalDominance = absY > Math.max(60, 3 * absX) && absX < 2; // mostly vertical
-
-    return verticalDominance && (hadFractional || hadSmallBeforeBig);
-  };
-
   const handleWheel = async (e) => {
     const rect = containerRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
+
+    // Maintain a lock per continuous stream of wheel events
+    const nowTs = performance.now();
+    if (nowTs - (wheelStreamRef.current.lastTimestamp || 0) > WHEEL_STREAM_GAP_MS) {
+      wheelStreamRef.current.lockedType = null;
+      wheelStreamRef.current.mouseEvidence = 0;
+      wheelStreamRef.current.trackpadEvidence = 0;
+      wheelStreamRef.current.candidate = { type: null, count: 0 };
+      // Reset history between streams to avoid cross-gesture contamination
+      deltaHistoryRef.current = [];
+    }
+    wheelStreamRef.current.lastTimestamp = nowTs;
 
     let deltaY = e.deltaY;
     if (e.deltaMode === 1) { deltaY *= 33; } 
@@ -2285,10 +2390,72 @@ function NodeCanvas() {
     if (e.deltaMode === 1) { deltaX *= 33; }
     else if (e.deltaMode === 2) { deltaX *= window.innerWidth; } 
 
-    // Analyze input device type (raw), then apply mac momentum flick override
-    const rawDeviceType = analyzeInputDevice(deltaX, deltaY);
-    const momentumFlick = looksLikeTrackpadMomentumFlick(deltaX, deltaY, e);
-    const deviceType = (isMac && !e.ctrlKey && momentumFlick) ? 'trackpad' : rawDeviceType;
+    // Analyze input device type
+    const candidateType = analyzeInputDevice(deltaX, deltaY, e.deltaMode, e.wheelDeltaY ?? 0, e.deltaY ?? 0);
+    // Lethargy check: returns 1/-1 for intentional wheel, false for inertial flick/nuance
+    let lethargySense = null;
+    try { lethargySense = lethargyRef.current?.check(e); } catch {}
+    // Per-stream lock: only consider Lethargy for mouse wheel when there is negligible horizontal motion
+    if (!wheelStreamRef.current.lockedType && (lethargySense === 1 || lethargySense === -1) && Math.abs(deltaX) < 0.15) {
+      wheelStreamRef.current.lockedType = 'mouse_wheel';
+    }
+
+    // Evidence-based locking to stabilize fast wheel bursts
+    const absWheel = Math.abs(e.wheelDeltaY || 0);
+    if (absWheel >= 120 && absWheel % 120 === 0 && Math.abs(deltaX) < 0.05) {
+      wheelStreamRef.current.mouseEvidence = (wheelStreamRef.current.mouseEvidence || 0) + 1;
+    }
+    if (Math.abs(deltaX) < 0.03) {
+      wheelStreamRef.current.mouseEvidence = (wheelStreamRef.current.mouseEvidence || 0) + 1;
+    }
+    const fractionalPresent = ((Math.abs(e.deltaY) % 1) !== 0) || ((Math.abs(e.deltaX) % 1) !== 0);
+    const hasHorizontalDriftStrong = Math.abs(deltaX) > 0.2;
+    const hasHorizontalDriftMild = Math.abs(deltaX) > 0.08;
+    if (!e.ctrlKey && e.deltaMode === 0 && (hasHorizontalDriftStrong || (fractionalPresent && hasHorizontalDriftMild))) {
+      wheelStreamRef.current.trackpadEvidence = (wheelStreamRef.current.trackpadEvidence || 0) + 1;
+    }
+    if (!wheelStreamRef.current.lockedType) {
+      if ((wheelStreamRef.current.mouseEvidence || 0) >= 2) {
+        wheelStreamRef.current.lockedType = 'mouse_wheel';
+      } else if ((wheelStreamRef.current.trackpadEvidence || 0) >= 2) {
+        wheelStreamRef.current.lockedType = 'trackpad';
+      }
+    }
+    // Otherwise, require two consistent samples before locking
+    if (!wheelStreamRef.current.lockedType) {
+      wheelStreamRef.current.candidate = wheelStreamRef.current.candidate || { type: null, count: 0 };
+      const normType = (candidateType === 'mouse' || candidateType === 'mouse_wheel' || e.deltaMode === 1 || e.deltaMode === 2) ? 'mouse_wheel'
+                       : (candidateType === 'trackpad' || candidateType === 'trackpad_inertia') ? 'trackpad'
+                       : 'undetermined';
+      if (normType !== 'undetermined') {
+        if (wheelStreamRef.current.candidate.type === normType) {
+          wheelStreamRef.current.candidate.count += 1;
+        } else {
+          wheelStreamRef.current.candidate.type = normType;
+          wheelStreamRef.current.candidate.count = 1;
+        }
+        if (wheelStreamRef.current.candidate.count >= 2) {
+          wheelStreamRef.current.lockedType = wheelStreamRef.current.candidate.type;
+        }
+      }
+    }
+    let deviceType = wheelStreamRef.current.lockedType || candidateType;
+    // Strong pan override: pixel-mode, no ctrl/meta, require meaningful horizontal drift
+    if (!e.ctrlKey && e.deltaMode === 0 && (hasHorizontalDriftStrong || (fractionalPresent && hasHorizontalDriftMild))) {
+      deviceType = 'trackpad';
+      if (!wheelStreamRef.current.lockedType) wheelStreamRef.current.lockedType = 'trackpad';
+    }
+
+    // Post-zoom cooldown bias: shortly after zoom, tiny pixel-mode deltas skew to pan unless strong mouse evidence
+    const withinZoomCooldown = (nowTs - (lastZoomTsRef.current || 0)) < POST_ZOOM_COOLDOWN_MS;
+    const strongMouseEvidence = (lethargySense === 1 || lethargySense === -1) || ((Math.abs(e.wheelDeltaY || 0) >= 120) && (Math.abs(e.wheelDeltaY || 0) % 120 === 0));
+    if (!e.ctrlKey && e.deltaMode === 0 && withinZoomCooldown && Math.abs(deltaY) <= SMALL_PIXEL_DELTA_Y && Math.abs(deltaX) < 0.15 && !strongMouseEvidence) {
+      deviceType = 'trackpad';
+      wheelStreamRef.current.trackpadEvidence = (wheelStreamRef.current.trackpadEvidence || 0) + 1;
+      if (!wheelStreamRef.current.lockedType && wheelStreamRef.current.trackpadEvidence >= 2) {
+        wheelStreamRef.current.lockedType = 'trackpad';
+      }
+    }
 
     setDebugData((prev) => ({
       ...prev,
@@ -2299,37 +2466,20 @@ function NodeCanvas() {
       isMac: isMac.toString(),
       deltaMode: e.deltaMode.toString(),
       wheelDeltaY: (e.wheelDeltaY || 0).toFixed(2),
-      detectedDevice: deviceType !== rawDeviceType ? `${deviceType} (override)` : deviceType,
+      detectedDevice: deviceType,
+      detectedDeviceCandidate: candidateType,
+      lethargySense: String(lethargySense),
+      deviceLock: wheelStreamRef.current.lockedType || 'none',
+      mouseEvidence: String(wheelStreamRef.current.mouseEvidence || 0),
+      trackpadEvidence: String(wheelStreamRef.current.trackpadEvidence || 0),
       historyLength: deltaHistoryRef.current.length.toString(),
-      momentumFlick: momentumFlick.toString(),
     }));
 
     // 1. Mac Pinch-to-Zoom (Ctrl key pressed) - always zoom regardless of device
     if (isMac && e.ctrlKey) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
-        // Apply a small deadzone with accumulation to prevent micro jiggle zooming
-        const nowTs = Date.now();
-        const accum = macZoomAccumRef.current;
-        const currentSign = Math.sign(deltaY);
-        if (currentSign !== 0 && currentSign !== accum.lastSign) {
-          accum.sum = 0; // reset on direction change
-        }
-        accum.lastSign = currentSign;
-        accum.sum += deltaY;
-        accum.lastTs = nowTs;
-
-        // Threshold in wheel delta units before we apply a zoom
-        const DEADZONE_THRESHOLD = 0.6; // small, tuned for light finger shake
-        if (Math.abs(accum.sum) < DEADZONE_THRESHOLD) {
-          // Below threshold: do not zoom, but mark operation done soon
-          setTimeout(() => { isPanningOrZooming.current = false; }, 60);
-          return; // prevent tiny back/forth zooms
-        }
-
-        const effectiveDeltaY = accum.sum;
-        accum.sum = 0; // consume accumulated delta
-        const zoomDelta = effectiveDeltaY * TRACKPAD_ZOOM_SENSITIVITY;
+        const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
         const currentZoomForWorker = zoomLevel;
         const currentPanOffsetForWorker = panOffset;
         const opId = ++zoomOpIdRef.current;
@@ -2342,10 +2492,8 @@ function NodeCanvas() {
             viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
           });
           if (opId === zoomOpIdRef.current) {
-            unstable_batchedUpdates(() => {
-          setPanOffset(result.panOffset);
-          setZoomLevel(result.zoomLevel);
-            });
+            setPanOffset(result.panOffset);
+            setZoomLevel(result.zoomLevel);
           }
           setDebugData((prev) => ({
             ...prev,
@@ -2376,11 +2524,7 @@ function NodeCanvas() {
     if (abstractionCarouselVisible) return;
 
     // 2. Trackpad Two-Finger Pan (based on device detection)
-    if (
-        deviceType === 'trackpad' ||
-        // Broaden macOS fallback: treat undetermined (no Ctrl) as pan to avoid accidental zooms
-        (isMac && !e.ctrlKey && deviceType === 'undetermined')
-      ) {
+    if (deviceType === 'trackpad' || deviceType === 'trackpad_inertia' || (deviceType === 'undetermined' && isMac && (Math.abs(deltaX) > 0.05 || (Math.abs(deltaY) < 30 && Math.abs(deltaX) > 0)))) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
         const dx = -deltaX * PAN_DRAG_SENSITIVITY;
@@ -2411,62 +2555,13 @@ function NodeCanvas() {
           }));
           return { x: newX, y: newY };
         });
-        // Mark recent macOS pan to guard against immediate zoom flicker
-        if (isMac && !e.ctrlKey) {
-          lastMacPanAtRef.current = Date.now();
-          consecutiveZoomEligibleRef.current = 0;
-        }
         // Clear the flag after a delay
         setTimeout(() => { isPanningOrZooming.current = false; }, 100);
         return; // Processed
     }
 
     // 3. Mouse Wheel Zoom (based on device detection or fallback)
-    if (deviceType === 'mouse' || (!isMac && deviceType === 'undetermined' && deltaY !== 0)) {
-        // macOS anti-flicker: require stability or consecutive eligibility before zooming
-        if (isMac && !e.ctrlKey) {
-          const nowTs = Date.now();
-          const guardActive = (nowTs - lastMacPanAtRef.current) < 140; // brief guard window
-          if (guardActive || consecutiveZoomEligibleRef.current < 1) {
-            // Treat this single event as a pan to absorb momentum and confirm intent
-            e.stopPropagation();
-            isPanningOrZooming.current = true;
-            const dx = -deltaX * PAN_DRAG_SENSITIVITY;
-            const dy = -deltaY * PAN_DRAG_SENSITIVITY;
-            const currentCanvasWidth = canvasSize.width * zoomLevel;
-            const currentCanvasHeight = canvasSize.height * zoomLevel;
-            const minX = viewportSize.width - currentCanvasWidth;
-            const minY = viewportSize.height - currentCanvasHeight;
-            const maxX = 0;
-            const maxY = 0;
-
-            setPanOffset((prev) => {
-              const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
-              const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
-              setDebugData((prevData) => ({
-                ...prevData,
-                inputDevice: 'Trackpad (guard)',
-                gesture: 'two-finger pan (guarded)',
-                zooming: false,
-                panning: true,
-                sensitivity: PAN_DRAG_SENSITIVITY,
-                deltaX: deltaX.toFixed(2),
-                deltaY: deltaY.toFixed(2),
-                panOffsetX: newX.toFixed(2),
-                panOffsetY: newY.toFixed(2),
-                zoomGuard: 'active',
-                zoomEligibleCount: consecutiveZoomEligibleRef.current.toString(),
-              }));
-              return { x: newX, y: newY };
-            });
-            lastMacPanAtRef.current = nowTs;
-            consecutiveZoomEligibleRef.current = guardActive ? 0 : (consecutiveZoomEligibleRef.current + 1);
-            setTimeout(() => { isPanningOrZooming.current = false; }, 100);
-            return; // do not zoom this event
-          }
-          // Passed guard and had a prior eligible event; allow zoom and reset counter
-          consecutiveZoomEligibleRef.current = 0;
-        }
+    if (deviceType === 'mouse' || deviceType === 'mouse_wheel' || (deviceType === 'undetermined' && deltaY !== 0 && Math.abs(deltaX) < 0.15)) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
         const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
@@ -2483,10 +2578,9 @@ function NodeCanvas() {
             });
             // Drop stale results (older ops) to avoid "ghost frames"
             if (opId === zoomOpIdRef.current) {
-              unstable_batchedUpdates(() => {
-            setPanOffset(result.panOffset);
-            setZoomLevel(result.zoomLevel);
-              });
+              setPanOffset(result.panOffset);
+              setZoomLevel(result.zoomLevel);
+              lastZoomTsRef.current = nowTs;
             }
             setDebugData((prev) => ({
                 ...prev,
@@ -2592,87 +2686,256 @@ function NodeCanvas() {
 
   // Compute an orthogonal path that prefers straight/L/Z and tries small detours as needed
   const computeCleanPolylineFromPorts = (start, end, obstacleRects, laneSpacing = 24) => {
-    const candidates = [];
+    // Helper: rectangle intersection
+    const rectsIntersect = (a, b) => !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY);
+    // Inflate obstacles by a small clearance so routes never graze nodes
+    const clearancePx = 6;
+    const inflated = obstacleRects.map(r => inflateRect(r, clearancePx));
 
-    const isStraight = (start.x === end.x) || (start.y === end.y);
-    if (isStraight) {
-      candidates.push([start, end]);
+    // Determine routing bounds
+    const allXs = [start.x, end.x, ...inflated.flatMap(r => [r.minX, r.maxX])];
+    const allYs = [start.y, end.y, ...inflated.flatMap(r => [r.minY, r.maxY])];
+    const minX = Math.floor(Math.min(...allXs)) - 24;
+    const maxX = Math.ceil(Math.max(...allXs)) + 24;
+    const minY = Math.floor(Math.min(...allYs)) - 24;
+    const maxY = Math.ceil(Math.max(...allYs)) + 24;
+
+    // Grid resolution (adaptive-ish): coarser at larger lane spacing
+    const gridSize = Math.max(8, Math.min(24, Math.round(laneSpacing / 2)));
+    const cols = Math.max(4, Math.ceil((maxX - minX) / gridSize));
+    const rows = Math.max(4, Math.ceil((maxY - minY) / gridSize));
+
+    const toCell = (p) => ({
+      cx: Math.max(0, Math.min(cols - 1, Math.round((p.x - minX) / gridSize))),
+      cy: Math.max(0, Math.min(rows - 1, Math.round((p.y - minY) / gridSize))),
+    });
+    const toPoint = (cx, cy) => ({ x: minX + cx * gridSize, y: minY + cy * gridSize });
+
+    // Blocked grid
+    const blocked = new Array(rows);
+    for (let y = 0; y < rows; y++) {
+      blocked[y] = new Array(cols).fill(false);
     }
-
-    // L candidates (HV and VH)
-    const L_HV = [start, { x: end.x, y: start.y }, end];
-    const L_VH = [start, { x: start.x, y: end.y }, end];
-    candidates.push(L_HV, L_VH);
-
-    // Z candidates (HVH and VHV) using mid lines
-    const midX = Math.round((start.x + end.x) / 2);
-    const midY = Math.round((start.y + end.y) / 2);
-    const Z_HVH = [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end];
-    const Z_VHV = [start, { x: start.x, y: midY }, { x: end.x, y: midY }, end];
-    candidates.push(Z_HVH, Z_VHV);
-
-    const pathBlocked = (pts) => {
-      for (let i = 1; i < pts.length; i++) {
-        if (segmentIntersectsAnyRect(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y, obstacleRects)) return true;
-      }
-      return false;
-    };
-
-    const scorePath = (pts) => {
-      const bends = Math.max(0, pts.length - 2);
-      // Manhattan length
-      let length = 0;
-      for (let i = 1; i < pts.length; i++) {
-        length += Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
-      }
-      const BEND_PENALTY = 1000;
-      const LENGTH_WEIGHT = 1;
-      return bends * BEND_PENALTY + length * LENGTH_WEIGHT;
-    };
-
-    // Evaluate simple candidates with early exit (first valid, lowest bends preferred)
-    let best = null;
-    for (const cand of candidates) {
-      if (!pathBlocked(cand)) {
-        const sc = scorePath(cand);
-        if (!best || sc < best.score) {
-          best = { pts: cand, score: sc };
-          if (cand.length <= 3) break; // straight or L found, good enough
+    // Mark blocked cells whose center lies inside any inflated rect
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const cx = minX + x * gridSize;
+        const cy = minY + y * gridSize;
+        const cellRect = { minX: cx - gridSize / 2, maxX: cx + gridSize / 2, minY: cy - gridSize / 2, maxY: cy + gridSize / 2 };
+        for (const r of inflated) {
+          if (rectsIntersect(cellRect, r)) { blocked[y][x] = true; break; }
         }
       }
     }
 
-    if (best) return best.pts;
+    // A* search (4-neighbor) with slight bend penalty
+    const startCell = toCell(start);
+    const endCell = toCell(end);
+    const key = (x, y) => `${x},${y}`;
+    const h = (x, y) => Math.abs(x - endCell.cx) + Math.abs(y - endCell.cy);
+    const gScore = new Map();
+    const fScore = new Map();
+    const cameFrom = new Map(); // key -> { px, py }
+    const cameDir = new Map();  // key -> dir 'U'|'D'|'L'|'R'
+    const open = new Set();
 
-    // Detour attempt: offset corridor in +/- direction, up to 3 lanes
-    const offsets = [laneSpacing, laneSpacing * 2, laneSpacing * 3];
-    const tryDetour = (dir) => {
-      for (const off of offsets) {
-        // Horizontal-first detour
-        const d1 = [
-          start,
-          { x: start.x + dir * off, y: start.y },
-          { x: start.x + dir * off, y: end.y },
-          end,
-        ];
-        if (!pathBlocked(d1)) return d1;
-        // Vertical-first detour
-        const d2 = [
-          start,
-          { x: start.x, y: start.y + dir * off },
-          { x: end.x, y: start.y + dir * off },
-          end,
-        ];
-        if (!pathBlocked(d2)) return d2;
+    const push = (x, y, g, dir) => {
+      const k = key(x, y);
+      const old = gScore.get(k);
+      if (old === undefined || g < old) {
+        gScore.set(k, g);
+        fScore.set(k, g + h(x, y));
+        open.add(k);
+        cameDir.set(k, dir);
       }
-      return null;
     };
 
-    let detour = tryDetour(1) || tryDetour(-1);
-    if (detour) return detour;
+    const neighbors = (x, y) => [
+      [x + 1, y, 'R'],
+      [x - 1, y, 'L'],
+      [x, y + 1, 'D'],
+      [x, y - 1, 'U'],
+    ];
 
-    // Absolute last resort: return basic Z path (may overlap)
-    return Z_HVH;
+    const startKey = key(startCell.cx, startCell.cy);
+    gScore.set(startKey, 0);
+    fScore.set(startKey, h(startCell.cx, startCell.cy));
+    open.add(startKey);
+    cameDir.set(startKey, null);
+
+    const popLowest = () => {
+      let bestK = null; let bestF = Infinity;
+      for (const k of open) {
+        const f = fScore.get(k) ?? Infinity;
+        if (f < bestF) { bestF = f; bestK = k; }
+      }
+      if (bestK) open.delete(bestK);
+      return bestK;
+    };
+
+    let goalKey = null;
+    while (open.size) {
+      const currentK = popLowest();
+      if (!currentK) break;
+      const [cxS, cyS] = currentK.split(',').map(n => parseInt(n, 10));
+      if (cxS === endCell.cx && cyS === endCell.cy) { goalKey = currentK; break; }
+      const prevDir = cameDir.get(currentK);
+      for (const [nx, ny, ndir] of neighbors(cxS, cyS)) {
+        if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+        if (blocked[ny][nx]) continue;
+        const bendPenalty = prevDir && prevDir !== ndir ? 0.3 : 0.0;
+        const stepCost = 1.0 + bendPenalty;
+        const tentativeG = (gScore.get(currentK) ?? Infinity) + stepCost;
+        const nk = key(nx, ny);
+        const gOld = gScore.get(nk);
+        if (gOld === undefined || tentativeG < gOld) {
+          gScore.set(nk, tentativeG);
+          fScore.set(nk, tentativeG + h(nx, ny));
+          cameFrom.set(nk, { px: cxS, py: cyS });
+          cameDir.set(nk, ndir);
+          open.add(nk);
+        }
+      }
+    }
+
+    // Reconstruct
+    const pathCells = [];
+    if (goalKey) {
+      let ck = goalKey;
+      while (ck) {
+        const [cx, cy] = ck.split(',').map(n => parseInt(n, 10));
+        pathCells.push({ cx, cy });
+        const prev = cameFrom.get(ck);
+        if (!prev) break;
+        ck = key(prev.px, prev.py);
+      }
+      pathCells.reverse();
+    }
+
+    // Fallback: simple Z if no path found
+    if (!pathCells.length) {
+      const midX = Math.round((start.x + end.x) / 2);
+      return [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end];
+    }
+
+    // Convert to polyline (axis-aligned) and simplify
+    const rawPts = [];
+    for (let i = 0; i < pathCells.length; i++) {
+      const p = toPoint(pathCells[i].cx, pathCells[i].cy);
+      rawPts.push({ x: Math.round(p.x), y: Math.round(p.y) });
+    }
+
+    // Insert start and end with orthogonal connectors to first/last
+    const points = [];
+    if (rawPts.length) {
+      const first = rawPts[0];
+      if (first.x !== start.x) points.push({ x: start.x, y: start.y }, { x: first.x, y: start.y });
+      else points.push({ x: start.x, y: start.y });
+      for (let i = 1; i < rawPts.length; i++) points.push(rawPts[i]);
+      const last = rawPts[rawPts.length - 1];
+      if (last.y !== end.y) points.push({ x: last.x, y: end.y }, { x: end.x, y: end.y });
+      else points.push({ x: end.x, y: end.y });
+    } else {
+      points.push(start, end);
+    }
+
+    // Simplify colinear
+    const simplified = [];
+    for (let i = 0; i < points.length; i++) {
+      if (i === 0 || i === points.length - 1) { simplified.push(points[i]); continue; }
+      const a = simplified[simplified.length - 1];
+      const b = points[i];
+      const c = points[i + 1];
+      const colinear = (a.x === b.x && b.x === c.x) || (a.y === b.y && b.y === c.y);
+      if (!colinear) simplified.push(b);
+    }
+    return simplified.length >= 2 ? simplified : points;
+  };
+
+  // --- Orthogonal visibility routing (many bends allowed, strictly 90°) ---
+  const buildOrthogonalRoute = (start, end, obstacleRects, clearance = 6) => {
+    // Build a set of waypoint candidates: start, end, and expanded obstacle corners
+    const nodes = [];
+    const addNode = (p) => { if (Number.isFinite(p.x) && Number.isFinite(p.y)) nodes.push({ x: Math.round(p.x), y: Math.round(p.y) }); };
+    addNode(start); addNode(end);
+    const expanded = obstacleRects.map(r => inflateRect(r, Math.max(1, clearance)));
+    for (const r of expanded) {
+      addNode({ x: r.minX, y: r.minY });
+      addNode({ x: r.minX, y: r.maxY });
+      addNode({ x: r.maxX, y: r.minY });
+      addNode({ x: r.maxX, y: r.maxY });
+    }
+    // Remove near-duplicates
+    const key = (p) => `${p.x}|${p.y}`;
+    const dedup = new Map();
+    for (const p of nodes) dedup.set(key(p), p);
+    const pts = Array.from(dedup.values());
+
+    // Visibility edges between colinear unobstructed pairs
+    const canConnect = (a, b) => {
+      if (a.x !== b.x && a.y !== b.y) return false; // must be orthogonal
+      return !segmentIntersectsAnyRect(a.x, a.y, b.x, b.y, expanded);
+    };
+    const adj = new Map();
+    const addEdge = (i, j, cost) => {
+      if (!adj.has(i)) adj.set(i, []);
+      adj.get(i).push({ j, cost });
+    };
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        const a = pts[i], b = pts[j];
+        if (!canConnect(a, b)) continue;
+        const c = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+        addEdge(i, j, c);
+        addEdge(j, i, c);
+      }
+    }
+
+    // Find indices of start/end
+    const sIdx = pts.findIndex(p => p.x === start.x && p.y === start.y);
+    const eIdx = pts.findIndex(p => p.x === end.x && p.y === end.y);
+    if (sIdx === -1 || eIdx === -1) return null;
+
+    // Dijkstra with slight bend penalty
+    const prev = new Array(pts.length).fill(-1);
+    const dist = new Array(pts.length).fill(Infinity);
+    const dir = new Array(pts.length).fill(null); // 'H' or 'V'
+    dist[sIdx] = 0;
+    const visited = new Array(pts.length).fill(false);
+    for (let iter = 0; iter < pts.length; iter++) {
+      let u = -1, best = Infinity;
+      for (let k = 0; k < pts.length; k++) if (!visited[k] && dist[k] < best) { best = dist[k]; u = k; }
+      if (u === -1) break;
+      visited[u] = true;
+      if (u === eIdx) break;
+      const neighbors = adj.get(u) || [];
+      for (const { j, cost } of neighbors) {
+        const a = pts[u], b = pts[j];
+        const ndir = (a.x === b.x) ? 'V' : 'H';
+        const bendPenalty = (dir[u] && dir[u] !== ndir) ? 5 : 0;
+        const nd = dist[u] + cost + bendPenalty;
+        if (nd < dist[j]) {
+          dist[j] = nd;
+          prev[j] = u;
+          dir[j] = ndir;
+        }
+      }
+    }
+    if (prev[eIdx] === -1 && eIdx !== sIdx) return null;
+    // Reconstruct path
+    const rev = [];
+    let cur = eIdx;
+    while (cur !== -1) { rev.push(pts[cur]); cur = prev[cur]; }
+    rev.reverse();
+    // Simplify colinear points
+    const simp = [];
+    for (let i = 0; i < rev.length; i++) {
+      if (i === 0 || i === rev.length - 1) { simp.push(rev[i]); continue; }
+      const a = simp[simp.length - 1], b = rev[i], c = rev[i + 1];
+      const colinear = (a.x === b.x && b.x === c.x) || (a.y === b.y && b.y === c.y);
+      if (!colinear) simp.push(b);
+    }
+    return simp;
   };
 
   // Deterministic tiny lane offset to reduce parallel overlaps for clean routing
@@ -2743,7 +3006,7 @@ function NodeCanvas() {
     return bends * 1000 + length;
   };
 
-  const computeCleanPathBetweenNodes = (sourceNode, sDims, destNode, dDims, obstacleRects, laneSpacing = 24, portGap = 6) => {
+  const computeCleanPathBetweenNodes = (sourceNode, sDims, destNode, dDims, obstacleRects, laneSpacing = 24, portGap = 3) => {
     const sSegs = getEdgeSegmentsForNode(sourceNode, sDims, NODE_CORNER_RADIUS);
     const dSegs = getEdgeSegmentsForNode(destNode, dDims, NODE_CORNER_RADIUS);
 
@@ -2781,6 +3044,7 @@ function NodeCanvas() {
     if (!pts || !lane) return pts;
     return pts.map((p, i) => (i === 0 || i === pts.length - 1) ? p : { x: p.x + (lane.dx || 0), y: p.y + (lane.dy || 0) });
   };
+
   // --- Mouse Drag Panning (unchanged) ---
   // Throttle edge-hover detection to reduce per-frame work
   const lastHoverCheckRef = useRef(0);
@@ -2798,12 +3062,12 @@ function NodeCanvas() {
       const now = performance.now();
       if (now - lastHoverCheckRef.current >= HOVER_CHECK_INTERVAL_MS) {
         lastHoverCheckRef.current = now;
-      // Check if mouse is over any node first
+        // Check if mouse is over any node first
         const hoveredNode = nodes.find(node => visibleNodeIds.has(node.id) && isInsideNode(node, e.clientX, e.clientY));
-      if (!hoveredNode) {
+        if (!hoveredNode) {
           // Search only among visible edges
-        let foundHoveredEdgeInfo = null;
-        let closestDistance = Infinity;
+          let foundHoveredEdgeInfo = null;
+          let closestDistance = Infinity;
           for (const edge of visibleEdges) {
             const sourceNode = nodeById.get(edge.sourceId);
             const destNode = nodeById.get(edge.destinationId);
@@ -2838,9 +3102,9 @@ function NodeCanvas() {
               }
             }
           }
-        setHoveredEdgeInfo(foundHoveredEdgeInfo);
-      } else {
-        setHoveredEdgeInfo(null);
+          setHoveredEdgeInfo(foundHoveredEdgeInfo);
+        } else {
+          setHoveredEdgeInfo(null);
         }
       }
     }
@@ -3148,6 +3412,7 @@ function NodeCanvas() {
     isMouseDown.current = false;
     // setHasMouseMovedSinceDown(false); // Reset on next mousedown
   };
+
   const handleCanvasClick = (e) => {
       if (wasDrawingConnection.current) {
           wasDrawingConnection.current = false;
@@ -3516,35 +3781,16 @@ function NodeCanvas() {
 
 
 
-  // Refs for keyboard acceleration tracking
-  const keyHoldStartTimes = useRef({});
-  const accelerationMultipliers = useRef({});
-  
-  // Track zoom level in ref to prevent useEffect restarts during zoom
-  const currentZoomRef = useRef(zoomLevel);
+  // Simple keyboard controls using requestAnimationFrame - synced to display refresh rate
   useEffect(() => {
-    currentZoomRef.current = zoomLevel;
-  }, [zoomLevel]);
-  // Video game-style keyboard controls with smooth acceleration
-  // Robust key state: if window loses focus, clear all pressed keys to avoid stuck states
-  useEffect(() => {
-    const clearKeysOnBlur = () => {
-      if (keysPressed.current) {
-        Object.keys(keysPressed.current).forEach((k) => (keysPressed.current[k] = false));
-      }
-      // Also clear acceleration timing so next press starts fresh
-      keyHoldStartTimes.current = {};
-      accelerationMultipliers.current = {};
-    };
-
-    window.addEventListener('blur', clearKeysOnBlur);
-    window.addEventListener('visibilitychange', () => {
-      if (document.hidden) clearKeysOnBlur();
-    });
-
-    let animationFrameId;
+    let lastFrameTime = 0;
     
-    const gameLoop = (timestamp) => {
+    const handleKeyboardMovement = (currentTime = performance.now()) => {
+      // Throttle to ensure consistent timing regardless of refresh rate
+      if (currentTime - lastFrameTime < 8) { // ~120fps max to keep it smooth even on high refresh displays
+        return;
+      }
+      lastFrameTime = currentTime;
       // Check for conditions that should disable keyboard controls
       const shouldDisableKeyboard = 
         isPaused ||
@@ -3556,186 +3802,64 @@ function NodeCanvas() {
         isLeftPanelInputFocused ||
         !activeGraphId;
 
-      if (shouldDisableKeyboard) {
-        // Clear all acceleration when disabled
-        keyHoldStartTimes.current = {};
-        accelerationMultipliers.current = {};
-        animationFrameId = requestAnimationFrame(gameLoop);
-        return;
-      }
+      if (shouldDisableKeyboard) return;
 
-      // Smooth acceleration function - like video games
-      const getSmoothAcceleration = (keyType, currentTime) => {
-        if (!keyHoldStartTimes.current[keyType]) {
-          keyHoldStartTimes.current[keyType] = currentTime;
-          return 1;
-        }
-        
-        const holdDuration = currentTime - keyHoldStartTimes.current[keyType];
-        
-        // Smooth acceleration curve: starts at 1x, ramps up smoothly
-        if (holdDuration < 300) {
-          // First 300ms: stay at base speed for precision
-          return 1;
-        } else if (holdDuration < 800) {
-          // 300-800ms: smooth ramp to 2x speed
-          const progress = (holdDuration - 300) / 500;
-          return 1 + progress; // 1x to 2x
-        } else if (holdDuration < 1500) {
-          // 800-1500ms: ramp to 3x speed
-          const progress = (holdDuration - 800) / 700;
-          return 2 + progress; // 2x to 3x
-        } else {
-          // 1500ms+: max speed
-          return 3;
-        }
-      };
-
-      // Check movement keys
-      // Normalize to lowercase letters since the hook stores single chars as lowercase
-      const leftPressed = keysPressed.current['ArrowLeft'] || keysPressed.current['a'] === true;
-      const rightPressed = keysPressed.current['ArrowRight'] || keysPressed.current['d'] === true;
-      const upPressed = keysPressed.current['ArrowUp'] || keysPressed.current['w'] === true;
-      const downPressed = keysPressed.current['ArrowDown'] || keysPressed.current['s'] === true;
-
-      // Calculate movement with constant speed (no acceleration)
+      // Calculate movement (use lowercase only to avoid shift conflicts)
       let panDx = 0, panDy = 0;
-      if (leftPressed) panDx += KEYBOARD_PAN_BASE_SPEED;
-      if (rightPressed) panDx -= KEYBOARD_PAN_BASE_SPEED;
-      if (upPressed) panDy += KEYBOARD_PAN_BASE_SPEED;
-      if (downPressed) panDy -= KEYBOARD_PAN_BASE_SPEED;
+      if (keysPressed.current['ArrowLeft'] || keysPressed.current['a']) panDx += KEYBOARD_PAN_SPEED;
+      if (keysPressed.current['ArrowRight'] || keysPressed.current['d']) panDx -= KEYBOARD_PAN_SPEED;
+      if (keysPressed.current['ArrowUp'] || keysPressed.current['w']) panDy += KEYBOARD_PAN_SPEED;
+      if (keysPressed.current['ArrowDown'] || keysPressed.current['s']) panDy -= KEYBOARD_PAN_SPEED;
 
-      // Apply movement immediately - no thresholds
+      // Apply movement
       if (panDx !== 0 || panDy !== 0) {
-        // If zoom was active very recently, do not suppress movement
         setPanOffset(prevPan => {
-          const currentZoom = currentZoomRef.current;
-          const newX = Math.max(viewportSize.width - canvasSize.width * currentZoom, Math.min(0, prevPan.x + panDx));
-          const newY = Math.max(viewportSize.height - canvasSize.height * currentZoom, Math.min(0, prevPan.y + panDy));
+          const newX = Math.max(viewportSize.width - canvasSize.width * zoomLevel, Math.min(0, prevPan.x + panDx));
+          const newY = Math.max(viewportSize.height - canvasSize.height * zoomLevel, Math.min(0, prevPan.y + panDy));
           return { x: newX, y: newY };
         });
       }
 
-      // Check zoom keys (independent of movement) - ensure modifiers do not suppress motion
-      const spacePressed = !!keysPressed.current[' '];
-      const shiftPressed = !!keysPressed.current['Shift'];
-      
-      // Clear zoom acceleration for unpressed keys
-      if (!spacePressed && !shiftPressed) delete keyHoldStartTimes.current['zoom'];
-
-      // Handle zoom with flat rate (no acceleration)
-      if (spacePressed || shiftPressed) {
-        // Simple flat rate zoom - consistent and predictable
-        const zoomSpeed = KEYBOARD_ZOOM_BASE_SPEED;
-        
+      // Handle zoom (simple direct approach - no async calculations)
       let zoomDelta = 0;
-        if (spacePressed) zoomDelta -= zoomSpeed; // Space = zoom out
-        if (shiftPressed) zoomDelta += zoomSpeed; // Shift = zoom in
-        
-        if (zoomDelta !== 0) {
-          setZoomLevel(prevZoom => {
-            const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom + zoomDelta));
+      if (keysPressed.current[' ']) zoomDelta = -KEYBOARD_ZOOM_SPEED; // Space = zoom out
+      if (keysPressed.current['Shift']) zoomDelta = KEYBOARD_ZOOM_SPEED; // Shift = zoom in
+      
+      if (zoomDelta !== 0) {
+        setZoomLevel(prevZoom => {
+          const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom + zoomDelta));
+          
+          // Simple pan adjustment to keep view centered
+          if (newZoom !== prevZoom) {
+            const zoomRatio = newZoom / prevZoom;
+            const centerX = viewportSize.width / 2;
+            const centerY = viewportSize.height / 2;
             
-            // Keep view centered during zoom
-            if (newZoom !== prevZoom) {
-              const zoomRatio = newZoom / prevZoom;
-              const centerX = viewportSize.width / 2;
-              const centerY = viewportSize.height / 2;
-              
-              setPanOffset(prevPan => {
-                // Keep the center stable and clamp pan to bounds to avoid jumpiness
-                const nextPan = {
-                  x: centerX - (centerX - prevPan.x) * zoomRatio,
-                  y: centerY - (centerY - prevPan.y) * zoomRatio
-                };
-                const currentCanvasWidth = canvasSize.width * newZoom;
-                const currentCanvasHeight = canvasSize.height * newZoom;
-                const minX = viewportSize.width - currentCanvasWidth;
-                const minY = viewportSize.height - currentCanvasHeight;
-                const maxX = 0;
-                const maxY = 0;
-                return {
-                  x: Math.min(Math.max(nextPan.x, minX), maxX),
-                  y: Math.min(Math.max(nextPan.y, minY), maxY)
-                };
-              });
-            }
-            
-            return newZoom;
-          });
-        }
+            setPanOffset(prevPan => ({
+              x: centerX - (centerX - prevPan.x) * zoomRatio,
+              y: centerY - (centerY - prevPan.y) * zoomRatio
+            }));
+          }
+          
+          return newZoom;
+        });
       }
-
-      // Continue the game loop
-      animationFrameId = requestAnimationFrame(gameLoop);
     };
 
-    // Start the game loop
-    animationFrameId = requestAnimationFrame(gameLoop);
+    // Use requestAnimationFrame to sync with display refresh rate
+    let animationFrameId;
+    const keyboardLoop = (timestamp) => {
+      handleKeyboardMovement(timestamp);
+      animationFrameId = requestAnimationFrame(keyboardLoop);
+    };
     
+    animationFrameId = requestAnimationFrame(keyboardLoop);
     return () => {
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
       }
-      window.removeEventListener('blur', clearKeysOnBlur);
-      window.removeEventListener('visibilitychange', clearKeysOnBlur);
     };
-  }, [isPaused, nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, activeGraphId, viewportSize, canvasSize]);
-
-  // Panel and type list keyboard shortcuts
-  useEffect(() => {
-    const handlePanelShortcuts = (e) => {
-      // Check if focus is on a text input or if any prompts are visible
-      const activeElement = document.activeElement;
-      const isTextInput = activeElement && (
-        activeElement.tagName === 'INPUT' ||
-        activeElement.tagName === 'TEXTAREA' ||
-        activeElement.contentEditable === 'true' ||
-        activeElement.type === 'text' ||
-        activeElement.type === 'search' ||
-        activeElement.type === 'password' ||
-        activeElement.type === 'email' ||
-        activeElement.type === 'number'
-      );
-      
-      const shouldDisableShortcuts = 
-        isTextInput ||
-        nodeNamePrompt.visible || 
-        connectionNamePrompt.visible || 
-        abstractionPrompt.visible ||
-        isHeaderEditing || 
-        isRightPanelInputFocused || 
-        isLeftPanelInputFocused ||
-        !activeGraphId;
-
-      if (shouldDisableShortcuts) return;
-
-      // Panel shortcuts
-      if (e.key === '1') {
-        e.preventDefault();
-        setLeftPanelExpanded(prev => !prev);
-      } else if (e.key === '2') {
-        e.preventDefault();
-        setRightPanelExpanded(prev => !prev);
-      } else if (e.key === '3') {
-        e.preventDefault();
-        // Cycle type list through all three states: connection -> node -> closed -> connection
-        const currentMode = useGraphStore.getState().typeListMode;
-        let newMode;
-        if (currentMode === 'connection') {
-          newMode = 'node';
-        } else if (currentMode === 'node') {
-          newMode = 'closed';
-      } else {
-          newMode = 'connection';
-        }
-        setTypeListMode(newMode);
-      }
-    };
-
-    window.addEventListener('keydown', handlePanelShortcuts);
-    return () => window.removeEventListener('keydown', handlePanelShortcuts);
-  }, [nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, activeGraphId, setTypeListMode]);
+  }, [isPaused, nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, activeGraphId, viewportSize, canvasSize, zoomLevel]);
 
     // Add ref for dialog container
   const dialogContainerRef = useRef(null);
@@ -3944,6 +4068,7 @@ function NodeCanvas() {
       </>
     );
   };
+
   const handleToggleRightPanel = useCallback(() => {
     setRightPanelExpanded(prev => !prev);
   }, []);
@@ -4261,6 +4386,7 @@ function NodeCanvas() {
 
     hurtleAnimationRef.current = requestAnimationFrame(animate);
   }, [storeActions]);
+
   // Simple Particle Transfer Animation - always use fresh coordinates
   const startHurtleAnimation = useCallback((nodeId, targetGraphId, definitionNodeId, sourceGraphId = null) => {
     const currentState = useGraphStore.getState();
@@ -4388,6 +4514,7 @@ function NodeCanvas() {
       }
     };
   }, []);
+
   return (
     <div
       className="node-canvas-container"
@@ -4607,6 +4734,7 @@ function NodeCanvas() {
            }
          }}
       />
+
       <div style={{ display: 'flex', flexGrow: 1, position: 'relative', overflow: 'hidden' }}> 
         <Panel
           key="left-panel"
@@ -5056,94 +5184,6 @@ function NodeCanvas() {
                         manhattanDestSide = dSide;
                       }
 
-                      // Helper to render rounded Manhattan (L-shaped) path
-                      const cornerRadius = 8;
-                      const getRoundedLPath = (sx, sy, ex, ey, r) => {
-                        // Straight line cases
-                        if (sx === ex || sy === ey) {
-                          return `M ${sx},${sy} L ${ex},${ey}`;
-                        }
-                        const signX = ex > sx ? 1 : -1;
-                        const signY = ey > sy ? 1 : -1;
-                        const cornerX = ex;
-                        const cornerY = sy;
-                        const hx = cornerX - signX * r;
-                        const hy = cornerY;
-                        const vx = cornerX;
-                        const vy = cornerY + signY * r;
-                        // Use quadratic curve at the corner for a rounded bend
-                        return `M ${sx},${sy} L ${hx},${hy} Q ${cornerX},${cornerY} ${vx},${vy} L ${ex},${ey}`;
-                      };
-
-                      // Two-bend rounded Manhattan path ensuring perpendicular entry/exit
-                      const getRoundedZPath = (sx, sy, ex, ey, r) => {
-                        if (sx === ex || sy === ey) {
-                          return `M ${sx},${sy} L ${ex},${ey}`;
-                        }
-                        const midX = (sx + ex) / 2;
-                        const midY = (sy + ey) / 2;
-                        const signX1 = Math.sign(midX - sx) || 1;
-                        const signY1 = Math.sign(midY - sy) || 1;
-                        const signX2 = Math.sign(ex - midX) || 1;
-                        const signY2 = Math.sign(ey - midY) || 1;
-
-                        // First corner at (midX, sy)
-                        const c1x = midX, c1y = sy;
-                        const h1x = c1x - signX1 * r, h1y = c1y;
-                        const v1x = c1x, v1y = c1y + signY1 * r;
-
-                        // Second corner at (midX, ey)
-                        const c2x = midX, c2y = ey;
-                        const h2x = c2x, h2y = c2y - signY2 * r;
-                        const v2x = ex - signX2 * r, v2y = ey;
-
-                        return `M ${sx},${sy} L ${h1x},${h1y} Q ${c1x},${c1y} ${v1x},${v1y} L ${h2x},${h2y} Q ${c2x},${c2y} ${v2x},${v2y} L ${ex},${ey}`;
-                      };
-
-                      // Oriented one-bend L path (H then V or V then H)
-                      const getRoundedLPathOriented = (sx, sy, ex, ey, r, firstOrientation /* 'H' | 'V' */) => {
-                        if (firstOrientation === 'H') {
-                          // Horizontal then Vertical: corner at (ex, sy)
-                          return getRoundedLPath(sx, sy, ex, ey, r);
-                        } else {
-                          // Vertical then Horizontal: corner at (sx, ey)
-                          if (sx === ex || sy === ey) {
-                            return `M ${sx},${sy} L ${ex},${ey}`;
-                          }
-                          const signX = ex > sx ? 1 : -1;
-                          const signY = ey > sy ? 1 : -1;
-                          const cornerX = sx;
-                          const cornerY = ey;
-                          const vx = cornerX;
-                          const vy = cornerY - signY * r;
-                          const hx = cornerX + signX * r;
-                          const hy = cornerY;
-                          return `M ${sx},${sy} L ${vx},${vy} Q ${cornerX},${cornerY} ${hx},${hy} L ${ex},${ey}`;
-                        }
-                      };
-
-                      // Oriented two-bend Z path: 'HVH' or 'VHV'
-                      const getRoundedZPathOriented = (sx, sy, ex, ey, r, pattern /* 'HVH' | 'VHV' */) => {
-                        if (sx === ex || sy === ey) {
-                          return `M ${sx},${sy} L ${ex},${ey}`;
-                        }
-                        if (pattern === 'HVH') {
-                          const midX = (sx + ex) / 2;
-                          const a1 = getRoundedLPathOriented(sx, sy, midX, ey, r, 'H'); // H then V to mid
-                          // Continue from (midX, ey) to (ex, ey) horizontally with rounding at the join
-                          const signX = ex > midX ? 1 : -1;
-                          const preX = midX + signX * r;
-                          const d = `${a1} L ${preX},${ey} Q ${midX},${ey} ${midX},${ey} L ${ex},${ey}`;
-                          return d;
-                        } else { // 'VHV'
-                          const midY = (sy + ey) / 2;
-                          const a1 = getRoundedLPathOriented(sx, sy, ex, midY, r, 'V'); // V then H to mid
-                          const signY = ey > midY ? 1 : -1;
-                          const preY = midY + signY * r;
-                          const d = `${a1} L ${ex},${preY} Q ${ex},${midY} ${ex},${midY} L ${ex},${ey}`;
-                          return d;
-                        }
-                      };
                   return (
                         <g key={`edge-${edge.id}-${idx}`}>
                                                  {/* Main edge line - always same thickness */}
@@ -5161,7 +5201,7 @@ function NodeCanvas() {
                               const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
                               obstacleRects.push(inflateRect(rect, 8));
                             }
-                            const basePts = computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
+                            const basePts = buildOrthogonalRoute(startPt, endPt, obstacleRects, 6) || computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
                             const lane = cleanLaneOffsets.get(edge.id) || computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
                             const shifted = applyLaneToInnerPoints(basePts, lane);
                             return buildRoundedPathFromPoints(shifted, 8);
@@ -5210,7 +5250,7 @@ function NodeCanvas() {
                               const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
                               obstacleRects.push(inflateRect(rect, 8));
                             }
-                            const basePts = computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
+                            const basePts = buildOrthogonalRoute(startPt, endPt, obstacleRects, 6) || computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
                             const lane = cleanLaneOffsets.get(edge.id) || computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
                             const shifted = applyLaneToInnerPoints(basePts, lane);
                             return buildRoundedPathFromPoints(shifted, 8);
@@ -5423,7 +5463,7 @@ function NodeCanvas() {
                                  const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
                                  obstacleRects.push(inflateRect(rect, 8));
                                }
-                               const basePts = computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
+                               const basePts = buildOrthogonalRoute(startPt, endPt, obstacleRects, 6) || computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
                                const lane = cleanLaneOffsets.get(edge.id) || computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
                                const cleanPts = applyLaneToInnerPoints(basePts, lane);
                                const first = cleanPts[0];
@@ -5697,6 +5737,7 @@ function NodeCanvas() {
                     strokeWidth="8"
                   />
                 )}
+
                 {(() => {
                    const draggingNodeId = draggingNodeInfo?.primaryId || draggingNodeInfo?.instanceId;
 
