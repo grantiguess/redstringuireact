@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
-import { unstable_batchedUpdates } from 'react-dom';
 import './NodeCanvas.css';
 import { X } from 'lucide-react';
 import Header from './Header.jsx';
@@ -65,10 +64,8 @@ const isMac = /Mac/i.test(navigator.userAgent);
 
 // Sensitivity constants
 const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1;        // Sensitivity for standard mouse wheel zooming
-const KEYBOARD_PAN_BASE_SPEED = 12;             // constant movement speed (no acceleration) - balanced speed
-const KEYBOARD_PAN_MAX_SPEED = 20;              // max movement speed with acceleration
-const KEYBOARD_ZOOM_BASE_SPEED = 0.010;         // base zoom speed - balanced responsiveness
-const KEYBOARD_ZOOM_MAX_SPEED = 0.04;           // max zoom speed with acceleration
+const KEYBOARD_PAN_SPEED = 12;                  // for keyboard panning (much faster)
+const KEYBOARD_ZOOM_SPEED = 0.01;               // for keyboard zooming (extra smooth)
 
 function NodeCanvas() {
   const svgRef = useRef(null);
@@ -105,8 +102,6 @@ function NodeCanvas() {
   const toggleSavedNode = useGraphStore((state) => state.toggleSavedNode);
   const toggleSavedGraph = useGraphStore((state) => state.toggleSavedGraph);
   const toggleShowConnectionNames = useGraphStore((state) => state.toggleShowConnectionNames);
-  const toggleEnableAutoRouting = useGraphStore((state) => state.toggleEnableAutoRouting);
-  const setRoutingStyle = useGraphStore((state) => state.setRoutingStyle);
   const updateMultipleNodeInstancePositions = useGraphStore((state) => state.updateMultipleNodeInstancePositions);
   const removeDefinitionFromNode = useGraphStore((state) => state.removeFromDefinitionFromNode);
   const openGraphTabAndBringToTop = useGraphStore((state) => state.openGraphTabAndBringToTop);
@@ -119,7 +114,6 @@ function NodeCanvas() {
   const addToAbstractionChain = useGraphStore((state) => state.addToAbstractionChain);
   const removeFromAbstractionChain = useGraphStore((state) => state.removeFromAbstractionChain);
   const updateGraphView = useGraphStore((state) => state.updateGraphView);
-  const setTypeListMode = useGraphStore((state) => state.setTypeListMode);
 
   // Panel overlay resizers rendered in canvas (do not overlap panel DOM)
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
@@ -527,8 +521,6 @@ function NodeCanvas() {
     removeSelectedEdgeId,
     clearSelectedEdgeIds,
     toggleShowConnectionNames,
-    toggleEnableAutoRouting,
-    setRoutingStyle,
     updateGraphView,
   }), [
     updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance, removeEdge, updateGraph, createNewGraph,
@@ -539,7 +531,7 @@ function NodeCanvas() {
     openGraphTabAndBringToTop, cleanupOrphanedData, restoreFromSession,
     loadUniverseFromFile, setUniverseError, clearUniverse, setUniverseConnected,
     setSelectedEdgeIds, addSelectedEdgeId, removeSelectedEdgeId, clearSelectedEdgeIds, toggleShowConnectionNames,
-    toggleEnableAutoRouting, setRoutingStyle, updateGraphView
+    updateGraphView
   ]);
 
   // <<< SELECT STATE DIRECTLY >>>
@@ -552,10 +544,6 @@ function NodeCanvas() {
   const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
   const edgePrototypesMap = useGraphStore(state => state.edgePrototypes);
   const showConnectionNames = useGraphStore(state => state.showConnectionNames);
-  const enableAutoRouting = useGraphStore(state => state.autoLayoutSettings?.enableAutoRouting);
-  const routingStyle = useGraphStore(state => state.autoLayoutSettings?.routingStyle || 'straight');
-  const manhattanBends = useGraphStore(state => state.autoLayoutSettings?.manhattanBends || 'auto');
-  const cleanLaneSpacing = useGraphStore(state => state.autoLayoutSettings?.cleanLaneSpacing || 24);
   const edgesMap = useGraphStore(state => state.edges);
   const savedNodeIds = useGraphStore(state => state.savedNodeIds);
   const savedGraphIds = useGraphStore(state => state.savedGraphIds);
@@ -799,6 +787,7 @@ function NodeCanvas() {
     viewportSize.width / canvasSize.width,
     viewportSize.height / canvasSize.height
   );
+
   // Compute and update culling sets when pan/zoom or graph state changes (batch to next frame)
   useEffect(() => {
     // Guard until basic view state is present
@@ -841,59 +830,6 @@ function NodeCanvas() {
         const sDims = baseDimsById.get(s.id);
         const dDims = baseDimsById.get(d.id);
         if (!sDims || !dDims) continue;
-        if (enableAutoRouting && routingStyle === 'manhattan') {
-          // Approximate Manhattan path bbox using snapped ports and midpoints
-          const sCenterX = s.x + sDims.currentWidth / 2;
-          const sCenterY = s.y + sDims.currentHeight / 2;
-          const dCenterX = d.x + dDims.currentWidth / 2;
-          const dCenterY = d.y + dDims.currentHeight / 2;
-          const sPorts = {
-            top: { x: sCenterX, y: s.y },
-            bottom: { x: sCenterX, y: s.y + sDims.currentHeight },
-            left: { x: s.x, y: sCenterY },
-            right: { x: s.x + sDims.currentWidth, y: sCenterY },
-          };
-          const dPorts = {
-            top: { x: dCenterX, y: d.y },
-            bottom: { x: dCenterX, y: d.y + dDims.currentHeight },
-            left: { x: d.x, y: dCenterY },
-            right: { x: d.x + dDims.currentWidth, y: dCenterY },
-          };
-          const relDx = dCenterX - sCenterX;
-          const relDy = dCenterY - sCenterY;
-          let sPort, dPort;
-          if (Math.abs(relDx) >= Math.abs(relDy)) {
-            sPort = relDx >= 0 ? sPorts.right : sPorts.left;
-            dPort = relDx >= 0 ? dPorts.left : dPorts.right;
-          } else {
-            sPort = relDy >= 0 ? sPorts.bottom : sPorts.top;
-            dPort = relDy >= 0 ? dPorts.top : dPorts.bottom;
-          }
-          const start = sPort, end = dPort;
-          const sSide = (Math.abs(start.y - s.y) < 0.5) ? 'top' : (Math.abs(start.y - (s.y + sDims.currentHeight)) < 0.5) ? 'bottom' : (Math.abs(start.x - s.x) < 0.5) ? 'left' : 'right';
-          const dSide = (Math.abs(end.y - d.y) < 0.5) ? 'top' : (Math.abs(end.y - (d.y + dDims.currentHeight)) < 0.5) ? 'bottom' : (Math.abs(end.x - d.x) < 0.5) ? 'left' : 'right';
-          const initOrient = (sSide === 'left' || sSide === 'right') ? 'H' : 'V';
-          const finalOrient = (dSide === 'left' || dSide === 'right') ? 'H' : 'V';
-          const eff = (manhattanBends === 'auto') ? (initOrient === finalOrient ? 'two' : 'one') : manhattanBends;
-          let pts;
-          if (eff === 'two' && initOrient === finalOrient) {
-            if (initOrient === 'H') {
-              const midX = (start.x + end.x) / 2;
-              pts = [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end];
-            } else {
-              const midY = (start.y + end.y) / 2;
-              pts = [start, { x: start.x, y: midY }, { x: end.x, y: midY }, end];
-            }
-          } else {
-            pts = initOrient === 'H' ? [start, { x: end.x, y: start.y }, end] : [start, { x: start.x, y: end.y }, end];
-          }
-          const minX = Math.min(...pts.map(p => p.x));
-          const maxX = Math.max(...pts.map(p => p.x));
-          const minY = Math.min(...pts.map(p => p.y));
-          const maxY = Math.max(...pts.map(p => p.y));
-          const intersects = !(maxX < expanded.minX || minX > expanded.maxX || maxY < expanded.minY || minY > expanded.maxY);
-          if (intersects) nextVisibleEdges.push(edge);
-        } else {
         const sx = s.x + sDims.currentWidth / 2;
         const sy = s.y + sDims.currentHeight / 2;
         const dx = d.x + dDims.currentWidth / 2;
@@ -902,70 +838,69 @@ function NodeCanvas() {
         const dIn = dx >= expanded.minX && dx <= expanded.maxX && dy >= expanded.minY && dy <= expanded.maxY;
         if (sIn || dIn || lineIntersectsRect(sx, sy, dx, dy, expanded)) {
           nextVisibleEdges.push(edge);
-          }
         }
       }
 
-      unstable_batchedUpdates(() => {
-        setVisibleNodeIds(nextVisibleNodeIds);
-        setVisibleEdges(nextVisibleEdges);
-      });
+      setVisibleNodeIds(nextVisibleNodeIds);
+      setVisibleEdges(nextVisibleEdges);
     };
 
     rafId = requestAnimationFrame(compute);
     return () => { if (rafId) cancelAnimationFrame(rafId); };
   }, [panOffset, zoomLevel, viewportSize, canvasSize, nodes, edges, baseDimsById, nodeById]);
 
-  // Group-based lane offsets for clean routing to reduce parallel overlaps
-  const cleanLaneOffsets = useMemo(() => {
-    const offsets = new Map();
-    if (!enableAutoRouting || routingStyle !== 'clean' || !visibleEdges?.length) return offsets;
+  // Store view states per graph (graphId -> {panOffset, zoomLevel})
+  // const [graphViewStates, setGraphViewStates] = useState(new Map());
+
+  // Load view states from localStorage on mount
+  /*
+  useEffect(() => {
     try {
-      const groups = new Map();
-      const laneStep = Math.max(3, Math.floor((cleanLaneSpacing || 24) / 4));
-      const bucketSize = Math.max(6, laneStep); // quantization bucket
-      for (const edge of visibleEdges) {
-        const s = nodeById.get(edge.sourceId);
-        const d = nodeById.get(edge.destinationId);
-        if (!s || !d) continue;
-        const sDims = baseDimsById.get(s.id) || getNodeDimensions(s, false, null);
-        const dDims = baseDimsById.get(d.id) || getNodeDimensions(d, false, null);
-        // Build obstacles excluding endpoints
-        const obstacleRects = [];
-        for (const n of nodes) {
-          if (n.id === s.id || n.id === d.id) continue;
-          const nd = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
-          const rect = { minX: n.x, minY: n.y, maxX: n.x + nd.currentWidth, maxY: n.y + nd.currentHeight };
-          obstacleRects.push(inflateRect(rect, 8));
-        }
-        // Compute a quick polyline to get the first segment
-        const pts = computeCleanPathBetweenNodes(s, sDims, d, dDims, obstacleRects, cleanLaneSpacing || 24);
-        if (!pts || pts.length < 2) continue;
-        const a = pts[0];
-        const b = pts[1];
-        const isVertical = Math.abs(b.x - a.x) < Math.abs(b.y - a.y);
-        const coord = isVertical ? a.x : a.y;
-        const bucket = Math.round(coord / bucketSize);
-        const key = `${isVertical ? 'V' : 'H'}:${bucket}`;
-        if (!groups.has(key)) groups.set(key, { isVertical, ids: [] });
-        groups.get(key).ids.push(edge.id);
+      const stored = localStorage.getItem('redstring_graph_view_states');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const viewStatesMap = new Map();
+        Object.entries(parsed).forEach(([graphId, state]) => {
+          viewStatesMap.set(graphId, state);
+        });
+        setGraphViewStates(viewStatesMap);
       }
-      // Assign symmetric offsets per group
-      groups.forEach(({ isVertical, ids }) => {
-        ids.sort();
-        const n = ids.length;
-        for (let i = 0; i < n; i++) {
-          const center = (n - 1) / 2;
-          const laneIndex = i - center; // symmetric around 0
-          const delta = laneIndex * laneStep * 2; // spread more aggressively
-          offsets.set(ids[i], isVertical ? { dx: delta, dy: 0 } : { dx: 0, dy: delta });
-        }
-      });
-      return offsets;
-    } catch {
-      return offsets;
+    } catch (error) {
+      console.error('Error loading graph view states:', error);
     }
-  }, [enableAutoRouting, routingStyle, visibleEdges, nodes, baseDimsById, cleanLaneSpacing, getNodeDimensions]);
+  }, []);
+  */
+
+  // Save view states to localStorage (debounced)
+  /*
+  const saveViewStatesToStorage = useCallback((viewStates) => {
+    try {
+      const stateObject = Object.fromEntries(viewStates);
+      localStorage.setItem('redstring_graph_view_states', JSON.stringify(stateObject));
+    } catch (error) {
+      console.error('Error saving graph view states:', error);
+    }
+  }, []);
+  */
+
+  // Debounced save to localStorage
+  /*
+  const debouncedSaveViewStates = useRef(null);
+  useEffect(() => {
+    if (debouncedSaveViewStates.current) {
+      clearTimeout(debouncedSaveViewStates.current);
+    }
+    debouncedSaveViewStates.current = setTimeout(() => {
+      saveViewStatesToStorage(graphViewStates);
+    }, 500); // Save after 500ms of inactivity
+
+    return () => {
+      if (debouncedSaveViewStates.current) {
+        clearTimeout(debouncedSaveViewStates.current);
+      }
+    };
+  }, [graphViewStates, saveViewStatesToStorage]);
+  */
 
   const [debugMode, setDebugMode] = useState(false);
   const [debugData, setDebugData] = useState({
@@ -1425,6 +1360,7 @@ function NodeCanvas() {
       }
     }
   }, [activePieMenuColorNodeId, nodes, storeActions]);
+
   // Pie Menu Button Configuration - now targetPieMenuButtons and dynamic
   const targetPieMenuButtons = useMemo(() => {
     const selectedNode = selectedNodeIdForPieMenu ? nodes.find(n => n.id === selectedNodeIdForPieMenu) : null;
@@ -2152,16 +2088,13 @@ function NodeCanvas() {
         Object.assign(draft, newData);
     });
   };
+
   // Delta history for better trackpad/mouse detection
   const deltaHistoryRef = useRef([]);
   const DELTA_HISTORY_SIZE = 10;
   const DELTA_TIMEOUT = 500; // Clear history after 500ms of inactivity
   const deltaTimeoutRef = useRef(null);
-  // Guard against brief zoom flicker after macOS momentum pans
-  const lastMacPanAtRef = useRef(0);
-  const consecutiveZoomEligibleRef = useRef(0);
-  // Accumulator to add a small deadzone for mac pinch-zoom jitter
-  const macZoomAccumRef = useRef({ sum: 0, lastSign: 0, lastTs: 0 });
+
   // Improved trackpad vs mouse wheel detection based on industry patterns
   const analyzeInputDevice = (deltaX, deltaY) => {
     // Add current deltas to history
@@ -2255,24 +2188,6 @@ function NodeCanvas() {
     return 'undetermined';
   };
 
-  // Heuristic: detect macOS trackpad momentum "flick" pans that sometimes produce
-  // large vertical wheel deltas and can be misclassified as a mouse. We inspect
-  // recent history for small/fractional deltas preceding a large spike and strong
-  // vertical dominance without Ctrl (no pinch-to-zoom).
-  const looksLikeTrackpadMomentumFlick = (deltaX, deltaY, wheelEvent) => {
-    if (!isMac || wheelEvent.ctrlKey) return false;
-    const absY = Math.abs(deltaY);
-    const absX = Math.abs(deltaX);
-
-    // Prior few samples, excluding the current one (which has already been pushed)
-    const recent = deltaHistoryRef.current.slice(1, 6);
-    const hadFractional = recent.some(d => Math.abs(d.deltaY) % 1 !== 0);
-    const hadSmallBeforeBig = recent.some(d => Math.abs(d.deltaY) < 30) && absY >= 50;
-    const verticalDominance = absY > Math.max(60, 3 * absX) && absX < 2; // mostly vertical
-
-    return verticalDominance && (hadFractional || hadSmallBeforeBig);
-  };
-
   const handleWheel = async (e) => {
     const rect = containerRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
@@ -2285,10 +2200,8 @@ function NodeCanvas() {
     if (e.deltaMode === 1) { deltaX *= 33; }
     else if (e.deltaMode === 2) { deltaX *= window.innerWidth; } 
 
-    // Analyze input device type (raw), then apply mac momentum flick override
-    const rawDeviceType = analyzeInputDevice(deltaX, deltaY);
-    const momentumFlick = looksLikeTrackpadMomentumFlick(deltaX, deltaY, e);
-    const deviceType = (isMac && !e.ctrlKey && momentumFlick) ? 'trackpad' : rawDeviceType;
+    // Analyze input device type
+    const deviceType = analyzeInputDevice(deltaX, deltaY);
 
     setDebugData((prev) => ({
       ...prev,
@@ -2299,37 +2212,15 @@ function NodeCanvas() {
       isMac: isMac.toString(),
       deltaMode: e.deltaMode.toString(),
       wheelDeltaY: (e.wheelDeltaY || 0).toFixed(2),
-      detectedDevice: deviceType !== rawDeviceType ? `${deviceType} (override)` : deviceType,
+      detectedDevice: deviceType,
       historyLength: deltaHistoryRef.current.length.toString(),
-      momentumFlick: momentumFlick.toString(),
     }));
 
     // 1. Mac Pinch-to-Zoom (Ctrl key pressed) - always zoom regardless of device
     if (isMac && e.ctrlKey) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
-        // Apply a small deadzone with accumulation to prevent micro jiggle zooming
-        const nowTs = Date.now();
-        const accum = macZoomAccumRef.current;
-        const currentSign = Math.sign(deltaY);
-        if (currentSign !== 0 && currentSign !== accum.lastSign) {
-          accum.sum = 0; // reset on direction change
-        }
-        accum.lastSign = currentSign;
-        accum.sum += deltaY;
-        accum.lastTs = nowTs;
-
-        // Threshold in wheel delta units before we apply a zoom
-        const DEADZONE_THRESHOLD = 0.6; // small, tuned for light finger shake
-        if (Math.abs(accum.sum) < DEADZONE_THRESHOLD) {
-          // Below threshold: do not zoom, but mark operation done soon
-          setTimeout(() => { isPanningOrZooming.current = false; }, 60);
-          return; // prevent tiny back/forth zooms
-        }
-
-        const effectiveDeltaY = accum.sum;
-        accum.sum = 0; // consume accumulated delta
-        const zoomDelta = effectiveDeltaY * TRACKPAD_ZOOM_SENSITIVITY;
+        const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
         const currentZoomForWorker = zoomLevel;
         const currentPanOffsetForWorker = panOffset;
         const opId = ++zoomOpIdRef.current;
@@ -2342,10 +2233,8 @@ function NodeCanvas() {
             viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM,
           });
           if (opId === zoomOpIdRef.current) {
-            unstable_batchedUpdates(() => {
-          setPanOffset(result.panOffset);
-          setZoomLevel(result.zoomLevel);
-            });
+            setPanOffset(result.panOffset);
+            setZoomLevel(result.zoomLevel);
           }
           setDebugData((prev) => ({
             ...prev,
@@ -2376,11 +2265,7 @@ function NodeCanvas() {
     if (abstractionCarouselVisible) return;
 
     // 2. Trackpad Two-Finger Pan (based on device detection)
-    if (
-        deviceType === 'trackpad' ||
-        // Broaden macOS fallback: treat undetermined (no Ctrl) as pan to avoid accidental zooms
-        (isMac && !e.ctrlKey && deviceType === 'undetermined')
-      ) {
+    if (deviceType === 'trackpad' || (deviceType === 'undetermined' && isMac && (Math.abs(deltaX) > 0.05 || Math.abs(deltaY) < 30))) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
         const dx = -deltaX * PAN_DRAG_SENSITIVITY;
@@ -2411,62 +2296,13 @@ function NodeCanvas() {
           }));
           return { x: newX, y: newY };
         });
-        // Mark recent macOS pan to guard against immediate zoom flicker
-        if (isMac && !e.ctrlKey) {
-          lastMacPanAtRef.current = Date.now();
-          consecutiveZoomEligibleRef.current = 0;
-        }
         // Clear the flag after a delay
         setTimeout(() => { isPanningOrZooming.current = false; }, 100);
         return; // Processed
     }
 
     // 3. Mouse Wheel Zoom (based on device detection or fallback)
-    if (deviceType === 'mouse' || (!isMac && deviceType === 'undetermined' && deltaY !== 0)) {
-        // macOS anti-flicker: require stability or consecutive eligibility before zooming
-        if (isMac && !e.ctrlKey) {
-          const nowTs = Date.now();
-          const guardActive = (nowTs - lastMacPanAtRef.current) < 140; // brief guard window
-          if (guardActive || consecutiveZoomEligibleRef.current < 1) {
-            // Treat this single event as a pan to absorb momentum and confirm intent
-            e.stopPropagation();
-            isPanningOrZooming.current = true;
-            const dx = -deltaX * PAN_DRAG_SENSITIVITY;
-            const dy = -deltaY * PAN_DRAG_SENSITIVITY;
-            const currentCanvasWidth = canvasSize.width * zoomLevel;
-            const currentCanvasHeight = canvasSize.height * zoomLevel;
-            const minX = viewportSize.width - currentCanvasWidth;
-            const minY = viewportSize.height - currentCanvasHeight;
-            const maxX = 0;
-            const maxY = 0;
-
-            setPanOffset((prev) => {
-              const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
-              const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
-              setDebugData((prevData) => ({
-                ...prevData,
-                inputDevice: 'Trackpad (guard)',
-                gesture: 'two-finger pan (guarded)',
-                zooming: false,
-                panning: true,
-                sensitivity: PAN_DRAG_SENSITIVITY,
-                deltaX: deltaX.toFixed(2),
-                deltaY: deltaY.toFixed(2),
-                panOffsetX: newX.toFixed(2),
-                panOffsetY: newY.toFixed(2),
-                zoomGuard: 'active',
-                zoomEligibleCount: consecutiveZoomEligibleRef.current.toString(),
-              }));
-              return { x: newX, y: newY };
-            });
-            lastMacPanAtRef.current = nowTs;
-            consecutiveZoomEligibleRef.current = guardActive ? 0 : (consecutiveZoomEligibleRef.current + 1);
-            setTimeout(() => { isPanningOrZooming.current = false; }, 100);
-            return; // do not zoom this event
-          }
-          // Passed guard and had a prior eligible event; allow zoom and reset counter
-          consecutiveZoomEligibleRef.current = 0;
-        }
+    if (deviceType === 'mouse' || (deviceType === 'undetermined' && deltaY !== 0)) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
         const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
@@ -2483,10 +2319,8 @@ function NodeCanvas() {
             });
             // Drop stale results (older ops) to avoid "ghost frames"
             if (opId === zoomOpIdRef.current) {
-              unstable_batchedUpdates(() => {
-            setPanOffset(result.panOffset);
-            setZoomLevel(result.zoomLevel);
-              });
+              setPanOffset(result.panOffset);
+              setZoomLevel(result.zoomLevel);
             }
             setDebugData((prev) => ({
                 ...prev,
@@ -2544,234 +2378,6 @@ function NodeCanvas() {
     }
   }, []);
 
-  // --- Clean routing helpers (orthogonal, low-bend path with simple detours) ---
-  // Inflate a rectangle by padding
-  const inflateRect = (rect, pad) => ({
-    minX: rect.minX - pad,
-    minY: rect.minY - pad,
-    maxX: rect.maxX + pad,
-    maxY: rect.maxY + pad,
-  });
-
-  // Check if a single segment intersects any rect (using existing lineIntersectsRect)
-  const segmentIntersectsAnyRect = (x1, y1, x2, y2, rects) => {
-    for (let i = 0; i < rects.length; i++) {
-      if (lineIntersectsRect(x1, y1, x2, y2, rects[i])) return true;
-    }
-    return false;
-  };
-
-  // Build a rounded SVG path from ordered polyline points
-  const buildRoundedPathFromPoints = (pts, r = 8) => {
-    if (!pts || pts.length === 0) return '';
-    if (pts.length === 1) return `M ${pts[0].x},${pts[0].y}`;
-    let d = `M ${pts[0].x},${pts[0].y}`;
-    for (let i = 1; i < pts.length; i++) {
-      const prev = pts[i - 1];
-      const curr = pts[i];
-      // For first and last segments, just draw straight line; corners handled via quadratic joins
-      if (i < pts.length - 1) {
-        const next = pts[i + 1];
-        // Determine the approach point before the corner and the exit point after the corner
-        // Move back from curr by radius along prev->curr, and forward from curr by radius along curr->next
-        const dx1 = curr.x - prev.x;
-        const dy1 = curr.y - prev.y;
-        const len1 = Math.max(1, Math.abs(dx1) + Math.abs(dy1)); // Manhattan length (orthogonal)
-        const backX = curr.x - Math.sign(dx1) * Math.min(r, Math.abs(dx1)) - (dx1 === 0 ? 0 : 0);
-        const backY = curr.y - Math.sign(dy1) * Math.min(r, Math.abs(dy1)) - (dy1 === 0 ? 0 : 0);
-
-        const dx2 = next.x - curr.x;
-        const dy2 = next.y - curr.y;
-        const fwdX = curr.x + Math.sign(dx2) * Math.min(r, Math.abs(dx2));
-        const fwdY = curr.y + Math.sign(dy2) * Math.min(r, Math.abs(dy2));
-
-        d += ` L ${backX},${backY} Q ${curr.x},${curr.y} ${fwdX},${fwdY}`;
-      } else {
-        d += ` L ${curr.x},${curr.y}`;
-      }
-    }
-    return d;
-  };
-
-  // Compute an orthogonal path that prefers straight/L/Z and tries small detours as needed
-  const computeCleanPolylineFromPorts = (start, end, obstacleRects, laneSpacing = 24) => {
-    const candidates = [];
-
-    const isStraight = (start.x === end.x) || (start.y === end.y);
-    if (isStraight) {
-      candidates.push([start, end]);
-    }
-
-    // L candidates (HV and VH)
-    const L_HV = [start, { x: end.x, y: start.y }, end];
-    const L_VH = [start, { x: start.x, y: end.y }, end];
-    candidates.push(L_HV, L_VH);
-
-    // Z candidates (HVH and VHV) using mid lines
-    const midX = Math.round((start.x + end.x) / 2);
-    const midY = Math.round((start.y + end.y) / 2);
-    const Z_HVH = [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end];
-    const Z_VHV = [start, { x: start.x, y: midY }, { x: end.x, y: midY }, end];
-    candidates.push(Z_HVH, Z_VHV);
-
-    const pathBlocked = (pts) => {
-      for (let i = 1; i < pts.length; i++) {
-        if (segmentIntersectsAnyRect(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y, obstacleRects)) return true;
-      }
-      return false;
-    };
-
-    const scorePath = (pts) => {
-      const bends = Math.max(0, pts.length - 2);
-      // Manhattan length
-      let length = 0;
-      for (let i = 1; i < pts.length; i++) {
-        length += Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
-      }
-      const BEND_PENALTY = 1000;
-      const LENGTH_WEIGHT = 1;
-      return bends * BEND_PENALTY + length * LENGTH_WEIGHT;
-    };
-
-    // Evaluate simple candidates
-    let best = null;
-    for (const cand of candidates) {
-      if (!pathBlocked(cand)) {
-        const sc = scorePath(cand);
-        if (!best || sc < best.score) best = { pts: cand, score: sc };
-      }
-    }
-
-    if (best) return best.pts;
-
-    // Detour attempt: offset corridor in +/- direction, up to 3 lanes
-    const offsets = [laneSpacing, laneSpacing * 2, laneSpacing * 3];
-    const tryDetour = (dir) => {
-      for (const off of offsets) {
-        // Horizontal-first detour
-        const d1 = [
-          start,
-          { x: start.x + dir * off, y: start.y },
-          { x: start.x + dir * off, y: end.y },
-          end,
-        ];
-        if (!pathBlocked(d1)) return d1;
-        // Vertical-first detour
-        const d2 = [
-          start,
-          { x: start.x, y: start.y + dir * off },
-          { x: end.x, y: start.y + dir * off },
-          end,
-        ];
-        if (!pathBlocked(d2)) return d2;
-      }
-      return null;
-    };
-
-    let detour = tryDetour(1) || tryDetour(-1);
-    if (detour) return detour;
-
-    // Absolute last resort: return basic Z path (may overlap)
-    return Z_HVH;
-  };
-
-  // Deterministic tiny lane offset to reduce parallel overlaps for clean routing
-  const hashString = (str) => {
-    let h = 0;
-    for (let i = 0; i < str.length; i++) {
-      h = ((h << 5) - h) + str.charCodeAt(i);
-      h |= 0;
-    }
-    return Math.abs(h);
-  };
-
-  const computeCleanLaneTransform = (start, end, obstacleRects, laneSpacingPx, edgeId) => {
-    try {
-      const pts = computeCleanPolylineFromPorts(start, end, obstacleRects, laneSpacingPx);
-      if (!pts || pts.length < 2) return { dx: 0, dy: 0 };
-      const a = pts[0];
-      const b = pts[1];
-      const isVertical = Math.abs(b.x - a.x) < Math.abs(b.y - a.y);
-      const coord = isVertical ? Math.round(a.x) : Math.round(a.y);
-      // Map hash to symmetric lane indices: ..., -2, -1, 0, 1, 2 ...
-      const base = hashString(`${edgeId}:${coord}`);
-      const lane = (base % 5) - 2; // range [-2,2]
-      const offset = lane * Math.max(3, Math.floor(laneSpacingPx / 4));
-      return isVertical ? { dx: offset, dy: 0 } : { dx: 0, dy: offset };
-    } catch {
-      return { dx: 0, dy: 0 };
-    }
-  };
-
-  // Clean routing: pick anchors along node edge segments (excluding rounded corners)
-  const getEdgeSegmentsForNode = (node, dims, cornerRadius) => {
-    const x = node.x;
-    const y = node.y;
-    const w = dims.currentWidth;
-    const h = dims.currentHeight;
-    const r = Math.max(0, Math.min(cornerRadius || 0, Math.floor(Math.min(w, h) / 2)));
-    return [
-      { side: 'top', x1: x + r, y1: y, x2: x + w - r, y2: y },
-      { side: 'bottom', x1: x + r, y1: y + h, x2: x + w - r, y2: y + h },
-      { side: 'left', x1: x, y1: y + r, x2: x, y2: y + h - r },
-      { side: 'right', x1: x + w, y1: y + r, x2: x + w, y2: y + h - r },
-    ];
-  };
-
-  const projectPointOntoSegment = (seg, target) => {
-    if (seg.y1 === seg.y2) {
-      // horizontal
-      const minX = Math.min(seg.x1, seg.x2);
-      const maxX = Math.max(seg.x1, seg.x2);
-      const clampedX = Math.min(Math.max(target.x, minX), maxX);
-      return { x: clampedX, y: seg.y1 };
-    } else {
-      // vertical
-      const minY = Math.min(seg.y1, seg.y2);
-      const maxY = Math.max(seg.y1, seg.y2);
-      const clampedY = Math.min(Math.max(target.y, minY), maxY);
-      return { x: seg.x1, y: clampedY };
-    }
-  };
-
-  const scorePolyline = (pts) => {
-    const bends = Math.max(0, (pts?.length || 0) - 2);
-    let length = 0;
-    for (let i = 1; i < (pts?.length || 0); i++) {
-      length += Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
-    }
-    return bends * 1000 + length;
-  };
-
-  const computeCleanPathBetweenNodes = (sourceNode, sDims, destNode, dDims, obstacleRects, laneSpacing = 24) => {
-    const sSegs = getEdgeSegmentsForNode(sourceNode, sDims, NODE_CORNER_RADIUS);
-    const dSegs = getEdgeSegmentsForNode(destNode, dDims, NODE_CORNER_RADIUS);
-
-    const sCenter = { x: sourceNode.x + sDims.currentWidth / 2, y: sourceNode.y + sDims.currentHeight / 2 };
-    const dCenter = { x: destNode.x + dDims.currentWidth / 2, y: destNode.y + dDims.currentHeight / 2 };
-    const dx = dCenter.x - sCenter.x;
-    const dy = dCenter.y - sCenter.y;
-    const preferHorizontal = Math.abs(dx) >= Math.abs(dy);
-
-    // Candidate side pairs in order of preference
-    const sidePairs = preferHorizontal
-      ? [ ['right','left'], ['left','right'], ['top','bottom'], ['bottom','top'] ]
-      : [ ['bottom','top'], ['top','bottom'], ['right','left'], ['left','right'] ];
-
-    let best = null;
-    for (const [sSide, dSide] of sidePairs) {
-      const sSeg = sSegs.find(s => s.side === sSide);
-      const dSeg = dSegs.find(s => s.side === dSide);
-      if (!sSeg || !dSeg) continue;
-      const sAnchor = projectPointOntoSegment(sSeg, dCenter);
-      const dAnchor = projectPointOntoSegment(dSeg, sCenter);
-      const pts = computeCleanPolylineFromPorts(sAnchor, dAnchor, obstacleRects, laneSpacing);
-      const sc = scorePolyline(pts);
-      if (!best || sc < best.score) best = { pts, score: sc };
-    }
-
-    return best ? best.pts : computeCleanPolylineFromPorts(sCenter, dCenter, obstacleRects, laneSpacing);
-  };
   // --- Mouse Drag Panning (unchanged) ---
   // Throttle edge-hover detection to reduce per-frame work
   const lastHoverCheckRef = useRef(0);
@@ -2789,12 +2395,12 @@ function NodeCanvas() {
       const now = performance.now();
       if (now - lastHoverCheckRef.current >= HOVER_CHECK_INTERVAL_MS) {
         lastHoverCheckRef.current = now;
-      // Check if mouse is over any node first
+        // Check if mouse is over any node first
         const hoveredNode = nodes.find(node => visibleNodeIds.has(node.id) && isInsideNode(node, e.clientX, e.clientY));
-      if (!hoveredNode) {
+        if (!hoveredNode) {
           // Search only among visible edges
-        let foundHoveredEdgeInfo = null;
-        let closestDistance = Infinity;
+          let foundHoveredEdgeInfo = null;
+          let closestDistance = Infinity;
           for (const edge of visibleEdges) {
             const sourceNode = nodeById.get(edge.sourceId);
             const destNode = nodeById.get(edge.destinationId);
@@ -2829,9 +2435,9 @@ function NodeCanvas() {
               }
             }
           }
-        setHoveredEdgeInfo(foundHoveredEdgeInfo);
-      } else {
-        setHoveredEdgeInfo(null);
+          setHoveredEdgeInfo(foundHoveredEdgeInfo);
+        } else {
+          setHoveredEdgeInfo(null);
         }
       }
     }
@@ -3139,6 +2745,7 @@ function NodeCanvas() {
     isMouseDown.current = false;
     // setHasMouseMovedSinceDown(false); // Reset on next mousedown
   };
+
   const handleCanvasClick = (e) => {
       if (wasDrawingConnection.current) {
           wasDrawingConnection.current = false;
@@ -3507,35 +3114,16 @@ function NodeCanvas() {
 
 
 
-  // Refs for keyboard acceleration tracking
-  const keyHoldStartTimes = useRef({});
-  const accelerationMultipliers = useRef({});
-  
-  // Track zoom level in ref to prevent useEffect restarts during zoom
-  const currentZoomRef = useRef(zoomLevel);
+  // Simple keyboard controls using requestAnimationFrame - synced to display refresh rate
   useEffect(() => {
-    currentZoomRef.current = zoomLevel;
-  }, [zoomLevel]);
-  // Video game-style keyboard controls with smooth acceleration
-  // Robust key state: if window loses focus, clear all pressed keys to avoid stuck states
-  useEffect(() => {
-    const clearKeysOnBlur = () => {
-      if (keysPressed.current) {
-        Object.keys(keysPressed.current).forEach((k) => (keysPressed.current[k] = false));
-      }
-      // Also clear acceleration timing so next press starts fresh
-      keyHoldStartTimes.current = {};
-      accelerationMultipliers.current = {};
-    };
-
-    window.addEventListener('blur', clearKeysOnBlur);
-    window.addEventListener('visibilitychange', () => {
-      if (document.hidden) clearKeysOnBlur();
-    });
-
-    let animationFrameId;
+    let lastFrameTime = 0;
     
-    const gameLoop = (timestamp) => {
+    const handleKeyboardMovement = (currentTime = performance.now()) => {
+      // Throttle to ensure consistent timing regardless of refresh rate
+      if (currentTime - lastFrameTime < 8) { // ~120fps max to keep it smooth even on high refresh displays
+        return;
+      }
+      lastFrameTime = currentTime;
       // Check for conditions that should disable keyboard controls
       const shouldDisableKeyboard = 
         isPaused ||
@@ -3547,186 +3135,64 @@ function NodeCanvas() {
         isLeftPanelInputFocused ||
         !activeGraphId;
 
-      if (shouldDisableKeyboard) {
-        // Clear all acceleration when disabled
-        keyHoldStartTimes.current = {};
-        accelerationMultipliers.current = {};
-        animationFrameId = requestAnimationFrame(gameLoop);
-        return;
-      }
+      if (shouldDisableKeyboard) return;
 
-      // Smooth acceleration function - like video games
-      const getSmoothAcceleration = (keyType, currentTime) => {
-        if (!keyHoldStartTimes.current[keyType]) {
-          keyHoldStartTimes.current[keyType] = currentTime;
-          return 1;
-        }
-        
-        const holdDuration = currentTime - keyHoldStartTimes.current[keyType];
-        
-        // Smooth acceleration curve: starts at 1x, ramps up smoothly
-        if (holdDuration < 300) {
-          // First 300ms: stay at base speed for precision
-          return 1;
-        } else if (holdDuration < 800) {
-          // 300-800ms: smooth ramp to 2x speed
-          const progress = (holdDuration - 300) / 500;
-          return 1 + progress; // 1x to 2x
-        } else if (holdDuration < 1500) {
-          // 800-1500ms: ramp to 3x speed
-          const progress = (holdDuration - 800) / 700;
-          return 2 + progress; // 2x to 3x
-        } else {
-          // 1500ms+: max speed
-          return 3;
-        }
-      };
-
-      // Check movement keys
-      // Normalize to lowercase letters since the hook stores single chars as lowercase
-      const leftPressed = keysPressed.current['ArrowLeft'] || keysPressed.current['a'] === true;
-      const rightPressed = keysPressed.current['ArrowRight'] || keysPressed.current['d'] === true;
-      const upPressed = keysPressed.current['ArrowUp'] || keysPressed.current['w'] === true;
-      const downPressed = keysPressed.current['ArrowDown'] || keysPressed.current['s'] === true;
-
-      // Calculate movement with constant speed (no acceleration)
+      // Calculate movement (use lowercase only to avoid shift conflicts)
       let panDx = 0, panDy = 0;
-      if (leftPressed) panDx += KEYBOARD_PAN_BASE_SPEED;
-      if (rightPressed) panDx -= KEYBOARD_PAN_BASE_SPEED;
-      if (upPressed) panDy += KEYBOARD_PAN_BASE_SPEED;
-      if (downPressed) panDy -= KEYBOARD_PAN_BASE_SPEED;
+      if (keysPressed.current['ArrowLeft'] || keysPressed.current['a']) panDx += KEYBOARD_PAN_SPEED;
+      if (keysPressed.current['ArrowRight'] || keysPressed.current['d']) panDx -= KEYBOARD_PAN_SPEED;
+      if (keysPressed.current['ArrowUp'] || keysPressed.current['w']) panDy += KEYBOARD_PAN_SPEED;
+      if (keysPressed.current['ArrowDown'] || keysPressed.current['s']) panDy -= KEYBOARD_PAN_SPEED;
 
-      // Apply movement immediately - no thresholds
+      // Apply movement
       if (panDx !== 0 || panDy !== 0) {
-        // If zoom was active very recently, do not suppress movement
         setPanOffset(prevPan => {
-          const currentZoom = currentZoomRef.current;
-          const newX = Math.max(viewportSize.width - canvasSize.width * currentZoom, Math.min(0, prevPan.x + panDx));
-          const newY = Math.max(viewportSize.height - canvasSize.height * currentZoom, Math.min(0, prevPan.y + panDy));
+          const newX = Math.max(viewportSize.width - canvasSize.width * zoomLevel, Math.min(0, prevPan.x + panDx));
+          const newY = Math.max(viewportSize.height - canvasSize.height * zoomLevel, Math.min(0, prevPan.y + panDy));
           return { x: newX, y: newY };
         });
       }
 
-      // Check zoom keys (independent of movement) - ensure modifiers do not suppress motion
-      const spacePressed = !!keysPressed.current[' '];
-      const shiftPressed = !!keysPressed.current['Shift'];
-      
-      // Clear zoom acceleration for unpressed keys
-      if (!spacePressed && !shiftPressed) delete keyHoldStartTimes.current['zoom'];
-
-      // Handle zoom with flat rate (no acceleration)
-      if (spacePressed || shiftPressed) {
-        // Simple flat rate zoom - consistent and predictable
-        const zoomSpeed = KEYBOARD_ZOOM_BASE_SPEED;
-        
+      // Handle zoom (simple direct approach - no async calculations)
       let zoomDelta = 0;
-        if (spacePressed) zoomDelta -= zoomSpeed; // Space = zoom out
-        if (shiftPressed) zoomDelta += zoomSpeed; // Shift = zoom in
-        
-        if (zoomDelta !== 0) {
-          setZoomLevel(prevZoom => {
-            const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom + zoomDelta));
+      if (keysPressed.current[' ']) zoomDelta = -KEYBOARD_ZOOM_SPEED; // Space = zoom out
+      if (keysPressed.current['Shift']) zoomDelta = KEYBOARD_ZOOM_SPEED; // Shift = zoom in
+      
+      if (zoomDelta !== 0) {
+        setZoomLevel(prevZoom => {
+          const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom + zoomDelta));
+          
+          // Simple pan adjustment to keep view centered
+          if (newZoom !== prevZoom) {
+            const zoomRatio = newZoom / prevZoom;
+            const centerX = viewportSize.width / 2;
+            const centerY = viewportSize.height / 2;
             
-            // Keep view centered during zoom
-            if (newZoom !== prevZoom) {
-              const zoomRatio = newZoom / prevZoom;
-              const centerX = viewportSize.width / 2;
-              const centerY = viewportSize.height / 2;
-              
-              setPanOffset(prevPan => {
-                // Keep the center stable and clamp pan to bounds to avoid jumpiness
-                const nextPan = {
-                  x: centerX - (centerX - prevPan.x) * zoomRatio,
-                  y: centerY - (centerY - prevPan.y) * zoomRatio
-                };
-                const currentCanvasWidth = canvasSize.width * newZoom;
-                const currentCanvasHeight = canvasSize.height * newZoom;
-                const minX = viewportSize.width - currentCanvasWidth;
-                const minY = viewportSize.height - currentCanvasHeight;
-                const maxX = 0;
-                const maxY = 0;
-                return {
-                  x: Math.min(Math.max(nextPan.x, minX), maxX),
-                  y: Math.min(Math.max(nextPan.y, minY), maxY)
-                };
-              });
-            }
-            
-            return newZoom;
-          });
-        }
+            setPanOffset(prevPan => ({
+              x: centerX - (centerX - prevPan.x) * zoomRatio,
+              y: centerY - (centerY - prevPan.y) * zoomRatio
+            }));
+          }
+          
+          return newZoom;
+        });
       }
-
-      // Continue the game loop
-      animationFrameId = requestAnimationFrame(gameLoop);
     };
 
-    // Start the game loop
-    animationFrameId = requestAnimationFrame(gameLoop);
+    // Use requestAnimationFrame to sync with display refresh rate
+    let animationFrameId;
+    const keyboardLoop = (timestamp) => {
+      handleKeyboardMovement(timestamp);
+      animationFrameId = requestAnimationFrame(keyboardLoop);
+    };
     
+    animationFrameId = requestAnimationFrame(keyboardLoop);
     return () => {
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
       }
-      window.removeEventListener('blur', clearKeysOnBlur);
-      window.removeEventListener('visibilitychange', clearKeysOnBlur);
     };
-  }, [isPaused, nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, activeGraphId, viewportSize, canvasSize]);
-
-  // Panel and type list keyboard shortcuts
-  useEffect(() => {
-    const handlePanelShortcuts = (e) => {
-      // Check if focus is on a text input or if any prompts are visible
-      const activeElement = document.activeElement;
-      const isTextInput = activeElement && (
-        activeElement.tagName === 'INPUT' ||
-        activeElement.tagName === 'TEXTAREA' ||
-        activeElement.contentEditable === 'true' ||
-        activeElement.type === 'text' ||
-        activeElement.type === 'search' ||
-        activeElement.type === 'password' ||
-        activeElement.type === 'email' ||
-        activeElement.type === 'number'
-      );
-      
-      const shouldDisableShortcuts = 
-        isTextInput ||
-        nodeNamePrompt.visible || 
-        connectionNamePrompt.visible || 
-        abstractionPrompt.visible ||
-        isHeaderEditing || 
-        isRightPanelInputFocused || 
-        isLeftPanelInputFocused ||
-        !activeGraphId;
-
-      if (shouldDisableShortcuts) return;
-
-      // Panel shortcuts
-      if (e.key === '1') {
-        e.preventDefault();
-        setLeftPanelExpanded(prev => !prev);
-      } else if (e.key === '2') {
-        e.preventDefault();
-        setRightPanelExpanded(prev => !prev);
-      } else if (e.key === '3') {
-        e.preventDefault();
-        // Cycle type list through all three states: connection -> node -> closed -> connection
-        const currentMode = useGraphStore.getState().typeListMode;
-        let newMode;
-        if (currentMode === 'connection') {
-          newMode = 'node';
-        } else if (currentMode === 'node') {
-          newMode = 'closed';
-      } else {
-          newMode = 'connection';
-        }
-        setTypeListMode(newMode);
-      }
-    };
-
-    window.addEventListener('keydown', handlePanelShortcuts);
-    return () => window.removeEventListener('keydown', handlePanelShortcuts);
-  }, [nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, activeGraphId, setTypeListMode]);
+  }, [isPaused, nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, activeGraphId, viewportSize, canvasSize, zoomLevel]);
 
     // Add ref for dialog container
   const dialogContainerRef = useRef(null);
@@ -3935,6 +3401,7 @@ function NodeCanvas() {
       </>
     );
   };
+
   const handleToggleRightPanel = useCallback(() => {
     setRightPanelExpanded(prev => !prev);
   }, []);
@@ -4252,6 +3719,7 @@ function NodeCanvas() {
 
     hurtleAnimationRef.current = requestAnimationFrame(animate);
   }, [storeActions]);
+
   // Simple Particle Transfer Animation - always use fresh coordinates
   const startHurtleAnimation = useCallback((nodeId, targetGraphId, definitionNodeId, sourceGraphId = null) => {
     const currentState = useGraphStore.getState();
@@ -4379,6 +3847,7 @@ function NodeCanvas() {
       }
     };
   }, []);
+
   return (
     <div
       className="node-canvas-container"
@@ -4407,14 +3876,6 @@ function NodeCanvas() {
          onBookmarkToggle={handleToggleBookmark}
          showConnectionNames={showConnectionNames}
          onToggleShowConnectionNames={storeActions.toggleShowConnectionNames}
-         enableAutoRouting={enableAutoRouting}
-         routingStyle={routingStyle}
-         manhattanBends={manhattanBends}
-         onToggleEnableAutoRouting={storeActions.toggleEnableAutoRouting}
-         onSetRoutingStyle={storeActions.setRoutingStyle}
-         onSetManhattanBends={storeActions.setManhattanBends}
-         onSetCleanLaneSpacing={(v) => useGraphStore.getState().setCleanLaneSpacing(v)}
-         cleanLaneSpacing={cleanLaneSpacing}
 
          onNewUniverse={async () => {
            try {
@@ -4598,6 +4059,7 @@ function NodeCanvas() {
            }
          }}
       />
+
       <div style={{ display: 'flex', flexGrow: 1, position: 'relative', overflow: 'hidden' }}> 
         <Panel
           key="left-panel"
@@ -4903,275 +4365,19 @@ function NodeCanvas() {
                         : new Set(Array.isArray(edge.directionality?.arrowsToward) ? edge.directionality.arrowsToward : []);
                       
                       // Only shorten connections at ends with arrows or hover state
-                      let shouldShortenSource = isHovered || arrowsToward.has(sourceNode.id);
-                      let shouldShortenDest = isHovered || arrowsToward.has(destNode.id);
-                      if (enableAutoRouting && routingStyle === 'manhattan') {
-                        // In Manhattan mode, never shorten for hover—only for actual arrows
-                        shouldShortenSource = arrowsToward.has(sourceNode.id);
-                        shouldShortenDest = arrowsToward.has(destNode.id);
-                      }
+                      const shouldShortenSource = isHovered || arrowsToward.has(sourceNode.id);
+                      const shouldShortenDest = isHovered || arrowsToward.has(destNode.id);
 
-                      // Determine actual start/end points for rendering
-                      let startX = shouldShortenSource ? (sourceIntersection?.x || x1) : x1;
-                      let startY = shouldShortenSource ? (sourceIntersection?.y || y1) : y1;
-                      let endX = shouldShortenDest ? (destIntersection?.x || x2) : x2;
-                      let endY = shouldShortenDest ? (destIntersection?.y || y2) : y2;
-
-                      // Predeclare Manhattan path info for safe use below
-                      let manhattanPathD = null;
-                      let manhattanSourceSide = null;
-                      let manhattanDestSide = null;
-
-                      // When using Manhattan routing, snap to 4 node ports (midpoints of each side)
-                      if (enableAutoRouting && routingStyle === 'manhattan') {
-                        const sCenterX = sourceNode.x + sNodeDims.currentWidth / 2;
-                        const sCenterY = sourceNode.y + sNodeDims.currentHeight / 2;
-                        const dCenterX = destNode.x + eNodeDims.currentWidth / 2;
-                        const dCenterY = destNode.y + eNodeDims.currentHeight / 2;
-
-                        const sPorts = {
-                          top: { x: sCenterX, y: sourceNode.y },
-                          bottom: { x: sCenterX, y: sourceNode.y + sNodeDims.currentHeight },
-                          left: { x: sourceNode.x, y: sCenterY },
-                          right: { x: sourceNode.x + sNodeDims.currentWidth, y: sCenterY },
-                        };
-                        const dPorts = {
-                          top: { x: dCenterX, y: destNode.y },
-                          bottom: { x: dCenterX, y: destNode.y + eNodeDims.currentHeight },
-                          left: { x: destNode.x, y: dCenterY },
-                          right: { x: destNode.x + eNodeDims.currentWidth, y: dCenterY },
-                        };
-
-                        const relDx = dCenterX - sCenterX;
-                        const relDy = dCenterY - sCenterY;
-                        let sPort, dPort;
-                        if (Math.abs(relDx) >= Math.abs(relDy)) {
-                          // Prefer horizontal ports
-                          sPort = relDx >= 0 ? sPorts.right : sPorts.left;
-                          dPort = relDx >= 0 ? dPorts.left : dPorts.right;
-                        } else {
-                          // Prefer vertical ports
-                          sPort = relDy >= 0 ? sPorts.bottom : sPorts.top;
-                          dPort = relDy >= 0 ? dPorts.top : dPorts.bottom;
-                        }
-                        startX = sPort.x;
-                        startY = sPort.y;
-                        endX = dPort.x;
-                        endY = dPort.y;
-
-                        // Determine sides for perpendicular entry/exit
-                        const sSide = (Math.abs(startY - sourceNode.y) < 0.5) ? 'top'
-                                        : (Math.abs(startY - (sourceNode.y + sNodeDims.currentHeight)) < 0.5) ? 'bottom'
-                                        : (Math.abs(startX - sourceNode.x) < 0.5) ? 'left' : 'right';
-                        const dSide = (Math.abs(endY - destNode.y) < 0.5) ? 'top'
-                                        : (Math.abs(endY - (destNode.y + eNodeDims.currentHeight)) < 0.5) ? 'bottom'
-                                        : (Math.abs(endX - destNode.x) < 0.5) ? 'left' : 'right';
-                        const initOrient = (sSide === 'left' || sSide === 'right') ? 'H' : 'V';
-                        const finalOrient = (dSide === 'left' || dSide === 'right') ? 'H' : 'V';
-
-                        const effectiveBends = (manhattanBends === 'auto')
-                          ? (initOrient === finalOrient ? 'two' : 'one')
-                          : manhattanBends;
-
-                        // Local helpers declared before use to avoid hoisting issues
-                        const cornerRadiusLocal = 8;
-                        const buildRoundedLPathOriented = (sx, sy, ex, ey, r, firstOrientation /* 'H' | 'V' */) => {
-                          if (firstOrientation === 'H') {
-                            if (sx === ex || sy === ey) {
-                              return `M ${sx},${sy} L ${ex},${ey}`;
-                            }
-                            const signX = ex > sx ? 1 : -1;
-                            const signY = ey > sy ? 1 : -1;
-                            const cornerX = ex;
-                            const cornerY = sy;
-                            const hx = cornerX - signX * r;
-                            const hy = cornerY;
-                            const vx = cornerX;
-                            const vy = cornerY + signY * r;
-                            return `M ${sx},${sy} L ${hx},${hy} Q ${cornerX},${cornerY} ${vx},${vy} L ${ex},${ey}`;
-                          } else {
-                            if (sx === ex || sy === ey) {
-                              return `M ${sx},${sy} L ${ex},${ey}`;
-                            }
-                            const signX = ex > sx ? 1 : -1;
-                            const signY = ey > sy ? 1 : -1;
-                            const cornerX = sx;
-                            const cornerY = ey;
-                            const vx = cornerX;
-                            const vy = cornerY - signY * r;
-                            const hx = cornerX + signX * r;
-                            const hy = cornerY;
-                            return `M ${sx},${sy} L ${vx},${vy} Q ${cornerX},${cornerY} ${hx},${hy} L ${ex},${ey}`;
-                          }
-                        };
-                        const buildRoundedZPathOriented = (sx, sy, ex, ey, r, pattern /* 'HVH' | 'VHV' */) => {
-                          if (sx === ex || sy === ey) {
-                            return `M ${sx},${sy} L ${ex},${ey}`;
-                          }
-                          if (pattern === 'HVH') {
-                            // Horizontal → Vertical → Horizontal with rounded corners at both bends
-                            const midX = (sx + ex) / 2;
-                            const signX1 = midX >= sx ? 1 : -1; // initial horizontal direction
-                            const signY = ey >= sy ? 1 : -1;     // vertical direction
-                            const signX2 = ex >= midX ? 1 : -1;  // final horizontal direction
-                            const hx1 = midX - signX1 * r;       // before first corner
-                            const vy1 = sy + signY * r;          // after first corner
-                            const vy2 = ey - signY * r;          // before second corner
-                            const hx2 = midX + signX2 * r;       // after second corner
-                            return `M ${sx},${sy} L ${hx1},${sy} Q ${midX},${sy} ${midX},${vy1} L ${midX},${vy2} Q ${midX},${ey} ${hx2},${ey} L ${ex},${ey}`;
-                          } else {
-                            // Vertical → Horizontal → Vertical with rounded corners at both bends
-                            const midY = (sy + ey) / 2;
-                            const signY1 = midY >= sy ? 1 : -1;  // initial vertical direction
-                            const signX = ex >= sx ? 1 : -1;      // horizontal direction (same for both H segments)
-                            const signY2 = ey >= midY ? 1 : -1;   // final vertical direction
-                            const vy1 = midY - signY1 * r;        // before first corner
-                            const hx1 = sx + signX * r;           // after first corner
-                            const hx2 = ex - signX * r;           // before second corner
-                            const vy2 = midY + signY2 * r;        // after second corner
-                            return `M ${sx},${sy} L ${sx},${vy1} Q ${sx},${midY} ${hx1},${midY} L ${hx2},${midY} Q ${ex},${midY} ${ex},${vy2} L ${ex},${ey}`;
-                          }
-                        };
-                        let pathD;
-                        if (effectiveBends === 'two' && initOrient === finalOrient) {
-                          pathD = (initOrient === 'H')
-                            ? buildRoundedZPathOriented(startX, startY, endX, endY, cornerRadiusLocal, 'HVH')
-                            : buildRoundedZPathOriented(startX, startY, endX, endY, cornerRadiusLocal, 'VHV');
-                        } else {
-                          pathD = buildRoundedLPathOriented(startX, startY, endX, endY, cornerRadiusLocal, initOrient);
-                        }
-
-                        // Assign for rendering and arrow logic
-                        manhattanPathD = pathD;
-                        manhattanSourceSide = sSide;
-                        manhattanDestSide = dSide;
-                      }
-
-                      // Helper to render rounded Manhattan (L-shaped) path
-                      const cornerRadius = 8;
-                      const getRoundedLPath = (sx, sy, ex, ey, r) => {
-                        // Straight line cases
-                        if (sx === ex || sy === ey) {
-                          return `M ${sx},${sy} L ${ex},${ey}`;
-                        }
-                        const signX = ex > sx ? 1 : -1;
-                        const signY = ey > sy ? 1 : -1;
-                        const cornerX = ex;
-                        const cornerY = sy;
-                        const hx = cornerX - signX * r;
-                        const hy = cornerY;
-                        const vx = cornerX;
-                        const vy = cornerY + signY * r;
-                        // Use quadratic curve at the corner for a rounded bend
-                        return `M ${sx},${sy} L ${hx},${hy} Q ${cornerX},${cornerY} ${vx},${vy} L ${ex},${ey}`;
-                      };
-
-                      // Two-bend rounded Manhattan path ensuring perpendicular entry/exit
-                      const getRoundedZPath = (sx, sy, ex, ey, r) => {
-                        if (sx === ex || sy === ey) {
-                          return `M ${sx},${sy} L ${ex},${ey}`;
-                        }
-                        const midX = (sx + ex) / 2;
-                        const midY = (sy + ey) / 2;
-                        const signX1 = Math.sign(midX - sx) || 1;
-                        const signY1 = Math.sign(midY - sy) || 1;
-                        const signX2 = Math.sign(ex - midX) || 1;
-                        const signY2 = Math.sign(ey - midY) || 1;
-
-                        // First corner at (midX, sy)
-                        const c1x = midX, c1y = sy;
-                        const h1x = c1x - signX1 * r, h1y = c1y;
-                        const v1x = c1x, v1y = c1y + signY1 * r;
-
-                        // Second corner at (midX, ey)
-                        const c2x = midX, c2y = ey;
-                        const h2x = c2x, h2y = c2y - signY2 * r;
-                        const v2x = ex - signX2 * r, v2y = ey;
-
-                        return `M ${sx},${sy} L ${h1x},${h1y} Q ${c1x},${c1y} ${v1x},${v1y} L ${h2x},${h2y} Q ${c2x},${c2y} ${v2x},${v2y} L ${ex},${ey}`;
-                      };
-
-                      // Oriented one-bend L path (H then V or V then H)
-                      const getRoundedLPathOriented = (sx, sy, ex, ey, r, firstOrientation /* 'H' | 'V' */) => {
-                        if (firstOrientation === 'H') {
-                          // Horizontal then Vertical: corner at (ex, sy)
-                          return getRoundedLPath(sx, sy, ex, ey, r);
-                        } else {
-                          // Vertical then Horizontal: corner at (sx, ey)
-                          if (sx === ex || sy === ey) {
-                            return `M ${sx},${sy} L ${ex},${ey}`;
-                          }
-                          const signX = ex > sx ? 1 : -1;
-                          const signY = ey > sy ? 1 : -1;
-                          const cornerX = sx;
-                          const cornerY = ey;
-                          const vx = cornerX;
-                          const vy = cornerY - signY * r;
-                          const hx = cornerX + signX * r;
-                          const hy = cornerY;
-                          return `M ${sx},${sy} L ${vx},${vy} Q ${cornerX},${cornerY} ${hx},${hy} L ${ex},${ey}`;
-                        }
-                      };
-
-                      // Oriented two-bend Z path: 'HVH' or 'VHV'
-                      const getRoundedZPathOriented = (sx, sy, ex, ey, r, pattern /* 'HVH' | 'VHV' */) => {
-                        if (sx === ex || sy === ey) {
-                          return `M ${sx},${sy} L ${ex},${ey}`;
-                        }
-                        if (pattern === 'HVH') {
-                          const midX = (sx + ex) / 2;
-                          const a1 = getRoundedLPathOriented(sx, sy, midX, ey, r, 'H'); // H then V to mid
-                          // Continue from (midX, ey) to (ex, ey) horizontally with rounding at the join
-                          const signX = ex > midX ? 1 : -1;
-                          const preX = midX + signX * r;
-                          const d = `${a1} L ${preX},${ey} Q ${midX},${ey} ${midX},${ey} L ${ex},${ey}`;
-                          return d;
-                        } else { // 'VHV'
-                          const midY = (sy + ey) / 2;
-                          const a1 = getRoundedLPathOriented(sx, sy, ex, midY, r, 'V'); // V then H to mid
-                          const signY = ey > midY ? 1 : -1;
-                          const preY = midY + signY * r;
-                          const d = `${a1} L ${ex},${preY} Q ${ex},${midY} ${ex},${midY} L ${ex},${ey}`;
-                          return d;
-                        }
-                      };
                   return (
                         <g key={`edge-${edge.id}-${idx}`}>
                                                  {/* Main edge line - always same thickness */}
                     {/* Glow effect for selected or hovered edge */}
                     {(isSelected || isHovered) && (
-                      (enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) ? (
-                        <path
-                          d={(routingStyle === 'manhattan') ? manhattanPathD : (() => {
-                            const startPt = { x: startX, y: startY };
-                            const endPt = { x: endX, y: endY };
-                            const obstacleRects = [];
-                            for (const n of nodes) {
-                              if (n.id === sourceNode.id || n.id === destNode.id) continue;
-                              const dims = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
-                              const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
-                              obstacleRects.push(inflateRect(rect, 8));
-                            }
-                            const basePts = computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
-                            const lane = cleanLaneOffsets.get(edge.id) || computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
-                            const shifted = basePts.map(p => ({ x: p.x + (lane.dx||0), y: p.y + (lane.dy||0) }));
-                            return buildRoundedPathFromPoints(shifted, 8);
-                          })()}
-                          fill="none"
-                          stroke={edgeColor}
-                          strokeWidth="12"
-                          opacity={isSelected ? "0.3" : "0.2"}
-                          style={{ 
-                            filter: `blur(3px) drop-shadow(0 0 8px ${edgeColor})`
-                          }}
-                          strokeLinecap="round"
-                        />
-                      ) : (
                       <line
-                          x1={startX}
-                          y1={startY}
-                          x2={endX}
-                          y2={endY}
+                        x1={shouldShortenSource ? (sourceIntersection?.x || x1) : x1}
+                        y1={shouldShortenSource ? (sourceIntersection?.y || y1) : y1}
+                        x2={shouldShortenDest ? (destIntersection?.x || x2) : x2}
+                        y2={shouldShortenDest ? (destIntersection?.y || y2) : y2}
                         stroke={edgeColor}
                         strokeWidth="12"
                         opacity={isSelected ? "0.3" : "0.2"}
@@ -5179,74 +4385,23 @@ function NodeCanvas() {
                           filter: `blur(3px) drop-shadow(0 0 8px ${edgeColor})`
                         }}
                       />
-                      )
                     )}
                     
-                    {(enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) ? (
-                      <>
-                        {routingStyle === 'manhattan' && !arrowsToward.has(sourceNode.id) && (
-                          <line x1={x1} y1={y1} x2={startX} y2={startY} stroke={edgeColor} strokeWidth={showConnectionNames ? "16" : "6"} strokeLinecap="round" />
-                        )}
-                        {routingStyle === 'manhattan' && !arrowsToward.has(destNode.id) && (
-                          <line x1={endX} y1={endY} x2={x2} y2={y2} stroke={edgeColor} strokeWidth={showConnectionNames ? "16" : "6"} strokeLinecap="round" />
-                        )}
-                        <path
-                          d={(routingStyle === 'manhattan') ? manhattanPathD : (() => {
-                            const startPt = { x: startX, y: startY };
-                            const endPt = { x: endX, y: endY };
-                            const obstacleRects = [];
-                            for (const n of nodes) {
-                              if (n.id === sourceNode.id || n.id === destNode.id) continue;
-                              const dims = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
-                              const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
-                              obstacleRects.push(inflateRect(rect, 8));
-                            }
-                            const basePts = computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
-                            const lane = cleanLaneOffsets.get(edge.id) || computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
-                            const shifted = basePts.map(p => ({ x: p.x + (lane.dx||0), y: p.y + (lane.dy||0) }));
-                            return buildRoundedPathFromPoints(shifted, 8);
-                          })()}
-                          fill="none"
-                          stroke={edgeColor}
-                          strokeWidth={showConnectionNames ? "16" : "6"}
-                          style={{ transition: 'stroke 0.2s ease' }}
-                          strokeLinecap="round"
-                        />
-                      </>
-                     ) : (
-                       <line
-                         x1={startX}
-                         y1={startY}
-                         x2={endX}
-                         y2={endY}
-                         stroke={edgeColor}
-                         strokeWidth={showConnectionNames ? "16" : "6"}
-                         style={{ transition: 'stroke 0.2s ease' }}
-                       />
-                     )}
+                    <line
+                             x1={shouldShortenSource ? (sourceIntersection?.x || x1) : x1}
+                             y1={shouldShortenSource ? (sourceIntersection?.y || y1) : y1}
+                             x2={shouldShortenDest ? (destIntersection?.x || x2) : x2}
+                             y2={shouldShortenDest ? (destIntersection?.y || y2) : y2}
+                      stroke={edgeColor}
+                             strokeWidth={showConnectionNames ? "16" : "6"}
+                             style={{ transition: 'stroke 0.2s ease' }}
+                           />
                            
                            {/* Connection name text - only show when enabled */}
                            {showConnectionNames && (() => {
-                             let midX;
-                             let midY;
-                             let angle;
-                             if (enableAutoRouting && routingStyle === 'manhattan') {
-                               const horizontalLen = Math.abs(endX - startX);
-                               const verticalLen = Math.abs(endY - startY);
-                               if (horizontalLen >= verticalLen) {
-                                 midX = (startX + endX) / 2;
-                                 midY = startY;
-                                 angle = 0;
-                               } else {
-                                 midX = endX;
-                                 midY = (startY + endY) / 2;
-                                 angle = 90;
-                               }
-                             } else {
-                               midX = (x1 + x2) / 2;
-                               midY = (y1 + y2) / 2;
-                               angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
-                             }
+                             const midX = (x1 + x2) / 2;
+                             const midY = (y1 + y2) / 2;
+                             const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
                              
                              // Determine connection name to display
                              let connectionName = 'Connection';
@@ -5291,65 +4446,6 @@ function NodeCanvas() {
                            })()}
                            
                            {/* Invisible click area for edge selection - matches hover detection */}
-                           {(enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) ? (
-                             <path
-                               d={(routingStyle === 'manhattan') ? manhattanPathD : (() => {
-                                 const startPt = { x: startX, y: startY };
-                                 const endPt = { x: endX, y: endY };
-                                 const obstacleRects = [];
-                                 for (const n of nodes) {
-                                   if (n.id === sourceNode.id || n.id === destNode.id) continue;
-                                   const dims = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
-                                   const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
-                                   obstacleRects.push(inflateRect(rect, 8));
-                                 }
-                                 const basePts = computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
-                                 const lane = computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
-                                 const shifted = basePts.map(p => ({ x: p.x + lane.dx, y: p.y + lane.dy }));
-                                 return buildRoundedPathFromPoints(shifted, 8);
-                               })()}
-                               fill="none"
-                               stroke="transparent"
-                               strokeWidth="40"
-                               style={{ cursor: 'pointer' }}
-                               onClick={(e) => {
-                                 e.stopPropagation();
-                                 
-                                 // Handle multiple selection with Ctrl/Cmd key
-                                 if (e.ctrlKey || e.metaKey) {
-                                   // Toggle this edge in the multiple selection
-                                   if (selectedEdgeIds.has(edge.id)) {
-                                     removeSelectedEdgeId(edge.id);
-                                   } else {
-                                     addSelectedEdgeId(edge.id);
-                                   }
-                                 } else {
-                                   // Single selection - clear multiple selection and set single edge
-                                   clearSelectedEdgeIds();
-                                   setSelectedEdgeId(edge.id);
-                                 }
-                               }}
-                               onDoubleClick={(e) => {
-                                 e.stopPropagation();
-                                 
-                                 // Find the defining node for this edge's connection type
-                                 let definingNodeId = null;
-                                 
-                                 // Check definitionNodeIds first (for custom connection types)
-                                 if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
-                                   definingNodeId = edge.definitionNodeIds[0];
-                                 } else if (edge.typeNodeId) {
-                                   // Fallback to typeNodeId (for base connection type)
-                                   definingNodeId = edge.typeNodeId;
-                                 }
-                                 
-                                 // Open the panel tab for the defining node
-                                 if (definingNodeId) {
-                                   openRightPanelNodeTab(definingNodeId);
-                                 }
-                               }}
-                             />
-                           ) : (
                            <line
                              x1={x1}
                              y1={y1}
@@ -5395,48 +4491,13 @@ function NodeCanvas() {
                                }
                              }}
                            />
-                           )}
                           
                                                                                                                   {/* Smart directional arrows with clickable toggle */}
                            {(() => {
                              // Calculate arrow positions (use fallback if intersections fail)
                              let sourceArrowX, sourceArrowY, destArrowX, destArrowY, sourceArrowAngle, destArrowAngle;
                              
-                             if (enableAutoRouting && routingStyle === 'clean') {
-                               // Clean mode: infer arrow directions from first/last segment of the clean polyline
-                               const offset = showConnectionNames ? 6 : (shouldShortenSource || shouldShortenDest ? 3 : 5);
-                               const startPt = { x: startX, y: startY };
-                               const endPt = { x: endX, y: endY };
-                               const obstacleRects = [];
-                               for (const n of nodes) {
-                                 if (n.id === sourceNode.id || n.id === destNode.id) continue;
-                                 const dims = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
-                                 const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
-                                 obstacleRects.push(inflateRect(rect, 8));
-                               }
-                               const basePts = computeCleanPolylineFromPorts(startPt, endPt, obstacleRects, cleanLaneSpacing);
-                               const lane = cleanLaneOffsets.get(edge.id) || computeCleanLaneTransform(startPt, endPt, obstacleRects, cleanLaneSpacing, edge.id);
-                               const cleanPts = basePts.map(p => ({ x: p.x + (lane.dx||0), y: p.y + (lane.dy||0) }));
-                               const first = cleanPts[0];
-                               const second = cleanPts[Math.min(1, cleanPts.length - 1)];
-                               const beforeLast = cleanPts[Math.max(cleanPts.length - 2, 0)];
-                               const last = cleanPts[cleanPts.length - 1];
-
-                               const v1x = second.x - first.x;
-                               const v1y = second.y - first.y;
-                               const v2x = last.x - beforeLast.x;
-                               const v2y = last.y - beforeLast.y;
-
-                               // Source arrow points back toward the source node (opposite of initial direction)
-                               sourceArrowX = first.x - Math.sign(v1x) * offset;
-                               sourceArrowY = first.y - Math.sign(v1y) * offset;
-                               sourceArrowAngle = Math.atan2(-v1y, -v1x) * (180 / Math.PI);
-
-                               // Destination arrow points into the destination (terminal direction)
-                               destArrowX = last.x - Math.sign(v2x) * offset;
-                               destArrowY = last.y - Math.sign(v2y) * offset;
-                               destArrowAngle = Math.atan2(v2y, v2x) * (180 / Math.PI);
-                             } else if (!sourceIntersection || !destIntersection) {
+                             if (!sourceIntersection || !destIntersection) {
                                // Fallback positioning - arrows/dots closer to connection center  
                                const fallbackOffset = showConnectionNames ? 20 : 
                                                      (shouldShortenSource || shouldShortenDest ? 12 : 15);
@@ -5447,86 +4508,22 @@ function NodeCanvas() {
                                sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
                                destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
                              } else {
-                               // Manhattan-aware arrow placement; falls back to straight orientation
-                               const offset = showConnectionNames ? 6 : (shouldShortenSource || shouldShortenDest ? 3 : 5);
-                               if (enableAutoRouting && routingStyle === 'manhattan') {
-                                 // Destination arrow aligns to terminal segment into destination
-                                 const horizontalTerminal = Math.abs(endX - startX) > Math.abs(endY - startY);
-                                 if (horizontalTerminal) {
-                                   destArrowAngle = (endX >= startX) ? 0 : 180;
-                                   destArrowX = endX + ((endX >= startX) ? -offset : offset);
-                                   destArrowY = endY;
-                                 } else {
-                                   destArrowAngle = (endY >= startY) ? 90 : -90;
-                                   destArrowX = endX;
-                                   destArrowY = endY + ((endY >= startY) ? -offset : offset);
-                                 }
-                                 // Source arrow aligns to initial segment out of source (pointing back toward source)
-                                 const horizontalInitial = Math.abs(endX - startX) > Math.abs(endY - startY);
-                                 if (horizontalInitial) {
-                                   sourceArrowAngle = (endX - startX) >= 0 ? 180 : 0;
-                                   sourceArrowX = startX + ((endX - startX) >= 0 ? offset : -offset);
-                                   sourceArrowY = startY;
-                                 } else {
-                                   sourceArrowAngle = (endY - startY) >= 0 ? -90 : 90;
-                                   sourceArrowX = startX;
-                                   sourceArrowY = startY + ((endY - startY) >= 0 ? offset : -offset);
-                                 }
-                             } else {
                                // Precise intersection positioning - adjust based on slope for visual consistency
                                const angle = Math.abs(Math.atan2(dy, dx) * (180 / Math.PI));
                                const normalizedAngle = angle > 90 ? 180 - angle : angle;
+                               
                                // Shorter distance for quantized slopes (hitting node sides) vs diagonal (hitting corners)
                                const isQuantizedSlope = normalizedAngle < 15 || normalizedAngle > 75;
-                                 const arrowLength = isQuantizedSlope ? offset * 0.6 : offset;
+                               const baseLength = showConnectionNames ? 6 : 
+                                                (shouldShortenSource || shouldShortenDest ? 3 : 5);
+                               const arrowLength = isQuantizedSlope ? baseLength * 0.6 : baseLength;
+                               
                                sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
                                sourceArrowX = sourceIntersection.x + (dx / length) * arrowLength;
                                sourceArrowY = sourceIntersection.y + (dy / length) * arrowLength;
                                destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
                                destArrowX = destIntersection.x - (dx / length) * arrowLength;
                                destArrowY = destIntersection.y - (dy / length) * arrowLength;
-                               }
-                             }
-                             
-                             // Override arrow orientation deterministically by Manhattan sides
-                             if (enableAutoRouting && routingStyle === 'manhattan') {
-                               const sideOffset = showConnectionNames ? 6 : (shouldShortenSource || shouldShortenDest ? 3 : 5);
-                               // Destination arrow strictly based on destination side
-                               if (manhattanDestSide === 'left') {
-                                 destArrowAngle = 0; // rightwards
-                                 destArrowX = endX - sideOffset;
-                                 destArrowY = endY;
-                               } else if (manhattanDestSide === 'right') {
-                                 destArrowAngle = 180; // leftwards
-                                 destArrowX = endX + sideOffset;
-                                 destArrowY = endY;
-                               } else if (manhattanDestSide === 'top') {
-                                 destArrowAngle = 90; // downwards
-                                 destArrowX = endX;
-                                 destArrowY = endY - sideOffset;
-                               } else if (manhattanDestSide === 'bottom') {
-                                 destArrowAngle = -90; // upwards
-                                 destArrowX = endX;
-                                 destArrowY = endY + sideOffset;
-                               }
-                               // Source arrow strictly based on source side (points toward the source node)
-                               if (manhattanSourceSide === 'left') {
-                                 sourceArrowAngle = 0; // rightwards
-                                 sourceArrowX = startX - sideOffset;
-                                 sourceArrowY = startY;
-                               } else if (manhattanSourceSide === 'right') {
-                                 sourceArrowAngle = 180; // leftwards
-                                 sourceArrowX = startX + sideOffset;
-                                 sourceArrowY = startY;
-                               } else if (manhattanSourceSide === 'top') {
-                                 sourceArrowAngle = 90; // downwards
-                                 sourceArrowX = startX;
-                                 sourceArrowY = startY - sideOffset;
-                               } else if (manhattanSourceSide === 'bottom') {
-                                 sourceArrowAngle = -90; // upwards
-                                 sourceArrowX = startX;
-                                 sourceArrowY = startY + sideOffset;
-                               }
                              }
                              
                              const handleArrowClick = (nodeId, e) => {
@@ -5688,6 +4685,7 @@ function NodeCanvas() {
                     strokeWidth="8"
                   />
                 )}
+
                 {(() => {
                    const draggingNodeId = draggingNodeInfo?.primaryId || draggingNodeInfo?.instanceId;
 
