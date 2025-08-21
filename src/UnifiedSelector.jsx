@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Palette, ArrowBigRightDash } from 'lucide-react';
-import { NODE_DEFAULT_COLOR, HEADER_HEIGHT } from './constants';
-import NodeGridItem from './NodeGridItem';
-import ColorPicker from './ColorPicker';
+import { NODE_DEFAULT_COLOR } from './constants';
 import useGraphStore from './store/graphStore.js';
+import ColorPicker from './ColorPicker';
+import useViewportBounds from './hooks/useViewportBounds';
+import './UnifiedSelector.css';
 
 const UnifiedSelector = ({ 
-  mode, // 'node-creation', 'connection-creation', 'node-typing', or 'abstraction-node-creation'
+  mode,
   isVisible,
   onClose,
   onSubmit,
@@ -14,118 +15,83 @@ const UnifiedSelector = ({
   initialColor = null,
   title,
   subtitle,
-  position = null, // Optional custom position
   showCreateNewOption = false,
   searchTerm = '',
   onNodeSelect = null,
   selectedNodes = new Set(),
-  abstractionDirection = 'above' // 'above' or 'below' for abstraction mode
+  abstractionDirection = 'above',
+  leftPanelExpanded = true,
+  rightPanelExpanded = true
 }) => {
   const [name, setName] = useState(initialName);
   const lastInitialNameRef = useRef(initialName);
-  
-  // Update internal name when initialName changes (for clearing)
+
   useEffect(() => {
-    // Only update when initialName actually changes from outside
-    // This prevents overriding user input while they're typing
     if (initialName !== lastInitialNameRef.current) {
       lastInitialNameRef.current = initialName;
       setName(initialName);
     }
   }, [initialName]);
+
   const [color, setColor] = useState(initialColor || NODE_DEFAULT_COLOR);
   const [colorPickerVisible, setColorPickerVisible] = useState(false);
   const [colorPickerPosition, setColorPickerPosition] = useState({ x: 0, y: 0 });
-  const scrollContainerRef = useRef(null);
 
-  // Store access
   const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
 
-  // Calculate position based on mode - simpler approach
-  const containerPosition = React.useMemo(() => {
-    if (position) return position;
-    
-    const windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
-    const containerWidth = 300;
-    const centerX = windowWidth / 2 - containerWidth / 2;
-    
-    return {
-      x: centerX,
-      y: HEADER_HEIGHT + 25
-    };
-  }, [position]);
+  const bounds = useViewportBounds(leftPanelExpanded, rightPanelExpanded);
 
-  // Define showDialog and showGrid early
-  const showDialog = mode === 'node-creation' || mode === 'connection-creation' || mode === 'abstraction-node-creation';
+  const showDialog = mode === 'node-creation' || mode === 'connection-creation' || mode === 'abstraction-node-creation' || mode === 'node-typing';
   const showGrid = mode === 'node-typing' || mode === 'abstraction-node-creation' || showCreateNewOption || onNodeSelect;
 
-  // Filter prototypes based on search term - use name field as search for creation modes
   const filteredPrototypes = React.useMemo(() => {
     const prototypes = Array.from(nodePrototypesMap.values());
-    // For node/connection/abstraction creation modes, use the name field as search
-    // For node-typing mode, use the external searchTerm prop
     const searchText = (mode === 'node-creation' || mode === 'connection-creation' || mode === 'abstraction-node-creation') ? name : searchTerm;
     if (!searchText) return prototypes;
-    return prototypes.filter(p => 
-      p.name && p.name.toLowerCase().includes(searchText.toLowerCase())
-    );
+    return prototypes.filter(p => p.name && p.name.toLowerCase().includes(searchText.toLowerCase()));
   }, [nodePrototypesMap, name, searchTerm, mode]);
 
-  // Handle form submission
   const handleSubmit = useCallback(() => {
     if (name.trim() && onSubmit) {
       onSubmit({ name: name.trim(), color });
-      // Clear the field immediately after submission
       setName('');
     }
   }, [name, onSubmit, color]);
 
-  // Handle color picker - toggle behavior like PieMenu
   const handleColorPickerToggle = (element, event) => {
     event.stopPropagation();
-    
     if (colorPickerVisible) {
-      // If already open, close it (toggle off)
       setColorPickerVisible(false);
     } else {
-      // If closed, open it
       const rect = element.getBoundingClientRect();
-      setColorPickerPosition({
-        x: rect.left,
-        y: rect.bottom + 5
-      });
+      setColorPickerPosition({ x: rect.left, y: rect.bottom + 5 });
       setColorPickerVisible(true);
     }
   };
 
-  const handleColorChange = (newColor) => {
-    setColor(newColor);
-  };
+  const handleColorChange = (newColor) => setColor(newColor);
 
-  // Handle wheel events to prevent NodeCanvas panning
+  const scrollContainerRef = useRef(null);
+
+  // Handle wheel events for scrolling
   const handleWheel = useCallback((e) => {
-    e.stopPropagation(); // Stop NodeCanvas from receiving the event
-    // Let the browser handle the actual scrolling
+    e.stopPropagation(); // Prevent NodeCanvas from receiving the event
+    // Let the browser handle the actual scrolling naturally
   }, []);
 
-
-  // Keyboard handling
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (!isVisible) return;
-      
-      if (e.key === 'Escape') {
-        onClose?.();
-      } else if (e.key === 'Enter' && (mode === 'node-creation' || mode === 'connection-creation' || mode === 'abstraction-node-creation')) {
+      if (e.key === 'Escape') onClose?.();
+      else if (e.key === 'Enter' && (mode === 'node-creation' || mode === 'connection-creation' || mode === 'abstraction-node-creation' || mode === 'node-typing')) {
         handleSubmit();
       }
     };
-
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isVisible, mode, onClose, handleSubmit]);
 
-  // Add wheel event listener to prevent NodeCanvas panning
+  // Add wheel event listener to the scroll container
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (container && isVisible) {
@@ -136,26 +102,30 @@ const UnifiedSelector = ({
     }
   }, [isVisible, handleWheel]);
 
-
-
-
   if (!isVisible) return null;
+
+  // Layout measurements with more margins
+  const outerMargin = 32; // Increased outer margin for more breathing room
+  const sideMargin = 48; // Additional left/right margins
+  const containerMaxWidth = Math.min(bounds.width - (outerMargin + sideMargin) * 2, Math.max(720, Math.floor(bounds.windowWidth * 0.8)));
+  const dialogWidth = Math.min(containerMaxWidth * 0.6, Math.max(420, Math.floor(bounds.windowWidth * 0.4))); // Even narrower dialog
+  const gridOuterWidth = Math.min(containerMaxWidth, bounds.width - (outerMargin + sideMargin) * 2);
+  const gridInnerPadding = 16;
+
+  // Grid responsive columns with smaller cards
+  const cardMinWidth = 140; // Smaller minimum width for more columns
+  const columns = Math.max(2, Math.floor((gridOuterWidth - gridInnerPadding * 2) / (cardMinWidth + 12)));
+  const gridTemplateColumns = `repeat(${columns}, 1fr)`;
 
   return (
     <>
-      {/* Backdrop with blur effect */}
       <div 
         style={{ 
-          position: 'fixed', 
-          inset: 0, 
-          backgroundColor: 'rgba(0,0,0,0.3)', 
-          backdropFilter: 'blur(2px)',
-          WebkitBackdropFilter: 'blur(2px)', // Safari support
-          zIndex: 1000 
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)',
+          backdropFilter: 'blur(2px)', WebkitBackdropFilter: 'blur(2px)', zIndex: 1000 
         }} 
         onClick={(e) => {
           if (e.target === e.currentTarget) {
-            // Clear the field and permanently close color picker when clicking off/backing out
             setName('');
             setColorPickerVisible(false);
             onClose?.();
@@ -163,56 +133,47 @@ const UnifiedSelector = ({
         }}
       />
 
-      {/* Main container with proper flex layout */}
       <div
         style={{
           position: 'fixed',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          top: containerPosition.y,
-          bottom: '20px', // Match Panel.jsx bottomOffset={20}
-          width: '300px',
+          left: `${Math.round(bounds.x + outerMargin + sideMargin)}px`,
+          top: `${Math.round(bounds.y + outerMargin)}px`,
+          width: `${Math.round(bounds.width - (outerMargin + sideMargin) * 2)}px`,
+          height: `${Math.round(bounds.height - outerMargin * 2)}px`,
           zIndex: 1001,
           display: 'flex',
           flexDirection: 'column',
-          gap: '10px',
+          gap: '18px',
           pointerEvents: 'auto'
         }}
       >
-        {/* Dialog for name input */}
         {showDialog && (
           <div
             style={{
+              alignSelf: 'center',
+              width: `${dialogWidth}px`,
               backgroundColor: '#bdb5b5',
               padding: '20px',
-              borderRadius: '10px',
+              borderRadius: '12px',
               boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
-              flexShrink: 0, // Don't shrink the dialog
-              position: 'relative'
+              position: 'relative',
+              flexShrink: 0
             }}
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div style={{ position: 'absolute', top: '10px', right: '10px', cursor: 'pointer' }}>
-              <X size={20} color="#999" onClick={() => {
-                // Clear the field and permanently close color picker when clicking X
-                setName('');
-                setColorPickerVisible(false);
-                onClose?.();
-              }} />
+              <X size={20} color="#999" onClick={() => { setName(''); setColorPickerVisible(false); onClose?.(); }} />
             </div>
-            
-            <div style={{ textAlign: 'center', marginBottom: '15px', color: 'black' }}>
+            <div style={{ textAlign: 'left', marginBottom: '15px', color: 'black' }}>
               <strong style={{ fontSize: '18px', fontFamily: "'EmOne', sans-serif" }}>{title}</strong>
             </div>
-            
             {subtitle && (
               <div 
-                style={{ textAlign: 'center', marginBottom: '15px', color: '#666', fontSize: '14px', fontFamily: "'EmOne', sans-serif" }}
+                style={{ textAlign: 'left', marginBottom: '15px', color: '#666', fontSize: '14px', fontFamily: "'EmOne', sans-serif" }}
                 dangerouslySetInnerHTML={{ __html: subtitle }}
               />
             )}
-            
             <div style={{ display: 'flex', alignItems: 'center' }}>
               <Palette
                 size={20}
@@ -228,37 +189,14 @@ const UnifiedSelector = ({
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => { 
                   if (e.key === 'Enter') handleSubmit(); 
-                  if (e.key === 'Escape') {
-                    // Clear the field and permanently close color picker when hitting Escape
-                    setName('');
-                    setColorPickerVisible(false);
-                    onClose?.();
-                  }
+                  if (e.key === 'Escape') { setName(''); setColorPickerVisible(false); onClose?.(); }
                 }}
-                style={{ 
-                  flex: 1, 
-                  padding: '10px', 
-                  borderRadius: '5px', 
-                  border: '1px solid #ccc', 
-                  marginRight: '10px' 
-                }}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ccc', marginRight: '10px' }}
                 autoFocus
               />
               <button
                 onClick={handleSubmit}
-                style={{ 
-                  padding: '10px', 
-                  backgroundColor: color, 
-                  color: '#bdb5b5', 
-                  border: 'none', 
-                  borderRadius: '5px', 
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  minWidth: '50px',
-                  minHeight: '44px'
-                }}
+                style={{ padding: '10px', backgroundColor: color, color: '#bdb5b5', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '56px', minHeight: '44px' }}
                 title={mode === 'connection-creation' ? 'Create connection type' : mode === 'abstraction-node-creation' ? `Create ${abstractionDirection} abstraction` : 'Create node type'}
               >
                 <ArrowBigRightDash size={16} color="#bdb5b5" />
@@ -267,40 +205,141 @@ const UnifiedSelector = ({
           </div>
         )}
 
-        {/* Grid for node selection */}
         {showGrid && (
           <div
-            ref={scrollContainerRef}
-            style={{
-              flex: 1, // Take up remaining space
-              overflowY: 'auto', // Use native scrolling
-              minHeight: 0, // Important for flex child to shrink properly
-              padding: '12px'
-            }}
+            style={{ flex: 1, overflow: 'hidden', display: 'flex', justifyContent: 'center' }}
           >
+            {/* Outer rounded rectangle */}
             <div
               style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '12px',
-                alignContent: 'start'
+                width: `${gridOuterWidth}px`,
+                height: '100%',
+                backgroundColor: '#bdb5b5',
+                borderRadius: '16px',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+                display: 'flex',
+                flexDirection: 'column',
               }}
             >
-              {/* Existing prototypes */}
-              {filteredPrototypes.map(prototype => (
-                <NodeGridItem
-                  key={prototype.id}
-                  nodePrototype={prototype}
-                  onClick={() => onNodeSelect?.(prototype)}
-                  isSelected={selectedNodes.has(prototype.id)}
-                />
-              ))}
+              {/* Header area inside outer, reserved for future buttons */}
+              <div
+                style={{
+                  padding: '14px 18px',
+                  borderTopLeftRadius: '16px',
+                  borderTopRightRadius: '16px',
+                  color: '#260000',
+                  fontFamily: "'EmOne', sans-serif",
+                  fontWeight: 'bold',
+                  fontSize: '16px',
+                  flexShrink: 0
+                }}
+              >
+                Browse All Things
+              </div>
+              {/* Inner rectangle with 5px border spacing on all sides */}
+              <div
+                style={{
+                  flex: 1,
+                  margin: '0 5px 5px 5px',
+                  backgroundColor: '#979090',
+                  borderRadius: '11px', // Fully rounded inner rectangle
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}
+              >
+                <div
+                  ref={scrollContainerRef}
+                  style={{
+                    flex: 1,
+                    overflowY: 'auto',
+                    padding: `${gridInnerPadding}px`,
+                    // Custom scrollbar styling
+                    scrollbarWidth: 'thin',
+                    scrollbarColor: '#bdb5b5 transparent',
+                  }}
+                  className="unified-selector-scroll"
+                >
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: gridTemplateColumns,
+                      gap: '10px',
+                      alignContent: 'start'
+                    }}
+                  >
+                    {filteredPrototypes.map(prototype => (
+                      <div 
+                        key={prototype.id} 
+                        style={{ 
+                          background: prototype.color || '#8B0000', 
+                          borderRadius: '16px', // More rounding
+                          padding: '12px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          height: '90px', // Fixed smaller height
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          position: 'relative'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'scale(1.03)';
+                          e.currentTarget.style.filter = 'brightness(1.1)';
+                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.2)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.filter = 'brightness(1)';
+                          e.currentTarget.style.boxShadow = 'none';
+                        }}
+                        onClick={() => onNodeSelect?.(prototype)}
+                      >
+                        {/* Thumbnail background if available */}
+                        {prototype.thumbnailSrc && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: 0, left: 0, right: 0, bottom: 0,
+                              backgroundImage: `url(${prototype.thumbnailSrc})`,
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center',
+                              borderRadius: '16px', // Match container rounding
+                              opacity: 0.3
+                            }}
+                          />
+                        )}
+                        <span 
+                          style={{ 
+                            color: '#bdb5b5', 
+                            fontWeight: 'bold', 
+                            fontFamily: "'EmOne', sans-serif", 
+                            textAlign: 'center',
+                            fontSize: '13px',
+                            lineHeight: '1.2',
+                            wordWrap: 'break-word',
+                            position: 'relative',
+                            zIndex: 1,
+                            textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 3,
+                            WebkitBoxOrient: 'vertical'
+                          }}
+                        >
+                          {prototype.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Color Picker */}
       {colorPickerVisible && (
         <ColorPicker
           isVisible={colorPickerVisible}
@@ -309,7 +348,7 @@ const UnifiedSelector = ({
           currentColor={color}
           position={colorPickerPosition}
           direction="down-left"
-          parentContainerRef={null} // Use null since we changed the layout
+          parentContainerRef={null}
         />
       )}
     </>

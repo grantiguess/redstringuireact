@@ -4196,6 +4196,30 @@ function NodeCanvas() {
     // console.log("[Left Panel Toggle] New state:", !leftPanelExpanded);
   }, [leftPanelExpanded]);
 
+  // Panel toggle and TypeList keyboard shortcuts - work even when inputs are focused
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      // Only handle these specific keys, regardless of input focus
+      if (e.key === '1') {
+        e.preventDefault();
+        handleToggleLeftPanel();
+      } else if (e.key === '2') {
+        e.preventDefault();
+        handleToggleRightPanel();
+      } else if (e.key === '3') {
+        e.preventDefault();
+        // Cycle TypeList mode: connection -> node -> closed -> connection
+        const currentMode = useGraphStore.getState().typeListMode;
+        const newMode = currentMode === 'connection' ? 'node' : 
+                       currentMode === 'node' ? 'closed' : 'connection';
+        storeActions.setTypeListMode(newMode);
+      }
+    };
+
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [handleToggleLeftPanel, handleToggleRightPanel, storeActions]);
+
 
 
   const handleLeftPanelFocusChange = useCallback((isFocused) => {
@@ -4867,6 +4891,8 @@ function NodeCanvas() {
           graphDescription={activeGraphDescription}
           nodeDefinitionIndices={nodeDefinitionIndices}
           onStartHurtleAnimationFromPanel={startHurtleAnimationFromPanel}
+          leftPanelExpanded={leftPanelExpanded}
+          rightPanelExpanded={rightPanelExpanded}
         />
 
         <div
@@ -6345,113 +6371,98 @@ function NodeCanvas() {
           {/* Overlay panel resizers (outside panels) */}
           {renderPanelResizers()}
 
-          {/* Unified Node Creation Selector */}
-          <UnifiedSelector
-            mode="node-creation"
-            isVisible={nodeNamePrompt.visible}
-            onClose={() => {
-              // Close color picker when closing prompt
-              setDialogColorPickerVisible(false);
-              handleClosePrompt();
-            }}
-            onSubmit={({ name, color }) => {
-              // Call the original handlePromptSubmit logic directly
-              if (name && plusSign) {
-                setPlusSign(ps => ps && { ...ps, mode: 'morph', tempName: name, selectedColor: color });
-              } else {
-                setPlusSign(ps => ps && { ...ps, mode: 'disappear' });
-              }
-              setNodeNamePrompt({ visible: false, name: '', color: null });
-              setDialogColorPickerVisible(false);
-            }}
-            onNodeSelect={handleNodeSelection}
-            initialName={nodeNamePrompt.name}
-            initialColor={nodeNamePrompt.color}
-            title="Name Your Thing"
-            subtitle="Add a new Thing to this Web."
-            searchTerm={nodeNamePrompt.name}
-          />
-
-          {/* Unified Connection Creation Selector */}
-          <UnifiedSelector
-            mode="connection-creation"
-            isVisible={connectionNamePrompt.visible}
-            onClose={() => {
-              // Close color picker when closing connection prompt
-              setDialogColorPickerVisible(false);
-              setConnectionNamePrompt({ visible: false, name: '', color: null, edgeId: null });
-            }}
-            onSubmit={({ name, color }) => {
-              // Use the exact original handleConnectionPromptSubmit logic
-              if (name.trim()) {
-                // Create a new node prototype for this connection type
-                const newConnectionNodeId = uuidv4();
-                addNodePrototype({
-                  id: newConnectionNodeId,
-                  name: name.trim(),
-                  description: '',
-                  picture: null,
-                  color: color || NODE_DEFAULT_COLOR,
-                  typeNodeId: null,
-                  definitionGraphIds: []
-                });
-                
-                // Update the edge to use this new connection type
-                if (connectionNamePrompt.edgeId) {
-                  updateEdge(connectionNamePrompt.edgeId, (draft) => {
-                    draft.definitionNodeIds = [newConnectionNodeId];
-                  });
-                }
-                
-                setConnectionNamePrompt({ visible: false, name: '', color: null, edgeId: null });
-                setDialogColorPickerVisible(false); // Close color picker on submit
-              }
-            }}
-            onNodeSelect={(node) => {
-              // When selecting an existing node for connection type
-              if (connectionNamePrompt.edgeId) {
-                updateEdge(connectionNamePrompt.edgeId, (draft) => {
-                  draft.definitionNodeIds = [node.id];
-                });
-              }
-              setConnectionNamePrompt({ visible: false, name: '', color: null, edgeId: null });
-              setDialogColorPickerVisible(false); // Close color picker when selecting existing node
-            }}
-            initialName={connectionNamePrompt.name}
-            initialColor={connectionNamePrompt.color}
-            title="Name Your Connection"
-            subtitle="The Thing that will define your Connection,<br />in verb form if available."
-            searchTerm={connectionNamePrompt.name}
-          />
-
-          {/* UnifiedSelector for abstraction node creation */}
-          <UnifiedSelector
-            mode="abstraction-node-creation"
-            isVisible={abstractionPrompt.visible}
-            onClose={() => {
-              console.log(`[Abstraction] Closing UnifiedSelector without creating node`);
-              console.log(`[Abstraction] Current selectedNodeIdForPieMenu before close: ${selectedNodeIdForPieMenu}`);
-              setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null, carouselLevel: null });
-              // When manually closing (without creating node), return to stage 1 but keep carousel visible
-              setCarouselPieMenuStage(1);
-              setIsCarouselStageTransition(true);
-              // Ensure pie menu stays selected for the carousel node
-              if (abstractionCarouselNode && !selectedNodeIdForPieMenu) {
-                console.log(`[Abstraction] Restoring selectedNodeIdForPieMenu after close`);
-                setSelectedNodeIdForPieMenu(abstractionCarouselNode.id);
-              }
-            }}
-            onSubmit={handleAbstractionSubmit}
-            onNodeSelect={(node) => {
-              console.log(`[Abstraction] Selected existing node:`, node);
-              handleAbstractionSubmit({ name: node.name, color: node.color });
-            }}
-            initialName={abstractionPrompt.name}
-            initialColor={abstractionPrompt.color}
-            title={`Add ${abstractionPrompt.direction === 'above' ? 'Above' : 'Below'}`}
-            subtitle={`Create a ${abstractionPrompt.direction === 'above' ? 'more abstract' : 'more specific'} node in the abstraction chain`}
-            abstractionDirection={abstractionPrompt.direction}
-          />
+          {/* Single UnifiedSelector instance with dynamic props */}
+          {(() => {
+            const anyVisible = nodeNamePrompt.visible || connectionNamePrompt.visible || abstractionPrompt.visible;
+            if (!anyVisible) return null;
+            if (nodeNamePrompt.visible) {
+              return (
+                <UnifiedSelector
+                  mode="node-creation"
+                  isVisible={true}
+                  leftPanelExpanded={leftPanelExpanded}
+                  rightPanelExpanded={rightPanelExpanded}
+                  onClose={() => { setDialogColorPickerVisible(false); handleClosePrompt(); }}
+                  onSubmit={({ name, color }) => {
+                    if (name && plusSign) {
+                      setPlusSign(ps => ps && { ...ps, mode: 'morph', tempName: name, selectedColor: color });
+                    } else {
+                      setPlusSign(ps => ps && { ...ps, mode: 'disappear' });
+                    }
+                    setNodeNamePrompt({ visible: false, name: '', color: null });
+                    setDialogColorPickerVisible(false);
+                  }}
+                  onNodeSelect={handleNodeSelection}
+                  initialName={nodeNamePrompt.name}
+                  initialColor={nodeNamePrompt.color}
+                  title="Name Your Thing"
+                  subtitle="Add a new Thing to this Web."
+                  searchTerm={nodeNamePrompt.name}
+                />
+              );
+            }
+            if (connectionNamePrompt.visible) {
+              return (
+                <UnifiedSelector
+                  mode="connection-creation"
+                  isVisible={true}
+                  leftPanelExpanded={leftPanelExpanded}
+                  rightPanelExpanded={rightPanelExpanded}
+                  onClose={() => { setDialogColorPickerVisible(false); setConnectionNamePrompt({ visible: false, name: '', color: null, edgeId: null }); }}
+                  onSubmit={({ name, color }) => {
+                    if (name.trim()) {
+                      const newConnectionNodeId = uuidv4();
+                      addNodePrototype({ id: newConnectionNodeId, name: name.trim(), description: '', picture: null, color: color || NODE_DEFAULT_COLOR, typeNodeId: null, definitionGraphIds: [] });
+                      if (connectionNamePrompt.edgeId) {
+                        updateEdge(connectionNamePrompt.edgeId, (draft) => { draft.definitionNodeIds = [newConnectionNodeId]; });
+                      }
+                      setConnectionNamePrompt({ visible: false, name: '', color: null, edgeId: null });
+                      setDialogColorPickerVisible(false);
+                    }
+                  }}
+                  onNodeSelect={(node) => {
+                    if (connectionNamePrompt.edgeId) {
+                      updateEdge(connectionNamePrompt.edgeId, (draft) => { draft.definitionNodeIds = [node.id]; });
+                    }
+                    setConnectionNamePrompt({ visible: false, name: '', color: null, edgeId: null });
+                    setDialogColorPickerVisible(false);
+                  }}
+                  initialName={connectionNamePrompt.name}
+                  initialColor={connectionNamePrompt.color}
+                  title="Name Your Connection"
+                  subtitle="The Thing that will define your Connection,<br />in verb form if available."
+                  searchTerm={connectionNamePrompt.name}
+                />
+              );
+            }
+            // Abstraction prompt
+            return (
+              <UnifiedSelector
+                mode="abstraction-node-creation"
+                isVisible={true}
+                leftPanelExpanded={leftPanelExpanded}
+                rightPanelExpanded={rightPanelExpanded}
+                onClose={() => {
+                  console.log(`[Abstraction] Closing UnifiedSelector without creating node`);
+                  console.log(`[Abstraction] Current selectedNodeIdForPieMenu before close: ${selectedNodeIdForPieMenu}`);
+                  setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null, carouselLevel: null });
+                  setCarouselPieMenuStage(1);
+                  setIsCarouselStageTransition(true);
+                  if (abstractionCarouselNode && !selectedNodeIdForPieMenu) {
+                    console.log(`[Abstraction] Restoring selectedNodeIdForPieMenu after close`);
+                    setSelectedNodeIdForPieMenu(abstractionCarouselNode.id);
+                  }
+                }}
+                onSubmit={handleAbstractionSubmit}
+                onNodeSelect={(node) => { console.log(`[Abstraction] Selected existing node:`, node); handleAbstractionSubmit({ name: node.name, color: node.color }); }}
+                initialName={abstractionPrompt.name}
+                initialColor={abstractionPrompt.color}
+                title={`Add ${abstractionPrompt.direction === 'above' ? 'Above' : 'Below'}`}
+                subtitle={`Create a ${abstractionPrompt.direction === 'above' ? 'more abstract' : 'more specific'} node in the abstraction chain`}
+                abstractionDirection={abstractionPrompt.direction}
+              />
+            );
+          })()}
           
           {debugMode && (
             <DebugOverlay 
@@ -6496,6 +6507,8 @@ function NodeCanvas() {
           graphDescription={activeGraphDescription}
           nodeDefinitionIndices={nodeDefinitionIndices}
           onStartHurtleAnimationFromPanel={startHurtleAnimationFromPanel}
+          leftPanelExpanded={leftPanelExpanded}
+          rightPanelExpanded={rightPanelExpanded}
         />
       </div>
 
