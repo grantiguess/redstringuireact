@@ -1014,6 +1014,8 @@ function NodeCanvas() {
     }
   };
 
+
+
   // Helper: Generate consistent clean routing path for an edge (used by hover, click, and rendering)
   const generateCleanRoutingPath = (edge, sourceNode, destNode, sDims, dDims) => {
     const x1 = sourceNode.x + sDims.currentWidth / 2;
@@ -3012,10 +3014,11 @@ function NodeCanvas() {
       // Check if mouse is over any node first
         const hoveredNode = nodes.find(node => visibleNodeIds.has(node.id) && isInsideNode(node, e.clientX, e.clientY));
       if (!hoveredNode) {
-          // Search only among visible edges
+          // Search only among visible edges in REVERSE order to match z-axis (last rendered = top)
         let foundHoveredEdgeInfo = null;
         let closestDistance = Infinity;
-          for (const edge of visibleEdges) {
+          for (let i = visibleEdges.length - 1; i >= 0; i--) {
+            const edge = visibleEdges[i];
             const sourceNode = nodeById.get(edge.sourceId);
             const destNode = nodeById.get(edge.destinationId);
             if (!sourceNode || !destNode) continue;
@@ -3062,8 +3065,80 @@ function NodeCanvas() {
                 }
               }
               distance = minSegmentDistance;
+            } else if (enableAutoRouting && routingStyle === 'manhattan') {
+              // Manhattan routing: use simple L-path approximation for hover
+              // This matches the basic Manhattan concept without complex bend calculations
+              const sCenterX = sourceNode.x + sDims.currentWidth / 2;
+              const sCenterY = sourceNode.y + sDims.currentHeight / 2;
+              const dCenterX = destNode.x + dDims.currentWidth / 2;
+              const dCenterY = destNode.y + dDims.currentHeight / 2;
+
+              const relDx = dCenterX - sCenterX;
+              const relDy = dCenterY - sCenterY;
+              
+              // Use the same port selection logic as rendering
+              let startPt, endPt;
+              if (Math.abs(relDx) >= Math.abs(relDy)) {
+                // Horizontal preference
+                startPt = relDx >= 0 
+                  ? { x: sourceNode.x + sDims.currentWidth, y: sCenterY }
+                  : { x: sourceNode.x, y: sCenterY };
+                endPt = relDx >= 0 
+                  ? { x: destNode.x, y: dCenterY }
+                  : { x: destNode.x + dDims.currentWidth, y: dCenterY };
+              } else {
+                // Vertical preference
+                startPt = relDy >= 0 
+                  ? { x: sCenterX, y: sourceNode.y + sDims.currentHeight }
+                  : { x: sCenterX, y: sourceNode.y };
+                endPt = relDy >= 0 
+                  ? { x: dCenterX, y: destNode.y }
+                  : { x: dCenterX, y: destNode.y + dDims.currentHeight };
+              }
+
+              // Check L-shaped path: start -> corner -> end
+              const cornerPt = { x: endPt.x, y: startPt.y };
+              let minManhattanDistance = Infinity;
+              
+              // First segment: start to corner
+              const A1 = currentX - startPt.x;
+              const B1 = currentY - startPt.y;
+              const C1 = cornerPt.x - startPt.x;
+              const D1 = cornerPt.y - startPt.y;
+              const dot1 = A1 * C1 + B1 * D1;
+              const lenSq1 = C1 * C1 + D1 * D1;
+              if (lenSq1 > 0) {
+                let param1 = dot1 / lenSq1;
+                if (param1 >= 0 && param1 <= 1) {
+                  const xx = startPt.x + param1 * C1;
+                  const yy = startPt.y + param1 * D1;
+                  const dx = currentX - xx;
+                  const dy = currentY - yy;
+                  minManhattanDistance = Math.min(minManhattanDistance, Math.sqrt(dx * dx + dy * dy));
+                }
+              }
+              
+              // Second segment: corner to end
+              const A2 = currentX - cornerPt.x;
+              const B2 = currentY - cornerPt.y;
+              const C2 = endPt.x - cornerPt.x;
+              const D2 = endPt.y - cornerPt.y;
+              const dot2 = A2 * C2 + B2 * D2;
+              const lenSq2 = C2 * C2 + D2 * D2;
+              if (lenSq2 > 0) {
+                let param2 = dot2 / lenSq2;
+                if (param2 >= 0 && param2 <= 1) {
+                  const xx = cornerPt.x + param2 * C2;
+                  const yy = cornerPt.y + param2 * D2;
+                  const dx = currentX - xx;
+                  const dy = currentY - yy;
+                  minManhattanDistance = Math.min(minManhattanDistance, Math.sqrt(dx * dx + dy * dy));
+                }
+              }
+              
+              distance = minManhattanDistance;
             } else {
-              // Straight line or Manhattan routing: use simple straight-line distance
+              // Straight line routing: use simple straight-line distance
               const A = currentX - x1;
               const B = currentY - y1;
               const C = x2 - x1;
@@ -3082,9 +3157,16 @@ function NodeCanvas() {
               }
             }
             
-            if (distance <= 40 && distance < closestDistance) {
+            // Use different thresholds based on routing mode
+            const hoverThreshold = (enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) ? 50 : 40;
+            
+            if (distance <= hoverThreshold && distance < closestDistance) {
               closestDistance = distance;
               foundHoveredEdgeInfo = { edgeId: edge.id };
+              // For auto-routing modes, break on first match (top z-axis) to prevent wrong selection
+              if (enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) {
+                break;
+              }
             }
           }
         setHoveredEdgeInfo(foundHoveredEdgeInfo);
