@@ -94,10 +94,13 @@ const SemanticLinkInput = ({ onAdd, placeholder, type, icon: Icon }) => {
           padding: '6px 8px',
           border: 'none',
           borderRadius: '4px',
-          backgroundColor: isValid ? '#28a745' : '#ccc',
+          backgroundColor: isValid ? '#8B0000' : '#ccc',
           color: 'white',
           cursor: isValid ? 'pointer' : 'not-allowed',
-          fontSize: '12px'
+          fontSize: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
         }}
       >
         <Plus size={14} />
@@ -258,16 +261,48 @@ const WikipediaSearch = ({ onSelect }) => {
     }
   };
 
+  // Handle Wikipedia URL input
+  const handleDirectURL = (input) => {
+    const wikipediaMatch = input.match(/(?:https?:\/\/)?(?:www\.)?(?:en\.)?wikipedia\.org\/wiki\/(.+)/);
+    if (wikipediaMatch) {
+      return input;
+    }
+    return null;
+  };
+
+  const handleInputChange = (e) => {
+    const value = e.target.value;
+    setQuery(value);
+    
+    // If it looks like a Wikipedia URL, clear results to indicate it's ready
+    if (handleDirectURL(value)) {
+      setResults([]);
+    }
+  };
+
+  const handleSearch = () => {
+    // Check if it's a direct Wikipedia URL first
+    const directURL = handleDirectURL(query);
+    if (directURL) {
+      onSelect(directURL);
+      setQuery('');
+      return;
+    }
+    
+    // Otherwise, search
+    searchWikipedia(query);
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-        <Search size={16} style={{ color: '#666' }} />
+        <Globe size={16} style={{ color: '#666' }} />
         <input
           type="text"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={handleInputChange}
           onKeyPress={handleKeyPress}
-          placeholder="Search Wikipedia..."
+          placeholder="Search Wikipedia or paste URL..."
           style={{
             flex: 1,
             padding: '6px 8px',
@@ -278,19 +313,22 @@ const WikipediaSearch = ({ onSelect }) => {
           }}
         />
         <button
-          onClick={() => searchWikipedia(query)}
+          onClick={handleSearch}
           disabled={loading || !query.trim()}
           style={{
-            padding: '6px 12px',
+            padding: '6px 8px',
             border: 'none',
             borderRadius: '4px',
-            backgroundColor: loading ? '#ccc' : '#007bff',
+            backgroundColor: loading ? '#ccc' : '#8B0000',
             color: 'white',
             cursor: loading ? 'not-allowed' : 'pointer',
-            fontSize: '12px'
+            fontSize: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
           }}
         >
-          {loading ? '...' : 'Search'}
+          {loading ? '...' : <Search size={14} />}
         </button>
       </div>
 
@@ -299,32 +337,54 @@ const WikipediaSearch = ({ onSelect }) => {
           {results.map((result, index) => (
             <div
               key={index}
-              onClick={() => onSelect(result.url || `https://en.wikipedia.org/wiki/${result.title}`)}
               style={{
                 padding: '8px',
                 border: '1px solid #ddd',
                 borderRadius: '4px',
                 marginBottom: '6px',
                 cursor: 'pointer',
-                backgroundColor: '#f8f9fa'
+                backgroundColor: '#f8f9fa',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start'
               }}
             >
-              <div style={{
-                fontWeight: 'bold',
-                fontSize: '14px',
-                marginBottom: '4px'
-              }}>
-                {result.title}
-              </div>
-              {result.description && (
+              <div 
+                onClick={() => onSelect(result.url || `https://en.wikipedia.org/wiki/${result.title}`)}
+                style={{ flex: 1 }}
+              >
                 <div style={{
-                  fontSize: '12px',
-                  color: '#666',
-                  lineHeight: 1.3
+                  fontWeight: 'bold',
+                  fontSize: '14px',
+                  marginBottom: '4px',
+                  color: '#333'  // Dark title
                 }}>
-                  {result.description.substring(0, 100)}...
+                  {result.title}
                 </div>
-              )}
+                {result.description && (
+                  <div style={{
+                    fontSize: '12px',
+                    color: '#666',
+                    lineHeight: 1.3
+                  }}>
+                    {result.description.substring(0, 100)}...
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => window.open(result.url || `https://en.wikipedia.org/wiki/${result.title}`, '_blank')}
+                style={{
+                  padding: '4px',
+                  border: 'none',
+                  backgroundColor: 'transparent',
+                  cursor: 'pointer',
+                  color: '#8B0000',
+                  marginLeft: '8px'
+                }}
+                title="Open in Wikipedia"
+              >
+                <ExternalLink size={14} />
+              </button>
             </div>
           ))}
         </div>
