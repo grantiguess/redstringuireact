@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Palette, ArrowBigRightDash } from 'lucide-react';
+import { X, Palette, Plus } from 'lucide-react';
 import { NODE_DEFAULT_COLOR } from './constants';
 import useGraphStore from './store/graphStore.js';
 import ColorPicker from './ColorPicker';
@@ -166,11 +166,11 @@ const UnifiedSelector = ({
               <X size={20} color="#999" onClick={() => { setName(''); setColorPickerVisible(false); onClose?.(); }} />
             </div>
             <div style={{ textAlign: 'left', marginBottom: '15px', color: 'black' }}>
-              <strong style={{ fontSize: '18px', fontFamily: "'EmOne', sans-serif" }}>{title}</strong>
+              <strong style={{ fontSize: '22px', fontFamily: "'EmOne', sans-serif" }}>{title}</strong>
             </div>
             {subtitle && (
               <div 
-                style={{ textAlign: 'left', marginBottom: '15px', color: '#666', fontSize: '14px', fontFamily: "'EmOne', sans-serif" }}
+                style={{ textAlign: 'left', marginBottom: '15px', color: '#666', fontSize: '16px', fontFamily: "'EmOne', sans-serif" }}
                 dangerouslySetInnerHTML={{ __html: subtitle }}
               />
             )}
@@ -196,10 +196,10 @@ const UnifiedSelector = ({
               />
               <button
                 onClick={handleSubmit}
-                style={{ padding: '10px', backgroundColor: color, color: '#bdb5b5', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '56px', minHeight: '44px' }}
+                style={{ padding: '10px', backgroundColor: color, color: '#bdb5b5', border: '2px solid #bdb5b5', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '56px', minHeight: '44px' }}
                 title={mode === 'connection-creation' ? 'Create connection type' : mode === 'abstraction-node-creation' ? `Create ${abstractionDirection} abstraction` : 'Create node type'}
               >
-                <ArrowBigRightDash size={16} color="#bdb5b5" />
+                <Plus size={18} color="#bdb5b5" strokeWidth={2.5} />
               </button>
             </div>
           </div>

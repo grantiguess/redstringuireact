@@ -3811,7 +3811,7 @@ const Panel = forwardRef(
                 initialName={typeNamePrompt.name}
                 initialColor={typeNamePrompt.color}
                 title="Name Your Thing"
-                subtitle={`a more generic way to refer to ${typeNamePrompt.targetNodeName},<br/>also known as a superclass`}
+                subtitle={`a more generic way to refer to ${typeNamePrompt.targetNodeName},<br/>also known as a superclass or a type.`}
                 searchTerm={typeNamePrompt.name}
                 showCreateNewOption={true}
               />
