@@ -1016,6 +1016,99 @@ function NodeCanvas() {
 
 
 
+  // Helper: Generate consistent Manhattan routing path for an edge (used by hover, click, and rendering)
+  const generateManhattanRoutingPath = (edge, sourceNode, destNode, sDims, dDims) => {
+    const sCenterX = sourceNode.x + sDims.currentWidth / 2;
+    const sCenterY = sourceNode.y + sDims.currentHeight / 2;
+    const dCenterX = destNode.x + dDims.currentWidth / 2;
+    const dCenterY = destNode.y + dDims.currentHeight / 2;
+
+    const sPorts = {
+      top: { x: sCenterX, y: sourceNode.y },
+      bottom: { x: sCenterX, y: sourceNode.y + sDims.currentHeight },
+      left: { x: sourceNode.x, y: sCenterY },
+      right: { x: sourceNode.x + sDims.currentWidth, y: sCenterY },
+    };
+    const dPorts = {
+      top: { x: dCenterX, y: destNode.y },
+      bottom: { x: dCenterX, y: destNode.y + dDims.currentHeight },
+      left: { x: destNode.x, y: dCenterY },
+      right: { x: destNode.x + dDims.currentWidth, y: dCenterY },
+    };
+
+    const relDx = dCenterX - sCenterX;
+    const relDy = dCenterY - sCenterY;
+    let sPort, dPort;
+    if (Math.abs(relDx) >= Math.abs(relDy)) {
+      sPort = relDx >= 0 ? sPorts.right : sPorts.left;
+      dPort = relDx >= 0 ? dPorts.left : dPorts.right;
+    } else {
+      sPort = relDy >= 0 ? sPorts.bottom : sPorts.top;
+      dPort = relDy >= 0 ? dPorts.top : dPorts.bottom;
+    }
+    
+    const startX = sPort.x;
+    const startY = sPort.y;
+    const endX = dPort.x;
+    const endY = dPort.y;
+
+    // Determine sides for perpendicular entry/exit (same logic as rendering)
+    const sSide = (Math.abs(startY - sourceNode.y) < 0.5) ? 'top'
+                    : (Math.abs(startY - (sourceNode.y + sDims.currentHeight)) < 0.5) ? 'bottom'
+                    : (Math.abs(startX - sourceNode.x) < 0.5) ? 'left' : 'right';
+    const dSide = (Math.abs(endY - destNode.y) < 0.5) ? 'top'
+                    : (Math.abs(endY - (destNode.y + dDims.currentHeight)) < 0.5) ? 'bottom'
+                    : (Math.abs(endX - destNode.x) < 0.5) ? 'left' : 'right';
+    const initOrient = (sSide === 'left' || sSide === 'right') ? 'H' : 'V';
+    const finalOrient = (dSide === 'left' || dSide === 'right') ? 'H' : 'V';
+
+    // Use the same bend logic as rendering
+    const effectiveBends = (manhattanBends === 'auto')
+      ? (initOrient === finalOrient ? 'two' : 'one')
+      : manhattanBends;
+
+    // Generate path points based on bend type
+    let pathPoints;
+    if (effectiveBends === 'two' && initOrient === finalOrient) {
+      if (initOrient === 'H') {
+        // HVH pattern
+        const midX = (startX + endX) / 2;
+        pathPoints = [
+          { x: startX, y: startY },
+          { x: midX, y: startY },
+          { x: midX, y: endY },
+          { x: endX, y: endY }
+        ];
+      } else {
+        // VHV pattern
+        const midY = (startY + endY) / 2;
+        pathPoints = [
+          { x: startX, y: startY },
+          { x: startX, y: midY },
+          { x: endX, y: midY },
+          { x: endX, y: endY }
+        ];
+      }
+    } else {
+      // Simple L-path
+      if (initOrient === 'H') {
+        pathPoints = [
+          { x: startX, y: startY },
+          { x: endX, y: startY },
+          { x: endX, y: endY }
+        ];
+      } else {
+        pathPoints = [
+          { x: startX, y: startY },
+          { x: startX, y: endY },
+          { x: endX, y: endY }
+        ];
+      }
+    }
+    
+    return pathPoints;
+  };
+
   // Helper: Generate consistent clean routing path for an edge (used by hover, click, and rendering)
   const generateCleanRoutingPath = (edge, sourceNode, destNode, sDims, dDims) => {
     const x1 = sourceNode.x + sDims.currentWidth / 2;
@@ -3066,77 +3159,35 @@ function NodeCanvas() {
               }
               distance = minSegmentDistance;
             } else if (enableAutoRouting && routingStyle === 'manhattan') {
-              // Manhattan routing: use simple L-path approximation for hover
-              // This matches the basic Manhattan concept without complex bend calculations
-              const sCenterX = sourceNode.x + sDims.currentWidth / 2;
-              const sCenterY = sourceNode.y + sDims.currentHeight / 2;
-              const dCenterX = destNode.x + dDims.currentWidth / 2;
-              const dCenterY = destNode.y + dDims.currentHeight / 2;
-
-              const relDx = dCenterX - sCenterX;
-              const relDy = dCenterY - sCenterY;
+              // Manhattan routing: use the exact same path generation as rendering
+              const pathPoints = generateManhattanRoutingPath(edge, sourceNode, destNode, sDims, dDims);
               
-              // Use the same port selection logic as rendering
-              let startPt, endPt;
-              if (Math.abs(relDx) >= Math.abs(relDy)) {
-                // Horizontal preference
-                startPt = relDx >= 0 
-                  ? { x: sourceNode.x + sDims.currentWidth, y: sCenterY }
-                  : { x: sourceNode.x, y: sCenterY };
-                endPt = relDx >= 0 
-                  ? { x: destNode.x, y: dCenterY }
-                  : { x: destNode.x + dDims.currentWidth, y: dCenterY };
-              } else {
-                // Vertical preference
-                startPt = relDy >= 0 
-                  ? { x: sCenterX, y: sourceNode.y + sDims.currentHeight }
-                  : { x: sCenterX, y: sourceNode.y };
-                endPt = relDy >= 0 
-                  ? { x: dCenterX, y: destNode.y }
-                  : { x: dCenterX, y: destNode.y + dDims.currentHeight };
-              }
-
-              // Check L-shaped path: start -> corner -> end
-              const cornerPt = { x: endPt.x, y: startPt.y };
-              let minManhattanDistance = Infinity;
-              
-              // First segment: start to corner
-              const A1 = currentX - startPt.x;
-              const B1 = currentY - startPt.y;
-              const C1 = cornerPt.x - startPt.x;
-              const D1 = cornerPt.y - startPt.y;
-              const dot1 = A1 * C1 + B1 * D1;
-              const lenSq1 = C1 * C1 + D1 * D1;
-              if (lenSq1 > 0) {
-                let param1 = dot1 / lenSq1;
-                if (param1 >= 0 && param1 <= 1) {
-                  const xx = startPt.x + param1 * C1;
-                  const yy = startPt.y + param1 * D1;
+              // Check distance to each segment of the Manhattan path
+              let minSegmentDistance = Infinity;
+              for (let i = 0; i < pathPoints.length - 1; i++) {
+                const segStart = pathPoints[i];
+                const segEnd = pathPoints[i + 1];
+                
+                const A = currentX - segStart.x;
+                const B = currentY - segStart.y;
+                const C = segEnd.x - segStart.x;
+                const D = segEnd.y - segStart.y;
+                const dot = A * C + B * D;
+                const lenSq = C * C + D * D;
+                
+                if (lenSq > 0) {
+                  let param = dot / lenSq;
+                  if (param < 0) param = 0;
+                  else if (param > 1) param = 1;
+                  const xx = segStart.x + param * C;
+                  const yy = segStart.y + param * D;
                   const dx = currentX - xx;
                   const dy = currentY - yy;
-                  minManhattanDistance = Math.min(minManhattanDistance, Math.sqrt(dx * dx + dy * dy));
+                  const segDistance = Math.sqrt(dx * dx + dy * dy);
+                  minSegmentDistance = Math.min(minSegmentDistance, segDistance);
                 }
               }
-              
-              // Second segment: corner to end
-              const A2 = currentX - cornerPt.x;
-              const B2 = currentY - cornerPt.y;
-              const C2 = endPt.x - cornerPt.x;
-              const D2 = endPt.y - cornerPt.y;
-              const dot2 = A2 * C2 + B2 * D2;
-              const lenSq2 = C2 * C2 + D2 * D2;
-              if (lenSq2 > 0) {
-                let param2 = dot2 / lenSq2;
-                if (param2 >= 0 && param2 <= 1) {
-                  const xx = cornerPt.x + param2 * C2;
-                  const yy = cornerPt.y + param2 * D2;
-                  const dx = currentX - xx;
-                  const dy = currentY - yy;
-                  minManhattanDistance = Math.min(minManhattanDistance, Math.sqrt(dx * dx + dy * dy));
-                }
-              }
-              
-              distance = minManhattanDistance;
+              distance = minSegmentDistance;
             } else {
               // Straight line routing: use simple straight-line distance
               const A = currentX - x1;
