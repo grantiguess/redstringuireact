@@ -305,13 +305,7 @@ const RedstringMenu = ({
                               onMouseEnter={handleSubmenuEnter}
                               onMouseLeave={handleMenuItemLeave}
                             >
-                              <div
-                                className="submenu-item"
-                                onClick={() => onToggleEnableAutoRouting?.()}
-                                style={{ cursor: 'pointer' }}
-                              >
-                                {enableAutoRouting ? 'Disable Auto-Routing' : 'Enable Auto-Routing'}
-                              </div>
+
                               <div
                                 className="submenu-item"
                                 onClick={() => onSetRoutingStyle?.('straight')}

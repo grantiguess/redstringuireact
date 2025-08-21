@@ -162,7 +162,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     autoLayoutSettings: {
       defaultSpacing: 15,
       nodeClearance: 20,
-      enableAutoRouting: false,
+      enableAutoRouting: true,
       showConnectionLabels: true,
       routingStyle: 'straight', // 'straight' | 'manhattan' | 'clean'
       manhattanBends: 'auto', // 'auto' | 'one' | 'two'
@@ -944,7 +944,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       draft.autoLayoutSettings = {
         defaultSpacing: 15,
         nodeClearance: 20,
-        enableAutoRouting: false,
+        enableAutoRouting: true,
         showConnectionLabels: true,
         routingStyle: 'straight'
       };
@@ -958,7 +958,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       draft.autoLayoutSettings = {
         defaultSpacing: 15,
         nodeClearance: 20,
-        enableAutoRouting: false,
+        enableAutoRouting: true,
         showConnectionLabels: true,
         routingStyle: 'straight'
       };
@@ -976,7 +976,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       draft.autoLayoutSettings = {
         defaultSpacing: 15,
         nodeClearance: 20,
-        enableAutoRouting: false,
+        enableAutoRouting: true,
         showConnectionLabels: true,
         routingStyle: 'straight',
         manhattanBends: 'auto'
@@ -995,7 +995,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       draft.autoLayoutSettings = {
         defaultSpacing: 15,
         nodeClearance: 20,
-        enableAutoRouting: false,
+        enableAutoRouting: true,
         showConnectionLabels: true,
         routingStyle: 'straight',
         manhattanBends: 'auto',

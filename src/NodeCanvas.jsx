@@ -957,7 +957,7 @@ function NodeCanvas() {
   };
 
   // Helper: Calculate staggered position along an edge to distribute connections
-  const calculateStaggeredPosition = (basePort, side, edgeIndex, dims, cornerRadius) => {
+  const calculateStaggeredPosition = (basePort, side, edgeUsageIndex, dims, cornerRadius) => {
     // Calculate available straight-edge space (avoiding rounded corners)
     const segmentLength = basePort.segmentEnd - basePort.segmentStart;
     const safeMargin = 12; // Additional margin from corners for visual clarity
@@ -983,11 +983,12 @@ function NodeCanvas() {
     } else {
       // Multiple ports - distribute evenly with slight variations to prevent perfect overlap
       const evenSpacing = usableLength / (actualPortCount - 1);
-      const basePosition = (edgeIndex % actualPortCount) * evenSpacing;
+      const basePosition = (edgeUsageIndex % actualPortCount) * evenSpacing;
       
-      // Add small deterministic variation based on edge ID to prevent perfect alignment
-      const edgeHash = Math.abs(edgeIndex * 17 + edgeIndex * edgeIndex) % 7; // 0-6
-      const variation = (edgeHash - 3) * 2; // -6 to +6 pixel variation
+      // Add small deterministic variation based on port position to prevent perfect alignment
+      // Use port coordinates for stable hash regardless of edge order
+      const portHash = Math.abs((basePort.x * 23 + basePort.y * 19) % 7); // 0-6
+      const variation = (portHash - 3) * 2; // -6 to +6 pixel variation
       
       position = basePosition + variation;
     }
@@ -1010,6 +1011,46 @@ function NodeCanvas() {
         };
       default:
         return basePort;
+    }
+  };
+
+  // Helper: Generate consistent clean routing path for an edge (used by hover, click, and rendering)
+  const generateCleanRoutingPath = (edge, sourceNode, destNode, sDims, dDims) => {
+    const x1 = sourceNode.x + sDims.currentWidth / 2;
+    const y1 = sourceNode.y + sDims.currentHeight / 2;
+    const x2 = destNode.x + dDims.currentWidth / 2;
+    const y2 = destNode.y + dDims.currentHeight / 2;
+    
+    const portAssignment = cleanLaneOffsets.get(edge.id);
+    if (portAssignment) {
+      const { sourcePort, destPort, sourceSide, destSide } = portAssignment;
+      
+      // Check if this edge has directional arrows
+      const arrowsToward = edge.directionality?.arrowsToward instanceof Set 
+        ? edge.directionality.arrowsToward 
+        : new Set(Array.isArray(edge.directionality?.arrowsToward) ? edge.directionality.arrowsToward : []);
+      const hasSourceArrow = arrowsToward.has(sourceNode.id);
+      const hasDestArrow = arrowsToward.has(destNode.id);
+      
+      // For non-directional connections, route to node centers
+      const effectiveStart = hasSourceArrow ? sourcePort : { x: x1, y: y1 };
+      const effectiveEnd = hasDestArrow ? destPort : { x: x2, y: y2 };
+      const effectiveStartSide = hasSourceArrow ? sourceSide : null;
+      const effectiveEndSide = hasDestArrow ? destSide : null;
+      
+      return computeCleanPolylineFromPorts(
+        effectiveStart, 
+        effectiveEnd, 
+        [], 
+        cleanLaneSpacing, 
+        effectiveStartSide, 
+        effectiveEndSide
+      );
+    } else {
+      // Fallback to simple L-path from node centers
+      const startPt = { x: x1, y: y1 };
+      const endPt = { x: x2, y: y2 };
+      return computeCleanPolylineFromPorts(startPt, endPt, [], cleanLaneSpacing);
     }
   };
 
@@ -2814,17 +2855,33 @@ function NodeCanvas() {
     return d;
   };
 
-  // Orthogonal routing with mandatory stems - always exit perpendicular to node edge
-  const computeCleanPolylineFromPorts = (start, end, obstacleRects, laneSpacing = 24, startSide = null, endSide = null, edgeIndex = 0) => {
+  // Orthogonal routing with smart stem usage - use stems only when needed
+  const computeCleanPolylineFromPorts = (start, end, obstacleRects, laneSpacing = 24, startSide = null, endSide = null) => {
     const dx = end.x - start.x;
     const dy = end.y - start.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
     
-    // Staggered stem lengths to prevent overlap - each connection gets a different stem length
-    // Base stem length with staggered variations
-    const baseStemLength = Math.max(100, laneSpacing);
-    const stemVariation = (edgeIndex % 4) * 20; // 0, 20, 40, 60px variations
-    const startStemLength = baseStemLength + stemVariation;
-    const endStemLength = baseStemLength + ((edgeIndex + 2) % 4) * 20; // Offset pattern for end stems
+    // For short connections or when start/end are well-aligned, use minimal stems
+    const isShortConnection = distance < 200;
+    const isWellAligned = (startSide === 'right' && endSide === 'left' && Math.abs(dy) < 50) ||
+                         (startSide === 'left' && endSide === 'right' && Math.abs(dy) < 50) ||
+                         (startSide === 'bottom' && endSide === 'top' && Math.abs(dx) < 50) ||
+                         (startSide === 'top' && endSide === 'bottom' && Math.abs(dx) < 50);
+    
+    let startStemLength, endStemLength;
+    
+    if (isShortConnection || isWellAligned) {
+      // Use minimal stems for short or well-aligned connections
+      startStemLength = 24;
+      endStemLength = 24;
+    } else {
+      // Use staggered stems for longer connections to prevent overlap
+      const stableEdgeHash = Math.abs((start.x * 31 + start.y * 17 + end.x * 13 + end.y * 7) % 97);
+      const baseStemLength = Math.max(60, laneSpacing * 0.3);
+      const stemVariation = (stableEdgeHash % 3) * 16; // 0, 16, 32px variations (reduced)
+      startStemLength = baseStemLength + stemVariation;
+      endStemLength = baseStemLength + ((stableEdgeHash + 1) % 3) * 16;
+    }
     
     // Create stem points that exit orthogonally from the node edges at staggered distances
     let stemStart, stemEnd;
@@ -2976,80 +3033,35 @@ function NodeCanvas() {
             
             // Use different hover detection based on routing mode
             if (enableAutoRouting && routingStyle === 'clean') {
-              // Clean routing: check against the actual orthogonal path
-              const portAssignment = cleanLaneOffsets.get(edge.id);
-              if (portAssignment) {
-                const { sourcePort, destPort, sourceSide, destSide } = portAssignment;
+              // Clean routing: check against the actual orthogonal path using consistent helper
+              const pathPoints = generateCleanRoutingPath(edge, sourceNode, destNode, sDims, dDims);
+              
+              // Check distance to each segment of the path
+              let minSegmentDistance = Infinity;
+              for (let i = 0; i < pathPoints.length - 1; i++) {
+                const segStart = pathPoints[i];
+                const segEnd = pathPoints[i + 1];
                 
-                // Check if this edge has directional arrows to determine effective start/end
-                const arrowsToward = edge.directionality?.arrowsToward instanceof Set 
-                  ? edge.directionality.arrowsToward 
-                  : new Set(Array.isArray(edge.directionality?.arrowsToward) ? edge.directionality.arrowsToward : []);
-                const hasSourceArrow = arrowsToward.has(sourceNode.id);
-                const hasDestArrow = arrowsToward.has(destNode.id);
-                
-                // Use ports for directional connections, centers for non-directional
-                const effectiveStart = hasSourceArrow ? sourcePort : { x: x1, y: y1 };
-                const effectiveEnd = hasDestArrow ? destPort : { x: x2, y: y2 };
-                const effectiveStartSide = hasSourceArrow ? sourceSide : null;
-                const effectiveEndSide = hasDestArrow ? destSide : null;
-                
-                // Generate the same path points used for rendering
-                const pathPoints = computeCleanPolylineFromPorts(
-                  effectiveStart, 
-                  effectiveEnd, 
-                  [], 
-                  cleanLaneSpacing, 
-                  effectiveStartSide, 
-                  effectiveEndSide,
-                  visibleEdges.indexOf(edge) // Use edge index for consistent staggering
-                );
-                
-                // Check distance to each segment of the path
-                let minSegmentDistance = Infinity;
-                for (let i = 0; i < pathPoints.length - 1; i++) {
-                  const segStart = pathPoints[i];
-                  const segEnd = pathPoints[i + 1];
-                  
-                  const A = currentX - segStart.x;
-                  const B = currentY - segStart.y;
-                  const C = segEnd.x - segStart.x;
-                  const D = segEnd.y - segStart.y;
-                  const dot = A * C + B * D;
-                  const lenSq = C * C + D * D;
-                  
-                  if (lenSq > 0) {
-                    let param = dot / lenSq;
-                    if (param < 0) param = 0;
-                    else if (param > 1) param = 1;
-                    const xx = segStart.x + param * C;
-                    const yy = segStart.y + param * D;
-                    const dx = currentX - xx;
-                    const dy = currentY - yy;
-                    const segDistance = Math.sqrt(dx * dx + dy * dy);
-                    minSegmentDistance = Math.min(minSegmentDistance, segDistance);
-                  }
-                }
-                distance = minSegmentDistance;
-              } else {
-                // Fallback to straight line for clean routing if no port assignment
-                const A = currentX - x1;
-                const B = currentY - y1;
-                const C = x2 - x1;
-                const D = y2 - y1;
+                const A = currentX - segStart.x;
+                const B = currentY - segStart.y;
+                const C = segEnd.x - segStart.x;
+                const D = segEnd.y - segStart.y;
                 const dot = A * C + B * D;
                 const lenSq = C * C + D * D;
+                
                 if (lenSq > 0) {
                   let param = dot / lenSq;
                   if (param < 0) param = 0;
                   else if (param > 1) param = 1;
-                  const xx = x1 + param * C;
-                  const yy = y1 + param * D;
+                  const xx = segStart.x + param * C;
+                  const yy = segStart.y + param * D;
                   const dx = currentX - xx;
                   const dy = currentY - yy;
-                  distance = Math.sqrt(dx * dx + dy * dy);
+                  const segDistance = Math.sqrt(dx * dx + dy * dy);
+                  minSegmentDistance = Math.min(minSegmentDistance, segDistance);
                 }
               }
+              distance = minSegmentDistance;
             } else {
               // Straight line or Manhattan routing: use simple straight-line distance
               const A = currentX - x1;
@@ -5192,44 +5204,9 @@ function NodeCanvas() {
                       (enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) ? (
                         <path
                           d={(routingStyle === 'manhattan') ? manhattanPathD : (() => {
-                            const startPt = { x: startX, y: startY };
-                            const endPt = { x: endX, y: endY };
-                            const obstacleRects = [];
-                            for (const n of nodes) {
-                              if (n.id === sourceNode.id || n.id === destNode.id) continue;
-                              const dims = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
-                              const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
-                              obstacleRects.push(inflateRect(rect, 8));
-                            }
-                            // Use intelligent port assignments for clean routing
-                            const portAssignment = cleanLaneOffsets.get(edge.id);
-                            if (portAssignment) {
-                              const { sourcePort, destPort, sourceSide, destSide } = portAssignment;
-                              
-                              // Check if this edge has directional arrows
-                              const hasSourceArrow = arrowsToward.has(sourceNode.id);
-                              const hasDestArrow = arrowsToward.has(destNode.id);
-                              
-                              // For non-directional connections, route to node centers
-                              const effectiveStart = hasSourceArrow ? sourcePort : { x: x1, y: y1 };
-                              const effectiveEnd = hasDestArrow ? destPort : { x: x2, y: y2 };
-                              const effectiveStartSide = hasSourceArrow ? sourceSide : null;
-                              const effectiveEndSide = hasDestArrow ? destSide : null;
-                              
-                              const cleanPts = computeCleanPolylineFromPorts(
-                                effectiveStart, 
-                                effectiveEnd, 
-                                [], 
-                                cleanLaneSpacing, 
-                                effectiveStartSide, 
-                                effectiveEndSide
-                              );
-                              return buildRoundedPathFromPoints(cleanPts, 8);
-                            } else {
-                              // Fallback to simple L-path from node centers
-                              const cleanPts = computeCleanPolylineFromPorts(startPt, endPt, [], cleanLaneSpacing);
-                              return buildRoundedPathFromPoints(cleanPts, 8);
-                            }
+                            // Use consistent clean routing path helper
+                            const cleanPts = generateCleanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
+                            return buildRoundedPathFromPoints(cleanPts, 8);
                           })()}
                           fill="none"
                           stroke={edgeColor}
@@ -5266,38 +5243,9 @@ function NodeCanvas() {
                         )}
                         <path
                           d={(routingStyle === 'manhattan') ? manhattanPathD : (() => {
-                            // Use intelligent port assignments for clean routing
-                            const portAssignment = cleanLaneOffsets.get(edge.id);
-                            if (portAssignment) {
-                              const { sourcePort, destPort, sourceSide, destSide } = portAssignment;
-                              
-                              // Check if this edge has directional arrows
-                              const hasSourceArrow = arrowsToward.has(sourceNode.id);
-                              const hasDestArrow = arrowsToward.has(destNode.id);
-                              
-                              // For non-directional connections, route to node centers
-                              const effectiveStart = hasSourceArrow ? sourcePort : { x: x1, y: y1 };
-                              const effectiveEnd = hasDestArrow ? destPort : { x: x2, y: y2 };
-                              const effectiveStartSide = hasSourceArrow ? sourceSide : null;
-                              const effectiveEndSide = hasDestArrow ? destSide : null;
-                              
-                              const cleanPts = computeCleanPolylineFromPorts(
-                                effectiveStart, 
-                                effectiveEnd, 
-                                [], 
-                                cleanLaneSpacing, 
-                                effectiveStartSide, 
-                                effectiveEndSide,
-                                idx // Use rendering index for consistent staggering
-                              );
-                              return buildRoundedPathFromPoints(cleanPts, 8);
-                            } else {
-                              // Fallback to simple L-path from node centers
-                              const startPt = { x: startX, y: startY };
-                              const endPt = { x: endX, y: endY };
-                              const cleanPts = computeCleanPolylineFromPorts(startPt, endPt, [], cleanLaneSpacing, null, null, idx);
-                              return buildRoundedPathFromPoints(cleanPts, 8);
-                            }
+                            // Use consistent clean routing path helper
+                            const cleanPts = generateCleanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
+                            return buildRoundedPathFromPoints(cleanPts, 8);
                           })()}
                           fill="none"
                           stroke={edgeColor}
@@ -5384,48 +5332,12 @@ function NodeCanvas() {
                            })()}
                            
                            {/* Invisible click area for edge selection - matches hover detection */}
-                           {(enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) ? (
+                                                      {(enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) ? (
                              <path
                                d={(routingStyle === 'manhattan') ? manhattanPathD : (() => {
-                                 const startPt = { x: startX, y: startY };
-                                 const endPt = { x: endX, y: endY };
-                                 const obstacleRects = [];
-                                 for (const n of nodes) {
-                                   if (n.id === sourceNode.id || n.id === destNode.id) continue;
-                                   const dims = baseDimsById.get(n.id) || getNodeDimensions(n, false, null);
-                                   const rect = { minX: n.x, minY: n.y, maxX: n.x + dims.currentWidth, maxY: n.y + dims.currentHeight };
-                                   obstacleRects.push(inflateRect(rect, 8));
-                                 }
-                                 // Use intelligent port assignments for clean routing
-                                 const portAssignment = cleanLaneOffsets.get(edge.id);
-                                 if (portAssignment) {
-                                   const { sourcePort, destPort, sourceSide, destSide } = portAssignment;
-                                   
-                                   // Check if this edge has directional arrows
-                                   const hasSourceArrow = arrowsToward.has(sourceNode.id);
-                                   const hasDestArrow = arrowsToward.has(destNode.id);
-                                   
-                                   // For non-directional connections, route to node centers
-                                   const effectiveStart = hasSourceArrow ? sourcePort : { x: x1, y: y1 };
-                                   const effectiveEnd = hasDestArrow ? destPort : { x: x2, y: y2 };
-                                   const effectiveStartSide = hasSourceArrow ? sourceSide : null;
-                                   const effectiveEndSide = hasDestArrow ? destSide : null;
-                                   
-                                   const cleanPts = computeCleanPolylineFromPorts(
-                                     effectiveStart, 
-                                     effectiveEnd, 
-                                     [], 
-                                     cleanLaneSpacing, 
-                                     effectiveStartSide, 
-                                     effectiveEndSide,
-                                     idx // Use rendering index for consistent staggering
-                                   );
-                                   return buildRoundedPathFromPoints(cleanPts, 8);
-                                 } else {
-                                   // Fallback to simple L-path from node centers
-                                   const cleanPts = computeCleanPolylineFromPorts(startPt, endPt, [], cleanLaneSpacing, null, null, idx);
-                                   return buildRoundedPathFromPoints(cleanPts, 8);
-                                 }
+                                 // Use consistent clean routing path helper
+                                 const cleanPts = generateCleanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
+                                 return buildRoundedPathFromPoints(cleanPts, 8);
                                })()}
                                fill="none"
                                stroke="transparent"
@@ -5609,15 +5521,14 @@ function NodeCanvas() {
                                sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
                                destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
                              } else if (enableAutoRouting && routingStyle === 'clean') {
-                               // Clean routing arrow placement - use port assignments
-                               const offset = showConnectionNames ? 6 : (shouldShortenSource || shouldShortenDest ? 3 : 5);
+                               // Clean routing arrow placement - position close to nodes for better visibility
+                               const offset = showConnectionNames ? 8 : 6; // Reduced offset for better visibility
                                const portAssignment = cleanLaneOffsets.get(edge.id);
                                
                                if (portAssignment) {
                                  const { sourcePort, destPort, sourceSide, destSide } = portAssignment;
                                  
-                                 // Position arrows pointing TOWARD the target node (into the edge)
-                                 // Arrow tip points toward the node, positioned outside the edge
+                                 // Position arrows close to the actual ports, pointing toward the nodes
                                  switch (sourceSide) {
                                    case 'top':
                                      sourceArrowAngle = 90; // Arrow points down toward node
@@ -5664,26 +5575,13 @@ function NodeCanvas() {
                                      break;
                                  }
                                } else {
-                                 // Fallback to center-based positioning for clean routing
-                                 const deltaX = endX - startX;
-                                 const deltaY = endY - startY;
-                                 const isMainlyVertical = Math.abs(deltaY) > Math.abs(deltaX);
-                                 
-                                 if (isMainlyVertical) {
-                                   sourceArrowAngle = deltaY > 0 ? -90 : 90;
-                                   sourceArrowX = startX;
-                                   sourceArrowY = startY + (deltaY > 0 ? offset : -offset);
-                                   destArrowAngle = deltaX > 0 ? 0 : 180;
-                                   destArrowX = endX + (deltaX > 0 ? -offset : offset);
-                                   destArrowY = endY;
-                                 } else {
-                                   sourceArrowAngle = deltaX > 0 ? 180 : 0;
-                                   sourceArrowX = startX + (deltaX > 0 ? offset : -offset);
-                                   sourceArrowY = startY;
-                                   destArrowAngle = deltaY > 0 ? 90 : -90;
-                                   destArrowX = endX;
-                                   destArrowY = endY + (deltaY > 0 ? -offset : offset);
-                                 }
+                                 // Fallback: position arrows close to node centers
+                                 sourceArrowX = startX;
+                                 sourceArrowY = startY;
+                                 sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
+                                 destArrowX = endX;
+                                 destArrowY = endY;
+                                 destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
                                }
                              } else {
                                // Manhattan-aware arrow placement; falls back to straight orientation
