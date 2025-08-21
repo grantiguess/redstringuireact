@@ -5761,8 +5761,8 @@ function NodeCanvas() {
                                    </g>
                                  )}
 
-                                 {/* Hover Dots - only visible when hovering */}
-                                 {isHovered && (
+                                 {/* Hover Dots - only visible when hovering and using straight routing */}
+                                 {isHovered && (!enableAutoRouting || routingStyle === 'straight') && (
                                    <>
                                      {/* Source Dot - only show if arrow not pointing toward source */}
                                      {!arrowsToward.has(sourceNode.id) && (
