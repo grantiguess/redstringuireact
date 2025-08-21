@@ -36,6 +36,11 @@ const Header = ({
   // Clean routing controls
   onSetCleanLaneSpacing,
   cleanLaneSpacing,
+  // Grid controls
+  gridMode,
+  onSetGridMode,
+  gridSize,
+  onSetGridSize,
   // File management actions
   onNewUniverse,
   onOpenUniverse,
@@ -292,6 +297,10 @@ const Header = ({
             onSetManhattanBends={onSetManhattanBends}
             onSetCleanLaneSpacing={onSetCleanLaneSpacing}
             cleanLaneSpacing={cleanLaneSpacing}
+            gridMode={gridMode}
+            onSetGridMode={onSetGridMode}
+            gridSize={gridSize}
+            onSetGridSize={onSetGridSize}
             onNewUniverse={onNewUniverse}
             onOpenUniverse={onOpenUniverse}
             onSaveUniverse={onSaveUniverse}
@@ -357,6 +366,10 @@ const Header = ({
           onSetManhattanBends={onSetManhattanBends}
           onSetCleanLaneSpacing={onSetCleanLaneSpacing}
           cleanLaneSpacing={cleanLaneSpacing}
+          gridMode={gridMode}
+          onSetGridMode={onSetGridMode}
+          gridSize={gridSize}
+          onSetGridSize={onSetGridSize}
           onNewUniverse={onNewUniverse}
           onOpenUniverse={onOpenUniverse}
           onSaveUniverse={onSaveUniverse}

@@ -158,6 +158,21 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     
     // UI Settings
     showConnectionNames: false,
+    // Grid visualization settings
+    gridSettings: (() => {
+      try {
+        const modeRaw = localStorage.getItem('redstring_grid_mode');
+        const sizeRaw = localStorage.getItem('redstring_grid_size');
+        const allowed = new Set(['off', 'hover', 'always']);
+        const mode = allowed.has(modeRaw) ? modeRaw : 'off';
+        let size = Number.parseInt(sizeRaw, 10);
+        if (!Number.isFinite(size)) size = 200;
+        size = Math.max(20, Math.min(400, Math.round(size)));
+        return { mode, size };
+      } catch (_) {
+        return { mode: 'off', size: 200 };
+      }
+    })(),
     // Connections visualization/layout settings
     autoLayoutSettings: {
       defaultSpacing: 15,
@@ -936,6 +951,29 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   // Toggle connection names visibility
   toggleShowConnectionNames: () => set(produce((draft) => {
     draft.showConnectionNames = !draft.showConnectionNames;
+  })),
+
+  // Grid settings actions
+  setGridMode: (mode) => set(produce((draft) => {
+    const allowed = ['off', 'hover', 'always'];
+    if (!draft.gridSettings) draft.gridSettings = { mode: 'off', size: 200 };
+    if (allowed.includes(mode)) {
+      draft.gridSettings.mode = mode;
+      try { localStorage.setItem('redstring_grid_mode', mode); } catch (_) {}
+    } else {
+      console.warn(`[setGridMode] Invalid mode: ${mode}`);
+    }
+  })),
+  setGridSize: (value) => set(produce((draft) => {
+    if (!draft.gridSettings) draft.gridSettings = { mode: 'off', size: 200 };
+    const v = Number(value);
+    if (!Number.isFinite(v)) {
+      console.warn(`[setGridSize] Invalid value: ${value}`);
+      return;
+    }
+    const clamped = Math.max(20, Math.min(400, Math.round(v)));
+    draft.gridSettings.size = clamped;
+    try { localStorage.setItem('redstring_grid_size', String(clamped)); } catch (_) {}
   })),
 
   // Toggle global auto-routing enablement

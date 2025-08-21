@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import MaroonSlider from './components/MaroonSlider.jsx';
 import { ChevronRight, FileText, FolderOpen, Save, Clock } from 'lucide-react';
 import './RedstringMenu.css';
 import DebugOverlay from './DebugOverlay';
@@ -20,6 +21,11 @@ const RedstringMenu = ({
   // Optional: expose clean lane spacing adjuster
   onSetCleanLaneSpacing,
   cleanLaneSpacing,
+  // Grid controls
+  gridMode,
+  onSetGridMode,
+  gridSize,
+  onSetGridSize,
   // Universe management actions
   onNewUniverse,
   onOpenUniverse,
@@ -263,7 +269,7 @@ const RedstringMenu = ({
                               <span>{item}</span>
                               <ChevronRight size={16} className="menu-item-chevron" />
                           </button>
-                          {openSubmenu === 'View' && (
+                          {(openSubmenu === 'View' || openSubmenu === 'Grid') && (
                             <div 
                               className="submenu-container"
                               onMouseEnter={handleSubmenuEnter}
@@ -282,6 +288,65 @@ const RedstringMenu = ({
                                   style={{ cursor: 'pointer' }}
                                 >
                                   {showConnectionNames ? 'Hide Connection Names' : 'Show Connection Names'}
+                                </div>
+                                <div
+                                  className={`submenu-item has-submenu ${openSubmenu === 'Grid' ? 'active-submenu-parent' : ''}`}
+                                  onMouseEnter={() => setOpenSubmenu('Grid')}
+                                  onMouseLeave={handleMenuItemLeave}
+                                  style={{ cursor: 'pointer' }}
+                                >
+                                  Grid
+                                  <ChevronRight size={14} style={{ marginLeft: 'auto', opacity: 0.7 }} />
+
+                                  {openSubmenu === 'Grid' && (
+                                    <div 
+                                      className="submenu-container"
+                                      onMouseEnter={handleSubmenuEnter}
+                                      onMouseLeave={handleMenuItemLeave}
+                                      style={{ left: '100%', top: 0 }}
+                                    >
+                                      <div
+                                        className="submenu-item"
+                                        onClick={() => onSetGridMode?.('off')}
+                                        style={{ opacity: gridMode === 'off' ? 1 : 0.8, cursor: 'pointer' }}
+                                      >
+                                        Off {gridMode === 'off' ? '✓' : ''}
+                                      </div>
+                                      <div
+                                        className="submenu-item"
+                                        onClick={() => onSetGridMode?.('hover')}
+                                        style={{ opacity: gridMode === 'hover' ? 1 : 0.8, cursor: 'pointer' }}
+                                      >
+                                        On Move {gridMode === 'hover' ? '✓' : ''}
+                                      </div>
+                                      <div
+                                        className="submenu-item"
+                                        onClick={() => onSetGridMode?.('always')}
+                                        style={{ opacity: gridMode === 'always' ? 1 : 0.8, cursor: 'pointer' }}
+                                      >
+                                        Always {gridMode === 'always' ? '✓' : ''}
+                                      </div>
+                                      <div style={{ padding: '6px 6px 0 6px', width: '100%' }}
+                                           onMouseDown={(e) => e.stopPropagation()}
+                                           onMouseUp={(e) => e.stopPropagation()}
+                                           onClick={(e) => e.stopPropagation()}
+                                           onPointerDown={(e) => e.stopPropagation()}
+                                           onPointerUp={(e) => e.stopPropagation()}
+                                           onTouchStart={(e) => e.stopPropagation()}
+                                           onTouchEnd={(e) => e.stopPropagation()}
+                                      >
+                                        <MaroonSlider
+                                          label="Grid Size"
+                                          value={gridSize || 200}
+                                          min={20}
+                                          max={400}
+                                          step={5}
+                                          suffix="px"
+                                          onChange={(v) => onSetGridSize?.(v)}
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                             </div>
                           )}
