@@ -820,82 +820,24 @@ function NodeCanvas() {
     return { x: snappedX, y: snappedY };
   };
 
-  // Grid snapping state for smooth animations
-  const gridSnapTargets = useRef(new Map()); // nodeId -> { targetX, targetY, startX, startY, startTime }
-  const animationFrameRef = useRef(null);
-
-  // Start smooth grid animation to target position
-  const startGridAnimation = (nodeId, targetX, targetY, currentX, currentY) => {
-    const now = performance.now();
-    gridSnapTargets.current.set(nodeId, {
-      targetX,
-      targetY,
-      startX: currentX,
-      startY: currentY,
-      startTime: now
-    });
-
-    // Start animation loop if not already running
-    if (!animationFrameRef.current) {
-      const animate = () => {
-        const now = performance.now();
-        let hasActiveAnimations = false;
-
-        gridSnapTargets.current.forEach((animation, id) => {
-          const elapsed = now - animation.startTime;
-          const duration = 150; // Animation duration in ms
-          const progress = Math.min(elapsed / duration, 1);
-          
-          // Easing function for smooth animation
-          const easeOut = 1 - Math.pow(1 - progress, 3);
-          
-          const newX = animation.startX + (animation.targetX - animation.startX) * easeOut;
-          const newY = animation.startY + (animation.targetY - animation.startY) * easeOut;
-          
-          // Update node position
-          storeActions.updateNodeInstance(activeGraphId, id, draft => {
-            draft.x = newX;
-            draft.y = newY;
-          });
-
-          if (progress < 1) {
-            hasActiveAnimations = true;
-          } else {
-            // Animation complete, remove from map
-            gridSnapTargets.current.delete(id);
-          }
-        });
-
-        if (hasActiveAnimations) {
-          animationFrameRef.current = requestAnimationFrame(animate);
-        } else {
-          animationFrameRef.current = null;
-        }
-      };
-
-      animationFrameRef.current = requestAnimationFrame(animate);
+    // Animated grid snapping - quick snap animation between vertices
+  const snapToGridAnimated = (mouseX, mouseY, nodeWidth, nodeHeight, currentPos) => {
+    if (gridMode === 'off') {
+      return { x: mouseX, y: mouseY };
     }
-  };
-
-  // Check if grid target has changed and start animation if needed
-  const checkAndStartGridAnimation = (nodeId, mouseX, mouseY, nodeWidth, nodeHeight, currentX, currentY) => {
-    if (gridMode === 'off') return { x: mouseX, y: mouseY };
     
     const snapped = snapToGrid(mouseX, mouseY, nodeWidth, nodeHeight);
-    const currentTarget = gridSnapTargets.current.get(nodeId);
     
-    // Check if target has changed
-    if (!currentTarget || 
-        Math.abs(currentTarget.targetX - snapped.x) > 1 || 
-        Math.abs(currentTarget.targetY - snapped.y) > 1) {
+    // If we have a current position, apply quick snap animation
+    if (currentPos) {
+      const snapAnimationFactor = 0.4; // Quick snap (0.3 = slower, 0.6 = faster)
+      const animatedX = currentPos.x + (snapped.x - currentPos.x) * snapAnimationFactor;
+      const animatedY = currentPos.y + (snapped.y - currentPos.y) * snapAnimationFactor;
       
-      // Target changed, start new animation
-      startGridAnimation(nodeId, snapped.x, snapped.y, currentX, currentY);
-      return snapped;
+      return { x: animatedX, y: animatedY };
     }
     
-    // Target hasn't changed, return current position (animation will handle the movement)
-    return { x: currentX, y: currentY };
+    return snapped;
   };
   const MIN_ZOOM = Math.max(
     viewportSize.width / canvasSize.width,
@@ -1730,7 +1672,7 @@ function NodeCanvas() {
 
         // Apply smooth grid snapping when creating new nodes via drag and drop if grid is enabled
         if (gridMode !== 'off') {
-          const snapped = snapToGridWithLerp(x, y, dimensions.currentWidth, dimensions.currentHeight, null);
+          const snapped = snapToGridAnimated(x, y, dimensions.currentWidth, dimensions.currentHeight, null);
           position = { x: snapped.x, y: snapped.y };
         }
 
@@ -3696,7 +3638,7 @@ function NodeCanvas() {
                 let newPrimaryX = draggingNodeInfo.initialPrimaryPos.x + dx;
                 let newPrimaryY = draggingNodeInfo.initialPrimaryPos.y + dy;
 
-                // Apply optimized grid snapping to primary node
+                // Apply smooth grid snapping to primary node
                 if (gridMode !== 'off') {
                   const primaryNode = nodes.find(n => n.id === primaryInstanceId);
                   if (primaryNode) {
@@ -3705,8 +3647,8 @@ function NodeCanvas() {
                     const mouseCanvasX = (e.clientX - panOffset.x) / zoomLevel;
                     const mouseCanvasY = (e.clientY - panOffset.y) / zoomLevel;
                     console.log('[Grid Snap] Multi-node drag - mouse pos:', { mouseCanvasX, mouseCanvasY, gridMode, gridSize });
-                    const snapped = checkAndStartGridAnimation(primaryInstanceId, mouseCanvasX, mouseCanvasY, dims.currentWidth, dims.currentHeight, primaryNode.x, primaryNode.y);
-                    console.log('[Grid Snap] Multi-node drag - target position:', { x: snapped.x, y: snapped.y, dims: dims.currentWidth + 'x' + dims.currentHeight });
+                                         const snapped = snapToGridAnimated(mouseCanvasX, mouseCanvasY, dims.currentWidth, dims.currentHeight, { x: primaryNode.x, y: primaryNode.y });
+                    console.log('[Grid Snap] Multi-node drag - after smooth snap:', { x: snapped.x, y: snapped.y, dims: dims.currentWidth + 'x' + dims.currentHeight });
                     newPrimaryX = snapped.x;
                     newPrimaryY = snapped.y;
                   }
@@ -3739,14 +3681,13 @@ function NodeCanvas() {
                   
                   let newX, newY;
                   
-                  // Apply optimized grid snapping to single node
+                  // Apply smooth grid snapping to single node
                   if (gridMode !== 'off') {
                     console.log('[Grid Snap] Single node drag - mouse pos:', { mouseCanvasX, mouseCanvasY, gridMode, gridSize });
-                    const snapped = checkAndStartGridAnimation(instanceId, mouseCanvasX, mouseCanvasY, dims.currentWidth, dims.currentHeight, node.x, node.y);
-                    console.log('[Grid Snap] Single node drag - target position:', { x: snapped.x, y: snapped.y, dims: dims.currentWidth + 'x' + dims.currentHeight });
-                    
-                    // Start smooth animation to target position
-                    startGridAnimation(instanceId, snapped.x, snapped.y, node.x, node.y);
+                                         const snapped = snapToGridAnimated(mouseCanvasX, mouseCanvasY, dims.currentWidth, dims.currentHeight, { x: node.x, y: node.y });
+                    console.log('[Grid Snap] Single node drag - after smooth snap:', { x: snapped.x, y: snapped.y, dims: dims.currentWidth + 'x' + dims.currentHeight });
+                    newX = snapped.x;
+                    newY = snapped.y;
                   } else {
                     // No grid snapping - use offset-based calculation
                     newX = mouseCanvasX - (offset.x / zoomLevel);
@@ -3871,12 +3812,6 @@ function NodeCanvas() {
                 storeActions.updateNodeInstance(activeGraphId, id, draft => { draft.scale = 1; });
             }
         });
-        // Clean up grid animations when dragging stops
-        gridSnapTargets.current.clear();
-        if (animationFrameRef.current) {
-          cancelAnimationFrame(animationFrameRef.current);
-          animationFrameRef.current = null;
-        }
         setDraggingNodeInfo(null);
     }
 
@@ -4259,7 +4194,7 @@ function NodeCanvas() {
 
       // Apply smooth grid snapping when creating new nodes if grid is enabled
       if (gridMode !== 'off') {
-        const snapped = snapToGridWithLerp(plusSign.x, plusSign.y, NODE_WIDTH, NODE_HEIGHT, null);
+        const snapped = snapToGridAnimated(plusSign.x, plusSign.y, NODE_WIDTH, NODE_HEIGHT, null);
         position = { x: snapped.x, y: snapped.y };
       }
 
@@ -5529,7 +5464,7 @@ function NodeCanvas() {
                     <>
                       <defs>
                         <pattern id="grid-lines-pattern" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
-                          <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#716C6C" strokeWidth="1.75" vectorEffect="non-scaling-stroke" />
+                          <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#979090" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
                         </pattern>
                       </defs>
                       <rect x="0" y="0" width={canvasSize.width} height={canvasSize.height} fill="url(#grid-lines-pattern)" />
