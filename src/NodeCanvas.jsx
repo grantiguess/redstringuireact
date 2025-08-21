@@ -820,7 +820,7 @@ function NodeCanvas() {
     return { x: snappedX, y: snappedY };
   };
 
-    // Animated grid snapping - quick snap animation between vertices
+    // Grid snapping - instant in grid mode, animated in off mode
   const snapToGridAnimated = (mouseX, mouseY, nodeWidth, nodeHeight, currentPos) => {
     if (gridMode === 'off') {
       return { x: mouseX, y: mouseY };
@@ -828,8 +828,13 @@ function NodeCanvas() {
     
     const snapped = snapToGrid(mouseX, mouseY, nodeWidth, nodeHeight);
     
-    // If we have a current position, apply quick snap animation
-    if (currentPos) {
+    // In grid mode, always snap instantly for precise positioning
+    if (gridMode === 'hover' || gridMode === 'always') {
+      return snapped;
+    }
+    
+    // Only apply animation in off mode if we have a current position
+    if (currentPos && gridMode === 'off') {
       const snapAnimationFactor = 0.4; // Quick snap (0.3 = slower, 0.6 = faster)
       const animatedX = currentPos.x + (snapped.x - currentPos.x) * snapAnimationFactor;
       const animatedY = currentPos.y + (snapped.y - currentPos.y) * snapAnimationFactor;
@@ -1359,6 +1364,7 @@ function NodeCanvas() {
   const [abstractionControlPanelVisible, setAbstractionControlPanelVisible] = useState(false);
   const [abstractionControlPanelShouldShow, setAbstractionControlPanelShouldShow] = useState(false);
   const [isPieMenuActionInProgress, setIsPieMenuActionInProgress] = useState(false);
+  
 
 
   // Define carousel callbacks outside conditional rendering to avoid hook violations
@@ -2448,12 +2454,16 @@ function NodeCanvas() {
                     selectedInstanceIds.forEach(id => {
                         storeActions.updateNodeInstance(activeGraphId, id, draft => { draft.scale = 1.1; });
                     });
+                    
+
 
                 } else {
                     // Single node drag setup
                     const offset = { x: e.clientX - nodeData.x * zoomLevel - panOffset.x, y: e.clientY - nodeData.y * zoomLevel - panOffset.y };
                     setDraggingNodeInfo({ instanceId: instanceId, offset });
                     storeActions.updateNodeInstance(activeGraphId, instanceId, draft => { draft.scale = 1.1; });
+                    
+
                 }
             }
             setLongPressingInstanceId(null); // Clear after processing
@@ -3813,6 +3823,7 @@ function NodeCanvas() {
             }
         });
         setDraggingNodeInfo(null);
+
     }
 
     // Finalize selection box
@@ -3900,6 +3911,7 @@ function NodeCanvas() {
     isPanningOrZooming.current = false; // Clear the flag when canvas mouse up
     setDraggingNodeInfo(null);
     setDrawingConnectionFrom(null);
+
     isMouseDown.current = false;
     // setHasMouseMovedSinceDown(false); // Reset on next mousedown
   };
@@ -5464,16 +5476,16 @@ function NodeCanvas() {
                     <>
                       <defs>
                         <pattern id="grid-lines-pattern" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
-                          <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#979090" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
+                          <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#716C6C" strokeWidth="0.75" vectorEffect="non-scaling-stroke" />
                         </pattern>
                       </defs>
                       <rect x="0" y="0" width={canvasSize.width} height={canvasSize.height} fill="url(#grid-lines-pattern)" />
                     </>
                   )}
 
-                  {/* Efficient grid dots - only render visible ones */}
+                  {/* Grid dots - only show when dragging nodes */}
                   {gridMode === 'hover' && !!draggingNodeInfo && (
-                    <>
+                    <g>
                       {(() => {
                         const dots = [];
                         const startX = Math.floor((-panOffset.x / zoomLevel) / gridSize) * gridSize;
@@ -5490,13 +5502,14 @@ function NodeCanvas() {
                                 cy={y}
                                 r={Math.min(6, Math.max(3, gridSize * 0.06))}
                                 fill="#260000"
+                                pointerEvents="none"
                               />
                             );
                           }
                         }
                         return dots;
                       })()}
-                    </>
+                    </g>
                   )}
                 </g>
               )}
