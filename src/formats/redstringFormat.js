@@ -46,6 +46,42 @@ export const REDSTRING_CONTEXT = {
   "subject": { "@id": "rdf:subject", "@type": "@id" },
   "predicate": { "@id": "rdf:predicate", "@type": "@id" },
   "object": { "@id": "rdf:object", "@type": "@id" },
+
+  // OWL for external linking and semantic web integration
+  "owl": "http://www.w3.org/2002/07/owl#",
+  "sameAs": "owl:sameAs",
+  "equivalentClass": "owl:equivalentClass",
+  "equivalentProperty": "owl:equivalentProperty",
+  "differentFrom": "owl:differentFrom",
+  
+  // External Knowledge Bases
+  "wd": "http://www.wikidata.org/entity/",
+  "wdt": "http://www.wikidata.org/prop/direct/",
+  "dbr": "http://dbpedia.org/resource/",
+  "dbo": "http://dbpedia.org/ontology/",
+  
+  // Academic & Research Integration
+  "doi": "https://doi.org/",
+  "pubmed": "https://pubmed.ncbi.nlm.nih.gov/",
+  "arxiv": "https://arxiv.org/abs/",
+  "orcid": "https://orcid.org/",
+  "researchgate": "https://www.researchgate.net/publication/",
+  "semanticscholar": "https://www.semanticscholar.org/paper/",
+  
+  // Citation and Bibliography
+  "cites": "http://purl.org/spar/cito/cites",
+  "citedBy": "http://purl.org/spar/cito/citedBy",
+  "isDocumentedBy": "http://purl.org/spar/cito/isDocumentedBy",
+  "documents": "http://purl.org/spar/cito/documents",
+  
+  // Academic Metadata
+  "author": "http://schema.org/author",
+  "datePublished": "http://schema.org/datePublished",
+  "publisher": "http://schema.org/publisher",
+  "journal": "http://schema.org/isPartOf",
+  "citation": "http://schema.org/citation",
+  "abstract": "http://schema.org/abstract",
+  "keywords": "http://schema.org/keywords",
   
   // Spatial & UI State
   "x": "redstring:xCoordinate",
@@ -118,7 +154,8 @@ export const exportToRedstring = (storeState, userDomain = null) => {
   const nodesObj = {};
   nodePrototypes.forEach((node, id) => {
     nodesObj[id] = {
-      "@type": "Node",
+      "@type": ["Node", "owl:Class", "schema:Thing"],
+      "@id": `node:${id}`,
       ...node,
       spatial: {
         x: node.x || 0,
@@ -133,6 +170,12 @@ export const exportToRedstring = (storeState, userDomain = null) => {
       cognitive: {
         saved: savedNodeIds.has(id),
         lastViewed: new Date().toISOString()
+      },
+      // Semantic web integration
+      semantic: {
+        externalLinks: node.externalLinks || [],
+        equivalentClasses: node.equivalentClasses || [],
+        citations: node.citations || []
       }
     };
   });

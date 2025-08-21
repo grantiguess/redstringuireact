@@ -27,6 +27,7 @@ import APIKeySetup from './ai/components/APIKeySetup.jsx';
 import mcpClient from './services/mcpClient.js';
 import { bridgeFetch } from './services/bridgeConfig.js';
 import apiKeyManager from './services/apiKeyManager.js';
+import SemanticEditor from './components/SemanticEditor.jsx';
 
 // Helper function to determine the correct article ("a" or "an")
 const getArticleFor = (word) => {
@@ -3489,9 +3490,16 @@ const Panel = forwardRef(
                                 </>
                             )}
                             
-                            {/* Divider Line - always present below bio/image */}
+                            {/* Semantic Web Integration Section */}
                             <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
-                            {/* ... existing code ... */}
+                            <SemanticEditor 
+                                nodeData={nodeData}
+                                onUpdate={(updatedData) => {
+                                    storeActions.updateNodePrototype(nodeId, draft => {
+                                        Object.assign(draft, updatedData);
+                                    });
+                                }}
+                            />
                         </div>
                     </div>
                 );
