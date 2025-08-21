@@ -805,9 +805,9 @@ function NodeCanvas() {
       return { x: mouseX, y: mouseY };
     }
     
-    // Always snap to exact grid vertices (intersections) - no interpolation
-    const nearestGridX = Math.round(mouseX / gridSize) * gridSize;
-    const nearestGridY = Math.round(mouseY / gridSize) * gridSize;
+    // Snap to grid vertices - use Math.floor to ensure mouse snaps to grid line above
+    const nearestGridX = Math.floor(mouseX / gridSize) * gridSize;
+    const nearestGridY = Math.floor(mouseY / gridSize) * gridSize;
     
     // Calculate snapped position - center the node on the grid vertex
     // This ensures the node's center (where text is) aligns with grid intersections
@@ -5471,21 +5471,23 @@ function NodeCanvas() {
                     </>
                   )}
 
-                  {/* Individual grid dots at vertices - only show when moving nodes */}
+                  {/* Efficient grid dots - only render visible ones */}
                   {gridMode === 'hover' && !!draggingNodeInfo && (
                     <>
                       {(() => {
                         const dots = [];
-                        const cols = Math.ceil(canvasSize.width / gridSize) + 1;
-                        const rows = Math.ceil(canvasSize.height / gridSize) + 1;
+                        const startX = Math.floor((-panOffset.x / zoomLevel) / gridSize) * gridSize;
+                        const startY = Math.floor((-panOffset.y / zoomLevel) / gridSize) * gridSize;
+                        const endX = startX + (viewportSize.width / zoomLevel) + gridSize * 2;
+                        const endY = startY + (viewportSize.height / zoomLevel) + gridSize * 2;
                         
-                        for (let i = 0; i < cols; i++) {
-                          for (let j = 0; j < rows; j++) {
+                        for (let x = startX; x <= endX; x += gridSize) {
+                          for (let y = startY; y <= endY; y += gridSize) {
                             dots.push(
                               <circle
-                                key={`grid-dot-${i}-${j}`}
-                                cx={i * gridSize}
-                                cy={j * gridSize}
+                                key={`grid-dot-${x}-${y}`}
+                                cx={x}
+                                cy={y}
                                 r={Math.min(6, Math.max(3, gridSize * 0.06))}
                                 fill="#260000"
                               />
