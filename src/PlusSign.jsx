@@ -188,15 +188,14 @@ const PlusSign = ({
         x: 0, // Don't animate position - let the final node appear at the correct location
         y: 0,
         rotation: lerp(startRot, endRot, easeT),
-        width: lerp(startW, endWidth, easeT),
-        height: lerp(startH, endHeight, easeT),
-        cornerRadius: lerp(startCorner, endCorner, easeT),
+        width: Math.max(0, lerp(startW, endWidth, easeT)), // Prevent negative width
+        height: Math.max(0, lerp(startH, endHeight, easeT)), // Prevent negative height
+        cornerRadius: Math.max(0, lerp(startCorner, endCorner, easeT)), // Prevent negative corner radius
         color: mode === 'morph'
           ? (() => {
-              const interpolatedColor = interpolateColor('#DEDADA', endColor, easeT);
-              // Debug color values
-              if (easeT === 0) console.log('Color animation start:', { startColor: '#DEDADA', endColor, easeT });
-              if (easeT === 1) console.log('Color animation end:', { startColor: '#DEDADA', endColor, easeT, interpolatedColor });
+              // Make color transition faster by using a steeper curve
+              const colorT = Math.min(easeT * 1.5, 1); // Color changes 1.5x faster
+              const interpolatedColor = interpolateColor('#DEDADA', endColor, colorT);
               return interpolatedColor;
             })()
           : '#DEDADA',

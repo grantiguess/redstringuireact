@@ -6890,13 +6890,15 @@ function NodeCanvas() {
                      // Create a mock node object to get exact dimensions
                      const mockNode = { name: plusSign.tempName };
                      const dims = getNodeDimensions(mockNode, false, null);
-                     return dims.currentWidth;
+                     // Make the PlusSign slightly smaller so the final node feels like an expansion
+                     return dims.currentWidth * 0.9;
                    })() : NODE_WIDTH}
                    targetHeight={plusSign.tempName ? (() => {
                      // Create a mock node object to get exact dimensions
                      const mockNode = { name: plusSign.tempName };
                      const dims = getNodeDimensions(mockNode, false, null);
-                     return dims.currentHeight;
+                     // Make the PlusSign slightly smaller so the final node feels like an expansion
+                     return dims.currentHeight * 0.9;
                    })() : NODE_HEIGHT}
                  />
                    )}
