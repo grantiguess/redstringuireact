@@ -43,7 +43,11 @@ const _createAndAssignGraphDefinition = (draft, prototypeId) => {
  * Helper function to normalize edge directionality to ensure arrowsToward is always a Set
  */
 const normalizeEdgeDirectionality = (directionality) => {
-  if (!directionality) {
+  if (!directionality || typeof directionality !== 'object') {
+    return { arrowsToward: new Set() };
+  }
+  
+  if (!directionality.arrowsToward) {
     return { arrowsToward: new Set() };
   }
   
@@ -1364,36 +1368,64 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
 
   // Universe file management actions
   loadUniverseFromFile: (dataToLoad) => {
-    // If dataToLoad already contains Maps (i.e., was returned by importFromRedstring earlier) we can use it directly.
-    const isAlreadyDeserialized = dataToLoad && dataToLoad.graphs instanceof Map;
+    try {
+      // If dataToLoad already contains Maps (i.e., was returned by importFromRedstring earlier) we can use it directly.
+      const isAlreadyDeserialized = dataToLoad && dataToLoad.graphs instanceof Map;
 
-    let storeState;
-    if (isAlreadyDeserialized) {
-      storeState = dataToLoad;
-    } else {
-      // Use the centralized import function to correctly deserialize the data
-      const { storeState: importedState, errors } = importFromRedstring(dataToLoad);
-      if (errors && errors.length > 0) {
-        console.error("[graphStore] Errors importing from Redstring:", errors);
+      let storeState;
+      if (isAlreadyDeserialized) {
+        storeState = dataToLoad;
+      } else {
+        // Use the centralized import function to correctly deserialize the data
+        const { storeState: importedState, errors } = importFromRedstring(dataToLoad);
+        if (errors && errors.length > 0) {
+          console.error("[graphStore] Errors importing from Redstring:", errors);
+          // Don't return here, continue with the imported state even if there were errors
+        }
+        storeState = importedState;
+      }
+
+      // Validate that we have a valid storeState
+      if (!storeState || typeof storeState !== 'object') {
+        console.error("[graphStore] Invalid storeState after import:", storeState);
+        set({
+          isUniverseLoaded: true,
+          isUniverseLoading: false,
+          universeLoadingError: "Failed to load universe: Invalid data format",
+          hasUniverseFile: false,
+        });
         return;
       }
-      storeState = importedState;
-    }
 
-    // Normalize all edge directionality to ensure arrowsToward is always a Set
-    if (storeState.edges) {
-      for (const [edgeId, edgeData] of storeState.edges.entries()) {
-        edgeData.directionality = normalizeEdgeDirectionality(edgeData.directionality);
+      // Normalize all edge directionality to ensure arrowsToward is always a Set
+      if (storeState.edges) {
+        for (const [edgeId, edgeData] of storeState.edges.entries()) {
+          try {
+            edgeData.directionality = normalizeEdgeDirectionality(edgeData.directionality);
+          } catch (error) {
+            console.warn(`[graphStore] Error normalizing edge ${edgeId} directionality:`, error);
+            // Set a safe default
+            edgeData.directionality = { arrowsToward: new Set() };
+          }
+        }
       }
-    }
 
-    set({
-      ...storeState,
-      isUniverseLoaded: true,
-      isUniverseLoading: false,
-      universeLoadingError: null,
-      hasUniverseFile: true,
-    });
+      set({
+        ...storeState,
+        isUniverseLoaded: true,
+        isUniverseLoading: false,
+        universeLoadingError: null,
+        hasUniverseFile: true,
+      });
+    } catch (error) {
+      console.error("[graphStore] Critical error in loadUniverseFromFile:", error);
+      set({
+        isUniverseLoaded: true,
+        isUniverseLoading: false,
+        universeLoadingError: `Failed to load universe: ${error.message}`,
+        hasUniverseFile: false,
+      });
+    }
   },
 
   setUniverseError: (error) => set({ 

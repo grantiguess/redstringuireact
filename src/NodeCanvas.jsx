@@ -5136,7 +5136,7 @@ function NodeCanvas() {
              // Check if user has unsaved work
              const currentState = useGraphStore.getState();
              const hasGraphs = currentState.graphs.size > 0;
-             const hasNodes = currentState.nodes.size > 0;
+             const hasNodes = currentState.nodePrototypes.size > 0;
              
              if (hasGraphs || hasNodes) {
                const confirmed = confirm(
@@ -5243,7 +5243,7 @@ function NodeCanvas() {
              // Check if user has unsaved work
              const currentState = useGraphStore.getState();
              const hasGraphs = currentState.graphs.size > 0;
-             const hasNodes = currentState.nodes.size > 0;
+             const hasNodes = currentState.nodePrototypes.size > 0;
              
              if (hasGraphs || hasNodes) {
                const confirmed = confirm(
