@@ -221,6 +221,14 @@ const SharedPanelContent = ({
   const handleBioDoubleClick = () => {
     setTempBio(nodeData.description || '');
     setIsEditingBio(true);
+    // Trigger auto-resize after a short delay to ensure DOM is updated
+    setTimeout(() => {
+      const textarea = document.querySelector('textarea');
+      if (textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = Math.max(textarea.scrollHeight + 4, 40) + 'px';
+      }
+    }, 10);
   };
 
   const handleBioSave = () => {
@@ -454,15 +462,15 @@ const SharedPanelContent = ({
                 outline: 'none',
                 color: '#260000',
                 resize: 'none',
-                minHeight: '30px',
+                minHeight: '40px',
                 height: 'auto',
                 overflow: 'hidden',
                 boxSizing: 'border-box'
               }}
-              rows={1}
+              rows={2}
               onInput={(e) => {
                 e.target.style.height = 'auto';
-                e.target.style.height = (e.target.scrollHeight + 4) + 'px';
+                e.target.style.height = Math.max(e.target.scrollHeight + 4, 40) + 'px';
               }}
             />
           </div>
