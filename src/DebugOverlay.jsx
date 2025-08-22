@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './DebugOverlay.css';
-import { HEADER_HEIGHT } from './constants';
+import { HEADER_HEIGHT, PANEL_CLOSE_ICON_SIZE } from './constants';
 import { X } from 'lucide-react';
 
 const DebugOverlay = ({ debugData, hideOverlay }) => {
@@ -137,7 +137,7 @@ const DebugOverlay = ({ debugData, hideOverlay }) => {
           }}
           aria-label="Close debug overlay"
         >
-          <X size={16} />
+          <X size={PANEL_CLOSE_ICON_SIZE} />
         </button>
       </div>
 

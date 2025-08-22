@@ -46,19 +46,21 @@ const DraggableNodeComponent = ({ node, onOpenNode }) => {
         backgroundColor: node.color || NODE_DEFAULT_COLOR,
         color: '#bdb5b5',
         borderRadius: '12px',
-        padding: '4px 6px',
+        padding: '6px 6px',
         fontSize: '0.8rem',
         fontWeight: 'bold',
         textAlign: 'center',
         cursor: 'pointer',
-        overflow: 'visible',
+        overflow: 'hidden',
         userSelect: 'none',
         fontFamily: "'EmOne', sans-serif",
-        height: '32px',
+        minHeight: '32px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        opacity: isDragging ? 0.5 : 1
+        opacity: isDragging ? 0.5 : 1,
+        wordBreak: 'break-word',
+        lineHeight: '1.2'
       }}
       title={node.name}
       onClick={() => onOpenNode(node.prototypeId || node.id)}
@@ -518,7 +520,7 @@ const SharedPanelContent = ({
           <div style={{
             marginRight: '15px',
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
+            gridTemplateColumns: isUltraSlim ? '1fr' : '1fr 1fr',
             gap: '8px',
             maxHeight: '300px',
             overflowY: 'auto'

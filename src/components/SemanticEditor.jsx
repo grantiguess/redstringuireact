@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { Globe, Link, Book, Search, ExternalLink, Plus, X, Check } from 'lucide-react';
+import { PANEL_CLOSE_ICON_SIZE } from '../constants';
 
 // DOI validation regex
 const DOI_REGEX = /^10\.\d{4,}\/[-._;()\/:a-zA-Z0-9]+$/;
@@ -215,7 +216,7 @@ const ExternalLinkCard = ({ link, onRemove }) => {
           }}
           title="Remove link"
         >
-          <X size={14} />
+          <X size={PANEL_CLOSE_ICON_SIZE} />
         </button>
       </div>
     </div>

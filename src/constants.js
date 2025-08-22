@@ -31,5 +31,9 @@ export const KEYBOARD_ZOOM_SPEED = 0.15;               // for keyboard zooming
 // Image Processing
 export const THUMBNAIL_MAX_DIMENSION = 800; // Max width/height for thumbnails (increased again)
 
+// UI Icon Sizes
+export const PANEL_CLOSE_ICON_SIZE = 16; // Standard size for X/close icons in panels
+export const MODAL_CLOSE_ICON_SIZE = 20; // Standard size for X/close icons in modal dialogs
+
 // Define default node color - maroon to match base Thing prototype
 export const NODE_DEFAULT_COLOR = '#8B0000';

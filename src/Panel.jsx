@@ -1,7 +1,7 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, useCallback, useMemo } from 'react';
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
-import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR } from './constants';
+import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR, PANEL_CLOSE_ICON_SIZE } from './constants';
 import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Wand, Settings, RotateCcw, Send, Bot, User, Key, Square } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import './Panel.css'
@@ -213,7 +213,7 @@ const SavedNodeItem = ({ node, onClick, onDoubleClick, onUnsave, isActive }) => 
         title="Unsave this item"
       >
         <XCircle 
-          size={16}
+          size={PANEL_CLOSE_ICON_SIZE}
           style={{
             color: '#999999',
             transition: 'color 0.2s ease',
@@ -964,7 +964,7 @@ const DraggableTab = ({ tab, index, displayTitle, dragItemTitle, moveTabAction, 
         {displayTitle}
       </span>
       <XCircle
-        size={16}
+        size={PANEL_CLOSE_ICON_SIZE}
         style={{
           marginLeft: 'auto',
           cursor: 'pointer',

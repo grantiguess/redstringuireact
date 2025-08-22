@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Palette, ArrowBigRightDash } from 'lucide-react';
-import { NODE_DEFAULT_COLOR, HEADER_HEIGHT } from './constants';
+import { NODE_DEFAULT_COLOR, HEADER_HEIGHT, MODAL_CLOSE_ICON_SIZE } from './constants';
 import NodeGridItem from './NodeGridItem';
 import ColorPicker from './ColorPicker';
 import useGraphStore from './store/graphStore.js';
@@ -194,7 +194,7 @@ const OldUnifiedSelector = ({
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div style={{ position: 'absolute', top: '10px', right: '10px', cursor: 'pointer' }}>
-              <X size={20} color="#999" onClick={() => {
+              <X size={MODAL_CLOSE_ICON_SIZE} color="#999" onClick={() => {
                 // Clear the field and permanently close color picker when clicking X
                 setName('');
                 setColorPickerVisible(false);

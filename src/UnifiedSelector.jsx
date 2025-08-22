@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Palette, Plus } from 'lucide-react';
-import { NODE_DEFAULT_COLOR } from './constants';
+import { NODE_DEFAULT_COLOR, MODAL_CLOSE_ICON_SIZE } from './constants';
 import useGraphStore from './store/graphStore.js';
 import ColorPicker from './ColorPicker';
 import useViewportBounds from './hooks/useViewportBounds';
@@ -46,10 +46,11 @@ const UnifiedSelector = ({
 
   const filteredPrototypes = React.useMemo(() => {
     const prototypes = Array.from(nodePrototypesMap.values());
-    const searchText = (mode === 'node-creation' || mode === 'connection-creation' || mode === 'abstraction-node-creation') ? name : searchTerm;
+    // Always use 'name' for live search when typing, fallback to searchTerm for initial filter
+    const searchText = name || searchTerm;
     if (!searchText) return prototypes;
     return prototypes.filter(p => p.name && p.name.toLowerCase().includes(searchText.toLowerCase()));
-  }, [nodePrototypesMap, name, searchTerm, mode]);
+  }, [nodePrototypesMap, name, searchTerm]);
 
   const handleSubmit = useCallback(() => {
     if (name.trim() && onSubmit) {
@@ -163,7 +164,7 @@ const UnifiedSelector = ({
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div style={{ position: 'absolute', top: '10px', right: '10px', cursor: 'pointer' }}>
-              <X size={20} color="#999" onClick={() => { setName(''); setColorPickerVisible(false); onClose?.(); }} />
+              <X size={MODAL_CLOSE_ICON_SIZE} color="#999" onClick={() => { setName(''); setColorPickerVisible(false); onClose?.(); }} />
             </div>
             <div style={{ textAlign: 'left', marginBottom: '15px', color: 'black' }}>
               <strong style={{ fontSize: '22px', fontFamily: "'EmOne', sans-serif" }}>{title}</strong>

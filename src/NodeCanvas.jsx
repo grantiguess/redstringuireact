@@ -48,7 +48,8 @@ import {
   TRACKPAD_ZOOM_SENSITIVITY,
   PAN_DRAG_SENSITIVITY,
   SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY,
-  NODE_DEFAULT_COLOR
+  NODE_DEFAULT_COLOR,
+  MODAL_CLOSE_ICON_SIZE
 } from './constants';
 
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -4431,7 +4432,7 @@ function NodeCanvas() {
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div style={{ position: 'absolute', top: '10px', right: '10px', cursor: 'pointer' }}>
-            <X size={20} color="#999" onClick={handleConnectionPromptClose} />
+            <X size={MODAL_CLOSE_ICON_SIZE} color="#999" onClick={handleConnectionPromptClose} />
           </div>
           <div style={{ textAlign: 'center', marginBottom: '15px', color: 'black' }}>
             <strong style={{ fontSize: '18px' }}>Name Your Connection</strong>
@@ -4524,7 +4525,7 @@ function NodeCanvas() {
           onMouseDown={(e) => e.stopPropagation()} // Also stop mousedown to prevent grid from closing
         >
           <div style={{ position: 'absolute', top: '10px', right: '10px', cursor: 'pointer' }}>
-            <X size={20} color="#999" onClick={handleClosePrompt} />
+            <X size={MODAL_CLOSE_ICON_SIZE} color="#999" onClick={handleClosePrompt} />
           </div>
           <div style={{ textAlign: 'center', marginBottom: '15px', color: 'black' }}>
             <strong style={{ fontSize: '18px' }}>Name Your Thing</strong>
