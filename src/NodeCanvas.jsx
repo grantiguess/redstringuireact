@@ -4201,14 +4201,18 @@ function NodeCanvas() {
   const handleMorphDone = () => {
       if (!plusSign || !activeGraphId) return;
       
+      // Get the actual dimensions for the node
+      const mockNode = { name: plusSign.tempName };
+      const dims = getNodeDimensions(mockNode, false, null);
+      
       let position = {
-          x: plusSign.x - NODE_WIDTH / 2,
-          y: plusSign.y - NODE_HEIGHT / 2,
+          x: plusSign.x - dims.currentWidth / 2,
+          y: plusSign.y - dims.currentHeight / 2,
       };
 
       // Apply smooth grid snapping when creating new nodes if grid is enabled
       if (gridMode !== 'off') {
-        const snapped = snapToGridAnimated(plusSign.x, plusSign.y, NODE_WIDTH, NODE_HEIGHT, null);
+        const snapped = snapToGridAnimated(plusSign.x, plusSign.y, dims.currentWidth, dims.currentHeight, null);
         position = { x: snapped.x, y: snapped.y };
       }
 

@@ -7,14 +7,10 @@ const PlusSign = ({
   onMorphDone,
   onDisappearDone,
   targetWidth = NODE_WIDTH,
-  targetHeight = NODE_HEIGHT,
-  targetX = null,
-  targetY = null
+  targetHeight = NODE_HEIGHT
 }) => {
   const animationFrameRef = useRef(null);
   const plusRef = useRef({
-    x: 0,
-    y: 0,
     rotation: -90,
     width: 0,
     height: 0,
@@ -112,6 +108,7 @@ const PlusSign = ({
       endHeight = targetHeight;
       endCorner = 40;
       endColor = plusSign.selectedColor || 'maroon'; // Use selected color if available
+      console.log('Morph animation setup:', { selectedColor: plusSign.selectedColor, endColor, targetWidth, targetHeight });
       endLineOp = 0;
       endTextOp = 1;
     }
@@ -123,12 +120,18 @@ const PlusSign = ({
       const easeT = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
       plusRef.current = {
+        x: 0, // Don't animate position - let the final node appear at the correct location
+        y: 0,
         rotation: lerp(startRot, endRot, easeT),
         width: lerp(startW, endWidth, easeT),
         height: lerp(startH, endHeight, easeT),
         cornerRadius: lerp(startCorner, endCorner, easeT),
         color: mode === 'morph'
-          ? interpolateColor('#DEDADA', endColor, easeT) // Always start from light color for smooth transition
+          ? (() => {
+              const interpolatedColor = interpolateColor('#DEDADA', endColor, easeT);
+              if (easeT > 0.5) console.log('Color interpolation:', { easeT, startColor: '#DEDADA', endColor, interpolatedColor });
+              return interpolatedColor;
+            })()
           : '#DEDADA',
         lineOpacity: mode === 'morph'
           ? Math.max(0, 1 - easeT * 4) // Plus sign fades out even faster
