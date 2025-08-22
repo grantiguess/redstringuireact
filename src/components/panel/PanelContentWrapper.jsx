@@ -10,7 +10,8 @@ const PanelContentWrapper = ({
   tabType, // 'home' | 'node'
   nodeId = null,
   storeActions,
-  onFocusChange
+  onFocusChange,
+  onTypeSelect
 }) => {
   const {
     graphs,
@@ -23,10 +24,11 @@ const PanelContentWrapper = ({
   const getNodeData = () => {
     if (tabType === 'home') {
       // For home tab, use the defining node of the active graph
+      if (!graphs || !activeGraphId) return null;
       const currentGraph = graphs.get(activeGraphId);
       const definingNodeId = currentGraph?.definingNodeIds?.[0];
-      return definingNodeId ? nodePrototypes.get(definingNodeId) : null;
-    } else if (tabType === 'node' && nodeId) {
+      return definingNodeId && nodePrototypes ? nodePrototypes.get(definingNodeId) : null;
+    } else if (tabType === 'node' && nodeId && nodePrototypes) {
       // For node tab, use the specific node
       return nodePrototypes.get(nodeId);
     }
@@ -35,18 +37,32 @@ const PanelContentWrapper = ({
 
   // Get graph data
   const getGraphData = () => {
-    return graphs.get(activeGraphId);
+    return graphs && activeGraphId ? graphs.get(activeGraphId) : null;
   };
 
-  // Get nodes for the current graph
+  // Get nodes for the current context
   const getActiveGraphNodes = () => {
-    const currentGraph = graphs.get(activeGraphId);
-    if (!currentGraph || !currentGraph.instances) return [];
+    let targetGraphId = activeGraphId;
+    
+    // For node tabs, show components from the node's definition graph if it has one
+    if (tabType === 'node' && nodeId && nodePrototypes) {
+      const nodeData = nodePrototypes.get(nodeId);
+      if (nodeData && nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
+        // Get the context-specific definition index
+        const contextKey = `${nodeId}-${activeGraphId}`;
+        const currentIndex = nodeDefinitionIndices?.get(contextKey) || 0;
+        targetGraphId = nodeData.definitionGraphIds[currentIndex] || nodeData.definitionGraphIds[0];
+      }
+    }
+    
+    if (!graphs) return [];
+    const targetGraph = graphs.get(targetGraphId);
+    if (!targetGraph || !targetGraph.instances) return [];
     
     // Convert instances to hydrated nodes
-    return Array.from(currentGraph.instances.values())
+    return Array.from(targetGraph.instances.values())
       .map(instance => {
-        const prototype = nodePrototypes.get(instance.prototypeId);
+        const prototype = nodePrototypes?.get(instance.prototypeId);
         return prototype ? {
           ...prototype,
           ...instance // Instance data (x, y, scale) overwrites prototype data
@@ -117,6 +133,12 @@ const PanelContentWrapper = ({
     console.log('Expand node clicked');
   };
 
+  const handleTypeSelect = (nodeId) => {
+    if (onTypeSelect) {
+      onTypeSelect(nodeId);
+    }
+  };
+
   if (!nodeData) {
     return (
       <div style={{ padding: '10px', color: '#aaa', fontFamily: "'EmOne', sans-serif" }}>
@@ -130,11 +152,13 @@ const PanelContentWrapper = ({
       nodeData={nodeData}
       graphData={graphData}
       activeGraphNodes={activeGraphNodes}
+      nodePrototypes={nodePrototypes}
       onNodeUpdate={handleNodeUpdate}
       onImageAdd={handleImageAdd}
       onColorChange={handleColorChange}
       onOpenNode={handleOpenNode}
       onExpandNode={handleExpandNode}
+      onTypeSelect={handleTypeSelect}
       isHomeTab={tabType === 'home'}
       showExpandButton={true}
       isUltraSlim={false}
