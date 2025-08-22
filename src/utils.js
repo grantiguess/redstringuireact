@@ -49,7 +49,7 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
     }
 
     // Use getters to access node properties
-    const nodeName = node.getName ? node.getName() : node.name; // Handle potential plain objects gracefully for now?
+    const nodeName = node.getName ? node.getName() : (node.name || 'Unnamed Node'); // Handle potential plain objects gracefully for now?
     const thumbnailSrc = node.getThumbnailSrc ? node.getThumbnailSrc() : node.thumbnailSrc; // Use getter
     // const imageSrc = node.getImageSrc ? node.getImageSrc() : node.imageSrc; // If needed for dimensions
 

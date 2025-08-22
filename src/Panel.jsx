@@ -1171,9 +1171,31 @@ const Panel = forwardRef(
     const bottomSafeArea = isTypeListVisible ? HEADER_HEIGHT + 10 : 0; // footer height + small gap
     let effectiveBottomPadding = isTypeListVisible ? bottomSafeArea : 0; // refined after leftViewActive initializes
 
-    // Derive saved nodes array reactively
+    // Derive saved nodes array reactively - savedNodeIds contains PROTOTYPE IDs
     const savedNodes = useMemo(() => {
-        return Array.from(savedNodeIds).map(id => nodePrototypesMap.get(id)).filter(Boolean);
+        console.log('[DEBUG] Processing saved nodes:', {
+            savedNodeIds: Array.from(savedNodeIds),
+            nodePrototypesMapSize: nodePrototypesMap.size
+        });
+        
+        return Array.from(savedNodeIds).map(prototypeId => {
+            const prototype = nodePrototypesMap.get(prototypeId);
+            console.log(`[DEBUG] Processing saved prototype ${prototypeId}:`, {
+                exists: !!prototype,
+                name: prototype?.name,
+                hasName: !!(prototype && prototype.name)
+            });
+            
+            if (prototype && prototype.name) {
+                return prototype;
+            } else if (prototype) {
+                // If prototype exists but has no name, give it a fallback
+                console.log(`[DEBUG] Prototype ${prototypeId} has no name, using fallback`);
+                return { ...prototype, name: 'Untitled Node' };
+            }
+            console.log(`[DEBUG] Prototype ${prototypeId} not found`);
+            return null;
+        }).filter(Boolean);
     }, [savedNodeIds, nodePrototypesMap]);
 
     // Group saved nodes by their types

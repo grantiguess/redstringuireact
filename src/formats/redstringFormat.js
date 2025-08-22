@@ -187,19 +187,24 @@ export const REDSTRING_CONTEXT = {
  * @returns {Object} Redstring data with dynamic URIs
  */
 export const exportToRedstring = (storeState, userDomain = null) => {
-  const {
-    graphs,
-    nodePrototypes,
-    edges,
-    openGraphIds,
-    activeGraphId,
-    activeDefinitionNodeId,
-    expandedGraphIds,
-    rightPanelTabs,
-    savedNodeIds,
-    savedGraphIds,
-    showConnectionNames
-  } = storeState;
+  try {
+    if (!storeState) {
+      throw new Error('Store state is required for export');
+    }
+
+    const {
+      graphs = new Map(),
+      nodePrototypes = new Map(),
+      edges = new Map(),
+      openGraphIds = [],
+      activeGraphId = null,
+      activeDefinitionNodeId = null,
+      expandedGraphIds = new Set(),
+      rightPanelTabs = [],
+      savedNodeIds = new Set(),
+      savedGraphIds = new Set(),
+      showConnectionNames = false
+    } = storeState;
 
   // Three-Layer Architecture: Export Spatial Graphs with Instance Collections
   const spatialGraphs = {};
@@ -215,8 +220,8 @@ export const exportToRedstring = (storeState, userDomain = null) => {
           
           // RDF Schema: this individual belongs to prototype class
           "rdf:type": { "@id": `prototype:${instance.prototypeId}` },
-          "rdfs:label": instance.name || `Instance ${instanceId}`,
-          "rdfs:comment": instance.description || "RedString spatial instance",
+          "rdfs:label": instance.name || null, // Don't generate fallback labels
+          "rdfs:comment": instance.description || null,
           
           // RedString: this instance is contained within specific graph
           "redstring:containedIn": { "@id": `graph:${graphId}` },
@@ -270,8 +275,8 @@ export const exportToRedstring = (storeState, userDomain = null) => {
       "@id": `prototype:${id}`,
       
       // RDF Schema standard properties (W3C compliant)
-      "rdfs:label": prototype.name,
-      "rdfs:comment": prototype.description || `RedString prototype: ${prototype.name}`,
+      "rdfs:label": prototype.name || 'Untitled',
+      "rdfs:comment": prototype.description || `RedString prototype: ${prototype.name || 'Untitled'}`,
       "rdfs:seeAlso": prototype.externalLinks || [],
       "rdfs:isDefinedBy": { "@id": "https://redstring.dev" },
       
@@ -529,6 +534,10 @@ export const exportToRedstring = (storeState, userDomain = null) => {
       "edges": edgesObj
     }
   };
+  } catch (error) {
+    console.error('[exportToRedstring] Error during export:', error);
+    throw new Error(`Failed to export to Redstring format: ${error.message}`);
+  }
 };
 
 /**
@@ -583,7 +592,7 @@ export const importFromRedstring = (redstringData, storeActions) => {
           definingNodeIds = graph['redstring:definingNodeIds'] || [];
           edgeIds = graph['redstring:edgeIds'] || [];
         } else {
-          // Legacy format
+          // Legacy format - handle both old nested structure and flat structure
           instancesObj = graph.instances || {};
           graphName = graph.name || `Graph ${id}`;
           graphDescription = graph.description || '';
@@ -601,8 +610,8 @@ export const importFromRedstring = (redstringData, storeActions) => {
             convertedInstance = {
               id: instanceId,
               prototypeId: instance['redstring:prototypeId'] || instance['rdf:type']?.['@id']?.replace('prototype:', ''),
-              name: instance['rdfs:label'],
-              description: instance['rdfs:comment'],
+              name: instance['rdfs:label'] || undefined, // Only preserve explicit names, not generated ones
+              description: instance['rdfs:comment'] || undefined,
               x: instance['redstring:spatialContext']?.['redstring:xCoordinate'] || 0,
               y: instance['redstring:spatialContext']?.['redstring:yCoordinate'] || 0,
               scale: instance['redstring:spatialContext']?.['redstring:spatialScale'] || 1.0,
@@ -610,8 +619,19 @@ export const importFromRedstring = (redstringData, storeActions) => {
               visible: instance['redstring:visualProperties']?.['redstring:visible'] !== false
             };
           } else {
-            // Legacy format - use as-is
-            convertedInstance = { ...instance, id: instanceId };
+            // Legacy format - ensure all required properties exist
+            convertedInstance = {
+              id: instanceId,
+              prototypeId: instance.prototypeId,
+              name: instance.name,
+              description: instance.description,
+              x: instance.x || 0,
+              y: instance.y || 0,
+              scale: instance.scale || 1.0,
+              expanded: instance.expanded || false,
+              visible: instance.visible !== false,
+              ...instance
+            };
           }
           
           instancesMap.set(instanceId, convertedInstance);
@@ -622,8 +642,8 @@ export const importFromRedstring = (redstringData, storeActions) => {
           name: graphName,
           description: graphDescription,
           instances: instancesMap,
-          definingNodeIds,
-          edgeIds
+          definingNodeIds: definingNodeIds || [],
+          edgeIds: edgeIds || []
         });
       } catch (error) {
         console.warn(`[importFromRedstring] Error processing graph ${id}:`, error);
@@ -649,8 +669,8 @@ export const importFromRedstring = (redstringData, storeActions) => {
           // Convert from new semantic format
           convertedPrototype = {
             id,
-            name: prototype['rdfs:label'],
-            description: prototype['rdfs:comment']?.replace(/^RedString prototype: /, '') || '',
+            name: prototype['rdfs:label'] || prototype.name || 'Untitled',
+            description: prototype['rdfs:comment']?.replace(/^RedString prototype: /, '') || prototype.description || '',
             
             // Extract from spatial properties
             x: prototype['redstring:spatialContext']?.['redstring:xCoordinate'] || 0,
@@ -809,22 +829,33 @@ export const importFromRedstring = (redstringData, storeActions) => {
 
     // Note: abstractionChains are stored directly on node prototypes
 
+    // Extract UI state from either new format or legacy format
+    const uiState = userInterface || {};
+    const extractedOpenGraphIds = uiState['redstring:openGraphIds'] || uiState.openGraphIds || [];
+    const extractedActiveGraphId = uiState['redstring:activeGraphId'] || uiState.activeGraphId || null;
+    const extractedActiveDefinitionNodeId = uiState['redstring:activeDefinitionNodeId'] || uiState.activeDefinitionNodeId || null;
+    const extractedExpandedGraphIds = uiState['redstring:expandedGraphIds'] || uiState.expandedGraphIds || [];
+    const extractedRightPanelTabs = uiState['redstring:rightPanelTabs'] || uiState.rightPanelTabs || [];
+    const extractedSavedNodeIds = uiState['redstring:savedNodeIds'] || uiState.savedNodeIds || [];
+    const extractedSavedGraphIds = uiState['redstring:savedGraphIds'] || uiState.savedGraphIds || [];
+    const extractedShowConnectionNames = uiState['redstring:showConnectionNames'] || uiState.showConnectionNames || false;
+
     // Return the converted state for file storage to use
     const storeState = {
       graphs: graphsMap,
       nodePrototypes: nodesMap,
       edges: edgesMap,
-      openGraphIds: Array.isArray(userInterface.openGraphIds) ? userInterface.openGraphIds : [],
-      activeGraphId: userInterface.activeGraphId || null,
-      activeDefinitionNodeId: userInterface.activeDefinitionNodeId || null,
-      expandedGraphIds: new Set(Array.isArray(userInterface.expandedGraphIds) ? userInterface.expandedGraphIds : []),
-      rightPanelTabs: Array.isArray(userInterface.rightPanelTabs) ? userInterface.rightPanelTabs : [],
-      savedNodeIds: new Set(Array.isArray(userInterface.savedNodeIds) ? userInterface.savedNodeIds : []),
-      savedGraphIds: new Set(Array.isArray(userInterface.savedGraphIds) ? userInterface.savedGraphIds : []),
-      showConnectionNames: !!userInterface.showConnectionNames
+      openGraphIds: Array.isArray(extractedOpenGraphIds) ? extractedOpenGraphIds : [],
+      activeGraphId: extractedActiveGraphId,
+      activeDefinitionNodeId: extractedActiveDefinitionNodeId,
+      expandedGraphIds: new Set(Array.isArray(extractedExpandedGraphIds) ? extractedExpandedGraphIds : []),
+      rightPanelTabs: Array.isArray(extractedRightPanelTabs) ? extractedRightPanelTabs : [],
+      savedNodeIds: new Set(Array.isArray(extractedSavedNodeIds) ? extractedSavedNodeIds : []),
+      savedGraphIds: new Set(Array.isArray(extractedSavedGraphIds) ? extractedSavedGraphIds : []),
+      showConnectionNames: !!extractedShowConnectionNames
     };
 
-    const importedTabs = userInterface.rightPanelTabs;
+    const importedTabs = extractedRightPanelTabs;
 
     // If no tabs are loaded or the array is empty, default to the home tab.
     if (!Array.isArray(importedTabs) || importedTabs.length === 0) {
