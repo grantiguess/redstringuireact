@@ -170,9 +170,11 @@ const PlusSign = ({
       endColor = plusSign.selectedColor || 'maroon'; // Use selected color if available
       console.log('Morph setup:', { 
         selectedColor: plusSign.selectedColor, 
+        selectedColorType: typeof plusSign.selectedColor,
         endColor, 
         tempName: plusSign.tempName,
-        mode: plusSign.mode 
+        mode: plusSign.mode,
+        plusSignKeys: Object.keys(plusSign)
       });
       endLineOp = 0;
       endTextOp = 1;
@@ -196,6 +198,9 @@ const PlusSign = ({
               // Make color transition faster by using a steeper curve
               const colorT = Math.min(easeT * 1.5, 1); // Color changes 1.5x faster
               const interpolatedColor = interpolateColor('#DEDADA', endColor, colorT);
+              // Debug color interpolation
+              if (easeT === 0) console.log('Color animation start:', { startColor: '#DEDADA', endColor, colorT, interpolatedColor });
+              if (easeT === 1) console.log('Color animation end:', { startColor: '#DEDADA', endColor, colorT, interpolatedColor });
               return interpolatedColor;
             })()
           : '#DEDADA',
