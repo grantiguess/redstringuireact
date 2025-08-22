@@ -529,6 +529,7 @@ function NodeCanvas() {
     toggleEnableAutoRouting,
     setRoutingStyle,
     updateGraphView,
+    setTypeListMode,
   }), [
     updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance, removeEdge, updateGraph, createNewGraph,
     setActiveGraph, setActiveDefinitionNode, setNodeType, openRightPanelNodeTab,
@@ -538,7 +539,7 @@ function NodeCanvas() {
     openGraphTabAndBringToTop, cleanupOrphanedData, restoreFromSession,
     loadUniverseFromFile, setUniverseError, clearUniverse, setUniverseConnected,
     setSelectedEdgeIds, addSelectedEdgeId, removeSelectedEdgeId, clearSelectedEdgeIds, toggleShowConnectionNames,
-    toggleEnableAutoRouting, setRoutingStyle, updateGraphView
+    toggleEnableAutoRouting, setRoutingStyle, updateGraphView, setTypeListMode
   ]);
 
   // <<< SELECT STATE DIRECTLY >>>
@@ -4589,20 +4590,40 @@ function NodeCanvas() {
   // Panel toggle and TypeList keyboard shortcuts - work even when inputs are focused
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
-      // Only handle these specific keys, regardless of input focus
-      if (e.key === '1') {
-        e.preventDefault();
-        handleToggleLeftPanel();
-      } else if (e.key === '2') {
-        e.preventDefault();
-        handleToggleRightPanel();
-      } else if (e.key === '3') {
-        e.preventDefault();
-        // Cycle TypeList mode: connection -> node -> closed -> connection
-        const currentMode = useGraphStore.getState().typeListMode;
-        const newMode = currentMode === 'connection' ? 'node' : 
-                       currentMode === 'node' ? 'closed' : 'connection';
-        storeActions.setTypeListMode(newMode);
+      // Check if focus is on a text input to prevent conflicts
+      const activeElement = document.activeElement;
+      const isTextInput = activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.contentEditable === 'true' ||
+        activeElement.type === 'text' ||
+        activeElement.type === 'search' ||
+        activeElement.type === 'password' ||
+        activeElement.type === 'email' ||
+        activeElement.type === 'number'
+      );
+      
+      console.log('[Key Shortcuts] Key pressed:', e.key, 'Active element:', activeElement?.tagName, 'Is text input:', isTextInput);
+      
+      // Only handle these specific keys if NOT in a text input
+      if (!isTextInput) {
+        if (e.key === '1') {
+          e.preventDefault();
+          handleToggleLeftPanel();
+        } else if (e.key === '2') {
+          e.preventDefault();
+          handleToggleRightPanel();
+        } else if (e.key === '3') {
+          e.preventDefault();
+          console.log('[Key 3] Key 3 pressed, cycling TypeList mode');
+          // Cycle TypeList mode: connection -> node -> closed -> connection
+          const currentMode = useGraphStore.getState().typeListMode;
+          const newMode = currentMode === 'connection' ? 'node' : 
+                         currentMode === 'node' ? 'closed' : 'connection';
+          console.log('[Key 3] Cycling TypeList mode:', { currentMode, newMode });
+          storeActions.setTypeListMode(newMode);
+          console.log('[Key 3] setTypeListMode called with:', newMode);
+        }
       }
     };
 

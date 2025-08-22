@@ -1981,6 +1981,7 @@ const Panel = forwardRef(
                         storeActions={storeActions}
                         onFocusChange={onFocusChange}
                         onTypeSelect={handleTypeNodeSelection}
+                        onStartHurtleAnimationFromPanel={onStartHurtleAnimationFromPanel}
                         isUltraSlim={isUltraSlim}
                     />
                 </div>
@@ -2004,6 +2005,7 @@ const Panel = forwardRef(
                             storeActions={storeActions}
                             onFocusChange={onFocusChange}
                             onTypeSelect={handleTypeNodeSelection}
+                            onStartHurtleAnimationFromPanel={onStartHurtleAnimationFromPanel}
                             isUltraSlim={isUltraSlim}
                         />
                     </div>

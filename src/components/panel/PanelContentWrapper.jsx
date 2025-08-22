@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import SharedPanelContent from './SharedPanelContent.jsx';
 import useGraphStore from '../../store/graphStore.js';
+import ColorPicker from '../../ColorPicker.jsx';
 
 /**
  * Wrapper component that handles data fetching and action binding
@@ -12,6 +13,7 @@ const PanelContentWrapper = ({
   storeActions,
   onFocusChange,
   onTypeSelect,
+  onStartHurtleAnimationFromPanel,
   isUltraSlim = false
 }) => {
   const {
@@ -20,6 +22,11 @@ const PanelContentWrapper = ({
     activeGraphId,
     nodeDefinitionIndices
   } = useGraphStore();
+
+  // Color picker state
+  const [colorPickerVisible, setColorPickerVisible] = useState(false);
+  const [colorPickerPosition, setColorPickerPosition] = useState({ x: 0, y: 0 });
+  const [colorPickerNodeId, setColorPickerNodeId] = useState(null);
 
   // Determine which node data to use based on tab type
   const getNodeData = () => {
@@ -76,6 +83,10 @@ const PanelContentWrapper = ({
   const graphData = getGraphData();
   const activeGraphNodes = getActiveGraphNodes();
 
+  // Check if this node is the defining node of the current active graph
+  const isDefiningNodeOfCurrentGraph = activeGraphId && graphData && 
+    graphData.definingNodeIds && graphData.definingNodeIds.includes(nodeData?.id);
+
   // Action handlers
   const handleNodeUpdate = (updatedData) => {
     if (nodeData?.id) {
@@ -120,18 +131,77 @@ const PanelContentWrapper = ({
     input.click();
   };
 
-  const handleColorChange = () => {
-    // Color change logic would go here
-    console.log('Color change clicked');
+  const handleColorPickerOpen = (event) => {
+    event.stopPropagation();
+    const nodeId = nodeData?.id;
+    if (!nodeId) return;
+    
+    // If already open for the same node, close it (toggle behavior)
+    if (colorPickerVisible && colorPickerNodeId === nodeId) {
+      setColorPickerVisible(false);
+      setColorPickerNodeId(null);
+      return;
+    }
+    
+    // Open color picker - align with the icon position
+    const rect = event.currentTarget.getBoundingClientRect();
+    setColorPickerPosition({ x: rect.right - 10, y: rect.top - 5 });
+    setColorPickerNodeId(nodeId);
+    setColorPickerVisible(true);
+  };
+
+  const handleColorChange = (newColor) => {
+    if (colorPickerNodeId && storeActions?.updateNodePrototype) {
+      storeActions.updateNodePrototype(colorPickerNodeId, draft => {
+        draft.color = newColor;
+      });
+    }
+  };
+
+  const handleColorPickerClose = () => {
+    setColorPickerVisible(false);
+    setColorPickerNodeId(null);
   };
 
   const handleOpenNode = (nodeId) => {
     storeActions.openRightPanelNodeTab(nodeId);
   };
 
-  const handleExpandNode = () => {
-    // Expand node logic would go here
-    console.log('Expand node clicked');
+  const handleExpandNode = (event) => {
+    const nodeId = nodeData?.id;
+    if (!nodeId) return;
+
+    // Get the icon's bounding rectangle for the hurtle animation
+    const iconRect = event.currentTarget.getBoundingClientRect();
+
+    // Same logic as PieMenu expand but using hurtle animation from panel
+    if (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
+      // Node has existing definition(s) - start hurtle animation to first one
+      const graphIdToOpen = nodeData.definitionGraphIds[0];
+      if (onStartHurtleAnimationFromPanel) {
+        onStartHurtleAnimationFromPanel(nodeId, graphIdToOpen, nodeId, iconRect);
+      } else if (storeActions?.openGraphTabAndBringToTop) {
+        // Fallback if hurtle animation not available
+        storeActions.openGraphTabAndBringToTop(graphIdToOpen, nodeId);
+      }
+    } else {
+      // Node has no definitions - create one first, then start hurtle animation
+      if (storeActions?.createAndAssignGraphDefinitionWithoutActivation) {
+        const sourceGraphId = activeGraphId; // Capture current graph before it changes
+        storeActions.createAndAssignGraphDefinitionWithoutActivation(nodeId);
+        
+        setTimeout(() => {
+          const currentState = useGraphStore.getState();
+          const updatedNodeData = currentState.nodePrototypes.get(nodeId);
+          if (updatedNodeData?.definitionGraphIds?.length > 0) {
+            const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+            if (onStartHurtleAnimationFromPanel) {
+              onStartHurtleAnimationFromPanel(nodeId, newGraphId, nodeId, iconRect);
+            }
+          }
+        }, 50);
+      }
+    }
   };
 
   const handleTypeSelect = (nodeId) => {
@@ -149,21 +219,36 @@ const PanelContentWrapper = ({
   }
 
   return (
-    <SharedPanelContent
-      nodeData={nodeData}
-      graphData={graphData}
-      activeGraphNodes={activeGraphNodes}
-      nodePrototypes={nodePrototypes}
-      onNodeUpdate={handleNodeUpdate}
-      onImageAdd={handleImageAdd}
-      onColorChange={handleColorChange}
-      onOpenNode={handleOpenNode}
-      onExpandNode={handleExpandNode}
-      onTypeSelect={handleTypeSelect}
-      isHomeTab={tabType === 'home'}
-      showExpandButton={true}
-      isUltraSlim={isUltraSlim}
-    />
+    <>
+      <SharedPanelContent
+        nodeData={nodeData}
+        graphData={graphData}
+        activeGraphNodes={activeGraphNodes}
+        nodePrototypes={nodePrototypes}
+        onNodeUpdate={handleNodeUpdate}
+        onImageAdd={handleImageAdd}
+        onColorChange={handleColorPickerOpen}
+        onOpenNode={handleOpenNode}
+        onExpandNode={handleExpandNode}
+        onTypeSelect={handleTypeSelect}
+        isHomeTab={tabType === 'home'}
+        showExpandButton={true}
+      expandButtonDisabled={isDefiningNodeOfCurrentGraph}
+        isUltraSlim={isUltraSlim}
+      />
+      
+      {/* Color Picker Component */}
+      {colorPickerVisible && (
+        <ColorPicker
+          isVisible={colorPickerVisible}
+          onClose={handleColorPickerClose}
+          onColorChange={handleColorChange}
+          currentColor={colorPickerNodeId && nodePrototypes ? nodePrototypes.get(colorPickerNodeId)?.color || '#8B0000' : '#8B0000'}
+          position={colorPickerPosition}
+          direction="down-left"
+        />
+      )}
+    </>
   );
 };
 

@@ -208,6 +208,7 @@ const SharedPanelContent = ({
   // UI state
   isUltraSlim = false,
   showExpandButton = true,
+  expandButtonDisabled = false,
   
   // Type determination
   isHomeTab = false
@@ -288,10 +289,14 @@ const SharedPanelContent = ({
       {showExpandButton && (
         <ArrowUpFromDot
           size={20}
-          color="#260000"
-          style={{ cursor: 'pointer', flexShrink: 0 }}
-          onClick={onExpandNode}
-          title="Expand definition"
+          color={expandButtonDisabled ? "#716C6C" : "#260000"}
+          style={{ 
+            cursor: expandButtonDisabled ? 'not-allowed' : 'pointer', 
+            flexShrink: 0,
+            opacity: expandButtonDisabled ? 0.5 : 1
+          }}
+          onClick={expandButtonDisabled ? undefined : onExpandNode}
+          title={expandButtonDisabled ? "Cannot expand - this node defines the current graph" : "Expand definition"}
         />
       )}
       <ImagePlus
