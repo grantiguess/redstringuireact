@@ -95,16 +95,19 @@ const SemanticLinkInput = ({ onAdd, placeholder, type, icon: Icon }) => {
           height: '32px',
           border: 'none',
           borderRadius: '6px',
-          backgroundColor: isValid ? '#8B0000' : '#ccc',
+          backgroundColor: '#8B0000',
           color: 'white',
           cursor: isValid ? 'pointer' : 'not-allowed',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          transition: 'all 0.2s ease'
+          transition: 'all 0.2s ease',
+          opacity: isValid ? 1 : 0.5
         }}
+        onMouseEnter={(e) => isValid && (e.target.style.backgroundColor = '#A00000')}
+        onMouseLeave={(e) => isValid && (e.target.style.backgroundColor = '#8B0000')}
       >
-        <Plus size={14} />
+        <span style={{ fontSize: '20px', fontWeight: 'bold', color: 'white', lineHeight: 1 }}>+</span>
       </button>
     </div>
   );
@@ -297,7 +300,7 @@ const WikipediaSearch = ({ onSelect }) => {
   return (
     <div>
       <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', alignItems: 'center' }}>
-        <Globe size={16} style={{ color: '#666', marginTop: '1px' }} />
+        <Globe size={16} style={{ color: '#666', marginTop: '1px', flexShrink: 0 }} />
         <input
           type="text"
           value={query}
@@ -321,16 +324,19 @@ const WikipediaSearch = ({ onSelect }) => {
             height: '32px',
             border: 'none',
             borderRadius: '6px',
-            backgroundColor: loading || !query.trim() ? '#ccc' : '#8B0000',
+            backgroundColor: '#8B0000',
             color: 'white',
             cursor: loading || !query.trim() ? 'not-allowed' : 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transition: 'all 0.2s ease'
+            transition: 'all 0.2s ease',
+            opacity: loading || !query.trim() ? 0.5 : 1
           }}
+          onMouseEnter={(e) => !(loading || !query.trim()) && (e.target.style.backgroundColor = '#A00000')}
+          onMouseLeave={(e) => !(loading || !query.trim()) && (e.target.style.backgroundColor = '#8B0000')}
         >
-          {loading ? '...' : <Search size={14} />}
+          {loading ? '...' : <span style={{ fontSize: '18px', color: 'white', lineHeight: 1 }}>⌕</span>}
         </button>
       </div>
 
