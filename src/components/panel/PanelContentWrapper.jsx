@@ -11,7 +11,8 @@ const PanelContentWrapper = ({
   nodeId = null,
   storeActions,
   onFocusChange,
-  onTypeSelect
+  onTypeSelect,
+  isUltraSlim = false
 }) => {
   const {
     graphs,
@@ -161,7 +162,7 @@ const PanelContentWrapper = ({
       onTypeSelect={handleTypeSelect}
       isHomeTab={tabType === 'home'}
       showExpandButton={true}
-      isUltraSlim={false}
+      isUltraSlim={isUltraSlim}
     />
   );
 };

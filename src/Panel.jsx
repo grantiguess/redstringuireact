@@ -1981,6 +1981,7 @@ const Panel = forwardRef(
                         storeActions={storeActions}
                         onFocusChange={onFocusChange}
                         onTypeSelect={handleTypeNodeSelection}
+                        isUltraSlim={isUltraSlim}
                     />
                 </div>
             );
@@ -2003,6 +2004,7 @@ const Panel = forwardRef(
                             storeActions={storeActions}
                             onFocusChange={onFocusChange}
                             onTypeSelect={handleTypeNodeSelection}
+                            isUltraSlim={isUltraSlim}
                         />
                     </div>
                 );

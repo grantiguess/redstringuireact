@@ -333,45 +333,94 @@ const SharedPanelContent = ({
         
         return (
           <div style={{
-            marginBottom: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px'
+            marginBottom: isUltraSlim ? '16px' : '12px'
           }}>
-            <span style={{
-              fontSize: '0.9rem',
-              color: '#260000',
-              fontFamily: "'EmOne', sans-serif"
-            }}>
-              Is {getArticleFor(typeName)}
-            </span>
-            <button
-              onClick={() => onTypeSelect && onTypeSelect(nodeData.id)}
-              style={{
-                backgroundColor: '#8B0000',
-                color: '#bdb5b5',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '5px 8px 3px 8px',
-                fontSize: '0.8rem',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                fontFamily: "'EmOne', sans-serif",
-                outline: 'none',
-                marginLeft: '6px'
-              }}
-            >
-              {typeName}
-            </button>
+            {isUltraSlim ? (
+              // Ultra slim layout: "Is a" on top, type button below, icons at bottom
+              <>
+                <div style={{
+                  marginBottom: '6px',
+                  minWidth: '120px',
+                  whiteSpace: 'nowrap'
+                }}>
+                  <span style={{
+                    fontSize: '0.9rem',
+                    color: '#260000',
+                    fontFamily: "'EmOne', sans-serif"
+                  }}>
+                    Is {getArticleFor(typeName)}
+                  </span>
+                </div>
+                
+                <div style={{
+                  marginBottom: '12px'
+                }}>
+                  <button
+                    onClick={() => onTypeSelect && onTypeSelect(nodeData.id)}
+                    style={{
+                      backgroundColor: '#8B0000',
+                      color: '#bdb5b5',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '5px 8px 3px 8px',
+                      fontSize: '0.8rem',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      fontFamily: "'EmOne', sans-serif",
+                      outline: 'none'
+                    }}
+                  >
+                    {typeName}
+                  </button>
+                </div>
+                
+                <div style={{ 
+                  display: 'flex',
+                  gap: '8px',
+                  marginLeft: '2px'
+                }}>
+                  {actionButtons}
+                </div>
+              </>
+            ) : (
+              // Normal layout: "Is a" and type button inline
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                minWidth: '120px',
+                whiteSpace: 'nowrap'
+              }}>
+                <span style={{
+                  fontSize: '0.9rem',
+                  color: '#260000',
+                  fontFamily: "'EmOne', sans-serif"
+                }}>
+                  Is {getArticleFor(typeName)}
+                </span>
+                <button
+                  onClick={() => onTypeSelect && onTypeSelect(nodeData.id)}
+                  style={{
+                    backgroundColor: '#8B0000',
+                    color: '#bdb5b5',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '5px 8px 3px 8px',
+                    fontSize: '0.8rem',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    fontFamily: "'EmOne', sans-serif",
+                    outline: 'none',
+                    marginLeft: '6px'
+                  }}
+                >
+                  {typeName}
+                </button>
+              </div>
+            )}
           </div>
         );
       })()}
-
-      {isUltraSlim && (
-        <div style={{ marginTop: '12px' }}>
-          {actionButtons}
-        </div>
-      )}
 
       {/* Bio Section */}
       <CollapsibleSection 
