@@ -127,11 +127,7 @@ const PlusSign = ({
         height: lerp(startH, endHeight, easeT),
         cornerRadius: lerp(startCorner, endCorner, easeT),
         color: mode === 'morph'
-          ? (() => {
-              const interpolatedColor = interpolateColor('#DEDADA', endColor, easeT);
-              if (easeT > 0.5) console.log('Color interpolation:', { easeT, startColor: '#DEDADA', endColor, interpolatedColor });
-              return interpolatedColor;
-            })()
+          ? interpolateColor('#DEDADA', endColor, easeT)
           : '#DEDADA',
         lineOpacity: mode === 'morph'
           ? Math.max(0, 1 - easeT * 4) // Plus sign fades out even faster
