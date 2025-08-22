@@ -46,89 +46,472 @@ Essential for linking to external entities:
 "hydra": "http://www.w3.org/ns/hydra/core#",
 ```
 
-## Enhanced Context for Web Integration
+## Enhanced Redstring Context - The Semantic Web Rosetta Stone
+
+**Redstring creates a unified semantic web format where every concept is a Rosetta Stone for multiple vocabularies.**
 
 ```javascript
-export const WEB_INTEGRATED_CONTEXT = {
-  ...REDSTRING_CONTEXT,
+export const REDSTRING_CONTEXT = {
+  "@version": 1.1,
+  "@vocab": "https://redstring.io/vocab/",
   
-  // RDF Schema core classes (W3C standard)
+  // ==========================================
+  // REDSTRING EXTENSIONS (New Standard)
+  // ==========================================
+  "redstring": "https://redstring.io/vocab/",
+  "ThingPrototype": "redstring:ThingPrototype",    // Prototype concepts (semantic classes)
+  "ThingInstance": "redstring:ThingInstance",      // Instance placements (spatial objects)
+  "partOf": "redstring:partOf",                    // Spatial/contextual containment
+  "preferredDefinition": "redstring:preferredDefinition", // Context-aware definitions
+  "definitionGraphIds": "redstring:definitionGraphIds",   // Multiple definition graphs
+  "abstractionChains": "redstring:abstractionChains",     // User-defined hierarchies
+  "spatialContext": "redstring:spatialContext",           // Position, scale, visual
+  "color": "redstring:color",                              // Visual semantics
+  
+  // ==========================================
+  // RDF SCHEMA FOUNDATIONS (W3C Standard)
+  // ==========================================
   "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
   "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-  "rdfs:Class": "rdfs:Class",
-  "rdfs:Resource": "rdfs:Resource", 
-  "rdfs:Literal": "rdfs:Literal",
-  "rdfs:Datatype": "rdfs:Datatype",
-  "rdf:Property": "rdf:Property",
   
-  // RDF Schema core properties
-  "rdf:type": "rdf:type",                    // Instance of class
-  "rdfs:subClassOf": "rdfs:subClassOf",      // Class hierarchy
-  "rdfs:subPropertyOf": "rdfs:subPropertyOf", // Property hierarchy
-  "rdfs:domain": "rdfs:domain",              // Property domain
-  "rdfs:range": "rdfs:range",                // Property range
+  // Core RDF Schema classes
+  "rdfs:Class": "rdfs:Class",                      // Class definitions
+  "rdfs:Resource": "rdfs:Resource",                // All RDF resources
+  "rdfs:Literal": "rdfs:Literal",                 // String/number values
+  "rdf:Property": "rdf:Property",                  // Relationship definitions
   
-  // RDF Schema utility properties
-  "rdfs:label": "rdfs:label",                // Human-readable name
-  "rdfs:comment": "rdfs:comment",            // Description
-  "rdfs:seeAlso": "rdfs:seeAlso",            // Related resources
-  "rdfs:isDefinedBy": "rdfs:isDefinedBy",    // Definition source
+  // Core RDF Schema properties
+  "rdf:type": "rdf:type",                          // Instance belongs to class
+  "rdfs:subClassOf": "rdfs:subClassOf",            // Class hierarchy (Type → Prototype)
+  "rdfs:subPropertyOf": "rdfs:subPropertyOf",      // Property hierarchy
+  "rdfs:domain": "rdfs:domain",                    // Valid source classes
+  "rdfs:range": "rdfs:range",                      // Valid target classes
   
-  // OWL for external linking
+  // Human-readable metadata
+  "rdfs:label": "rdfs:label",                      // Display name
+  "rdfs:comment": "rdfs:comment",                  // Description text
+  "rdfs:seeAlso": "rdfs:seeAlso",                  // Related resources
+  "rdfs:isDefinedBy": "rdfs:isDefinedBy",          // Definition source
+  
+  // ==========================================
+  // OWL SEMANTIC MAPPINGS (Rosetta Stone)
+  // ==========================================
   "owl": "http://www.w3.org/2002/07/owl#",
-  "sameAs": "owl:sameAs",
-  "equivalentClass": "owl:equivalentClass",
-  "differentFrom": "owl:differentFrom",
   
-  // External knowledge bases
-  "wdt": "http://www.wikidata.org/prop/direct/",
-  "wd": "http://www.wikidata.org/entity/", 
-  "dbr": "http://dbpedia.org/resource/",
-  "dbo": "http://dbpedia.org/ontology/",
+  // The Rosetta Stone mechanisms
+  "sameAs": "owl:sameAs",                          // "This exact thing = that exact thing"
+  "equivalentClass": "owl:equivalentClass",        // "This class = that class concept"
+  "differentFrom": "owl:differentFrom",            // "This ≠ that" (disambiguation)
   
-  // Social/web platforms
-  "sioc": "http://rdfs.org/sioc/ns#",
-  "as": "https://www.w3.org/ns/activitystreams#",
-  "ldp": "http://www.w3.org/ns/ldp#",
+  // ==========================================
+  // EXTERNAL KNOWLEDGE BASES (Global Vocab)
+  // ==========================================
   
-  // Additional schema.org for rich web content
-  "thing": "http://schema.org/Thing",
-  "person": "http://schema.org/Person",
-  "organization": "http://schema.org/Organization",
-  "webpage": "http://schema.org/WebPage",
-  "article": "http://schema.org/Article",
-  "url": "http://schema.org/url",
-  "identifier": "http://schema.org/identifier"
+  // Wikidata (world's largest knowledge base)
+  "wd": "http://www.wikidata.org/entity/",         // Wikidata entities (wd:Q5 = human)
+  "wdt": "http://www.wikidata.org/prop/direct/",   // Wikidata properties
+  
+  // DBpedia (Wikipedia as RDF)
+  "dbr": "http://dbpedia.org/resource/",           // DBpedia resources
+  "dbo": "http://dbpedia.org/ontology/",           // DBpedia ontology
+  
+  // Schema.org (structured web data)
+  "schema": "http://schema.org/",
+  "Person": "schema:Person",
+  "Organization": "schema:Organization", 
+  "Thing": "schema:Thing",
+  "CreativeWork": "schema:CreativeWork",
+  
+  // Academic & Research
+  "doi": "https://doi.org/",                       // Digital Object Identifiers
+  "orcid": "https://orcid.org/",                   // Researcher IDs
+  "pubmed": "https://pubmed.ncbi.nlm.nih.gov/",   // Medical literature
+  "arxiv": "https://arxiv.org/abs/",               // Preprint archive
+  
+  // FOAF (Friend of a Friend)
+  "foaf": "http://xmlns.com/foaf/0.1/",
+  "foaf:Person": "foaf:Person",
+  "foaf:Organization": "foaf:Organization",
+  
+  // Dublin Core (metadata standards)
+  "dc": "http://purl.org/dc/terms/",
+  "created": "dc:created",
+  "modified": "dc:modified",
+  "creator": "dc:creator",
+  "description": "dc:description"
 };
 ```
 
-## Node Enhancement for External Links
+## The Three-Layer Redstring Architecture
+
+### Layer 1: Types (Superclasses) - Global Semantic Categories
+```javascript
+// Types are hardcoded superclasses that provide rdfs:subClassOf relationships
+const REDSTRING_TYPES = {
+  "Person": {
+    "@id": "schema:Person",
+    "rdfs:label": "Person",
+    "rdfs:comment": "A human being",
+    // Types create automatic subClassOf relationships
+  },
+  "Organization": {
+    "@id": "schema:Organization", 
+    "rdfs:label": "Organization",
+    "rdfs:comment": "An organized body of people"
+  }
+};
+```
+
+### Layer 2: Prototypes (Classes) - Local Semantic Concepts  
+```javascript
+// Prototypes are rdfs:Class + Redstring extensions - the Rosetta Stone layer
+{
+  "@type": ["redstring:ThingPrototype", "rdfs:Class"],
+  "@id": "prototype:barack-obama",
+  
+  // RDF Schema compliance
+  "rdfs:label": "Barack Obama",
+  "rdfs:comment": "44th President of the United States",
+  "rdfs:subClassOf": { "@id": "schema:Person" },  // Links to Type layer
+  
+  // OWL Rosetta Stone mappings - THIS IS THE MAGIC!
+  "sameAs": [
+    "wd:Q76",                                    // Wikidata: Barack Obama
+    "dbr:Barack_Obama",                          // DBpedia: Barack Obama  
+    "https://en.wikipedia.org/wiki/Barack_Obama" // Wikipedia page
+  ],
+  "equivalentClass": [
+    "foaf:Person",                               // FOAF vocabulary
+    "dbo:President"                              // DBpedia ontology
+  ],
+  
+  // Redstring extensions (what makes it more than RDF)
+  "redstring:color": "#blue",
+  "redstring:definitionGraphIds": [
+    "barack-personal-life",                      // Personal perspective
+    "barack-political-career",                  // Political perspective
+    "barack-cultural-impact"                    // Cultural perspective
+  ],
+  "redstring:abstractionChains": {
+    "specificity": ["person", "politician", "president", "us-president"],
+    "domain": ["politics", "american-politics", "democratic-party"]
+  },
+  "redstring:spatialContext": {
+    "defaultScale": 1.2,
+    "defaultPosition": { "x": 0, "y": 0 }
+  }
+}
+```
+
+### Layer 3: Instances (Objects) - Spatial Manifestations
+```javascript
+// Instances are spatial placements of prototypes in specific graphs
+{
+  "@type": "redstring:ThingInstance",
+  "@id": "instance:barack-in-presidency-graph",
+  
+  // RDF Schema relationship - instance belongs to prototype class
+  "rdf:type": { "@id": "prototype:barack-obama" },
+  
+  // Redstring spatial containment - instance exists in specific graph
+  "redstring:partOf": { "@id": "graph:us-presidency-timeline" },
+  
+  // Context-aware definition selection
+  "redstring:preferredDefinition": "barack-political-career",
+  
+  // Spatial positioning
+  "redstring:spatialContext": {
+    "x": 500,
+    "y": 300, 
+    "scale": 1.0
+  }
+}
+```
+
+## The Rosetta Stone Mechanism Explained
+
+**Every Redstring prototype is a translation hub between vocabularies:**
 
 ```javascript
-// Enhanced node structure with external references
-const createWebLinkedNode = (nodeData) => ({
-  ...nodeData,
-  "@type": ["redstring:Node", "schema:Thing"],
+// Local concept with global reach
+{
+  "@id": "prototype:climate-policy",
+  "rdfs:label": "Climate Policy",               // Human readable
   
-  // External entity linking
+  // Rosetta Stone translations
   "sameAs": [
-    { "@id": "wd:Q5" },           // Wikidata: Human
-    { "@id": "dbr:Person" },      // DBpedia: Person
-    { "@id": "https://example.com/person/john" }
+    "dbr:Climate_change_policy",                // Wikipedia/DBpedia
+    "wd:Q7942",                                 // Wikidata  
+    "https://en.wikipedia.org/wiki/Climate_change_policy"
+  ],
+  "equivalentClass": [
+    "schema:GovernmentPolicy",                  // Schema.org category
+    "dbo:Policy",                               // DBpedia ontology
+    "foaf:Document"                             // FOAF perspective
   ],
   
-  // External identifiers
-  "identifier": [
-    { "@type": "schema:PropertyValue", "name": "wikidata", "value": "Q5" },
-    { "@type": "schema:PropertyValue", "name": "twitter", "value": "@username" },
-    { "@type": "schema:PropertyValue", "name": "orcid", "value": "0000-0000-0000-0000" }
-  ],
-  
-  // Web presence
-  "url": "https://example.com/profile",
-  "mainEntityOfPage": { "@id": "https://example.com/about" }
-});
+  // When someone searches for "environmental policy" across semantic web:
+  // → They find this concept through multiple pathways
+  // → Can understand it in their preferred vocabulary
+  // → Can link to it from their own semantic systems
+}
 ```
+
+## Separated Storage Architecture
+
+```javascript
+{
+  "@context": REDSTRING_CONTEXT,
+  "@type": "redstring:CognitiveSpace",
+  "format": "redstring-v2.0.0",
+  
+  // ========================================
+  // PROTOTYPE SPACE (Semantic Layer)
+  // ========================================
+  "prototypeSpace": {
+    // All concept definitions (the semantic classes)
+    "nodePrototypes": {
+      "barack-obama": { /* prototype definition */ },
+      "climate-policy": { /* prototype definition */ }
+    },
+    
+    // Type hierarchy (superclass relationships)
+    "typeHierarchy": {
+      "Person": { "@id": "schema:Person" },
+      "Policy": { "@id": "schema:Policy" }
+    },
+    
+    // Prototype-level relationships (semantic edges)
+    "semanticEdges": {
+      "barack-implements-climate": {
+        "subject": { "@id": "prototype:barack-obama" },
+        "predicate": { "@id": "prototype:implements" },
+        "object": { "@id": "prototype:climate-policy" }
+      }
+    }
+  },
+  
+  // ========================================
+  // SPATIAL GRAPHS (Visual Layer)  
+  // ========================================
+  "spatialGraphs": {
+    "us-presidency": {
+      "instances": {
+        "barack-instance": {
+          "rdf:type": { "@id": "prototype:barack-obama" },
+          "redstring:partOf": { "@id": "graph:us-presidency" },
+          "redstring:preferredDefinition": "barack-political-career"
+        }
+      },
+      "spatialConnections": {
+        "visual-connection-1": {
+          "sourceInstanceId": "barack-instance",
+          "destinationInstanceId": "policy-instance",
+          "representsSemanticEdge": "barack-implements-climate"
+        }
+      }
+    }
+  }
+}
+## Native Triplet Support
+
+**Redstring stores semantic relationships as explicit RDF triplets while maintaining visual connections:**
+
+```javascript
+// Edge with native triplet support
+{
+  "id": "connection-123",
+  "@type": "redstring:SemanticConnection",
+  
+  // Native RDF triplets (semantic meaning)
+  "triplets": [
+    {
+      "subject": { "@id": "prototype:barack-obama" },
+      "predicate": { "@id": "prototype:implements" },
+      "object": { "@id": "prototype:climate-policy" }
+    }
+    // Future: multiple triplets per edge for complex relationships
+  ],
+  
+  // Visual connection data (spatial representation)
+  "sourceInstanceId": "barack-instance",
+  "destinationInstanceId": "policy-instance",
+  "redstring:spatialContext": {
+    "path": "curved",
+    "color": "#green",
+    "thickness": 2
+  },
+  
+  // User interaction - click connection to see triplet context
+  "redstring:displayMode": "triplet-aware"
+}
+```
+
+**Bidirectional connections become two triplets:**
+```javascript
+// Non-directional edge → 2 symmetric triplets
+{
+  "triplets": [
+    {
+      "subject": { "@id": "prototype:climate-policy" },
+      "predicate": { "@id": "prototype:relates-to" },
+      "object": { "@id": "prototype:economic-policy" }
+    },
+    {
+      "subject": { "@id": "prototype:economic-policy" },
+      "predicate": { "@id": "prototype:relates-to" },
+      "object": { "@id": "prototype:climate-policy" }
+    }
+  ]
+}
+```
+
+## Panel.jsx Semantic Web Integration
+
+**Four new sections in the right panel for comprehensive semantic web linking:**
+
+### Section 1: Class Mappings (Type System Integration)
+```javascript
+const ClassMappingsSection = ({ node, onUpdate }) => (
+  <section className="semantic-mappings">
+    <h3>Class Mappings</h3>
+    
+    {/* Automatic Type → subClassOf */}
+    <div className="type-mapping">
+      <label>Is a:</label>
+      <TypeSelector 
+        value={node.type}
+        onChange={(type) => {
+          // Automatically creates rdfs:subClassOf relationship
+          updateSemanticProperty(node, 'rdfs:subClassOf', { '@id': type.semanticId })
+        }}
+      />
+    </div>
+    
+    {/* Equivalent Classes */}
+    <div className="equivalent-classes">
+      <label>Equivalent Classes:</label>
+      <ClassSelector
+        vocabulary="schema.org"
+        onSelect={(classId) => addEquivalentClass(node, classId)}
+      />
+      <ClassSelector  
+        vocabulary="FOAF"
+        onSelect={(classId) => addEquivalentClass(node, classId)}
+      />
+      
+      {/* Display existing mappings */}
+      {node.equivalentClass?.map(cls => (
+        <ClassMappingCard key={cls['@id']} classId={cls['@id']} onRemove={removeEquivalentClass} />
+      ))}
+    </div>
+  </section>
+);
+```
+
+### Section 2: External Entities (Rosetta Stone Links)
+```javascript
+const ExternalEntitiesSection = ({ node, onUpdate }) => (
+  <section className="external-entities">
+    <h3>External Entities (sameAs)</h3>
+    
+    {/* Wikidata Search */}
+    <WikidataEntitySearch 
+      conceptName={node.name}
+      onSelect={(entityId) => addSameAs(node, `wd:${entityId}`)}
+    />
+    
+    {/* DBpedia Search */}
+    <DBpediaResourceSearch
+      conceptName={node.name} 
+      onSelect={(resourceId) => addSameAs(node, `dbr:${resourceId}`)}
+    />
+    
+    {/* Manual URL Entry */}
+    <URLInput
+      placeholder="Custom semantic web URI"
+      onAdd={(uri) => addSameAs(node, uri)}
+    />
+    
+    {/* Display existing sameAs links */}
+    {node.sameAs?.map(uri => (
+      <EntityLinkCard key={uri} uri={uri} onRemove={removeSameAs} />
+    ))}
+  </section>
+);
+```
+
+### Section 3: Academic References 
+```javascript
+const AcademicReferencesSection = ({ node, onUpdate }) => (
+  <section className="academic-references">
+    <h3>Academic References</h3>
+    
+    <DOIInput onAdd={(doi) => addReference(node, `doi:${doi}`)} />
+    <ORCIDInput onAdd={(orcid) => addReference(node, `orcid:${orcid}`)} />
+    <ArXivInput onAdd={(arxiv) => addReference(node, `arxiv:${arxiv}`)} />
+    <PubMedInput onAdd={(pmid) => addReference(node, `pubmed:${pmid}`)} />
+    
+    {/* Display existing references */}
+    {node.academicReferences?.map(ref => (
+      <AcademicReferenceCard key={ref} reference={ref} onRemove={removeReference} />
+    ))}
+  </section>
+);
+```
+
+### Section 4: Web Resources
+```javascript
+const WebResourcesSection = ({ node, onUpdate }) => (
+  <section className="web-resources">
+    <h3>Web Resources</h3>
+    
+    <WikipediaSearch onSelect={(url) => addWebResource(node, url)} />
+    <GenericURLInput onAdd={(url) => addWebResource(node, url)} />
+    <SocialMediaInput onAdd={(profile) => addWebResource(node, profile)} />
+    
+    {/* Display existing web resources */}
+    {node.webResources?.map(resource => (
+      <WebResourceCard key={resource} resource={resource} onRemove={removeWebResource} />
+    ))}
+  </section>
+);
+```
+
+## Implementation Roadmap
+
+### 🎯 Sprint 1: RDF Schema Foundations
+- [ ] **Update REDSTRING_CONTEXT** with comprehensive vocabulary
+- [ ] **Prototype export enhancement**: `redstring:ThingPrototype` + `rdfs:Class`
+- [ ] **Instance export enhancement**: `rdf:type` relationships
+- [ ] **Type → subClassOf automation**: Panel Type selection creates semantic hierarchy
+- [ ] **Bidirectional edges**: Export as 2 triplets
+- [ ] **Format consistency tests**: Ensure round-trip fidelity
+
+### 🎯 Sprint 2: Separated Storage Architecture
+- [ ] **Prototype space separation**: Semantic layer distinct from spatial layer
+- [ ] **Enhanced export structure**: `prototypeSpace` + `spatialGraphs`
+- [ ] **Import/export functions**: Handle new separated structure
+- [ ] **Git storage updates**: Support separated format
+- [ ] **Backwards compatibility**: Import old formats correctly
+
+### 🎯 Sprint 3: Panel Semantic Sections
+- [ ] **Class Mappings section**: Type integration + equivalent classes
+- [ ] **External Entities section**: Wikidata/DBpedia search + sameAs links
+- [ ] **Academic References section**: DOI/ORCID/arXiv inputs
+- [ ] **Web Resources section**: Wikipedia/URL management
+
+### 🎯 Sprint 4: Native Triplet Support
+- [ ] **Triplet array in edges**: Explicit RDF statements
+- [ ] **Click connection → triplet context**: Visual triplet display
+- [ ] **Multiple triplets per edge**: Complex relationship support
+- [ ] **Triplet validation**: Ensure semantic consistency
+
+### 🎯 Sprint 5: Advanced Features
+- [ ] **AbstractionCarousel integration**: Chain → subClassOf mapping
+- [ ] **Cross-domain linking**: Git-native protocol semantic discovery
+- [ ] **Validation system**: RDF Schema compliance checking
+- [ ] **Export formats**: Native .redstring + pure RDF/Turtle options
 
 ## External Site Integration Capabilities
 

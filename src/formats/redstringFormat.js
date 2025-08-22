@@ -6,17 +6,26 @@
 import { v4 as uuidv4 } from 'uuid';
 import uriGenerator from '../services/uriGenerator.js';
 
-// Legacy JSON-LD Context for Redstring (fallback)
+// Enhanced JSON-LD Context for Redstring with Full RDF Schema Support
 export const REDSTRING_CONTEXT = {
   "@version": 1.1,
   "@vocab": "https://redstring.io/vocab/",
   
-  // Core Redstring Concepts
+  // Core Redstring Concepts - Enhanced with Three-Layer Architecture
   "redstring": "https://redstring.io/vocab/",
   "Graph": "redstring:Graph",
   "Node": "redstring:Node", 
   "Edge": "redstring:Edge",
   "SpatialContext": "redstring:SpatialContext",
+  "CognitiveSpace": "redstring:CognitiveSpace",
+  
+  // Three-Layer Architecture
+  "SemanticType": "redstring:SemanticType",
+  "Prototype": "redstring:Prototype", 
+  "Instance": "redstring:Instance",
+  "PrototypeSpace": "redstring:PrototypeSpace",
+  "SpatialGraph": "redstring:SpatialGraph",
+  "SpatialGraphCollection": "redstring:SpatialGraphCollection",
   
   // Recursive Composition (The Heart of Redstring)
   "defines": "redstring:defines",
@@ -36,29 +45,55 @@ export const REDSTRING_CONTEXT = {
   "composedOf": "http://purl.org/vocab/frbr/core#embodiment",
   "composes": "http://purl.org/vocab/frbr/core#embodimentOf",
   
-  // RDFS for class hierarchies
+  // Complete RDF Schema Vocabulary
   "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
-  "subClassOf": "rdfs:subClassOf",
+  "Class": "rdfs:Class",
+  "subClassOf": { "@id": "rdfs:subClassOf", "@type": "@id" },
+  "subPropertyOf": { "@id": "rdfs:subPropertyOf", "@type": "@id" },
+  "domain": { "@id": "rdfs:domain", "@type": "@id" },
+  "range": { "@id": "rdfs:range", "@type": "@id" },
+  "label": "rdfs:label",
+  "comment": "rdfs:comment",
+  "seeAlso": { "@id": "rdfs:seeAlso", "@type": "@id" },
+  "isDefinedBy": { "@id": "rdfs:isDefinedBy", "@type": "@id" },
+  "Resource": "rdfs:Resource",
+  "Literal": "rdfs:Literal",
+  "Datatype": "rdfs:Datatype",
+  "Container": "rdfs:Container",
+  "member": { "@id": "rdfs:member", "@type": "@id" },
 
-  // RDF for statements
+  // Complete RDF Core Vocabulary
   "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+  "type": { "@id": "rdf:type", "@type": "@id" },
+  "Property": "rdf:Property",
   "Statement": "rdf:Statement",
   "subject": { "@id": "rdf:subject", "@type": "@id" },
   "predicate": { "@id": "rdf:predicate", "@type": "@id" },
   "object": { "@id": "rdf:object", "@type": "@id" },
+  "value": "rdf:value",
+  "first": { "@id": "rdf:first", "@type": "@id" },
+  "rest": { "@id": "rdf:rest", "@type": "@id" },
+  "nil": { "@id": "rdf:nil", "@type": "@id" },
 
-  // OWL for external linking and semantic web integration
+  // Complete OWL Vocabulary for Semantic Web Integration
   "owl": "http://www.w3.org/2002/07/owl#",
-  "sameAs": "owl:sameAs",
-  "equivalentClass": "owl:equivalentClass",
-  "equivalentProperty": "owl:equivalentProperty",
-  "differentFrom": "owl:differentFrom",
+  "sameAs": { "@id": "owl:sameAs", "@type": "@id" },
+  "equivalentClass": { "@id": "owl:equivalentClass", "@type": "@id" },
+  "equivalentProperty": { "@id": "owl:equivalentProperty", "@type": "@id" },
+  "differentFrom": { "@id": "owl:differentFrom", "@type": "@id" },
+  "disjointWith": { "@id": "owl:disjointWith", "@type": "@id" },
+  "inverseOf": { "@id": "owl:inverseOf", "@type": "@id" },
+  "functionalProperty": "owl:FunctionalProperty",
+  "inverseFunctionalProperty": "owl:InverseFunctionalProperty",
+  "transitiveProperty": "owl:TransitiveProperty",
+  "symmetricProperty": "owl:SymmetricProperty",
   
-  // External Knowledge Bases
+  // External Knowledge Bases - Rosetta Stone Mappings
   "wd": "http://www.wikidata.org/entity/",
   "wdt": "http://www.wikidata.org/prop/direct/",
   "dbr": "http://dbpedia.org/resource/",
   "dbo": "http://dbpedia.org/ontology/",
+  "schema": "http://schema.org/",
   
   // Academic & Research Integration
   "doi": "https://doi.org/",
@@ -83,19 +118,55 @@ export const REDSTRING_CONTEXT = {
   "abstract": "http://schema.org/abstract",
   "keywords": "http://schema.org/keywords",
   
-  // Spatial & UI State
-  "x": "redstring:xCoordinate",
-  "y": "redstring:yCoordinate", 
-  "scale": "redstring:scale",
+  // RedString Spatial Properties (Unique Contribution to Semantic Web)
+  "spatialContext": "redstring:spatialContext",
+  "xCoordinate": "redstring:xCoordinate",
+  "yCoordinate": "redstring:yCoordinate", 
+  "spatialScale": "redstring:spatialScale",
   "viewport": "redstring:viewport",
+  "canvasSize": "redstring:canvasSize",
+  
+  // RedString Visual Properties
+  "visualProperties": "redstring:visualProperties",
+  "cognitiveColor": "redstring:cognitiveColor",
   "expanded": "redstring:expanded",
   "visible": "redstring:visible",
+  "thumbnailSrc": "redstring:thumbnailSrc",
+  "imageSrc": "redstring:imageSrc",
+  "imageAspectRatio": "redstring:imageAspectRatio",
   
-  // Cognitive Concepts
-  "saved": "redstring:bookmarked",
-  "active": "redstring:activeInContext",
-  "definitionIndex": "redstring:currentDefinitionIndex",
+  // RedString Semantic Properties (Three-Layer Architecture)
+  "hasDefinition": { "@id": "redstring:hasDefinition", "@type": "@id" },
+  "definitionGraphIds": "redstring:definitionGraphIds",
+  "prototypeId": { "@id": "redstring:prototypeId", "@type": "@id" },
+  "instanceOf": { "@id": "redstring:instanceOf", "@type": "@id" },
+  "containedIn": { "@id": "redstring:containedIn", "@type": "@id" },
+  "abstractionChains": "redstring:abstractionChains",
+  "abstractionDimensions": "redstring:abstractionDimensions",
+  
+  // RedString Cognitive Properties
+  "cognitiveProperties": "redstring:cognitiveProperties",
+  "bookmarked": "redstring:bookmarked",
+  "activeInContext": "redstring:activeInContext",
+  "currentDefinitionIndex": "redstring:currentDefinitionIndex",
   "contextKey": "redstring:contextKey",
+  "personalMeaning": "redstring:personalMeaning",
+  "cognitiveAssociations": "redstring:cognitiveAssociations",
+  "lastViewed": "redstring:lastViewed",
+  
+  // RedString Relationship Properties
+  "relationshipDirection": "redstring:relationshipDirection",
+  "relationshipStrength": "redstring:relationshipStrength",
+  "bidirectional": "redstring:bidirectional",
+  "arrowsToward": "redstring:arrowsToward",
+  "directionality": "redstring:directionality",
+  
+  // RedString Metadata Properties
+  "bio": "redstring:bio",
+  "conjugation": "redstring:conjugation",
+  "externalLinks": "redstring:externalLinks",
+  "citations": "redstring:citations",
+  "typeNodeId": { "@id": "redstring:typeNodeId", "@type": "@id" },
   
   // Temporal & Versioning
   "created": "http://purl.org/dc/terms/created",
@@ -151,32 +222,59 @@ export const exportToRedstring = (storeState, userDomain = null) => {
     };
   });
 
-  const nodesObj = {};
-  nodePrototypes.forEach((node, id) => {
-    nodesObj[id] = {
-      "@type": ["Node", "owl:Class", "schema:Thing"],
-      "@id": `node:${id}`,
-      ...node,
-      spatial: {
-        x: node.x || 0,
-        y: node.y || 0,
-        scale: node.scale || 1.0
+  // Three-Layer Architecture: Export Prototypes as Semantic Classes
+  const prototypeSpace = {};
+  nodePrototypes.forEach((prototype, id) => {
+    prototypeSpace[id] = {
+      // RDF Schema typing - prototype is a class
+      "@type": ["redstring:Prototype", "rdfs:Class", "schema:Thing"],
+      "@id": `prototype:${id}`,
+      
+      // RDF Schema standard properties (W3C compliant)
+      "rdfs:label": prototype.name,
+      "rdfs:comment": prototype.description || `RedString prototype: ${prototype.name}`,
+      "rdfs:seeAlso": prototype.externalLinks || [],
+      "rdfs:isDefinedBy": { "@id": "https://redstring.dev" },
+      
+      // Type hierarchy - automatic rdfs:subClassOf relationships
+      "rdfs:subClassOf": prototype.typeNodeId ? 
+        { "@id": `type:${prototype.typeNodeId}` } : null,
+      
+      // Rosetta Stone mechanism - core semantic web linking
+      "owl:sameAs": prototype.externalLinks || [],
+      "owl:equivalentClass": prototype.equivalentClasses || [],
+      
+      // RedString spatial properties (unique contribution to semantic web)
+      "redstring:spatialContext": {
+        "redstring:xCoordinate": prototype.x || 0,
+        "redstring:yCoordinate": prototype.y || 0,
+        "redstring:spatialScale": prototype.scale || 1.0
       },
-      media: {
-        image: node.imageSrc,
-        thumbnail: node.thumbnailSrc,
-        aspectRatio: node.imageAspectRatio
+      
+      // RedString visual properties
+      "redstring:visualProperties": {
+        "redstring:cognitiveColor": prototype.color,
+        "redstring:imageSrc": prototype.imageSrc,
+        "redstring:thumbnailSrc": prototype.thumbnailSrc,
+        "redstring:imageAspectRatio": prototype.imageAspectRatio
       },
-      cognitive: {
-        saved: savedNodeIds.has(id),
-        lastViewed: new Date().toISOString()
+      
+      // RedString semantic properties
+      "redstring:definitionGraphIds": prototype.definitionGraphIds || [],
+      "redstring:bio": prototype.bio,
+      "redstring:conjugation": prototype.conjugation,
+      "redstring:typeNodeId": prototype.typeNodeId,
+      
+      // RedString cognitive properties
+      "redstring:cognitiveProperties": {
+        "redstring:bookmarked": savedNodeIds.has(id),
+        "redstring:lastViewed": new Date().toISOString(),
+        "redstring:personalMeaning": prototype.personalMeaning,
+        "redstring:cognitiveAssociations": prototype.cognitiveAssociations || []
       },
-      // Semantic web integration
-      semantic: {
-        externalLinks: node.externalLinks || [],
-        equivalentClasses: node.equivalentClasses || [],
-        citations: node.citations || []
-      }
+      
+      // Abstraction chains for rdfs:subClassOf generation
+      "redstring:abstractionChains": prototype.abstractionChains || {}
     };
   });
 
