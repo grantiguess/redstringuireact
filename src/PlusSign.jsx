@@ -108,7 +108,6 @@ const PlusSign = ({
       endHeight = targetHeight;
       endCorner = 40;
       endColor = plusSign.selectedColor || 'maroon'; // Use selected color if available
-      console.log('Morph animation setup:', { selectedColor: plusSign.selectedColor, endColor, targetWidth, targetHeight });
       endLineOp = 0;
       endTextOp = 1;
     }
