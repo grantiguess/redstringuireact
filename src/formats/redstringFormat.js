@@ -201,23 +201,62 @@ export const exportToRedstring = (storeState, userDomain = null) => {
     showConnectionNames
   } = storeState;
 
-  // Convert Maps to objects for serialization
-  const graphsObj = {};
-  graphs.forEach((graph, id) => {
-    // Also serialize the instances Map
-    const instancesObj = {};
+  // Three-Layer Architecture: Export Spatial Graphs with Instance Collections
+  const spatialGraphs = {};
+  graphs.forEach((graph, graphId) => {
+    // Export instances as positioned individuals with rdf:type relationships
+    const spatialInstances = {};
     if (graph.instances) {
-        graph.instances.forEach((instance, instanceId) => {
-            instancesObj[instanceId] = instance;
-        });
+      graph.instances.forEach((instance, instanceId) => {
+        spatialInstances[instanceId] = {
+          // RDF Schema typing - instance is an individual
+          "@type": "redstring:Instance",
+          "@id": `instance:${instanceId}`,
+          
+          // RDF Schema: this individual belongs to prototype class
+          "rdf:type": { "@id": `prototype:${instance.prototypeId}` },
+          "rdfs:label": instance.name || `Instance ${instanceId}`,
+          "rdfs:comment": instance.description || "RedString spatial instance",
+          
+          // RedString: this instance is contained within specific graph
+          "redstring:containedIn": { "@id": `graph:${graphId}` },
+          
+          // Unique spatial positioning data (RedString's contribution to semantic web)
+          "redstring:spatialContext": {
+            "redstring:xCoordinate": instance.x,
+            "redstring:yCoordinate": instance.y,
+            "redstring:spatialScale": instance.scale
+          },
+          
+          // Visual state properties
+          "redstring:visualProperties": {
+            "redstring:expanded": instance.expanded,
+            "redstring:visible": instance.visible
+          },
+          
+          // Preserve original prototype reference for internal use
+          "redstring:prototypeId": instance.prototypeId
+        };
+      });
     }
-    graphsObj[id] = {
-      "@type": "Graph",
-      ...graph,
-      instances: instancesObj,
-      spatial: {
-        expanded: expandedGraphIds.has(id),
-        active: id === activeGraphId
+    
+    spatialGraphs[graphId] = {
+      "@type": "redstring:SpatialGraph", 
+      "@id": `graph:${graphId}`,
+      "rdfs:label": graph.name || `Graph ${graphId}`,
+      "rdfs:comment": graph.description || "RedString spatial graph",
+      
+      // Graph-level properties
+      "redstring:definingNodeIds": graph.definingNodeIds || [],
+      "redstring:edgeIds": graph.edgeIds || [],
+      
+      // Spatial instances collection
+      "redstring:instances": spatialInstances,
+      
+      // UI state for this graph
+      "redstring:visualProperties": {
+        "redstring:expanded": expandedGraphIds.has(graphId),
+        "redstring:activeInContext": graphId === activeGraphId
       }
     };
   });
@@ -264,6 +303,7 @@ export const exportToRedstring = (storeState, userDomain = null) => {
       "redstring:bio": prototype.bio,
       "redstring:conjugation": prototype.conjugation,
       "redstring:typeNodeId": prototype.typeNodeId,
+      "redstring:citations": prototype.citations || [],
       
       // RedString cognitive properties
       "redstring:cognitiveProperties": {
@@ -278,8 +318,8 @@ export const exportToRedstring = (storeState, userDomain = null) => {
     };
   });
 
-  // Process abstraction chains to add subClassOf relationships
-  nodePrototypes.forEach((node) => {
+  // Process abstraction chains to add additional subClassOf relationships
+  nodePrototypes.forEach((node, nodeId) => {
     if (node.abstractionChains) {
       for (const dimension in node.abstractionChains) {
         const chain = node.abstractionChains[dimension];
@@ -287,15 +327,19 @@ export const exportToRedstring = (storeState, userDomain = null) => {
           for (let i = 1; i < chain.length; i++) {
             const subClassId = chain[i];
             const superClassId = chain[i - 1];
-            if (nodesObj[subClassId]) {
-              if (!nodesObj[subClassId].subClassOf) {
-                nodesObj[subClassId].subClassOf = [];
+            if (prototypeSpace[subClassId]) {
+              if (!prototypeSpace[subClassId]['rdfs:subClassOf']) {
+                prototypeSpace[subClassId]['rdfs:subClassOf'] = [];
               }
               // Add as an object to be expanded to a proper link by JSON-LD
-              const superClassRef = { "@id": superClassId };
+              const superClassRef = { "@id": `prototype:${superClassId}` };
               // Avoid duplicates
-              if (!nodesObj[subClassId].subClassOf.some(item => item["@id"] === superClassId)) {
-                nodesObj[subClassId].subClassOf.push(superClassRef);
+              const existingSubClasses = Array.isArray(prototypeSpace[subClassId]['rdfs:subClassOf']) 
+                ? prototypeSpace[subClassId]['rdfs:subClassOf'] 
+                : [prototypeSpace[subClassId]['rdfs:subClassOf']];
+              if (!existingSubClasses.some(item => item?.["@id"] === `prototype:${superClassId}`)) {
+                existingSubClasses.push(superClassRef);
+                prototypeSpace[subClassId]['rdfs:subClassOf'] = existingSubClasses;
               }
             }
           }
@@ -419,34 +463,70 @@ export const exportToRedstring = (storeState, userDomain = null) => {
   return {
     "@context": context,
     "@type": "redstring:CognitiveSpace",
-    "format": "redstring-v1.0.0",
+    "format": "redstring-v2.0.0-semantic",
     "metadata": {
       "created": new Date().toISOString(),
       "modified": new Date().toISOString(),
       "title": (activeGraphId && graphs.get(activeGraphId)?.name) || "Untitled Space",
       "description": (activeGraphId && graphs.get(activeGraphId)?.description) || "",
       "domain": userDomain || null,
-      "userURIs": userURIs
+      "userURIs": userURIs,
+      "semanticWebCompliant": true,
+      "rdfSchemaVersion": "1.1",
+      "owlVersion": "2.0"
     },
     
-    "spatialContext": {
-      "viewport": { "x": 0, "y": 0, "zoom": 1.0 },
-      "canvasSize": { "width": 4000, "height": 3000 }
+    // Separated Storage Architecture
+    "prototypeSpace": {
+      "@type": "redstring:PrototypeSpace",
+      "@id": "space:prototypes",
+      "rdfs:label": "RedString Prototype Space",
+      "rdfs:comment": "Collection of semantic classes with spatial properties",
+      "prototypes": prototypeSpace
     },
     
-    "graphs": graphsObj,
-    "nodePrototypes": nodesObj,
-    "edges": edgesObj,
+    "spatialGraphs": {
+      "@type": "redstring:SpatialGraphCollection", 
+      "@id": "space:graphs",
+      "rdfs:label": "RedString Spatial Graphs",
+      "rdfs:comment": "Collection of positioned instances within spatial graphs",
+      "graphs": spatialGraphs
+    },
     
+    // Relationships as RDF statements/properties
+    "relationships": {
+      "@type": "redstring:RelationshipCollection",
+      "@id": "space:relationships", 
+      "rdfs:label": "RedString Relationships",
+      "rdfs:comment": "RDF statements representing connections between instances",
+      "edges": edgesObj
+    },
+    
+    // Global spatial context
+    "globalSpatialContext": {
+      "@type": "redstring:SpatialContext",
+      "redstring:viewport": { "x": 0, "y": 0, "zoom": 1.0 },
+      "redstring:canvasSize": { "width": 4000, "height": 3000 }
+    },
+    
+    // User interface state (preserved for application functionality)
     "userInterface": {
-      "openGraphIds": [...openGraphIds],
-      "activeGraphId": activeGraphId,
-      "activeDefinitionNodeId": activeDefinitionNodeId,
-      "expandedGraphIds": [...expandedGraphIds],
-      "rightPanelTabs": [...rightPanelTabs],
-      "savedNodeIds": [...savedNodeIds],
-      "savedGraphIds": [...savedGraphIds],
-      "showConnectionNames": !!showConnectionNames
+      "@type": "redstring:UserInterfaceState",
+      "redstring:openGraphIds": [...openGraphIds],
+      "redstring:activeGraphId": activeGraphId,
+      "redstring:activeDefinitionNodeId": activeDefinitionNodeId,
+      "redstring:expandedGraphIds": [...expandedGraphIds],
+      "redstring:rightPanelTabs": [...rightPanelTabs],
+      "redstring:savedNodeIds": [...savedNodeIds],
+      "redstring:savedGraphIds": [...savedGraphIds],
+      "redstring:showConnectionNames": !!showConnectionNames
+    },
+    
+    // Legacy compatibility (for backwards compatibility during transition)
+    "legacy": {
+      "graphs": spatialGraphs,
+      "nodePrototypes": prototypeSpace,
+      "edges": edgesObj
     }
   };
 };
@@ -456,41 +536,102 @@ export const exportToRedstring = (storeState, userDomain = null) => {
  */
 export const importFromRedstring = (redstringData, storeActions) => {
   try {
-    const {
-      graphs: graphsObj = {},
-      nodePrototypes: nodesObj = {},
-      edges: edgesObj = {},
-      userInterface = {}
-    } = redstringData;
+    // Handle both new separated storage format and legacy format
+    let graphsObj = {};
+    let nodesObj = {};
+    let edgesObj = {};
+    let userInterface = {};
+    
+    if (redstringData.prototypeSpace && redstringData.spatialGraphs) {
+      // New separated storage format (v2.0.0-semantic)
+      nodesObj = redstringData.prototypeSpace.prototypes || {};
+      graphsObj = redstringData.spatialGraphs.graphs || {};
+      edgesObj = redstringData.relationships?.edges || {};
+      userInterface = redstringData.userInterface || {};
+    } else if (redstringData.legacy) {
+      // Fallback to legacy section if available
+      graphsObj = redstringData.legacy.graphs || {};
+      nodesObj = redstringData.legacy.nodePrototypes || {};
+      edgesObj = redstringData.legacy.edges || {};
+      userInterface = redstringData.userInterface || {};
+    } else {
+      // Legacy format (v1.0.0)
+      graphsObj = redstringData.graphs || {};
+      nodesObj = redstringData.nodePrototypes || {};
+      edgesObj = redstringData.edges || {};
+      userInterface = redstringData.userInterface || {};
+    }
 
     //console.log('[DEBUG] Importing edges:', edgesObj);
 
-    // Convert objects back to Maps and import to store
+    // Convert spatial graphs back to Maps and import to store
     const graphsMap = new Map();
     Object.entries(graphsObj).forEach(([id, graph]) => {
       try {
-        const { spatial, instances: instancesObj, ...graphData } = graph;
+        // Handle both new semantic format and legacy format
+        let instancesObj = {};
+        let graphName = '';
+        let graphDescription = '';
+        let definingNodeIds = [];
+        let edgeIds = [];
         
-        // Convert instances object back to a Map
-        const instancesMap = new Map();
-        if (instancesObj) {
-            Object.entries(instancesObj).forEach(([instanceId, instance]) => {
-                instancesMap.set(instanceId, instance);
-            });
+        if (graph['@type'] === 'redstring:SpatialGraph') {
+          // New semantic format
+          instancesObj = graph['redstring:instances'] || {};
+          graphName = graph['rdfs:label'] || `Graph ${id}`;
+          graphDescription = graph['rdfs:comment'] || '';
+          definingNodeIds = graph['redstring:definingNodeIds'] || [];
+          edgeIds = graph['redstring:edgeIds'] || [];
+        } else {
+          // Legacy format
+          instancesObj = graph.instances || {};
+          graphName = graph.name || `Graph ${id}`;
+          graphDescription = graph.description || '';
+          definingNodeIds = graph.definingNodeIds || [];
+          edgeIds = graph.edgeIds || [];
         }
+        
+        // Convert instances back to Map with proper format conversion
+        const instancesMap = new Map();
+        Object.entries(instancesObj).forEach(([instanceId, instance]) => {
+          let convertedInstance = {};
+          
+          if (instance['@type'] === 'redstring:Instance') {
+            // Convert from new semantic format
+            convertedInstance = {
+              id: instanceId,
+              prototypeId: instance['redstring:prototypeId'] || instance['rdf:type']?.['@id']?.replace('prototype:', ''),
+              name: instance['rdfs:label'],
+              description: instance['rdfs:comment'],
+              x: instance['redstring:spatialContext']?.['redstring:xCoordinate'] || 0,
+              y: instance['redstring:spatialContext']?.['redstring:yCoordinate'] || 0,
+              scale: instance['redstring:spatialContext']?.['redstring:spatialScale'] || 1.0,
+              expanded: instance['redstring:visualProperties']?.['redstring:expanded'] || false,
+              visible: instance['redstring:visualProperties']?.['redstring:visible'] !== false
+            };
+          } else {
+            // Legacy format - use as-is
+            convertedInstance = { ...instance, id: instanceId };
+          }
+          
+          instancesMap.set(instanceId, convertedInstance);
+        });
 
         graphsMap.set(id, {
-          ...graphData,
-          id, // Ensure ID is preserved
-          instances: instancesMap // Use the reconstructed Map
+          id,
+          name: graphName,
+          description: graphDescription,
+          instances: instancesMap,
+          definingNodeIds,
+          edgeIds
         });
       } catch (error) {
         console.warn(`[importFromRedstring] Error processing graph ${id}:`, error);
         // Create a minimal valid graph to prevent crashes
         const fallbackGraph = {
           id,
-          name: graph?.name || 'Unknown Graph',
-          description: graph?.description || 'Graph with import error',
+          name: graph?.name || graph?.['rdfs:label'] || 'Unknown Graph',
+          description: graph?.description || graph?.['rdfs:comment'] || 'Graph with import error',
           instances: new Map(),
           edgeIds: [],
           definingNodeIds: []
@@ -500,35 +641,86 @@ export const importFromRedstring = (redstringData, storeActions) => {
     });
 
     const nodesMap = new Map();
-    Object.entries(nodesObj).forEach(([id, node]) => {
+    Object.entries(nodesObj).forEach(([id, prototype]) => {
       try {
-        const { spatial = {}, media = {}, cognitive = {}, ...nodeData } = node;
-        nodesMap.set(id, {
-          ...nodeData,
-          id, // Ensure ID is preserved
-          x: spatial.x || 0,
-          y: spatial.y || 0,
-          scale: spatial.scale || 1.0,
-          imageSrc: media.image,
-          thumbnailSrc: media.thumbnail,
-          imageAspectRatio: media.aspectRatio
-        });
-        // Note: subClassOf is not explicitly imported back into the store's
-        // abstractionChain model, as that is derived dynamically in the UI.
-        // The subClassOf relationship is preserved for RDF export fidelity.
+        let convertedPrototype = {};
+        
+        if (prototype['@type']?.includes('redstring:Prototype')) {
+          // Convert from new semantic format
+          convertedPrototype = {
+            id,
+            name: prototype['rdfs:label'],
+            description: prototype['rdfs:comment']?.replace(/^RedString prototype: /, '') || '',
+            
+            // Extract from spatial properties
+            x: prototype['redstring:spatialContext']?.['redstring:xCoordinate'] || 0,
+            y: prototype['redstring:spatialContext']?.['redstring:yCoordinate'] || 0,
+            scale: prototype['redstring:spatialContext']?.['redstring:spatialScale'] || 1.0,
+            
+            // Extract from visual properties
+            color: prototype['redstring:visualProperties']?.['redstring:cognitiveColor'],
+            imageSrc: prototype['redstring:visualProperties']?.['redstring:imageSrc'],
+            thumbnailSrc: prototype['redstring:visualProperties']?.['redstring:thumbnailSrc'],
+            imageAspectRatio: prototype['redstring:visualProperties']?.['redstring:imageAspectRatio'],
+            
+            // Extract semantic properties
+            externalLinks: prototype['owl:sameAs'] || [],
+            equivalentClasses: prototype['owl:equivalentClass'] || [],
+            citations: prototype['redstring:citations'] || [],
+            definitionGraphIds: prototype['redstring:definitionGraphIds'] || [],
+            bio: prototype['redstring:bio'],
+            conjugation: prototype['redstring:conjugation'],
+            typeNodeId: prototype['redstring:typeNodeId'] || 
+                       prototype['rdfs:subClassOf']?.['@id']?.replace('type:', ''),
+            
+            // Extract abstraction chains
+            abstractionChains: prototype['redstring:abstractionChains'] || {},
+            
+            // Extract cognitive properties
+            personalMeaning: prototype['redstring:cognitiveProperties']?.['redstring:personalMeaning'],
+            cognitiveAssociations: prototype['redstring:cognitiveProperties']?.['redstring:cognitiveAssociations'] || []
+          };
+        } else {
+          // Legacy format - handle old structure
+          const { spatial = {}, media = {}, cognitive = {}, semantic = {}, ...nodeData } = prototype;
+          convertedPrototype = {
+            ...nodeData,
+            id,
+            x: spatial.x || 0,
+            y: spatial.y || 0,
+            scale: spatial.scale || 1.0,
+            imageSrc: media.image,
+            thumbnailSrc: media.thumbnail,
+            imageAspectRatio: media.aspectRatio,
+            externalLinks: semantic.externalLinks || [],
+            equivalentClasses: semantic.equivalentClasses || [],
+            citations: semantic.citations || []
+          };
+        }
+        
+        nodesMap.set(id, convertedPrototype);
+        
+        // Note: rdfs:subClassOf relationships are preserved in the semantic format
+        // but don't need to be imported back into abstractionChains as they are
+        // generated dynamically from abstractionChains during export
       } catch (error) {
-        console.warn(`[importFromRedstring] Error processing node ${id}:`, error);
-        // Create a minimal valid node to prevent crashes
-        const fallbackNode = {
+        console.warn(`[importFromRedstring] Error processing prototype ${id}:`, error);
+        // Create a minimal valid prototype to prevent crashes
+        const fallbackPrototype = {
           id,
-          name: node?.name || 'Unknown Node',
-          description: node?.description || 'Node with import error',
-          color: node?.color || '#8B0000',
+          name: prototype?.['rdfs:label'] || prototype?.name || 'Unknown Prototype',
+          description: prototype?.['rdfs:comment'] || prototype?.description || 'Prototype with import error',
+          color: prototype?.['redstring:visualProperties']?.['redstring:cognitiveColor'] || 
+                 prototype?.color || '#8B0000',
           x: 0,
           y: 0,
-          scale: 1.0
+          scale: 1.0,
+          externalLinks: [],
+          equivalentClasses: [],
+          definitionGraphIds: [],
+          abstractionChains: {}
         };
-        nodesMap.set(id, fallbackNode);
+        nodesMap.set(id, fallbackPrototype);
       }
     });
 
