@@ -4183,7 +4183,8 @@ function NodeCanvas() {
       ...ps, 
       mode: 'morph', 
       tempName: nodePrototype.name,
-      selectedPrototype: nodePrototype // Store the selected prototype for morphDone
+      selectedPrototype: nodePrototype, // Store the selected prototype for morphDone
+      selectedColor: nodePrototype.color // Use the prototype's color for the animation
     });
     
     // Clean up UI state

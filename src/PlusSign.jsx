@@ -16,6 +16,7 @@ const PlusSign = ({
     height: 0,
     cornerRadius: 40,
     color: '#DEDADA',
+    strokeColor: 'maroon',
     lineOpacity: 1,
     textOpacity: 0,
   });
@@ -198,12 +199,12 @@ const PlusSign = ({
               // Make color transition faster by using a steeper curve
               const colorT = Math.min(easeT * 1.5, 1); // Color changes 1.5x faster
               const interpolatedColor = interpolateColor('#DEDADA', endColor, colorT);
-              // Debug color interpolation
-              if (easeT === 0) console.log('Color animation start:', { startColor: '#DEDADA', endColor, colorT, interpolatedColor });
-              if (easeT === 1) console.log('Color animation end:', { startColor: '#DEDADA', endColor, colorT, interpolatedColor });
               return interpolatedColor;
             })()
           : '#DEDADA',
+        strokeColor: mode === 'morph'
+          ? interpolateColor('maroon', endColor, easeT) // Stroke fades from maroon to target color
+          : 'maroon',
         lineOpacity: mode === 'morph'
           ? Math.max(0, 1 - easeT * 4) // Plus sign fades out even faster
           : lerp(startLineOp, endLineOp, easeT),
@@ -229,7 +230,7 @@ const PlusSign = ({
     animationFrameRef.current = requestAnimationFrame(animateFrame);
   };
 
-  const { rotation, width, height, cornerRadius, color, lineOpacity, textOpacity } = plusRef.current;
+  const { rotation, width, height, cornerRadius, color, strokeColor, lineOpacity, textOpacity } = plusRef.current;
   const { mode, tempName } = plusSign;
   const halfCross = width / 4;
 
@@ -252,7 +253,7 @@ const PlusSign = ({
         rx={cornerRadius}
         ry={cornerRadius}
         fill={color}
-        stroke="maroon"
+        stroke={strokeColor}
         strokeWidth={5}
       />
       <line
