@@ -36,9 +36,32 @@ const PlusSign = ({
     // Simple color interpolation for hex colors
     if (color1 === color2) return color1;
     
+    // CSS color name to hex mapping
+    const colorNameToHex = {
+      'maroon': '#800000',
+      'red': '#FF0000',
+      'orange': '#FFA500',
+      'yellow': '#FFFF00',
+      'olive': '#808000',
+      'green': '#008000',
+      'purple': '#800080',
+      'fuchsia': '#FF00FF',
+      'lime': '#00FF00',
+      'teal': '#008080',
+      'aqua': '#00FFFF',
+      'blue': '#0000FF',
+      'navy': '#000080',
+      'black': '#000000',
+      'gray': '#808080',
+      'silver': '#C0C0C0',
+      'white': '#FFFFFF'
+    };
+    
     // Convert hex to RGB
     const hexToRgb = (hex) => {
-      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      // Handle both #RRGGBB and RRGGBB formats
+      const cleanHex = hex.startsWith('#') ? hex.slice(1) : hex;
+      const result = /^([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(cleanHex);
       return result ? {
         r: parseInt(result[1], 16),
         g: parseInt(result[2], 16),
@@ -46,16 +69,53 @@ const PlusSign = ({
       } : null;
     };
     
-    const rgb1 = hexToRgb(color1);
-    const rgb2 = hexToRgb(color2);
+    // Handle different color formats
+    const normalizeColor = (color) => {
+      if (typeof color === 'string') {
+        // Handle CSS color names
+        if (colorNameToHex[color.toLowerCase()]) {
+          return colorNameToHex[color.toLowerCase()];
+        }
+        if (color.startsWith('#')) return color;
+        if (color.startsWith('rgb')) {
+          // Convert RGB to hex
+          const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+          if (match) {
+            const r = parseInt(match[1]);
+            const g = parseInt(match[2]);
+            const b = parseInt(match[3]);
+            return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+          }
+        }
+        // Try to parse as hex without #
+        if (/^[0-9A-Fa-f]{6}$/.test(color)) {
+          return `#${color}`;
+        }
+      }
+      return color;
+    };
     
-    if (!rgb1 || !rgb2) return color1;
+    const normalizedColor1 = normalizeColor(color1);
+    const normalizedColor2 = normalizeColor(color2);
+    
+    const rgb1 = hexToRgb(normalizedColor1);
+    const rgb2 = hexToRgb(normalizedColor2);
+    
+    if (!rgb1 || !rgb2) {
+      console.warn('Color interpolation failed:', { 
+        color1, color2, 
+        normalizedColor1, normalizedColor2,
+        rgb1, rgb2 
+      });
+      return color1;
+    }
     
     const r = Math.round(lerp(rgb1.r, rgb2.r, factor));
     const g = Math.round(lerp(rgb1.g, rgb2.g, factor));
     const b = Math.round(lerp(rgb1.b, rgb2.b, factor));
     
-    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+    const result = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+    return result;
   };
 
   const runAnimation = () => {
@@ -108,6 +168,12 @@ const PlusSign = ({
       endHeight = targetHeight;
       endCorner = 40;
       endColor = plusSign.selectedColor || 'maroon'; // Use selected color if available
+      console.log('Morph setup:', { 
+        selectedColor: plusSign.selectedColor, 
+        endColor, 
+        tempName: plusSign.tempName,
+        mode: plusSign.mode 
+      });
       endLineOp = 0;
       endTextOp = 1;
     }
@@ -126,7 +192,13 @@ const PlusSign = ({
         height: lerp(startH, endHeight, easeT),
         cornerRadius: lerp(startCorner, endCorner, easeT),
         color: mode === 'morph'
-          ? interpolateColor('#DEDADA', endColor, easeT)
+          ? (() => {
+              const interpolatedColor = interpolateColor('#DEDADA', endColor, easeT);
+              // Debug color values
+              if (easeT === 0) console.log('Color animation start:', { startColor: '#DEDADA', endColor, easeT });
+              if (easeT === 1) console.log('Color animation end:', { startColor: '#DEDADA', endColor, easeT, interpolatedColor });
+              return interpolatedColor;
+            })()
           : '#DEDADA',
         lineOpacity: mode === 'morph'
           ? Math.max(0, 1 - easeT * 4) // Plus sign fades out even faster
