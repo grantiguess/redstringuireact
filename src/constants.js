@@ -6,9 +6,9 @@ export const HEADER_HEIGHT = 50;
 export const MAX_ZOOM = 3;
 export const MOVEMENT_THRESHOLD = 3;
 export const SCROLL_SENSITIVITY = 0.5;
-export const PLUS_SIGN_SIZE = 40;
+export const PLUS_SIGN_SIZE = 80;
 export const PLUS_LINE_SIZE = PLUS_SIGN_SIZE / 2;
-export const PLUS_SIGN_ANIMATION_DURATION = 200;
+export const PLUS_SIGN_ANIMATION_DURATION = 150;
 
 // Node Layout Constants (Moved from Node.jsx)
 export const NODE_PADDING = 30; // Unified padding for horizontal, bottom, and gap

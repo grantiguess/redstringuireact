@@ -6882,6 +6882,18 @@ function NodeCanvas() {
                    onClick={handlePlusSignClick}
                    onMorphDone={handleMorphDone}
                    onDisappearDone={() => setPlusSign(null)}
+                   targetWidth={plusSign.tempName ? (() => {
+                     // Create a mock node object to get exact dimensions
+                     const mockNode = { name: plusSign.tempName };
+                     const dims = getNodeDimensions(mockNode, false, null);
+                     return dims.currentWidth;
+                   })() : NODE_WIDTH}
+                   targetHeight={plusSign.tempName ? (() => {
+                     // Create a mock node object to get exact dimensions
+                     const mockNode = { name: plusSign.tempName };
+                     const dims = getNodeDimensions(mockNode, false, null);
+                     return dims.currentHeight;
+                   })() : NODE_HEIGHT}
                  />
                    )}
                 </>

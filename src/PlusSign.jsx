@@ -5,10 +5,16 @@ const PlusSign = ({
   plusSign,
   onClick,
   onMorphDone,
-  onDisappearDone
+  onDisappearDone,
+  targetWidth = NODE_WIDTH,
+  targetHeight = NODE_HEIGHT,
+  targetX = null,
+  targetY = null
 }) => {
   const animationFrameRef = useRef(null);
   const plusRef = useRef({
+    x: 0,
+    y: 0,
     rotation: -90,
     width: 0,
     height: 0,
@@ -29,6 +35,32 @@ const PlusSign = ({
   }, [plusSign.mode]);
 
   const lerp = (a, b, t) => a + (b - a) * t;
+  
+  const interpolateColor = (color1, color2, factor) => {
+    // Simple color interpolation for hex colors
+    if (color1 === color2) return color1;
+    
+    // Convert hex to RGB
+    const hexToRgb = (hex) => {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+      } : null;
+    };
+    
+    const rgb1 = hexToRgb(color1);
+    const rgb2 = hexToRgb(color2);
+    
+    if (!rgb1 || !rgb2) return color1;
+    
+    const r = Math.round(lerp(rgb1.r, rgb2.r, factor));
+    const g = Math.round(lerp(rgb1.g, rgb2.g, factor));
+    const b = Math.round(lerp(rgb1.b, rgb2.b, factor));
+    
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  };
 
   const runAnimation = () => {
     if (animationFrameRef.current) {
@@ -37,7 +69,7 @@ const PlusSign = ({
     const startTime = performance.now();
     const { mode } = plusSign;
     const appearDisappearDuration = PLUS_SIGN_ANIMATION_DURATION || 200;
-    const morphDuration = 300;
+    const morphDuration = 400; // Increased for smoother animation
     const duration = mode === 'morph' ? morphDuration : appearDisappearDuration;
 
     const {
@@ -76,10 +108,10 @@ const PlusSign = ({
       endTextOp = 0;
     } else if (mode === 'morph') {
       endRot = 0;
-      endWidth = NODE_WIDTH;
-      endHeight = NODE_HEIGHT;
+      endWidth = targetWidth;
+      endHeight = targetHeight;
       endCorner = 40;
-      endColor = 'maroon';
+      endColor = plusSign.selectedColor || 'maroon'; // Use selected color if available
       endLineOp = 0;
       endTextOp = 1;
     }
@@ -87,7 +119,8 @@ const PlusSign = ({
     const animateFrame = (currentTime) => {
       const elapsed = currentTime - startTime;
       const t = Math.min(elapsed / duration, 1);
-      const easeT = t * t * (3 - 2 * t);
+      // Smoother easing function using cubic-bezier approximation
+      const easeT = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
       plusRef.current = {
         rotation: lerp(startRot, endRot, easeT),
@@ -95,13 +128,13 @@ const PlusSign = ({
         height: lerp(startH, endHeight, easeT),
         cornerRadius: lerp(startCorner, endCorner, easeT),
         color: mode === 'morph'
-          ? (easeT < 0.5 ? startColor : endColor)
+          ? interpolateColor('#DEDADA', endColor, easeT) // Always start from light color for smooth transition
           : '#DEDADA',
         lineOpacity: mode === 'morph'
-          ? lerp(startLineOp, endLineOp, Math.min(easeT * 3, 1))
+          ? Math.max(0, 1 - easeT * 4) // Plus sign fades out even faster
           : lerp(startLineOp, endLineOp, easeT),
         textOpacity: mode === 'morph'
-          ? lerp(startTextOp, endTextOp, easeT)
+          ? Math.max(0, (easeT - 0.2) * 1.25) // Text appears sooner
           : 0,
       };
 
@@ -146,7 +179,7 @@ const PlusSign = ({
         ry={cornerRadius}
         fill={color}
         stroke="maroon"
-        strokeWidth={3}
+        strokeWidth={5}
       />
       <line
         x1={-halfCross}
@@ -154,7 +187,7 @@ const PlusSign = ({
         x2={halfCross}
         y2={0}
         stroke="maroon"
-        strokeWidth={3}
+        strokeWidth={5}
         opacity={lineOpacity}
       />
       <line
@@ -163,24 +196,10 @@ const PlusSign = ({
         x2={0}
         y2={halfCross}
         stroke="maroon"
-        strokeWidth={3}
+        strokeWidth={5}
         opacity={lineOpacity}
       />
-      {tempName && mode === 'morph' && (
-        <text
-          x="0"
-          y="5"
-          textAnchor="middle"
-          fontSize="16"
-          fontWeight="bold"
-          fontFamily="'EmOne', sans-serif"
-          fill="maroon"
-          opacity={textOpacity}
-          pointerEvents="none"
-        >
-          {tempName}
-        </text>
-      )}
+
     </g>
   );
 };
