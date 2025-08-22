@@ -28,6 +28,7 @@ import mcpClient from './services/mcpClient.js';
 import { bridgeFetch } from './services/bridgeConfig.js';
 import apiKeyManager from './services/apiKeyManager.js';
 import SemanticEditor from './components/SemanticEditor.jsx';
+import CollapsibleSection from './components/CollapsibleSection.jsx';
 
 // Helper function to determine the correct article ("a" or "an")
 const getArticleFor = (word) => {
@@ -2822,6 +2823,21 @@ const Panel = forwardRef(
                             </>
                         );
                     })()}
+
+                    {/* Semantic Web Integration Section */}
+                    {definingNodeData && (
+                        <>
+                            <div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>
+                            <SemanticEditor 
+                                nodeData={definingNodeData}
+                                onUpdate={(updatedData) => {
+                                    storeActions.updateNodePrototype(definingNodeId, draft => {
+                                        Object.assign(draft, updatedData);
+                                    });
+                                }}
+                            />
+                        </>
+                    )}
                 </div>
             );
         } else if (activeRightPanelTab.type === 'node') {

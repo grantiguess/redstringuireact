@@ -71,7 +71,7 @@ const SemanticLinkInput = ({ onAdd, placeholder, type, icon: Icon }) => {
 
   return (
     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-      <Icon size={16} style={{ color: '#666' }} />
+      <Icon size={16} style={{ color: '#666', marginTop: '1px' }} />
       <input
         type="text"
         value={input}
@@ -91,16 +91,17 @@ const SemanticLinkInput = ({ onAdd, placeholder, type, icon: Icon }) => {
         onClick={handleAdd}
         disabled={!isValid}
         style={{
-          padding: '6px 8px',
+          width: '32px',
+          height: '32px',
           border: 'none',
-          borderRadius: '4px',
+          borderRadius: '6px',
           backgroundColor: isValid ? '#8B0000' : '#ccc',
           color: 'white',
           cursor: isValid ? 'pointer' : 'not-allowed',
-          fontSize: '12px',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center'
+          justifyContent: 'center',
+          transition: 'all 0.2s ease'
         }}
       >
         <Plus size={14} />
@@ -295,8 +296,8 @@ const WikipediaSearch = ({ onSelect }) => {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-        <Globe size={16} style={{ color: '#666' }} />
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', alignItems: 'center' }}>
+        <Globe size={16} style={{ color: '#666', marginTop: '1px' }} />
         <input
           type="text"
           value={query}
@@ -316,16 +317,17 @@ const WikipediaSearch = ({ onSelect }) => {
           onClick={handleSearch}
           disabled={loading || !query.trim()}
           style={{
-            padding: '6px 8px',
+            width: '32px',
+            height: '32px',
             border: 'none',
-            borderRadius: '4px',
-            backgroundColor: loading ? '#ccc' : '#8B0000',
+            borderRadius: '6px',
+            backgroundColor: loading || !query.trim() ? '#ccc' : '#8B0000',
             color: 'white',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            fontSize: '12px',
+            cursor: loading || !query.trim() ? 'not-allowed' : 'pointer',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            transition: 'all 0.2s ease'
           }}
         >
           {loading ? '...' : <Search size={14} />}
