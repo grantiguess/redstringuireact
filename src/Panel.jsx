@@ -9,6 +9,7 @@ import { generateThumbnail } from './utils'; // Import thumbnail generator
 import ToggleButton from './ToggleButton'; // Import the new component
 import PanelResizerHandle from './components/PanelResizerHandle.jsx';
 import ColorPicker from './ColorPicker'; // Import the new ColorPicker component
+import PanelColorPickerPortal from './components/PanelColorPickerPortal.jsx';
 import NodeSelectionGrid from './NodeSelectionGrid'; // Import NodeSelectionGrid for type selection
 import UnifiedSelector from './UnifiedSelector'; // Import the new UnifiedSelector
 import useGraphStore, {
@@ -346,6 +347,7 @@ const LeftGridView = ({
   handleGridItemClick,
   closeGraph,
   toggleGraphExpanded,
+  createNewGraph,
 }) => {
   return (
     <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -353,6 +355,26 @@ const LeftGridView = ({
         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
           Open Things
         </h2>
+        <button
+          onClick={() => createNewGraph({ name: 'New Thing' })}
+          style={{
+            backgroundColor: 'transparent',
+            border: 'none',
+            color: '#260000',
+            cursor: 'pointer',
+            padding: '4px',
+            borderRadius: '4px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            outline: 'none',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(38, 0, 0, 0.1)'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+          title="Create New Thing with Graph Definition"
+        >
+          <Plus size={20} />
+        </button>
       </div>
 
       <div
@@ -1948,6 +1970,7 @@ const Panel = forwardRef(
                 handleGridItemClick={handleGridItemClick}
                 closeGraph={closeGraph}
                 toggleGraphExpanded={toggleGraphExpanded}
+                createNewGraph={createNewGraph}
               />
             );
         } else if (leftViewActive === 'federation') {
@@ -2321,17 +2344,15 @@ const Panel = forwardRef(
                 </div>
             </div>
 
-            {/* Color Picker Component */}
-            {colorPickerVisible && (
-                <ColorPicker
-                    isVisible={colorPickerVisible}
-                    onClose={handleCloseColorPicker}
-                    onColorChange={handleColorChange}
-                    currentColor={colorPickerNodeId ? nodePrototypesMap.get(colorPickerNodeId)?.color || '#8B0000' : '#8B0000'}
-                    position={colorPickerPosition}
-                    direction="down-left"
-                />
-            )}
+            {/* Color Picker Component - Rendered in Portal to prevent clipping */}
+            <PanelColorPickerPortal
+                isVisible={colorPickerVisible}
+                onClose={handleCloseColorPicker}
+                onColorChange={handleColorChange}
+                currentColor={colorPickerNodeId ? nodePrototypesMap.get(colorPickerNodeId)?.color || '#8B0000' : '#8B0000'}
+                position={colorPickerPosition}
+                direction="down-left"
+            />
 
             
 

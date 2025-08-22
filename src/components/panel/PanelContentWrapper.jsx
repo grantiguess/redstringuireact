@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import SharedPanelContent from './SharedPanelContent.jsx';
 import useGraphStore from '../../store/graphStore.js';
 import ColorPicker from '../../ColorPicker.jsx';
+import PanelColorPickerPortal from '../PanelColorPickerPortal.jsx';
 
 /**
  * Wrapper component that handles data fetching and action binding
@@ -237,17 +238,15 @@ const PanelContentWrapper = ({
         isUltraSlim={isUltraSlim}
       />
       
-      {/* Color Picker Component */}
-      {colorPickerVisible && (
-        <ColorPicker
-          isVisible={colorPickerVisible}
-          onClose={handleColorPickerClose}
-          onColorChange={handleColorChange}
-          currentColor={colorPickerNodeId && nodePrototypes ? nodePrototypes.get(colorPickerNodeId)?.color || '#8B0000' : '#8B0000'}
-          position={colorPickerPosition}
-          direction="down-left"
-        />
-      )}
+      {/* Color Picker Component - Rendered in Portal to prevent clipping */}
+      <PanelColorPickerPortal
+        isVisible={colorPickerVisible}
+        onClose={handleColorPickerClose}
+        onColorChange={handleColorChange}
+        currentColor={colorPickerNodeId && nodePrototypes ? nodePrototypes.get(colorPickerNodeId)?.color || '#8B0000' : '#8B0000'}
+        position={colorPickerPosition}
+        direction="down-left"
+      />
     </>
   );
 };
