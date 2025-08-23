@@ -1,10 +1,9 @@
 import React, { useState, useCallback } from 'react';
-import { Globe, Link, Book, Search, ExternalLink, Plus, X, Check, Tags, FileText, Eye, Settings, CheckCircle, RotateCcw, Zap } from 'lucide-react';
+import { Globe, Link, Book, Search, ExternalLink, Plus, X, Check, Tags, FileText, Eye, Settings, CheckCircle, RotateCcw, Zap, Loader2, AlertCircle, CheckSquare } from 'lucide-react';
 import { PANEL_CLOSE_ICON_SIZE } from '../constants';
 import StandardDivider from './StandardDivider.jsx';
-import RDFResolutionPanel from './RDFResolutionPanel.jsx';
-import { semanticEnrichment, suggestExternalLinks, suggestEquivalentClasses } from '../services/semanticEnrichment.js';
-import { rdfValidation, validateNode } from '../services/rdfValidation.js';
+import { rdfResolver } from '../services/rdfResolver.js';
+import { enrichFromSemanticWeb } from '../services/semanticWebQuery.js';
 
 // DOI validation regex
 const DOI_REGEX = /^10\.\d{4,}\/[-._;()\/:a-zA-Z0-9]+$/;
@@ -800,10 +799,13 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
 };
 
 const SemanticEditor = ({ nodeData, onUpdate }) => {
-  const [showRDFResolution, setShowRDFResolution] = useState(false);
-  const [suggestions, setSuggestions] = useState(null);
-  const [validationResults, setValidationResults] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [enrichmentState, setEnrichmentState] = useState({
+    isEnriching: false,
+    progress: {},
+    results: null,
+    error: null
+  });
+  const [resolvedData, setResolvedData] = useState(new Map());
 
   if (!nodeData) return null;
 
@@ -825,39 +827,95 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
     });
   };
 
-  // Handle getting suggestions for external links
-  const handleGetSuggestions = async () => {
-    if (!nodeData) return;
+  // Handle semantic web enrichment
+  const handleEnrichFromSemanticWeb = async () => {
+    if (!nodeData?.name) return;
     
-    setIsLoading(true);
+    setEnrichmentState({
+      isEnriching: true,
+      progress: {
+        wikidata: 'pending',
+        dbpedia: 'pending',
+        wikipedia: 'pending'
+      },
+      results: null,
+      error: null
+    });
+
     try {
-      const linkSuggestions = await suggestExternalLinks(nodeData.id, nodeData);
-      setSuggestions(linkSuggestions);
+      // Update progress as we go
+      setEnrichmentState(prev => ({
+        ...prev,
+        progress: { 
+          wikidata: 'active', 
+          dbpedia: 'pending', 
+          wikipedia: 'pending' 
+        }
+      }));
+      
+      // Use our comprehensive semantic web enrichment
+      const enrichmentResults = await enrichFromSemanticWeb(nodeData.name);
+      
+      // Update progress to show completion
+      setEnrichmentState(prev => ({
+        ...prev,
+        progress: {
+          wikidata: enrichmentResults.sources.wikidata?.found ? 'completed' : 'failed',
+          dbpedia: enrichmentResults.sources.dbpedia?.found ? 'completed' : 'failed',
+          wikipedia: enrichmentResults.sources.wikipedia?.found ? 'completed' : 'failed'
+        }
+      }));
+      
+      // Set final results
+      setEnrichmentState({
+        isEnriching: false,
+        progress: {},
+        results: enrichmentResults.suggestions,
+        error: null
+      });
+      
     } catch (error) {
-      console.error('[SemanticEditor] Failed to get suggestions:', error);
-    } finally {
-      setIsLoading(false);
+      console.error('[SemanticEditor] Enrichment failed:', error);
+      setEnrichmentState({
+        isEnriching: false,
+        progress: {},
+        results: null,
+        error: error.message
+      });
     }
   };
 
-  // Handle node validation
-  const handleValidateNode = async () => {
-    if (!nodeData) return;
+
+  // Resolve external links to RDF data
+  const resolveExternalLinks = async () => {
+    const resolved = new Map();
     
-    setIsLoading(true);
-    try {
-      const results = await validateNode(nodeData, { nodes: [nodeData] });
-      setValidationResults(results);
-    } catch (error) {
-      console.error('[SemanticEditor] Validation failed:', error);
-    } finally {
-      setIsLoading(false);
+    for (const link of externalLinks) {
+      try {
+        const rdfData = await rdfResolver.resolveURI(link, { timeout: 10000 });
+        if (rdfData) {
+          resolved.set(link, rdfData);
+        }
+      } catch (error) {
+        console.warn(`Failed to resolve ${link}:`, error);
+      }
     }
+    
+    setResolvedData(resolved);
+    return resolved;
   };
 
-  // Handle updating node data
-  const handleNodeUpdate = (updatedNode) => {
-    onUpdate(updatedNode);
+
+  // Apply a suggestion to the node
+  const applySuggestion = (type, value) => {
+    if (type === 'externalLink') {
+      addExternalLink(value);
+    } else if (type === 'description' && !nodeData.description) {
+      onUpdate({ ...nodeData, description: value });
+    } else if (type === 'equivalentClass') {
+      const updatedClasses = [...(nodeData.equivalentClasses || []), value];
+      onUpdate({ ...nodeData, equivalentClasses: updatedClasses });
+    }
   };
 
   return (
@@ -986,81 +1044,192 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
           </div>
         )}
 
-        {/* RDF Resolution Actions */}
-        {externalLinks.length > 0 && (
-          <div style={{ marginTop: '15px', padding: '12px', backgroundColor: 'rgba(38, 0, 0, 0.05)', borderRadius: '6px' }}>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        {/* Semantic Web Actions */}
+        <div style={{ marginTop: '15px', padding: '12px', backgroundColor: 'rgba(38, 0, 0, 0.05)', borderRadius: '6px' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+            <button
+              onClick={handleEnrichFromSemanticWeb}
+              disabled={enrichmentState.isEnriching}
+              style={{
+                backgroundColor: enrichmentState.isEnriching ? '#666' : '#8B0000',
+                color: '#bdb5b5',
+                border: 'none',
+                padding: '8px 12px',
+                borderRadius: '4px',
+                cursor: enrichmentState.isEnriching ? 'not-allowed' : 'pointer',
+                fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontWeight: 'bold'
+              }}
+              onMouseEnter={(e) => !enrichmentState.isEnriching && (e.currentTarget.style.backgroundColor = '#A52A2A')}
+              onMouseLeave={(e) => !enrichmentState.isEnriching && (e.currentTarget.style.backgroundColor = '#8B0000')}
+              title="Enrich from semantic web (Wikidata, DBpedia)"
+            >
+              {enrichmentState.isEnriching ? <Loader2 size={14} style={{animation: 'spin 1s linear infinite'}} /> : <Zap size={14} />}
+              {enrichmentState.isEnriching ? 'Enriching...' : 'Enrich from Web'}
+            </button>
+            
+            {externalLinks.length > 0 && (
               <button
-                onClick={() => setShowRDFResolution(true)}
+                onClick={resolveExternalLinks}
+                disabled={enrichmentState.isEnriching}
                 style={{
-                  backgroundColor: '#8B0000',
+                  backgroundColor: enrichmentState.isEnriching ? '#666' : '#2E8B57',
                   color: '#bdb5b5',
                   border: 'none',
                   padding: '8px 12px',
                   borderRadius: '4px',
-                  cursor: 'pointer',
+                  cursor: enrichmentState.isEnriching ? 'not-allowed' : 'pointer',
                   fontSize: '12px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
                   fontWeight: 'bold'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#A52A2A'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#8B0000'}
+                onMouseEnter={(e) => !enrichmentState.isEnriching && (e.currentTarget.style.backgroundColor = '#3CB371')}
+                onMouseLeave={(e) => !enrichmentState.isEnriching && (e.currentTarget.style.backgroundColor = '#2E8B57')}
                 title="Resolve external links to RDF data"
               >
                 <RotateCcw size={14} />
                 Resolve Links
               </button>
-              
-              <button
-                onClick={handleGetSuggestions}
-                style={{
-                  backgroundColor: '#2E8B57',
-                  color: '#bdb5b5',
-                  border: 'none',
-                  padding: '8px 12px',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontWeight: 'bold'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#3CB371'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2E8B57'}
-                title="Get AI-powered suggestions for external links"
-              >
-                <Zap size={14} />
-                Get Suggestions
-              </button>
-
-              <button
-                onClick={handleValidateNode}
-                style={{
-                  backgroundColor: '#FF8C00',
-                  color: '#bdb5b5',
-                  border: 'none',
-                  padding: '8px 12px',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontWeight: 'bold'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#FFA500'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#FF8C00'}
-                title="Validate node semantic consistency"
-              >
-                <CheckCircle size={14} />
-                Validate
-              </button>
-            </div>
+            )}
           </div>
-        )}
+
+          {/* Progress Display */}
+          {enrichmentState.isEnriching && (
+            <div style={{ 
+              fontSize: '11px', 
+              color: '#666',
+              padding: '8px',
+              backgroundColor: '#EFE8E5',
+              borderRadius: '4px',
+              marginBottom: '10px'
+            }}>
+              <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>Enriching from semantic web...</div>
+              {Object.entries(enrichmentState.progress).map(([source, status]) => (
+                <div key={source} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                  {status === 'pending' && <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ccc' }} />}
+                  {status === 'active' && <Loader2 size={8} style={{ color: '#8B0000', animation: 'spin 1s linear infinite' }} />}
+                  {status === 'completed' && <CheckSquare size={8} style={{ color: '#2E8B57' }} />}
+                  <span>{source.replace('_', ' ')}...</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Error Display */}
+          {enrichmentState.error && (
+            <div style={{
+              fontSize: '11px',
+              color: '#dc3545',
+              padding: '8px',
+              backgroundColor: 'rgba(220, 53, 69, 0.1)',
+              borderRadius: '4px',
+              marginBottom: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
+              <AlertCircle size={12} />
+              {enrichmentState.error}
+            </div>
+          )}
+
+          {/* Results and Suggestions */}
+          {enrichmentState.results && (
+            <div style={{
+              padding: '10px',
+              backgroundColor: '#EFE8E5',
+              borderRadius: '4px',
+              fontSize: '12px'
+            }}>
+              <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#8B0000' }}>Enrichment Suggestions:</div>
+              
+              {enrichmentState.results.description && (
+                <div style={{ marginBottom: '8px' }}>
+                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Description:</div>
+                  <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>
+                    {enrichmentState.results.description}
+                  </div>
+                  {!nodeData.description && (
+                    <button
+                      onClick={() => applySuggestion('description', enrichmentState.results.description)}
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '10px',
+                        backgroundColor: '#2E8B57',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '3px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Apply Description
+                    </button>
+                  )}
+                </div>
+              )}
+              
+              {enrichmentState.results.externalLinks.length > 0 && (
+                <div style={{ marginBottom: '8px' }}>
+                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>External Links:</div>
+                  {enrichmentState.results.externalLinks.map((link, idx) => (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                      <code style={{ fontSize: '10px', backgroundColor: '#bdb5b5', padding: '2px 4px', borderRadius: '2px' }}>
+                        {link.substring(0, 50)}...
+                      </code>
+                      <button
+                        onClick={() => applySuggestion('externalLink', link)}
+                        style={{
+                          padding: '2px 6px',
+                          fontSize: '9px',
+                          backgroundColor: '#2E8B57',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '2px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {enrichmentState.results.equivalentClasses.length > 0 && (
+                <div style={{ marginBottom: '8px' }}>
+                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Classifications:</div>
+                  {enrichmentState.results.equivalentClasses.map((cls, idx) => (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '10px' }}>{cls.label}</span>
+                      <span style={{ fontSize: '9px', color: '#666' }}>({cls.source})</span>
+                      <button
+                        onClick={() => applySuggestion('equivalentClass', cls)}
+                        style={{
+                          padding: '2px 6px',
+                          fontSize: '9px',
+                          backgroundColor: '#2E8B57',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '2px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              <div style={{ fontSize: '10px', color: '#666', marginTop: '8px' }}>Confidence: {(enrichmentState.results.confidence * 100).toFixed(0)}%</div>
+            </div>
+          )}
+        </div>
       </div>
 
       <StandardDivider margin="20px 0" />
@@ -1071,13 +1240,44 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
         onUpdate={onUpdate}
       />
 
-      {/* RDF Resolution Panel */}
-      <RDFResolutionPanel
-        nodeData={nodeData}
-        onUpdate={handleNodeUpdate}
-        isVisible={showRDFResolution}
-        onClose={() => setShowRDFResolution(false)}
-      />
+      {/* Resolved RDF Data Display */}
+      {resolvedData.size > 0 && (
+        <div style={{
+          marginTop: '15px',
+          padding: '12px',
+          backgroundColor: '#EFE8E5',
+          borderRadius: '6px',
+          border: '1px solid #e0e0e0'
+        }}>
+          <h5 style={{
+            margin: '0 0 10px 0',
+            fontSize: '12px',
+            color: '#8B0000',
+            fontWeight: 'bold'
+          }}>
+            Resolved RDF Data ({resolvedData.size})
+          </h5>
+          {Array.from(resolvedData.entries()).map(([link, data], idx) => (
+            <div key={idx} style={{
+              marginBottom: '8px',
+              padding: '6px',
+              backgroundColor: '#bdb5b5',
+              borderRadius: '4px',
+              fontSize: '11px'
+            }}>
+              <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+                {data.label || 'Unknown Resource'}
+              </div>
+              {data.description && (
+                <div style={{ color: '#666', marginBottom: '4px' }}>
+                  {data.description}
+                </div>
+              )}
+              <div style={{ fontSize: '10px', color: '#8B0000' }}>Source: {link}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

@@ -7,6 +7,16 @@ html, body, #root {
   font-family: sans-serif; /* Example font */
 }
 
+/* Keyframe animations */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Main application container using Flexbox */
 .app-container {
   display: flex;
