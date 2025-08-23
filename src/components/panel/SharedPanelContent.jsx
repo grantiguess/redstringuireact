@@ -340,9 +340,6 @@ const SharedPanelContent = ({
         {!isUltraSlim && actionButtons}
       </div>
 
-      {/* Dividing line above Type section */}
-      <StandardDivider margin="20px 0" />
-      
       {/* Type Section - under title */}
       {(() => {
         // Get the type name

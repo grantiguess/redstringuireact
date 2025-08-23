@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
-import { Globe, Link, Book, Search, ExternalLink, Plus, X, Check } from 'lucide-react';
+import { Globe, Link, Book, Search, ExternalLink, Plus, X, Check, Tags, FileText, Eye, Settings } from 'lucide-react';
 import { PANEL_CLOSE_ICON_SIZE } from '../constants';
+import StandardDivider from './StandardDivider.jsx';
 
 // DOI validation regex
 const DOI_REGEX = /^10\.\d{4,}\/[-._;()\/:a-zA-Z0-9]+$/;
@@ -402,11 +403,416 @@ const WikipediaSearch = ({ onSelect }) => {
   );
 };
 
+const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
+  const [localValues, setLocalValues] = useState({
+    rdfsLabel: nodeData['rdfs:label'] || nodeData.name || '',
+    rdfsComment: nodeData['rdfs:comment'] || nodeData.description || '',
+    rdfsSeeAlso: (nodeData['rdfs:seeAlso'] || []).join(', ')
+  });
+
+  const handleLocalChange = (field, value) => {
+    setLocalValues(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleBlur = (field) => {
+    const updates = { ...nodeData };
+    
+    switch (field) {
+      case 'rdfsLabel':
+        if (localValues.rdfsLabel !== nodeData.name) {
+          updates['rdfs:label'] = localValues.rdfsLabel;
+        }
+        break;
+      case 'rdfsComment':
+        if (localValues.rdfsComment !== nodeData.description) {
+          updates['rdfs:comment'] = localValues.rdfsComment;
+        }
+        break;
+      case 'rdfsSeeAlso':
+        const seeAlsoArray = localValues.rdfsSeeAlso
+          .split(',')
+          .map(s => s.trim())
+          .filter(s => s.length > 0);
+        updates['rdfs:seeAlso'] = seeAlsoArray;
+        break;
+    }
+    
+    onUpdate(updates);
+  };
+
+  const handleKeyPress = (e, field) => {
+    if (e.key === 'Enter') {
+      e.target.blur();
+    }
+  };
+
+  return (
+    <div style={{ marginBottom: '20px' }}>
+      <h4 style={{ 
+        margin: '0 0 10px 0', 
+        fontSize: '14px', 
+        color: '#555',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px'
+      }}>
+        <Tags size={14} />
+        RDF Schema Properties
+      </h4>
+
+      {/* rdfs:label */}
+      <div style={{ marginBottom: '10px' }}>
+        <label style={{ 
+          display: 'block', 
+          fontSize: '12px', 
+          color: '#666', 
+          marginBottom: '4px' 
+        }}>
+          Label (rdfs:label)
+        </label>
+        <input
+          type="text"
+          value={localValues.rdfsLabel}
+          onChange={(e) => handleLocalChange('rdfsLabel', e.target.value)}
+          onBlur={() => handleBlur('rdfsLabel')}
+          onKeyPress={(e) => handleKeyPress(e, 'rdfsLabel')}
+          placeholder="Primary label for this concept"
+          style={{
+            width: '100%',
+            padding: '6px 8px',
+            border: '1px solid #260000',
+            borderRadius: '4px',
+            fontSize: '14px',
+            fontFamily: "'EmOne', sans-serif"
+          }}
+        />
+      </div>
+
+      {/* rdfs:comment */}
+      <div style={{ marginBottom: '10px' }}>
+        <label style={{ 
+          display: 'block', 
+          fontSize: '12px', 
+          color: '#666', 
+          marginBottom: '4px' 
+        }}>
+          Description (rdfs:comment)
+        </label>
+        <textarea
+          value={localValues.rdfsComment}
+          onChange={(e) => handleLocalChange('rdfsComment', e.target.value)}
+          onBlur={() => handleBlur('rdfsComment')}
+          placeholder="Description of this concept"
+          rows={3}
+          style={{
+            width: '100%',
+            padding: '6px 8px',
+            border: '1px solid #260000',
+            borderRadius: '4px',
+            fontSize: '14px',
+            fontFamily: "'EmOne', sans-serif",
+            resize: 'vertical',
+            minHeight: '60px'
+          }}
+        />
+      </div>
+
+      {/* rdfs:seeAlso */}
+      <div style={{ marginBottom: '10px' }}>
+        <label style={{ 
+          display: 'block', 
+          fontSize: '12px', 
+          color: '#666', 
+          marginBottom: '4px' 
+        }}>
+          See Also (rdfs:seeAlso) - comma separated URLs
+        </label>
+        <input
+          type="text"
+          value={localValues.rdfsSeeAlso}
+          onChange={(e) => handleLocalChange('rdfsSeeAlso', e.target.value)}
+          onBlur={() => handleBlur('rdfsSeeAlso')}
+          onKeyPress={(e) => handleKeyPress(e, 'rdfsSeeAlso')}
+          placeholder="https://example.com/related, https://another.com/resource"
+          style={{
+            width: '100%',
+            padding: '6px 8px',
+            border: '1px solid #260000',
+            borderRadius: '4px',
+            fontSize: '14px',
+            fontFamily: "'EmOne', sans-serif"
+          }}
+        />
+      </div>
+    </div>
+  );
+};
+
+const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
+  const [federationMode, setFederationMode] = useState('node'); // 'node' or 'domain'
+  const [showSettings, setShowSettings] = useState(false);
+
+  const equivalentClasses = nodeData.equivalentClasses || [];
+  const abstractionChains = nodeData.abstractionChains || {};
+
+  const addEquivalentClass = (uri, source = 'manual') => {
+    const updatedClasses = [...equivalentClasses, { "@id": uri, "source": source }];
+    onUpdate({
+      ...nodeData,
+      equivalentClasses: updatedClasses
+    });
+  };
+
+  const removeEquivalentClass = (uri) => {
+    const updatedClasses = equivalentClasses.filter(cls => cls['@id'] !== uri);
+    onUpdate({
+      ...nodeData,
+      equivalentClasses: updatedClasses
+    });
+  };
+
+  // Common ontology mappings
+  const commonOntologies = [
+    { id: 'schema:Person', name: 'Person (Schema.org)', color: '#4285f4' },
+    { id: 'foaf:Person', name: 'Person (FOAF)', color: '#34a853' },
+    { id: 'dbo:Person', name: 'Person (DBpedia)', color: '#ea4335' },
+    { id: 'schema:Organization', name: 'Organization (Schema.org)', color: '#4285f4' },
+    { id: 'foaf:Organization', name: 'Organization (FOAF)', color: '#34a853' },
+    { id: 'schema:CreativeWork', name: 'Creative Work (Schema.org)', color: '#4285f4' },
+    { id: 'schema:Thing', name: 'Thing (Schema.org)', color: '#4285f4' }
+  ];
+
+  return (
+    <div>
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        marginBottom: '10px' 
+      }}>
+        <h4 style={{ 
+          margin: '0', 
+          fontSize: '14px', 
+          color: '#555',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px'
+        }}>
+          <Search size={14} />
+          Semantic Classification
+        </h4>
+        <button
+          onClick={() => setShowSettings(!showSettings)}
+          style={{
+            padding: '4px',
+            border: 'none',
+            backgroundColor: 'transparent',
+            cursor: 'pointer',
+            color: '#666'
+          }}
+          title="Federation settings"
+        >
+          <Settings size={14} />
+        </button>
+      </div>
+
+      {/* Federation Settings */}
+      {showSettings && (
+        <div style={{
+          padding: '10px',
+          backgroundColor: '#f0f0f0',
+          borderRadius: '6px',
+          marginBottom: '10px',
+          border: '1px solid #ddd'
+        }}>
+          <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
+            Federation Mode:
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}>
+              <input
+                type="radio"
+                checked={federationMode === 'node'}
+                onChange={() => setFederationMode('node')}
+              />
+              Per-node classification
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}>
+              <input
+                type="radio"
+                checked={federationMode === 'domain'}
+                onChange={() => setFederationMode('domain')}
+              />
+              Domain-wide settings
+            </label>
+          </div>
+          <div style={{ 
+            fontSize: '11px', 
+            color: '#888', 
+            marginTop: '6px',
+            fontStyle: 'italic'
+          }}>
+            {federationMode === 'node' 
+              ? 'Each node can have custom ontology mappings'
+              : 'Use domain-wide federation settings for consistent classification'
+            }
+          </div>
+        </div>
+      )}
+
+      {/* Current Type Display */}
+      {nodeData.typeNodeId && (
+        <div style={{
+          padding: '8px 10px',
+          backgroundColor: '#e8f4fd',
+          borderLeft: '3px solid #2196f3',
+          marginBottom: '10px',
+          fontSize: '12px'
+        }}>
+          <strong>Current Type:</strong> {nodeData.typeNodeId}
+          <br />
+          <span style={{ color: '#666' }}>
+            This creates an rdfs:subClassOf relationship in RDF Schema
+          </span>
+        </div>
+      )}
+
+      {/* Quick Ontology Mappings */}
+      <div style={{ marginBottom: '15px' }}>
+        <label style={{ 
+          display: 'block', 
+          fontSize: '12px', 
+          color: '#666', 
+          marginBottom: '8px' 
+        }}>
+          Quick Classifications (owl:equivalentClass):
+        </label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          {commonOntologies.map(onto => {
+            const isSelected = equivalentClasses.some(cls => cls['@id'] === onto.id);
+            return (
+              <button
+                key={onto.id}
+                onClick={() => isSelected 
+                  ? removeEquivalentClass(onto.id)
+                  : addEquivalentClass(onto.id, 'quick-select')
+                }
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '11px',
+                  border: `1px solid ${onto.color}`,
+                  backgroundColor: isSelected ? onto.color : 'transparent',
+                  color: isSelected ? 'white' : onto.color,
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {onto.name}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Current Classifications */}
+      {equivalentClasses.length > 0 && (
+        <div>
+          <label style={{ 
+            display: 'block', 
+            fontSize: '12px', 
+            color: '#666', 
+            marginBottom: '8px' 
+          }}>
+            Current Classifications ({equivalentClasses.length}):
+          </label>
+          {equivalentClasses.map((cls, index) => (
+            <div
+              key={index}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '6px 10px',
+                backgroundColor: '#f8f9fa',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                marginBottom: '4px',
+                fontSize: '12px'
+              }}
+            >
+              <div>
+                <code style={{ 
+                  backgroundColor: '#e9ecef', 
+                  padding: '2px 4px', 
+                  borderRadius: '3px',
+                  fontSize: '11px'
+                }}>
+                  {cls['@id']}
+                </code>
+                {cls.source && (
+                  <span style={{ 
+                    color: '#666', 
+                    marginLeft: '8px',
+                    fontSize: '10px'
+                  }}>
+                    ({cls.source})
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => removeEquivalentClass(cls['@id'])}
+                style={{
+                  padding: '2px',
+                  border: 'none',
+                  backgroundColor: 'transparent',
+                  cursor: 'pointer',
+                  color: '#dc3545'
+                }}
+                title="Remove classification"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Future: Abstraction Chain Integration */}
+      {Object.keys(abstractionChains).length > 0 && (
+        <div style={{
+          marginTop: '15px',
+          padding: '10px',
+          backgroundColor: '#fff3cd',
+          border: '1px solid #ffeaa7',
+          borderRadius: '6px',
+          fontSize: '12px'
+        }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
+            Abstraction Chains detected:
+          </div>
+          {Object.entries(abstractionChains).map(([dimension, chain]) => (
+            <div key={dimension} style={{ marginBottom: '3px' }}>
+              <strong>{dimension}:</strong> {Array.isArray(chain) ? chain.join(' → ') : 'Invalid chain'}
+            </div>
+          ))}
+          <div style={{ 
+            color: '#856404', 
+            fontStyle: 'italic',
+            marginTop: '8px'
+          }}>
+            Future: These will be automatically mapped to rdfs:subClassOf relationships
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const SemanticEditor = ({ nodeData, onUpdate }) => {
   if (!nodeData) return null;
 
   const externalLinks = nodeData.externalLinks || [];
-  const equivalentClasses = nodeData.equivalentClasses || [];
 
   const addExternalLink = (uri) => {
     const updatedLinks = [...externalLinks, uri];
@@ -424,14 +830,6 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
     });
   };
 
-  const addEquivalentClass = (uri) => {
-    const updatedClasses = [...equivalentClasses, { "@id": uri }];
-    onUpdate({
-      ...nodeData,
-      equivalentClasses: updatedClasses
-    });
-  };
-
   return (
     <div style={{ padding: '15px', fontFamily: "'EmOne', sans-serif" }}>
       <h3 style={{
@@ -446,7 +844,15 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
         Semantic Web Links
       </h3>
 
-      {/* External Links Section */}
+      {/* RDF Schema Properties Section */}
+      <RDFSchemaPropertiesSection 
+        nodeData={nodeData} 
+        onUpdate={onUpdate} 
+      />
+
+      <StandardDivider margin="15px 0" />
+
+      {/* External Links Section (Rosetta Stone) */}
       <div style={{ marginBottom: '20px' }}>
         <h4 style={{ 
           margin: '0 0 10px 0', 
@@ -457,7 +863,7 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
           gap: '6px'
         }}>
           <Link size={14} />
-          External References
+          External References (owl:sameAs)
         </h4>
 
         {/* DOI Input */}
@@ -531,40 +937,13 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
         )}
       </div>
 
-      {/* Abstraction Relationships Section */}
-      <div style={{ borderTop: '1px solid #eee', paddingTop: '20px' }}>
-        <h4 style={{ 
-          margin: '0 0 10px 0', 
-          fontSize: '14px', 
-          color: '#555',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px'
-        }}>
-          <Search size={14} />
-          Semantic Classification
-        </h4>
-
-        <div style={{
-          padding: '10px',
-          backgroundColor: '#f8f9fa',
-          borderRadius: '6px',
-          fontSize: '12px',
-          color: '#666',
-          fontStyle: 'italic'
-        }}>
-          Abstraction Carousel integration with external ontologies coming soon...
-        </div>
-
-        {/* Future: AbstractionCarousel with external mappings */}
-        {/* {nodeData.abstractionChains && (
-          <SemanticAbstractionCarousel 
-            node={nodeData}
-            onChainUpdate={(chains) => onUpdate({...nodeData, abstractionChains: chains})}
-            onExternalMapping={(mapping) => addEquivalentClass(mapping)}
-          />
-        )} */}
-      </div>
+      <StandardDivider margin="20px 0" />
+      
+      {/* Semantic Classification Section */}
+      <SemanticClassificationSection 
+        nodeData={nodeData} 
+        onUpdate={onUpdate}
+      />
     </div>
   );
 };
