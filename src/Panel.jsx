@@ -28,7 +28,7 @@ import APIKeySetup from './ai/components/APIKeySetup.jsx';
 import mcpClient from './services/mcpClient.js';
 import { bridgeFetch } from './services/bridgeConfig.js';
 import apiKeyManager from './services/apiKeyManager.js';
-import SemanticEditor from './components/SemanticEditor.jsx';
+
 import PanelContentWrapper from './components/panel/PanelContentWrapper.jsx';
 import CollapsibleSection from './components/CollapsibleSection.jsx';
 import StandardDivider from './components/StandardDivider.jsx';

@@ -48,10 +48,10 @@ const RDFTriplet = ({ subject, predicate, object, subjectColor, objectColor, onM
 
 /**
  * Connection Browser Component
- * Shows semantic web connections with In Graph ↔ All Connections slider
+ * Shows all connections (manual + semantic) with unified Redstring visual language
  */
-const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
-  const [connectionScope, setConnectionScope] = useState('all'); // 'graph' | 'all'
+const ConnectionBrowser = ({ nodeData, onMaterializeConnection, semanticConnections = [] }) => {
+  const [connectionScope, setConnectionScope] = useState('all'); // 'graph' | 'all' | 'semantic'
   const [connections, setConnections] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -154,9 +154,12 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
   const filteredConnections = useMemo(() => {
     if (connectionScope === 'graph') {
       return connections.filter(conn => conn.inCurrentGraph);
+    } else if (connectionScope === 'semantic') {
+      return semanticConnections;
     }
-    return connections;
-  }, [connections, connectionScope]);
+    // 'all' scope - combine manual and semantic connections
+    return [...connections, ...semanticConnections];
+  }, [connections, semanticConnections, connectionScope]);
   
   // Get appropriate color for nodes based on existing prototypes
   const getNodeColor = (nodeName) => {
@@ -200,10 +203,16 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
             In Graph
           </button>
           <button
+            className={`scope-button ${connectionScope === 'semantic' ? 'active' : ''}`}
+            onClick={() => setConnectionScope('semantic')}
+          >
+            Semantic
+          </button>
+          <button
             className={`scope-button ${connectionScope === 'all' ? 'active' : ''}`}
             onClick={() => setConnectionScope('all')}
           >
-            All Connections
+            All
           </button>
         </div>
         <div className="connection-count">

@@ -4,7 +4,7 @@ import { getEmptyImage } from 'react-dnd-html5-backend';
 import { Palette, ArrowUpFromDot, ImagePlus } from 'lucide-react';
 import { NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR } from '../../constants.js';
 import CollapsibleSection from '../CollapsibleSection.jsx';
-import SemanticEditor from '../SemanticEditor.jsx';
+import SemanticDiscovery from '../SemanticDiscovery.jsx';
 import ConnectionBrowser from '../ConnectionBrowser.jsx';
 import StandardDivider from '../StandardDivider.jsx';
 
@@ -583,20 +583,22 @@ const SharedPanelContent = ({
         <ConnectionBrowser 
           nodeData={nodeData}
           onMaterializeConnection={onMaterializeConnection}
+          semanticConnections={[]} // Will be populated by SemanticDiscovery when integrated
         />
       </CollapsibleSection>
 
       {/* Dividing line above Semantic Web Integration section */}
       <StandardDivider margin="20px 0" />
       
-      {/* Semantic Web Integration */}
+      {/* Semantic Discovery */}
       <CollapsibleSection 
-        title="Semantic Web Links" 
+        title="Semantic Discovery" 
         defaultExpanded={false}
       >
-        <SemanticEditor 
+        <SemanticDiscovery 
           nodeData={nodeData}
-          onUpdate={onNodeUpdate}
+          onMaterializeConnection={onMaterializeConnection}
+          onNodeUpdate={onNodeUpdate}
         />
       </CollapsibleSection>
     </div>
