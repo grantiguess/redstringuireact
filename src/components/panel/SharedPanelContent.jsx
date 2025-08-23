@@ -4,7 +4,9 @@ import { getEmptyImage } from 'react-dnd-html5-backend';
 import { Palette, ArrowUpFromDot, ImagePlus } from 'lucide-react';
 import { NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR } from '../../constants.js';
 import CollapsibleSection from '../CollapsibleSection.jsx';
-import SemanticDiscovery from '../SemanticDiscovery.jsx';
+import SemanticEditor from '../SemanticEditor.jsx';
+import ConnectionBrowser from '../ConnectionBrowser.jsx';
+import SemanticIdentity from '../SemanticIdentity.jsx';
 import StandardDivider from '../StandardDivider.jsx';
 
 // Helper function to determine the correct article ("a" or "an")
@@ -571,15 +573,29 @@ const SharedPanelContent = ({
         )}
       </CollapsibleSection>
 
-      {/* Dividing line above Semantic Discovery section */}
+      {/* Dividing line above Connections section */}
       <StandardDivider margin="20px 0" />
       
-      {/* Consolidated Semantic Discovery Section */}
+      {/* Connections Section - Native Redstring connections */}
       <CollapsibleSection 
-        title="Semantic Discovery" 
+        title="Connections" 
         defaultExpanded={false}
       >
-        <SemanticDiscovery 
+        <ConnectionBrowser 
+          nodeData={nodeData}
+          onMaterializeConnection={onMaterializeConnection}
+        />
+      </CollapsibleSection>
+
+      {/* Dividing line above Semantic Web section */}
+      <StandardDivider margin="20px 0" />
+      
+      {/* Semantic Web Identity and Integration */}
+      <CollapsibleSection 
+        title="Semantic Web" 
+        defaultExpanded={false}
+      >
+        <SemanticIdentity 
           nodeData={nodeData}
           onNodeUpdate={onNodeUpdate}
           onMaterializeConnection={onMaterializeConnection}
