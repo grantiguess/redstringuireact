@@ -1,7 +1,10 @@
 import React, { useState, useCallback } from 'react';
-import { Globe, Link, Book, Search, ExternalLink, Plus, X, Check, Tags, FileText, Eye, Settings, CheckCircle } from 'lucide-react';
+import { Globe, Link, Book, Search, ExternalLink, Plus, X, Check, Tags, FileText, Eye, Settings, CheckCircle, RotateCcw, Zap } from 'lucide-react';
 import { PANEL_CLOSE_ICON_SIZE } from '../constants';
 import StandardDivider from './StandardDivider.jsx';
+import RDFResolutionPanel from './RDFResolutionPanel.jsx';
+import { semanticEnrichment, suggestExternalLinks, suggestEquivalentClasses } from '../services/semanticEnrichment.js';
+import { rdfValidation, validateNode } from '../services/rdfValidation.js';
 
 // DOI validation regex
 const DOI_REGEX = /^10\.\d{4,}\/[-._;()\/:a-zA-Z0-9]+$/;

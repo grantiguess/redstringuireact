@@ -73,36 +73,52 @@ export class RDFResolver {
    * @private
    */
   async _fetchAndParse(uri, options) {
-    const headers = { ...this.defaultHeaders, ...options.headers };
-    
-    // Try to fetch with content negotiation
-    const response = await fetch(uri, {
-      method: 'GET',
-      headers,
-      signal: options.signal || AbortSignal.timeout(10000) // 10 second timeout
-    });
+    try {
+      const headers = { ...this.defaultHeaders, ...options.headers };
+      
+      // Try to fetch with content negotiation
+      const response = await fetch(uri, {
+        method: 'GET',
+        headers,
+        signal: options.signal || AbortSignal.timeout(10000) // 10 second timeout
+      });
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      const content = await response.text();
+      
+      if (!content.trim()) {
+        throw new Error('Empty response from URI');
+      }
+
+      // Parse based on content type
+      const parsedData = await this._parseContent(content, contentType, uri);
+      
+      return {
+        uri,
+        contentType,
+        triples: parsedData.triples,
+        metadata: parsedData.metadata,
+        resolvedAt: new Date().toISOString()
+      };
+    } catch (error) {
+      // Check if this is a CORS error
+      if (error.message.includes('Failed to fetch') || 
+          error.message.includes('CORS') || 
+          error.message.includes('Access-Control-Allow-Origin')) {
+        throw new Error(`CORS blocked: Cannot fetch ${uri} from browser due to cross-origin restrictions. This is a browser security feature. Try using a local identifier (e.g., local:MyType) or a different schema that supports CORS.`);
+      }
+      
+      // Check for other common network errors
+      if (error.message.includes('net::ERR_FAILED')) {
+        throw new Error(`Network error: ${uri} is not accessible from this browser. This could be due to CORS restrictions, network issues, or the resource being unavailable.`);
+      }
+      
+      throw error;
     }
-
-    const contentType = response.headers.get('content-type') || '';
-    const content = await response.text();
-    
-    if (!content.trim()) {
-      throw new Error('Empty response from URI');
-    }
-
-    // Parse based on content type
-    const parsedData = await this._parseContent(content, contentType, uri);
-    
-    return {
-      uri,
-      contentType,
-      triples: parsedData.triples,
-      metadata: parsedData.metadata,
-      resolvedAt: new Date().toISOString()
-    };
   }
 
   /**

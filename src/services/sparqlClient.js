@@ -133,6 +133,16 @@ export class SPARQLClient {
         headers: { ...endpoint.headers, ...options.headers }
       });
 
+      // Debug: Log the result structure
+      console.log(`[SPARQL Client] Raw result for ${endpointKey}:`, {
+        type: typeof result,
+        isIterable: result && (result[Symbol.asyncIterator] || result[Symbol.iterator]),
+        hasBindings: result && result.bindings,
+        hasResults: result && result.results,
+        keys: result ? Object.keys(result) : [],
+        constructor: result ? result.constructor.name : 'none'
+      });
+
       const parsedResult = await this._parseQueryResult(result);
       
       // Cache the result
@@ -345,25 +355,75 @@ export class SPARQLClient {
    * @private
    */
   async _parseQueryResult(result) {
-    const bindings = [];
-    
-    for await (const binding of result) {
-      const parsedBinding = {};
-      for (const [key, value] of binding.entries()) {
-        parsedBinding[key] = {
-          value: value.value,
-          type: value.termType,
-          datatype: value.datatype?.value,
-          language: value.language
-        };
+    try {
+      // Handle different result formats from sparql-http-client
+      if (result && typeof result === 'object') {
+        // If result has a bindings property, it's already parsed
+        if (result.bindings && Array.isArray(result.bindings)) {
+          return {
+            head: { vars: result.variables || [] },
+            results: { bindings: result.bindings }
+          };
+        }
+        
+        // If result has a results property, it's in the expected format
+        if (result.results && result.results.bindings) {
+          return result;
+        }
+        
+        // If result is iterable, parse it manually
+        if (result[Symbol.asyncIterator] || result[Symbol.iterator]) {
+          const bindings = [];
+          
+          try {
+            for await (const binding of result) {
+              if (binding && typeof binding === 'object') {
+                const parsedBinding = {};
+                for (const [key, value] of Object.entries(binding)) {
+                  if (value && typeof value === 'object' && 'value' in value) {
+                    parsedBinding[key] = {
+                      value: value.value,
+                      type: value.termType || 'literal',
+                      datatype: value.datatype?.value,
+                      language: value.language
+                    };
+                  } else {
+                    // Handle simple string values
+                    parsedBinding[key] = {
+                      value: String(value),
+                      type: 'literal',
+                      datatype: null,
+                      language: null
+                    };
+                  }
+                }
+                bindings.push(parsedBinding);
+              }
+            }
+          } catch (iterationError) {
+            console.warn('[SPARQL Client] Error iterating over result:', iterationError);
+          }
+          
+          return {
+            head: { vars: result.variables || [] },
+            results: { bindings }
+          };
+        }
       }
-      bindings.push(parsedBinding);
+      
+      // Fallback: return empty result structure
+      console.warn('[SPARQL Client] Unexpected result format:', result);
+      return {
+        head: { vars: [] },
+        results: { bindings: [] }
+      };
+    } catch (error) {
+      console.error('[SPARQL Client] Error parsing query result:', error);
+      return {
+        head: { vars: [] },
+        results: { bindings: [] }
+      };
     }
-
-    return {
-      head: { vars: result.variables },
-      results: { bindings }
-    };
   }
 
   /**
@@ -371,18 +431,41 @@ export class SPARQLClient {
    * @private
    */
   async _parseConstructResult(result) {
-    const triples = [];
-    
-    for await (const quad of result) {
-      triples.push({
-        subject: quad.subject.value,
-        predicate: quad.predicate.value,
-        object: quad.object.value,
-        graph: quad.graph?.value || null
-      });
+    try {
+      const triples = [];
+      
+      // Handle different result formats
+      if (result && typeof result === 'object') {
+        // If result is already an array of triples
+        if (Array.isArray(result)) {
+          return result;
+        }
+        
+        // If result is iterable, parse it manually
+        if (result[Symbol.asyncIterator] || result[Symbol.iterator]) {
+          try {
+            for await (const quad of result) {
+              if (quad && typeof quad === 'object') {
+                const triple = {
+                  subject: quad.subject?.value || String(quad.subject),
+                  predicate: quad.predicate?.value || String(quad.predicate),
+                  object: quad.object?.value || String(quad.object),
+                  graph: quad.graph?.value || null
+                };
+                triples.push(triple);
+              }
+            }
+          } catch (iterationError) {
+            console.warn('[SPARQL Client] Error iterating over CONSTRUCT result:', iterationError);
+          }
+        }
+      }
+      
+      return triples;
+    } catch (error) {
+      console.error('[SPARQL Client] Error parsing CONSTRUCT result:', error);
+      return [];
     }
-
-    return triples;
   }
 
   /**
