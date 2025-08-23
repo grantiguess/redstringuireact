@@ -72,10 +72,23 @@ const PanelContentWrapper = ({
     return Array.from(targetGraph.instances.values())
       .map(instance => {
         const prototype = nodePrototypes?.get(instance.prototypeId);
-        return prototype ? {
-          ...prototype,
-          ...instance // Instance data (x, y, scale) overwrites prototype data
-        } : null;
+        if (!prototype) return null;
+        
+        // Ensure prototype data (including name) is preserved, instance data only adds spatial properties
+        return {
+          id: instance.id,
+          prototypeId: instance.prototypeId,
+          name: prototype.name || 'Unnamed Component', // Always preserve prototype name
+          description: prototype.description || '',
+          color: prototype.color || '#8B0000', // Assuming NODE_DEFAULT_COLOR is defined elsewhere or needs to be imported
+          // Instance spatial data
+          x: instance.x || 0,
+          y: instance.y || 0,
+          scale: instance.scale || 1,
+          // Preserve other prototype properties
+          typeNodeId: prototype.typeNodeId,
+          definitionGraphIds: prototype.definitionGraphIds || []
+        };
       })
       .filter(Boolean);
   };

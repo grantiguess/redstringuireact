@@ -404,43 +404,21 @@ const WikipediaSearch = ({ onSelect }) => {
 };
 
 const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
-  const [localValues, setLocalValues] = useState({
-    rdfsLabel: nodeData['rdfs:label'] || nodeData.name || '',
-    rdfsComment: nodeData['rdfs:comment'] || nodeData.description || '',
-    rdfsSeeAlso: (nodeData['rdfs:seeAlso'] || []).join(', ')
-  });
+  const [rdfsSeeAlso, setRdfsSeeAlso] = useState((nodeData['rdfs:seeAlso'] || []).join(', '));
 
-  const handleLocalChange = (field, value) => {
-    setLocalValues(prev => ({ ...prev, [field]: value }));
+  const handleSeeAlsoBlur = () => {
+    const seeAlsoArray = rdfsSeeAlso
+      .split(',')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+    
+    onUpdate({
+      ...nodeData,
+      'rdfs:seeAlso': seeAlsoArray
+    });
   };
 
-  const handleBlur = (field) => {
-    const updates = { ...nodeData };
-    
-    switch (field) {
-      case 'rdfsLabel':
-        if (localValues.rdfsLabel !== nodeData.name) {
-          updates['rdfs:label'] = localValues.rdfsLabel;
-        }
-        break;
-      case 'rdfsComment':
-        if (localValues.rdfsComment !== nodeData.description) {
-          updates['rdfs:comment'] = localValues.rdfsComment;
-        }
-        break;
-      case 'rdfsSeeAlso':
-        const seeAlsoArray = localValues.rdfsSeeAlso
-          .split(',')
-          .map(s => s.trim())
-          .filter(s => s.length > 0);
-        updates['rdfs:seeAlso'] = seeAlsoArray;
-        break;
-    }
-    
-    onUpdate(updates);
-  };
-
-  const handleKeyPress = (e, field) => {
+  const handleSeeAlsoKeyPress = (e) => {
     if (e.key === 'Enter') {
       e.target.blur();
     }
@@ -460,7 +438,30 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
         RDF Schema Properties
       </h4>
 
-      {/* rdfs:label */}
+      {/* Show auto-synced RDF properties */}
+      <div style={{
+        padding: '8px 10px',
+        backgroundColor: '#f0f8ff',
+        border: '1px solid #b8d4f0',
+        borderRadius: '6px',
+        marginBottom: '10px',
+        fontSize: '12px'
+      }}>
+        <div style={{ marginBottom: '6px', fontWeight: 'bold', color: '#333' }}>
+          Auto-Generated RDF Schema:
+        </div>
+        <div style={{ marginBottom: '3px' }}>
+          <strong>rdfs:label:</strong> <code>"{nodeData.name || 'Untitled'}"</code>
+        </div>
+        <div style={{ marginBottom: '8px' }}>
+          <strong>rdfs:comment:</strong> <code>"{(nodeData.description || 'No description').substring(0, 60)}{(nodeData.description || '').length > 60 ? '...' : ''}"</code>
+        </div>
+        <div style={{ color: '#666', fontSize: '11px', fontStyle: 'italic' }}>
+          💫 These automatically sync when you edit the node name or bio above. No manual input needed!
+        </div>
+      </div>
+
+      {/* Only rdfs:seeAlso needs manual input */}
       <div style={{ marginBottom: '10px' }}>
         <label style={{ 
           display: 'block', 
@@ -468,15 +469,15 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
           color: '#666', 
           marginBottom: '4px' 
         }}>
-          Label (rdfs:label)
+          See Also (rdfs:seeAlso)
         </label>
         <input
           type="text"
-          value={localValues.rdfsLabel}
-          onChange={(e) => handleLocalChange('rdfsLabel', e.target.value)}
-          onBlur={() => handleBlur('rdfsLabel')}
-          onKeyPress={(e) => handleKeyPress(e, 'rdfsLabel')}
-          placeholder="Primary label for this concept"
+          value={rdfsSeeAlso}
+          onChange={(e) => setRdfsSeeAlso(e.target.value)}
+          onBlur={handleSeeAlsoBlur}
+          onKeyPress={handleSeeAlsoKeyPress}
+          placeholder="https://example.com/related, https://other.com/resource"
           style={{
             width: '100%',
             padding: '6px 8px',
@@ -486,63 +487,13 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
             fontFamily: "'EmOne', sans-serif"
           }}
         />
-      </div>
-
-      {/* rdfs:comment */}
-      <div style={{ marginBottom: '10px' }}>
-        <label style={{ 
-          display: 'block', 
-          fontSize: '12px', 
-          color: '#666', 
-          marginBottom: '4px' 
+        <div style={{ 
+          fontSize: '11px', 
+          color: '#888', 
+          marginTop: '2px'
         }}>
-          Description (rdfs:comment)
-        </label>
-        <textarea
-          value={localValues.rdfsComment}
-          onChange={(e) => handleLocalChange('rdfsComment', e.target.value)}
-          onBlur={() => handleBlur('rdfsComment')}
-          placeholder="Description of this concept"
-          rows={3}
-          style={{
-            width: '100%',
-            padding: '6px 8px',
-            border: '1px solid #260000',
-            borderRadius: '4px',
-            fontSize: '14px',
-            fontFamily: "'EmOne', sans-serif",
-            resize: 'vertical',
-            minHeight: '60px'
-          }}
-        />
-      </div>
-
-      {/* rdfs:seeAlso */}
-      <div style={{ marginBottom: '10px' }}>
-        <label style={{ 
-          display: 'block', 
-          fontSize: '12px', 
-          color: '#666', 
-          marginBottom: '4px' 
-        }}>
-          See Also (rdfs:seeAlso) - comma separated URLs
-        </label>
-        <input
-          type="text"
-          value={localValues.rdfsSeeAlso}
-          onChange={(e) => handleLocalChange('rdfsSeeAlso', e.target.value)}
-          onBlur={() => handleBlur('rdfsSeeAlso')}
-          onKeyPress={(e) => handleKeyPress(e, 'rdfsSeeAlso')}
-          placeholder="https://example.com/related, https://another.com/resource"
-          style={{
-            width: '100%',
-            padding: '6px 8px',
-            border: '1px solid #260000',
-            borderRadius: '4px',
-            fontSize: '14px',
-            fontFamily: "'EmOne', sans-serif"
-          }}
-        />
+          Comma-separated URLs to related resources
+        </div>
       </div>
     </div>
   );
