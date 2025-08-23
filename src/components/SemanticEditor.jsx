@@ -797,6 +797,11 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
 };
 
 const SemanticEditor = ({ nodeData, onUpdate }) => {
+  const [showRDFResolution, setShowRDFResolution] = useState(false);
+  const [suggestions, setSuggestions] = useState(null);
+  const [validationResults, setValidationResults] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+
   if (!nodeData) return null;
 
   const externalLinks = nodeData.externalLinks || [];
@@ -815,6 +820,41 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
       ...nodeData,
       externalLinks: updatedLinks
     });
+  };
+
+  // Handle getting suggestions for external links
+  const handleGetSuggestions = async () => {
+    if (!nodeData) return;
+    
+    setIsLoading(true);
+    try {
+      const linkSuggestions = await suggestExternalLinks(nodeData.id, nodeData);
+      setSuggestions(linkSuggestions);
+    } catch (error) {
+      console.error('[SemanticEditor] Failed to get suggestions:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle node validation
+  const handleValidateNode = async () => {
+    if (!nodeData) return;
+    
+    setIsLoading(true);
+    try {
+      const results = await validateNode(nodeData, { nodes: [nodeData] });
+      setValidationResults(results);
+    } catch (error) {
+      console.error('[SemanticEditor] Validation failed:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle updating node data
+  const handleNodeUpdate = (updatedNode) => {
+    onUpdate(updatedNode);
   };
 
   return (
@@ -942,6 +982,82 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
             ))}
           </div>
         )}
+
+        {/* RDF Resolution Actions */}
+        {externalLinks.length > 0 && (
+          <div style={{ marginTop: '15px', padding: '12px', backgroundColor: 'rgba(38, 0, 0, 0.05)', borderRadius: '6px' }}>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setShowRDFResolution(true)}
+                style={{
+                  backgroundColor: '#8B0000',
+                  color: '#bdb5b5',
+                  border: 'none',
+                  padding: '8px 12px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontWeight: 'bold'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#A52A2A'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#8B0000'}
+                title="Resolve external links to RDF data"
+              >
+                <RotateCcw size={14} />
+                Resolve Links
+              </button>
+              
+              <button
+                onClick={handleGetSuggestions}
+                style={{
+                  backgroundColor: '#2E8B57',
+                  color: '#bdb5b5',
+                  border: 'none',
+                  padding: '8px 12px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontWeight: 'bold'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#3CB371'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2E8B57'}
+                title="Get AI-powered suggestions for external links"
+              >
+                <Zap size={14} />
+                Get Suggestions
+              </button>
+
+              <button
+                onClick={handleValidateNode}
+                style={{
+                  backgroundColor: '#FF8C00',
+                  color: '#bdb5b5',
+                  border: 'none',
+                  padding: '8px 12px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontWeight: 'bold'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#FFA500'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#FF8C00'}
+                title="Validate node semantic consistency"
+              >
+                <CheckCircle size={14} />
+                Validate
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <StandardDivider margin="20px 0" />
@@ -950,6 +1066,14 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
       <SemanticClassificationSection 
         nodeData={nodeData} 
         onUpdate={onUpdate}
+      />
+
+      {/* RDF Resolution Panel */}
+      <RDFResolutionPanel
+        nodeData={nodeData}
+        onUpdate={handleNodeUpdate}
+        isVisible={showRDFResolution}
+        onClose={() => setShowRDFResolution(false)}
       />
     </div>
   );
