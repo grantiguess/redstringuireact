@@ -4,6 +4,7 @@ import { PANEL_CLOSE_ICON_SIZE } from '../constants';
 import StandardDivider from './StandardDivider.jsx';
 import { rdfResolver } from '../services/rdfResolver.js';
 import { enrichFromSemanticWeb } from '../services/semanticWebQuery.js';
+import { knowledgeFederation } from '../services/knowledgeFederation.js';
 
 // DOI validation regex
 const DOI_REGEX = /^10\.\d{4,}\/[-._;()\/:a-zA-Z0-9]+$/;
@@ -806,6 +807,17 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
     error: null
   });
   const [resolvedData, setResolvedData] = useState(new Map());
+  const [federationState, setFederationState] = useState({
+    isImporting: false,
+    progress: { stage: '', entity: '', level: 0 },
+    results: null,
+    error: null
+  });
+  const [searchState, setSearchState] = useState({
+    isSearching: false,
+    query: '',
+    results: []
+  });
 
   if (!nodeData) return null;
 
@@ -916,6 +928,95 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
       const updatedClasses = [...(nodeData.equivalentClasses || []), value];
       onUpdate({ ...nodeData, equivalentClasses: updatedClasses });
     }
+  };
+
+  // Handle mass knowledge import
+  const handleMassImport = async () => {
+    if (!nodeData?.name) return;
+    
+    setFederationState({
+      isImporting: true,
+      progress: { stage: 'initializing', entity: nodeData.name, level: 0 },
+      results: null,
+      error: null
+    });
+
+    try {
+      const results = await knowledgeFederation.importKnowledgeCluster(
+        nodeData.name,
+        {
+          maxDepth: 2,
+          maxEntitiesPerLevel: 8,
+          includeRelationships: true,
+          includeSources: ['wikidata', 'dbpedia'],
+          onProgress: (progressData) => {
+            setFederationState(prev => ({
+              ...prev,
+              progress: progressData
+            }));
+          }
+        }
+      );
+
+      setFederationState({
+        isImporting: false,
+        progress: { stage: 'complete', entity: '', level: 0 },
+        results: results,
+        error: null
+      });
+
+      console.log(`[SemanticEditor] Mass import completed: ${results.totalEntities} entities, ${results.totalRelationships} relationships`);
+      
+    } catch (error) {
+      console.error('[SemanticEditor] Mass import failed:', error);
+      setFederationState({
+        isImporting: false,
+        progress: { stage: 'failed', entity: '', level: 0 },
+        results: null,
+        error: error.message
+      });
+    }
+  };
+
+  // Handle federated search
+  const handleFederatedSearch = async (query) => {
+    if (!query.trim()) return;
+    
+    setSearchState({
+      isSearching: true,
+      query: query,
+      results: []
+    });
+
+    try {
+      const results = await knowledgeFederation.federatedSearch(query, {
+        sources: ['wikidata', 'dbpedia'],
+        limit: 20,
+        minConfidence: 0.6,
+        includeSnippets: true
+      });
+
+      setSearchState({
+        isSearching: false,
+        query: query,
+        results: results
+      });
+
+    } catch (error) {
+      console.error('[SemanticEditor] Federated search failed:', error);
+      setSearchState({
+        isSearching: false,
+        query: query,
+        results: []
+      });
+    }
+  };
+
+  // Import a search result as new node
+  const importSearchResult = (result) => {
+    // This would integrate with the graph store to create a new node
+    console.log('[SemanticEditor] Would import:', result);
+    // TODO: Integrate with graph store to create new node
   };
 
   return (
@@ -1069,6 +1170,30 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
             >
               {enrichmentState.isEnriching ? <Loader2 size={14} style={{animation: 'spin 1s linear infinite'}} /> : <Zap size={14} />}
               {enrichmentState.isEnriching ? 'Enriching...' : 'Enrich from Web'}
+            </button>
+            
+            <button
+              onClick={handleMassImport}
+              disabled={enrichmentState.isEnriching || federationState.isImporting}
+              style={{
+                backgroundColor: (enrichmentState.isEnriching || federationState.isImporting) ? '#666' : '#4B0082',
+                color: '#bdb5b5',
+                border: 'none',
+                padding: '8px 12px',
+                borderRadius: '4px',
+                cursor: (enrichmentState.isEnriching || federationState.isImporting) ? 'not-allowed' : 'pointer',
+                fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontWeight: 'bold'
+              }}
+              onMouseEnter={(e) => !(enrichmentState.isEnriching || federationState.isImporting) && (e.currentTarget.style.backgroundColor = '#6A0DAD')}
+              onMouseLeave={(e) => !(enrichmentState.isEnriching || federationState.isImporting) && (e.currentTarget.style.backgroundColor = '#4B0082')}
+              title="Import entire knowledge cluster (entities + relationships)"
+            >
+              {federationState.isImporting ? <Loader2 size={14} style={{animation: 'spin 1s linear infinite'}} /> : <Globe size={14} />}
+              {federationState.isImporting ? 'Importing...' : 'Mass Import'}
             </button>
             
             {externalLinks.length > 0 && (
@@ -1233,6 +1358,171 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
       </div>
 
       <StandardDivider margin="20px 0" />
+
+      {/* Mass Import Progress */}
+      {federationState.isImporting && (
+        <div style={{
+          marginBottom: '15px',
+          padding: '12px',
+          backgroundColor: '#EFE8E5',
+          borderRadius: '6px',
+          border: '1px solid #e0e0e0'
+        }}>
+          <div style={{ 
+            fontSize: '12px', 
+            color: '#4B0082',
+            fontWeight: 'bold',
+            marginBottom: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+            Mass Importing Knowledge Cluster...
+          </div>
+          <div style={{ fontSize: '11px', color: '#666' }}>
+            Stage: {federationState.progress.stage}
+            {federationState.progress.entity && ` | Entity: ${federationState.progress.entity}`}
+            {federationState.progress.level > 0 && ` | Level: ${federationState.progress.level}`}
+          </div>
+        </div>
+      )}
+
+      {/* Mass Import Results */}
+      {federationState.results && (
+        <div style={{
+          marginBottom: '15px',
+          padding: '12px',
+          backgroundColor: '#EFE8E5',
+          borderRadius: '6px',
+          border: '1px solid #e0e0e0'
+        }}>
+          <div style={{
+            fontSize: '12px',
+            color: '#4B0082',
+            fontWeight: 'bold',
+            marginBottom: '8px'
+          }}>
+            Knowledge Cluster Imported 🌐
+          </div>
+          <div style={{ fontSize: '11px', color: '#333', marginBottom: '6px' }}>
+            <strong>{federationState.results.totalEntities}</strong> entities, <strong>{federationState.results.totalRelationships}</strong> relationships
+          </div>
+          <div style={{ fontSize: '10px', color: '#666' }}>
+            Sources: {Object.entries(federationState.results.sourceBreakdown).map(([source, count]) => `${source}: ${count}`).join(', ')}
+          </div>
+          <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>
+            Clusters: {federationState.results.clusters.size}
+          </div>
+        </div>
+      )}
+
+      {/* Federated Search */}
+      <div style={{
+        marginBottom: '20px',
+        padding: '12px',
+        backgroundColor: '#bdb5b5',
+        borderRadius: '6px',
+        border: '1px solid #e0e0e0'
+      }}>
+        <div style={{
+          fontSize: '12px',
+          color: '#8B0000',
+          fontWeight: 'bold',
+          marginBottom: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px'
+        }}>
+          <Search size={14} />
+          Federated Knowledge Search
+        </div>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+          <input
+            type="text"
+            value={searchState.query}
+            onChange={(e) => setSearchState(prev => ({ ...prev, query: e.target.value }))}
+            onKeyPress={(e) => e.key === 'Enter' && handleFederatedSearch(searchState.query)}
+            placeholder="Search across Wikidata, DBpedia..."
+            style={{
+              flex: 1,
+              padding: '6px 8px',
+              border: '1px solid #8B0000',
+              borderRadius: '4px',
+              fontSize: '12px',
+              fontFamily: "'EmOne', sans-serif"
+            }}
+          />
+          <button
+            onClick={() => handleFederatedSearch(searchState.query)}
+            disabled={searchState.isSearching || !searchState.query.trim()}
+            style={{
+              padding: '6px 12px',
+              border: 'none',
+              backgroundColor: searchState.isSearching ? '#666' : '#8B0000',
+              color: '#bdb5b5',
+              borderRadius: '4px',
+              cursor: (searchState.isSearching || !searchState.query.trim()) ? 'not-allowed' : 'pointer',
+              fontSize: '12px',
+              fontWeight: 'bold'
+            }}
+          >
+            {searchState.isSearching ? '...' : 'Search'}
+          </button>
+        </div>
+        
+        {/* Search Results */}
+        {searchState.results.length > 0 && (
+          <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+            <div style={{ fontSize: '11px', color: '#8B0000', marginBottom: '6px', fontWeight: 'bold' }}>
+              Found {searchState.results.length} results:
+            </div>
+            {searchState.results.map((result, index) => (
+              <div
+                key={index}
+                style={{
+                  padding: '6px 8px',
+                  backgroundColor: '#EFE8E5',
+                  borderRadius: '4px',
+                  marginBottom: '4px',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start'
+                }}
+                onClick={() => importSearchResult(result)}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 'bold', color: '#333', marginBottom: '2px' }}>
+                    {result.title}
+                  </div>
+                  <div style={{ color: '#666', fontSize: '10px', marginBottom: '2px' }}>
+                    {result.snippet}
+                  </div>
+                  <div style={{ color: '#8B0000', fontSize: '9px' }}>
+                    {result.source} | Confidence: {Math.round((result.confidence || 0) * 100)}%
+                  </div>
+                </div>
+                <button
+                  style={{
+                    padding: '2px 6px',
+                    fontSize: '9px',
+                    backgroundColor: '#2E8B57',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    marginLeft: '8px'
+                  }}
+                >
+                  Import
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       
       {/* Semantic Classification Section */}
       <SemanticClassificationSection 
