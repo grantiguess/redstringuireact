@@ -224,6 +224,110 @@ const PanelContentWrapper = ({
     }
   };
 
+  const handleMaterializeConnection = (connection) => {
+    console.log('[PanelContentWrapper] Materializing semantic connection:', connection);
+    
+    const { subject, predicate, object, subjectColor, objectColor } = connection;
+    
+    // Find or create subject node prototype
+    let subjectPrototypeId = null;
+    for (const [id, prototype] of nodePrototypes.entries()) {
+      if (prototype.name.toLowerCase() === subject.toLowerCase()) {
+        subjectPrototypeId = id;
+        break;
+      }
+    }
+    
+    // If subject node doesn't exist, create it
+    if (!subjectPrototypeId) {
+      subjectPrototypeId = `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      storeActions.addNodePrototype({
+        id: subjectPrototypeId,
+        name: subject,
+        description: `Semantic node: ${subject}`,
+        color: subjectColor || '#8B0000',
+        definitionGraphIds: []
+      });
+    }
+    
+    // Find or create object node prototype
+    let objectPrototypeId = null;
+    for (const [id, prototype] of nodePrototypes.entries()) {
+      if (prototype.name.toLowerCase() === object.toLowerCase()) {
+        objectPrototypeId = id;
+        break;
+      }
+    }
+    
+    // If object node doesn't exist, create it
+    if (!objectPrototypeId) {
+      objectPrototypeId = `node-${Date.now() + 1}-${Math.random().toString(36).substr(2, 9)}`;
+      storeActions.addNodePrototype({
+        id: objectPrototypeId,
+        name: object,
+        description: `Semantic node: ${object}`,
+        color: objectColor || '#8B0000',
+        definitionGraphIds: []
+      });
+    }
+    
+    // Add instances to current graph if they don't exist
+    const currentGraph = graphs.get(activeGraphId);
+    if (currentGraph) {
+      let subjectInstanceId = null;
+      let objectInstanceId = null;
+      
+      // Check if subject instance already exists in current graph
+      for (const [instanceId, instance] of currentGraph.instances.entries()) {
+        if (instance.prototypeId === subjectPrototypeId) {
+          subjectInstanceId = instanceId;
+        }
+        if (instance.prototypeId === objectPrototypeId) {
+          objectInstanceId = instanceId;
+        }
+      }
+      
+      // Create subject instance if it doesn't exist
+      if (!subjectInstanceId) {
+        subjectInstanceId = `instance-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        storeActions.addNodeInstance(activeGraphId, subjectPrototypeId, { 
+          x: 100, 
+          y: 100, 
+          scale: 1 
+        }, subjectInstanceId);
+      }
+      
+      // Create object instance if it doesn't exist
+      if (!objectInstanceId) {
+        objectInstanceId = `instance-${Date.now() + 1}-${Math.random().toString(36).substr(2, 9)}`;
+        storeActions.addNodeInstance(activeGraphId, objectPrototypeId, { 
+          x: 300, 
+          y: 100, 
+          scale: 1 
+        }, objectInstanceId);
+      }
+      
+      // Create edge between instances
+      const edgeId = `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      storeActions.addEdge(activeGraphId, {
+        id: edgeId,
+        sourceId: subjectInstanceId,
+        destinationId: objectInstanceId,
+        label: predicate,
+        color: '#666666'
+      });
+      
+      console.log('[PanelContentWrapper] Created semantic connection in graph:', {
+        subjectPrototypeId,
+        objectPrototypeId,
+        subjectInstanceId,
+        objectInstanceId,
+        edgeId,
+        predicate
+      });
+    }
+  };
+
   if (!nodeData) {
     return (
       <div style={{ padding: '10px', color: '#aaa', fontFamily: "'EmOne', sans-serif" }}>
@@ -245,6 +349,7 @@ const PanelContentWrapper = ({
         onOpenNode={handleOpenNode}
         onExpandNode={handleExpandNode}
         onTypeSelect={handleTypeSelect}
+        onMaterializeConnection={handleMaterializeConnection}
         isHomeTab={tabType === 'home'}
         showExpandButton={true}
       expandButtonDisabled={isDefiningNodeOfCurrentGraph}

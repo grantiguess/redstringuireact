@@ -5,6 +5,7 @@ import { Palette, ArrowUpFromDot, ImagePlus } from 'lucide-react';
 import { NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR } from '../../constants.js';
 import CollapsibleSection from '../CollapsibleSection.jsx';
 import SemanticEditor from '../SemanticEditor.jsx';
+import ConnectionBrowser from '../ConnectionBrowser.jsx';
 import StandardDivider from '../StandardDivider.jsx';
 
 // Helper function to determine the correct article ("a" or "an")
@@ -205,6 +206,7 @@ const SharedPanelContent = ({
   onExpandNode,
   onNavigateDefinition,
   onTypeSelect,
+  onMaterializeConnection,
   
   // UI state
   isUltraSlim = false,
@@ -568,6 +570,20 @@ const SharedPanelContent = ({
             No components in this {isHomeTab ? 'graph' : 'definition'}.
           </div>
         )}
+      </CollapsibleSection>
+
+      {/* Dividing line above Connections section */}
+      <StandardDivider margin="20px 0" />
+      
+      {/* Connections Section */}
+      <CollapsibleSection 
+        title="Connections" 
+        defaultExpanded={false}
+      >
+        <ConnectionBrowser 
+          nodeData={nodeData}
+          onMaterializeConnection={onMaterializeConnection}
+        />
       </CollapsibleSection>
 
       {/* Dividing line above Semantic Web Integration section */}

@@ -117,10 +117,17 @@ Beyond the general guidelines, recent development has focused on more complex UI
 
 20. **Inline Node Editing and Panel Integration:**
 
-21. **Semantic Web & Solid Pod Integration:**
+21. **Semantic Web Integration & Federated Knowledge System:**
     *   **RDF Export**: The system now exports cognitive spaces in RDF/Turtle format, making them interoperable with the global semantic web. See `src/formats/rdfExport.js` and `src/formats/redstringFormat.js` for implementation details.
     *   **Abstraction Mapping**: Redstring's abstraction chains are mapped to `rdfs:subClassOf` relationships, encoding hierarchical knowledge in W3C standards.
     *   **Connection Triples**: Redstring connections are transformed into formal RDF statements (subject-predicate-object) for machine-readable knowledge graphs.
+    *   **Live SPARQL Integration**: Direct-fetch SPARQL client (`src/services/sparqlClient.js`) that bypasses library limitations to query Wikidata, DBpedia, and other semantic web endpoints in real-time.
+    *   **Federated Knowledge Import**: Mass knowledge cluster import system (`src/services/knowledgeFederation.js`) that can pull entire semantic networks around seed concepts, discovering relationships and building comprehensive knowledge graphs.
+    *   **Semantic Web Query Service**: Unified semantic enrichment service (`src/services/semanticWebQuery.js`) that integrates Wikipedia, Wikidata, and DBpedia queries with fallback mechanisms and confidence scoring.
+    *   **RDF Triplet Processing**: Advanced processing pipeline that converts RDF subject-predicate-object triplets into potential Redstring connections, maintaining semantic relationships while presenting them as native graph elements.
+    *   **Cognitive Augmentation Architecture**: The system acts as invisible infrastructure that reduces free recall burden and increases discovery surface area - users interact with concepts and connections without needing to understand semantic web markup.
+    *   **Semantic Viewport Concept**: Implements a "narrow viewport" system where users work within focused cognitive workspaces while having access to vast semantic substrate of human knowledge as discoverable connection opportunities.
+    *   **Connection Browser Framework**: Infrastructure for presenting imported semantic relationships as "addable options" to current graph context, supporting selective materialization of semantic web data into native Redstring nodes and edges.
     *   **Solid Pod Federation**: Complete integration with Solid Pods for decentralized storage and sharing of cognitive spaces. See `src/services/solidAuth.js` and `src/services/solidData.js`.
     *   **Federation UI**: New "Federation" tab in the left panel (`src/Federation.jsx`) provides Pod authentication, space management, and browsing capabilities.
     *   **WebID Authentication**: OIDC-based authentication flow with session management and automatic redirect handling.
@@ -255,3 +262,34 @@ Beyond the general guidelines, recent development has focused on more complex UI
    *   **File Persistence:** Arrow states are saved to universe files with proper Set-to-Array conversion during export and Array-to-Set restoration during import, ensuring data integrity across sessions.
 
 a system where a Node is spawned whenever a node representation in the header, the saved things and open things page button node previews in the graphbrowserpanel (not counting the network representations within the open things views, those are just visual aids) is dragged onto the canvas. this uses the same click and hold logic for moving a node to essentially place the existing node (not a copy) onto the canvas, maintaining the same ID and all properties including graph definitions. If the node already exists in the current graph, it just moves to the new position. If it doesn't exist in the current graph, it adds the existing node to that graph. Special recursive case: when dragging a defining node into its own definition graph, it creates a new instance with a new ID, maintaining the parent-child relationship and enabling infinite recursive nesting. this needs to be higher than the header on the Z axis so the starting move might need to be higher than the header and able to be dragged across the header, almost above most other things as an extension of the cursor, while maintaining that smooth appearance of it getting larger to show that it's been picked up and moving smoothly. it uses webworkers so keep that in mind too. the special node should start out at the center of the cursor horizontally and vertically and it should be a little bit smaller. this ensures that when you expand a node into its graph definition, it will be the exact same node with all its properties and definitions intact, creating a consistent, recursive structure where the same node can appear in multiple graphs while maintaining its identity and definitions, and supports the philosophical goal of nodes containing themselves infinitely.
+
+## Connection Browser & Semantic Integration Vision:
+
+36. **Semantic-to-Native Translation Pipeline:**
+   *   **Core Philosophy:** Transform semantic web RDF triplets into native Redstring nodes and connections that are indistinguishable from manually created content, supporting the goal of making semantic web markup invisible to users.
+   *   **Connection Browser Interface:** New "Connections" section in `Panel.jsx` that displays imported semantic relationships as visual node representations with connections between them, using custom Redstring colors (or default maroon) for semantic consistency.
+   *   **In Graph vs All Connections Slider:** Interface component allowing users to filter between connections that exist in the current graph versus all available semantic connections from imported knowledge clusters.
+   *   **Selective Materialization:** Click-to-add system where users can selectively materialize semantic web triplets as actual Redstring nodes and edges, transforming potential connections into instantiated graph elements.
+   *   **Cognitive Augmentation Goals:**
+        - **Reduce Free Recall Burden:** Present discoverable connections instead of requiring users to remember what might relate
+        - **Increase Discovery Surface Area:** Surface unexpected but relevant connections from vast semantic datasets
+        - **Support Guided Growth:** Enable graph expansion through connection opportunities rather than blank-slate creation
+
+37. **Semantic Viewport & Narrow Focus Architecture:**
+   *   **Narrow Viewport Concept:** Current graph serves as focused cognitive workspace while imported semantic networks provide vast, accessible substrate of potential connections.
+   *   **Instantiated Portals of Meaning:** When users materialize semantic connections, they create meaning-pathways into larger datasets, enabling navigation through massive knowledge networks via small, manageable viewports.
+   *   **Non-Intrusive Pipeline:** Semantic web infrastructure remains completely invisible - no RDF terminology, SPARQL interfaces, or semantic web complexity exposed to users.
+   *   **Actor Network Theory Integration:** Concepts, objects, and relationships treated as equal participants in the knowledge network, supporting holistic understanding of complex systems.
+   *   **Evolutionary Selection Pressure:** Ideas and connections evolve through user selection and materialization choices, mimicking natural cognitive processes.
+
+38. **Connection Representation & Visual Design:**
+   *   **Reusable Triplet Component:** Visual component for displaying RDF subject-predicate-object relationships as connected node representations, reusable for both Connection Browser and future connection control panels.
+   *   **Redstring-Native Styling:** All semantic connections displayed using Redstring's visual language - node colors, connection styles, and spatial arrangements that match manually created content.
+   *   **Progressive Enhancement:** System enhances existing Redstring capabilities without changing core interaction patterns or introducing new complexity to the base interface.
+   *   **Cognitive Science Alignment:** Interface design supports natural pattern recognition and symbolic recomposition processes, acting as external cognitive scaffold for complex information networks.
+
+39. **Implementation Strategy & Architecture:**
+   *   **Panel Integration:** Extend `Panel.jsx` with new "Connections" section alongside existing Components, Definitions, and other sections.
+   *   **Semantic Data Flow:** Imported knowledge clusters from `knowledgeFederation.js` feed into connection browser, providing pool of materializable relationships.
+   *   **Store Integration:** Connection browser integrates with Zustand store to access current graph context and manage selective materialization of semantic connections.
+   *   **Universal Interface Philosophy:** Semantic web serves as invisible infrastructure supporting universally accessible interface focused on concepts and objects in digital space, not markup languages or technical complexity.

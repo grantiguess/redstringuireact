@@ -76,6 +76,13 @@ Complex state management for contextual menus:
 - "Chin" expansion effect for expanded nodes
 - Seamless panel-canvas synchronization
 
+### Semantic Web Integration
+- **Live SPARQL Queries**: Direct-fetch SPARQL client for real-time queries to Wikidata, DBpedia, and other semantic web endpoints
+- **Federated Knowledge Import**: Mass knowledge cluster import system that discovers semantic relationships and builds comprehensive knowledge graphs
+- **Cognitive Augmentation**: Semantic web infrastructure acts as invisible substrate, reducing free recall burden while increasing discovery opportunities
+- **Connection Browser**: Interface for browsing and selectively materializing semantic web relationships as native Redstring nodes and connections
+- **Semantic-to-Native Translation**: RDF triplets automatically converted to Redstring-native visual elements using appropriate colors and styling
+
 ## Testing Strategy
 
 Tests are located in `test/` directory:
@@ -107,4 +114,8 @@ Tests are located in `test/` directory:
 - `src/core/Graph.js`: Core graph data structure
 - `src/Panel.jsx`: Right panel interface
 - `src/PieMenu.jsx`: Contextual menu system
+- `src/services/sparqlClient.js`: Direct-fetch SPARQL client for semantic web queries
+- `src/services/knowledgeFederation.js`: Mass knowledge import and cluster analysis
+- `src/services/semanticWebQuery.js`: Unified semantic enrichment service
+- `src/components/SemanticEditor.jsx`: Semantic web integration interface
 - `aiinstructions.txt`: Detailed project philosophy and comprehensive development patterns
