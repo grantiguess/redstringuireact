@@ -101,11 +101,11 @@ export class SPARQLClient {
   }
 
   /**
-   * Execute a SPARQL query
+   * Execute a SPARQL query using direct fetch (bypasses sparql-http-client issues)
    * @param {string} endpointKey - Endpoint identifier
    * @param {string} query - SPARQL query string
    * @param {Object} options - Query options
-   * @returns {Promise<Object>} Query results
+   * @returns {Promise<Array>} Query results as bindings array
    */
   async executeQuery(endpointKey, query, options = {}) {
     const endpoint = this.endpoints.get(endpointKey);
@@ -127,33 +127,46 @@ export class SPARQLClient {
     }
 
     try {
-      const client = await this._getClient(endpointKey, endpoint);
-      const result = await client.query.select(query, {
-        signal: AbortSignal.timeout(endpoint.timeout),
-        headers: { ...endpoint.headers, ...options.headers }
+      console.log(`[SPARQL Client] Direct fetch query to ${endpointKey}:`, query.substring(0, 100) + '...');
+      
+      // Use direct fetch instead of sparql-http-client
+      const response = await fetch(endpoint.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/sparql-results+json',
+          'User-Agent': 'Redstring-SPARQL-Client/1.0',
+          ...endpoint.headers,
+          ...options.headers
+        },
+        body: `query=${encodeURIComponent(query)}`,
+        signal: AbortSignal.timeout(endpoint.timeout)
       });
 
-      // Debug: Log the result structure
-      console.log(`[SPARQL Client] Raw result for ${endpointKey}:`, {
-        type: typeof result,
-        isIterable: result && (result[Symbol.asyncIterator] || result[Symbol.iterator]),
-        hasBindings: result && result.bindings,
-        hasResults: result && result.results,
-        keys: result ? Object.keys(result) : [],
-        constructor: result ? result.constructor.name : 'none'
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const jsonData = await response.json();
+      console.log(`[SPARQL Client] Direct fetch result for ${endpointKey}:`, {
+        hasResults: !!jsonData.results,
+        bindingsCount: jsonData.results?.bindings?.length || 0,
+        head: jsonData.head,
+        sampleBinding: jsonData.results?.bindings?.[0]
       });
 
-      const parsedResult = await this._parseQueryResult(result);
+      // Extract just the bindings array
+      const bindings = jsonData?.results?.bindings || [];
       
       // Cache the result
       this.queryCache.set(cacheKey, {
-        data: parsedResult,
+        data: bindings,
         timestamp: Date.now()
       });
 
-      return parsedResult;
+      return bindings;
     } catch (error) {
-      console.error(`[SPARQL Client] Query failed for ${endpointKey}:`, error);
+      console.error(`[SPARQL Client] Direct fetch query failed for ${endpointKey}:`, error);
       throw new Error(`SPARQL query failed: ${error.message}`);
     }
   }
@@ -216,7 +229,7 @@ export class SPARQLClient {
     `;
 
     const result = await this.executeQuery(endpointKey, query);
-    return result.results.map(binding => binding.equivalentClass?.value).filter(Boolean);
+    return result.map(binding => binding.equivalentClass?.value).filter(Boolean);
   }
 
   /**
@@ -234,7 +247,7 @@ export class SPARQLClient {
     `;
 
     const result = await this.executeQuery(endpointKey, query);
-    return result.results.map(binding => binding.subClass?.value).filter(Boolean);
+    return result.map(binding => binding.subClass?.value).filter(Boolean);
   }
 
   /**
@@ -252,7 +265,7 @@ export class SPARQLClient {
     `;
 
     const result = await this.executeQuery(endpointKey, query);
-    return result.results.map(binding => binding.superClass?.value).filter(Boolean);
+    return result.map(binding => binding.superClass?.value).filter(Boolean);
   }
 
   /**
@@ -280,7 +293,7 @@ export class SPARQLClient {
     `;
 
     const result = await this.executeQuery(endpointKey, query);
-    return result.results.map(binding => ({
+    return result.map(binding => ({
       uri: binding.entity?.value,
       label: binding.label?.value,
       type: binding.type?.value
@@ -320,18 +333,12 @@ export class SPARQLClient {
   }
 
   /**
-   * Get SPARQL client for an endpoint
+   * Get SPARQL client for an endpoint (legacy method - now using direct fetch)
    * @private
    */
   async _getClient(endpointKey, endpoint) {
-    if (!this.clients.has(endpointKey)) {
-      const client = new SparqlHttpClient({
-        endpointUrl: endpoint.url,
-        defaultGraph: endpoint.defaultGraph
-      });
-      this.clients.set(endpointKey, client);
-    }
-    return this.clients.get(endpointKey);
+    // Legacy method kept for compatibility but no longer used
+    return null;
   }
 
   /**
@@ -358,6 +365,165 @@ export class SPARQLClient {
     try {
       // Handle different result formats from sparql-http-client
       if (result && typeof result === 'object') {
+        // Handle sparql-http-client _Patchable objects (stream already consumed)
+        if (result.constructor && result.constructor.name === '_Patchable') {
+          // Log all properties to understand the _Patchable structure
+          const patchableProps = {};
+          const keys = Object.keys(result);
+          keys.forEach(key => {
+            const value = result[key];
+            if (typeof value === 'function') {
+              patchableProps[key] = 'function';
+            } else if (Array.isArray(value)) {
+              patchableProps[key] = `array[${value.length}]`;
+            } else if (value && typeof value === 'object') {
+              patchableProps[key] = `object(${value.constructor?.name || 'unknown'})`;
+            } else {
+              patchableProps[key] = typeof value;
+            }
+          });
+          
+          console.log('[SPARQL Client] _Patchable keys:', keys);
+          console.log('[SPARQL Client] _Patchable properties:', patchableProps);
+          
+          // Also try to see what methods might be available  
+          const prototypeMethods = [];
+          let current = result;
+          while (current && current !== Object.prototype) {
+            Object.getOwnPropertyNames(current).forEach(prop => {
+              if (typeof current[prop] === 'function' && !prototypeMethods.includes(prop)) {
+                prototypeMethods.push(prop);
+              }
+            });
+            current = Object.getPrototypeOf(current);
+          }
+          console.log('[SPARQL Client] _Patchable methods:', prototypeMethods);
+          
+          // _Patchable objects are already processed streams, check if they have bindings
+          if (result.bindings && Array.isArray(result.bindings)) {
+            return {
+              head: { vars: result.variables || [] },
+              results: { bindings: result.bindings }
+            };
+          }
+          
+          // Try various methods to extract data from the _Patchable object
+          // First try clone() to get an unconsumed copy
+          if (typeof result.clone === 'function') {
+            try {
+              console.log('[SPARQL Client] Attempting _Patchable.clone().json()...');
+              const clonedResult = result.clone();
+              const jsonData = await clonedResult.json();
+              console.log('[SPARQL Client] Cloned _Patchable JSON data:', jsonData);
+              if (jsonData && jsonData.results && jsonData.results.bindings) {
+                return jsonData;
+              }
+              return jsonData || { head: { vars: [] }, results: { bindings: [] } };
+            } catch (cloneError) {
+              console.warn('[SPARQL Client] Failed to clone and parse _Patchable:', cloneError);
+            }
+          }
+          
+          // If clone failed, try text() method
+          if (typeof result.text === 'function') {
+            try {
+              console.log('[SPARQL Client] Attempting _Patchable.text()...');
+              const textData = await result.text();
+              console.log('[SPARQL Client] _Patchable text data (first 200 chars):', textData.substring(0, 200));
+              const jsonData = JSON.parse(textData);
+              if (jsonData && jsonData.results && jsonData.results.bindings) {
+                return jsonData;
+              }
+              return jsonData || { head: { vars: [] }, results: { bindings: [] } };
+            } catch (textError) {
+              console.warn('[SPARQL Client] Failed to parse text from _Patchable:', textError);
+            }
+          }
+          
+          // Try to call methods that might exist on _Patchable to get data
+          try {
+            // Try calling toArray() if it exists (common in sparql-http-client)
+            if (typeof result.toArray === 'function') {
+              console.log('[SPARQL Client] Attempting result.toArray()...');
+              const arrayResult = await result.toArray();
+              console.log('[SPARQL Client] toArray() result:', arrayResult);
+              if (Array.isArray(arrayResult) && arrayResult.length > 0) {
+                return {
+                  head: { vars: Object.keys(arrayResult[0] || {}) },
+                  results: { bindings: arrayResult }
+                };
+              }
+            }
+          } catch (toArrayError) {
+            console.warn('[SPARQL Client] toArray() failed:', toArrayError);
+          }
+          
+          // Try to access common SPARQL result methods on _Patchable
+          const asyncIteratorMethod = result[Symbol.asyncIterator];
+          if (asyncIteratorMethod && typeof asyncIteratorMethod === 'function') {
+            const bindings = [];
+            try {
+              for await (const binding of result) {
+                if (binding && typeof binding === 'object') {
+                  const parsedBinding = {};
+                  for (const [key, value] of Object.entries(binding)) {
+                    if (value && typeof value === 'object' && 'value' in value) {
+                      parsedBinding[key] = {
+                        value: value.value,
+                        type: value.termType || 'literal',
+                        datatype: value.datatype?.value,
+                        language: value.language
+                      };
+                    } else {
+                      parsedBinding[key] = {
+                        value: String(value),
+                        type: 'literal',
+                        datatype: null,
+                        language: null
+                      };
+                    }
+                  }
+                  bindings.push(parsedBinding);
+                }
+              }
+            } catch (iterationError) {
+              console.warn('[SPARQL Client] Error iterating over _Patchable:', iterationError);
+            }
+            
+            return {
+              head: { vars: result.variables || [] },
+              results: { bindings }
+            };
+          }
+          
+          // Fall back to empty result for _Patchable objects we can't parse
+          console.warn('[SPARQL Client] _Patchable object without accessible data, returning empty result');
+          return {
+            head: { vars: [] },
+            results: { bindings: [] }
+          };
+        }
+
+        // Handle standard Response objects
+        if (typeof result.json === 'function' && result.constructor && result.constructor.name === 'Response') {
+          try {
+            const jsonData = await result.json();
+            console.log('[SPARQL Client] JSON response data:', {
+              hasResults: !!jsonData.results,
+              bindingsCount: jsonData.results?.bindings?.length || 0,
+              head: jsonData.head,
+              sampleBinding: jsonData.results?.bindings?.[0]
+            });
+            if (jsonData && jsonData.results && jsonData.results.bindings) {
+              return jsonData;
+            }
+            // Return even empty results in correct format
+            return jsonData || { head: { vars: [] }, results: { bindings: [] } };
+          } catch (jsonError) {
+            console.warn('[SPARQL Client] Failed to parse JSON from Response:', jsonError);
+          }
+        }
+
         // If result has a bindings property, it's already parsed
         if (result.bindings && Array.isArray(result.bindings)) {
           return {
