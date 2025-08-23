@@ -42,7 +42,7 @@ const NodeGridItem = ({
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = 'scale(1.05)';
-        e.currentTarget.style.borderColor = '#bdb5b5';
+        e.currentTarget.style.borderColor = '#260000';
         e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
         e.currentTarget.style.filter = 'brightness(1.1)';
       }}

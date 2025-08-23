@@ -274,9 +274,13 @@ export const exportToRedstring = (storeState, userDomain = null) => {
       "@type": ["redstring:Prototype", "rdfs:Class", "schema:Thing"],
       "@id": `prototype:${id}`,
       
-      // RDF Schema standard properties (W3C compliant)
-      "rdfs:label": prototype.name || 'Untitled',
-      "rdfs:comment": prototype.description || `RedString prototype: ${prototype.name || 'Untitled'}`,
+      // RDF Schema standard properties (W3C compliant) - preserve original
+      "rdfs:label": prototype.name,
+      "rdfs:comment": prototype.description,
+      
+      // RedString core properties (NEVER override these)
+      "name": prototype.name,
+      "description": prototype.description,
       "rdfs:seeAlso": prototype.externalLinks || [],
       "rdfs:isDefinedBy": { "@id": "https://redstring.dev" },
       
@@ -669,8 +673,9 @@ export const importFromRedstring = (redstringData, storeActions) => {
           // Convert from new semantic format
           convertedPrototype = {
             id,
-            name: prototype['rdfs:label'] || prototype.name || 'Untitled',
-            description: prototype['rdfs:comment']?.replace(/^RedString prototype: /, '') || prototype.description || '',
+            // ALWAYS use original RedString properties first, then fall back to RDF
+            name: prototype.name || prototype['rdfs:label'] || 'Untitled',
+            description: prototype.description || prototype['rdfs:comment'] || '',
             
             // Extract from spatial properties
             x: prototype['redstring:spatialContext']?.['redstring:xCoordinate'] || 0,

@@ -192,12 +192,12 @@ const UnifiedSelector = ({
                   if (e.key === 'Enter') handleSubmit(); 
                   if (e.key === 'Escape') { setName(''); setColorPickerVisible(false); onClose?.(); }
                 }}
-                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ccc', marginRight: '10px' }}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #260000', marginRight: '10px' }}
                 autoFocus
               />
               <button
                 onClick={handleSubmit}
-                style={{ padding: '10px', backgroundColor: color, color: '#bdb5b5', border: '2px solid #bdb5b5', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '56px', minHeight: '44px' }}
+                style={{ padding: '10px', backgroundColor: color, color: '#bdb5b5', border: '2px solid #260000', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '56px', minHeight: '44px' }}
                 title={mode === 'connection-creation' ? 'Create connection type' : mode === 'abstraction-node-creation' ? `Create ${abstractionDirection} abstraction` : 'Create node type'}
               >
                 <Plus size={18} color="#bdb5b5" strokeWidth={2.5} />

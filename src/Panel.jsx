@@ -31,6 +31,7 @@ import apiKeyManager from './services/apiKeyManager.js';
 import SemanticEditor from './components/SemanticEditor.jsx';
 import PanelContentWrapper from './components/panel/PanelContentWrapper.jsx';
 import CollapsibleSection from './components/CollapsibleSection.jsx';
+import StandardDivider from './components/StandardDivider.jsx';
 
 // Helper function to determine the correct article ("a" or "an")
 const getArticleFor = (word) => {
@@ -328,11 +329,211 @@ const LeftLibraryView = ({
                   </div>
                 )}
               </div>
-              {!isLastSection && (<div style={{ borderTop: '1px solid #ccc', margin: '15px 0' }}></div>)}
+              {!isLastSection && <StandardDivider />}
             </div>
           );
         })
       )}
+    </div>
+  );
+};
+
+// Bridge Status Display Component
+const BridgeStatusDisplay = () => {
+  const [statusMessages, setStatusMessages] = React.useState([]);
+  const [isVisible, setIsVisible] = React.useState(false);
+
+  React.useEffect(() => {
+    // Override console methods to catch errors
+    const originalConsoleError = console.error;
+    const originalConsoleLog = console.log;
+
+    console.error = (...args) => {
+      // Call original console.error
+      originalConsoleError.apply(console, args);
+      
+      // Check if this is a bridge-related error
+      const message = args.join(' ');
+      if (message.includes('MCP Bridge') || 
+          message.includes('ERR_CONNECTION_REFUSED') ||
+          message.includes('Failed to fetch') ||
+          message.includes('bridge_unavailable_cooldown')) {
+        
+        // Extract meaningful status from error messages
+        let statusText = '';
+        let statusType = 'info';
+        
+        if (message.includes('ERR_CONNECTION_REFUSED')) {
+          statusText = 'Bridge server not available';
+          statusType = 'info';
+        } else if (message.includes('Failed to fetch')) {
+          statusText = 'Unable to connect to bridge server';
+          statusType = 'info';
+        } else if (message.includes('bridge_unavailable_cooldown')) {
+          const cooldownMatch = message.match(/(\d+)s remaining/);
+          const cooldownSeconds = cooldownMatch ? cooldownMatch[1] : 'unknown';
+          statusText = `Bridge temporarily unavailable (${cooldownSeconds}s)`;
+          statusType = 'info';
+        } else if (message.includes('Max reconnection attempts reached')) {
+          statusText = 'Bridge connection failed';
+          statusType = 'warning';
+        } else if (message.includes('Connection lost')) {
+          statusText = 'Bridge connection lost - reconnecting...';
+          statusType = 'info';
+        } else if (message.includes('Connection fully restored')) {
+          statusText = 'Bridge connection restored';
+          statusType = 'success';
+        } else if (message.includes('Redstring store bridge established')) {
+          statusText = 'Bridge connection established';
+          statusType = 'success';
+        } else {
+          statusText = 'Bridge connection issue detected';
+          statusType = 'info';
+        }
+
+        // Add to status messages
+        const newStatus = {
+          id: Date.now(),
+          text: statusText,
+          type: statusType,
+          timestamp: new Date(),
+          originalMessage: message
+        };
+
+        setStatusMessages(prev => {
+          const filtered = prev.filter(msg => 
+            msg.text !== statusText || 
+            Date.now() - msg.timestamp.getTime() > 10000
+          );
+          return [...filtered, newStatus];
+        });
+
+        setIsVisible(true);
+      }
+    };
+
+    console.log = (...args) => {
+      // Call original console.log
+      originalConsoleLog.apply(console, args);
+      
+      // Check if this is a bridge-related success message
+      const message = args.join(' ');
+      if (message.includes('MCP Bridge') && 
+          (message.includes('✅') || message.includes('🎉'))) {
+        
+        let statusText = '';
+        if (message.includes('Connection fully restored')) {
+          statusText = 'Bridge connection restored';
+        } else if (message.includes('Redstring store bridge established')) {
+          statusText = 'Bridge connection established';
+        } else if (message.includes('Store actions registered')) {
+          statusText = 'Bridge store actions registered';
+        }
+
+        if (statusText) {
+          const newStatus = {
+            id: Date.now(),
+            text: statusText,
+            type: 'success',
+            timestamp: new Date(),
+            originalMessage: message
+          };
+
+          setStatusMessages(prev => {
+            const filtered = prev.filter(msg => 
+              msg.text !== statusText || 
+              Date.now() - msg.timestamp.getTime() > 10000
+            );
+            return [...filtered, newStatus];
+          });
+
+          setIsVisible(true);
+        }
+      }
+    };
+
+    // Cleanup function
+    return () => {
+      console.error = originalConsoleError;
+      console.log = originalConsoleLog;
+    };
+  }, []);
+
+  // Auto-hide status messages after 8 seconds
+  React.useEffect(() => {
+    if (statusMessages.length > 0) {
+      const timer = setTimeout(() => {
+        setStatusMessages(prev => prev.filter(msg => 
+          Date.now() - msg.timestamp.getTime() < 8000
+        ));
+        
+        if (statusMessages.length === 0) {
+          setIsVisible(false);
+        }
+      }, 8000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [statusMessages]);
+
+  // Auto-hide display if no messages
+  React.useEffect(() => {
+    if (statusMessages.length === 0) {
+      setIsVisible(false);
+    }
+  }, [statusMessages]);
+
+  if (!isVisible || statusMessages.length === 0) {
+    return null;
+  }
+
+  return (
+    <div style={{
+      marginBottom: '16px',
+      padding: '8px 12px',
+      backgroundColor: 'rgba(38, 0, 0, 0.05)',
+      border: '1px solid rgba(38, 0, 0, 0.1)',
+      borderRadius: '6px',
+      fontFamily: "'EmOne', sans-serif",
+      fontSize: '0.85rem'
+    }}>
+      {statusMessages.map(status => (
+        <div key={status.id} style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: statusMessages.indexOf(status) === statusMessages.length - 1 ? '0' : '6px',
+          color: status.type === 'success' ? '#10b981' : 
+                 status.type === 'warning' ? '#f59e0b' : 
+                 status.type === 'error' ? '#ef4444' : '#260000'
+        }}>
+          <span>{status.text}</span>
+          <button 
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'rgba(38, 0, 0, 0.5)',
+              fontSize: '16px',
+              cursor: 'pointer',
+              padding: '0',
+              width: '16px',
+              height: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '50%',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(38, 0, 0, 0.1)'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            onClick={() => {
+              setStatusMessages(prev => prev.filter(msg => msg.id !== status.id));
+            }}
+          >
+            ×
+          </button>
+        </div>
+      ))}
     </div>
   );
 };
@@ -376,6 +577,9 @@ const LeftGridView = ({
           <Plus size={20} />
         </button>
       </div>
+
+      {/* Bridge Status Display */}
+      <BridgeStatusDisplay />
 
       <div
         ref={listContainerRef}
@@ -817,7 +1021,7 @@ You can "see" and reason about canvas layouts:
         </div>
       </div>
       {/* Dividing line below graph info section */}
-      <div style={{ borderTop: '1px solid #260000', margin: 0 }}></div>
+      <StandardDivider margin="0" />
 
       {showAPIKeySetup && (
         <div className="ai-api-setup-section">
@@ -1173,27 +1377,14 @@ const Panel = forwardRef(
 
     // Derive saved nodes array reactively - savedNodeIds contains PROTOTYPE IDs
     const savedNodes = useMemo(() => {
-        console.log('[DEBUG] Processing saved nodes:', {
-            savedNodeIds: Array.from(savedNodeIds),
-            nodePrototypesMapSize: nodePrototypesMap.size
-        });
-        
         return Array.from(savedNodeIds).map(prototypeId => {
             const prototype = nodePrototypesMap.get(prototypeId);
-            console.log(`[DEBUG] Processing saved prototype ${prototypeId}:`, {
-                exists: !!prototype,
-                name: prototype?.name,
-                hasName: !!(prototype && prototype.name)
-            });
-            
-            if (prototype && prototype.name) {
-                return prototype;
-            } else if (prototype) {
-                // If prototype exists but has no name, give it a fallback
-                console.log(`[DEBUG] Prototype ${prototypeId} has no name, using fallback`);
-                return { ...prototype, name: 'Untitled Node' };
+            if (prototype) {
+                return {
+                    ...prototype,
+                    name: prototype.name || 'Untitled Node'
+                };
             }
-            console.log(`[DEBUG] Prototype ${prototypeId} not found`);
             return null;
         }).filter(Boolean);
     }, [savedNodeIds, nodePrototypesMap]);
@@ -1261,7 +1452,12 @@ const Panel = forwardRef(
             
             const nodes = instances.map(instance => {
                 const prototype = nodePrototypesMap.get(instance.prototypeId);
-                return { ...prototype, ...instance };
+                return { 
+                    ...prototype, 
+                    ...instance,
+                    // Always use prototype name, with fallback
+                    name: prototype?.name || 'Unnamed'
+                };
             }).filter(Boolean);
 
             const edges = edgeIds.map(edgeId => edgesMap.get(edgeId)).filter(Boolean); // Use edgesMap

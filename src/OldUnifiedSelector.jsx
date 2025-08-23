@@ -239,7 +239,7 @@ const OldUnifiedSelector = ({
                   flex: 1, 
                   padding: '10px', 
                   borderRadius: '5px', 
-                  border: '1px solid #ccc', 
+                  border: '1px solid #260000', 
                   marginRight: '10px' 
                 }}
                 autoFocus

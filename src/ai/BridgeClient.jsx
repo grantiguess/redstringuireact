@@ -92,14 +92,14 @@ const BridgeClient = () => {
         connectionState.reconnectAttempts++;
         
         if (connectionState.reconnectAttempts >= connectionState.maxReconnectAttempts) {
-          console.error('❌ MCP Bridge: Max reconnection attempts reached. Giving up.');
+          console.log('🔌 MCP Bridge: Max reconnection attempts reached - this is normal if the bridge connector isn\'t running');
           if (reconnectIntervalRef.current) {
             clearInterval(reconnectIntervalRef.current);
             reconnectIntervalRef.current = null;
           }
         } else {
           const nextAttemptDelay = Math.min(1000 * Math.pow(2, connectionState.reconnectAttempts), 30000);
-          console.log(`⏳ MCP Bridge: Next reconnection attempt in ${nextAttemptDelay/1000}s`);
+          console.log(`⏳ MCP Bridge: Next reconnection attempt in ${nextAttemptDelay/1000}s - this is normal if the bridge connector isn't running`);
         }
       }
     };
@@ -110,7 +110,7 @@ const BridgeClient = () => {
       
       if (connectionState.isConnected) {
         connectionState.isConnected = false;
-        console.log('🔌 MCP Bridge: Connection lost, starting reconnection process...');
+        console.log('🔌 MCP Bridge: Connection lost, starting reconnection process... - this is normal if the bridge connector isn\'t running');
       }
       
       // Stop normal polling
@@ -637,7 +637,16 @@ const BridgeClient = () => {
           throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
       } catch (error) {
-        console.error('❌ MCP Bridge: Failed to register store actions:', error);
+        // Provide more user-friendly error messages
+        if (error.message.includes('bridge_unavailable_cooldown')) {
+          const cooldownMatch = error.message.match(/(\d+)s remaining/);
+          const cooldownSeconds = cooldownMatch ? cooldownMatch[1] : 'unknown';
+          console.log(`⏳ MCP Bridge: Bridge temporarily unavailable (${cooldownSeconds}s cooldown) - this is normal if the bridge connector isn't running`);
+        } else if (error.message.includes('Failed to fetch')) {
+          console.log(`🔌 MCP Bridge: Unable to connect to bridge server - this is normal if the bridge connector isn't running`);
+        } else {
+          console.error('❌ MCP Bridge: Failed to register store actions:', error);
+        }
         connectionStateRef.current.isConnected = false;
         startReconnection();
       }
@@ -711,10 +720,21 @@ const BridgeClient = () => {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
       } catch (error) {
-        console.error('❌ MCP Bridge: Failed to send store to server:', error);
+        // Provide more user-friendly error messages
+        if (error.message.includes('bridge_unavailable_cooldown')) {
+          const cooldownMatch = error.message.match(/(\d+)s remaining/);
+          const cooldownSeconds = cooldownMatch ? cooldownMatch[1] : 'unknown';
+          console.log(`⏳ MCP Bridge: Bridge temporarily unavailable (${cooldownSeconds}s cooldown) - this is normal if the bridge connector isn't running`);
+        } else if (error.message.includes('Failed to fetch')) {
+          console.log(`🔌 MCP Bridge: Unable to connect to bridge server - this is normal if the bridge connector isn't running`);
+        } else {
+          console.error('❌ MCP Bridge: Failed to send store to server:', error);
+        }
+        
         const isConnectionError = error.message.includes('fetch') || 
                                  error.message.includes('ECONNREFUSED') ||
-                                 error.message.includes('Failed to fetch');
+                                 error.message.includes('Failed to fetch') ||
+                                 error.message.includes('bridge_unavailable_cooldown');
         if (isConnectionError && connectionStateRef.current.isConnected) {
           connectionStateRef.current.isConnected = false;
           startReconnection();

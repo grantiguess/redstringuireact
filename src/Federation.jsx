@@ -340,7 +340,7 @@ const Federation = () => {
                 style={{
                   padding: '12px',
                   backgroundColor: '#979090',
-                  border: '1px solid #bdb5b5',
+                  border: '1px solid #260000',
                   borderRadius: '6px',
                   cursor: 'pointer'
                 }}

@@ -742,6 +742,8 @@ function NodeCanvas() {
         return {
             ...prototype,
             ...instance,
+            // Always use prototype name
+            name: prototype.name,
         };
     }).filter(Boolean);
   }, [instances, nodePrototypesMap]);
@@ -4471,7 +4473,7 @@ function NodeCanvas() {
                 if (e.key === 'Enter') handleConnectionPromptSubmit(); 
                 if (e.key === 'Escape') handleConnectionPromptClose();
               }}
-              style={{ flex: 1, padding: '10px', borderRadius: '5px', border: '1px solid #ccc', marginRight: '10px' }}
+              style={{ flex: 1, padding: '10px', borderRadius: '5px', border: '1px solid #260000', marginRight: '10px' }}
               autoFocus
             />
             <button
@@ -4555,7 +4557,7 @@ function NodeCanvas() {
               value={nodeNamePrompt.name}
               onChange={(e) => setNodeNamePrompt({ ...nodeNamePrompt, name: e.target.value })}
               onKeyDown={(e) => { if (e.key === 'Enter') handlePromptSubmit(); }}
-              style={{ flex: 1, padding: '10px', borderRadius: '5px', border: '1px solid #ccc', marginRight: '10px' }}
+              style={{ flex: 1, padding: '10px', borderRadius: '5px', border: '1px solid #260000', marginRight: '10px' }}
               autoFocus
             />
             <button
@@ -5340,7 +5342,7 @@ function NodeCanvas() {
                 style={{
                   width: '40px',
                   height: '40px',
-                  border: '4px solid #bdb5b5', // Canvas color
+                  border: '4px solid #260000', // Canvas color
                   borderTop: '4px solid #260000', // Maroon color matching header
                   borderRadius: '50%',
                   animation: 'spin 1s linear infinite'

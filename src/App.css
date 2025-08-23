@@ -19,7 +19,7 @@ html, body, #root {
 .graph-browser-panel {
   width: 250px; /* Example fixed width */
   min-width: 200px; /* Minimum width */
-  border-right: 1px solid #ccc; /* Separator */
+  border-right: 1px solid #260000; /* Separator */
   padding: 1rem;
   overflow-y: auto; /* Scroll if content overflows */
   background-color: #f8f8f8; /* Slight background color */

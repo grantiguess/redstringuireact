@@ -88,7 +88,8 @@ export function bridgeFetch(path, options) {
   const now = Date.now();
   if (__bridgeHealth.cooldownUntil && now < __bridgeHealth.cooldownUntil) {
     // Short-circuit without hitting the network to prevent console spam
-    return Promise.reject(new Error('bridge_unavailable_cooldown'));
+    const cooldownRemaining = Math.ceil((__bridgeHealth.cooldownUntil - now) / 1000);
+    return Promise.reject(new Error(`bridge_unavailable_cooldown: ${cooldownRemaining}s remaining`));
   }
   return fetch(bridgeUrl(path), options)
     .then((res) => {
@@ -103,6 +104,9 @@ export function bridgeFetch(path, options) {
         if (__bridgeHealth.consecutiveFailures >= 3) {
           // Stop trying for a while; panel Refresh/manual reconnect can reset this
           __bridgeHealth.cooldownUntil = Date.now() + 60_000; // 60s cooldown
+          console.log(`🔌 MCP Bridge: Connection failed ${__bridgeHealth.consecutiveFailures} times, entering ${60}s cooldown period`);
+        } else {
+          console.log(`🔌 MCP Bridge: Connection attempt ${__bridgeHealth.consecutiveFailures}/3 failed`);
         }
       }
       // Re-throw so callers can handle softly; no network call will be attempted during cooldown

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import StandardDivider from './StandardDivider.jsx';
 
 const CollapsibleSection = ({ 
   title, 
@@ -12,19 +13,18 @@ const CollapsibleSection = ({
   return (
     <div>
       {/* Section Header */}
-      <div 
-        onClick={() => setIsExpanded(!isExpanded)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 0',
-          cursor: 'pointer',
-          userSelect: 'none',
-          borderBottom: '1px solid #ccc',
-          marginBottom: isExpanded ? '15px' : '0'
-        }}
-      >
+              <div 
+          onClick={() => setIsExpanded(!isExpanded)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '8px 0',
+            cursor: 'pointer',
+            userSelect: 'none',
+            marginBottom: isExpanded ? '15px' : '0'
+          }}
+        >
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
@@ -56,7 +56,6 @@ const CollapsibleSection = ({
           ▶
         </span>
       </div>
-
       {/* Section Content */}
       {isExpanded && (
         <div style={{

@@ -82,7 +82,7 @@ const SemanticLinkInput = ({ onAdd, placeholder, type, icon: Icon }) => {
         style={{
           flex: 1,
           padding: '6px 8px',
-          border: `1px solid ${isValid ? '#28a745' : input ? '#dc3545' : '#ccc'}`,
+          border: `1px solid ${isValid ? '#28a745' : input ? '#dc3545' : '#260000'}`,
           borderRadius: '4px',
           fontSize: '14px',
           fontFamily: "'EmOne', sans-serif"
@@ -311,7 +311,7 @@ const WikipediaSearch = ({ onSelect }) => {
           style={{
             flex: 1,
             padding: '6px 8px',
-            border: '1px solid #ccc',
+            border: '1px solid #260000',
             borderRadius: '4px',
             fontSize: '14px',
             fontFamily: "'EmOne', sans-serif"

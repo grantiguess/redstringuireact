@@ -26,7 +26,7 @@ const NodeType = ({ name, color = '#800000', onClick }) => {
       }}
       onClick={onClick}
       onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = '#bdb5b5';
+        e.currentTarget.style.borderColor = '#260000';
         e.currentTarget.style.transform = 'translateY(-2px)';
       }}
       onMouseLeave={(e) => {

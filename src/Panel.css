@@ -46,7 +46,7 @@ header .editable-title-input::selection {
 
   .panel-bio-textarea {
     padding: 8px;
-    border: 1px solid #ccc;
+    border: 1px solid #260000;
     border-radius: 4px;
     font-size: 14px;
     font-family: 'EmOne', sans-serif;
@@ -102,7 +102,7 @@ header .editable-title-input::selection {
 
 /* Left-side panel specifics */
 .panel-container.left {
-  border-right: 1px solid #ccc;
+  border-right: 1px solid #260000;
   width: 300px; /* Example starting width */
 }
 

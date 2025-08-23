@@ -5,6 +5,7 @@ import { Palette, ArrowUpFromDot, ImagePlus } from 'lucide-react';
 import { NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR } from '../../constants.js';
 import CollapsibleSection from '../CollapsibleSection.jsx';
 import SemanticEditor from '../SemanticEditor.jsx';
+import StandardDivider from '../StandardDivider.jsx';
 
 // Helper function to determine the correct article ("a" or "an")
 const getArticleFor = (word) => {
@@ -339,6 +340,9 @@ const SharedPanelContent = ({
         {!isUltraSlim && actionButtons}
       </div>
 
+      {/* Dividing line above Type section */}
+      <StandardDivider margin="20px 0" />
+      
       {/* Type Section - under title */}
       {(() => {
         // Get the type name
@@ -437,6 +441,9 @@ const SharedPanelContent = ({
         );
       })()}
 
+      {/* Dividing line above Bio section */}
+      <StandardDivider margin="20px 0" />
+      
       {/* Bio Section */}
       <CollapsibleSection 
         title="Bio" 
@@ -497,6 +504,9 @@ const SharedPanelContent = ({
         )}
       </CollapsibleSection>
 
+      {/* Dividing line above Image section */}
+      {nodeData.imageSrc && <StandardDivider margin="20px 0" />}
+      
       {/* Image Section */}
       {nodeData.imageSrc && (
         <CollapsibleSection 
@@ -523,6 +533,9 @@ const SharedPanelContent = ({
         </CollapsibleSection>
       )}
 
+      {/* Dividing line above Components section */}
+      <StandardDivider margin="20px 0" />
+      
       {/* Components Section */}
       <CollapsibleSection 
         title="Components" 
@@ -549,17 +562,20 @@ const SharedPanelContent = ({
         ) : (
           <div style={{ 
             marginRight: '15px',
-            color: '#260000', 
+            color: '#999', 
             fontSize: '0.9rem', 
             fontFamily: "'EmOne', sans-serif",
-            textAlign: 'center',
-            padding: '20px 0'
+            textAlign: 'left',
+            padding: '20px 0 20px 15px'
           }}>
             No components in this {isHomeTab ? 'graph' : 'definition'}.
           </div>
         )}
       </CollapsibleSection>
 
+      {/* Dividing line above Semantic Web Integration section */}
+      <StandardDivider margin="20px 0" />
+      
       {/* Semantic Web Integration */}
       <CollapsibleSection 
         title="Semantic Web Links" 

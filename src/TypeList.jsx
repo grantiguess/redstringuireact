@@ -278,7 +278,7 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
           alignItems: 'center',
           justifyContent: 'center',
           background: '#260000',
-          border: '2px solid #bdb5b5', // Canvas color stroke
+          border: '2px solid #260000', // Canvas color stroke
           borderRadius: '8px',
           padding: 0,
           cursor: 'pointer',
