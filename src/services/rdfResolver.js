@@ -74,6 +74,12 @@ export class RDFResolver {
    */
   async _fetchAndParse(uri, options) {
     try {
+      // Check if this is a known CORS-problematic domain
+      if (this._isCORSProblematic(uri)) {
+        console.warn(`[RDF Resolver] Skipping CORS-problematic URI: ${uri}`);
+        return this._createFallbackData(uri);
+      }
+
       const headers = { ...this.defaultHeaders, ...options.headers };
       
       // Try to fetch with content negotiation
@@ -105,16 +111,10 @@ export class RDFResolver {
         resolvedAt: new Date().toISOString()
       };
     } catch (error) {
-      // Check if this is a CORS error
-      if (error.message.includes('Failed to fetch') || 
-          error.message.includes('CORS') || 
-          error.message.includes('Access-Control-Allow-Origin')) {
-        throw new Error(`CORS blocked: Cannot fetch ${uri} from browser due to cross-origin restrictions. This is a browser security feature. Try using a local identifier (e.g., local:MyType) or a different schema that supports CORS.`);
-      }
-      
-      // Check for other common network errors
-      if (error.message.includes('net::ERR_FAILED')) {
-        throw new Error(`Network error: ${uri} is not accessible from this browser. This could be due to CORS restrictions, network issues, or the resource being unavailable.`);
+      // Handle CORS and network errors gracefully
+      if (this._isCORSOrNetworkError(error)) {
+        console.warn(`[RDF Resolver] CORS/Network error for ${uri}, using fallback`);
+        return this._createFallbackData(uri);
       }
       
       throw error;
@@ -358,6 +358,78 @@ export class RDFResolver {
       size += key.length + JSON.stringify(value).length;
     }
     return size;
+  }
+
+  /**
+   * Check if URI is known to have CORS issues
+   * @private
+   */
+  _isCORSProblematic(uri) {
+    const problematicDomains = [
+      'ea.com',
+      'wikidata.org/entity', // Entity pages (not query endpoint)
+      'dbpedia.org/resource', // Resource pages (not query endpoint) 
+      'schema.org',
+      'w3.org',
+      'xmlns.com',
+      'google.com',
+      'facebook.com',
+      'twitter.com',
+      'microsoft.com',
+      'apple.com'
+    ];
+    
+    return problematicDomains.some(domain => uri.includes(domain));
+  }
+
+  /**
+   * Check if error is CORS or network related
+   * @private
+   */
+  _isCORSOrNetworkError(error) {
+    const errorMessage = error.message.toLowerCase();
+    return errorMessage.includes('failed to fetch') || 
+           errorMessage.includes('cors') || 
+           errorMessage.includes('access-control-allow-origin') ||
+           errorMessage.includes('net::err_failed') ||
+           errorMessage.includes('network error') ||
+           error.name === 'TypeError';
+  }
+
+  /**
+   * Create fallback data for CORS-blocked URIs
+   * @private
+   */
+  _createFallbackData(uri) {
+    const label = this._extractLabelFromURI(uri);
+    return {
+      uri,
+      contentType: 'application/ld+json',
+      triples: [],
+      metadata: {
+        label: label,
+        description: `External resource (CORS-protected): ${label}`,
+        url: uri,
+        corsBlocked: true
+      },
+      resolvedAt: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Extract readable label from URI
+   * @private
+   */
+  _extractLabelFromURI(uri) {
+    try {
+      const url = new URL(uri);
+      const path = url.pathname || url.hash || '';
+      const segments = path.split(/[\/#]/).filter(s => s && s !== 'entity' && s !== 'resource');
+      const lastSegment = segments[segments.length - 1] || url.hostname;
+      return decodeURIComponent(lastSegment).replace(/[_-]/g, ' ');
+    } catch (error) {
+      return uri.split('/').pop() || uri;
+    }
   }
 }
 
