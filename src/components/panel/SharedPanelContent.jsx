@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useDrag } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend';
-import { Palette, ArrowUpFromDot, ImagePlus } from 'lucide-react';
+import { Palette, ArrowUpFromDot, ImagePlus, BookOpen, ExternalLink } from 'lucide-react';
 import { NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR } from '../../constants.js';
 import CollapsibleSection from '../CollapsibleSection.jsx';
 import SemanticEditor from '../SemanticEditor.jsx';
 import ConnectionBrowser from '../ConnectionBrowser.jsx';
-import SemanticIdentity from '../SemanticIdentity.jsx';
 import StandardDivider from '../StandardDivider.jsx';
 
 // Helper function to determine the correct article ("a" or "an")
@@ -14,6 +13,359 @@ const getArticleFor = (word) => {
   if (!word) return 'a';
   const firstLetter = word.trim()[0].toLowerCase();
   return ['a', 'e', 'i', 'o', 'u'].includes(firstLetter) ? 'an' : 'a';
+};
+
+// Wikipedia enrichment functions
+const searchWikipedia = async (query) => {
+  try {
+    // First try to get the exact page
+    const summaryResponse = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`,
+      { 
+        headers: { 
+          'Api-User-Agent': 'Redstring/1.0 (https://redstring.ai) Claude/1.0' 
+        }
+      }
+    );
+
+    if (summaryResponse.ok) {
+      const summaryData = await summaryResponse.json();
+      return {
+        type: 'direct',
+        page: {
+          title: summaryData.title,
+          description: summaryData.extract || summaryData.description,
+          url: summaryData.content_urls?.desktop?.page,
+          thumbnail: summaryData.thumbnail?.source
+        }
+      };
+    }
+
+    // If direct lookup fails, search for similar pages
+    const searchResponse = await fetch(
+      `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=5`,
+      { 
+        headers: { 
+          'Api-User-Agent': 'Redstring/1.0 (https://redstring.ai) Claude/1.0' 
+        }
+      }
+    );
+
+    if (searchResponse.ok) {
+      const searchData = await searchResponse.json();
+      if (searchData.query?.search?.length > 0) {
+        return {
+          type: 'disambiguation',
+          options: searchData.query.search.map(result => ({
+            title: result.title,
+            snippet: result.snippet.replace(/<[^>]*>/g, ''), // Remove HTML tags
+            pageid: result.pageid
+          }))
+        };
+      }
+    }
+  } catch (error) {
+    console.warn('[Wikipedia] Search failed:', error);
+  }
+  
+  return { type: 'not_found' };
+};
+
+const getWikipediaPage = async (title) => {
+  try {
+    // Check if this is a section link (contains #)
+    const [pageTitle, sectionId] = title.includes('#') ? title.split('#') : [title, null];
+    
+    const summaryResponse = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`,
+      { 
+        headers: { 
+          'Api-User-Agent': 'Redstring/1.0 (https://redstring.ai) Claude/1.0' 
+        }
+      }
+    );
+
+    if (summaryResponse.ok) {
+      const summaryData = await summaryResponse.json();
+      let description = summaryData.extract || summaryData.description;
+      let pageUrl = summaryData.content_urls?.desktop?.page;
+      
+      // If this is a section link, try to get section-specific content
+      if (sectionId) {
+        try {
+          const sectionContent = await getWikipediaSection(pageTitle, sectionId);
+          if (sectionContent) {
+            description = sectionContent;
+          }
+          // Add section fragment to URL
+          if (pageUrl) {
+            pageUrl += '#' + sectionId;
+          }
+        } catch (error) {
+          console.warn('[Wikipedia] Section content fetch failed, using page summary:', error);
+        }
+      }
+      
+      return {
+        title: summaryData.title,
+        description: description,
+        url: pageUrl,
+        thumbnail: summaryData.thumbnail?.source,
+        isSection: !!sectionId,
+        sectionId: sectionId
+      };
+    }
+  } catch (error) {
+    console.warn('[Wikipedia] Page fetch failed:', error);
+  }
+  
+  return null;
+};
+
+const getWikipediaSection = async (pageTitle, sectionId) => {
+  try {
+    // Get full page content to extract section
+    const response = await fetch(
+      `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(pageTitle)}&format=json&origin=*&section=${encodeURIComponent(sectionId)}`,
+      { 
+        headers: { 
+          'Api-User-Agent': 'Redstring/1.0 (https://redstring.ai) Claude/1.0' 
+        }
+      }
+    );
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.parse?.text?.['*']) {
+        // Extract first paragraph from HTML content
+        const htmlContent = data.parse.text['*'];
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = htmlContent;
+        
+        // Find first paragraph with substantial content
+        const paragraphs = tempDiv.querySelectorAll('p');
+        for (const p of paragraphs) {
+          const text = p.textContent.trim();
+          if (text.length > 100) { // Minimum length for substantial content
+            return text;
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('[Wikipedia] Section parsing failed:', error);
+  }
+  
+  return null;
+};
+
+// Wikipedia Enrichment Component
+const WikipediaEnrichment = ({ nodeData, onUpdateNode }) => {
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResult, setSearchResult] = useState(null);
+  const [showDisambiguation, setShowDisambiguation] = useState(false);
+
+  const handleWikipediaSearch = async () => {
+    setIsSearching(true);
+    try {
+      const result = await searchWikipedia(nodeData.name);
+      setSearchResult(result);
+      
+      if (result.type === 'direct') {
+        // Directly apply the Wikipedia data
+        await applyWikipediaData(result.page);
+      } else if (result.type === 'disambiguation') {
+        setShowDisambiguation(true);
+      }
+    } catch (error) {
+      console.error('[Wikipedia] Enrichment failed:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const applyWikipediaData = async (pageData) => {
+    const updates = {};
+    
+    // Add description if node doesn't have one
+    if (!nodeData.description && pageData.description) {
+      updates.description = pageData.description;
+    }
+    
+    // Add Wikipedia metadata
+    updates.semanticMetadata = {
+      ...nodeData.semanticMetadata,
+      wikipediaUrl: pageData.url,
+      wikipediaTitle: pageData.title,
+      wikipediaEnriched: true,
+      wikipediaEnrichedAt: new Date().toISOString()
+    };
+
+    if (pageData.thumbnail) {
+      updates.semanticMetadata.wikipediaThumbnail = pageData.thumbnail;
+    }
+
+    // Add Wikipedia link to external links (stored directly on nodeData.externalLinks)
+    const currentExternalLinks = nodeData.externalLinks || [];
+    
+    // Check if Wikipedia link already exists
+    const hasWikipediaLink = currentExternalLinks.some(link => 
+      typeof link === 'string' ? 
+        link.includes('wikipedia.org') : 
+        link.url?.includes('wikipedia.org')
+    );
+    
+    if (!hasWikipediaLink && pageData.url) {
+      // Add the Wikipedia URL directly to the externalLinks array
+      updates.externalLinks = [pageData.url, ...currentExternalLinks];
+    }
+
+    await onUpdateNode(updates);
+    setSearchResult(null);
+    setShowDisambiguation(false);
+  };
+
+  const handleDisambiguationSelect = async (option) => {
+    setIsSearching(true);
+    try {
+      const pageData = await getWikipediaPage(option.title);
+      if (pageData) {
+        await applyWikipediaData(pageData);
+      }
+    } catch (error) {
+      console.error('[Wikipedia] Disambiguation selection failed:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Show the enrichment button only if node has no description or no Wikipedia link
+  const showEnrichButton = !nodeData.description || !nodeData.semanticMetadata?.wikipediaUrl;
+  const isAlreadyLinked = nodeData.semanticMetadata?.wikipediaUrl;
+
+  if (!showEnrichButton && !showDisambiguation) return null;
+
+  return (
+    <div style={{ margin: '12px 0' }}>
+      {showEnrichButton && (
+        <button
+          onClick={handleWikipediaSearch}
+          disabled={isSearching}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 12px',
+            border: '1px solid #8B0000',
+            borderRadius: '6px',
+            background: 'transparent',
+            color: '#8B0000',
+            fontFamily: "'EmOne', sans-serif",
+            fontSize: '11px',
+            cursor: isSearching ? 'wait' : 'pointer',
+            fontWeight: 'bold',
+            textAlign: 'left'
+          }}
+        >
+          <BookOpen size={12} />
+          {isSearching ? 'Searching Wikipedia...' : 'Enrich from Wikipedia'}
+        </button>
+      )}
+
+      {showDisambiguation && searchResult?.type === 'disambiguation' && (
+        <div style={{
+          marginTop: '8px',
+          padding: '12px',
+          border: '1px solid #8B0000',
+          borderRadius: '6px',
+          background: 'rgba(139,0,0,0.05)'
+        }}>
+          <div style={{
+            fontSize: '11px',
+            color: '#8B0000',
+            fontFamily: "'EmOne', sans-serif",
+            fontWeight: 'bold',
+            marginBottom: '8px'
+          }}>
+            Multiple Wikipedia pages found:
+          </div>
+          {searchResult.options.slice(0, 3).map((option, index) => (
+            <div
+              key={index}
+              onClick={() => handleDisambiguationSelect(option)}
+              style={{
+                padding: '6px',
+                marginBottom: '4px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                background: 'white',
+                fontSize: '10px',
+                fontFamily: "'EmOne', sans-serif"
+              }}
+            >
+              <div style={{ fontWeight: 'bold', color: '#8B0000', marginBottom: '2px' }}>
+                {option.title}
+              </div>
+              <div style={{ color: '#666', lineHeight: '1.3' }}>
+                {option.snippet}
+              </div>
+            </div>
+          ))}
+          <button
+            onClick={() => setShowDisambiguation(false)}
+            style={{
+              marginTop: '6px',
+              padding: '4px 8px',
+              border: '1px solid #ccc',
+              borderRadius: '3px',
+              background: 'transparent',
+              color: '#666',
+              fontSize: '9px',
+              cursor: 'pointer',
+              fontFamily: "'EmOne', sans-serif"
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {isAlreadyLinked && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          marginTop: '8px',
+          fontSize: '10px',
+          color: '#8B0000',
+          fontFamily: "'EmOne', sans-serif"
+        }}>
+          <BookOpen size={10} />
+          <span>Wikipedia linked</span>
+          <button
+            onClick={() => window.open(nodeData.semanticMetadata.wikipediaUrl, '_blank')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '2px',
+              padding: '2px 4px',
+              border: '1px solid #8B0000',
+              borderRadius: '3px',
+              background: 'transparent',
+              color: '#8B0000',
+              fontSize: '8px',
+              cursor: 'pointer',
+              fontFamily: "'EmOne', sans-serif"
+            }}
+          >
+            <ExternalLink size={8} />
+            View
+          </button>
+        </div>
+      )}
+    </div>
+  );
 };
 
 // Item types for drag and drop
@@ -504,6 +856,12 @@ const SharedPanelContent = ({
         )}
       </CollapsibleSection>
 
+      {/* Wikipedia Enrichment */}
+      <WikipediaEnrichment 
+        nodeData={nodeData}
+        onUpdateNode={onNodeUpdate}
+      />
+
       {/* Dividing line above Image section */}
       {nodeData.imageSrc && <StandardDivider margin="20px 0" />}
       
@@ -587,21 +945,101 @@ const SharedPanelContent = ({
         />
       </CollapsibleSection>
 
-      {/* Dividing line above Semantic Web section */}
+      {/* Dividing line above External Links section */}
       <StandardDivider margin="20px 0" />
       
-      {/* Semantic Web Identity and Integration */}
+      {/* External Links Section - SemanticEditor for Wikipedia/Wikidata links */}
       <CollapsibleSection 
-        title="Semantic Web" 
+        title="External Links" 
         defaultExpanded={false}
       >
-        <SemanticIdentity 
+        <SemanticEditor 
           nodeData={nodeData}
-          onNodeUpdate={onNodeUpdate}
-          onMaterializeConnection={onMaterializeConnection}
-          isUltraSlim={isUltraSlim}
+          onUpdate={onNodeUpdate}
         />
       </CollapsibleSection>
+
+      {/* Show Semantic Profile if node has semantic metadata */}
+      {nodeData.semanticMetadata && (
+        <>
+          <StandardDivider margin="20px 0" />
+          <CollapsibleSection 
+            title="Semantic Profile" 
+            defaultExpanded={false}
+          >
+            <div className="semantic-profile">
+              <div style={{ padding: '12px', fontSize: '11px', color: '#260000', fontFamily: "'EmOne', sans-serif" }}>
+                <div style={{ marginBottom: '8px' }}>
+                  <strong>Source:</strong> {nodeData.semanticMetadata.source || 'Semantic Web'}
+                </div>
+                {nodeData.semanticMetadata.originalUri && (
+                  <div style={{ marginBottom: '8px' }}>
+                    <strong>URI:</strong> 
+                    <a href={nodeData.semanticMetadata.originalUri} target="_blank" rel="noopener noreferrer" 
+                       style={{ color: '#8B0000', marginLeft: '8px' }}>
+                      View Original
+                    </a>
+                  </div>
+                )}
+                {nodeData.semanticMetadata.confidence && (
+                  <div style={{ marginBottom: '8px' }}>
+                    <strong>Confidence:</strong> {Math.round(nodeData.semanticMetadata.confidence * 100)}%
+                  </div>
+                )}
+                {nodeData.semanticMetadata.equivalentClasses?.length > 0 && (
+                  <div style={{ marginBottom: '8px' }}>
+                    <strong>Equivalent Classes:</strong>
+                    <div style={{ marginTop: '4px', fontSize: '10px' }}>
+                      {nodeData.semanticMetadata.equivalentClasses.map((cls, idx) => (
+                        <span key={idx} style={{ 
+                          display: 'inline-block', 
+                          margin: '2px', 
+                          padding: '2px 6px', 
+                          background: 'rgba(139,0,0,0.1)', 
+                          borderRadius: '3px' 
+                        }}>
+                          {cls}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Show imported triplets/relationships */}
+                {nodeData.semanticMetadata.relationships && nodeData.semanticMetadata.relationships.length > 0 && (
+                  <div style={{ marginTop: '12px' }}>
+                    <strong>Imported Relationships:</strong>
+                    <div style={{ marginTop: '6px', fontSize: '10px' }}>
+                      {nodeData.semanticMetadata.relationships.map((rel, idx) => (
+                        <div key={idx} style={{
+                          padding: '4px 6px',
+                          margin: '2px 0',
+                          background: 'rgba(255,255,255,0.02)',
+                          border: '1px solid #333',
+                          borderRadius: '3px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}>
+                          <span style={{ fontWeight: 'bold', color: '#8B0000' }}>{rel.subject}</span>
+                          <span style={{ color: '#666' }}>→</span>
+                          <span style={{ fontStyle: 'italic', fontSize: '9px' }}>{rel.relation}</span>
+                          <span style={{ color: '#666' }}>→</span>
+                          <span style={{ fontWeight: 'bold', color: '#8B0000' }}>{rel.target}</span>
+                          {rel.confidence && (
+                            <span style={{ marginLeft: 'auto', fontSize: '8px', color: '#666' }}>
+                              ({Math.round(rel.confidence * 100)}%)
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </CollapsibleSection>
+        </>
+      )}
     </div>
   );
 };

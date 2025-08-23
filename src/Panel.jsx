@@ -2,7 +2,7 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, us
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR, PANEL_CLOSE_ICON_SIZE } from './constants';
-import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Wand, Settings, RotateCcw, Send, Bot, User, Key, Square } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Wand, Settings, RotateCcw, Send, Bot, User, Key, Square, Search } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
@@ -32,6 +32,7 @@ import SemanticEditor from './components/SemanticEditor.jsx';
 import PanelContentWrapper from './components/panel/PanelContentWrapper.jsx';
 import CollapsibleSection from './components/CollapsibleSection.jsx';
 import StandardDivider from './components/StandardDivider.jsx';
+import { knowledgeFederation } from './services/knowledgeFederation.js';
 
 // Helper function to determine the correct article ("a" or "an")
 const getArticleFor = (word) => {
@@ -444,6 +445,453 @@ const LeftAllThingsView = ({
           );
         })
       )}
+    </div>
+  );
+};
+
+// Left Semantic Discovery View - Concept Discovery Engine
+const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightPanelNodeTab, rightPanelTabs, activeDefinitionNodeId }) => {
+  const [isSearching, setIsSearching] = useState(false);
+  const [discoveredConcepts, setDiscoveredConcepts] = useState([]);
+  const [searchHistory, setSearchHistory] = useState([]);
+  const [selectedConcept, setSelectedConcept] = useState(null);
+  const [viewMode, setViewMode] = useState('discover'); // 'discover', 'history', 'advanced'
+  const [manualQuery, setManualQuery] = useState('');
+
+  // Get current context from right panel
+  const getCurrentContext = () => {
+    // Check if there's an active tab in right panel
+    const activeTab = rightPanelTabs?.find(tab => tab.isActive);
+    if (activeTab && activeTab.nodeId) {
+      const nodeData = nodePrototypesMap.get(activeTab.nodeId);
+      return {
+        nodeId: activeTab.nodeId,
+        nodeName: nodeData?.name || 'Current Node',
+        nodeData: nodeData
+      };
+    }
+    
+    // Fallback to active definition node
+    if (activeDefinitionNodeId) {
+      const nodeData = nodePrototypesMap.get(activeDefinitionNodeId);
+      return {
+        nodeId: activeDefinitionNodeId,
+        nodeName: nodeData?.name || 'Active Node', 
+        nodeData: nodeData
+      };
+    }
+    
+    return null;
+  };
+
+  const currentContext = getCurrentContext();
+  const searchQuery = currentContext?.nodeName || '';
+
+  // Search for concepts using current context
+  const handleConceptSearch = async () => {
+    if (!searchQuery.trim()) return;
+    await performSearch(searchQuery);
+  };
+
+  // Manual search with custom query
+  const handleManualSearch = async () => {
+    if (!manualQuery?.trim()) return;
+    await performSearch(manualQuery);
+  };
+
+
+  // Common search logic
+  const performSearch = async (query) => {
+    
+    setIsSearching(true);
+    const searchId = `concept-search-${Date.now()}`;
+    
+    try {
+      // Use existing knowledge federation but convert results to concept format
+      const results = await knowledgeFederation.importKnowledgeCluster(query, {
+        maxDepth: 1,
+        maxEntitiesPerLevel: 20,
+        includeRelationships: true,
+        includeSources: ['wikidata', 'dbpedia']
+      });
+      
+      // Convert semantic entities to Redstring concept format
+      const concepts = Array.from(results.entities.entries()).map(([name, entityData]) => ({
+        id: `concept-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        name: name,
+        description: entityData.descriptions?.[0]?.text || `A concept related to ${query}`,
+        category: entityData.types?.[0]?.type || 'Thing',
+        source: entityData.sources?.[0] || 'semantic-web',
+        relationships: results.relationships
+          .filter(rel => rel.source === name || rel.target === name)
+          .slice(0, 5), // Top 5 relationships
+        semanticMetadata: {
+          originalUri: entityData.externalLinks?.[0],
+          equivalentClasses: entityData.equivalentClasses || [],
+          externalLinks: entityData.externalLinks || [],
+          confidence: entityData.confidence || 0.8
+        },
+        color: generateConceptColor(name),
+        discoveredAt: new Date().toISOString(),
+        searchQuery: query
+      }));
+      
+      setDiscoveredConcepts(concepts);
+      
+      // Add to search history
+      setSearchHistory(prev => [{
+        id: searchId,
+        query: searchQuery,
+        timestamp: new Date(),
+        resultCount: concepts.length,
+        concepts: concepts.slice(0, 10) // Store first 10 for quick access
+      }, ...prev].slice(0, 20)); // Keep last 20 searches
+      
+    } catch (error) {
+      console.error('[SemanticDiscovery] Search failed:', error);
+      setDiscoveredConcepts([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+  
+  // Generate color for concept based on name hash
+  const generateConceptColor = (name) => {
+    const colors = ['#8B0000', '#8B4513', '#006400', '#4B0082', '#8B008B', '#FF6347', '#4682B4'];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = ((hash << 5) - hash + name.charCodeAt(i)) & 0xffffffff;
+    }
+    return colors[Math.abs(hash) % colors.length];
+  };
+  
+  // Create Redstring node prototype from discovered concept
+  const materializeConcept = (concept) => {
+    const newNodeId = `semantic-node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    storeActions?.addNodePrototype({
+      id: newNodeId,
+      name: concept.name,
+      description: concept.description,
+      color: concept.color,
+      typeNodeId: 'base-thing-prototype',
+      definitionGraphIds: [],
+      semanticMetadata: {
+        ...concept.semanticMetadata,
+        relationships: concept.relationships // Include the relationships for triplet display
+      }
+    });
+    
+    // Optionally save the new concept
+    storeActions?.toggleSavedNode(newNodeId);
+    
+    console.log(`[SemanticDiscovery] Materialized concept: ${concept.name}`);
+    return newNodeId;
+  };
+
+  return (
+    <div className="panel-content-inner semantic-discovery-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+        <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
+          Semantic Discovery
+        </h2>
+        <div className="view-mode-tabs" style={{ display: 'flex', gap: '4px' }}>
+            {['discover', 'history'].map(mode => (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              style={{
+                padding: '4px 8px',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                background: viewMode === mode ? '#8B0000' : 'transparent',
+                color: viewMode === mode ? '#fff' : '#666',
+                fontFamily: "'EmOne', sans-serif",
+                fontSize: '10px',
+                cursor: 'pointer'
+              }}
+            >
+              {mode.charAt(0).toUpperCase() + mode.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {viewMode === 'discover' && (
+        <>
+          {/* Current Context Display */}
+          {currentContext ? (
+            <div className="current-context" style={{ marginBottom: '16px', padding: '12px', background: 'rgba(139,0,0,0.1)', borderRadius: '6px', border: '1px solid rgba(139,0,0,0.2)' }}>
+              <div style={{ fontSize: '11px', color: '#260000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold', marginBottom: '4px' }}>
+                Discovering concepts related to:
+              </div>
+              <div style={{ fontSize: '13px', color: '#260000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold' }}>
+                "{currentContext.nodeName}"
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                <button
+                  onClick={handleConceptSearch}
+                  disabled={isSearching}
+                  style={{
+                    padding: '6px 12px',
+                    border: '1px solid #8B0000',
+                    borderRadius: '4px',
+                    background: '#8B0000',
+                    color: '#260000',
+                    fontFamily: "'EmOne', sans-serif",
+                    fontSize: '11px',
+                    cursor: isSearching ? 'wait' : 'pointer',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  {isSearching ? 'Discovering...' : 'Quick Discover'}
+                </button>
+                <button
+                  onClick={() => setViewMode('advanced')}
+                  style={{
+                    padding: '6px 12px',
+                    border: '1px solid #666',
+                    borderRadius: '4px',
+                    background: 'transparent',
+                    color: '#666',
+                    fontFamily: "'EmOne', sans-serif",
+                    fontSize: '11px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Advanced Search
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="no-context" style={{ marginBottom: '16px', padding: '12px', background: 'rgba(102,102,102,0.1)', borderRadius: '6px', border: '1px solid rgba(102,102,102,0.2)' }}>
+              <div style={{ fontSize: '11px', color: '#666', fontFamily: "'EmOne', sans-serif", textAlign: 'center', lineHeight: '1.4', marginBottom: '8px' }}>
+                Open a node in the right panel to discover related semantic concepts
+              </div>
+              <button
+                onClick={() => setViewMode('advanced')}
+                style={{
+                  padding: '6px 12px',
+                  border: '1px solid #666',
+                  borderRadius: '4px',
+                  background: 'transparent',
+                  color: '#666',
+                  fontFamily: "'EmOne', sans-serif",
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  display: 'block',
+                  margin: '0 auto'
+                }}
+              >
+                Manual Search
+              </button>
+            </div>
+          )}
+
+          {/* Concept Results */}
+          {discoveredConcepts.length > 0 && (
+            <div className="discovered-concepts" style={{ flex: 1, overflow: 'auto' }}>
+              <div style={{ marginBottom: '12px', fontSize: '12px', color: '#260000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold' }}>
+                Discovered Concepts ({discoveredConcepts.length})
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
+                {discoveredConcepts.map(concept => (
+                  <DraggableConceptCard
+                    key={concept.id}
+                    concept={concept}
+                    onMaterialize={materializeConcept}
+                    onSelect={setSelectedConcept}
+                    isSelected={selectedConcept?.id === concept.id}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {viewMode === 'advanced' && (
+        <div className="advanced-search-view" style={{ flex: 1, overflow: 'auto' }}>
+          <div style={{ marginBottom: '16px' }}>
+            <input
+              type="text"
+              value={manualQuery || ''}
+              onChange={(e) => setManualQuery(e.target.value)}
+              placeholder="Enter custom search query..."
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #444',
+                borderRadius: '6px',
+                background: '#1a1a1a',
+                color: '#260000',
+                fontFamily: "'EmOne', sans-serif",
+                fontSize: '12px',
+                marginBottom: '8px'
+              }}
+              onKeyPress={(e) => e.key === 'Enter' && handleManualSearch()}
+            />
+            <button
+              onClick={handleManualSearch}
+              disabled={isSearching || !manualQuery?.trim()}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #8B0000',
+                borderRadius: '6px',
+                background: '#8B0000',
+                color: '#260000',
+                fontFamily: "'EmOne', sans-serif",
+                fontSize: '12px',
+                cursor: isSearching ? 'wait' : 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              {isSearching ? 'Searching...' : 'Search Semantic Web'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {viewMode === 'history' && (
+        <div className="search-history-view" style={{ flex: 1, overflow: 'auto' }}>
+          <div style={{ marginBottom: '12px', fontSize: '12px', color: '#260000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold' }}>
+            Discovery History ({searchHistory.length})
+          </div>
+          {searchHistory.length === 0 ? (
+            <div style={{ padding: '20px', textAlign: 'center', color: '#666', fontSize: '11px', fontFamily: "'EmOne', sans-serif" }}>
+              No discoveries yet. Open a node and search for related concepts.
+            </div>
+          ) : (
+            searchHistory.map(historyItem => (
+              <div key={historyItem.id} style={{
+                padding: '8px',
+                marginBottom: '8px',
+                background: 'rgba(255,255,255,0.02)',
+                border: '1px solid #333',
+                borderRadius: '6px'
+              }}>
+                <div style={{ fontSize: '11px', color: '#260000', fontWeight: 'bold' }}>{historyItem.query}</div>
+                <div style={{ fontSize: '9px', color: '#666', marginTop: '2px' }}>
+                  {historyItem.timestamp.toLocaleString()} • {historyItem.resultCount} concepts
+                </div>
+                <button
+                  onClick={() => {
+                    setDiscoveredConcepts(historyItem.concepts);
+                    setViewMode('discover');
+                  }}
+                  style={{
+                    marginTop: '4px',
+                    padding: '2px 6px',
+                    border: '1px solid #8B0000',
+                    borderRadius: '3px',
+                    background: 'transparent',
+                    color: '#8B0000',
+                    fontSize: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  View Results
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Draggable Concept Card - Core component of the new system
+const DraggableConceptCard = ({ concept, onMaterialize, onSelect, isSelected }) => {
+  const [{ isDragging }, drag, preview] = useDrag(() => ({
+    type: ItemTypes.SPAWNABLE_NODE,
+    item: { 
+      prototypeId: concept.id,
+      nodeId: concept.id,
+      nodeName: concept.name,
+      nodeColor: concept.color,
+      fromSemanticDiscovery: true,
+      conceptData: concept
+    },
+    collect: (monitor) => ({
+      isDragging: !!monitor.isDragging(),
+    }),
+  }), [concept]);
+
+  useEffect(() => {
+    preview(getEmptyImage(), { captureDraggingState: true });
+  }, [preview]);
+
+  const handleMaterialize = () => {
+    const nodeId = onMaterialize(concept);
+    onSelect(null); // Deselect after materialization
+  };
+
+  return (
+    <div
+      ref={drag}
+      onClick={() => onSelect(isSelected ? null : concept)}
+      style={{
+        padding: '12px',
+        background: concept.color,
+        borderRadius: '8px',
+        border: isSelected ? '2px solid #260000' : '1px solid transparent',
+        cursor: 'pointer',
+        opacity: isDragging ? 0.5 : 1,
+        transition: 'all 0.2s ease',
+        marginBottom: '4px'
+      }}
+    >
+      <div style={{
+        color: '#bdb5b5',
+        fontFamily: "'EmOne', sans-serif",
+        fontSize: '12px',
+        fontWeight: 'bold',
+        marginBottom: '4px'
+      }}>
+        {concept.name}
+      </div>
+      <div style={{
+        color: '#bdb5b5',
+        fontFamily: "'EmOne', sans-serif",
+        fontSize: '9px',
+        lineHeight: '1.3',
+        marginBottom: '8px',
+        opacity: 0.8
+      }}>
+        {concept.description}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{
+          color: '#bdb5b5',
+          fontFamily: "'EmOne', sans-serif",
+          fontSize: '8px',
+          opacity: 0.6
+        }}>
+          {concept.relationships.length} connections • {concept.source}
+        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleMaterialize();
+          }}
+          style={{
+            padding: '4px 8px',
+            border: '1px solid #bdb5b5',
+            borderRadius: '4px',
+            background: 'rgba(189, 181, 181, 0.1)',
+            color: '#bdb5b5',
+            fontSize: '8px',
+            cursor: 'pointer',
+            fontFamily: "'EmOne', sans-serif"
+          }}
+          title="Add to Saved Things"
+        >
+          Save
+        </button>
+      </div>
     </div>
   );
 };
@@ -1696,9 +2144,9 @@ const Panel = forwardRef(
     const [tempProjectTitle, setTempProjectTitle] = useState(''); // Used by right panel home tab
 
     // Left panel view state and collapsed sections
-    const [leftViewActive, setLeftViewActive] = useState('library'); // 'library', 'grid', 'federation', or 'ai'
+    const [leftViewActive, setLeftViewActive] = useState('library'); // 'library', 'all', 'grid', 'federation', 'semantic', or 'ai'
     // Now that leftViewActive is initialized, refine the padding to avoid raising AI view
-    if (side === 'left' && leftViewActive === 'ai') {
+    if (side === 'left' && (leftViewActive === 'ai' || leftViewActive === 'semantic')) {
         effectiveBottomPadding = 0;
     }
     const [sectionCollapsed, setSectionCollapsed] = useState({});
@@ -2429,6 +2877,17 @@ const Panel = forwardRef(
                     <GitNativeFederation />
                 </div>
             );
+        } else if (leftViewActive === 'semantic') {
+            // Semantic Discovery view - concept discovery engine
+            panelContent = (
+                <LeftSemanticDiscoveryView
+                    storeActions={storeActions}
+                    nodePrototypesMap={nodePrototypesMap}
+                    openRightPanelNodeTab={openRightPanelNodeTab}
+                    rightPanelTabs={rightPanelTabs}
+                    activeDefinitionNodeId={activeDefinitionNodeId}
+                />
+            );
         } else if (leftViewActive === 'ai') {
             // AI Collaboration view (inlined)
             panelContent = (
@@ -2667,6 +3126,14 @@ const Panel = forwardRef(
                                 <Globe size={20} color="#260000" />
                             </div>
 
+                            {/* Semantic Discovery Button */}
+                            <div 
+                                title="Semantic Discovery" 
+                                style={{ /* Common Button Styles */ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backgroundColor: leftViewActive === 'semantic' ? '#bdb5b5' : '#979090', zIndex: 2 }}
+                                onClick={() => setLeftViewActive('semantic')}
+                            >
+                                <Search size={20} color="#260000" />
+                            </div>
                             {/* AI Collaboration Button */}
                             <div 
                                 title="Wizard" 

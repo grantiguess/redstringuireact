@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Globe, Link, Book, Search, ExternalLink, Plus, X, Check, Tags, FileText, Eye, Settings, CheckCircle, RotateCcw, Zap, Loader2, AlertCircle, CheckSquare } from 'lucide-react';
 import { PANEL_CLOSE_ICON_SIZE } from '../constants';
 import StandardDivider from './StandardDivider.jsx';
@@ -35,8 +35,8 @@ const extractDOI = (input) => {
   return null;
 };
 
-const SemanticLinkInput = ({ onAdd, placeholder, type, icon: Icon }) => {
-  const [input, setInput] = useState('');
+const SemanticLinkInput = ({ onAdd, placeholder, type, icon: Icon, defaultValue = '' }) => {
+  const [input, setInput] = useState(defaultValue);
   const [isValid, setIsValid] = useState(false);
 
   const validateInput = useCallback((value) => {
@@ -45,6 +45,14 @@ const SemanticLinkInput = ({ onAdd, placeholder, type, icon: Icon }) => {
     }
     return isValidURL(value);
   }, [type]);
+
+  // Update input when defaultValue changes
+  useEffect(() => {
+    if (defaultValue && input === '') {
+      setInput(defaultValue);
+      setIsValid(validateInput(defaultValue));
+    }
+  }, [defaultValue, validateInput]);
 
   const handleInputChange = (e) => {
     const value = e.target.value;
@@ -813,11 +821,7 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
     results: null,
     error: null
   });
-  const [searchState, setSearchState] = useState({
-    isSearching: false,
-    query: '',
-    results: []
-  });
+
 
   if (!nodeData) return null;
 
@@ -978,46 +982,6 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
     }
   };
 
-  // Handle federated search
-  const handleFederatedSearch = async (query) => {
-    if (!query.trim()) return;
-    
-    setSearchState({
-      isSearching: true,
-      query: query,
-      results: []
-    });
-
-    try {
-      const results = await knowledgeFederation.federatedSearch(query, {
-        sources: ['wikidata', 'dbpedia'],
-        limit: 20,
-        minConfidence: 0.6,
-        includeSnippets: true
-      });
-
-      setSearchState({
-        isSearching: false,
-        query: query,
-        results: results
-      });
-
-    } catch (error) {
-      console.error('[SemanticEditor] Federated search failed:', error);
-      setSearchState({
-        isSearching: false,
-        query: query,
-        results: []
-      });
-    }
-  };
-
-  // Import a search result as new node
-  const importSearchResult = (result) => {
-    // This would integrate with the graph store to create a new node
-    console.log('[SemanticEditor] Would import:', result);
-    // TODO: Integrate with graph store to create new node
-  };
 
   return (
     <div style={{ 
@@ -1090,6 +1054,7 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
             placeholder="10.1000/182 or https://doi.org/10.1000/182"
             type="doi"
             icon={Book}
+            defaultValue={nodeData.name || ''}
           />
         </div>
 
@@ -1121,6 +1086,7 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
             placeholder="https://example.com/resource"
             type="url"
             icon={ExternalLink}
+            defaultValue={nodeData.name || ''}
           />
         </div>
 
@@ -1417,112 +1383,6 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
         </div>
       )}
 
-      {/* Federated Search */}
-      <div style={{
-        marginBottom: '20px',
-        padding: '12px',
-        backgroundColor: '#bdb5b5',
-        borderRadius: '6px',
-        border: '1px solid #e0e0e0'
-      }}>
-        <div style={{
-          fontSize: '12px',
-          color: '#8B0000',
-          fontWeight: 'bold',
-          marginBottom: '8px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px'
-        }}>
-          <Search size={14} />
-          Federated Knowledge Search
-        </div>
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-          <input
-            type="text"
-            value={searchState.query}
-            onChange={(e) => setSearchState(prev => ({ ...prev, query: e.target.value }))}
-            onKeyPress={(e) => e.key === 'Enter' && handleFederatedSearch(searchState.query)}
-            placeholder="Search across Wikidata, DBpedia..."
-            style={{
-              flex: 1,
-              padding: '6px 8px',
-              border: '1px solid #8B0000',
-              borderRadius: '4px',
-              fontSize: '12px',
-              fontFamily: "'EmOne', sans-serif"
-            }}
-          />
-          <button
-            onClick={() => handleFederatedSearch(searchState.query)}
-            disabled={searchState.isSearching || !searchState.query.trim()}
-            style={{
-              padding: '6px 12px',
-              border: 'none',
-              backgroundColor: searchState.isSearching ? '#666' : '#8B0000',
-              color: '#bdb5b5',
-              borderRadius: '4px',
-              cursor: (searchState.isSearching || !searchState.query.trim()) ? 'not-allowed' : 'pointer',
-              fontSize: '12px',
-              fontWeight: 'bold'
-            }}
-          >
-            {searchState.isSearching ? '...' : 'Search'}
-          </button>
-        </div>
-        
-        {/* Search Results */}
-        {searchState.results.length > 0 && (
-          <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-            <div style={{ fontSize: '11px', color: '#8B0000', marginBottom: '6px', fontWeight: 'bold' }}>
-              Found {searchState.results.length} results:
-            </div>
-            {searchState.results.map((result, index) => (
-              <div
-                key={index}
-                style={{
-                  padding: '6px 8px',
-                  backgroundColor: '#EFE8E5',
-                  borderRadius: '4px',
-                  marginBottom: '4px',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start'
-                }}
-                onClick={() => importSearchResult(result)}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 'bold', color: '#333', marginBottom: '2px' }}>
-                    {result.title}
-                  </div>
-                  <div style={{ color: '#666', fontSize: '10px', marginBottom: '2px' }}>
-                    {result.snippet}
-                  </div>
-                  <div style={{ color: '#8B0000', fontSize: '9px' }}>
-                    {result.source} | Confidence: {Math.round((result.confidence || 0) * 100)}%
-                  </div>
-                </div>
-                <button
-                  style={{
-                    padding: '2px 6px',
-                    fontSize: '9px',
-                    backgroundColor: '#2E8B57',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '3px',
-                    cursor: 'pointer',
-                    marginLeft: '8px'
-                  }}
-                >
-                  Import
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
       
       {/* Semantic Classification Section */}
       <SemanticClassificationSection 
