@@ -50,7 +50,7 @@ const cssColorToHex = (color) => {
     'black': '#000000',
     'gray': '#808080',
     'silver': '#c0c0c0',
-    'white': '#ffffff'
+    'white': '#EFE8E5'
   };
   
   return colorMap[color.toLowerCase()] || '#800000'; // Default to maroon if unknown
@@ -466,7 +466,7 @@ const AbstractionCarousel = ({
           let textColor = getTextColor(nodeColor);
           if (level > 0) {
             // Force bright text for darker specific nodes
-            textColor = '#ffffff';
+            textColor = '#EFE8E5';
           }
           
           chain.push({

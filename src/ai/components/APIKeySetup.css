@@ -108,7 +108,7 @@
 
 .test-button:hover:not(:disabled) {
   background: #8B0000;
-  color: #ffffff;
+      color: #EFE8E5;
 }
 
 .test-button:disabled {
@@ -134,7 +134,7 @@
 
 .update-button {
   background: #059669;
-  color: white;
+      color: #EFE8E5;
   border: none;
 }
 

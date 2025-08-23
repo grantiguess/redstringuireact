@@ -168,7 +168,7 @@ div.submenu-item {
 .submenu-item.has-submenu:hover,
 .submenu-item.has-submenu.active-submenu-parent {
     background-color: #F00000;
-    color: white;
+    color: #EFE8E5;
 }
 
 .recent-files-submenu {
@@ -211,11 +211,11 @@ div.submenu-item {
 
 .recent-file-item:hover {
     background-color: #F00000;
-    color: white;
+    color: #EFE8E5;
 }
 
 .recent-file-item:hover .recent-file-time {
-    color: white;
+    color: #EFE8E5;
 }
 
 .recent-file-name {

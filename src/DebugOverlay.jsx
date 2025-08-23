@@ -93,7 +93,7 @@ const DebugOverlay = ({ debugData, hideOverlay }) => {
         width: `${size.width}px`,
         height: `${size.height}px`,
         backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        color: 'white',
+        color: '#EFE8E5',
         padding: '20px',
         fontFamily: 'monospace',
         fontSize: '12px',
@@ -107,7 +107,7 @@ const DebugOverlay = ({ debugData, hideOverlay }) => {
         style={{
           width: '60px',
           height: '6px',
-          backgroundColor: 'white',
+          backgroundColor: '#EFE8E5',
           borderRadius: '3px',
           margin: '8px auto',
           cursor: 'grab'
@@ -131,7 +131,7 @@ const DebugOverlay = ({ debugData, hideOverlay }) => {
           style={{ 
             background: 'none', 
             border: 'none', 
-            color: 'white', 
+            color: '#EFE8E5', 
             cursor: 'pointer',
             padding: 0
           }}

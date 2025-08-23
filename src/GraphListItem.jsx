@@ -181,7 +181,7 @@ const GraphListItem = forwardRef(({
             e.stopPropagation(); // Prevent triggering item onClick
             onClose?.(graphData.id); // Call onClose prop with graph ID
           }}
-          onMouseEnter={(e) => e.currentTarget.style.color = 'white'}
+          onMouseEnter={(e) => e.currentTarget.style.color = '#EFE8E5'}
           onMouseLeave={(e) => e.currentTarget.style.color = '#bdb5b5'}
           title="Close Tab"
         />

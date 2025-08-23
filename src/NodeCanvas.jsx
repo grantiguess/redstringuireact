@@ -4104,7 +4104,7 @@ function NodeCanvas() {
       if (!newNodeColor) {
         const isAbove = abstractionPrompt.direction === 'above';
         const abstractionLevel = isAbove ? 0.3 : -0.2;
-        const targetColor = isAbove ? '#FFFFFF' : '#000000';
+        const targetColor = isAbove ? '#EFE8E5' : '#000000';
         newNodeColor = interpolateColor(currentlySelectedNode.color || '#8B0000', targetColor, Math.abs(abstractionLevel));
       }
       

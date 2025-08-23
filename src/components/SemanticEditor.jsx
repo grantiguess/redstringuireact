@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Globe, Link, Book, Search, ExternalLink, Plus, X, Check, Tags, FileText, Eye, Settings } from 'lucide-react';
+import { Globe, Link, Book, Search, ExternalLink, Plus, X, Check, Tags, FileText, Eye, Settings, CheckCircle } from 'lucide-react';
 import { PANEL_CLOSE_ICON_SIZE } from '../constants';
 import StandardDivider from './StandardDivider.jsx';
 
@@ -98,7 +98,7 @@ const SemanticLinkInput = ({ onAdd, placeholder, type, icon: Icon }) => {
           border: 'none',
           borderRadius: '6px',
           backgroundColor: '#8B0000',
-          color: 'white',
+          color: '#EFE8E5',
           cursor: isValid ? 'pointer' : 'not-allowed',
           display: 'flex',
           alignItems: 'center',
@@ -109,7 +109,7 @@ const SemanticLinkInput = ({ onAdd, placeholder, type, icon: Icon }) => {
         onMouseEnter={(e) => isValid && (e.target.style.backgroundColor = '#A00000')}
         onMouseLeave={(e) => isValid && (e.target.style.backgroundColor = '#8B0000')}
       >
-        <span style={{ fontSize: '20px', fontWeight: 'bold', color: 'white', lineHeight: 1 }}>+</span>
+        <span style={{ fontSize: '20px', fontWeight: 'bold', color: '#EFE8E5', lineHeight: 1 }}>+</span>
       </button>
     </div>
   );
@@ -170,10 +170,11 @@ const ExternalLinkCard = ({ link, onRemove }) => {
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '8px 12px',
-      backgroundColor: '#f8f9fa',
+      backgroundColor: '#bdb5b5', // Canvas color background
       border: `1px solid ${color}`,
       borderRadius: '6px',
-      marginBottom: '6px'
+      marginBottom: '6px',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.1)' // Subtle shadow
     }}>
       <div style={{ flex: 1 }}>
         <div style={{
@@ -211,9 +212,10 @@ const ExternalLinkCard = ({ link, onRemove }) => {
           style={{
             padding: '4px',
             border: 'none',
-            backgroundColor: 'transparent',
-            cursor: 'pointer',
-            color: '#dc3545'
+            backgroundColor: '#dc3545',
+            color: '#EFE8E5',
+            borderRadius: '3px',
+            cursor: 'pointer'
           }}
           title="Remove link"
         >
@@ -327,7 +329,7 @@ const WikipediaSearch = ({ onSelect }) => {
             border: 'none',
             borderRadius: '6px',
             backgroundColor: '#8B0000',
-            color: 'white',
+            color: '#EFE8E5',
             cursor: loading || !query.trim() ? 'not-allowed' : 'pointer',
             display: 'flex',
             alignItems: 'center',
@@ -338,7 +340,7 @@ const WikipediaSearch = ({ onSelect }) => {
           onMouseEnter={(e) => !(loading || !query.trim()) && (e.target.style.backgroundColor = '#A00000')}
           onMouseLeave={(e) => !(loading || !query.trim()) && (e.target.style.backgroundColor = '#8B0000')}
         >
-          {loading ? '...' : <span style={{ fontSize: '18px', color: 'white', lineHeight: 1 }}>⌕</span>}
+          {loading ? '...' : <span style={{ fontSize: '18px', color: '#EFE8E5', lineHeight: 1 }}>⌕</span>}
         </button>
       </div>
 
@@ -425,14 +427,24 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
   };
 
   return (
-    <div style={{ marginBottom: '20px' }}>
+    <div style={{ 
+      marginBottom: '20px',
+      backgroundColor: '#bdb5b5', // Canvas color background
+      padding: '15px',
+      borderRadius: '8px',
+      border: '1px solid #e0e0e0'
+    }}>
       <h4 style={{ 
         margin: '0 0 10px 0', 
         fontSize: '14px', 
-        color: '#555',
+        color: '#8B0000', // Maroon header
         display: 'flex',
         alignItems: 'center',
-        gap: '6px'
+        gap: '6px',
+        padding: '6px 10px',
+        backgroundColor: '#EFE8E5',
+        borderRadius: '4px',
+        borderLeft: '3px solid #8B0000' // Maroon left border
       }}>
         <Tags size={14} />
         RDF Schema Properties
@@ -441,8 +453,8 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
       {/* Show auto-synced RDF properties */}
       <div style={{
         padding: '8px 10px',
-        backgroundColor: '#f0f8ff',
-        border: '1px solid #b8d4f0',
+        backgroundColor: '#EFE8E5', // Canvas color background
+        border: '1px solid #e0e0e0',
         borderRadius: '6px',
         marginBottom: '10px',
         fontSize: '12px'
@@ -450,14 +462,22 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
         <div style={{ marginBottom: '6px', fontWeight: 'bold', color: '#333' }}>
           Auto-Generated RDF Schema:
         </div>
-        <div style={{ marginBottom: '3px' }}>
+        <div style={{ marginBottom: '3px', color: '#333' }}>
           <strong>rdfs:label:</strong> <code>"{nodeData.name || 'Untitled'}"</code>
         </div>
-        <div style={{ marginBottom: '8px' }}>
+        <div style={{ marginBottom: '0px', color: '#333' }}>
           <strong>rdfs:comment:</strong> <code>"{(nodeData.description || 'No description').substring(0, 60)}{(nodeData.description || '').length > 60 ? '...' : ''}"</code>
         </div>
-        <div style={{ color: '#666', fontSize: '11px', fontStyle: 'italic' }}>
-          💫 These automatically sync when you edit the node name or bio above. No manual input needed!
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '4px', 
+          marginTop: '6px',
+          color: '#666', 
+          fontSize: '11px'
+        }}>
+          <CheckCircle size={12} />
+          Auto-synced
         </div>
       </div>
 
@@ -466,8 +486,9 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
         <label style={{ 
           display: 'block', 
           fontSize: '12px', 
-          color: '#666', 
-          marginBottom: '4px' 
+          color: '#8B0000', // Maroon label
+          marginBottom: '4px',
+          fontWeight: 'bold'
         }}>
           See Also (rdfs:seeAlso)
         </label>
@@ -479,17 +500,18 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
           onKeyPress={handleSeeAlsoKeyPress}
           placeholder="https://example.com/related, https://other.com/resource"
           style={{
-            width: '100%',
+            width: 'calc(100% - 16px)', // Account for padding
             padding: '6px 8px',
-            border: '1px solid #260000',
+            border: '1px solid #8B0000', // Maroon border
             borderRadius: '4px',
             fontSize: '14px',
-            fontFamily: "'EmOne', sans-serif"
+            fontFamily: "'EmOne', sans-serif",
+            backgroundColor: '#EFE8E5' // Canvas color for input background
           }}
         />
         <div style={{ 
           fontSize: '11px', 
-          color: '#888', 
+          color: '#666', 
           marginTop: '2px'
         }}>
           Comma-separated URLs to related resources
@@ -534,7 +556,12 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
   ];
 
   return (
-    <div>
+    <div style={{
+      backgroundColor: '#bdb5b5', // Canvas color background
+      padding: '15px',
+      borderRadius: '8px',
+      border: '1px solid #e0e0e0'
+    }}>
       <div style={{ 
         display: 'flex', 
         alignItems: 'center', 
@@ -544,10 +571,14 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
         <h4 style={{ 
           margin: '0', 
           fontSize: '14px', 
-          color: '#555',
+          color: '#8B0000', // Maroon header
           display: 'flex',
           alignItems: 'center',
-          gap: '6px'
+          gap: '6px',
+          padding: '6px 10px',
+          backgroundColor: '#EFE8E5',
+          borderRadius: '4px',
+          borderLeft: '3px solid #8B0000' // Maroon left border
         }}>
           <Search size={14} />
           Semantic Classification
@@ -559,7 +590,7 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
             border: 'none',
             backgroundColor: 'transparent',
             cursor: 'pointer',
-            color: '#666'
+            color: '#8B0000' // Maroon color
           }}
           title="Federation settings"
         >
@@ -571,12 +602,12 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
       {showSettings && (
         <div style={{
           padding: '10px',
-          backgroundColor: '#f0f0f0',
+          backgroundColor: '#EFE8E5', // Canvas color background
           borderRadius: '6px',
           marginBottom: '10px',
-          border: '1px solid #ddd'
+          border: '1px solid #e0e0e0'
         }}>
-          <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
+          <div style={{ fontSize: '12px', color: '#8B0000', marginBottom: '8px', fontWeight: 'bold' }}>
             Federation Mode:
           </div>
           <div style={{ display: 'flex', gap: '10px' }}>
@@ -599,7 +630,7 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
           </div>
           <div style={{ 
             fontSize: '11px', 
-            color: '#888', 
+            color: '#666', 
             marginTop: '6px',
             fontStyle: 'italic'
           }}>
@@ -615,12 +646,13 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
       {nodeData.typeNodeId && (
         <div style={{
           padding: '8px 10px',
-          backgroundColor: '#e8f4fd',
-          borderLeft: '3px solid #2196f3',
+          backgroundColor: '#EFE8E5', // Canvas color background
+          borderLeft: '3px solid #8B0000', // Maroon left border
           marginBottom: '10px',
-          fontSize: '12px'
+          fontSize: '12px',
+          borderRadius: '0 6px 6px 0' // Rounded right corners
         }}>
-          <strong>Current Type:</strong> {nodeData.typeNodeId}
+          <strong style={{ color: '#8B0000' }}>Current Type:</strong> {nodeData.typeNodeId}
           <br />
           <span style={{ color: '#666' }}>
             This creates an rdfs:subClassOf relationship in RDF Schema
@@ -633,8 +665,9 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
         <label style={{ 
           display: 'block', 
           fontSize: '12px', 
-          color: '#666', 
-          marginBottom: '8px' 
+          color: '#8B0000', // Maroon label
+          marginBottom: '8px',
+          fontWeight: 'bold'
         }}>
           Quick Classifications (owl:equivalentClass):
         </label>
@@ -652,8 +685,8 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
                   padding: '4px 8px',
                   fontSize: '11px',
                   border: `1px solid ${onto.color}`,
-                  backgroundColor: isSelected ? onto.color : 'transparent',
-                  color: isSelected ? 'white' : onto.color,
+                  backgroundColor: isSelected ? onto.color : '#EFE8E5', // Canvas color background when not selected
+                  color: isSelected ? '#EFE8E5' : onto.color,
                   borderRadius: '12px',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease'
@@ -672,8 +705,9 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
           <label style={{ 
             display: 'block', 
             fontSize: '12px', 
-            color: '#666', 
-            marginBottom: '8px' 
+            color: '#8B0000', // Maroon label
+            marginBottom: '8px',
+            fontWeight: 'bold'
           }}>
             Current Classifications ({equivalentClasses.length}):
           </label>
@@ -685,8 +719,8 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '6px 10px',
-                backgroundColor: '#f8f9fa',
-                border: '1px solid #ddd',
+                backgroundColor: '#EFE8E5', // Canvas color background
+                border: '1px solid #e0e0e0',
                 borderRadius: '4px',
                 marginBottom: '4px',
                 fontSize: '12px'
@@ -694,60 +728,62 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
             >
               <div>
                 <code style={{ 
-                  backgroundColor: '#e9ecef', 
+                  backgroundColor: '#EFE8E5', 
                   padding: '2px 4px', 
                   borderRadius: '3px',
-                  fontSize: '11px'
+                  fontSize: '11px',
+                  color: '#333' // Dark text color for better readability
                 }}>
                   {cls['@id']}
                 </code>
                 {cls.source && (
                   <span style={{ 
-                    color: '#666', 
-                    marginLeft: '8px',
-                    fontSize: '10px'
+                    marginLeft: '8px', 
+                    fontSize: '10px', 
+                    color: '#333', // Dark text color to match panel
+                    fontStyle: 'italic'
                   }}>
-                    ({cls.source})
+                    via {cls.source}
                   </span>
                 )}
               </div>
               <button
                 onClick={() => removeEquivalentClass(cls['@id'])}
                 style={{
-                  padding: '2px',
+                  padding: '2px 6px',
                   border: 'none',
-                  backgroundColor: 'transparent',
+                  backgroundColor: '#dc3545',
+                  color: '#EFE8E5',
+                  borderRadius: '3px',
                   cursor: 'pointer',
-                  color: '#dc3545'
+                  fontSize: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  lineHeight: 1
                 }}
-                title="Remove classification"
               >
-                <X size={12} />
+                <X size={12} strokeWidth={3} />
               </button>
             </div>
           ))}
         </div>
       )}
 
-      {/* Future: Abstraction Chain Integration */}
+      {/* Abstraction Chains - Future Feature */}
       {Object.keys(abstractionChains).length > 0 && (
-        <div style={{
-          marginTop: '15px',
-          padding: '10px',
-          backgroundColor: '#fff3cd',
-          border: '1px solid #ffeaa7',
-          borderRadius: '6px',
-          fontSize: '12px'
-        }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
-            Abstraction Chains detected:
-          </div>
-          {Object.entries(abstractionChains).map(([dimension, chain]) => (
-            <div key={dimension} style={{ marginBottom: '3px' }}>
-              <strong>{dimension}:</strong> {Array.isArray(chain) ? chain.join(' → ') : 'Invalid chain'}
-            </div>
-          ))}
+        <div style={{ marginTop: '15px' }}>
+          <label style={{ 
+            display: 'block', 
+            fontSize: '12px', 
+            color: '#8B0000', // Maroon label
+            marginBottom: '8px',
+            fontWeight: 'bold'
+          }}>
+            Abstraction Chains:
+          </label>
           <div style={{ 
+            fontSize: '11px', 
             color: '#856404', 
             fontStyle: 'italic',
             marginTop: '8px'
@@ -782,14 +818,24 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
   };
 
   return (
-    <div style={{ padding: '15px', fontFamily: "'EmOne', sans-serif" }}>
+    <div style={{ 
+      padding: '15px', 
+      fontFamily: "'EmOne', sans-serif",
+      backgroundColor: '#bdb5b5', // Canvas color background
+      borderRadius: '8px',
+      border: '1px solid #e0e0e0'
+    }}>
       <h3 style={{
         margin: '0 0 15px 0',
-        color: '#333',
+        color: '#8B0000', // Maroon header
         fontSize: '16px',
         display: 'flex',
         alignItems: 'center',
-        gap: '8px'
+        gap: '8px',
+        padding: '8px 12px',
+        backgroundColor: '#EFE8E5', // Canvas color background for header
+        borderRadius: '6px',
+        borderLeft: '4px solid #8B0000' // Maroon left border
       }}>
         <Globe size={18} />
         Semantic Web Links
@@ -804,14 +850,24 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
       <StandardDivider margin="15px 0" />
 
       {/* External Links Section (Rosetta Stone) */}
-      <div style={{ marginBottom: '20px' }}>
+      <div style={{ 
+        marginBottom: '20px',
+        backgroundColor: '#bdb5b5', // Canvas color background
+        padding: '15px',
+        borderRadius: '8px',
+        border: '1px solid #e0e0e0'
+      }}>
         <h4 style={{ 
           margin: '0 0 10px 0', 
           fontSize: '14px', 
-          color: '#555',
+          color: '#8B0000', // Maroon header
           display: 'flex',
           alignItems: 'center',
-          gap: '6px'
+          gap: '6px',
+          padding: '6px 10px',
+          backgroundColor: '#EFE8E5',
+          borderRadius: '4px',
+          borderLeft: '3px solid #8B0000' // Maroon left border
         }}>
           <Link size={14} />
           External References (owl:sameAs)

@@ -55,7 +55,7 @@ const PlusSign = ({
       'black': '#000000',
       'gray': '#808080',
       'silver': '#C0C0C0',
-      'white': '#FFFFFF'
+      'white': '#EFE8E5'
     };
     
     // Convert hex to RGB

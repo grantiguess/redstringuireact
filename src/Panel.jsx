@@ -220,7 +220,7 @@ const SavedNodeItem = ({ node, onClick, onDoubleClick, onUnsave, isActive }) => 
             color: '#999999',
             transition: 'color 0.2s ease',
           }}
-          onMouseEnter={(e) => e.currentTarget.style.color = '#ffffff'}
+          onMouseEnter={(e) => e.currentTarget.style.color = '#EFE8E5'}
           onMouseLeave={(e) => e.currentTarget.style.color = '#999999'}
         />
       </div>
@@ -2518,7 +2518,7 @@ const Panel = forwardRef(
                                                 top: '50%',
                                                 transform: 'translateY(-50%)',
                                                 backgroundColor: '#8B0000',
-                                                color: 'white',
+                                                color: '#EFE8E5',
                                                 borderRadius: '50%',
                                                 width: '24px',
                                                 height: '24px',

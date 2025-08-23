@@ -155,7 +155,7 @@ header .editable-title-input::selection {
   width: 20px; /* Smaller button */
   height: 30px; /* Shorter button */
   background-color: #555;
-  color: white;
+      color: #EFE8E5;
   border: none;
   cursor: pointer;
   z-index: 101; /* Above panel content */

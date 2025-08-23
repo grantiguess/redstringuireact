@@ -388,7 +388,7 @@ const DynamicFederation = () => {
           {instructions && !podConfig.verified && (
             <div style={{ 
               padding: '10px', 
-              backgroundColor: '#fff3cd', 
+              backgroundColor: '#EFE8E5', 
               border: '1px solid #ffeaa7',
               borderRadius: '4px',
               fontSize: '0.8rem'

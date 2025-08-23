@@ -1046,7 +1046,7 @@ const GitNativeFederation = () => {
                 <>
                   <div style={{ 
                     padding: '12px', 
-                    backgroundColor: '#fff3e0', 
+                    backgroundColor: '#EFE8E5', 
                     borderRadius: '6px', 
                     fontSize: '0.8rem',
                     color: '#e65100',
@@ -1350,7 +1350,7 @@ const GitNativeFederation = () => {
             alignItems: 'center', 
             gap: '8px', 
             padding: '8px', 
-            backgroundColor: gitSyncEngine.getStatus().isDragging ? '#fff3e0' : 
+            backgroundColor: gitSyncEngine.getStatus().isDragging ? '#EFE8E5' : 
                            gitSyncEngine.getStatus().hasChanges ? '#e8f5e8' : '#f5f5f5',
             borderRadius: '4px',
             fontSize: '0.8rem',
@@ -1384,7 +1384,7 @@ const GitNativeFederation = () => {
             alignItems: 'center', 
             justifyContent: 'space-between',
             padding: '12px', 
-            backgroundColor: sourceOfTruthMode === SOURCE_OF_TRUTH.GIT ? '#fff3e0' : '#f3e5f5',
+            backgroundColor: sourceOfTruthMode === SOURCE_OF_TRUTH.GIT ? '#EFE8E5' : '#f3e5f5',
             borderRadius: '4px',
             fontSize: '0.8rem',
             marginTop: '8px',
@@ -1401,7 +1401,7 @@ const GitNativeFederation = () => {
               style={{
                 padding: '4px 8px',
                 backgroundColor: sourceOfTruthMode === SOURCE_OF_TRUTH.GIT ? '#ff9800' : '#9c27b0',
-                color: 'white',
+                color: '#EFE8E5',
                 border: 'none',
                 borderRadius: '3px',
                 cursor: 'pointer',

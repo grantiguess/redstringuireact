@@ -314,7 +314,7 @@ const ColorPicker = ({
             padding: '6px 8px',
             border: '1px solid #260000',
             borderRadius: '4px',
-            backgroundColor: 'white',
+            backgroundColor: '#EFE8E5',
             color: '#260000',
             fontSize: '14px',
             fontFamily: "'EmOne', sans-serif",
