@@ -4,8 +4,7 @@ import { getEmptyImage } from 'react-dnd-html5-backend';
 import { Palette, ArrowUpFromDot, ImagePlus } from 'lucide-react';
 import { NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR } from '../../constants.js';
 import CollapsibleSection from '../CollapsibleSection.jsx';
-import SemanticEditor from '../SemanticEditor.jsx';
-import ConnectionBrowser from '../ConnectionBrowser.jsx';
+import SemanticDiscovery from '../SemanticDiscovery.jsx';
 import StandardDivider from '../StandardDivider.jsx';
 
 // Helper function to determine the correct article ("a" or "an")
@@ -572,31 +571,19 @@ const SharedPanelContent = ({
         )}
       </CollapsibleSection>
 
-      {/* Dividing line above Connections section */}
+      {/* Dividing line above Semantic Discovery section */}
       <StandardDivider margin="20px 0" />
       
-      {/* Connections Section */}
+      {/* Consolidated Semantic Discovery Section */}
       <CollapsibleSection 
-        title="Connections" 
+        title="Semantic Discovery" 
         defaultExpanded={false}
       >
-        <ConnectionBrowser 
+        <SemanticDiscovery 
           nodeData={nodeData}
+          onNodeUpdate={onNodeUpdate}
           onMaterializeConnection={onMaterializeConnection}
-        />
-      </CollapsibleSection>
-
-      {/* Dividing line above Semantic Web Integration section */}
-      <StandardDivider margin="20px 0" />
-      
-      {/* Semantic Web Integration */}
-      <CollapsibleSection 
-        title="Semantic Web Links" 
-        defaultExpanded={false}
-      >
-        <SemanticEditor 
-          nodeData={nodeData}
-          onUpdate={onNodeUpdate}
+          isUltraSlim={isUltraSlim}
         />
       </CollapsibleSection>
     </div>
