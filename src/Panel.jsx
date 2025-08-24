@@ -512,8 +512,14 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
           type: 'graph'
         };
       } else {
-        // Log stale reference for debugging
-        console.warn(`[SemanticDiscovery] Stale activeDefinitionNodeId: ${activeDefinitionNodeId} - prototype not found or missing name`);
+        // Log stale reference for debugging (only once per session)
+        if (!window._staleNodeWarnings) window._staleNodeWarnings = new Set();
+        if (!window._staleNodeWarnings.has(activeDefinitionNodeId)) {
+          console.warn(`[SemanticDiscovery] Stale activeDefinitionNodeId: ${activeDefinitionNodeId} - prototype not found or missing name`);
+          window._staleNodeWarnings.add(activeDefinitionNodeId);
+        }
+        // Clear the stale reference to prevent repeated warnings
+        // Note: This would require access to storeActions to actually clear it
       }
     }
     

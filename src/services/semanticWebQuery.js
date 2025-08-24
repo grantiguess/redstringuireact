@@ -535,25 +535,18 @@ export async function findRelatedThroughDBpediaProperties(entityName, options = 
     
     const results = [];
     
-    console.log(`[SemanticWebQuery] Processing ${allProperties.length} properties for ${entityName}`);
-    
     // Look for wikiPageWikiLink properties that create entity relationships
     for (const prop of allProperties) {
       if (!prop.value) {
-        console.log(`[SemanticWebQuery] Skipping property without value:`, prop);
         continue;
       }
       
       const valueUri = prop.value;
       const propertyUri = prop.property;
       
-      console.log(`[SemanticWebQuery] Checking property: ${propertyUri} -> ${valueUri}`);
-      
       // Focus on wikiPageWikiLink properties that create entity relationships
       if (propertyUri === 'http://dbpedia.org/ontology/wikiPageWikiLink' && 
           valueUri.includes('dbpedia.org/resource/')) {
-        
-        console.log(`[SemanticWebQuery] Found wikiPageWikiLink property: ${prop.valueLabel} -> ${valueUri}`);
         
         // Find other entities that also link to this same entity
         const relatedQuery = `
@@ -564,8 +557,6 @@ export async function findRelatedThroughDBpediaProperties(entityName, options = 
             FILTER(?resource != <http://dbpedia.org/resource/${entityName.replace(/\s+/g, '_')}>)
           } LIMIT 5
         `;
-        
-        console.log(`[SemanticWebQuery] Executing query for ${prop.valueLabel}:`, relatedQuery);
         
         try {
           const response = await fetch('https://dbpedia.org/sparql', {
