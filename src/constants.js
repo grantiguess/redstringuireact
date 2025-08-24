@@ -25,7 +25,7 @@ export const TRACKPAD_ZOOM_SENSITIVITY = 6.5;     // Slightly increased sensitiv
 export const PAN_DRAG_SENSITIVITY = 1.2;
 export const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1.5; // Renaming this slightly for clarity, adjust value if needed
 export const SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY = 0.3; // Slightly faster to address slow mouse wheel zoom
-export const KEYBOARD_PAN_SPEED = 0.115;                // for keyboard panning
+export const KEYBOARD_PAN_SPEED = 0.065;                // for keyboard panning
 export const KEYBOARD_ZOOM_SPEED = 0.15;               // for keyboard zooming
 
 // Image Processing
