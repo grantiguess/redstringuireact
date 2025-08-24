@@ -29,6 +29,7 @@ import mcpClient from './services/mcpClient.js';
 import { bridgeFetch } from './services/bridgeConfig.js';
 import apiKeyManager from './services/apiKeyManager.js';
 import SemanticEditor from './components/SemanticEditor.jsx';
+import { enhancedSemanticSearch } from './services/semanticWebQuery.js';
 import PanelContentWrapper from './components/panel/PanelContentWrapper.jsx';
 import CollapsibleSection from './components/CollapsibleSection.jsx';
 import StandardDivider from './components/StandardDivider.jsx';
@@ -547,45 +548,68 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
     await performSearch(manualQuery);
   };
 
-  // Semantic expansion for selected node
+  // Semantic expansion for selected node - Use knowledge federation for better results
   const performSemanticExpansion = async (nodeName, nodeId) => {
     setIsSearching(true);
     try {
-      // Semantic expansion with focused parameters for node relationships
+      // Use knowledge federation for relationship-based expansion (like mass import)
+      console.log(`[SemanticExpansion] Starting knowledge federation expansion for "${nodeName}"`);
       const results = await knowledgeFederation.importKnowledgeCluster(nodeName, {
-        maxDepth: 2, // Slightly deeper for expansion
-        maxEntitiesPerLevel: 12, // Focused number for expansion halo
+        maxDepth: 1, // Focus on immediate relationships for expansion
+        maxEntitiesPerLevel: 20, // Get focused results for expansion
         includeRelationships: true,
-        includeSources: ['wikidata', 'dbpedia', 'freebase'],
-        includeTypes: true,
-        includeLabels: true,
-        minConfidence: 0.7, // Higher confidence for expansions
-        preferSemanticWeb: true,
-        expandRelated: true // Focus on relationships
+        includeSources: ['wikidata', 'dbpedia', 'conceptnet'],
+        onProgress: (progress) => {
+          console.log(`[SemanticExpansion] Progress: ${progress.stage} - ${progress.entity} (level ${progress.level})`);
+        }
       });
       
       // Convert to expansion results with proper positioning info
-      const expansionResults = Array.from(results.entities.entries()).map(([name, entityData]) => ({
-        id: `expansion-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        name: cleanTitle(name),
-        description: entityData.descriptions?.[0]?.text || `Related to ${nodeName}`,
-        category: entityData.types?.[0]?.type || 'Thing',
-        source: entityData.sources?.[0] || 'semantic-web',
-        confidence: entityData.confidence || 0.8,
-        relationships: results.relationships
-          .filter(rel => rel.source === name || rel.target === name)
-          .slice(0, 3),
-        semanticMetadata: {
-          originalUri: entityData.externalLinks?.[0],
-          equivalentClasses: entityData.equivalentClasses || [],
-          externalLinks: entityData.externalLinks || [],
-          confidence: entityData.confidence || 0.8
-        },
-        color: generateConceptColor(name),
-        expandedFrom: nodeId,
-        discoveredAt: new Date().toISOString()
-      }));
+      const expansionResults = Array.from(results.entities.entries()).map(([entityName, entityData]) => {
+        // Skip the seed entity itself
+        if (entityName === nodeName) return null;
+        
+        // Get relationships for this entity
+        const entityRelationships = results.relationships
+          .filter(rel => rel.source === entityName || rel.target === entityName)
+          .slice(0, 3);
+        
+        // Get the best description from available sources
+        const bestDescription = entityData.descriptions && entityData.descriptions.length > 0
+          ? entityData.descriptions[0].text
+          : `Related to ${nodeName}`;
+        
+        // Get the best type from available sources
+        const bestType = entityData.types && entityData.types.length > 0
+          ? entityData.types[0]
+          : 'Thing';
+        
+        return {
+          id: `expansion-${entityName.replace(/\s+/g, '_')}`,
+          name: cleanTitle(entityName),
+          description: bestDescription,
+          category: bestType,
+          source: entityData.sources?.join(', ') || 'federated',
+          confidence: entityData.confidence || 0.8,
+          relationships: entityRelationships,
+          semanticMetadata: {
+            originalUri: entityData.externalLinks?.[0],
+            equivalentClasses: entityData.types || [],
+            externalLinks: entityData.externalLinks || [],
+            confidence: entityData.confidence || 0.8,
+            connectionInfo: {
+              type: 'expansion',
+              value: 'related_via_federation',
+              originalEntity: nodeName
+            }
+          },
+          color: generateConceptColor(entityName),
+          expandedFrom: nodeId,
+          discoveredAt: new Date().toISOString()
+        };
+      }).filter(Boolean); // Remove null entries
       
+      console.log(`[SemanticExpansion] Found ${expansionResults.length} expansion concepts`);
       setSemanticExpansionResults(expansionResults);
       
     } catch (error) {
@@ -596,52 +620,73 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
   };
 
 
-  // Common search logic
+  // Common search logic - Use knowledge federation for better results
   const performSearch = async (query) => {
     
     setIsSearching(true);
     const searchId = `concept-search-${Date.now()}`;
     
     try {
-      // Pure semantic web search with enhanced parameters
+      // Use knowledge federation for relationship-based exploration (like mass import)
+      console.log(`[SemanticDiscovery] Starting knowledge federation search for "${query}"`);
       const results = await knowledgeFederation.importKnowledgeCluster(query, {
-        maxDepth: 1,
-        maxEntitiesPerLevel: 25, // Increased for more comprehensive results
+        maxDepth: 2, // Explore 2 levels deep for rich results
+        maxEntitiesPerLevel: 25, // Get more entities per level
         includeRelationships: true,
-        includeSources: ['wikidata', 'dbpedia', 'freebase'], // Focus on semantic web sources
-        includeTypes: true, // Include ontological typing
-        includeLabels: true, // Include alternative labels/names
-        minConfidence: 0.6, // Higher confidence threshold
-        preferSemanticWeb: true // Prioritize semantic web sources over general web
+        includeSources: ['wikidata', 'dbpedia', 'conceptnet'], // Use all available sources
+        onProgress: (progress) => {
+          console.log(`[SemanticDiscovery] Progress: ${progress.stage} - ${progress.entity} (level ${progress.level})`);
+        }
       });
       
-      // Convert semantic entities to Redstring concept format
-      const concepts = Array.from(results.entities.entries()).map(([name, entityData]) => ({
-        id: `concept-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        name: cleanTitle(name),
-        description: entityData.descriptions?.[0]?.text || `A concept related to ${query}`,
-        category: entityData.types?.[0]?.type || 'Thing',
-        source: entityData.sources?.[0] || 'semantic-web',
-        relationships: results.relationships
-          .filter(rel => rel.source === name || rel.target === name)
-          .slice(0, 5), // Top 5 relationships
-        semanticMetadata: {
-          originalUri: entityData.externalLinks?.[0],
-          equivalentClasses: entityData.equivalentClasses || [],
-          externalLinks: entityData.externalLinks || [],
-          confidence: entityData.confidence || 0.8
-        },
-        color: generateConceptColor(name),
-        discoveredAt: new Date().toISOString(),
-        searchQuery: query
-      }));
+      // Convert knowledge federation results to Redstring concept format
+      const concepts = Array.from(results.entities.entries()).map(([entityName, entityData]) => {
+        // Get relationships for this entity
+        const entityRelationships = results.relationships
+          .filter(rel => rel.source === entityName || rel.target === entityName)
+          .slice(0, 5);
+        
+        // Get the best description from available sources
+        const bestDescription = entityData.descriptions && entityData.descriptions.length > 0
+          ? entityData.descriptions[0].text
+          : `A concept related to ${query}`;
+        
+        // Get the best type from available sources
+        const bestType = entityData.types && entityData.types.length > 0
+          ? entityData.types[0]
+          : 'Thing';
+        
+        return {
+          id: `federation-${entityName.replace(/\s+/g, '_')}`,
+          name: cleanTitle(entityName),
+          description: bestDescription,
+          category: bestType,
+          source: entityData.sources?.join(', ') || 'federated',
+          relationships: entityRelationships,
+          semanticMetadata: {
+            originalUri: entityData.externalLinks?.[0],
+            equivalentClasses: entityData.types || [],
+            externalLinks: entityData.externalLinks || [],
+            confidence: entityData.confidence || 0.8,
+            connectionInfo: {
+              type: 'federated',
+              value: entityName === query ? 'seed_entity' : 'related_entity',
+              originalEntity: query
+            }
+          },
+          color: generateConceptColor(entityName),
+          discoveredAt: new Date().toISOString(),
+          searchQuery: query
+        };
+      });
       
+      console.log(`[SemanticDiscovery] Found ${concepts.length} concepts from knowledge federation`);
       setDiscoveredConcepts(concepts);
       
       // Add to search history
       setSearchHistory(prev => [{
         id: searchId,
-        query: searchQuery,
+        query: query,
         timestamp: new Date(),
         resultCount: concepts.length,
         concepts: concepts.slice(0, 10) // Store first 10 for quick access
@@ -654,6 +699,26 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
       setIsSearching(false);
     }
   };
+  
+  // Function to trigger search from individual concept cards
+  const triggerSearchFromConcept = async (conceptName) => {
+    console.log(`[SemanticDiscovery] Triggering search for concept: "${conceptName}"`);
+    setManualQuery(conceptName);
+    await performSearch(conceptName);
+  };
+  
+  // Expose search function globally for concept card search buttons
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.triggerSemanticSearch = triggerSearchFromConcept;
+    }
+    
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete window.triggerSemanticSearch;
+      }
+    };
+  }, []);
   
   // Clean and capitalize titles from semantic web
   const cleanTitle = (name) => {
@@ -1085,7 +1150,7 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                 ))}
               </div>
               
-              {/* Search More Button */}
+              {/* Load More Button */}
               {discoveredConcepts.length >= 10 && (
                 <div style={{ marginTop: '12px', textAlign: 'center' }}>
                   <button
@@ -1096,46 +1161,67 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                         
                         try {
                           setIsSearching(true);
+                          console.log(`[SemanticDiscovery] Loading more results for "${lastSearch.query}"`);
+                          
+                          // Use knowledge federation with higher limits for more results
                           const results = await knowledgeFederation.importKnowledgeCluster(lastSearch.query, {
-                            maxDepth: 1,
-                            maxEntitiesPerLevel: 35, // Get more results
+                            maxDepth: 3, // Go deeper for "load more"
+                            maxEntitiesPerLevel: 40, // Higher limit for "load more"
                             includeRelationships: true,
-                            includeSources: ['wikidata', 'dbpedia', 'freebase'],
-                            includeTypes: true,
-                            includeLabels: true,
-                            minConfidence: 0.5, // Lower confidence to get more variety
-                            preferSemanticWeb: true,
-                            offset: discoveredConcepts.length // Skip already retrieved results
+                            includeSources: ['wikidata', 'dbpedia', 'conceptnet'],
+                            onProgress: (progress) => {
+                              console.log(`[SemanticDiscovery] Load more progress: ${progress.stage} - ${progress.entity} (level ${progress.level})`);
+                            }
                           });
                           
-                          // Filter out duplicates and add new concepts
+                          // Convert knowledge federation results to concept format and filter out duplicates
                           const newConcepts = Array.from(results.entities.entries())
-                            .map(([name, entityData]) => ({
-                              id: `concept-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                              name: cleanTitle(name),
-                              description: entityData.descriptions?.[0]?.text || `A concept related to ${lastSearch.query}`,
-                              category: entityData.types?.[0]?.type || 'Thing',
-                              source: entityData.sources?.[0] || 'semantic-web',
-                              confidence: entityData.confidence || 0.8,
-                              relationships: results.relationships
-                                .filter(rel => rel.source === name || rel.target === name)
-                                .slice(0, 3),
-                              semanticMetadata: {
-                                originalUri: entityData.externalLinks?.[0],
-                                equivalentClasses: entityData.equivalentClasses || [],
-                                externalLinks: entityData.externalLinks || [],
-                                confidence: entityData.confidence || 0.8
-                              },
-                              color: generateConceptColor(name),
-                              searchQuery: lastSearch.query,
-                              discoveredAt: new Date().toISOString()
-                            }))
+                            .map(([entityName, entityData]) => {
+                              // Get relationships for this entity
+                              const entityRelationships = results.relationships
+                                .filter(rel => rel.source === entityName || rel.target === entityName)
+                                .slice(0, 3);
+                              
+                              // Get the best description from available sources
+                              const bestDescription = entityData.descriptions && entityData.descriptions.length > 0
+                                ? entityData.descriptions[0].text
+                                : `A concept related to ${lastSearch.query}`;
+                              
+                              // Get the best type from available sources
+                              const bestType = entityData.types && entityData.types.length > 0
+                                ? entityData.types[0]
+                                : 'Thing';
+                              
+                              return {
+                                id: `federation-${entityName.replace(/\s+/g, '_')}`,
+                                name: cleanTitle(entityName),
+                                description: bestDescription,
+                                category: bestType,
+                                source: entityData.sources?.join(', ') || 'federated',
+                                relationships: entityRelationships,
+                                semanticMetadata: {
+                                  originalUri: entityData.externalLinks?.[0],
+                                  equivalentClasses: entityData.types || [],
+                                  externalLinks: entityData.externalLinks || [],
+                                  confidence: entityData.confidence || 0.8,
+                                  connectionInfo: {
+                                    type: 'federated',
+                                    value: entityName === lastSearch.query ? 'seed_entity' : 'related_entity',
+                                    originalEntity: lastSearch.query
+                                  }
+                                },
+                                color: generateConceptColor(entityName),
+                                searchQuery: lastSearch.query,
+                                discoveredAt: new Date().toISOString()
+                              };
+                            })
                             .filter(concept => !existingNames.has(concept.name)); // Prevent duplicates
                           
+                          console.log(`[SemanticDiscovery] Loaded ${newConcepts.length} additional concepts`);
                           setDiscoveredConcepts(prev => [...prev, ...newConcepts]);
                           
                         } catch (error) {
-                          console.error('[SemanticDiscovery] Search more failed:', error);
+                          console.error('[SemanticDiscovery] Load more failed:', error);
                         } finally {
                           setIsSearching(false);
                         }
@@ -1166,7 +1252,7 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                       }
                     }}
                   >
-                    {isSearching ? '🔍 Searching...' : '🔍 Search More'}
+                    {isSearching ? '🔍 Loading...' : '🔍 Load More'}
                   </button>
                 </div>
               )}
@@ -1417,6 +1503,43 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
         {concept.source === 'wikidata' ? 'WD' : concept.source === 'dbpedia' ? 'DB' : 'SW'}
       </div>
       
+      {/* Search Button - Canvas colored rounded square with icon in result's background color */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '4px',
+          right: '32px', // Position to the left of origin badge
+          width: '20px',
+          height: '20px',
+          background: '#EFE8E5', // Canvas color
+          borderRadius: '4px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          opacity: 0.8,
+          transition: 'opacity 0.2s ease',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          // Trigger a new search with this concept's name
+          if (typeof window !== 'undefined' && window.triggerSemanticSearch) {
+            window.triggerSemanticSearch(concept.name);
+          }
+        }}
+        title={`Search for more about "${concept.name}"`}
+        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+        onMouseLeave={(e) => e.currentTarget.style.opacity = 0.8}
+      >
+        <Search 
+          size={12} 
+          style={{ 
+            color: concept.color // Icon in result's background color
+          }} 
+        />
+      </div>
+      
       {/* Node Name */}
       <div style={{
         color: '#bdb5b5',
@@ -1546,6 +1669,43 @@ const GhostSemanticNode = ({ concept, index, onMaterialize, onSelect }) => {
         color: '#bdb5b5'
       }}>
         ✨
+      </div>
+      
+      {/* Search Button - Canvas colored rounded square with icon in result's background color */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '2px',
+          right: '20px', // Position to the left of ghost indicator
+          width: '16px',
+          height: '16px',
+          background: '#EFE8E5', // Canvas color
+          borderRadius: '3px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          opacity: 0.8,
+          transition: 'opacity 0.2s ease',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.2)'
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          // Trigger a new search with this concept's name
+          if (typeof window !== 'undefined' && window.triggerSemanticSearch) {
+            window.triggerSemanticSearch(concept.name);
+          }
+        }}
+        title={`Search for more about "${concept.name}"`}
+        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+        onMouseLeave={(e) => e.currentTarget.style.opacity = 0.8}
+      >
+        <Search 
+          size={10} 
+          style={{ 
+            color: concept.color // Icon in result's background color
+          }} 
+        />
       </div>
       
       {/* Compact node content */}

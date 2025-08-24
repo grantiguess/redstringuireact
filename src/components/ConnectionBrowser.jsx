@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowRight, Plus, CircleDot, RefreshCw } from 'lucide-react';
 import useGraphStore from '../store/graphStore';
 import { knowledgeFederation } from '../services/knowledgeFederation';
+import { fastEnrichFromSemanticWeb } from '../services/semanticWebQuery.js';
 import './ConnectionBrowser.css';
 
 /**
@@ -60,33 +61,77 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
   
   // Load connections from federated knowledge system
   useEffect(() => {
-    if (!nodeData?.name) return;
+    if (!nodeData?.name || nodeData.name.trim() === '') {
+      console.log('[ConnectionBrowser] No valid node name, skipping connection load');
+      return;
+    }
     
     const loadConnections = async () => {
       setIsLoading(true);
       setError(null);
       
       try {
-        console.log(`[ConnectionBrowser] Loading federated connections for: ${nodeData.name}`);
+        console.log(`[ConnectionBrowser] Loading federated connections for: "${nodeData.name}"`);
         
-        // Import knowledge cluster around this node
-        const results = await knowledgeFederation.importKnowledgeCluster(nodeData.name, {
-          maxDepth: 1,
-          maxEntitiesPerLevel: 5,
-          includeRelationships: true,
-          includeSources: ['wikidata', 'dbpedia'],
+        // Use fast enrichment for immediate results
+        const enrichmentResults = await fastEnrichFromSemanticWeb(nodeData.name, {
+          timeout: 15000 // Use fast 15 second timeout
         });
         
-        // Convert relationships to connection format
-        const federatedConnections = results.relationships.map((rel, index) => ({
-          id: `fed-${index}`,
-          subject: rel.source,
-          predicate: rel.relation,
-          object: rel.target,
-          confidence: rel.confidence,
-          source: rel.source || 'federated',
-          inCurrentGraph: checkIfInCurrentGraph(rel.source, rel.target)
-        }));
+        // Convert enrichment results to connection format
+        const federatedConnections = [];
+        
+        // Add main entity connections if found
+        if (enrichmentResults.sources.wikidata?.found) {
+          federatedConnections.push({
+            id: 'fed-wikidata',
+            subject: nodeData.name,
+            predicate: 'found in',
+            object: 'Wikidata',
+            confidence: 0.9,
+            source: 'wikidata',
+            inCurrentGraph: false
+          });
+        }
+        
+        if (enrichmentResults.sources.dbpedia?.found) {
+          federatedConnections.push({
+            id: 'fed-dbpedia',
+            subject: nodeData.name,
+            predicate: 'found in',
+            object: 'DBpedia',
+            confidence: 0.9,
+            source: 'dbpedia',
+            inCurrentGraph: false
+          });
+        }
+        
+        if (enrichmentResults.sources.wikipedia?.found) {
+          federatedConnections.push({
+            id: 'fed-wikipedia',
+            subject: nodeData.name,
+            predicate: 'found in',
+            object: 'Wikipedia',
+            confidence: 0.8,
+            source: 'wikipedia',
+            inCurrentGraph: false
+          });
+        }
+        
+        // Add external links as connections
+        if (enrichmentResults.suggestions?.externalLinks) {
+          enrichmentResults.suggestions.externalLinks.forEach((link, index) => {
+            federatedConnections.push({
+              id: `fed-link-${index}`,
+              subject: nodeData.name,
+              predicate: 'external link',
+              object: link.split('/').pop() || link,
+              confidence: 0.7,
+              source: 'semantic_web',
+              inCurrentGraph: false
+            });
+          });
+        }
         
         setConnections(federatedConnections);
         console.log(`[ConnectionBrowser] Loaded ${federatedConnections.length} federated connections`);

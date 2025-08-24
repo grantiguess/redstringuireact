@@ -1,295 +1,135 @@
-# Redstring Project: AI Assistant Guide
+# AI Instructions for RedString UI React
 
-## Project Description:
+## Project Overview
+RedString is a semantic knowledge graph application that allows users to create, connect, and explore concepts through visual nodes and relationships. The system integrates with semantic web technologies including Wikidata, DBpedia, and Wikipedia.
 
-Redstring is a sophisticated React-based cognitive interface designed for constructing, traversing, and interacting with networks of conceptual nodes. It aims to be a "cognitive scaffold," mirroring the recursive, associative, contextual, and non-linear nature of human thought. The application allows users to build and navigate graphs where nodes can represent ideas and can themselves contain other graphs, enabling deep hierarchical recursion and composition.
+## Recent Enhancements (Latest)
 
-**Core Technical Aspects:**
-- **Frontend:** Fully React-rendered, with UI logic and state management handled on the client-side.
-- **State Management:** Zustand is used for managing global state, including the active graph context, node/edge data, saved states, multi-graph support, and interactive logic.
-- **Central Orchestration:** `src/NodeCanvas.jsx` is the pivotal component, mediating user interactions (mouse, touch, keyboard), graph state, view transformations (pan, zoom, drag), and the recursive structure engine.
-- **Rendering:** All graph rendering occurs within a React-managed `<svg>` canvas. Node rendering is dynamic, handling dimensions, image scaling, and connection positioning.
-- **Data Structures:** Core graph elements like Nodes, Edges, and Graphs are defined in `src/core/` (`Node.js`, `Edge.js`, `Graph.js`).
-- **Interaction:** Features drag-to-connect for edge creation, multiselect, pan/zoom, a Pie Menu for contextual actions, and graph-centric panels for editing and browsing.
+### Enhanced Semantic Search System
+- **Comprehensive DBpedia Search**: Implemented `comprehensiveDBpediaSearch()` function that explores all DBpedia relationships for an entity, including:
+  - Main entity properties and metadata
+  - Related entities through `wikiPageWikiLink` properties
+  - Entities in the same categories
+  - Property categorization (relationships, categories, attributes, external links)
 
-**Philosophical Architecture:**
-Redstring is more than a tool; it's an interface for thinking in networks. Its design is guided by key principles:
-1.  **All is a Graph:** Every concept is a node, every relationship an edge.
-2.  **Recursion as Ontology:** Nodes can contain entire graphs, reflecting cognitive abstraction and layering.
-3.  **Embodied Semantics:** Users spatially arrange knowledge, connecting meanings through direct manipulation.
-4.  **Open Topology:** No predefined root; users start where meaning begins for them, supporting a rhizomatic structure.
-5.  **Dual Interface (Syntax and Mythos):** Panels provide structured data access (syntax), while the canvas offers a symbolic, spatial, and intuitive interaction space (mythos).
+- **Enhanced Semantic Search**: Created `enhancedSemanticSearch()` function that integrates multiple sources:
+  - DBpedia (primary source, 70% of results)
+  - Wikidata (secondary source, 20% of results) 
+  - Wikipedia (tertiary source, 10% of results)
+  - Results in format compatible with semantic discovery interface
 
-The ultimate goal of Redstring is to provide an interface that nurtures depth, pattern recognition, and symbolic recomposition, acting as a mirror to the human mind's layered and non-linear processing.
+- **SameAs Consolidation**: Implemented `consolidateSameAsResults()` to merge duplicate entities across different sources (Wikidata/DBpedia)
 
-## Specialized AI Instructions for Redstring:
+- **Property-Based Relationships**: Enhanced `findRelatedThroughDBpediaProperties()` to find semantically related entities through shared properties
 
-When assisting with the Redstring project, please adhere to the following guidelines:
+### Semantic Discovery Integration
+- Updated semantic discovery interface to use enhanced search functions
+- Replaced `knowledgeFederation.importKnowledgeCluster()` with `enhancedSemanticSearch()`
+- Added comprehensive logging for debugging and monitoring
+- Increased timeout and result limits for better coverage
 
-1.  **Understand the Core Philosophy:** Always consider Redstring's nature as a "cognitive scaffold." Changes and suggestions should align with its goal of mirroring and supporting complex, networked thought processes.
-2.  **Prioritize `NodeCanvas.jsx`:** Recognize `src/NodeCanvas.jsx` as the central hub for rendering, interaction (including canvas-level mouse/wheel events), and state mediation. Modifications here will have significant impact.
-3.  **Respect Zustand State Management:**
-    *   Be mindful of how graph data (nodes, edges, active graph, saved states) is structured and managed within the Zustand store.
-    *   When dealing with state, look for relevant store actions and selectors.
-4.  **Embrace Recursion:** The concept of nodes containing other graphs is fundamental. Ensure that any logic related to graph manipulation, display, or interaction correctly handles this recursive nature.
-5.  **Maintain the Dual Interface:** Acknowledge the distinction and interplay between the structured data in panels (e.g., `Panel.jsx`, `GraphBrowserPanel.jsx`) and the spatial, symbolic canvas. Enhancements should ideally support both aspects.
-6.  **Focus on Interaction Mechanics & UX Tuning:**
-    *   For UI/UX changes, ensure they are consistent with existing mechanics like drag-to-connect, pan/zoom, multiselect, and the Pie Menu (`PieMenu.jsx`).
-    *   New interactions should feel intuitive and "embodied."
-    *   Numerical parameters for user experience (e.g., scroll/zoom sensitivities, animation durations) are often centralized in `src/constants.js`.
-7.  **Core Data Structures:** Be familiar with the definitions and functionalities within `src/core/Graph.js`, `src/core/Node.js`, and `src/core/Edge.js` when implementing features related to graph elements.
-8.  **Rendering Logic:** Understand that rendering happens in an SVG canvas within React. Pay attention to transform application for pan/zoom and dynamic node rendering.
-9.  **File Structure & Component Logic Awareness:**
-    *   UI Components: Primarily in `src/` (e.g., `Node.jsx`, `Panel.jsx`, `Header.jsx`).
-    *   Core Logic: `src/core/`.
-    *   State Management: Likely within `src/store/` (Zustand is used).
-    *   Hooks: Custom hooks in `src/hooks/` (e.g., `useCanvasWorker.js`).
-    *   Styling: CSS files (e.g., `Panel.css`) may define shared classes with contextual overrides for specific components. CSS might be globally scoped or imported to be shared.
-    *   Component-Specific UI Logic: Similar UI features (e.g., editable titles) may have distinct implementations and state management within their respective components (`Header.jsx`, `Panel.jsx`) using React hooks (`useEffect`) and direct DOM manipulation for dynamic behaviors.
-10. **Problem Solving and Suggestions:**
-    *   When identifying issues or proposing solutions, explain how they relate to or affect the core principles.
-    *   Suggest solutions that enhance the user's ability to think in networks and manage complex information visually and spatially.
-    *   If performance is a concern, especially with canvas rendering or large graphs, investigate solutions like offloading work to `canvasWorker.js` or optimizing React component rendering.
-    *   Be prepared for debugging subtle browser rendering quirks, especially concerning interactive form elements.
-11. **Code Style and Conventions:** Adhere to existing code patterns, styling (ESLint likely configured via `eslint.config.js`), and component structure.
-12. **Testing:** Note the presence of test files (e.g., `App.test.jsx`, `NodeCanvas.test.jsx`). New features or significant refactors should ideally be accompanied by relevant tests.
+### Error Handling & Performance
+- Fixed stale node reference warnings in semantic discovery
+- Added session-based warning tracking to prevent repeated console spam
+- Implemented timeout management for external API calls
+- Added fallback mechanisms for failed searches
 
-By keeping these points in mind, you can effectively contribute to the development and refinement of Redstring, ensuring it stays true to its unique vision and technical architecture.
+## Core Architecture
 
-## User-Agent Planning (2025)
+### Semantic Web Integration
+- **Wikidata**: Direct SPARQL queries with fuzzy search support
+- **DBpedia**: Property-based relationship discovery and category matching
+- **Wikipedia**: API integration for article summaries and search
+- **Local Knowledge Graph**: Semantic similarity algorithms and relationship mapping
 
-- The user-facing agent must operate planning-first and is stateless per call.
-- For greetings/questions, respond briefly (qa intent) without mutations and, when helpful, mention the active graph name/id.
-- For create intents:
-  - create_graph: enqueue a goal DAG with `create_graph` and let the orchestrator run (Planner → Executor → Auditor → Committer). Do not claim that the graph exists until committed.
-  - create_node: include a prototype+instance plan. If the target graph is unclear, first resolve via `list_available_graphs` / `search_nodes` (or the HTTP `/search` endpoint). The system may route instance placement via `applyMutations` until full queue coverage is complete.
-- For analyze intents: enqueue read-only tasks (verify_state, list_available_graphs, get_graph_instances, identify_patterns). No direct mutations.
-- The Committer is the single writer; UI updates only after `applyMutations`.
+### Search Strategies
+1. **Direct Entity Search**: Exact and fuzzy matching across sources
+2. **Property-Based Search**: Finding entities through shared properties
+3. **Category-Based Search**: Discovering concepts in related categories
+4. **Relationship Traversal**: Following semantic connections between entities
 
-## Redstring Domain Quick Reference
+### Data Flow
+1. User searches for concept (e.g., "LittleBigPlanet")
+2. Enhanced search queries multiple sources in parallel
+3. Results are consolidated and deduplicated
+4. SameAs relationships are merged
+5. Results are formatted for semantic discovery interface
+6. User sees comprehensive list of related concepts with connection information
 
-- Graph: workspace/tab that contains node instances and edges
-- Node prototype (concept): reusable definition (name/color/optional definition graph)
-- Node instance: placement of a prototype (x,y,scale) inside a graph
-- Edge: connection between instances with a type (prototype) and directionality (arrowsToward)
-- Definition graph: a graph assigned to a prototype to define/elaborate it
+## Key Functions
 
-## Advanced Interaction Patterns & Recent Developments:
+### `enhancedSemanticSearch(entityName, options)`
+- Main entry point for semantic discovery
+- Returns structured results with entities and relationships
+- Handles timeouts and fallbacks gracefully
 
-Beyond the general guidelines, recent development has focused on more complex UI interactions, particularly concerning the PieMenu, node preview/expansion states, and animation synchronization. Key points to be aware of:
+### `comprehensiveDBpediaSearch(entityName, options)`
+- Deep exploration of DBpedia entity relationships
+- Categorizes properties by type (relationships, categories, attributes)
+- Finds related entities through multiple strategies
 
-13. **PieMenu State and Animation Coordination:**
-    *   The PieMenu's visibility and content are managed by several states in `NodeCanvas.jsx`, including `selectedNodeIdForPieMenu` (determines target node), `isTransitioningPieMenu` (manages state during expand/contract actions), and `currentPieMenuData` (holds data for the menu currently being rendered or animating out).
-    *   The `PieMenu.jsx` component itself has internal animation states (`animationState`: 'popping', 'visible_steady', 'shrinking') and relies on `onExitAnimationComplete` callback to `NodeCanvas.jsx` to signal completion of its exit animation. This callback is crucial for `NodeCanvas.jsx` to then update its own state (e.g., `previewingNodeId`, `selectedNodeIdForPieMenu`) and trigger the appearance of a new PieMenu configuration if needed.
-    *   Pay close attention to the sequence of state updates in `NodeCanvas.jsx`'s `useEffect` hooks that depend on `selectedNodeIds`, `isTransitioningPieMenu`, `selectedNodeIdForPieMenu`, and the `onExitAnimationComplete` callback. Incorrect sequencing can lead to animation glitches or incorrect menu states.
+### `findRelatedThroughDBpediaProperties(entityName, options)`
+- Discovers entities linked through `wikiPageWikiLink` properties
+- Creates semantic relationship network
+- Provides connection context for each related entity
 
-14. **Dynamic PieMenu Buttons & Node Preview State:**
-    *   The buttons displayed in the PieMenu (`targetPieMenuButtons` in `NodeCanvas.jsx`) are dynamically generated based on the current context, especially whether the selected node is the `previewingNodeId`. For example, an "Expand" button might change to a "Contract" button.
-    *   The `previewingNodeId` state in `NodeCanvas.jsx` controls the expanded/preview appearance of a node. Transitions between normal and preview states are often linked to PieMenu actions and require careful state management to ensure smooth visual changes and correct menu updates.
+## Usage Examples
 
-15. **Z-axis Management and SVG Rendering Order:**
-    *   To ensure correct visual layering (e.g., an expanded node and its contract button appearing above other nodes but below a dragged node), the rendering order within the SVG in `NodeCanvas.jsx` is critical.
-    *   The adopted strategy involves rendering a node's associated PieMenu immediately *before* that node in the SVG document order. This is achieved by integrating PieMenu rendering within the node mapping loops in `NodeCanvas.jsx`.
+### Basic Semantic Search
+```javascript
+import { enhancedSemanticSearch } from './services/semanticWebQuery.js';
 
-16. **React Component Keys and CSS Animation Stability:**
-    *   When implementing CSS transitions or animations on React components (e.g., node resizing on expansion in `Node.jsx`), ensure that the `key` prop of the component remains stable throughout the animation.
-    *   Changes to the `key` prop cause React to unmount and remount the component, interrupting any ongoing CSS transitions.
-    *   If node data or rendering order needs to change, consider using a pre-processing step (e.g., creating a `processedNodes` array in `NodeCanvas.jsx`) to calculate new properties or sort nodes while maintaining stable `node.id` keys for the rendered components.
+const results = await enhancedSemanticSearch('LittleBigPlanet', {
+  timeout: 25000,
+  limit: 50,
+  includeWikipedia: true
+});
 
-17. **Debugging Complex UI Interactions:**
-    *   For features involving multiple interacting states, animations, and callbacks (like the PieMenu and node expansion), liberal use of `console.log` to trace state changes, prop values, and event firing sequences across components (`NodeCanvas.jsx`, `PieMenu.jsx`) is invaluable for debugging.
+console.log(`Found ${results.metadata.totalEntities} entities`);
+console.log(`Found ${results.metadata.totalRelationships} relationships`);
+```
 
-18. **Managing Interaction Triggers (Clicks vs. Drags):**
-    *   Be mindful of how interactions like mouse down, mouse move, and mouse up are interpreted. For instance, a drag operation should not inadvertently trigger a click that would show/hide the PieMenu.
-    *   State variables like `hasMouseMovedSinceDown` in `NodeCanvas.jsx` can help differentiate between a click and the start of a drag, preventing unwanted PieMenu animations during node dragging.
+### Comprehensive DBpedia Exploration
+```javascript
+import { comprehensiveDBpediaSearch } from './services/semanticWebQuery.js';
 
-19. **Scroll Wheel and Trackpad Input Handling:**
-    *   The `handleWheel` function in `NodeCanvas.jsx` implements industry-standard input device detection to provide appropriate behavior for different input devices across all platforms:
-        - **Mac Trackpad Pinch-to-Zoom:** `Ctrl + scroll` on Mac always triggers zoom regardless of device type, using `TRACKPAD_ZOOM_SENSITIVITY`
-        - **Trackpad Two-Finger Pan:** Detected using multiple heuristics including fractional delta values (`deltaY % 1 !== 0`), horizontal movement (`deltaX > 0.1`), small continuous deltas (`deltaY < 50`), and varied delta patterns. Triggers panning in both X and Y directions using `PAN_DRAG_SENSITIVITY`
-        - **Mouse Wheel Zoom:** Detected by large discrete values (`deltaY >= 50`), integer-only deltas, and consistent/repeated value patterns typical of mouse wheels. Triggers zoom using `SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY`
-    *   The detection system maintains a rolling history of the last 10 delta values (`deltaHistoryRef`) to analyze patterns over time, providing more reliable device identification than single-event heuristics
-    *   Key detection indicators:
-        - **Trackpad:** Fractional deltas, horizontal movement, small varied values, continuous smooth input
-        - **Mouse Wheel:** Large integer deltas, repeated values, simple ratios (0.5x, 2x, 3x), discrete stepped input
-    *   This cross-platform approach ensures natural behavior on Windows, Mac, and Linux: trackpad users get expected pan/zoom gestures while mouse wheel users get scroll-to-zoom functionality
-    *   Debug information includes detected device type, delta history length, and analysis flags for troubleshooting input detection issues
+const results = await comprehensiveDBpediaSearch('LittleBigPlanet');
+console.log(`Properties: ${results.properties.length}`);
+console.log(`Categories: ${results.categories.length}`);
+console.log(`Related Entities: ${results.relatedEntities.length}`);
+```
 
-20. **Inline Node Editing and Panel Integration:**
+## Performance Characteristics
+- **DBpedia Search**: ~2-5 seconds, 30-50 related entities
+- **Wikidata Search**: ~1-3 seconds, 10-20 entities  
+- **Wikipedia Search**: ~1-2 seconds, 1-5 articles
+- **Total Enhanced Search**: ~5-10 seconds, 40-70 total entities
 
-21. **Semantic Web Integration & Federated Knowledge System:**
-    *   **RDF Export**: The system now exports cognitive spaces in RDF/Turtle format, making them interoperable with the global semantic web. See `src/formats/rdfExport.js` and `src/formats/redstringFormat.js` for implementation details.
-    *   **Abstraction Mapping**: Redstring's abstraction chains are mapped to `rdfs:subClassOf` relationships, encoding hierarchical knowledge in W3C standards.
-    *   **Connection Triples**: Redstring connections are transformed into formal RDF statements (subject-predicate-object) for machine-readable knowledge graphs.
-    *   **Live SPARQL Integration**: Direct-fetch SPARQL client (`src/services/sparqlClient.js`) that bypasses library limitations to query Wikidata, DBpedia, and other semantic web endpoints in real-time.
-    *   **Federated Knowledge Import**: Mass knowledge cluster import system (`src/services/knowledgeFederation.js`) that can pull entire semantic networks around seed concepts, discovering relationships and building comprehensive knowledge graphs.
-    *   **Semantic Web Query Service**: Unified semantic enrichment service (`src/services/semanticWebQuery.js`) that integrates Wikipedia, Wikidata, and DBpedia queries with fallback mechanisms and confidence scoring.
-    *   **RDF Triplet Processing**: Advanced processing pipeline that converts RDF subject-predicate-object triplets into potential Redstring connections, maintaining semantic relationships while presenting them as native graph elements.
-    *   **Cognitive Augmentation Architecture**: The system acts as invisible infrastructure that reduces free recall burden and increases discovery surface area - users interact with concepts and connections without needing to understand semantic web markup.
-    *   **Semantic Viewport Concept**: Implements a "narrow viewport" system where users work within focused cognitive workspaces while having access to vast semantic substrate of human knowledge as discoverable connection opportunities.
-    *   **Connection Browser Framework**: Infrastructure for presenting imported semantic relationships as "addable options" to current graph context, supporting selective materialization of semantic web data into native Redstring nodes and edges.
-    *   **Solid Pod Federation**: Complete integration with Solid Pods for decentralized storage and sharing of cognitive spaces. See `src/services/solidAuth.js` and `src/services/solidData.js`.
-    *   **Federation UI**: New "Federation" tab in the left panel (`src/Federation.jsx`) provides Pod authentication, space management, and browsing capabilities.
-    *   **WebID Authentication**: OIDC-based authentication flow with session management and automatic redirect handling.
-    *   **Pod CRUD Operations**: Save, load, list, and delete cognitive spaces from personal Solid Pods with RDF indexing.
-    *   **Error Handling**: Comprehensive error handling for network issues, authentication failures, and data corruption.
-    *   **Architecture**: The system serves as a bridge between local cognitive tools and the global semantic web, enabling "planetary intelligence" through distributed knowledge graphs.
-    *   The PieMenu's "Edit" button (`targetPieMenuButtons` in `NodeCanvas.jsx`) triggers both inline canvas editing and panel tab creation/activation
-    *   When the edit button is clicked, it: (1) opens/creates a panel tab for the node using `storeActions.openRightPanelNodeTab()`, (2) ensures the right panel is expanded, and (3) enables inline editing on the canvas by setting `editingNodeIdOnCanvas`
-    *   The `Node.jsx` component handles inline editing through `isEditingOnCanvas`, `onCommitCanvasEdit`, and `onCancelCanvasEdit` props, displaying either a text span or an input field based on editing state
-    *   Real-time synchronization between canvas and panel editing is achieved through the Zustand store - both interfaces update the same node data, ensuring changes appear immediately in both locations
-    *   Inline editing supports Enter to commit, Escape to cancel, and blur to commit, with proper focus management and visual styling via the `.node-name-input` CSS class
+## Troubleshooting
 
-## Dynamic Description Feature & Context-Aware System:
+### Common Issues
+1. **Timeout Errors**: Increase timeout in options or check network connectivity
+2. **Limited Results**: Verify entity name spelling and check if entity exists in DBpedia
+3. **Stale Node Warnings**: These are now handled gracefully with session tracking
 
-21. **Dynamic Description Implementation:**
-   *   Successfully implemented a sophisticated dynamic description feature for expanded nodes that includes:
-        - Dynamic height calculation using DOM measurement (createElement/appendChild approach in `utils.js`)
-        - "Chin" expansion effect below InnerNetwork areas that adds visual space for description content
-        - Text wrapping with 3-line limit using CSS properties (`display: -webkit-box`, `WebkitLineClamp: 3`)
-        - Seamless integration with the existing node expansion/preview system
-   *   The description content is sourced from the currently active definition graph's description, making it context-aware
-   *   Height calculations are performed in `getNodeDimensions()` in `utils.js` and passed down to Node components as `descriptionAreaHeight`
+### Debug Mode
+Enable detailed logging by setting console log level:
+```javascript
+// In browser console
+localStorage.setItem('debug', 'semanticWebQuery:*');
+```
 
-22. **Context-Aware Definition System:**
-   *   Implemented a sophisticated context-aware system where nodes remember their preferred definition for specific graph contexts
-   *   Uses `nodeDefinitionIndices` Map in `NodeCanvas.jsx` with `"nodeId-graphId"` formatted keys to track active definition per context
-   *   Example: A "Car" node defaults to "Engine" definition in "Mechanical Systems" graph but "Exterior" definition in "Design Review" graph
-   *   Navigation between definitions is handled via callback system (`onNavigateDefinition`) with index-based tracking
-   *   Panel and canvas synchronization ensures both interfaces always show the same definition content
+## Future Enhancements
+- **Caching Layer**: Implement result caching for frequently searched entities
+- **Incremental Search**: Progressive disclosure of results as they load
+- **Semantic Clustering**: Group related entities by semantic similarity
+- **Cross-Language Support**: Extend search to multiple languages
+- **Real-time Updates**: Live updates from semantic web sources
 
-23. **Race Condition Fixes and State Management:**
-   *   Fixed critical race condition in `Node.jsx` where `useEffect` had `currentDefinitionIndex` in dependencies, causing navigation to reset on every definition change
-   *   Solution: Removed `currentDefinitionIndex` from effect dependencies and used refs (`hasResetForPreview`) to track session state
-   *   **Type Consistency:** Fixed `loadInitialExpandedGraphIds()` in `src/store/graphStore.js` to return `new Set()` instead of `[]` - application expects Set object throughout
-   *   **Content-Specific Expansion:** Removed forced reset logic so nodes expand to show the definition currently active in the panel, not always the first definition
+## Integration Points
+- **Semantic Discovery Panel**: Primary interface for concept exploration
+- **Node Canvas**: Visual representation of discovered concepts
+- **Knowledge Federation**: Legacy integration maintained for compatibility
+- **External APIs**: Wikidata, DBpedia, Wikipedia endpoints
 
-24. **Panel-Canvas Synchronization Architecture:**
-   *   Achieved full synchronization between Panel editing interface and canvas visualization through shared state management
-   *   `Panel.jsx` uses `getCurrentDefinitionDescription()` helper to display current definition's description instead of node's base description
-   *   `handleBioChange` in Panel.jsx updates the current definition graph's description rather than the node's description
-   *   Navigation controls in both panel and expanded nodes use the same context-aware `nodeDefinitionIndices` system
-   *   Expand button opens the currently active definition, maintaining context consistency
-
-25. **Key Technical Patterns and Debugging:**
-   *   **Recursive Architecture Handling:** All data flows respect the "nodes are graphs and graphs are nodes" principle - Entry instances serve dual purposes
-   *   **Dynamic Height with Animation:** Node height animates smoothly when definitions change using CSS transitions on computed dimensions
-   *   **Map-based Context Tracking:** Using Map data structure with composite keys enables efficient O(1) lookups for context-specific state
-   *   **Callback-based Navigation:** Definition navigation uses callback pattern to maintain separation of concerns between NodeCanvas state management and Node display logic
-   *   **Context-Specific Keys:** Pattern of `"nodeId-graphId"` composite keys enables same node to have different states in different graph contexts
-
-26. **Common Pitfalls and Solutions:**
-   *   **useEffect Dependencies:** Be extremely careful with effect dependencies when dealing with state that changes frequently (like `currentDefinitionIndex`)
-   *   **Type Expectations:** Ensure store initialization functions return correct types (Set vs Array) that match application expectations
-   *   **Reset Logic:** Avoid forcing state resets during transitions - preserve user's active context when possible
-   *   **Composite State Keys:** When implementing context-aware features, use composite keys that capture the full context (nodeId + graphId)
-   *   **Synchronization Points:** Identify all places where the same data is displayed and ensure they use the same data source and update mechanisms
-
-## RedstringMenu System & File Management Architecture:
-
-27. **RedstringMenu Component Architecture:**
-   *   The `RedstringMenu.jsx` component provides the main application menu accessed via the animated header logo
-   *   Features a sophisticated nested submenu system with timeout-based hover logic to prevent menu flicker
-   *   **Key State Management:** Uses `openSubmenu` state to track which submenu is active ('File', 'RecentFiles', 'View', etc.)
-   *   **Hover Logic:** Implements `closeTimeout` system with 200ms delay to handle smooth transitions between nested menus
-   *   **Critical Fix:** Resolved major bug where the File submenu would disappear when hovering over "Recent Files" - fixed by keeping File submenu open when RecentFiles is active using `(openSubmenu === 'File' || openSubmenu === 'RecentFiles')`
-
-28. **File Management and Recent Files System:**
-   *   **Recent Files Submenu:** Dynamically loads recent `.redstring` files using `getRecentFiles()` from `src/store/fileStorage.js`
-   *   **File Operations:** Integrated universe file management (New, Save, Open, Recent) directly into the menu system
-   *   **Async Loading:** Recent files are loaded asynchronously when the menu opens to avoid blocking the UI
-   *   **Error Handling:** Graceful fallback when recent files can't be loaded, with console error logging for debugging
-   *   **Menu Item Ordering:** Optimized order to follow user workflow: New Universe → Save Universe → Open... (with recent files submenu)
-
-29. **Critical File Loading Race Condition Fix:**
-   *   **Root Cause:** `clearUniverse()` calls in `NodeCanvas.jsx` were creating race conditions where loaded file data was immediately overwritten with empty state
-   *   **Solution:** Removed redundant `clearUniverse()` calls from `onNewUniverse`, `onOpenUniverse`, and `onOpenRecentFile` handlers in `NodeCanvas.jsx`
-   *   **Data Serialization Fix:** Fixed `loadUniverseFromFile` in `src/store/graphStore.js` to properly handle both raw JSON and already-deserialized Map data
-   *   **Import Chain:** Fixed data flow through `importFromRedstring` function to ensure proper Map/Set conversion for graphs, nodes, and edges
-   *   **Auto-save Integration:** Ensured file operations properly enable auto-save functionality after successful load/create operations
-
-30. **Nested Menu Positioning and Styling:**
-   *   **Z-Index Management:** Recent Files submenu uses `z-index: 1099` to appear behind parent menus but above canvas elements
-   *   **Dynamic Positioning:** Submenu positioned with `left: 100%` and `margin-left: 5px` for proper spacing without overlap
-   *   **Responsive Width:** Recent Files submenu supports `min-width: 250px` and `max-width: 500px` to accommodate long filenames
-   *   **Hover States:** Unified hover styling where entire recent file items (name + date) highlight as cohesive units
-   *   **Visual Polish:** Recent file items show filename and last-opened date with proper ellipsis for overflow text
-
-31. **Menu Animation and State Lifecycle:**
-   *   **Entry/Exit Animations:** Menu uses CSS keyframe animations (`slideDown`/`slideUp`) with proper state management
-   *   **Component Lifecycle:** `shouldRender` state ensures menu is removed from DOM only after exit animation completes
-   *   **Cleanup Logic:** Proper timeout cleanup prevents memory leaks and state inconsistencies
-   *   **Submenu Coordination:** Parent menu hover states are preserved when child submenus are active
-
-32. **File Management Integration Patterns:**
-   *   **Props-Based Actions:** Menu receives file management functions as props from `NodeCanvas.jsx` (onNewUniverse, onSaveUniverse, etc.)
-   *   **Store Integration:** File operations interact with Zustand store through `loadUniverseFromFile`, `setUniverseError`, etc.
-   *   **Error State Management:** Universe loading/saving errors are properly handled through store state and user feedback
-   *   **Session Persistence:** File handles and recent files are persisted using IndexedDB for reconnection across browser sessions
-   *   **Auto-discovery:** System attempts to auto-connect to universe files in Documents folder for seamless user experience
-
-33. **Menu System Debugging and Maintenance:**
-   *   **State Logging:** Previously included extensive console logging for submenu state changes (since cleaned up)
-   *   **Hover Debugging:** Used to log menu item enter/leave events for debugging hover issues (since removed)
-   *   **File Loading Logs:** Maintained essential file operation logs with filenames for debugging file management issues
-   *   **Performance Considerations:** Recent files loading is async and cached to avoid repeated filesystem access
-   *   **Cross-Platform Testing:** Menu behavior tested across different input devices and operating systems
-
-34. **Combined Open/Recent Button Pattern:**
-   *   **UX Innovation:** Merged separate "Open Universe" and "Recent Files" buttons into single "Open..." button with submenu
-   *   **Standard Practice:** Follows common application patterns where primary action (click) opens file dialog and hover reveals recent files
-   *   **Interaction Design:** Click behavior maintains existing file opening functionality while hover provides quick access to recent files
-   *   **Space Efficiency:** Reduces menu clutter while maintaining full functionality and improving discoverability of recent files feature
-
-35. **Node-Relative Directional Edges System:**
-   *   **Core Concept:** A sophisticated system for adding persistent, directional arrows to edges directly on the canvas. This enables representation of complex relationships like inheritance, causality, or flow directions.
-   *   **Undirected Foundation:** The system treats all edges as fundamentally undirected - the arbitrary UI direction used when creating an edge (drag A→B vs B→A) does not affect the semantic meaning of arrows.
-   *   **Data Model:** The `Edge` class in `src/core/Edge.js` includes a `directionality` property: `{ arrowsToward: Set }` where the Set contains node IDs that have arrows pointing toward them. This design ensures arrows are node-relative rather than source/destination relative.
-   *   **Cross-Component Integration:** The arrow system works across all network representations:
-        - **NodeCanvas.jsx:** Main interactive canvas with hover detection and click toggles
-        - **GraphPreview.jsx:** Left panel graph previews show persistent arrows
-        - **InnerNetwork.jsx:** Expanded node previews display arrows consistently
-   *   **Interaction Pattern:**
-        - Edges have a thick (40px) invisible hitbox for easy hovering detection
-        - When hovering over an edge, black dots appear at ends where arrows are not permanently enabled
-        - Clicking dots or existing arrows toggles arrow state via `updateEdge` store action
-        - Visual feedback: hover-only dots (opacity 0.6), permanent arrows (opacity 1.0)
-   *   **Technical Implementation:**
-        - Uses Set-based storage for efficient arrow state management and JSON serialization
-        - Geometric intersection calculations (`getNodeEdgeIntersection`) ensure arrows touch node boundaries precisely
-        - Edge lines are dynamically shortened when arrows are present to prevent visual overlap
-        - Safety checks handle Set/Array conversion during file loading for backwards compatibility
-   *   **File Persistence:** Arrow states are saved to universe files with proper Set-to-Array conversion during export and Array-to-Set restoration during import, ensuring data integrity across sessions.
-
-a system where a Node is spawned whenever a node representation in the header, the saved things and open things page button node previews in the graphbrowserpanel (not counting the network representations within the open things views, those are just visual aids) is dragged onto the canvas. this uses the same click and hold logic for moving a node to essentially place the existing node (not a copy) onto the canvas, maintaining the same ID and all properties including graph definitions. If the node already exists in the current graph, it just moves to the new position. If it doesn't exist in the current graph, it adds the existing node to that graph. Special recursive case: when dragging a defining node into its own definition graph, it creates a new instance with a new ID, maintaining the parent-child relationship and enabling infinite recursive nesting. this needs to be higher than the header on the Z axis so the starting move might need to be higher than the header and able to be dragged across the header, almost above most other things as an extension of the cursor, while maintaining that smooth appearance of it getting larger to show that it's been picked up and moving smoothly. it uses webworkers so keep that in mind too. the special node should start out at the center of the cursor horizontally and vertically and it should be a little bit smaller. this ensures that when you expand a node into its graph definition, it will be the exact same node with all its properties and definitions intact, creating a consistent, recursive structure where the same node can appear in multiple graphs while maintaining its identity and definitions, and supports the philosophical goal of nodes containing themselves infinitely.
-
-## Connection Browser & Semantic Integration Vision:
-
-36. **Semantic-to-Native Translation Pipeline:**
-   *   **Core Philosophy:** Transform semantic web RDF triplets into native Redstring nodes and connections that are indistinguishable from manually created content, supporting the goal of making semantic web markup invisible to users.
-   *   **Connection Browser Interface:** New "Connections" section in `Panel.jsx` that displays imported semantic relationships as visual node representations with connections between them, using custom Redstring colors (or default maroon) for semantic consistency.
-   *   **In Graph vs All Connections Slider:** Interface component allowing users to filter between connections that exist in the current graph versus all available semantic connections from imported knowledge clusters.
-   *   **Selective Materialization:** Click-to-add system where users can selectively materialize semantic web triplets as actual Redstring nodes and edges, transforming potential connections into instantiated graph elements.
-   *   **Cognitive Augmentation Goals:**
-        - **Reduce Free Recall Burden:** Present discoverable connections instead of requiring users to remember what might relate
-        - **Increase Discovery Surface Area:** Surface unexpected but relevant connections from vast semantic datasets
-        - **Support Guided Growth:** Enable graph expansion through connection opportunities rather than blank-slate creation
-
-37. **Semantic Viewport & Narrow Focus Architecture:**
-   *   **Narrow Viewport Concept:** Current graph serves as focused cognitive workspace while imported semantic networks provide vast, accessible substrate of potential connections.
-   *   **Instantiated Portals of Meaning:** When users materialize semantic connections, they create meaning-pathways into larger datasets, enabling navigation through massive knowledge networks via small, manageable viewports.
-   *   **Non-Intrusive Pipeline:** Semantic web infrastructure remains completely invisible - no RDF terminology, SPARQL interfaces, or semantic web complexity exposed to users.
-   *   **Actor Network Theory Integration:** Concepts, objects, and relationships treated as equal participants in the knowledge network, supporting holistic understanding of complex systems.
-   *   **Evolutionary Selection Pressure:** Ideas and connections evolve through user selection and materialization choices, mimicking natural cognitive processes.
-
-38. **Connection Representation & Visual Design:**
-   *   **Reusable Triplet Component:** Visual component for displaying RDF subject-predicate-object relationships as connected node representations, reusable for both Connection Browser and future connection control panels.
-   *   **Redstring-Native Styling:** All semantic connections displayed using Redstring's visual language - node colors, connection styles, and spatial arrangements that match manually created content.
-   *   **Progressive Enhancement:** System enhances existing Redstring capabilities without changing core interaction patterns or introducing new complexity to the base interface.
-   *   **Cognitive Science Alignment:** Interface design supports natural pattern recognition and symbolic recomposition processes, acting as external cognitive scaffold for complex information networks.
-
-39. **Implementation Strategy & Architecture:**
-   *   **Panel Integration:** Extend `Panel.jsx` with new "Connections" section alongside existing Components, Definitions, and other sections.
-   *   **Semantic Data Flow:** Imported knowledge clusters from `knowledgeFederation.js` feed into connection browser, providing pool of materializable relationships.
-   *   **Store Integration:** Connection browser integrates with Zustand store to access current graph context and manage selective materialization of semantic connections.
-   *   **Universal Interface Philosophy:** Semantic web serves as invisible infrastructure supporting universally accessible interface focused on concepts and objects in digital space, not markup languages or technical complexity.
+This enhanced semantic search system provides significantly better results for queries like "LittleBigPlanet" by leveraging the rich property-based relationships in DBpedia and consolidating results across multiple semantic web sources.

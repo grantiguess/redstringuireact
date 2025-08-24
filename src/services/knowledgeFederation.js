@@ -52,8 +52,30 @@ export class KnowledgeFederation {
       onProgress = () => {}
     } = options;
 
+    // Validate input to prevent processing empty entities
+    if (!seedEntity || typeof seedEntity !== 'string' || seedEntity.trim() === '') {
+      console.warn('[KnowledgeFederation] importKnowledgeCluster called with invalid seedEntity:', {
+        seedEntity,
+        type: typeof seedEntity,
+        options
+      });
+      return {
+        seedEntity: seedEntity || 'Unknown',
+        totalEntities: 0,
+        totalRelationships: 0,
+        sourceBreakdown: {},
+        entities: new Map(),
+        relationships: [],
+        clusters: new Map(),
+        importedAt: new Date().toISOString(),
+        error: 'Invalid seed entity provided'
+      };
+    }
+
+    const sanitizedSeedEntity = seedEntity.trim();
+    
     const results = {
-      seedEntity,
+      seedEntity: sanitizedSeedEntity,
       totalEntities: 0,
       totalRelationships: 0,
       sourceBreakdown: {},
@@ -65,12 +87,12 @@ export class KnowledgeFederation {
 
     try {
       // Level 0: Import seed entity
-      onProgress({ stage: 'seed', entity: seedEntity, level: 0 });
-      const seedData = await this.importSingleEntity(seedEntity, includeSources);
-      results.entities.set(seedEntity, seedData);
+      onProgress({ stage: 'seed', entity: sanitizedSeedEntity, level: 0 });
+      const seedData = await this.importSingleEntity(sanitizedSeedEntity, includeSources);
+      results.entities.set(sanitizedSeedEntity, seedData);
       
       // Level 1+: Import related entities
-      let currentEntities = [seedEntity];
+      let currentEntities = [sanitizedSeedEntity];
       
       for (let depth = 1; depth <= maxDepth; depth++) {
         const nextLevelEntities = [];
@@ -131,19 +153,37 @@ export class KnowledgeFederation {
   }
 
   /**
-   * Import a single entity from federated sources
-   * @param {string} entityName - Entity to import
-   * @param {Array} sources - Sources to query
-   * @returns {Promise<Object>} Entity data
+   * Import a single entity from federated knowledge sources
    */
   async importSingleEntity(entityName, sources = ['wikidata', 'dbpedia']) {
-    const cacheKey = `${entityName}:${sources.join(',')}`;
+    // Add debug logging to track where empty entity names come from
+    if (!entityName || typeof entityName !== 'string' || entityName.trim() === '') {
+      console.warn('[KnowledgeFederation] importSingleEntity called with invalid entityName:', {
+        entityName,
+        type: typeof entityName,
+        sources,
+        stack: new Error().stack
+      });
+      return {
+        name: entityName || 'Unknown',
+        sources: [],
+        descriptions: [],
+        externalLinks: [],
+        types: [],
+        properties: new Map(),
+        confidence: 0
+      };
+    }
+
+    const sanitizedEntityName = entityName.trim();
+    const cacheKey = `${sanitizedEntityName}:${sources.join(',')}`;
+    
     if (this.importCache.has(cacheKey)) {
       return this.importCache.get(cacheKey);
     }
 
     const entityData = {
-      name: entityName,
+      name: sanitizedEntityName,
       sources: [],
       descriptions: [],
       externalLinks: [],
@@ -158,7 +198,7 @@ export class KnowledgeFederation {
       if (!source) continue;
 
       try {
-        const sourceResults = await source.queryFn(entityName);
+        const sourceResults = await source.queryFn(sanitizedEntityName);
         if (sourceResults.length > 0) {
           entityData.sources.push(sourceName);
           
@@ -199,7 +239,7 @@ export class KnowledgeFederation {
           entityData.confidence = Math.max(entityData.confidence, sourceResults[0].confidence || 0.8);
         }
       } catch (error) {
-        console.warn(`[KnowledgeFederation] Failed to query ${sourceName} for ${entityName}:`, error);
+        console.warn(`[KnowledgeFederation] Failed to query ${sourceName} for ${sanitizedEntityName}:`, error);
       }
     }
 
@@ -216,6 +256,18 @@ export class KnowledgeFederation {
    */
   async findRelatedEntities(seedEntity, options = {}) {
     const { sources = ['wikidata', 'dbpedia'], limit = 10 } = options;
+    
+    // Validate input to prevent processing empty entities
+    if (!seedEntity || typeof seedEntity !== 'string' || seedEntity.trim() === '') {
+      console.warn('[KnowledgeFederation] findRelatedEntities called with invalid seedEntity:', {
+        seedEntity,
+        type: typeof seedEntity,
+        options
+      });
+      return [];
+    }
+
+    const sanitizedSeedEntity = seedEntity.trim();
     const relationships = [];
 
     for (const sourceName of sources) {
@@ -223,7 +275,7 @@ export class KnowledgeFederation {
       if (!source) continue;
 
       try {
-        const sourceRelationships = await source.relationshipFn(seedEntity, { limit: Math.floor(limit / sources.length) });
+        const sourceRelationships = await source.relationshipFn(sanitizedSeedEntity, { limit: Math.floor(limit / sources.length) });
         relationships.push(...sourceRelationships.map(rel => ({
           ...rel,
           sources: [sourceName]
@@ -256,6 +308,17 @@ export class KnowledgeFederation {
       includeSnippets = true
     } = options;
 
+    // Validate input to prevent processing empty queries
+    if (!query || typeof query !== 'string' || query.trim() === '') {
+      console.warn('[KnowledgeFederation] federatedSearch called with invalid query:', {
+        query,
+        type: typeof query,
+        options
+      });
+      return [];
+    }
+
+    const sanitizedQuery = query.trim();
     const results = [];
     const searchPromises = [];
 
@@ -300,12 +363,25 @@ export class KnowledgeFederation {
   async searchSingleSource(sourceName, query, options = {}) {
     const { limit = 10, includeSnippets = true } = options;
     
+    // Validate input to prevent processing empty queries
+    if (!query || typeof query !== 'string' || query.trim() === '') {
+      console.warn('[KnowledgeFederation] searchSingleSource called with invalid query:', {
+        sourceName,
+        query,
+        type: typeof query,
+        options
+      });
+      return [];
+    }
+
+    const sanitizedQuery = query.trim();
+    
     if (sourceName === 'wikidata') {
-      return await this.searchWikidata(query, { limit, includeSnippets });
+      return await this.searchWikidata(sanitizedQuery, { limit, includeSnippets });
     } else if (sourceName === 'dbpedia') {
-      return await this.searchDBpedia(query, { limit, includeSnippets });
+      return await this.searchDBpedia(sanitizedQuery, { limit, includeSnippets });
     } else if (sourceName === 'conceptnet') {
-      return await this.searchConceptNet(query, { limit, includeSnippets });
+      return await this.searchConceptNet(sanitizedQuery, { limit, includeSnippets });
     }
     
     return [];
@@ -317,9 +393,17 @@ export class KnowledgeFederation {
    * Query Wikidata for entity
    */
   async queryWikidata(entityName) {
+    // Validate input to prevent malformed SPARQL queries
+    if (!entityName || typeof entityName !== 'string' || entityName.trim() === '') {
+      console.warn('[KnowledgeFederation] Invalid entityName for Wikidata query:', entityName);
+      return [];
+    }
+
+    const sanitizedEntityName = entityName.trim();
+    
     const query = `
       SELECT DISTINCT ?item ?itemLabel ?itemDescription ?instanceOf ?instanceOfLabel WHERE {
-        ?item rdfs:label "${entityName}"@en .
+        ?item rdfs:label "${sanitizedEntityName}"@en .
         OPTIONAL { ?item wdt:P31 ?instanceOf }
         SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
       } LIMIT 5
@@ -345,9 +429,17 @@ export class KnowledgeFederation {
   async getWikidataRelationships(entityName, options = {}) {
     const { limit = 10 } = options;
     
+    // Validate input to prevent malformed SPARQL queries
+    if (!entityName || typeof entityName !== 'string' || entityName.trim() === '') {
+      console.warn('[KnowledgeFederation] Invalid entityName for Wikidata relationships query:', entityName);
+      return [];
+    }
+
+    const sanitizedEntityName = entityName.trim();
+    
     const query = `
       SELECT DISTINCT ?related ?relatedLabel ?property ?propertyLabel WHERE {
-        ?item rdfs:label "${entityName}"@en .
+        ?item rdfs:label "${sanitizedEntityName}"@en .
         ?item ?property ?related .
         ?related rdfs:label ?relatedLabel .
         FILTER(LANG(?relatedLabel) = "en")
@@ -372,9 +464,17 @@ export class KnowledgeFederation {
    * Query DBpedia for entity
    */
   async queryDBpedia(entityName) {
+    // Validate input to prevent malformed SPARQL queries
+    if (!entityName || typeof entityName !== 'string' || entityName.trim() === '') {
+      console.warn('[KnowledgeFederation] Invalid entityName for DBpedia query:', entityName);
+      return [];
+    }
+
+    const sanitizedEntityName = entityName.trim();
+    
     const query = `
       SELECT DISTINCT ?resource ?comment ?type WHERE {
-        ?resource rdfs:label "${entityName}"@en .
+        ?resource rdfs:label "${sanitizedEntityName}"@en .
         OPTIONAL { ?resource rdfs:comment ?comment . FILTER(LANG(?comment) = "en") }
         OPTIONAL { ?resource rdf:type ?type }
       } LIMIT 5
@@ -400,9 +500,17 @@ export class KnowledgeFederation {
   async getDBpediaRelationships(entityName, options = {}) {
     const { limit = 10 } = options;
     
+    // Validate input to prevent malformed SPARQL queries
+    if (!entityName || typeof entityName !== 'string' || entityName.trim() === '') {
+      console.warn('[KnowledgeFederation] Invalid entityName for DBpedia relationships query:', entityName);
+      return [];
+    }
+
+    const sanitizedEntityName = entityName.trim();
+    
     const query = `
       SELECT DISTINCT ?related ?relatedLabel ?property WHERE {
-        ?resource rdfs:label "${entityName}"@en .
+        ?resource rdfs:label "${sanitizedEntityName}"@en .
         ?resource ?property ?related .
         ?related rdfs:label ?relatedLabel .
         FILTER(LANG(?relatedLabel) = "en")
@@ -472,10 +580,18 @@ export class KnowledgeFederation {
   async searchWikidata(query, options = {}) {
     const { limit = 10 } = options;
     
+    // Validate input to prevent malformed SPARQL queries
+    if (!query || typeof query !== 'string' || query.trim() === '') {
+      console.warn('[KnowledgeFederation] Invalid query for Wikidata search:', query);
+      return [];
+    }
+
+    const sanitizedQuery = query.trim();
+    
     const sparqlQuery = `
       SELECT DISTINCT ?item ?itemLabel ?itemDescription WHERE {
         ?item rdfs:label ?itemLabel .
-        FILTER(CONTAINS(LCASE(?itemLabel), LCASE("${query}")))
+        FILTER(CONTAINS(LCASE(?itemLabel), LCASE("${sanitizedQuery}")))
         FILTER(LANG(?itemLabel) = "en")
         OPTIONAL { ?item schema:description ?itemDescription . FILTER(LANG(?itemDescription) = "en") }
       } LIMIT ${limit}
@@ -487,7 +603,7 @@ export class KnowledgeFederation {
         title: result.itemLabel?.value,
         snippet: result.itemDescription?.value,
         uri: result.item?.value,
-        confidence: this.calculateSearchConfidence(query, result.itemLabel?.value || '')
+        confidence: this.calculateSearchConfidence(sanitizedQuery, result.itemLabel?.value || '')
       }));
     } catch (error) {
       return [];

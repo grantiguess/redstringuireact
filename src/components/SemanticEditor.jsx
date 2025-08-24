@@ -3,7 +3,7 @@ import { Globe, Link, Book, Search, ExternalLink, Plus, X, Check, Tags, FileText
 import { PANEL_CLOSE_ICON_SIZE } from '../constants';
 import StandardDivider from './StandardDivider.jsx';
 import { rdfResolver } from '../services/rdfResolver.js';
-import { enrichFromSemanticWeb } from '../services/semanticWebQuery.js';
+import { enrichFromSemanticWeb, fastEnrichFromSemanticWeb } from '../services/semanticWebQuery.js';
 import { knowledgeFederation } from '../services/knowledgeFederation.js';
 
 // DOI validation regex
@@ -879,8 +879,8 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
         }
       }));
       
-      // Use our comprehensive semantic web enrichment
-      const enrichmentResults = await enrichFromSemanticWeb(nodeData.name);
+      // Use our fast semantic web enrichment for immediate results
+      const enrichmentResults = await fastEnrichFromSemanticWeb(nodeData.name, { timeout: 15000 });
       
       // Update progress to show completion
       setEnrichmentState(prev => ({

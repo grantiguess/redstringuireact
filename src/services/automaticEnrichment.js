@@ -247,6 +247,14 @@ export class AutomaticEnrichment {
    * @private
    */
   async _queryDBpedia(searchTerm) {
+    // Validate input to prevent malformed SPARQL queries
+    if (!searchTerm || typeof searchTerm !== 'string' || searchTerm.trim() === '') {
+      console.warn('[Auto Enrichment] Invalid searchTerm for DBpedia query:', searchTerm);
+      return { success: false, entities: [], error: 'Invalid search term' };
+    }
+
+    const sanitizedSearchTerm = searchTerm.trim();
+    
     try {
       // Search for entities - simplified query for better performance
       const searchQuery = `
@@ -254,8 +262,8 @@ export class AutomaticEnrichment {
           ?entity rdfs:label ?entityLabel .
           OPTIONAL { ?entity dbo:abstract ?entityAbstract }
           
-          FILTER(CONTAINS(LCASE(?entityLabel), LCASE("${searchTerm}")) || 
-                 (BOUND(?entityAbstract) && CONTAINS(LCASE(?entityAbstract), LCASE("${searchTerm}"))))
+          FILTER(CONTAINS(LCASE(?entityLabel), LCASE("${sanitizedSearchTerm}")) || 
+                 (BOUND(?entityAbstract) && CONTAINS(LCASE(?entityAbstract), LCASE("${sanitizedSearchTerm}"))))
           
           FILTER(LANG(?entityLabel) = "en")
           FILTER(LANG(?entityAbstract) = "en")
