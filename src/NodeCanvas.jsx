@@ -1663,43 +1663,61 @@ function NodeCanvas() {
         if (item.needsMaterialization && item.conceptData) {
             console.log(`[NodeCanvas] Materializing semantic concept: ${item.conceptData.name}`);
             
-            // Create the node prototype from concept data
-            const newNodeId = `semantic-node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            // Check if this semantic concept already exists as a prototype
+            const existingPrototype = Array.from(nodePrototypesMap.values()).find(proto => 
+                proto.semanticMetadata?.isSemanticNode && 
+                proto.name === item.conceptData.name &&
+                proto.semanticMetadata?.originMetadata?.source === item.conceptData.source &&
+                proto.semanticMetadata?.originMetadata?.originalUri === item.conceptData.semanticMetadata?.originalUri
+            );
             
-            // Build origin metadata
-            const originInfo = {
-                source: item.conceptData.source,
-                discoveredAt: item.conceptData.discoveredAt,
-                searchQuery: item.conceptData.searchQuery || '',
-                confidence: item.conceptData.semanticMetadata?.confidence || 0.8,
-                originalUri: item.conceptData.semanticMetadata?.originalUri,
-                relationships: item.conceptData.relationships || []
-            };
+            let prototypeId;
             
-            // Add the prototype to the store
-            storeActions.addNodePrototype({
-                id: newNodeId,
-                name: item.conceptData.name,
-                description: '', // No custom bio - will show origin info instead
-                color: item.conceptData.color,
-                typeNodeId: 'base-thing-prototype',
-                definitionGraphIds: [],
-                semanticMetadata: {
-                    ...item.conceptData.semanticMetadata,
-                    relationships: item.conceptData.relationships,
-                    originMetadata: originInfo,
-                    isSemanticNode: true
-                },
-                originalDescription: item.conceptData.description
-            });
+            if (existingPrototype) {
+                // Use existing prototype
+                prototypeId = existingPrototype.id;
+                console.log(`[NodeCanvas] Reusing existing semantic prototype: ${item.conceptData.name} (ID: ${prototypeId})`);
+            } else {
+                // Create new prototype
+                prototypeId = `semantic-node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            
+                // Build origin metadata
+                const originInfo = {
+                    source: item.conceptData.source,
+                    discoveredAt: item.conceptData.discoveredAt,
+                    searchQuery: item.conceptData.searchQuery || '',
+                    confidence: item.conceptData.semanticMetadata?.confidence || 0.8,
+                    originalUri: item.conceptData.semanticMetadata?.originalUri,
+                    relationships: item.conceptData.relationships || []
+                };
+                
+                // Add the prototype to the store
+                storeActions.addNodePrototype({
+                    id: prototypeId,
+                    name: item.conceptData.name,
+                    description: '', // No custom bio - will show origin info instead
+                    color: item.conceptData.color,
+                    typeNodeId: 'base-thing-prototype',
+                    definitionGraphIds: [],
+                    semanticMetadata: {
+                        ...item.conceptData.semanticMetadata,
+                        relationships: item.conceptData.relationships,
+                        originMetadata: originInfo,
+                        isSemanticNode: true
+                    },
+                    originalDescription: item.conceptData.description
+                });
 
-            // Auto-save semantic nodes to Library
-            storeActions.toggleSavedNode(newNodeId);
+                // Auto-save semantic nodes to Library
+                storeActions.toggleSavedNode(prototypeId);
+                
+                console.log(`[NodeCanvas] Created new semantic prototype: ${item.conceptData.name} (ID: ${prototypeId})`);
+            }
             
-            // Now use the new prototype ID for positioning
+            // Now use the prototype ID for positioning
             const prototype = { 
                 ...item.conceptData, 
-                id: newNodeId, 
+                id: prototypeId, 
                 name: item.conceptData.name,
                 color: item.conceptData.color 
             };
@@ -1718,7 +1736,7 @@ function NodeCanvas() {
             }
 
             // Add instance to the canvas
-            storeActions.addNodeInstance(activeGraphId, newNodeId, position);
+            storeActions.addNodeInstance(activeGraphId, prototypeId, position);
             
             console.log(`[NodeCanvas] Successfully materialized and placed semantic node: ${item.conceptData.name}`);
             return;

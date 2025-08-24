@@ -655,6 +655,21 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
   
   // Create Redstring node prototype from discovered concept
   const materializeConcept = (concept) => {
+    // Check if this semantic concept already exists as a prototype
+    const existingPrototype = Array.from(nodePrototypesMap.values()).find(proto => 
+      proto.semanticMetadata?.isSemanticNode && 
+      proto.name === concept.name &&
+      proto.semanticMetadata?.originMetadata?.source === concept.source &&
+      proto.semanticMetadata?.originMetadata?.originalUri === concept.semanticMetadata?.originalUri
+    );
+    
+    if (existingPrototype) {
+      // Use existing prototype
+      console.log(`[SemanticDiscovery] Reusing existing semantic prototype: ${concept.name} (ID: ${existingPrototype.id})`);
+      return existingPrototype.id;
+    }
+    
+    // Create new prototype
     const newNodeId = `semantic-node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
     // Build origin metadata for the bio section
@@ -687,7 +702,7 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
     // Auto-save semantic nodes to Library
     storeActions?.toggleSavedNode(newNodeId);
     
-    console.log(`[SemanticDiscovery] Materialized semantic node: ${concept.name}`);
+    console.log(`[SemanticDiscovery] Created new semantic prototype: ${concept.name} (ID: ${newNodeId})`);
     return newNodeId;
   };
 
