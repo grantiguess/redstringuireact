@@ -457,6 +457,8 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
   const [selectedConcept, setSelectedConcept] = useState(null);
   const [viewMode, setViewMode] = useState('discover'); // 'discover', 'history', 'advanced'
   const [manualQuery, setManualQuery] = useState('');
+  const [expandingNodeId, setExpandingNodeId] = useState(null);
+  const [semanticExpansionResults, setSemanticExpansionResults] = useState([]);
 
   // Get dual context (panel + graph)
   const getContexts = () => {
@@ -504,6 +506,54 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
     await performSearch(manualQuery);
   };
 
+  // Semantic expansion for selected node
+  const performSemanticExpansion = async (nodeName, nodeId) => {
+    setIsSearching(true);
+    try {
+      // Semantic expansion with focused parameters for node relationships
+      const results = await knowledgeFederation.importKnowledgeCluster(nodeName, {
+        maxDepth: 2, // Slightly deeper for expansion
+        maxEntitiesPerLevel: 12, // Focused number for expansion halo
+        includeRelationships: true,
+        includeSources: ['wikidata', 'dbpedia', 'freebase'],
+        includeTypes: true,
+        includeLabels: true,
+        minConfidence: 0.7, // Higher confidence for expansions
+        preferSemanticWeb: true,
+        expandRelated: true // Focus on relationships
+      });
+      
+      // Convert to expansion results with proper positioning info
+      const expansionResults = Array.from(results.entities.entries()).map(([name, entityData]) => ({
+        id: `expansion-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        name: cleanTitle(name),
+        description: entityData.descriptions?.[0]?.text || `Related to ${nodeName}`,
+        category: entityData.types?.[0]?.type || 'Thing',
+        source: entityData.sources?.[0] || 'semantic-web',
+        confidence: entityData.confidence || 0.8,
+        relationships: results.relationships
+          .filter(rel => rel.source === name || rel.target === name)
+          .slice(0, 3),
+        semanticMetadata: {
+          originalUri: entityData.externalLinks?.[0],
+          equivalentClasses: entityData.equivalentClasses || [],
+          externalLinks: entityData.externalLinks || [],
+          confidence: entityData.confidence || 0.8
+        },
+        color: generateConceptColor(name),
+        expandedFrom: nodeId,
+        discoveredAt: new Date().toISOString()
+      }));
+      
+      setSemanticExpansionResults(expansionResults);
+      
+    } catch (error) {
+      console.error('[SemanticExpansion] Failed:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
 
   // Common search logic
   const performSearch = async (query) => {
@@ -512,18 +562,22 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
     const searchId = `concept-search-${Date.now()}`;
     
     try {
-      // Use existing knowledge federation but convert results to concept format
+      // Pure semantic web search with enhanced parameters
       const results = await knowledgeFederation.importKnowledgeCluster(query, {
         maxDepth: 1,
-        maxEntitiesPerLevel: 20,
+        maxEntitiesPerLevel: 25, // Increased for more comprehensive results
         includeRelationships: true,
-        includeSources: ['wikidata', 'dbpedia']
+        includeSources: ['wikidata', 'dbpedia', 'freebase'], // Focus on semantic web sources
+        includeTypes: true, // Include ontological typing
+        includeLabels: true, // Include alternative labels/names
+        minConfidence: 0.6, // Higher confidence threshold
+        preferSemanticWeb: true // Prioritize semantic web sources over general web
       });
       
       // Convert semantic entities to Redstring concept format
       const concepts = Array.from(results.entities.entries()).map(([name, entityData]) => ({
         id: `concept-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        name: name,
+        name: cleanTitle(name),
         description: entityData.descriptions?.[0]?.text || `A concept related to ${query}`,
         category: entityData.types?.[0]?.type || 'Thing',
         source: entityData.sources?.[0] || 'semantic-web',
@@ -560,6 +614,35 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
     }
   };
   
+  // Clean and capitalize titles from semantic web
+  const cleanTitle = (name) => {
+    if (!name) return 'Unknown';
+    
+    // Remove common prefixes and clean up
+    let cleaned = name
+      .replace(/^(Q\d+|P\d+)\s*-?\s*/i, '') // Remove Wikidata IDs
+      .replace(/\(disambiguation\)/gi, '') // Remove disambiguation markers
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+    
+    // Capitalize properly - handle acronyms and proper nouns
+    cleaned = cleaned
+      .split(' ')
+      .map(word => {
+        // Keep common acronyms uppercase
+        if (/^[A-Z]{2,}$/.test(word)) return word;
+        // Keep known abbreviations
+        if (['AI', 'ML', 'API', 'HTTP', 'URL', 'DNA', 'RNA', 'CEO', 'CTO'].includes(word.toUpperCase())) {
+          return word.toUpperCase();
+        }
+        // Capitalize first letter, lowercase rest
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
+      .join(' ');
+    
+    return cleaned || 'Unknown Concept';
+  };
+
   // Generate color for concept based on name hash
   const generateConceptColor = (name) => {
     const colors = ['#8B0000', '#8B4513', '#006400', '#4B0082', '#8B008B', '#FF6347', '#4682B4'];
@@ -574,29 +657,95 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
   const materializeConcept = (concept) => {
     const newNodeId = `semantic-node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
+    // Build origin metadata for the bio section
+    const originInfo = {
+      source: concept.source,
+      discoveredAt: concept.discoveredAt,
+      searchQuery: concept.searchQuery || '',
+      confidence: concept.semanticMetadata?.confidence || 0.8,
+      originalUri: concept.semanticMetadata?.originalUri,
+      relationships: concept.relationships || []
+    };
+    
     storeActions?.addNodePrototype({
       id: newNodeId,
       name: concept.name,
-      description: concept.description,
+      description: '', // No custom bio - will show origin info instead
       color: concept.color,
       typeNodeId: 'base-thing-prototype',
       definitionGraphIds: [],
       semanticMetadata: {
         ...concept.semanticMetadata,
-        relationships: concept.relationships // Include the relationships for triplet display
-      }
+        relationships: concept.relationships,
+        originMetadata: originInfo,
+        isSemanticNode: true
+      },
+      // Store the original description for potential use
+      originalDescription: concept.description
     });
     
-    // Optionally save the new concept
+    // Auto-save semantic nodes to Library
     storeActions?.toggleSavedNode(newNodeId);
     
-    console.log(`[SemanticDiscovery] Materialized concept: ${concept.name}`);
+    console.log(`[SemanticDiscovery] Materialized semantic node: ${concept.name}`);
     return newNodeId;
   };
 
   return (
-    <div className="panel-content-inner semantic-discovery-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Header */}
+    <>
+      {/* Ghost animation CSS */}
+      <style>
+        {`
+          @keyframes ghostFadeIn {
+            0% {
+              opacity: 0;
+              transform: scale(0.5) translateY(10px);
+            }
+            50% {
+              opacity: 0.4;
+              transform: scale(0.8) translateY(5px);
+            }
+            100% {
+              opacity: 0.8;
+              transform: scale(1) translateY(0);
+            }
+          }
+          
+          @keyframes pulse {
+            0%, 100% {
+              opacity: 1;
+              transform: scale(1);
+            }
+            50% {
+              opacity: 0.6;
+              transform: scale(1.1);
+            }
+          }
+          
+          @keyframes ghostFloat {
+            0%, 100% {
+              transform: translateY(0px);
+            }
+            50% {
+              transform: translateY(-2px);
+            }
+          }
+          
+          @keyframes conceptSlideIn {
+            0% {
+              opacity: 0;
+              transform: translateX(-10px);
+            }
+            100% {
+              opacity: 1;
+              transform: translateX(0);
+            }
+          }
+        `}
+      </style>
+      
+      <div className="panel-content-inner semantic-discovery-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
           Semantic Discovery
@@ -625,135 +774,198 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
 
       {viewMode === 'discover' && (
         <>
-          {/* Dual Context Display */}
+          {/* Compact Dual Context Display */}
           {(contexts.panel || contexts.graph) ? (
-            <div className="contexts-display" style={{ marginBottom: '16px' }}>
-              {contexts.panel && (
-                <div className="panel-context" style={{ marginBottom: contexts.graph ? '8px' : '0', padding: '12px', background: 'rgba(139,0,0,0.1)', borderRadius: '6px', border: '1px solid rgba(139,0,0,0.2)' }}>
-                  <div style={{ fontSize: '10px', color: '#260000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold', marginBottom: '4px' }}>
-                    📋 Current Panel Node:
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#8B0000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold' }}>
-                    {contexts.panel.nodeName}
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                    <button
-                      onClick={() => {
-                        // Search using panel context
-                        const query = contexts.panel.nodeName;
-                        if (query.trim()) {
-                          performSearch(query);
-                        }
-                      }}
-                      disabled={isSearching}
-                      style={{
-                        padding: '4px 8px',
-                        border: '1px solid #8B0000',
-                        borderRadius: '3px',
-                        background: '#8B0000',
-                        color: '#260000',
-                        fontFamily: "'EmOne', sans-serif",
-                        fontSize: '10px',
-                        cursor: isSearching ? 'wait' : 'pointer',
-                        fontWeight: 'bold'
-                      }}
-                    >
-                      Discover
-                    </button>
-                  </div>
-                </div>
-              )}
+            <div className="contexts-display" style={{ marginBottom: '12px' }}>
+              {/* Compact Action Bar */}
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                {contexts.panel && (
+                  <button
+                    onClick={() => {
+                      const query = contexts.panel.nodeName;
+                      if (query.trim()) {
+                        performSearch(query);
+                      }
+                    }}
+                    disabled={isSearching}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '3px 6px',
+                      border: '1px solid #8B0000',
+                      borderRadius: '3px',
+                      background: '#8B0000',
+                      color: '#EFE8E5',
+                      fontFamily: "'EmOne', sans-serif",
+                      fontSize: '9px',
+                      cursor: isSearching ? 'wait' : 'pointer',
+                      fontWeight: 'bold',
+                      flex: 1,
+                      minWidth: '60px'
+                    }}
+                  >
+                    📋 {contexts.panel.nodeName.length > 12 ? contexts.panel.nodeName.substring(0, 12) + '...' : contexts.panel.nodeName}
+                  </button>
+                )}
+                
+                {contexts.graph && (
+                  <button
+                    onClick={() => {
+                      const query = contexts.graph.nodeName;
+                      if (query.trim()) {
+                        performSearch(query);
+                      }
+                    }}
+                    disabled={isSearching}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '3px 6px',
+                      border: '1px solid #4B0082',
+                      borderRadius: '3px',
+                      background: '#4B0082',
+                      color: '#EFE8E5',
+                      fontFamily: "'EmOne', sans-serif",
+                      fontSize: '9px',
+                      cursor: isSearching ? 'wait' : 'pointer',
+                      fontWeight: 'bold',
+                      flex: 1,
+                      minWidth: '60px'
+                    }}
+                  >
+                    🎯 {contexts.graph.nodeName.length > 12 ? contexts.graph.nodeName.substring(0, 12) + '...' : contexts.graph.nodeName}
+                  </button>
+                )}
+                
+                {/* Expand Semantically Button for Selected Node */}
+                {activeDefinitionNodeId && (
+                  <button
+                    onClick={() => {
+                      // Trigger semantic expansion for selected node
+                      const nodeData = nodePrototypesMap.get(activeDefinitionNodeId);
+                      if (nodeData?.name) {
+                        setExpandingNodeId(activeDefinitionNodeId);
+                        performSemanticExpansion(nodeData.name, activeDefinitionNodeId);
+                      }
+                    }}
+                    disabled={isSearching}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '2px',
+                      padding: '3px 6px',
+                      border: '1px solid #228B22',
+                      borderRadius: '3px',
+                      background: isSearching && expandingNodeId ? '#1a4d1a' : '#228B22',
+                      color: '#EFE8E5',
+                      fontFamily: "'EmOne', sans-serif",
+                      fontSize: '9px',
+                      cursor: isSearching ? 'wait' : 'pointer',
+                      fontWeight: 'bold',
+                      opacity: isSearching && expandingNodeId ? 0.7 : 1
+                    }}
+                  >
+                    {isSearching && expandingNodeId ? '⚡ Expanding...' : '⭐ Expand'}
+                  </button>
+                )}
+              </div>
               
-              {contexts.graph && (
-                <div className="graph-context" style={{ padding: '12px', background: 'rgba(75,0,130,0.1)', borderRadius: '6px', border: '1px solid rgba(75,0,130,0.2)' }}>
-                  <div style={{ fontSize: '10px', color: '#260000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold', marginBottom: '4px' }}>
-                    🎯 Active Graph Node:
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#4B0082', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold' }}>
-                    {contexts.graph.nodeName}
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                    <button
-                      onClick={() => {
-                        // Search using graph context
-                        const query = contexts.graph.nodeName;
-                        if (query.trim()) {
-                          performSearch(query);
-                        }
-                      }}
-                      disabled={isSearching}
-                      style={{
-                        padding: '4px 8px',
-                        border: '1px solid #4B0082',
-                        borderRadius: '3px',
-                        background: '#4B0082',
-                        color: '#EFE8E5',
-                        fontFamily: "'EmOne', sans-serif",
-                        fontSize: '10px',
-                        cursor: isSearching ? 'wait' : 'pointer',
-                        fontWeight: 'bold'
-                      }}
-                    >
-                      Discover
-                    </button>
-                  </div>
-                </div>
-              )}
-              
-              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px' }}>
+              {/* Manual Search Bar */}
+              <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                <input
+                  type="text"
+                  value={manualQuery}
+                  onChange={(e) => setManualQuery(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleManualSearch()}
+                  placeholder="Search semantic web..."
+                  style={{
+                    flex: 1,
+                    padding: '6px 8px',
+                    border: '1px solid #8B0000',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontFamily: "'EmOne', sans-serif",
+                    background: '#1a1a1a',
+                    color: '#260000'
+                  }}
+                />
                 <button
-                  onClick={() => setViewMode('advanced')}
+                  onClick={handleManualSearch}
+                  disabled={isSearching || !manualQuery?.trim()}
                   style={{
                     padding: '6px 12px',
-                    border: '1px solid #666',
+                    border: '1px solid #8B0000',
                     borderRadius: '4px',
-                    background: 'transparent',
-                    color: '#666',
-                    fontFamily: "'EmOne', sans-serif",
+                    background: '#8B0000',
+                    color: '#EFE8E5',
                     fontSize: '11px',
-                    cursor: 'pointer'
+                    fontFamily: "'EmOne', sans-serif",
+                    cursor: isSearching ? 'wait' : 'pointer',
+                    fontWeight: 'bold'
                   }}
                 >
-                  Manual Search
+                  {isSearching ? '...' : 'Go'}
                 </button>
               </div>
             </div>
           ) : (
             <div className="no-context" style={{ marginBottom: '16px', padding: '12px', background: 'rgba(102,102,102,0.1)', borderRadius: '6px', border: '1px solid rgba(102,102,102,0.2)' }}>
               <div style={{ fontSize: '11px', color: '#666', fontFamily: "'EmOne', sans-serif", textAlign: 'center', lineHeight: '1.4', marginBottom: '8px' }}>
-                Open a node in the right panel to discover related semantic concepts
+                Explore the semantic web - search for concepts, people, places, ideas
               </div>
-              <button
-                onClick={() => setViewMode('advanced')}
-                style={{
-                  padding: '6px 12px',
-                  border: '1px solid #666',
-                  borderRadius: '4px',
-                  background: 'transparent',
-                  color: '#666',
-                  fontFamily: "'EmOne', sans-serif",
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  display: 'block',
-                  margin: '0 auto'
-                }}
-              >
-                Manual Search
-              </button>
+              {/* Manual Search Bar for no context */}
+              <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                <input
+                  type="text"
+                  value={manualQuery}
+                  onChange={(e) => setManualQuery(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleManualSearch()}
+                  placeholder="Search semantic web..."
+                  style={{
+                    flex: 1,
+                    padding: '6px 8px',
+                    border: '1px solid #666',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontFamily: "'EmOne', sans-serif",
+                    background: '#1a1a1a',
+                    color: '#666'
+                  }}
+                />
+                <button
+                  onClick={handleManualSearch}
+                  disabled={isSearching || !manualQuery?.trim()}
+                  style={{
+                    padding: '6px 12px',
+                    border: '1px solid #666',
+                    borderRadius: '4px',
+                    background: 'transparent',
+                    color: '#666',
+                    fontSize: '11px',
+                    fontFamily: "'EmOne', sans-serif",
+                    cursor: isSearching ? 'wait' : 'pointer'
+                  }}
+                >
+                  {isSearching ? '...' : 'Go'}
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Concept Results */}
-          {discoveredConcepts.length > 0 && (
+          {/* Concept Results - Regular Search */}
+          {discoveredConcepts.length > 0 && !semanticExpansionResults.length && (
             <div className="discovered-concepts" style={{ flex: 1, overflow: 'auto' }}>
               <div style={{ marginBottom: '12px', fontSize: '12px', color: '#260000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold' }}>
                 Discovered Concepts ({discoveredConcepts.length})
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
-                {discoveredConcepts.map(concept => (
+                {discoveredConcepts.map((concept, index) => (
                   <DraggableConceptCard
                     key={concept.id}
                     concept={concept}
+                    index={index}
                     onMaterialize={materializeConcept}
                     onSelect={setSelectedConcept}
                     isSelected={selectedConcept?.id === concept.id}
@@ -762,51 +974,128 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
               </div>
             </div>
           )}
+
+          {/* Loading indicator for semantic expansion */}
+          {isSearching && expandingNodeId && semanticExpansionResults.length === 0 && (
+            <div className="semantic-expansion-loading" style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+              <div style={{ 
+                fontSize: '24px', 
+                marginBottom: '8px',
+                animation: 'pulse 1.5s ease-in-out infinite'
+              }}>
+                ⚡
+              </div>
+              <div style={{ 
+                fontSize: '12px', 
+                color: '#228B22', 
+                fontFamily: "'EmOne', sans-serif", 
+                fontWeight: 'bold',
+                marginBottom: '4px'
+              }}>
+                Expanding semantic web...
+              </div>
+              <div style={{ 
+                fontSize: '10px', 
+                color: '#666',
+                fontFamily: "'EmOne', sans-serif"
+              }}>
+                Finding related concepts for {nodePrototypesMap.get(expandingNodeId)?.name}
+              </div>
+            </div>
+          )}
+
+          {/* Semantic Expansion Results - Ghost Node Halo */}
+          {semanticExpansionResults.length > 0 && expandingNodeId && (
+            <div className="semantic-expansion-halo" style={{ flex: 1, overflow: 'auto' }}>
+              <div style={{ marginBottom: '12px', fontSize: '12px', color: '#228B22', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold' }}>
+                ⭐ Semantic Expansion ({semanticExpansionResults.length} related concepts)
+              </div>
+              
+              {/* Expanding Node Info */}
+              <div style={{ 
+                marginBottom: '12px', 
+                padding: '8px', 
+                background: 'rgba(34,139,34,0.1)', 
+                borderRadius: '6px',
+                border: '1px solid rgba(34,139,34,0.2)'
+              }}>
+                <div style={{ fontSize: '10px', color: '#228B22', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold' }}>
+                  Expanding: {nodePrototypesMap.get(expandingNodeId)?.name || 'Selected Node'}
+                </div>
+                <div style={{ fontSize: '9px', color: '#666', marginTop: '2px' }}>
+                  Drag concepts to canvas or click to add to library
+                </div>
+              </div>
+
+              {/* Ghost Node Grid */}
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', 
+                gap: '8px',
+                marginBottom: '12px'
+              }}>
+                {semanticExpansionResults.map((concept, index) => (
+                  <GhostSemanticNode
+                    key={concept.id}
+                    concept={concept}
+                    index={index}
+                    onMaterialize={materializeConcept}
+                    onSelect={() => {
+                      // Auto-materialize on selection
+                      materializeConcept(concept);
+                    }}
+                  />
+                ))}
+              </div>
+
+              {/* Controls */}
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                <button
+                  onClick={() => {
+                    // Clear expansion results
+                    setSemanticExpansionResults([]);
+                    setExpandingNodeId(null);
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    border: '1px solid #666',
+                    borderRadius: '4px',
+                    background: 'transparent',
+                    color: '#666',
+                    fontSize: '10px',
+                    cursor: 'pointer',
+                    fontFamily: "'EmOne', sans-serif"
+                  }}
+                >
+                  Clear Expansion
+                </button>
+                <button
+                  onClick={() => {
+                    // Materialize all concepts
+                    semanticExpansionResults.forEach(concept => materializeConcept(concept));
+                    setSemanticExpansionResults([]);
+                    setExpandingNodeId(null);
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    border: '1px solid #228B22',
+                    borderRadius: '4px',
+                    background: '#228B22',
+                    color: '#EFE8E5',
+                    fontSize: '10px',
+                    cursor: 'pointer',
+                    fontFamily: "'EmOne', sans-serif",
+                    fontWeight: 'bold'
+                  }}
+                >
+                  Add All to Library
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
 
-      {viewMode === 'advanced' && (
-        <div className="advanced-search-view" style={{ flex: 1, overflow: 'auto' }}>
-          <div style={{ marginBottom: '16px' }}>
-            <input
-              type="text"
-              value={manualQuery || ''}
-              onChange={(e) => setManualQuery(e.target.value)}
-              placeholder="Enter custom search query..."
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                border: '1px solid #444',
-                borderRadius: '6px',
-                background: '#1a1a1a',
-                color: '#260000',
-                fontFamily: "'EmOne', sans-serif",
-                fontSize: '12px',
-                marginBottom: '8px'
-              }}
-              onKeyPress={(e) => e.key === 'Enter' && handleManualSearch()}
-            />
-            <button
-              onClick={handleManualSearch}
-              disabled={isSearching || !manualQuery?.trim()}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                border: '1px solid #8B0000',
-                borderRadius: '6px',
-                background: '#8B0000',
-                color: '#260000',
-                fontFamily: "'EmOne', sans-serif",
-                fontSize: '12px',
-                cursor: isSearching ? 'wait' : 'pointer',
-                fontWeight: 'bold'
-              }}
-            >
-              {isSearching ? 'Searching...' : 'Search Semantic Web'}
-            </button>
-          </div>
-        </div>
-      )}
 
       {viewMode === 'history' && (
         <div className="search-history-view" style={{ flex: 1, overflow: 'auto' }}>
@@ -853,26 +1142,36 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
           )}
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 };
 
 // Draggable Concept Card - Core component of the new system
-const DraggableConceptCard = ({ concept, onMaterialize, onSelect, isSelected }) => {
+const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isSelected }) => {
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: ItemTypes.SPAWNABLE_NODE,
     item: { 
-      prototypeId: concept.id,
-      nodeId: concept.id,
+      // Don't use the concept ID since it doesn't exist in nodePrototypesMap yet
+      prototypeId: null, // Will trigger materialization during drop
+      nodeId: null,
       nodeName: concept.name,
       nodeColor: concept.color,
       fromSemanticDiscovery: true,
-      conceptData: concept
+      conceptData: concept, // Full concept data for materialization
+      needsMaterialization: true // Flag to indicate this needs to be created
+    },
+    end: (item, monitor) => {
+      // If the item was dropped successfully, materialize it
+      if (monitor.didDrop()) {
+        const materializedId = onMaterialize(concept);
+        console.log(`[SemanticDiscovery] Auto-materialized ${concept.name} with ID: ${materializedId}`);
+      }
     },
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
     }),
-  }), [concept]);
+  }), [concept, onMaterialize]);
 
   useEffect(() => {
     preview(getEmptyImage(), { captureDraggingState: true });
@@ -888,63 +1187,208 @@ const DraggableConceptCard = ({ concept, onMaterialize, onSelect, isSelected }) 
       ref={drag}
       onClick={() => onSelect(isSelected ? null : concept)}
       style={{
-        padding: '12px',
+        padding: '10px',
         background: concept.color,
-        borderRadius: '8px',
-        border: isSelected ? '2px solid #260000' : '1px solid transparent',
-        cursor: 'pointer',
+        borderRadius: '12px', // More rounded like actual nodes
+        border: isSelected ? '2px solid #260000' : '1px solid rgba(189,181,181,0.3)',
+        cursor: 'grab',
         opacity: isDragging ? 0.5 : 1,
         transition: 'all 0.2s ease',
-        marginBottom: '4px'
+        marginBottom: '6px',
+        boxShadow: isDragging ? '0 4px 12px rgba(0,0,0,0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
+        position: 'relative',
+        userSelect: 'none',
+        animation: `conceptSlideIn 0.3s ease ${index * 50}ms both`
       }}
+      title="Drag to canvas or click to select"
     >
+      {/* Origin Badge */}
+      <div style={{
+        position: 'absolute',
+        top: '4px',
+        right: '6px',
+        padding: '1px 4px',
+        background: 'rgba(0,0,0,0.2)',
+        borderRadius: '6px',
+        fontSize: '6px',
+        color: '#bdb5b5',
+        fontFamily: "'EmOne', sans-serif",
+        textTransform: 'uppercase',
+        opacity: 0.7
+      }}>
+        {concept.source === 'wikidata' ? 'WD' : concept.source === 'dbpedia' ? 'DB' : 'SW'}
+      </div>
+      
+      {/* Node Name */}
       <div style={{
         color: '#bdb5b5',
         fontFamily: "'EmOne', sans-serif",
-        fontSize: '12px',
+        fontSize: '13px',
         fontWeight: 'bold',
-        marginBottom: '4px'
+        marginBottom: '6px',
+        lineHeight: '1.2',
+        paddingRight: '20px' // Make room for origin badge
       }}>
         {concept.name}
       </div>
+      
+      {/* Truncated Description */}
       <div style={{
         color: '#bdb5b5',
         fontFamily: "'EmOne', sans-serif",
         fontSize: '9px',
         lineHeight: '1.3',
-        marginBottom: '8px',
-        opacity: 0.8
+        marginBottom: '6px',
+        opacity: 0.8,
+        maxHeight: '26px', // Limit to ~2 lines
+        overflow: 'hidden',
+        textOverflow: 'ellipsis'
       }}>
-        {concept.description}
+        {concept.description.length > 80 ? concept.description.substring(0, 80) + '...' : concept.description}
       </div>
+      
+      {/* Bottom Info Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{
           color: '#bdb5b5',
           fontFamily: "'EmOne', sans-serif",
-          fontSize: '8px',
-          opacity: 0.6
+          fontSize: '7px',
+          opacity: 0.6,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px'
         }}>
-          {concept.relationships.length} connections • {concept.source}
+          <span>🔗 {concept.relationships?.length || 0}</span>
+          {concept.semanticMetadata?.confidence && (
+            <span>• {Math.round(concept.semanticMetadata.confidence * 100)}%</span>
+          )}
         </div>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleMaterialize();
-          }}
-          style={{
-            padding: '4px 8px',
-            border: '1px solid #bdb5b5',
-            borderRadius: '4px',
-            background: 'rgba(189, 181, 181, 0.1)',
-            color: '#bdb5b5',
-            fontSize: '8px',
-            cursor: 'pointer',
-            fontFamily: "'EmOne', sans-serif"
-          }}
-          title="Add to Saved Things"
-        >
-          Save
-        </button>
+        
+        {/* Visual Drag Indicator */}
+        <div style={{
+          color: '#bdb5b5',
+          fontSize: '8px',
+          opacity: 0.4
+        }}>
+          ⋮⋮
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Ghost Semantic Node - Appears during semantic expansion with ghost-like effects
+const GhostSemanticNode = ({ concept, index, onMaterialize, onSelect }) => {
+  const [{ isDragging }, drag, preview] = useDrag(() => ({
+    type: ItemTypes.SPAWNABLE_NODE,
+    item: { 
+      // Don't use the concept ID since it doesn't exist in nodePrototypesMap yet
+      prototypeId: null, // Will trigger materialization during drop
+      nodeId: null,
+      nodeName: concept.name,
+      nodeColor: concept.color,
+      fromSemanticExpansion: true,
+      conceptData: concept, // Full concept data for materialization
+      needsMaterialization: true // Flag to indicate this needs to be created
+    },
+    end: (item, monitor) => {
+      // If the item was dropped successfully, materialize it
+      if (monitor.didDrop()) {
+        const materializedId = onMaterialize(concept);
+        console.log(`[SemanticExpansion] Auto-materialized ${concept.name} with ID: ${materializedId}`);
+      }
+    },
+    collect: (monitor) => ({
+      isDragging: !!monitor.isDragging(),
+    }),
+  }), [concept, onMaterialize]);
+
+  useEffect(() => {
+    preview(getEmptyImage(), { captureDraggingState: true });
+  }, [preview]);
+
+  // Staggered animation entrance effect
+  const animationDelay = index * 100; // 100ms stagger between nodes
+  const ghostOpacity = 0.7 + Math.random() * 0.2; // Slight opacity variation
+
+  return (
+    <div
+      ref={drag}
+      onClick={onSelect}
+      style={{
+        padding: '6px',
+        background: concept.color,
+        borderRadius: '8px',
+        border: '1px dashed rgba(189,181,181,0.4)',
+        cursor: 'grab',
+        opacity: isDragging ? 0.3 : ghostOpacity,
+        transform: `scale(${isDragging ? 0.95 : 1})`,
+        transition: 'all 0.2s ease',
+        position: 'relative',
+        userSelect: 'none',
+        minHeight: '60px',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        // Ghost-like effects inspired by AbstractionCarousel
+        animation: `ghostFadeIn 0.3s ease ${animationDelay}ms both, ghostFloat 2s ease-in-out infinite ${animationDelay + 500}ms`,
+        boxShadow: `0 2px 8px rgba(34,139,34,0.3), inset 0 1px 0 rgba(255,255,255,0.1)`,
+        backdropFilter: 'blur(1px)'
+      }}
+      title={`${concept.name} - Drag to canvas or click to add`}
+    >
+      {/* Ghost indicator */}
+      <div style={{
+        position: 'absolute',
+        top: '2px',
+        right: '3px',
+        fontSize: '8px',
+        opacity: 0.6,
+        color: '#bdb5b5'
+      }}>
+        ✨
+      </div>
+      
+      {/* Compact node content */}
+      <div style={{
+        color: '#bdb5b5',
+        fontFamily: "'EmOne', sans-serif",
+        fontSize: '9px',
+        fontWeight: 'bold',
+        textAlign: 'center',
+        lineHeight: '1.1',
+        marginBottom: '2px',
+        maxWidth: '100%',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis'
+      }}>
+        {concept.name.length > 20 ? concept.name.substring(0, 20) + '...' : concept.name}
+      </div>
+      
+      {/* Confidence indicator */}
+      {concept.semanticMetadata?.confidence && (
+        <div style={{
+          fontSize: '6px',
+          color: '#bdb5b5',
+          opacity: 0.6,
+          fontFamily: "'EmOne', sans-serif"
+        }}>
+          {Math.round(concept.semanticMetadata.confidence * 100)}%
+        </div>
+      )}
+      
+      {/* Connection count */}
+      <div style={{
+        position: 'absolute',
+        bottom: '2px',
+        left: '3px',
+        fontSize: '6px',
+        color: '#bdb5b5',
+        opacity: 0.5,
+        fontFamily: "'EmOne', sans-serif"
+      }}>
+        🔗{concept.relationships?.length || 0}
       </div>
     </div>
   );

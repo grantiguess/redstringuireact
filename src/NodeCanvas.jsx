@@ -1650,13 +1650,6 @@ function NodeCanvas() {
     drop: (item, monitor) => {
         if (!activeGraphId) return;
 
-        // The 'item' from the drag source now contains the prototypeId
-        const { prototypeId } = item;
-        if (!prototypeId) {
-            console.error("Dropped item is missing prototypeId", item);
-            return;
-        };
-
         const offset = monitor.getClientOffset();
         if (!offset || !containerRef.current) return;
         
@@ -1665,6 +1658,78 @@ function NodeCanvas() {
         // Convert drop position to canvas SVG coordinates
         const x = (offset.x - rect.left - panOffset.x) / zoomLevel;
         const y = (offset.y - rect.top - panOffset.y) / zoomLevel;
+
+        // Handle semantic concepts that need materialization
+        if (item.needsMaterialization && item.conceptData) {
+            console.log(`[NodeCanvas] Materializing semantic concept: ${item.conceptData.name}`);
+            
+            // Create the node prototype from concept data
+            const newNodeId = `semantic-node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            
+            // Build origin metadata
+            const originInfo = {
+                source: item.conceptData.source,
+                discoveredAt: item.conceptData.discoveredAt,
+                searchQuery: item.conceptData.searchQuery || '',
+                confidence: item.conceptData.semanticMetadata?.confidence || 0.8,
+                originalUri: item.conceptData.semanticMetadata?.originalUri,
+                relationships: item.conceptData.relationships || []
+            };
+            
+            // Add the prototype to the store
+            storeActions.addNodePrototype({
+                id: newNodeId,
+                name: item.conceptData.name,
+                description: '', // No custom bio - will show origin info instead
+                color: item.conceptData.color,
+                typeNodeId: 'base-thing-prototype',
+                definitionGraphIds: [],
+                semanticMetadata: {
+                    ...item.conceptData.semanticMetadata,
+                    relationships: item.conceptData.relationships,
+                    originMetadata: originInfo,
+                    isSemanticNode: true
+                },
+                originalDescription: item.conceptData.description
+            });
+
+            // Auto-save semantic nodes to Library
+            storeActions.toggleSavedNode(newNodeId);
+            
+            // Now use the new prototype ID for positioning
+            const prototype = { 
+                ...item.conceptData, 
+                id: newNodeId, 
+                name: item.conceptData.name,
+                color: item.conceptData.color 
+            };
+            const dimensions = getNodeDimensions(prototype, false, null);
+
+            // Create position
+            let position = {
+                x: x - (dimensions.currentWidth / 2),
+                y: y - (dimensions.currentHeight / 2)
+            };
+
+            // Apply grid snapping if enabled
+            if (gridMode !== 'off') {
+                const snapped = snapToGridAnimated(x, y, dimensions.currentWidth, dimensions.currentHeight, null);
+                position = { x: snapped.x, y: snapped.y };
+            }
+
+            // Add instance to the canvas
+            storeActions.addNodeInstance(activeGraphId, newNodeId, position);
+            
+            console.log(`[NodeCanvas] Successfully materialized and placed semantic node: ${item.conceptData.name}`);
+            return;
+        }
+
+        // Handle regular nodes (existing logic)
+        const { prototypeId } = item;
+        if (!prototypeId) {
+            console.error("Dropped item is missing prototypeId", item);
+            return;
+        }
         
         const prototype = nodePrototypesMap.get(prototypeId);
         if (!prototype) {

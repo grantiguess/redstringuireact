@@ -900,6 +900,80 @@ const SharedPanelContent = ({
         )}
       </CollapsibleSection>
 
+      {/* Semantic Origin Section - for nodes created from semantic web */}
+      {nodeData.semanticMetadata?.isSemanticNode && nodeData.semanticMetadata?.originMetadata && (
+        <CollapsibleSection 
+          title="Origin" 
+          defaultExpanded={true}
+        >
+          <div style={{ 
+            fontSize: '11px', 
+            fontFamily: "'EmOne', sans-serif",
+            color: '#260000',
+            marginBottom: '12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <div style={{ 
+                padding: '2px 6px', 
+                background: '#8B0000', 
+                borderRadius: '4px', 
+                color: '#EFE8E5',
+                fontSize: '9px',
+                fontWeight: 'bold'
+              }}>
+                {nodeData.semanticMetadata.originMetadata.source.toUpperCase()}
+              </div>
+              <div style={{ fontSize: '9px', color: '#666' }}>
+                Confidence: {Math.round(nodeData.semanticMetadata.originMetadata.confidence * 100)}%
+              </div>
+            </div>
+            
+            {nodeData.originalDescription && (
+              <div style={{ 
+                marginBottom: '8px', 
+                padding: '8px', 
+                background: 'rgba(139,0,0,0.05)',
+                borderRadius: '4px',
+                fontSize: '10px',
+                lineHeight: '1.4'
+              }}>
+                {nodeData.originalDescription}
+              </div>
+            )}
+            
+            <div style={{ fontSize: '9px', color: '#666', marginBottom: '4px' }}>
+              Discovered: {new Date(nodeData.semanticMetadata.originMetadata.discoveredAt).toLocaleDateString()}
+            </div>
+            
+            {nodeData.semanticMetadata.originMetadata.searchQuery && (
+              <div style={{ fontSize: '9px', color: '#666', marginBottom: '4px' }}>
+                Search: "{nodeData.semanticMetadata.originMetadata.searchQuery}"
+              </div>
+            )}
+            
+            {nodeData.semanticMetadata.originMetadata.originalUri && (
+              <div style={{ marginTop: '8px' }}>
+                <button
+                  onClick={() => window.open(nodeData.semanticMetadata.originMetadata.originalUri, '_blank')}
+                  style={{
+                    padding: '4px 8px',
+                    border: '1px solid #8B0000',
+                    borderRadius: '3px',
+                    background: 'transparent',
+                    color: '#8B0000',
+                    fontSize: '8px',
+                    cursor: 'pointer',
+                    fontFamily: "'EmOne', sans-serif"
+                  }}
+                >
+                  View Source
+                </button>
+              </div>
+            )}
+          </div>
+        </CollapsibleSection>
+      )}
+
       {/* Wikipedia Enrichment */}
       <WikipediaEnrichment 
         nodeData={nodeData}

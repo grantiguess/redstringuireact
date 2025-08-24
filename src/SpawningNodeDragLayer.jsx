@@ -38,17 +38,32 @@ const SpawningNodeDragLayer = () => {
 
     const node = useGraphStore(state => (item?.prototypeId ? state.nodePrototypes.get(item.prototypeId) : null));
 
-    if (!isDragging || itemType !== SPAWNABLE_NODE || !currentOffset || !node) {
+    // Handle semantic concepts that need materialization
+    let displayNode = node;
+    if (!node && item?.needsMaterialization && item?.conceptData) {
+        // Create a temporary node representation for the semantic concept
+        displayNode = {
+            id: item.conceptData.id,
+            name: item.conceptData.name,
+            description: item.conceptData.description,
+            color: item.conceptData.color,
+            typeNodeId: 'base-thing-prototype',
+            definitionGraphIds: [],
+            imageSrc: null
+        };
+    }
+
+    if (!isDragging || itemType !== SPAWNABLE_NODE || !currentOffset || !displayNode) {
         return null;
     }
 
-    const dimensions = getNodeDimensions(node, false, null);
+    const dimensions = getNodeDimensions(displayNode, false, null);
     const scale = 0.8;
     const nodeX = - (dimensions.currentWidth * scale) / 2;
     const nodeY = - (dimensions.currentHeight * scale) / 2;
 
     const clonedNode = {
-        ...node,
+        ...displayNode,
         x: nodeX,
         y: nodeY,
         scale,
