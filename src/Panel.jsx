@@ -2,7 +2,7 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, us
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR, PANEL_CLOSE_ICON_SIZE } from './constants';
-import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Wand, Settings, RotateCcw, Send, Bot, User, Key, Square, Search } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Wand, Settings, RotateCcw, Send, Bot, User, Key, Square, Search, Merge, Copy } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
@@ -34,6 +34,8 @@ import PanelContentWrapper from './components/panel/PanelContentWrapper.jsx';
 import CollapsibleSection from './components/CollapsibleSection.jsx';
 import StandardDivider from './components/StandardDivider.jsx';
 import { knowledgeFederation } from './services/knowledgeFederation.js';
+import DuplicateManager from './components/DuplicateManager.jsx';
+import ContextMenu from './components/ContextMenu.jsx';
 
 // Helper function to determine the correct article ("a" or "an")
 const getArticleFor = (word) => {
@@ -244,13 +246,51 @@ const LeftLibraryView = ({
   toggleSavedNode,
   openRightPanelNodeTab,
 }) => {
+  const [showDuplicateManager, setShowDuplicateManager] = useState(false);
+
   return (
     <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
           Saved Things
         </h2>
+        <button
+          onClick={() => setShowDuplicateManager(true)}
+          title="Manage duplicate nodes"
+          style={{
+            background: '#4F46E5',
+            border: 'none',
+            borderRadius: '6px',
+            padding: '6px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            color: 'white',
+            transition: 'background-color 0.2s'
+          }}
+          onMouseOver={(e) => e.target.style.backgroundColor = '#4338CA'}
+          onMouseOut={(e) => e.target.style.backgroundColor = '#4F46E5'}
+        >
+          <Merge size={16} />
+        </button>
       </div>
+
+      {showDuplicateManager && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }}>
+          <DuplicateManager onClose={() => setShowDuplicateManager(false)} />
+        </div>
+      )}
 
       {savedNodesByType.size === 0 ? (
         <div style={{ color: '#666', fontSize: '0.9rem', fontFamily: "'EmOne', sans-serif", textAlign: 'center', marginTop: '20px' }}>
@@ -354,13 +394,51 @@ const LeftAllThingsView = ({
   openRightPanelNodeTab,
   storeActions,
 }) => {
+  const [showDuplicateManager, setShowDuplicateManager] = useState(false);
+
   return (
     <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
           All Things
         </h2>
+        <button
+          onClick={() => setShowDuplicateManager(true)}
+          title="Manage duplicate nodes"
+          style={{
+            background: '#4F46E5',
+            border: 'none',
+            borderRadius: '6px',
+            padding: '6px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            color: 'white',
+            transition: 'background-color 0.2s'
+          }}
+          onMouseOver={(e) => e.target.style.backgroundColor = '#4338CA'}
+          onMouseOut={(e) => e.target.style.backgroundColor = '#4F46E5'}
+        >
+          <Merge size={16} />
+        </button>
       </div>
+
+      {showDuplicateManager && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }}>
+          <DuplicateManager onClose={() => setShowDuplicateManager(false)} />
+        </div>
+      )}
       {allNodesByType.size === 0 ? (
         <div style={{ color: '#666', fontSize: '0.9rem', fontFamily: "'EmOne', sans-serif", textAlign: 'center', marginTop: '20px' }}>
           No nodes found.
@@ -788,7 +866,7 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
       relationships: concept.relationships || []
     };
     
-    storeActions?.addNodePrototype({
+    const existingNodeId = storeActions?.addNodePrototypeWithDeduplication({
       id: newNodeId,
       name: concept.name,
       description: '', // No custom bio - will show origin info instead
@@ -805,11 +883,14 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
       originalDescription: concept.description
     });
     
-    // Auto-save semantic nodes to Library
-    storeActions?.toggleSavedNode(newNodeId);
+    // Use the returned ID (either new or existing) for further operations
+    const finalNodeId = existingNodeId || newNodeId;
     
-    console.log(`[SemanticDiscovery] Created new semantic prototype: ${concept.name} (ID: ${newNodeId})`);
-    return newNodeId;
+    // Auto-save semantic nodes to Library
+    storeActions?.toggleSavedNode(finalNodeId);
+    
+    console.log(`[SemanticDiscovery] Created/merged semantic prototype: ${concept.name} (ID: ${finalNodeId})`);
+    return finalNodeId;
   };
 
   return (
@@ -1075,61 +1156,7 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
             </div>
           )}
           
-          {/* Manual Search Bar - Always Available */}
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{ fontSize: '11px', color: '#666', fontFamily: "'EmOne', sans-serif", marginBottom: '8px', fontWeight: 'bold' }}>
-              Direct Search
-            </div>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <input
-                type="text"
-                value={manualQuery}
-                onChange={(e) => setManualQuery(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleManualSearch()}
-                placeholder="Search semantic web..."
-                style={{
-                  flex: 1,
-                  padding: '8px 10px',
-                  border: '1px solid #666',
-                  borderRadius: '6px',
-                  fontSize: '11px',
-                  fontFamily: "'EmOne', sans-serif",
-                  background: '#1a1a1a',
-                  color: '#666',
-                  transition: 'border-color 0.2s ease'
-                }}
-                onFocus={(e) => e.target.style.borderColor = '#8B0000'}
-                onBlur={(e) => e.target.style.borderColor = '#666'}
-              />
-              <button
-                onClick={handleManualSearch}
-                disabled={isSearching || !manualQuery?.trim()}
-                style={{
-                  padding: '8px 16px',
-                  border: '1px solid #666',
-                  borderRadius: '6px',
-                  background: isSearching ? '#333' : (manualQuery?.trim() ? '#8B0000' : 'transparent'),
-                  color: isSearching ? '#888' : (manualQuery?.trim() ? '#EFE8E5' : '#666'),
-                  fontSize: '11px',
-                  fontFamily: "'EmOne', sans-serif",
-                  cursor: (isSearching || !manualQuery?.trim()) ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
-                onMouseEnter={(e) => {
-                  if (!isSearching && manualQuery?.trim()) {
-                    e.target.style.background = '#a00000';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isSearching && manualQuery?.trim()) {
-                    e.target.style.background = '#8B0000';
-                  }
-                }}
-              >
-                {isSearching ? '🔍 ...' : '🔍 Search'}
-              </button>
-            </div>
-          </div>
+
 
           {/* Concept Results - Regular Search */}
           {discoveredConcepts.length > 0 && !semanticExpansionResults.length && (
@@ -1755,6 +1782,9 @@ const GhostSemanticNode = ({ concept, index, onMaterialize, onSelect }) => {
 // All Things Node Item Component with semantic web glow and exact SavedNodeItem formatting
 const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemanticData, onDelete }) => {
   const [isHovered, setIsHovered] = React.useState(false);
+  const [contextMenu, setContextMenu] = React.useState(null);
+  const { duplicateNodePrototype } = useGraphStore();
+  
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: ItemTypes.SPAWNABLE_NODE,
     item: { prototypeId: node.id },
@@ -1767,15 +1797,40 @@ const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemantic
     preview(getEmptyImage(), { captureDraggingState: true });
   }, [preview]);
 
+  const handleContextMenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      options: [
+        {
+          label: 'Duplicate Node',
+          icon: <Copy size={14} />,
+          action: 'duplicate'
+        }
+      ]
+    });
+  };
+
+  const handleContextMenuSelect = (option) => {
+    if (option.action === 'duplicate') {
+      duplicateNodePrototype(node.id);
+    }
+    setContextMenu(null);
+  };
+
   return (
-    <div
-      ref={drag}
-      key={node.id}
-      title={`${node.name}${hasSemanticData ? ' • Connected to semantic web' : ''}`}
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+    <>
+      <div
+        ref={drag}
+        key={node.id}
+        title={`${node.name}${hasSemanticData ? ' • Connected to semantic web' : ''}`}
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
+        onContextMenu={handleContextMenu}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       style={{
         position: 'relative',
         backgroundColor: node.color || NODE_DEFAULT_COLOR,
@@ -1842,7 +1897,18 @@ const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemantic
           onMouseLeave={(e) => e.currentTarget.style.color = '#999999'}
         />
       </div>
-    </div>
+      </div>
+      
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          options={contextMenu.options}
+          onSelect={handleContextMenuSelect}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+    </>
   );
 };
 

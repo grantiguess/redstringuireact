@@ -8,6 +8,44 @@ import { importFromRedstring } from '../formats/redstringFormat.js';
 // Enable Immer Map/Set plugin support
 enableMapSet();
 
+// String similarity calculation using Levenshtein distance
+const calculateStringSimilarity = (str1, str2) => {
+  if (!str1 || !str2) return 0;
+  
+  const s1 = str1.toLowerCase().trim();
+  const s2 = str2.toLowerCase().trim();
+  
+  if (s1 === s2) return 1.0;
+  
+  const len1 = s1.length;
+  const len2 = s2.length;
+  
+  if (len1 === 0 || len2 === 0) return 0;
+  
+  // Create matrix
+  const matrix = Array(len1 + 1).fill().map(() => Array(len2 + 1).fill(0));
+  
+  // Initialize first row and column
+  for (let i = 0; i <= len1; i++) matrix[i][0] = i;
+  for (let j = 0; j <= len2; j++) matrix[0][j] = j;
+  
+  // Fill the matrix
+  for (let i = 1; i <= len1; i++) {
+    for (let j = 1; j <= len2; j++) {
+      const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,     // deletion
+        matrix[i][j - 1] + 1,     // insertion
+        matrix[i - 1][j - 1] + cost // substitution
+      );
+    }
+  }
+  
+  const distance = matrix[len1][len2];
+  const maxLength = Math.max(len1, len2);
+  return 1 - (distance / maxLength);
+};
+
 const _createAndAssignGraphDefinition = (draft, prototypeId) => {
     const prototype = draft.nodePrototypes.get(prototypeId);
     if (!prototype) {
@@ -219,6 +257,311 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     if (!draft.nodePrototypes.has(prototypeId)) {
         draft.nodePrototypes.set(prototypeId, { ...prototypeData, id: prototypeId });
     }
+  })),
+
+  // Adds a node prototype with duplicate detection by name
+  addNodePrototypeWithDeduplication: (prototypeData) => {
+    let resultId = null;
+    
+    set(produce((draft) => {
+      // Check for existing nodes with the same name
+      const existingNodeWithSameName = Array.from(draft.nodePrototypes.values())
+        .find(prototype => prototype.name?.toLowerCase().trim() === prototypeData.name?.toLowerCase().trim());
+      
+      if (existingNodeWithSameName) {
+        // If found, merge semantic metadata if the new node has it
+        if (prototypeData.semanticMetadata && !existingNodeWithSameName.semanticMetadata) {
+          existingNodeWithSameName.semanticMetadata = prototypeData.semanticMetadata;
+        } else if (prototypeData.semanticMetadata && existingNodeWithSameName.semanticMetadata) {
+          // Merge external links and relationships
+          const existingLinks = existingNodeWithSameName.semanticMetadata.externalLinks || [];
+          const newLinks = prototypeData.semanticMetadata.externalLinks || [];
+          const combinedLinks = [...new Set([...existingLinks, ...newLinks])];
+          
+          const existingRelationships = existingNodeWithSameName.semanticMetadata.relationships || [];
+          const newRelationships = prototypeData.semanticMetadata.relationships || [];
+          const combinedRelationships = [...existingRelationships, ...newRelationships];
+          
+          existingNodeWithSameName.semanticMetadata = {
+            ...existingNodeWithSameName.semanticMetadata,
+            ...prototypeData.semanticMetadata,
+            externalLinks: combinedLinks,
+            relationships: combinedRelationships,
+            confidence: Math.max(
+              existingNodeWithSameName.semanticMetadata.confidence || 0,
+              prototypeData.semanticMetadata.confidence || 0
+            )
+          };
+        }
+        
+        // Update description if the existing one is empty and new one has content
+        if ((!existingNodeWithSameName.description || existingNodeWithSameName.description.trim() === '') 
+            && prototypeData.description && prototypeData.description.trim() !== '') {
+          existingNodeWithSameName.description = prototypeData.description;
+        }
+        
+        resultId = existingNodeWithSameName.id;
+      } else {
+        // No duplicate found, create new node
+        const prototypeId = prototypeData.id || uuidv4();
+        draft.nodePrototypes.set(prototypeId, { ...prototypeData, id: prototypeId });
+        resultId = prototypeId;
+      }
+    }));
+    
+    return resultId;
+  },
+
+  // Find potential duplicate nodes based on name similarity
+  findPotentialDuplicates: (threshold = 0.8) => {
+    const state = get();
+    const prototypes = Array.from(state.nodePrototypes.values());
+    const duplicateGroups = [];
+    
+    for (let i = 0; i < prototypes.length; i++) {
+      const current = prototypes[i];
+      const duplicates = [];
+      
+      for (let j = i + 1; j < prototypes.length; j++) {
+        const other = prototypes[j];
+        const similarity = calculateStringSimilarity(current.name, other.name);
+        
+        if (similarity >= threshold) {
+          duplicates.push({
+            node: other,
+            similarity: similarity,
+            reasons: [
+              similarity === 1.0 ? 'Exact name match' : `${Math.round(similarity * 100)}% name similarity`
+            ]
+          });
+        }
+      }
+      
+      if (duplicates.length > 0) {
+        duplicateGroups.push({
+          primary: current,
+          duplicates: duplicates,
+          totalNodes: duplicates.length + 1
+        });
+      }
+    }
+    
+    return duplicateGroups;
+  },
+
+  // Merge two node prototypes
+  mergeNodePrototypes: (primaryId, secondaryId) => set(produce((draft) => {
+    const primary = draft.nodePrototypes.get(primaryId);
+    const secondary = draft.nodePrototypes.get(secondaryId);
+    
+    if (!primary || !secondary) {
+      console.error(`[mergeNodePrototypes] Invalid IDs: ${primaryId}, ${secondaryId}`);
+      return;
+    }
+    
+    // Merge semantic metadata
+    if (secondary.semanticMetadata) {
+      if (!primary.semanticMetadata) {
+        primary.semanticMetadata = { ...secondary.semanticMetadata };
+      } else {
+        // Merge external links
+        const existingLinks = primary.semanticMetadata.externalLinks || [];
+        const newLinks = secondary.semanticMetadata.externalLinks || [];
+        const combinedLinks = [...new Set([...existingLinks, ...newLinks])];
+        
+        // Merge relationships
+        const existingRelationships = primary.semanticMetadata.relationships || [];
+        const newRelationships = secondary.semanticMetadata.relationships || [];
+        const combinedRelationships = [...existingRelationships, ...newRelationships];
+        
+        primary.semanticMetadata = {
+          ...primary.semanticMetadata,
+          ...secondary.semanticMetadata,
+          externalLinks: combinedLinks,
+          relationships: combinedRelationships,
+          confidence: Math.max(
+            primary.semanticMetadata.confidence || 0,
+            secondary.semanticMetadata.confidence || 0
+          )
+        };
+      }
+    }
+    
+    // Merge descriptions (keep the longer one)
+    if (secondary.description && secondary.description.trim() !== '') {
+      if (!primary.description || primary.description.trim() === '' || 
+          secondary.description.length > primary.description.length) {
+        primary.description = secondary.description;
+      }
+    }
+    
+    // Update all instances that reference the secondary prototype
+    for (const graph of draft.graphs.values()) {
+      if (graph.instances) {
+        for (const instance of graph.instances.values()) {
+          if (instance.prototypeId === secondaryId) {
+            instance.prototypeId = primaryId;
+          }
+        }
+      }
+    }
+    
+    // Update definition graph references
+    if (secondary.definitionGraphIds) {
+      primary.definitionGraphIds = primary.definitionGraphIds || [];
+      for (const graphId of secondary.definitionGraphIds) {
+        if (!primary.definitionGraphIds.includes(graphId)) {
+          primary.definitionGraphIds.push(graphId);
+        }
+      }
+    }
+
+    // Update saved node references
+    if (draft.savedNodeIds.has(secondaryId)) {
+      draft.savedNodeIds.delete(secondaryId);
+      draft.savedNodeIds.add(primaryId);
+    }
+
+    // Update saved graph references  
+    if (draft.savedGraphIds.has(secondaryId)) {
+      draft.savedGraphIds.delete(secondaryId);
+      draft.savedGraphIds.add(primaryId);
+    }
+
+    // Update type node references in other prototypes
+    for (const prototype of draft.nodePrototypes.values()) {
+      if (prototype.typeNodeId === secondaryId) {
+        prototype.typeNodeId = primaryId;
+      }
+    }
+
+    // Close redundant active graph tabs (definition graphs of the secondary node)
+    if (secondary.definitionGraphIds) {
+      for (const graphId of secondary.definitionGraphIds) {
+        // Remove from open graphs
+        const index = draft.openGraphIds.indexOf(graphId);
+        if (index !== -1) {
+          draft.openGraphIds.splice(index, 1);
+        }
+        
+        // Update active graph if it was the merged node's definition
+        if (draft.activeGraphId === graphId && primary.definitionGraphIds && primary.definitionGraphIds.length > 0) {
+          draft.activeGraphId = primary.definitionGraphIds[0];
+        }
+      }
+    }
+
+    // Note: Node definition indices will be updated if/when that system is implemented
+    
+    // Remove the secondary prototype
+    draft.nodePrototypes.delete(secondaryId);
+    
+    console.log(`[mergeNodePrototypes] Merged ${secondary.name} into ${primary.name}`);
+  })),
+
+  // Merge definition graphs with options
+  mergeDefinitionGraphs: (primaryId, secondaryId, mergeOptions = { strategy: 'combine' }) => set(produce((draft) => {
+    const primary = draft.nodePrototypes.get(primaryId);
+    const secondary = draft.nodePrototypes.get(secondaryId);
+    
+    if (!primary || !secondary) {
+      console.error(`[mergeDefinitionGraphs] Invalid IDs: ${primaryId}, ${secondaryId}`);
+      return;
+    }
+
+    const { strategy, keepPrimary, keepSecondary } = mergeOptions;
+    
+    if (strategy === 'overwrite_with_primary') {
+      // Keep only primary's definition graphs, close secondary's tabs
+      if (secondary.definitionGraphIds) {
+        for (const graphId of secondary.definitionGraphIds) {
+          const index = draft.openGraphIds.indexOf(graphId);
+          if (index !== -1) {
+            draft.openGraphIds.splice(index, 1);
+          }
+        }
+      }
+      // Primary definition graphs remain unchanged
+    } 
+    else if (strategy === 'overwrite_with_secondary') {
+      // Replace primary's definition graphs with secondary's
+      if (primary.definitionGraphIds) {
+        for (const graphId of primary.definitionGraphIds) {
+          const index = draft.openGraphIds.indexOf(graphId);
+          if (index !== -1) {
+            draft.openGraphIds.splice(index, 1);
+          }
+        }
+      }
+      primary.definitionGraphIds = [...(secondary.definitionGraphIds || [])];
+    }
+    else if (strategy === 'selective') {
+      // User chose specific graphs to keep
+      const graphsToKeep = [];
+      if (keepPrimary && primary.definitionGraphIds) {
+        graphsToKeep.push(...primary.definitionGraphIds);
+      }
+      if (keepSecondary && secondary.definitionGraphIds) {
+        graphsToKeep.push(...secondary.definitionGraphIds);
+      }
+      
+      // Close tabs for graphs not being kept
+      const allDefinitionGraphs = [
+        ...(primary.definitionGraphIds || []),
+        ...(secondary.definitionGraphIds || [])
+      ];
+      
+      for (const graphId of allDefinitionGraphs) {
+        if (!graphsToKeep.includes(graphId)) {
+          const index = draft.openGraphIds.indexOf(graphId);
+          if (index !== -1) {
+            draft.openGraphIds.splice(index, 1);
+          }
+        }
+      }
+      
+      primary.definitionGraphIds = [...new Set(graphsToKeep)];
+    }
+    else {
+      // Default: 'combine' - merge all definition graphs
+      if (secondary.definitionGraphIds) {
+        primary.definitionGraphIds = primary.definitionGraphIds || [];
+        for (const graphId of secondary.definitionGraphIds) {
+          if (!primary.definitionGraphIds.includes(graphId)) {
+            primary.definitionGraphIds.push(graphId);
+          }
+        }
+      }
+    }
+
+    console.log(`[mergeDefinitionGraphs] Merged definition graphs using strategy: ${strategy}`);
+  })),
+
+  // Duplicate a node prototype for testing
+  duplicateNodePrototype: (prototypeId) => set(produce((draft) => {
+    const original = draft.nodePrototypes.get(prototypeId);
+    if (!original) {
+      console.error(`[duplicateNodePrototype] Node prototype ${prototypeId} not found`);
+      return;
+    }
+
+    const newId = uuidv4();
+    const duplicated = {
+      ...original,
+      id: newId,
+      name: `${original.name} (Copy)`,
+      // Clear semantic metadata to create a true duplicate for testing
+      semanticMetadata: original.semanticMetadata ? {
+        ...original.semanticMetadata,
+        isMergedNode: false,
+        mergedFrom: undefined
+      } : undefined
+    };
+
+    draft.nodePrototypes.set(newId, duplicated);
+    console.log(`[duplicateNodePrototype] Created duplicate: ${duplicated.name}`);
+    
+    return newId;
   })),
   
   // Adds a new instance of a prototype to a specific graph.
