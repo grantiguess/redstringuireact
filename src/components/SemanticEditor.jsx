@@ -247,25 +247,35 @@ const WikipediaSearch = ({ onSelect }) => {
     
     setLoading(true);
     try {
-      const response = await fetch(
-        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(searchTerm)}`
+      // Use search API first for better semantic results
+      const searchResponse = await fetch(
+        `https://en.wikipedia.org/api/rest_v1/page/search?q=${encodeURIComponent(searchTerm)}&limit=10`
       );
       
-      if (response.ok) {
-        const data = await response.json();
-        setResults([{
-          title: data.title,
-          description: data.extract,
-          url: data.content_urls.desktop.page,
-          thumbnail: data.thumbnail?.source
-        }]);
-      } else {
-        // Fallback to search API
-        const searchResponse = await fetch(
-          `https://en.wikipedia.org/api/rest_v1/page/search?q=${encodeURIComponent(searchTerm)}&limit=3`
-        );
+      if (searchResponse.ok) {
         const searchData = await searchResponse.json();
-        setResults(searchData.pages || []);
+        if (searchData.pages && searchData.pages.length > 0) {
+          setResults(searchData.pages);
+        } else {
+          // If no search results, try exact page match as fallback
+          const exactResponse = await fetch(
+            `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(searchTerm)}`
+          );
+          
+          if (exactResponse.ok) {
+            const data = await exactResponse.json();
+            setResults([{
+              title: data.title,
+              description: data.extract,
+              url: data.content_urls.desktop.page,
+              thumbnail: data.thumbnail?.source
+            }]);
+          } else {
+            setResults([]);
+          }
+        }
+      } else {
+        setResults([]);
       }
     } catch (error) {
       console.warn('Wikipedia search failed:', error);

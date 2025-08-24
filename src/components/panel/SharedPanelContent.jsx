@@ -240,13 +240,18 @@ const WikipediaEnrichment = ({ nodeData, onUpdateNode }) => {
   };
 
   // Show the enrichment button only if node has no description or no Wikipedia link
-  const showEnrichButton = !nodeData.description || !nodeData.semanticMetadata?.wikipediaUrl;
+  // Also check if the description is meaningful (not empty, not default placeholder text)
+  const hasMeaningfulDescription = nodeData.description && 
+    nodeData.description.trim() !== '' && 
+    nodeData.description !== 'Double-click to add a bio...';
+  
+  const showEnrichButton = !hasMeaningfulDescription || !nodeData.semanticMetadata?.wikipediaUrl;
   const isAlreadyLinked = nodeData.semanticMetadata?.wikipediaUrl;
 
   if (!showEnrichButton && !showDisambiguation) return null;
 
   return (
-    <div style={{ margin: '12px 0' }}>
+    <div style={{ margin: '2px 20px 20px 10px' }}>
       {showEnrichButton && (
         <button
           onClick={handleWikipediaSearch}
@@ -255,7 +260,7 @@ const WikipediaEnrichment = ({ nodeData, onUpdateNode }) => {
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            padding: '8px 12px',
+            padding: '6px 10px',
             border: '1px solid #8B0000',
             borderRadius: '6px',
             background: 'transparent',
@@ -898,14 +903,26 @@ const SharedPanelContent = ({
             {nodeData.description || 'Double-click to add a bio...'}
           </div>
         )}
+        
+        {/* Wikipedia Enrichment - moved inside Bio section */}
+        <div style={{ marginTop: '12px' }}>
+          <WikipediaEnrichment 
+            nodeData={nodeData}
+            onUpdateNode={onNodeUpdate}
+          />
+        </div>
       </CollapsibleSection>
 
-      {/* Semantic Origin Section - for nodes created from semantic web */}
-      {nodeData.semanticMetadata?.isSemanticNode && nodeData.semanticMetadata?.originMetadata && (
-        <CollapsibleSection 
-          title="Origin" 
-          defaultExpanded={true}
-        >
+      {/* Dividing line above Origin section */}
+      <StandardDivider margin="20px 0" />
+      
+      {/* Origin Section - Always show, with semantic data if available */}
+      <CollapsibleSection 
+        title="Origin" 
+        defaultExpanded={true}
+      >
+        {nodeData.semanticMetadata?.isSemanticNode && nodeData.semanticMetadata?.originMetadata ? (
+          // Semantic web origin data
           <div style={{ 
             fontSize: '11px', 
             fontFamily: "'EmOne', sans-serif",
@@ -971,14 +988,56 @@ const SharedPanelContent = ({
               </div>
             )}
           </div>
-        </CollapsibleSection>
-      )}
-
-      {/* Wikipedia Enrichment */}
-      <WikipediaEnrichment 
-        nodeData={nodeData}
-        onUpdateNode={onNodeUpdate}
-      />
+        ) : (
+          // Default origin information for all nodes
+          <div style={{ 
+            fontSize: '11px', 
+            fontFamily: "'EmOne', sans-serif",
+            color: '#666',
+            marginBottom: '12px'
+          }}>
+            <div style={{ marginBottom: '8px' }}>
+              <strong>Created:</strong> {nodeData.createdAt ? new Date(nodeData.createdAt).toLocaleDateString() : 'Unknown'}
+            </div>
+            {nodeData.semanticMetadata?.wikipediaUrl && (
+              <div style={{ marginBottom: '8px' }}>
+                <strong>Wikipedia:</strong> 
+                <a 
+                  href={nodeData.semanticMetadata.wikipediaUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style={{ color: '#8B0000', marginLeft: '8px' }}
+                >
+                  View Article
+                </a>
+              </div>
+            )}
+            {nodeData.semanticMetadata?.wikidataUrl && (
+              <div style={{ marginBottom: '8px' }}>
+                <strong>Wikidata:</strong> 
+                <a 
+                  href={nodeData.semanticMetadata.wikidataUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style={{ color: '#8B0000', marginLeft: '8px' }}
+                >
+                  View Data
+                </a>
+              </div>
+            )}
+            {(!nodeData.semanticMetadata?.wikipediaUrl && !nodeData.semanticMetadata?.wikidataUrl) && (
+              <div style={{ 
+                fontSize: '10px', 
+                color: '#999', 
+                fontStyle: 'italic',
+                marginTop: '8px'
+              }}>
+                No external sources linked yet. Use the Wikipedia enrichment button above to add external data.
+              </div>
+            )}
+          </div>
+        )}
+      </CollapsibleSection>
 
       {/* Dividing line above Image section */}
       {nodeData.imageSrc && <StandardDivider margin="20px 0" />}

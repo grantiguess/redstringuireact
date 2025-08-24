@@ -5,6 +5,8 @@
  * finding related concepts, entities, and patterns without external CORS issues.
  */
 
+import { findRelatedConcepts } from './semanticWebQuery.js';
+
 // Note: This service uses getState() directly since it's not a React component
 // The store will be imported dynamically when needed
 
@@ -26,7 +28,8 @@ export class LocalSemanticQuery {
       maxResults = 20,
       includeTypes = true,
       includeRelationships = true,
-      semanticSimilarity = true
+      semanticSimilarity = true,
+      includeExternal = true
     } = options;
 
     const results = [];
@@ -58,6 +61,50 @@ export class LocalSemanticQuery {
         };
         
         results.push(entity);
+      }
+    }
+
+    // Add external semantic web results if enabled
+    if (includeExternal) {
+      try {
+        const externalResults = await findRelatedConcepts(searchTerm, { limit: Math.max(5, maxResults / 4) });
+        
+        for (const externalItem of externalResults) {
+          const entity = {
+            id: `external-${externalItem.item?.value || externalItem.resource?.value || Math.random()}`,
+            name: externalItem.itemLabel?.value || externalItem.label?.value || 'Unknown',
+            description: externalItem.itemDescription?.value || externalItem.comment?.value || '',
+            type: 'external',
+            color: '#666666',
+            relevance: 0.5, // Base relevance for external results
+            matchType: 'external',
+            relationships: [],
+            metadata: {
+              source: externalItem.source,
+              externalId: externalItem.item?.value || externalItem.resource?.value,
+              isExternal: true,
+              connectionInfo: externalItem.connectionInfo || null
+            }
+          };
+          
+          // Enhance relevance based on connection type
+          if (externalItem.connectionInfo) {
+            const connectionBoost = {
+              'genre': 0.3,
+              'developer': 0.4,
+              'publisher': 0.3,
+              'platform': 0.2,
+              'series': 0.5,
+              'character': 0.3
+            };
+            entity.relevance += connectionBoost[externalItem.connectionInfo.type] || 0.1;
+            entity.description = `${entity.description} (Related via ${externalItem.connectionInfo.type}: ${externalItem.connectionInfo.value})`;
+          }
+          
+          results.push(entity);
+        }
+      } catch (error) {
+        console.warn('[LocalSemanticQuery] External search failed:', error);
       }
     }
 
@@ -287,14 +334,89 @@ export class LocalSemanticQuery {
    * @private
    */
   _calculateSemanticSimilarity(term1, term2) {
-    // Simple word overlap similarity
+    // Enhanced semantic similarity with multiple strategies
+    
+    // 1. Exact match (highest score)
+    if (term1.toLowerCase() === term2.toLowerCase()) {
+      return 1.0;
+    }
+    
+    // 2. Word overlap similarity
     const words1 = new Set(term1.toLowerCase().split(/\s+/));
     const words2 = new Set(term2.toLowerCase().split(/\s+/));
     
     const intersection = new Set([...words1].filter(x => words2.has(x)));
     const union = new Set([...words1, ...words2]);
     
-    return intersection.size / union.size;
+    const wordOverlap = intersection.size / union.size;
+    
+    // 3. Substring similarity (for partial matches)
+    const longer = term1.length > term2.length ? term1 : term2;
+    const shorter = term1.length > term2.length ? term2 : term1;
+    const substringScore = longer.toLowerCase().includes(shorter.toLowerCase()) ? 0.8 : 0;
+    
+    // 4. Acronym/abbreviation similarity
+    const acronymScore = this._calculateAcronymSimilarity(term1, term2);
+    
+    // 5. Category-based similarity (basic heuristics)
+    const categoryScore = this._calculateCategorySimilarity(term1, term2);
+    
+    // Combine scores with weights
+    const finalScore = Math.max(
+      wordOverlap,
+      substringScore,
+      acronymScore,
+      categoryScore
+    );
+    
+    return finalScore;
+  }
+
+  /**
+   * Calculate acronym similarity
+   * @private
+   */
+  _calculateAcronymSimilarity(term1, term2) {
+    const acronym1 = term1.replace(/[^A-Z]/g, '');
+    const acronym2 = term2.replace(/[^A-Z]/g, '');
+    
+    if (acronym1 && acronym2) {
+      if (acronym1 === acronym2) return 0.9;
+      if (acronym1.includes(acronym2) || acronym2.includes(acronym1)) return 0.7;
+    }
+    
+    return 0;
+  }
+
+  /**
+   * Calculate category-based similarity using basic heuristics
+   * @private
+   */
+  _calculateCategorySimilarity(term1, term2) {
+    const categories = {
+      'game': ['game', 'gaming', 'play', 'player', 'level', 'score', 'character', 'world', 'quest', 'adventure', 'puzzle', 'strategy', 'action', 'rpg', 'fps', 'platform', 'racing', 'sports'],
+      'technology': ['tech', 'computer', 'software', 'hardware', 'digital', 'electronic', 'device', 'system', 'platform', 'application', 'program', 'code', 'data', 'network', 'internet', 'web'],
+      'media': ['media', 'video', 'audio', 'image', 'picture', 'film', 'movie', 'music', 'book', 'article', 'document', 'content', 'publish', 'stream', 'broadcast'],
+      'science': ['science', 'research', 'study', 'experiment', 'theory', 'hypothesis', 'analysis', 'data', 'method', 'discovery', 'innovation', 'technology', 'engineering', 'physics', 'chemistry', 'biology'],
+      'business': ['business', 'company', 'corporate', 'enterprise', 'organization', 'industry', 'market', 'commerce', 'trade', 'finance', 'investment', 'management', 'strategy', 'product', 'service']
+    };
+    
+    let maxScore = 0;
+    
+    for (const [category, keywords] of Object.entries(categories)) {
+      const term1InCategory = keywords.some(keyword => 
+        term1.toLowerCase().includes(keyword.toLowerCase())
+      );
+      const term2InCategory = keywords.some(keyword => 
+        term2.toLowerCase().includes(keyword.toLowerCase())
+      );
+      
+      if (term1InCategory && term2InCategory) {
+        maxScore = Math.max(maxScore, 0.6);
+      }
+    }
+    
+    return maxScore;
   }
 
   /**
