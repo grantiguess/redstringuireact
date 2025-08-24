@@ -20,14 +20,14 @@ const RDFTriplet = ({ subject, predicate, object, subjectColor, objectColor, onM
           className="triplet-node subject-node"
           style={{ backgroundColor: subjectColor || defaultColor }}
         >
-          <span className="node-label">{subject}</span>
+          <span className="node-label">{typeof subject === 'string' ? subject : JSON.stringify(subject)}</span>
         </div>
         
         {/* Connection Arrow with Predicate */}
         <div className="triplet-connection">
           <div className="connection-line" />
           <ArrowRight className="connection-arrow" size={14} />
-          <span className="predicate-label">{predicate}</span>
+          <span className="predicate-label">{typeof predicate === 'string' ? predicate : JSON.stringify(predicate)}</span>
         </div>
         
         {/* Object Node */}
@@ -35,7 +35,7 @@ const RDFTriplet = ({ subject, predicate, object, subjectColor, objectColor, onM
           className="triplet-node object-node"
           style={{ backgroundColor: objectColor || defaultColor }}
         >
-          <span className="node-label">{object}</span>
+          <span className="node-label">{typeof object === 'string' ? object : JSON.stringify(object)}</span>
         </div>
         
         {/* Add to Graph Button */}

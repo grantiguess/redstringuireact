@@ -26,7 +26,7 @@ export class KnowledgeFederation {
       }],
       ['conceptnet', {
         name: 'ConceptNet',
-        endpoint: 'http://api.conceptnet.io',
+        endpoint: '/api/conceptnet',
         queryFn: this.queryConceptNet.bind(this),
         relationshipFn: this.getConceptNetRelationships.bind(this)
       }]
@@ -535,7 +535,7 @@ export class KnowledgeFederation {
    */
   async queryConceptNet(entityName) {
     try {
-      const response = await fetch(`http://api.conceptnet.io/c/en/${entityName.toLowerCase().replace(/\s+/g, '_')}?limit=10`);
+      const response = await fetch(`/api/conceptnet/c/en/${entityName.toLowerCase().replace(/\s+/g, '_')}?limit=10`);
       if (!response.ok) return [];
       
       const data = await response.json();
@@ -558,7 +558,7 @@ export class KnowledgeFederation {
     const { limit = 10 } = options;
     
     try {
-      const response = await fetch(`http://api.conceptnet.io/query?node=/c/en/${entityName.toLowerCase().replace(/\s+/g, '_')}&limit=${limit}`);
+      const response = await fetch(`/api/conceptnet/query?node=/c/en/${entityName.toLowerCase().replace(/\s+/g, '_')}&limit=${limit}`);
       if (!response.ok) return [];
       
       const data = await response.json();
@@ -645,7 +645,7 @@ export class KnowledgeFederation {
     const { limit = 10 } = options;
     
     try {
-      const response = await fetch(`http://api.conceptnet.io/search?text=${encodeURIComponent(query)}&limit=${limit}`);
+      const response = await fetch(`/api/conceptnet/search?text=${encodeURIComponent(query)}&limit=${limit}`);
       if (!response.ok) return [];
       
       const data = await response.json();

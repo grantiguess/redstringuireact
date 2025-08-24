@@ -7,7 +7,25 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true, // listen on all interfaces for LAN testing
-    port: 4000
+    port: 4000,
+    proxy: {
+      '/api/conceptnet': {
+        target: 'http://api.conceptnet.io',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/conceptnet/, ''),
+        configure: (proxy, options) => {
+          proxy.on('error', (err, req, res) => {
+            console.log('proxy error', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            console.log('Sending Request to the Target:', req.method, req.url);
+          });
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            console.log('Received Response from the Target:', proxyRes.statusCode, req.url);
+          });
+        },
+      }
+    }
   },
   worker: {
     format: 'es',

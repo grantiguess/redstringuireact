@@ -773,94 +773,94 @@ export async function enrichFromSemanticWeb(entityName, options = {}) {
       wikipedia: wikipediaResult.status
     });
 
-      // Process Wikidata results
-      if (wikidataResults.status === 'fulfilled' && wikidataResults.value.length > 0) {
-        const wdResult = wikidataResults.value[0];
-        results.sources.wikidata = {
-          found: true,
-          results: wikidataResults.value
-        };
-        
-        if (wdResult.item?.value) {
-          results.suggestions.externalLinks.push(wdResult.item.value);
-        }
-        if (wdResult.itemDescription?.value) {
-          results.suggestions.description = wdResult.itemDescription.value;
-          results.suggestions.confidence = Math.max(results.suggestions.confidence, 0.9);
-        }
-      } else {
-        results.sources.wikidata = {
-          found: false,
-          error: wikidataResults.reason?.message
-        };
-      }
-
-      // Process DBpedia results
-      if (dbpediaResults.status === 'fulfilled' && dbpediaResults.value.length > 0) {
-        const dbResult = dbpediaResults.value[0];
-        results.sources.dbpedia = {
-          found: true,
-          results: dbpediaResults.value
-        };
-        
-        if (dbResult.resource?.value) {
-          results.suggestions.externalLinks.push(dbResult.resource.value);
-        }
-        if (dbResult.comment?.value && !results.suggestions.description) {
-          results.suggestions.description = dbResult.comment.value;
-          results.suggestions.confidence = Math.max(results.suggestions.confidence, 0.8);
-        }
-      } else {
-        results.sources.dbpedia = {
-          found: false,
-          error: dbpediaResults.reason?.message
-        };
-      }
-
-      // Process Wikipedia results
-      if (wikipediaResult.status === 'fulfilled' && wikipediaResult.value) {
-        const wpResult = wikipediaResult.value;
-        results.sources.wikipedia = {
-          found: true,
-          result: wpResult
-        };
-        
-        if (wpResult.url) {
-          results.suggestions.externalLinks.push(wpResult.url);
-        }
-        if (wpResult.description && !results.suggestions.description) {
-          results.suggestions.description = wpResult.description;
-          results.suggestions.confidence = Math.max(results.suggestions.confidence, 0.7);
-        }
-      } else {
-        results.sources.wikipedia = {
-          found: false,
-          error: wikipediaResult.reason?.message
-        };
-      }
-
-      // Remove duplicates from external links
-      results.suggestions.externalLinks = [...new Set(results.suggestions.externalLinks)];
-
-      console.log(`[SemanticWebQuery] Enriched "${entityName}" with ${results.suggestions.externalLinks.length} links, confidence: ${results.suggestions.confidence}`);
+    // Process Wikidata results
+    if (wikidataResults.status === 'fulfilled' && wikidataResults.value.length > 0) {
+      const wdResult = wikidataResults.value[0];
+      results.sources.wikidata = {
+        found: true,
+        results: wikidataResults.value
+      };
       
-      return results;
-      
-    } catch (error) {
-      console.error('[SemanticWebQuery] Enrichment failed:', error);
-      return {
-        entityName: entityName,
-        sources: {},
-        suggestions: {
-          externalLinks: [],
-          description: null,
-          equivalentClasses: [],
-          confidence: 0
-        },
-        timestamp: new Date().toISOString(),
-        error: error.message
+      if (wdResult.item?.value) {
+        results.suggestions.externalLinks.push(wdResult.item.value);
+      }
+      if (wdResult.itemDescription?.value) {
+        results.suggestions.description = wdResult.itemDescription.value;
+        results.suggestions.confidence = Math.max(results.suggestions.confidence, 0.9);
+      }
+    } else {
+      results.sources.wikidata = {
+        found: false,
+        error: wikidataResults.reason?.message
       };
     }
+
+    // Process DBpedia results
+    if (dbpediaResults.status === 'fulfilled' && dbpediaResults.value.length > 0) {
+      const dbResult = dbpediaResults.value[0];
+      results.sources.dbpedia = {
+        found: true,
+        results: dbpediaResults.value
+      };
+      
+      if (dbResult.resource?.value) {
+        results.suggestions.externalLinks.push(dbResult.resource.value);
+      }
+      if (dbResult.comment?.value && !results.suggestions.description) {
+        results.suggestions.description = dbResult.comment.value;
+        results.suggestions.confidence = Math.max(results.suggestions.confidence, 0.8);
+      }
+    } else {
+      results.sources.dbpedia = {
+        found: false,
+        error: dbpediaResults.reason?.message
+      };
+    }
+
+    // Process Wikipedia results
+    if (wikipediaResult.status === 'fulfilled' && wikipediaResult.value) {
+      const wpResult = wikipediaResult.value;
+      results.sources.wikipedia = {
+        found: true,
+        result: wpResult
+      };
+      
+      if (wpResult.url) {
+        results.suggestions.externalLinks.push(wpResult.url);
+      }
+      if (wpResult.description && !results.suggestions.description) {
+        results.suggestions.description = wpResult.description;
+        results.suggestions.confidence = Math.max(results.suggestions.confidence, 0.7);
+      }
+    } else {
+      results.sources.wikipedia = {
+        found: false,
+        error: wikipediaResult.reason?.message
+      };
+    }
+
+    // Remove duplicates from external links
+    results.suggestions.externalLinks = [...new Set(results.suggestions.externalLinks)];
+
+    console.log(`[SemanticWebQuery] Enriched "${entityName}" with ${results.suggestions.externalLinks.length} links, confidence: ${results.suggestions.confidence}`);
+    
+    return results;
+    
+  } catch (error) {
+    console.error('[SemanticWebQuery] Enrichment failed:', error);
+    return {
+      entityName: entityName,
+      sources: {},
+      suggestions: {
+        externalLinks: [],
+        description: null,
+        equivalentClasses: [],
+        confidence: 0
+      },
+      timestamp: new Date().toISOString(),
+      error: error.message
+    };
+  }
 }
 
 /**
