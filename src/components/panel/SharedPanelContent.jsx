@@ -362,6 +362,50 @@ const WikipediaEnrichment = ({ nodeData, onUpdateNode }) => {
             <ExternalLink size={8} />
             View
           </button>
+          <button
+            onClick={async () => {
+              // Remove Wikipedia data from node
+              const updates = {
+                semanticMetadata: {
+                  ...nodeData.semanticMetadata,
+                  wikipediaUrl: undefined,
+                  wikipediaTitle: undefined,
+                  wikipediaEnriched: undefined,
+                  wikipediaEnrichedAt: undefined,
+                  wikipediaThumbnail: undefined
+                }
+              };
+
+              // Also remove Wikipedia link from externalLinks
+              const currentExternalLinks = nodeData.externalLinks || [];
+              const filteredLinks = currentExternalLinks.filter(link => 
+                typeof link === 'string' ? 
+                  !link.includes('wikipedia.org') : 
+                  !link.url?.includes('wikipedia.org')
+              );
+              
+              if (filteredLinks.length !== currentExternalLinks.length) {
+                updates.externalLinks = filteredLinks;
+              }
+
+              await onUpdateNode(updates);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '2px',
+              padding: '2px 4px',
+              border: '1px solid #666',
+              borderRadius: '3px',
+              background: 'transparent',
+              color: '#666',
+              fontSize: '8px',
+              cursor: 'pointer',
+              fontFamily: "'EmOne', sans-serif"
+            }}
+          >
+            Unlink
+          </button>
         </div>
       )}
     </div>

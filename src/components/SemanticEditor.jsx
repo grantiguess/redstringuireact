@@ -1054,7 +1054,6 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
             placeholder="10.1000/182 or https://doi.org/10.1000/182"
             type="doi"
             icon={Book}
-            defaultValue={nodeData.name || ''}
           />
         </div>
 
@@ -1086,7 +1085,6 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
             placeholder="https://example.com/resource"
             type="url"
             icon={ExternalLink}
-            defaultValue={nodeData.name || ''}
           />
         </div>
 

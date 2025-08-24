@@ -458,34 +458,39 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
   const [viewMode, setViewMode] = useState('discover'); // 'discover', 'history', 'advanced'
   const [manualQuery, setManualQuery] = useState('');
 
-  // Get current context from right panel
-  const getCurrentContext = () => {
-    // Check if there's an active tab in right panel
+  // Get dual context (panel + graph)
+  const getContexts = () => {
+    const contexts = { panel: null, graph: null };
+    
+    // Panel context: active tab in right panel
     const activeTab = rightPanelTabs?.find(tab => tab.isActive);
     if (activeTab && activeTab.nodeId) {
       const nodeData = nodePrototypesMap.get(activeTab.nodeId);
-      return {
+      contexts.panel = {
         nodeId: activeTab.nodeId,
         nodeName: nodeData?.name || 'Current Node',
-        nodeData: nodeData
+        nodeData: nodeData,
+        type: 'panel'
       };
     }
     
-    // Fallback to active definition node
-    if (activeDefinitionNodeId) {
+    // Graph context: active definition node (what's highlighted in header)
+    if (activeDefinitionNodeId && activeDefinitionNodeId !== contexts.panel?.nodeId) {
       const nodeData = nodePrototypesMap.get(activeDefinitionNodeId);
-      return {
+      contexts.graph = {
         nodeId: activeDefinitionNodeId,
-        nodeName: nodeData?.name || 'Active Node', 
-        nodeData: nodeData
+        nodeName: nodeData?.name || 'Active Graph Node', 
+        nodeData: nodeData,
+        type: 'graph'
       };
     }
     
-    return null;
+    return contexts;
   };
 
-  const currentContext = getCurrentContext();
-  const searchQuery = currentContext?.nodeName || '';
+  const contexts = getContexts();
+  const primaryContext = contexts.panel || contexts.graph;
+  const searchQuery = primaryContext?.nodeName || '';
 
   // Search for concepts using current context
   const handleConceptSearch = async () => {
@@ -620,33 +625,82 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
 
       {viewMode === 'discover' && (
         <>
-          {/* Current Context Display */}
-          {currentContext ? (
-            <div className="current-context" style={{ marginBottom: '16px', padding: '12px', background: 'rgba(139,0,0,0.1)', borderRadius: '6px', border: '1px solid rgba(139,0,0,0.2)' }}>
-              <div style={{ fontSize: '11px', color: '#260000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold', marginBottom: '4px' }}>
-                Discovering concepts related to:
-              </div>
-              <div style={{ fontSize: '13px', color: '#260000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold' }}>
-                "{currentContext.nodeName}"
-              </div>
-              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                <button
-                  onClick={handleConceptSearch}
-                  disabled={isSearching}
-                  style={{
-                    padding: '6px 12px',
-                    border: '1px solid #8B0000',
-                    borderRadius: '4px',
-                    background: '#8B0000',
-                    color: '#260000',
-                    fontFamily: "'EmOne', sans-serif",
-                    fontSize: '11px',
-                    cursor: isSearching ? 'wait' : 'pointer',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  {isSearching ? 'Discovering...' : 'Quick Discover'}
-                </button>
+          {/* Dual Context Display */}
+          {(contexts.panel || contexts.graph) ? (
+            <div className="contexts-display" style={{ marginBottom: '16px' }}>
+              {contexts.panel && (
+                <div className="panel-context" style={{ marginBottom: contexts.graph ? '8px' : '0', padding: '12px', background: 'rgba(139,0,0,0.1)', borderRadius: '6px', border: '1px solid rgba(139,0,0,0.2)' }}>
+                  <div style={{ fontSize: '10px', color: '#260000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold', marginBottom: '4px' }}>
+                    📋 Current Panel Node:
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#8B0000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold' }}>
+                    {contexts.panel.nodeName}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                    <button
+                      onClick={() => {
+                        // Search using panel context
+                        const query = contexts.panel.nodeName;
+                        if (query.trim()) {
+                          performSearch(query);
+                        }
+                      }}
+                      disabled={isSearching}
+                      style={{
+                        padding: '4px 8px',
+                        border: '1px solid #8B0000',
+                        borderRadius: '3px',
+                        background: '#8B0000',
+                        color: '#260000',
+                        fontFamily: "'EmOne', sans-serif",
+                        fontSize: '10px',
+                        cursor: isSearching ? 'wait' : 'pointer',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      Discover
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              {contexts.graph && (
+                <div className="graph-context" style={{ padding: '12px', background: 'rgba(75,0,130,0.1)', borderRadius: '6px', border: '1px solid rgba(75,0,130,0.2)' }}>
+                  <div style={{ fontSize: '10px', color: '#260000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold', marginBottom: '4px' }}>
+                    🎯 Active Graph Node:
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#4B0082', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold' }}>
+                    {contexts.graph.nodeName}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                    <button
+                      onClick={() => {
+                        // Search using graph context
+                        const query = contexts.graph.nodeName;
+                        if (query.trim()) {
+                          performSearch(query);
+                        }
+                      }}
+                      disabled={isSearching}
+                      style={{
+                        padding: '4px 8px',
+                        border: '1px solid #4B0082',
+                        borderRadius: '3px',
+                        background: '#4B0082',
+                        color: '#EFE8E5',
+                        fontFamily: "'EmOne', sans-serif",
+                        fontSize: '10px',
+                        cursor: isSearching ? 'wait' : 'pointer',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      Discover
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px' }}>
                 <button
                   onClick={() => setViewMode('advanced')}
                   style={{
@@ -660,7 +714,7 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                     cursor: 'pointer'
                   }}
                 >
-                  Advanced Search
+                  Manual Search
                 </button>
               </div>
             </div>
