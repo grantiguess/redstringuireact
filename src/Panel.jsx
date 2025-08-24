@@ -35,7 +35,7 @@ import CollapsibleSection from './components/CollapsibleSection.jsx';
 import StandardDivider from './components/StandardDivider.jsx';
 import { knowledgeFederation } from './services/knowledgeFederation.js';
 import DuplicateManager from './components/DuplicateManager.jsx';
-import ContextMenu from './components/ContextMenu.jsx';
+import { showContextMenu } from './components/GlobalContextMenu.jsx';
 
 // Helper function to determine the correct article ("a" or "an")
 const getArticleFor = (word) => {
@@ -1782,7 +1782,6 @@ const GhostSemanticNode = ({ concept, index, onMaterialize, onSelect }) => {
 // All Things Node Item Component with semantic web glow and exact SavedNodeItem formatting
 const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemanticData, onDelete }) => {
   const [isHovered, setIsHovered] = React.useState(false);
-  const [contextMenu, setContextMenu] = React.useState(null);
   const { duplicateNodePrototype } = useGraphStore();
   
   const [{ isDragging }, drag, preview] = useDrag(() => ({
@@ -1800,24 +1799,14 @@ const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemantic
   const handleContextMenu = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      options: [
-        {
-          label: 'Duplicate Node',
-          icon: <Copy size={14} />,
-          action: 'duplicate'
-        }
-      ]
-    });
-  };
-
-  const handleContextMenuSelect = (option) => {
-    if (option.action === 'duplicate') {
-      duplicateNodePrototype(node.id);
-    }
-    setContextMenu(null);
+    
+    showContextMenu(e.clientX, e.clientY, [
+      {
+        label: 'Duplicate Node',
+        icon: <Copy size={14} />,
+        action: () => duplicateNodePrototype(node.id)
+      }
+    ]);
   };
 
   return (
@@ -1825,6 +1814,7 @@ const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemantic
       <div
         ref={drag}
         key={node.id}
+        data-has-context-menu="true"
         title={`${node.name}${hasSemanticData ? ' • Connected to semantic web' : ''}`}
         onClick={onClick}
         onDoubleClick={onDoubleClick}
@@ -1898,16 +1888,6 @@ const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemantic
         />
       </div>
       </div>
-      
-      {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          options={contextMenu.options}
-          onSelect={handleContextMenuSelect}
-          onClose={() => setContextMenu(null)}
-        />
-      )}
     </>
   );
 };

@@ -1122,17 +1122,18 @@ const SharedPanelContent = ({
         />
       </CollapsibleSection>
 
-      {/* Dividing line above External Links section */}
+      {/* Dividing line above Semantic Web section */}
       <StandardDivider margin="20px 0" />
       
-      {/* External Links Section - SemanticEditor for Wikipedia/Wikidata links */}
+      {/* Semantic Web Section - unified external links + RDF schema */}
       <CollapsibleSection 
-        title="External Links" 
+        title="Semantic Web" 
         defaultExpanded={false}
       >
         <SemanticEditor 
           nodeData={nodeData}
           onUpdate={onNodeUpdate}
+          isUltraSlim={isUltraSlim}
         />
       </CollapsibleSection>
 

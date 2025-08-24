@@ -1,8 +1,9 @@
 import React from 'react';
 import { Copy } from 'lucide-react';
 
-const ContextMenu = ({ x, y, options, onClose, onSelect }) => {
-  if (!options || options.length === 0) return null;
+const ContextMenu = ({ x, y, options = [], onClose, onSelect }) => {
+  // If no options provided, show default message
+  const displayOptions = options.length > 0 ? options : [{ label: 'No Tools Here...', disabled: true }];
 
   return (
     <>
@@ -14,12 +15,12 @@ const ContextMenu = ({ x, y, options, onClose, onSelect }) => {
           left: 0,
           right: 0,
           bottom: 0,
-          zIndex: 9998
+          zIndex: 999998
         }}
         onClick={onClose}
       />
       
-      {/* Context menu */}
+      {/* Context menu - positioned with top-left corner at cursor */}
       <div
         style={{
           position: 'fixed',
@@ -29,34 +30,38 @@ const ContextMenu = ({ x, y, options, onClose, onSelect }) => {
           border: '2px solid maroon', // PlusSign maroon stroke
           borderRadius: '8px',
           boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-          zIndex: 9999,
+          zIndex: 999999,
           minWidth: '150px',
-          fontFamily: "'EmOne', sans-serif",
+          fontFamily: 'EmOne, sans-serif',
           fontSize: '0.85rem'
         }}
       >
-        {options.map((option, index) => (
+        {displayOptions.map((option, index) => (
           <div
             key={index}
             style={{
               padding: '8px 12px',
-              color: 'maroon', // PlusSign maroon text
-              cursor: 'pointer',
+              color: option.disabled ? 'rgba(128, 0, 0, 0.5)' : 'maroon', // PlusSign maroon text
+              cursor: option.disabled ? 'default' : 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              borderBottom: index < options.length - 1 ? '1px solid rgba(128, 0, 0, 0.2)' : 'none',
+              borderBottom: index < displayOptions.length - 1 ? '1px solid rgba(128, 0, 0, 0.2)' : 'none',
               transition: 'background-color 0.1s ease',
               fontWeight: 'bold'
             }}
             onMouseEnter={(e) => {
-              e.target.style.backgroundColor = 'rgba(128, 0, 0, 0.1)';
+              if (!option.disabled) {
+                e.target.style.backgroundColor = 'rgba(128, 0, 0, 0.1)';
+              }
             }}
             onMouseLeave={(e) => {
               e.target.style.backgroundColor = 'transparent';
             }}
             onClick={() => {
-              onSelect(option);
+              if (!option.disabled && onSelect) {
+                onSelect(option);
+              }
               onClose();
             }}
           >

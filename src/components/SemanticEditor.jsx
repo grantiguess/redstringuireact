@@ -133,59 +133,66 @@ const ExternalLinkCard = ({ link, onRemove }) => {
         type: 'DOI',
         display: uri.replace('doi:', ''),
         url: `https://doi.org/${uri.replace('doi:', '')}`,
-        color: '#ff6b35'
+        color: '#ff6b35',
+        desc: 'Digital Object Identifier'
       };
     } else if (uri.startsWith('pubmed:')) {
       return {
         type: 'PubMed',
         display: uri.replace('pubmed:', ''),
         url: `https://pubmed.ncbi.nlm.nih.gov/${uri.replace('pubmed:', '')}`,
-        color: '#0066cc'
+        color: '#0066cc',
+        desc: 'PubMed record'
       };
     } else if (uri.startsWith('wd:')) {
       return {
         type: 'Wikidata',
         display: uri.replace('wd:', ''),
         url: `https://www.wikidata.org/wiki/${uri.replace('wd:', '')}`,
-        color: '#339966'
+        color: '#339966',
+        desc: 'Structured data from Wikidata'
       };
     } else if (uri.includes('wikipedia.org')) {
+      const last = uri.split('/').pop();
+      const pretty = last ? decodeURIComponent(last).replace(/_/g, ' ') : 'Wikipedia Article';
       return {
         type: 'Wikipedia',
-        display: uri.split('/').pop(),
+        display: pretty,
         url: uri,
-        color: '#000000'
+        color: '#000000',
+        desc: 'Wikipedia article'
       };
     } else if (uri.includes('arxiv.org')) {
       return {
         type: 'arXiv',
         display: uri.split('/').pop(),
         url: uri,
-        color: '#b31b1b'
+        color: '#b31b1b',
+        desc: 'arXiv preprint'
       };
     } else {
       return {
         type: 'URL',
         display: uri.replace(/^https?:\/\//, '').substring(0, 40) + '...',
         url: uri,
-        color: '#666'
+        color: '#666',
+        desc: undefined
       };
     }
   };
 
-  const { type, display, url, color } = getDisplayInfo(link);
+  const { type, display, url, color, desc } = getDisplayInfo(link);
 
   return (
     <div style={{
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      padding: '8px 12px',
-      backgroundColor: '#bdb5b5', // Canvas color background
+      padding: '8px 10px',
       border: `1px solid ${color}`,
-      borderRadius: '6px',
+      borderRadius: '8px',
       marginBottom: '6px',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.1)' // Subtle shadow
+      minWidth: 0
     }}>
       <div style={{ flex: 1 }}>
         <div style={{
@@ -197,18 +204,22 @@ const ExternalLinkCard = ({ link, onRemove }) => {
           {type}
         </div>
         <div style={{
-          fontSize: '14px',
+          fontSize: '12px',
           color: '#333',
-          fontFamily: "'EmOne', sans-serif"
+          fontFamily: "'EmOne', sans-serif",
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap'
         }}>
           {display}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: '8px' }}>
+      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
         <button
           onClick={() => window.open(url, '_blank')}
           style={{
-            padding: '4px',
+            width: '28px',
+            height: '28px',
             border: 'none',
             backgroundColor: 'transparent',
             cursor: 'pointer',
@@ -221,16 +232,22 @@ const ExternalLinkCard = ({ link, onRemove }) => {
         <button
           onClick={() => onRemove(link)}
           style={{
-            padding: '4px',
+            width: '28px',
+            height: '28px',
             border: 'none',
-            backgroundColor: '#dc3545',
+            backgroundColor: '#8B0000',
             color: '#EFE8E5',
-            borderRadius: '3px',
-            cursor: 'pointer'
+            borderRadius: '6px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            lineHeight: 1,
+            maxHeight: '28px'
           }}
           title="Remove link"
         >
-          <X size={PANEL_CLOSE_ICON_SIZE} />
+          <span style={{ fontWeight: 'bold', fontSize: '16px' }}>×</span>
         </button>
       </div>
     </div>
@@ -449,36 +466,24 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
 
   return (
     <div style={{ 
-      marginBottom: '20px',
-      backgroundColor: '#bdb5b5', // Canvas color background
-      padding: '15px',
-      borderRadius: '8px',
-      border: '1px solid #e0e0e0'
+      marginBottom: '12px'
     }}>
-      <h4 style={{ 
-        margin: '0 0 10px 0', 
-        fontSize: '14px', 
-        color: '#8B0000', // Maroon header
+      <div style={{ 
+        margin: '0 0 6px 0', 
+        fontSize: '12px', 
+        color: '#260000',
         display: 'flex',
         alignItems: 'center',
-        gap: '6px',
-        padding: '6px 10px',
-        backgroundColor: '#EFE8E5',
-        borderRadius: '4px',
-        borderLeft: '3px solid #8B0000' // Maroon left border
+        gap: '6px'
       }}>
-        <Tags size={14} />
-        RDF Schema Properties
-      </h4>
+        <Tags size={12} />
+        <span style={{ fontWeight: 'bold' }}>RDF Schema</span>
+      </div>
 
       {/* Show auto-synced RDF properties */}
       <div style={{
-        padding: '8px 10px',
-        backgroundColor: '#EFE8E5', // Canvas color background
-        border: '1px solid #e0e0e0',
-        borderRadius: '6px',
-        marginBottom: '10px',
-        fontSize: '12px'
+        fontSize: '12px',
+        marginBottom: '8px'
       }}>
         <div style={{ marginBottom: '6px', fontWeight: 'bold', color: '#333' }}>
           Auto-Generated RDF Schema:
@@ -503,7 +508,7 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
       </div>
 
       {/* Only rdfs:seeAlso needs manual input */}
-      <div style={{ marginBottom: '10px' }}>
+      <div style={{ marginBottom: '10px', marginLeft: '8px', marginRight: '24px' }}>
         <label style={{ 
           display: 'block', 
           fontSize: '12px', 
@@ -521,13 +526,13 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
           onKeyPress={handleSeeAlsoKeyPress}
           placeholder="https://example.com/related, https://other.com/resource"
           style={{
-            width: 'calc(100% - 16px)', // Account for padding
+            width: '100%',
             padding: '6px 8px',
-            border: '1px solid #8B0000', // Maroon border
-            borderRadius: '4px',
+            border: '1px solid #8B0000',
+            borderRadius: '6px',
             fontSize: '14px',
             fontFamily: "'EmOne', sans-serif",
-            backgroundColor: '#EFE8E5' // Canvas color for input background
+            backgroundColor: 'transparent'
           }}
         />
         <div style={{ 
@@ -817,7 +822,7 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
   );
 };
 
-const SemanticEditor = ({ nodeData, onUpdate }) => {
+const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
   const [enrichmentState, setEnrichmentState] = useState({
     isEnriching: false,
     progress: {},
@@ -831,6 +836,8 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
     results: null,
     error: null
   });
+  const [externalType, setExternalType] = useState('doi'); // 'doi' | 'wikipedia' | 'url'
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
 
   if (!nodeData) return null;
@@ -899,6 +906,34 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
         results: enrichmentResults.suggestions,
         error: null
       });
+
+      // Auto-import when confidence >= 0.8
+      try {
+        const conf = Number(enrichmentResults?.suggestions?.confidence || 0);
+        if (conf >= 0.8) {
+          const updates = { ...nodeData };
+          // Apply description if absent
+          if (!updates.description && enrichmentResults.suggestions.description) {
+            updates.description = enrichmentResults.suggestions.description;
+          }
+          // Merge external links
+          if (Array.isArray(enrichmentResults.suggestions.externalLinks) && enrichmentResults.suggestions.externalLinks.length > 0) {
+            const existing = new Set((updates.externalLinks || []));
+            enrichmentResults.suggestions.externalLinks.forEach(l => existing.add(l));
+            updates.externalLinks = Array.from(existing);
+          }
+          // Merge equivalent classes if provided
+          if (Array.isArray(enrichmentResults.suggestions.equivalentClasses) && enrichmentResults.suggestions.equivalentClasses.length > 0) {
+            const prev = Array.isArray(updates.equivalentClasses) ? updates.equivalentClasses : [];
+            const merged = [...prev, ...enrichmentResults.suggestions.equivalentClasses];
+            updates.equivalentClasses = merged;
+          }
+          onUpdate(updates);
+        }
+      } catch (e) {
+        // Swallow auto-import errors silently but log
+        console.warn('[SemanticEditor] Auto-import at 80% failed:', e);
+      }
       
     } catch (error) {
       console.error('[SemanticEditor] Enrichment failed:', error);
@@ -995,27 +1030,49 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
 
   return (
     <div style={{ 
-      padding: '15px', 
-      fontFamily: "'EmOne', sans-serif",
-      backgroundColor: '#bdb5b5', // Canvas color background
-      borderRadius: '8px',
-      border: '1px solid #e0e0e0'
+      padding: '0 0 10px 0', 
+      fontFamily: "'EmOne', sans-serif"
     }}>
-      <h3 style={{
-        margin: '0 0 15px 0',
-        color: '#8B0000', // Maroon header
-        fontSize: '16px',
+      <div style={{
+        margin: '0 0 10px 0',
+        color: '#260000',
+        fontSize: '14px',
         display: 'flex',
         alignItems: 'center',
-        gap: '8px',
-        padding: '8px 12px',
-        backgroundColor: '#EFE8E5', // Canvas color background for header
-        borderRadius: '6px',
-        borderLeft: '4px solid #8B0000' // Maroon left border
+        justifyContent: 'space-between'
       }}>
-        <Globe size={18} />
-        Semantic Web Links
-      </h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Globe size={16} />
+          <span style={{ fontWeight: 'bold' }}>Semantic Web</span>
+        </div>
+        <button
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          style={{
+            padding: '4px 8px',
+            border: '1px solid #8B0000',
+            borderRadius: '6px',
+            background: 'transparent',
+            color: '#8B0000',
+            fontSize: '10px',
+            cursor: 'pointer',
+            fontWeight: 'bold'
+          }}
+        >
+          {showAdvanced ? 'Advanced — On' : 'Advanced'}
+        </button>
+      </div>
+
+      {/* Semantic Profile */}
+      <div style={{ marginBottom: '12px' }}>
+        <div style={{
+          margin: '0 0 6px 0',
+          fontSize: '12px',
+          color: '#260000',
+          fontWeight: 'bold'
+        }}>
+          Semantic Profile
+        </div>
+      </div>
 
       {/* RDF Schema Properties Section */}
       <RDFSchemaPropertiesSection 
@@ -1027,85 +1084,52 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
 
       {/* External Links Section (Rosetta Stone) */}
       <div style={{ 
-        marginBottom: '20px',
-        backgroundColor: '#bdb5b5', // Canvas color background
-        padding: '15px',
-        borderRadius: '8px',
-        border: '1px solid #e0e0e0'
+        marginBottom: '16px'
       }}>
-        <h4 style={{ 
-          margin: '0 0 10px 0', 
-          fontSize: '14px', 
-          color: '#8B0000', // Maroon header
+        <div style={{ 
+          margin: '0 0 8px 0', 
+          fontSize: '12px', 
+          color: '#260000',
           display: 'flex',
           alignItems: 'center',
-          gap: '6px',
-          padding: '6px 10px',
-          backgroundColor: '#EFE8E5',
-          borderRadius: '4px',
-          borderLeft: '3px solid #8B0000' // Maroon left border
+          gap: '6px'
         }}>
-          <Link size={14} />
-          External References (owl:sameAs)
-        </h4>
-
-        {/* DOI Input */}
-        <div style={{ marginBottom: '10px' }}>
-          <label style={{ 
-            display: 'block', 
-            fontSize: '12px', 
-            color: '#666', 
-            marginBottom: '4px' 
-          }}>
-            DOI or Academic Paper
-          </label>
-          <SemanticLinkInput
-            onAdd={addExternalLink}
-            placeholder="10.1000/182 or https://doi.org/10.1000/182"
-            type="doi"
-            icon={Book}
-          />
+          <Link size={12} />
+          <span style={{ fontWeight: 'bold' }}>External References (owl:sameAs)</span>
         </div>
 
-        {/* Wikipedia Search */}
-        <div style={{ marginBottom: '10px' }}>
-          <label style={{ 
-            display: 'block', 
-            fontSize: '12px', 
-            color: '#666', 
-            marginBottom: '4px' 
-          }}>
-            Wikipedia Article
-          </label>
-          <WikipediaSearch onSelect={addExternalLink} />
-        </div>
-
-        {/* General URL Input */}
-        <div style={{ marginBottom: '10px' }}>
-          <label style={{ 
-            display: 'block', 
-            fontSize: '12px', 
-            color: '#666', 
-            marginBottom: '4px' 
-          }}>
-            Other URL
-          </label>
+        {/* Unified reference input */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px' }}>
+          <select
+            value={externalType}
+            onChange={(e) => setExternalType(e.target.value)}
+            style={{
+              padding: '6px 8px',
+              border: '1px solid #8B0000',
+              borderRadius: '6px',
+              fontSize: '12px',
+              color: '#260000'
+            }}
+          >
+            <option value="doi">DOI</option>
+            <option value="wikipedia">Wikipedia</option>
+            <option value="url">Other URL</option>
+          </select>
           <SemanticLinkInput
             onAdd={addExternalLink}
-            placeholder="https://example.com/resource"
-            type="url"
-            icon={ExternalLink}
+            placeholder={externalType === 'doi' ? '10.1000/182 or https://doi.org/10.1000/182' : (externalType === 'wikipedia' ? 'https://en.wikipedia.org/wiki/...' : 'https://example.com/resource')}
+            type={externalType === 'doi' ? 'doi' : 'url'}
+            icon={externalType === 'doi' ? Book : ExternalLink}
           />
         </div>
 
         {/* Display existing links */}
         {externalLinks.length > 0 && (
-          <div style={{ marginTop: '15px' }}>
+          <div style={{ marginTop: '10px' }}>
             <h5 style={{ 
-              margin: '0 0 8px 0', 
+              margin: '0 0 6px 0', 
               fontSize: '12px', 
-              color: '#666',
-              textTransform: 'uppercase'
+              color: '#666'
             }}>
               Linked Resources ({externalLinks.length})
             </h5>
@@ -1120,19 +1144,19 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
         )}
 
         {/* Semantic Web Actions */}
-        <div style={{ marginTop: '15px', padding: '12px', backgroundColor: 'rgba(38, 0, 0, 0.05)', borderRadius: '6px' }}>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+        <div style={{ marginTop: '12px' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
             <button
               onClick={handleEnrichFromSemanticWeb}
               disabled={enrichmentState.isEnriching}
               style={{
                 backgroundColor: enrichmentState.isEnriching ? '#666' : '#8B0000',
-                color: '#bdb5b5',
+                color: '#EFE8E5',
                 border: 'none',
-                padding: '8px 12px',
+                padding: '6px 10px',
                 borderRadius: '4px',
                 cursor: enrichmentState.isEnriching ? 'not-allowed' : 'pointer',
-                fontSize: '12px',
+                fontSize: '11px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
@@ -1146,17 +1170,18 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
               {enrichmentState.isEnriching ? 'Enriching...' : 'Enrich from Web'}
             </button>
             
+            {showAdvanced && (
             <button
               onClick={handleMassImport}
               disabled={enrichmentState.isEnriching || federationState.isImporting}
               style={{
                 backgroundColor: (enrichmentState.isEnriching || federationState.isImporting) ? '#666' : '#4B0082',
-                color: '#bdb5b5',
+                color: '#EFE8E5',
                 border: 'none',
-                padding: '8px 12px',
+                padding: '6px 10px',
                 borderRadius: '4px',
                 cursor: (enrichmentState.isEnriching || federationState.isImporting) ? 'not-allowed' : 'pointer',
-                fontSize: '12px',
+                fontSize: '11px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
@@ -1169,19 +1194,20 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
               {federationState.isImporting ? <Loader2 size={14} style={{animation: 'spin 1s linear infinite'}} /> : <Globe size={14} />}
               {federationState.isImporting ? 'Importing...' : 'Mass Import'}
             </button>
+            )}
             
-            {externalLinks.length > 0 && (
+            {showAdvanced && externalLinks.length > 0 && (
               <button
                 onClick={resolveExternalLinks}
                 disabled={enrichmentState.isEnriching}
                 style={{
                   backgroundColor: enrichmentState.isEnriching ? '#666' : '#2E8B57',
-                  color: '#bdb5b5',
+                  color: '#EFE8E5',
                   border: 'none',
-                  padding: '8px 12px',
+                  padding: '6px 10px',
                   borderRadius: '4px',
                   cursor: enrichmentState.isEnriching ? 'not-allowed' : 'pointer',
-                  fontSize: '12px',
+                  fontSize: '11px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
@@ -1197,15 +1223,19 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
             )}
           </div>
 
+          {/* Optional Wikipedia helper under Advanced */}
+          {showAdvanced && (
+            <div style={{ marginTop: '6px' }}>
+              <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>Wikipedia Helper</label>
+              <WikipediaSearch onSelect={addExternalLink} />
+            </div>
+          )}
+
           {/* Progress Display */}
           {enrichmentState.isEnriching && (
             <div style={{ 
               fontSize: '11px', 
-              color: '#666',
-              padding: '8px',
-              backgroundColor: '#EFE8E5',
-              borderRadius: '4px',
-              marginBottom: '10px'
+              color: '#666'
             }}>
               <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>Enriching from semantic web...</div>
               {Object.entries(enrichmentState.progress).map(([source, status]) => (
@@ -1240,9 +1270,6 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
           {/* Results and Suggestions */}
           {enrichmentState.results && (
             <div style={{
-              padding: '10px',
-              backgroundColor: '#EFE8E5',
-              borderRadius: '4px',
               fontSize: '12px'
             }}>
               <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#8B0000' }}>Enrichment Suggestions:</div>
@@ -1277,7 +1304,7 @@ const SemanticEditor = ({ nodeData, onUpdate }) => {
                   <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>External Links:</div>
                   {enrichmentState.results.externalLinks.map((link, idx) => (
                     <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                      <code style={{ fontSize: '10px', backgroundColor: '#bdb5b5', padding: '2px 4px', borderRadius: '2px' }}>
+                      <code style={{ fontSize: '10px', padding: '2px 4px', borderRadius: '2px', background: 'rgba(0,0,0,0.05)' }}>
                         {link.substring(0, 50)}...
                       </code>
                       <button
