@@ -16,8 +16,11 @@ const GraphListItem = forwardRef(({
   onDoubleClick,
   onClose, // <<< Add onClose prop
   isExpanded, // <<< Receive isExpanded prop
-  onToggleExpand // <<< Receive onToggleExpand prop
+  onToggleExpand, // <<< Receive onToggleExpand prop
+  onDelete // <<< Add onDelete prop for permanent deletion
 }, ref) => {
+  const [isHovered, setIsHovered] = useState(false);
+  
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: SPAWNABLE_NODE,
     item: { prototypeId: graphData.definingNodeIds?.[0] },
@@ -123,6 +126,8 @@ const GraphListItem = forwardRef(({
       style={itemStyle}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       title={graphData.name} // Tooltip with full name
     >
       {/* Graph Name - Add padding here */}
@@ -186,6 +191,41 @@ const GraphListItem = forwardRef(({
           title="Close Tab"
         />
       )}
+
+      {/* Add Delete Button - Same design as Saved/All Things tabs */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '-6px',
+          right: '-6px',
+          cursor: 'pointer',
+          zIndex: 10,
+          backgroundColor: '#000000', 
+          borderRadius: '50%',
+          padding: '2px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: isHovered ? 1 : 0,
+          transition: 'opacity 0.2s ease',
+          pointerEvents: isHovered ? 'auto' : 'none',
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete?.(graphData.id);
+        }}
+        title="Delete this graph permanently"
+      >
+        <XCircle 
+          size={20}
+          style={{
+            color: '#999999',
+            transition: 'color 0.2s ease',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.color = '#EFE8E5'}
+          onMouseLeave={(e) => e.currentTarget.style.color = '#999999'}
+        />
+      </div>
     </div>
   );
 });

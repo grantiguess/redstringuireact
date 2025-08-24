@@ -351,6 +351,7 @@ const LeftAllThingsView = ({
   openGraphTab,
   createAndAssignGraphDefinition,
   openRightPanelNodeTab,
+  storeActions,
 }) => {
   return (
     <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -433,6 +434,12 @@ const LeftAllThingsView = ({
                             onDoubleClick={handleDoubleClick}
                             isActive={node.id === activeDefinitionNodeId}
                             hasSemanticData={hasSemanticData}
+                            onDelete={(nodeId) => {
+                              // Delete the node prototype
+                              if (storeActions?.deleteNodePrototype) {
+                                storeActions.deleteNodePrototype(nodeId);
+                              }
+                            }}
                           />
                         );
                       })}
@@ -1410,7 +1417,8 @@ const GhostSemanticNode = ({ concept, index, onMaterialize, onSelect }) => {
 };
 
 // All Things Node Item Component with semantic web glow and exact SavedNodeItem formatting
-const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemanticData }) => {
+const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemanticData, onDelete }) => {
+  const [isHovered, setIsHovered] = React.useState(false);
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: ItemTypes.SPAWNABLE_NODE,
     item: { prototypeId: node.id },
@@ -1430,6 +1438,8 @@ const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemantic
       title={`${node.name}${hasSemanticData ? ' • Connected to semantic web' : ''}`}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{
         position: 'relative',
         backgroundColor: node.color || NODE_DEFAULT_COLOR,
@@ -1463,6 +1473,39 @@ const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemantic
       }}>
         {node.name || 'Unnamed'}
       </span>
+      <div
+        style={{
+          position: 'absolute',
+          top: '-6px',
+          right: '-6px',
+          cursor: 'pointer',
+          zIndex: 10,
+          backgroundColor: '#000000', 
+          borderRadius: '50%',
+          padding: '2px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: isHovered ? 1 : 0,
+          transition: 'opacity 0.2s ease',
+          pointerEvents: isHovered ? 'auto' : 'none',
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete?.(node.id);
+        }}
+        title="Delete this item"
+      >
+        <XCircle 
+          size={PANEL_CLOSE_ICON_SIZE}
+          style={{
+            color: '#999999',
+            transition: 'color 0.2s ease',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.color = '#EFE8E5'}
+          onMouseLeave={(e) => e.currentTarget.style.color = '#999999'}
+        />
+      </div>
     </div>
   );
 };
@@ -1678,6 +1721,7 @@ const LeftGridView = ({
   closeGraph,
   toggleGraphExpanded,
   createNewGraph,
+  storeActions,
 }) => {
   return (
     <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1725,6 +1769,12 @@ const LeftGridView = ({
             onClick={handleGridItemClick}
             onClose={closeGraph}
             onToggleExpand={toggleGraphExpanded}
+            onDelete={(graphId) => {
+              // Delete the graph permanently
+              if (storeActions?.deleteGraph) {
+                storeActions.deleteGraph(graphId);
+              }
+            }}
           />
         ))}
         {openGraphsForList.length === 0 && (
@@ -3350,6 +3400,7 @@ const Panel = forwardRef(
                 openGraphTab={openGraphTab}
                 createAndAssignGraphDefinition={createAndAssignGraphDefinition}
                 openRightPanelNodeTab={openRightPanelNodeTab}
+                storeActions={storeActions}
               />
             );
         } else if (leftViewActive === 'library') {
@@ -3381,6 +3432,7 @@ const Panel = forwardRef(
                 closeGraph={closeGraph}
                 toggleGraphExpanded={toggleGraphExpanded}
                 createNewGraph={createNewGraph}
+                storeActions={storeActions}
               />
             );
         } else if (leftViewActive === 'federation') {
