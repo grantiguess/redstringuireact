@@ -797,7 +797,6 @@ function NodeCanvas() {
     }
     return map;
   }, [nodes]);
-
   // Defer viewport-dependent culling until pan/zoom state is initialized below
   const [visibleNodeIds, setVisibleNodeIds] = useState(() => new Set());
   const [visibleEdges, setVisibleEdges] = useState(() => []);
@@ -1595,7 +1594,6 @@ function NodeCanvas() {
       setAbstractionControlPanelVisible(false);
     }
   }, [abstractionCarouselVisible, abstractionCarouselNode, abstractionControlPanelVisible]);
-
   // Handle control panel callbacks
   const handleControlPanelClose = useCallback(() => {
     setSelectedEdgeId(null);
@@ -2390,7 +2388,6 @@ function NodeCanvas() {
     const boundedY = Math.min(Math.max(y, 0), canvasSize.height);
     return { x: boundedX, y: boundedY };
   };
-
   // Fast line-rectangle intersection for edge culling
   const lineIntersectsRect = (x1, y1, x2, y2, rect) => {
     // Cohen–Sutherland-like quick reject/accept
@@ -2492,6 +2489,11 @@ function NodeCanvas() {
   };
   const handleNodeMouseDown = (nodeData, e) => { // nodeData is now a hydrated node (instance + prototype)
     e.stopPropagation();
+    // Ignore right-clicks (button === 2) so context menu can handle them without locking drag
+    if (e && e.button === 2) {
+      try { e.preventDefault(); } catch {}
+      return;
+    }
     if (isPaused || !activeGraphId) return;
 
     const instanceId = nodeData.id; // This is the instance ID
@@ -3159,7 +3161,6 @@ function NodeCanvas() {
     // Fallback: midpoint with best available offset
     return getFallbackPlacement(pathPoints, textWidth, textHeight, allObstacles);
   };
-
   // Try to place label directly on the path (horizontal segments preferred)
   const tryPathPlacement = (pathPoints, textWidth, textHeight, obstacles) => {
     const candidates = [];
@@ -3857,6 +3858,11 @@ function NodeCanvas() {
   };
 
   const handleMouseDown = (e) => {
+    // Ignore right-clicks (button === 2) so context menu can handle them without locking canvas panning
+    if (e && e.button === 2) {
+      try { e.preventDefault(); e.stopPropagation(); } catch {}
+      return;
+    }
     if (isPaused || !activeGraphId || abstractionCarouselVisible) return;
     // On touch/mobile: allow two-finger pan to bypass resizer/canvas checks
     if (e.touches && e.touches.length >= 2) {
@@ -3892,7 +3898,6 @@ function NodeCanvas() {
     setPanStart({ x: e.clientX, y: e.clientY });
     setIsPanning(true);
   };
-
   const handleMouseUp = (e) => {
     if (isPaused || !activeGraphId) return;
     clearTimeout(longPressTimeout.current);
@@ -4611,7 +4616,6 @@ function NodeCanvas() {
       </>
     );
   };
-
   // Deprecated - replaced by UnifiedSelector
   const renderCustomPrompt = () => {
     if (!nodeNamePrompt.visible) return null;
