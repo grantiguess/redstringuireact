@@ -32,11 +32,27 @@ const PanelContentWrapper = ({
   // Determine which node data to use based on tab type
   const getNodeData = () => {
     if (tabType === 'home') {
-      // For home tab, use the defining node of the active graph
+      // For home tab, we need either a defining node OR just graph data
+      // Don't return null if we have an active graph, even without a defining node
       if (!graphs || !activeGraphId) return null;
       const currentGraph = graphs.get(activeGraphId);
+      if (!currentGraph) return null;
+      
       const definingNodeId = currentGraph?.definingNodeIds?.[0];
-      return definingNodeId && nodePrototypes ? nodePrototypes.get(definingNodeId) : null;
+      if (definingNodeId && nodePrototypes && nodePrototypes.has(definingNodeId)) {
+        // Verify the defining node actually exists
+        return nodePrototypes.get(definingNodeId);
+      }
+      
+      // If no defining node or defining node doesn't exist, create a fallback node data object from the graph
+      return {
+        id: activeGraphId,
+        name: currentGraph.name || 'Untitled Graph',
+        description: currentGraph.description || '',
+        color: currentGraph.color || '#8B0000',
+        typeNodeId: null,
+        definitionGraphIds: [activeGraphId]
+      };
     } else if (tabType === 'node' && nodeId && nodePrototypes) {
       // For node tab, use the specific node
       return nodePrototypes.get(nodeId);
@@ -329,9 +345,23 @@ const PanelContentWrapper = ({
   };
 
   if (!nodeData) {
+    // Provide more specific error messages
+    let errorMessage = '';
+    if (tabType === 'home') {
+      if (!activeGraphId) {
+        errorMessage = 'No active graph selected...';
+      } else if (!graphs || !graphs.has(activeGraphId)) {
+        errorMessage = 'Active graph not found in store...';
+      } else {
+        errorMessage = 'Graph data is incomplete...';
+      }
+    } else {
+      errorMessage = 'Node data not found...';
+    }
+    
     return (
       <div style={{ padding: '10px', color: '#aaa', fontFamily: "'EmOne', sans-serif" }}>
-        {tabType === 'home' ? 'No graph data available...' : 'Node data not found...'}
+        {errorMessage}
       </div>
     );
   }

@@ -64,6 +64,8 @@ const SPAWNABLE_NODE = 'spawnable_node';
 // Check if user's on a Mac using userAgent as platform is deprecated
 const isMac = /Mac/i.test(navigator.userAgent);
 
+
+
 // Sensitivity constants
 const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1;        // Sensitivity for standard mouse wheel zooming
 const KEYBOARD_PAN_SPEED = 12;                  // for keyboard panning (much faster)
@@ -119,6 +121,8 @@ function NodeCanvas() {
   const setTypeListMode = useGraphStore((state) => state.setTypeListMode);
   const toggleEnableAutoRouting = useGraphStore((state) => state.toggleEnableAutoRouting);
   const setRoutingStyle = useGraphStore((state) => state.setRoutingStyle);
+  const deleteNodePrototype = useGraphStore((state) => state.deleteNodePrototype);
+  const deleteGraph = useGraphStore((state) => state.deleteGraph);
 
   // Panel overlay resizers rendered in canvas (do not overlap panel DOM)
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
@@ -530,6 +534,8 @@ function NodeCanvas() {
     setRoutingStyle,
     updateGraphView,
     setTypeListMode,
+    deleteNodePrototype,
+    deleteGraph,
   }), [
     updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance, removeEdge, updateGraph, createNewGraph,
     setActiveGraph, setActiveDefinitionNode, setNodeType, openRightPanelNodeTab,
@@ -539,10 +545,11 @@ function NodeCanvas() {
     openGraphTabAndBringToTop, cleanupOrphanedData, restoreFromSession,
     loadUniverseFromFile, setUniverseError, clearUniverse, setUniverseConnected,
     setSelectedEdgeIds, addSelectedEdgeId, removeSelectedEdgeId, clearSelectedEdgeIds, toggleShowConnectionNames,
-    toggleEnableAutoRouting, setRoutingStyle, updateGraphView, setTypeListMode
+    toggleEnableAutoRouting, setRoutingStyle, updateGraphView, setTypeListMode,
+    deleteNodePrototype, deleteGraph
   ]);
 
-  // <<< SELECT STATE DIRECTLY >>>
+  // <<< SELECT STATE DIRECTLY - Use individual subscriptions to prevent infinite loops >>>
   const activeGraphId = useGraphStore(state => state.activeGraphId);
   const activeDefinitionNodeId = useGraphStore(state => state.activeDefinitionNodeId);
   const selectedEdgeId = useGraphStore(state => state.selectedEdgeId);
@@ -561,13 +568,27 @@ function NodeCanvas() {
   const edgesMap = useGraphStore(state => state.edges);
   const savedNodeIds = useGraphStore(state => state.savedNodeIds);
   const savedGraphIds = useGraphStore(state => state.savedGraphIds);
-  // Get open graph IDs needed for initial check
   const openGraphIds = useGraphStore(state => state.openGraphIds);
-  // Universe file state
   const isUniverseLoaded = useGraphStore(state => state.isUniverseLoaded);
   const isUniverseLoading = useGraphStore(state => state.isUniverseLoading);
   const universeLoadingError = useGraphStore(state => state.universeLoadingError);
   const hasUniverseFile = useGraphStore(state => state.hasUniverseFile);
+  
+  // Get hydrated nodes for the active graph
+  const hydratedNodes = useMemo(() => {
+    if (!activeGraphId || !graphsMap || !nodePrototypesMap) return [];
+    const graph = graphsMap.get(activeGraphId);
+    if (!graph || !graph.instances) return [];
+    
+    return Array.from(graph.instances.values()).map(instance => {
+      const prototype = nodePrototypesMap.get(instance.prototypeId);
+      if (!prototype) return null;
+      return {
+        ...prototype,
+        ...instance,
+      };
+    }).filter(Boolean);
+  }, [activeGraphId, graphsMap, nodePrototypesMap]);
 
   // <<< Derive active graph data directly >>>
   const activeGraphData = useMemo(() => {
@@ -713,7 +734,7 @@ function NodeCanvas() {
     };
   }, []); // Run once on mount
 
-  // <<< Initial Graph Creation Logic (Revised) >>>
+    // <<< Initial Graph Creation Logic (Revised) >>>
   useEffect(() => {
       // Only run graph creation logic after universe has been loaded and we have a universe file
       if (!isUniverseLoaded || !hasUniverseFile) return;
@@ -724,14 +745,21 @@ function NodeCanvas() {
            storeActions.createNewGraph({ name: 'New Thing' });
       } else if (graphsMap.size === 0) {
           // Handle the case where universe is loaded but empty
-          console.log('[Effect: Initial Check] Universe loaded but empty, creating default "New Thing".');
-          storeActions.createNewGraph({ name: 'New Thing' });
+           console.log('[Effect: Initial Check] Universe loaded but empty, creating default "New Thing".');
+           storeActions.createNewGraph({ name: 'New Thing' });
       }
-  }, [graphsMap, activeGraphId, openGraphIds, storeActions, isUniverseLoaded, hasUniverseFile]); // Include universe states
+  }, [graphsMap, activeGraphId, openGraphIds, isUniverseLoaded, hasUniverseFile]); // Re-enabled
 
-  // Get raw data from store for memoization
-  const instances = useGraphStore(useCallback(state => state.graphs.get(activeGraphId)?.instances, [activeGraphId]));
-  const graphEdgeIds = useGraphStore(useCallback(state => state.graphs.get(activeGraphId)?.edgeIds, [activeGraphId]));
+  // Get raw data from store for memoization - derive from existing state
+  const instances = useMemo(() => {
+    if (!activeGraphId || !graphsMap) return null;
+    return graphsMap.get(activeGraphId)?.instances;
+  }, [activeGraphId, graphsMap]);
+  
+  const graphEdgeIds = useMemo(() => {
+    if (!activeGraphId || !graphsMap) return null;
+    return graphsMap.get(activeGraphId)?.edgeIds;
+  }, [activeGraphId, graphsMap]);
 
   // Derive nodes and edges using useMemo for stable references
   const nodes = useMemo(() => {
@@ -5396,6 +5424,8 @@ function NodeCanvas() {
           onStartHurtleAnimationFromPanel={startHurtleAnimationFromPanel}
           leftPanelExpanded={leftPanelExpanded}
           rightPanelExpanded={rightPanelExpanded}
+          selectedInstanceIds={selectedInstanceIds}
+          hydratedNodes={hydratedNodes}
         />
 
         <div

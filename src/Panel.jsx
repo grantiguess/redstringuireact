@@ -370,6 +370,15 @@ const LeftAllThingsView = ({
           const isCollapsed = sectionCollapsed[typeId] ?? false;
           const maxHeight = sectionMaxHeights[typeId] || '0px';
           const isLastSection = index === array.length - 1;
+          
+          // Debug logging
+          console.log(`[AllThingsView] Rendering type ${typeId}:`, {
+            typeName: typeInfo.name,
+            nodeCount: nodes.length,
+            isCollapsed,
+            maxHeight,
+            nodes: nodes.map(n => ({ id: n.id, name: n.name }))
+          });
           return (
             <div key={typeId}>
               <div style={{ marginBottom: '10px' }}>
@@ -457,7 +466,7 @@ const LeftAllThingsView = ({
 };
 
 // Left Semantic Discovery View - Concept Discovery Engine
-const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightPanelNodeTab, rightPanelTabs, activeDefinitionNodeId }) => {
+const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightPanelNodeTab, rightPanelTabs, activeDefinitionNodeId, selectedInstanceIds = new Set(), hydratedNodes = [] }) => {
   const [isSearching, setIsSearching] = useState(false);
   const [discoveredConcepts, setDiscoveredConcepts] = useState([]);
   const [searchHistory, setSearchHistory] = useState([]);
@@ -475,23 +484,37 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
     const activeTab = rightPanelTabs?.find(tab => tab.isActive);
     if (activeTab && activeTab.nodeId) {
       const nodeData = nodePrototypesMap.get(activeTab.nodeId);
-      contexts.panel = {
-        nodeId: activeTab.nodeId,
-        nodeName: nodeData?.name || 'Current Node',
-        nodeData: nodeData,
-        type: 'panel'
-      };
+      
+      // Only create panel context if the node actually exists
+      if (nodeData && nodeData.name) {
+        contexts.panel = {
+          nodeId: activeTab.nodeId,
+          nodeName: nodeData.name,
+          nodeData: nodeData,
+          type: 'panel'
+        };
+      } else {
+        // Log stale reference for debugging
+        console.warn(`[SemanticDiscovery] Stale panel tab nodeId: ${activeTab.nodeId} - prototype not found or missing name`);
+      }
     }
     
     // Graph context: active definition node (what's highlighted in header)
     if (activeDefinitionNodeId && activeDefinitionNodeId !== contexts.panel?.nodeId) {
       const nodeData = nodePrototypesMap.get(activeDefinitionNodeId);
-      contexts.graph = {
-        nodeId: activeDefinitionNodeId,
-        nodeName: nodeData?.name || 'Active Graph Node', 
-        nodeData: nodeData,
-        type: 'graph'
-      };
+      
+      // Only create graph context if the node actually exists
+      if (nodeData && nodeData.name) {
+        contexts.graph = {
+          nodeId: activeDefinitionNodeId,
+          nodeName: nodeData.name, 
+          nodeData: nodeData,
+          type: 'graph'
+        };
+      } else {
+        // Log stale reference for debugging
+        console.warn(`[SemanticDiscovery] Stale activeDefinitionNodeId: ${activeDefinitionNodeId} - prototype not found or missing name`);
+      }
     }
     
     return contexts;
@@ -500,6 +523,11 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
   const contexts = getContexts();
   const primaryContext = contexts.panel || contexts.graph;
   const searchQuery = primaryContext?.nodeName || '';
+  
+  // Get selected node information from canvas
+  const selectedNode = selectedInstanceIds.size === 1 
+    ? hydratedNodes.find(node => selectedInstanceIds.has(node.id))
+    : null;
 
   // Search for concepts using current context
   const handleConceptSearch = async () => {
@@ -796,11 +824,15 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
 
       {viewMode === 'discover' && (
         <>
-          {/* Compact Dual Context Display */}
-          {(contexts.panel || contexts.graph) ? (
-            <div className="contexts-display" style={{ marginBottom: '12px' }}>
-              {/* Compact Action Bar */}
-              <div style={{ display: 'flex', gap: '4px', marginBottom: '8px', flexWrap: 'wrap' }}>
+          {/* Enhanced Context Display */}
+          {(contexts.panel || contexts.graph || selectedNode) && (
+            <div className="contexts-display" style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '11px', color: '#666', fontFamily: "'EmOne', sans-serif", marginBottom: '8px', fontWeight: 'bold' }}>
+                Quick Search
+              </div>
+              
+              {/* Enhanced Action Grid */}
+              <div style={{ display: 'grid', gap: '6px', marginBottom: '12px' }}>
                 {contexts.panel && (
                   <button
                     onClick={() => {
@@ -813,21 +845,33 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '4px',
-                      padding: '3px 6px',
+                      gap: '6px',
+                      padding: '8px 10px',
                       border: '1px solid #8B0000',
-                      borderRadius: '3px',
-                      background: '#8B0000',
+                      borderRadius: '6px',
+                      background: isSearching ? '#6b0000' : '#8B0000',
                       color: '#EFE8E5',
                       fontFamily: "'EmOne', sans-serif",
-                      fontSize: '9px',
+                      fontSize: '11px',
                       cursor: isSearching ? 'wait' : 'pointer',
                       fontWeight: 'bold',
-                      flex: 1,
-                      minWidth: '60px'
+                      transition: 'all 0.2s ease',
+                      boxShadow: '0 2px 4px rgba(139,0,0,0.2)'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSearching) {
+                        e.target.style.background = '#a00000';
+                        e.target.style.transform = 'translateY(-1px)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSearching) {
+                        e.target.style.background = '#8B0000';
+                        e.target.style.transform = 'translateY(0)';
+                      }
                     }}
                   >
-                    📋 {contexts.panel.nodeName.length > 12 ? contexts.panel.nodeName.substring(0, 12) + '...' : contexts.panel.nodeName}
+                    📋 <span style={{ fontWeight: 'normal' }}>Panel:</span> {contexts.panel.nodeName.length > 18 ? contexts.panel.nodeName.substring(0, 18) + '...' : contexts.panel.nodeName}
                   </button>
                 )}
                 
@@ -843,53 +887,79 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '4px',
-                      padding: '3px 6px',
+                      gap: '6px',
+                      padding: '8px 10px',
                       border: '1px solid #4B0082',
-                      borderRadius: '3px',
-                      background: '#4B0082',
+                      borderRadius: '6px',
+                      background: isSearching ? '#3a0066' : '#4B0082',
                       color: '#EFE8E5',
                       fontFamily: "'EmOne', sans-serif",
-                      fontSize: '9px',
+                      fontSize: '11px',
                       cursor: isSearching ? 'wait' : 'pointer',
                       fontWeight: 'bold',
-                      flex: 1,
-                      minWidth: '60px'
+                      transition: 'all 0.2s ease',
+                      boxShadow: '0 2px 4px rgba(75,0,130,0.2)'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSearching) {
+                        e.target.style.background = '#5a0099';
+                        e.target.style.transform = 'translateY(-1px)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSearching) {
+                        e.target.style.background = '#4B0082';
+                        e.target.style.transform = 'translateY(0)';
+                      }
                     }}
                   >
-                    🎯 {contexts.graph.nodeName.length > 12 ? contexts.graph.nodeName.substring(0, 12) + '...' : contexts.graph.nodeName}
+                    🎯 <span style={{ fontWeight: 'normal' }}>Graph:</span> {contexts.graph.nodeName.length > 18 ? contexts.graph.nodeName.substring(0, 18) + '...' : contexts.graph.nodeName}
                   </button>
                 )}
                 
                 {/* Expand Semantically Button for Selected Node */}
-                {activeDefinitionNodeId && (
+                {selectedNode && (
                   <button
                     onClick={() => {
-                      // Trigger semantic expansion for selected node
-                      const nodeData = nodePrototypesMap.get(activeDefinitionNodeId);
-                      if (nodeData?.name) {
-                        setExpandingNodeId(activeDefinitionNodeId);
-                        performSemanticExpansion(nodeData.name, activeDefinitionNodeId);
+                      // Trigger semantic expansion for selected node on canvas
+                      const nodePrototype = nodePrototypesMap.get(selectedNode.prototypeId);
+                      if (nodePrototype?.name) {
+                        setExpandingNodeId(selectedNode.prototypeId);
+                        performSemanticExpansion(nodePrototype.name, selectedNode.prototypeId);
                       }
                     }}
                     disabled={isSearching}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '2px',
-                      padding: '3px 6px',
+                      gap: '6px',
+                      padding: '8px 10px',
                       border: '1px solid #228B22',
-                      borderRadius: '3px',
-                      background: isSearching && expandingNodeId ? '#1a4d1a' : '#228B22',
+                      borderRadius: '6px',
+                      background: isSearching && expandingNodeId ? '#1a4d1a' : (isSearching ? '#1e6b1e' : '#228B22'),
                       color: '#EFE8E5',
                       fontFamily: "'EmOne', sans-serif",
-                      fontSize: '9px',
+                      fontSize: '11px',
                       cursor: isSearching ? 'wait' : 'pointer',
                       fontWeight: 'bold',
-                      opacity: isSearching && expandingNodeId ? 0.7 : 1
+                      transition: 'all 0.2s ease',
+                      boxShadow: '0 2px 4px rgba(34,139,34,0.2)',
+                      opacity: isSearching && expandingNodeId ? 0.8 : 1
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSearching) {
+                        e.target.style.background = '#2aa52a';
+                        e.target.style.transform = 'translateY(-1px)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSearching) {
+                        e.target.style.background = '#228B22';
+                        e.target.style.transform = 'translateY(0)';
+                      }
                     }}
                   >
-                    {isSearching && expandingNodeId ? '⚡ Expanding...' : '⭐ Expand'}
+                    {isSearching && expandingNodeId ? '⚡ Expanding...' : '⭐ Expand'} <span style={{ fontWeight: 'normal' }}>Selected</span>
                   </button>
                 )}
               </div>
@@ -932,49 +1002,63 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                 </button>
               </div>
             </div>
-          ) : (
-            <div className="no-context" style={{ marginBottom: '16px', padding: '12px', background: 'rgba(102,102,102,0.1)', borderRadius: '6px', border: '1px solid rgba(102,102,102,0.2)' }}>
-              <div style={{ fontSize: '11px', color: '#666', fontFamily: "'EmOne', sans-serif", textAlign: 'center', lineHeight: '1.4', marginBottom: '8px' }}>
-                Explore the semantic web - search for concepts, people, places, ideas
-              </div>
-              {/* Manual Search Bar for no context */}
-              <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                <input
-                  type="text"
-                  value={manualQuery}
-                  onChange={(e) => setManualQuery(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleManualSearch()}
-                  placeholder="Search semantic web..."
-                  style={{
-                    flex: 1,
-                    padding: '6px 8px',
-                    border: '1px solid #666',
-                    borderRadius: '4px',
-                    fontSize: '11px',
-                    fontFamily: "'EmOne', sans-serif",
-                    background: '#1a1a1a',
-                    color: '#666'
-                  }}
-                />
-                <button
-                  onClick={handleManualSearch}
-                  disabled={isSearching || !manualQuery?.trim()}
-                  style={{
-                    padding: '6px 12px',
-                    border: '1px solid #666',
-                    borderRadius: '4px',
-                    background: 'transparent',
-                    color: '#666',
-                    fontSize: '11px',
-                    fontFamily: "'EmOne', sans-serif",
-                    cursor: isSearching ? 'wait' : 'pointer'
-                  }}
-                >
-                  {isSearching ? '...' : 'Go'}
-                </button>
-              </div>
-            </div>
           )}
+          
+          {/* Manual Search Bar - Always Available */}
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontSize: '11px', color: '#666', fontFamily: "'EmOne', sans-serif", marginBottom: '8px', fontWeight: 'bold' }}>
+              Direct Search
+            </div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <input
+                type="text"
+                value={manualQuery}
+                onChange={(e) => setManualQuery(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleManualSearch()}
+                placeholder="Search semantic web..."
+                style={{
+                  flex: 1,
+                  padding: '8px 10px',
+                  border: '1px solid #666',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontFamily: "'EmOne', sans-serif",
+                  background: '#1a1a1a',
+                  color: '#666',
+                  transition: 'border-color 0.2s ease'
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#8B0000'}
+                onBlur={(e) => e.target.style.borderColor = '#666'}
+              />
+              <button
+                onClick={handleManualSearch}
+                disabled={isSearching || !manualQuery?.trim()}
+                style={{
+                  padding: '8px 16px',
+                  border: '1px solid #666',
+                  borderRadius: '6px',
+                  background: isSearching ? '#333' : (manualQuery?.trim() ? '#8B0000' : 'transparent'),
+                  color: isSearching ? '#888' : (manualQuery?.trim() ? '#EFE8E5' : '#666'),
+                  fontSize: '11px',
+                  fontFamily: "'EmOne', sans-serif",
+                  cursor: (isSearching || !manualQuery?.trim()) ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSearching && manualQuery?.trim()) {
+                    e.target.style.background = '#a00000';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSearching && manualQuery?.trim()) {
+                    e.target.style.background = '#8B0000';
+                  }
+                }}
+              >
+                {isSearching ? '🔍 ...' : '🔍 Search'}
+              </button>
+            </div>
+          </div>
 
           {/* Concept Results - Regular Search */}
           {discoveredConcepts.length > 0 && !semanticExpansionResults.length && (
@@ -994,6 +1078,92 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                   />
                 ))}
               </div>
+              
+              {/* Search More Button */}
+              {discoveredConcepts.length >= 10 && (
+                <div style={{ marginTop: '12px', textAlign: 'center' }}>
+                  <button
+                    onClick={async () => {
+                      const lastSearch = searchHistory[0];
+                      if (lastSearch) {
+                        const existingNames = new Set(discoveredConcepts.map(c => c.name));
+                        
+                        try {
+                          setIsSearching(true);
+                          const results = await knowledgeFederation.importKnowledgeCluster(lastSearch.query, {
+                            maxDepth: 1,
+                            maxEntitiesPerLevel: 35, // Get more results
+                            includeRelationships: true,
+                            includeSources: ['wikidata', 'dbpedia', 'freebase'],
+                            includeTypes: true,
+                            includeLabels: true,
+                            minConfidence: 0.5, // Lower confidence to get more variety
+                            preferSemanticWeb: true,
+                            offset: discoveredConcepts.length // Skip already retrieved results
+                          });
+                          
+                          // Filter out duplicates and add new concepts
+                          const newConcepts = Array.from(results.entities.entries())
+                            .map(([name, entityData]) => ({
+                              id: `concept-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                              name: cleanTitle(name),
+                              description: entityData.descriptions?.[0]?.text || `A concept related to ${lastSearch.query}`,
+                              category: entityData.types?.[0]?.type || 'Thing',
+                              source: entityData.sources?.[0] || 'semantic-web',
+                              confidence: entityData.confidence || 0.8,
+                              relationships: results.relationships
+                                .filter(rel => rel.source === name || rel.target === name)
+                                .slice(0, 3),
+                              semanticMetadata: {
+                                originalUri: entityData.externalLinks?.[0],
+                                equivalentClasses: entityData.equivalentClasses || [],
+                                externalLinks: entityData.externalLinks || [],
+                                confidence: entityData.confidence || 0.8
+                              },
+                              color: generateConceptColor(name),
+                              searchQuery: lastSearch.query,
+                              discoveredAt: new Date().toISOString()
+                            }))
+                            .filter(concept => !existingNames.has(concept.name)); // Prevent duplicates
+                          
+                          setDiscoveredConcepts(prev => [...prev, ...newConcepts]);
+                          
+                        } catch (error) {
+                          console.error('[SemanticDiscovery] Search more failed:', error);
+                        } finally {
+                          setIsSearching(false);
+                        }
+                      }
+                    }}
+                    disabled={isSearching}
+                    style={{
+                      padding: '8px 16px',
+                      border: '1px solid #666',
+                      borderRadius: '6px',
+                      background: isSearching ? '#333' : 'transparent',
+                      color: isSearching ? '#888' : '#666',
+                      fontSize: '10px',
+                      cursor: isSearching ? 'wait' : 'pointer',
+                      fontFamily: "'EmOne', sans-serif",
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSearching) {
+                        e.target.style.background = 'rgba(102, 102, 102, 0.1)';
+                        e.target.style.borderColor = '#888';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSearching) {
+                        e.target.style.background = 'transparent';
+                        e.target.style.borderColor = '#666';
+                      }
+                    }}
+                  >
+                    {isSearching ? '🔍 Searching...' : '🔍 Search More'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -1721,7 +1891,6 @@ const LeftGridView = ({
   closeGraph,
   toggleGraphExpanded,
   createNewGraph,
-  storeActions,
 }) => {
   return (
     <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1769,12 +1938,7 @@ const LeftGridView = ({
             onClick={handleGridItemClick}
             onClose={closeGraph}
             onToggleExpand={toggleGraphExpanded}
-            onDelete={(graphId) => {
-              // Delete the graph permanently
-              if (storeActions?.deleteGraph) {
-                storeActions.deleteGraph(graphId);
-              }
-            }}
+
           />
         ))}
         {openGraphsForList.length === 0 && (
@@ -2456,6 +2620,8 @@ const Panel = forwardRef(
     nodeDefinitionIndices = new Map(), // Context-specific definition indices 
     onStartHurtleAnimationFromPanel, // <<< Add new prop for animation
     leftPanelExpanded = true,
+    selectedInstanceIds = new Set(), // Add selected node instances from canvas
+    hydratedNodes = [], // Add hydrated nodes from canvas
     rightPanelExpanded = true,
   }, ref) => {
     const [isScrolling, setIsScrolling] = useState(false);
@@ -2653,6 +2819,16 @@ const Panel = forwardRef(
             groups.get(typeId).nodes.push(node);
         });
         
+        console.log('[Panel] allNodesByType derived:', {
+            totalGroups: groups.size,
+            groups: Array.from(groups.entries()).map(([typeId, group]) => ({
+                typeId,
+                typeName: group.typeInfo.name,
+                nodeCount: group.nodes.length,
+                nodeIds: group.nodes.map(n => n.id)
+            }))
+        });
+        
         return groups;
     }, [allNodes, nodePrototypesMap]);
 
@@ -2743,6 +2919,15 @@ const Panel = forwardRef(
         console.log(`[toggleSection] Toggled section '${name}'. New collapsed state: ${!sectionCollapsed[name]}`);
     };
 
+    // Debug section state
+    useEffect(() => {
+        console.log('[Panel] Section state updated:', {
+            sectionCollapsed,
+            sectionMaxHeights,
+            leftViewActive
+        });
+    }, [sectionCollapsed, sectionMaxHeights, leftViewActive]);
+
     // <<< Effect to scroll to TOP when new item added >>>
     useEffect(() => {
         // Only scroll if it's the left panel and the ref exists
@@ -2779,27 +2964,29 @@ const Panel = forwardRef(
 
         const newMaxHeights = {};
         
-        // Calculate heights for each type section
-        savedNodesByType.forEach((group, typeId) => {
+        // Calculate heights for both saved nodes and all nodes (for All Things tab)
+        const allTypeGroups = new Map([...savedNodesByType, ...allNodesByType]);
+        
+        allTypeGroups.forEach((group, typeId) => {
             const sectionRef = sectionContentRefs.current.get(typeId);
             let maxHeight = '0px'; // Default to collapsed height
 
             if (sectionRef) {
                 const currentScrollHeight = sectionRef.scrollHeight;
-            const potentialOpenHeight = `${currentScrollHeight}px`; 
+                const potentialOpenHeight = `${currentScrollHeight}px`; 
 
-            // Decide whether to use the calculated height or 0px
+                // Decide whether to use the calculated height or 0px
                 if (!sectionCollapsed[typeId]) {
-                // Section is OPEN, use the calculated height
+                    // Section is OPEN, use the calculated height
                     maxHeight = potentialOpenHeight;
-            } else {
-                // Section is CLOSED, maxHeight remains '0px'
+                } else {
+                    // Section is CLOSED, maxHeight remains '0px'
                     maxHeight = '0px';
-            }
-        } else {
-            // Fallback if ref isn't ready (might happen on initial render)
+                }
+            } else {
+                // Fallback if ref isn't ready (might happen on initial render)
                 maxHeight = sectionCollapsed[typeId] ? '0px' : '500px';
-        }
+            }
 
             newMaxHeights[typeId] = maxHeight;
         });
@@ -2807,7 +2994,7 @@ const Panel = forwardRef(
         // Set the state
         setSectionMaxHeights(newMaxHeights);
 
-    }, [savedNodesByType, sectionCollapsed, panelWidth, isWidthInitialized]); // Rerun when savedNodesByType, collapsed state, or panel width changes
+    }, [savedNodesByType, allNodesByType, sectionCollapsed, panelWidth, isWidthInitialized]); // Rerun when savedNodesByType, allNodesByType, collapsed state, or panel width changes
 
 
 
@@ -3432,7 +3619,6 @@ const Panel = forwardRef(
                 closeGraph={closeGraph}
                 toggleGraphExpanded={toggleGraphExpanded}
                 createNewGraph={createNewGraph}
-                storeActions={storeActions}
               />
             );
         } else if (leftViewActive === 'federation') {
@@ -3451,6 +3637,8 @@ const Panel = forwardRef(
                     openRightPanelNodeTab={openRightPanelNodeTab}
                     rightPanelTabs={rightPanelTabs}
                     activeDefinitionNodeId={activeDefinitionNodeId}
+                    selectedInstanceIds={selectedInstanceIds}
+                    hydratedNodes={hydratedNodes}
                 />
             );
         } else if (leftViewActive === 'ai') {

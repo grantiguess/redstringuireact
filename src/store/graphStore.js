@@ -1608,7 +1608,180 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       // Persist to localStorage
       localStorage.setItem('redstring_git_source_of_truth', sourceOfTruth);
     }));
-  }
+  },
+
+  // Delete a node prototype and all its related data
+  deleteNodePrototype: (prototypeId) => set(produce((draft) => {
+    console.log(`[Store deleteNodePrototype] Deleting prototype: ${prototypeId}`);
+    
+    // Check if this is the base "Thing" type - prevent deletion
+    if (prototypeId === 'base-thing-prototype') {
+      console.warn(`[Store deleteNodePrototype] Cannot delete base "Thing" type.`);
+      return;
+    }
+    
+    const prototype = draft.nodePrototypes.get(prototypeId);
+    if (!prototype) {
+      console.warn(`[Store deleteNodePrototype] Prototype ${prototypeId} not found.`);
+      return;
+    }
+    
+    // Find and clean up graphs that reference this prototype as their defining node
+    const graphsToDelete = [];
+    draft.graphs.forEach((graph, graphId) => {
+      if (graph.definingNodeIds?.includes(prototypeId)) {
+        graphsToDelete.push(graphId);
+        console.log(`[Store deleteNodePrototype] Marking orphaned graph for deletion: ${graphId}`);
+      }
+    });
+    
+    // Delete orphaned graphs (this will also clean up their instances and edges)
+    graphsToDelete.forEach(graphId => {
+      const graph = draft.graphs.get(graphId);
+      if (graph) {
+        // Remove from open graphs
+        draft.openGraphIds = draft.openGraphIds.filter(id => id !== graphId);
+        
+        // Remove from expanded graphs
+        draft.expandedGraphIds.delete(graphId);
+        
+        // Clear active graph if it was this one
+        if (draft.activeGraphId === graphId) {
+          draft.activeGraphId = draft.openGraphIds.length > 0 ? draft.openGraphIds[0] : null;
+        }
+        
+        // Remove from right panel tabs if open
+        draft.rightPanelTabs = draft.rightPanelTabs.filter(tab => 
+          tab.type !== 'graph' || tab.graphId !== graphId
+        );
+        
+        // Delete all edges in this graph
+        if (graph.edgeIds) {
+          graph.edgeIds.forEach(edgeId => {
+            draft.edges.delete(edgeId);
+          });
+        }
+        
+        // Delete the graph
+        draft.graphs.delete(graphId);
+        console.log(`[Store deleteNodePrototype] Deleted orphaned graph: ${graphId}`);
+      }
+    });
+    
+    // Remove from saved nodes if it's saved
+    draft.savedNodeIds.delete(prototypeId);
+    
+    // Remove from right panel tabs if open
+    draft.rightPanelTabs = draft.rightPanelTabs.filter(tab => tab.nodeId !== prototypeId);
+    
+    // Clear active definition node if it was this one
+    if (draft.activeDefinitionNodeId === prototypeId) {
+      draft.activeDefinitionNodeId = null;
+    }
+    
+    // Delete the prototype
+    draft.nodePrototypes.delete(prototypeId);
+    
+    console.log(`[Store deleteNodePrototype] Successfully deleted prototype: ${prototypeId} and ${graphsToDelete.length} orphaned graphs`);
+  })),
+
+  // Delete a graph and all its related data
+  deleteGraph: (graphId) => set(produce((draft) => {
+    console.log(`[Store deleteGraph] Deleting graph: ${graphId}`);
+    
+    const graph = draft.graphs.get(graphId);
+    if (!graph) {
+      console.warn(`[Store deleteGraph] Graph ${graphId} not found.`);
+      return;
+    }
+    
+    // Remove from open graphs
+    draft.openGraphIds = draft.openGraphIds.filter(id => id !== graphId);
+    
+    // Remove from expanded graphs
+    draft.expandedGraphIds.delete(graphId);
+    
+    // Clear active graph if it was this one
+    if (draft.activeGraphId === graphId) {
+      draft.activeGraphId = draft.openGraphIds.length > 0 ? draft.openGraphIds[0] : null;
+    }
+    
+    // Clear active definition node if it was defined by this graph
+    if (draft.activeDefinitionNodeId && graph.definingNodeIds?.includes(draft.activeDefinitionNodeId)) {
+      draft.activeDefinitionNodeId = null;
+    }
+    
+    // Remove from right panel tabs if open
+    draft.rightPanelTabs = draft.rightPanelTabs.filter(tab => 
+      tab.type !== 'graph' || tab.graphId !== graphId
+    );
+    
+    // Delete all edges in this graph
+    if (graph.edgeIds) {
+      graph.edgeIds.forEach(edgeId => {
+        draft.edges.delete(edgeId);
+      });
+    }
+    
+    // Delete the graph (this will also delete all instances)
+    draft.graphs.delete(graphId);
+    
+    console.log(`[Store deleteGraph] Successfully deleted graph: ${graphId}`);
+  })),
+
+  // Clean up any orphaned graphs that reference non-existent prototypes
+  cleanupOrphanedGraphs: () => set(produce((draft) => {
+    console.log('[Store cleanupOrphanedGraphs] Starting cleanup...');
+    
+    const orphanedGraphs = [];
+    draft.graphs.forEach((graph, graphId) => {
+      if (graph.definingNodeIds) {
+        const hasOrphanedReferences = graph.definingNodeIds.some(nodeId => 
+          !draft.nodePrototypes.has(nodeId)
+        );
+        
+        if (hasOrphanedReferences) {
+          orphanedGraphs.push(graphId);
+          console.log(`[Store cleanupOrphanedGraphs] Found orphaned graph: ${graphId}`);
+        }
+      }
+    });
+    
+    // Delete orphaned graphs
+    orphanedGraphs.forEach(graphId => {
+      const graph = draft.graphs.get(graphId);
+      if (graph) {
+        // Remove from open graphs
+        draft.openGraphIds = draft.openGraphIds.filter(id => id !== graphId);
+        
+        // Remove from expanded graphs
+        draft.expandedGraphIds.delete(graphId);
+        
+        // Clear active graph if it was this one
+        if (draft.activeGraphId === graphId) {
+          draft.activeGraphId = draft.openGraphIds.length > 0 ? draft.openGraphIds[0] : null;
+        }
+        
+        // Remove from right panel tabs if open
+        draft.rightPanelTabs = draft.rightPanelTabs.filter(tab => 
+          tab.type !== 'graph' || tab.graphId !== graphId
+        );
+        
+        // Delete all edges in this graph
+        if (graph.edgeIds) {
+          graph.edgeIds.forEach(edgeId => {
+            draft.edges.delete(edgeId);
+          });
+        }
+        
+        // Delete the graph
+        draft.graphs.delete(graphId);
+        console.log(`[Store cleanupOrphanedGraphs] Deleted orphaned graph: ${graphId}`);
+      }
+    });
+    
+    console.log(`[Store cleanupOrphanedGraphs] Cleanup complete. Deleted ${orphanedGraphs.length} orphaned graphs.`);
+  })),
 
   }; // End of returned state and actions object
 })); // End of create function with middleware
