@@ -279,8 +279,8 @@ const Node = ({
             width: '100%',
             height: '100%',
             padding: isPreviewing 
-              ? `25px ${hasAnyDefinitions ? 140 : 20}px 10px` 
-              : `15px 15px`,
+              ? `30px ${hasAnyDefinitions ? 140 : 25}px 15px` 
+              : `20px 20px`,
             boxSizing: 'border-box',
             pointerEvents: isEditingOnCanvas ? 'auto' : 'none',
             userSelect: 'none',

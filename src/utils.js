@@ -66,18 +66,19 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
     if (isPreviewing) {
         baseWidth = PREVIEW_NODE_WIDTH;
         baseHeight = PREVIEW_NODE_MIN_HEIGHT;
-        // Account for the actual padding used in preview mode (140px on each side for nodes with definitions, 20px for those without)
-        // Navigation arrows need more space - being aggressive to avoid any overlap
-        const previewHorizontalPadding = 140; // This matches the padding in Node.jsx for nodes with definitions
+        // Account for the actual padding used in preview mode (140px on each side for nodes with definitions, 25px for those without)
+        // We need to pass information about whether the node has definitions to calculate accurate text width
+        // For now, use the larger padding to be conservative with text wrapping calculations
+        const previewHorizontalPadding = 140; // Conservative padding for nodes with definitions
         textWidthTarget = baseWidth - 2 * previewHorizontalPadding;
     } else if (hasImage) {
         baseWidth = EXPANDED_NODE_WIDTH;
         baseHeight = NODE_HEIGHT; // Start with base, image adds later
-        textWidthTarget = baseWidth - 2 * NODE_PADDING;
+        textWidthTarget = baseWidth - 40; // Account for 20px horizontal padding on each side
     } else {
         baseWidth = NODE_WIDTH;
         baseHeight = NODE_HEIGHT;
-        textWidthTarget = baseWidth - 2 * NODE_PADDING;
+        textWidthTarget = baseWidth - 40; // Account for 20px horizontal padding on each side
     }
 
     // --- Text Measurement ---
@@ -93,7 +94,7 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
     document.body.removeChild(tempSpan);
 
     // --- Shared Constant ---
-    const TEXT_V_PADDING_TOTAL = 35; // Total vertical padding (25px top + 10px bottom for preview mode)
+    const TEXT_V_PADDING_TOTAL = 45; // Total vertical padding (30px top + 15px bottom for preview mode)
 
     // --- Calculate Dimensions Based on State ---
     let currentWidth, currentHeight, textAreaHeight, imageWidth, calculatedImageHeight, innerNetworkWidth, innerNetworkHeight, descriptionAreaHeight;
@@ -183,13 +184,13 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
             textBlockHeight = LINE_HEIGHT_ESTIMATE;
         } else {
             // Otherwise, calculate wrapping based on the node's actual current width.
-            const actualTextWidth = currentWidth - 2 * NODE_PADDING;
+            const actualTextWidth = currentWidth - 40; // Account for 20px padding on each side
             textBlockHeight = calculateTextAreaHeight(nodeName, actualTextWidth);
         }
         
         // Total height is the text block height plus padding, with a minimum of NODE_HEIGHT
-        // For non-preview nodes, use symmetric padding (15px top + 15px bottom = 30px total)
-        currentHeight = Math.max(NODE_HEIGHT, textBlockHeight + 30);
+        // For non-preview nodes, use symmetric padding (20px top + 20px bottom = 40px total)
+        currentHeight = Math.max(NODE_HEIGHT, textBlockHeight + 40);
 
         // The text area itself now effectively is the full height to allow vertical centering.
         textAreaHeight = currentHeight;
