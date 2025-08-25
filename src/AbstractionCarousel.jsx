@@ -1251,7 +1251,16 @@ const AbstractionCarousel = ({
                       justifyContent: 'center',
                       width: '100%',
                       height: '100%',
-                      padding: '15px 15px', // Match Node.jsx padding
+                      // Match Node.jsx single-line padding for non-preview nodes
+                      // Node.jsx uses `20px ${isMultiline ? 30 : 22}px` when not previewing
+                      padding: `20px ${(() => {
+                        const singleLineSidePadding = 22;
+                        const availableWidth = unscaledWidth - (2 * singleLineSidePadding);
+                        const averageCharWidth = 12; // Keep consistent with Node.jsx
+                        const charsPerLine = Math.floor(availableWidth / averageCharWidth);
+                        const isMultiline = (item.name || '').length > charsPerLine;
+                        return isMultiline ? 30 : 22;
+                      })()}px`,
                       boxSizing: 'border-box',
                       userSelect: 'none',
                       minWidth: 0
@@ -1259,13 +1268,14 @@ const AbstractionCarousel = ({
                   >
                     <span
                       style={{
-                        fontSize: '20px', // Match Node.jsx
-                        fontWeight: 'bold', // Match Node.jsx
-                        fontFamily: "'EmOne', sans-serif", // Use EmOne for node names
+                        fontSize: '20px',
+                        fontWeight: 'bold',
+                        fontFamily: "'EmOne', sans-serif",
                         color: item.textColor || getTextColor(nodeColor),
+                        lineHeight: '32px',
                         whiteSpace: 'normal',
                         overflowWrap: 'break-word',
-                        wordBreak: 'keep-all',
+                        wordBreak: 'break-word',
                         textAlign: 'center',
                         minWidth: 0,
                         width: '100%',

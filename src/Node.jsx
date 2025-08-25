@@ -145,9 +145,13 @@ const Node = ({
   const isMultiline = useMemo(() => {
     if (!nodeName) return false;
     
-    // Estimate available width for text based on current width and base padding
-    const basePadding = isPreviewing ? (hasAnyDefinitions ? 140 : 30) : 25;
-    const availableWidth = currentWidth - (2 * basePadding);
+    // Estimate available width for text based on current width and the
+    // actual single-line side padding that will be applied in the UI.
+    // This prevents premature wrapping for short names (e.g., "Jim Carrey").
+    const singleLineSidePadding = isPreviewing
+      ? (hasAnyDefinitions ? 140 : 25)
+      : 22;
+    const availableWidth = currentWidth - (2 * singleLineSidePadding);
     
     // Quick character-based estimation (more accurate than previous method)
     const averageCharWidth = 12; // From constants
@@ -293,9 +297,16 @@ const Node = ({
             justifyContent: isPreviewing ? 'flex-start' : 'center',
             width: '100%',
             height: '100%',
-            padding: isPreviewing 
-              ? `30px ${hasAnyDefinitions ? 140 : (isMultiline ? 35 : 25)}px 15px` 
-              : `20px ${isMultiline ? 30 : 22}px`,
+            // Use a single computed side padding consistently between
+            // wrapping calculation and applied styles
+            padding: (() => {
+              const sidePadding = isPreviewing
+                ? (hasAnyDefinitions ? 140 : (isMultiline ? 35 : 25))
+                : (isMultiline ? 30 : 22);
+              return isPreviewing
+                ? `30px ${sidePadding}px 15px`
+                : `20px ${sidePadding}px`;
+            })(),
             boxSizing: 'border-box',
             pointerEvents: isEditingOnCanvas ? 'auto' : 'none',
             userSelect: 'none',
