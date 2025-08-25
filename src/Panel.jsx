@@ -1693,6 +1693,15 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
     onSelect(null); // Deselect after materialization
   };
 
+  // Check if this concept is bookmarked (materialized)
+  const { nodePrototypes } = useGraphStore();
+  const isBookmarked = useMemo(() => {
+    return Array.from(nodePrototypes.values()).some(node => 
+      node.semanticMetadata?.isSemanticNode && 
+      node.name === concept.name
+    );
+  }, [nodePrototypes, concept.name]);
+
   return (
     <div
       ref={drag}
@@ -1713,40 +1722,19 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
       }}
       title="Drag to canvas or click to select"
     >
-      {/* Origin Badge */}
-      <div style={{
-        position: 'absolute',
-        top: '4px',
-        right: '6px',
-        padding: '1px 4px',
-        background: 'rgba(0,0,0,0.2)',
-        borderRadius: '6px',
-        fontSize: '6px',
-        color: '#bdb5b5',
-        fontFamily: "'EmOne', sans-serif",
-        textTransform: 'uppercase',
-        opacity: 0.7
-      }}>
-        {concept.source === 'wikidata' ? 'WD' : concept.source === 'dbpedia' ? 'DB' : 'SW'}
-      </div>
-      
-      {/* Search Button - Canvas colored rounded square with icon in result's background color */}
+      {/* Search Button - Large, panel background colored icon */}
       <div
         style={{
           position: 'absolute',
-          top: '4px',
-          right: '32px', // Position to the left of origin badge
-          width: '20px',
-          height: '20px',
-          background: '#EFE8E5', // Canvas color
-          borderRadius: '4px',
+          top: '50%',
+          right: '45px',
+          transform: 'translateY(-50%)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           cursor: 'pointer',
           opacity: 0.8,
-          transition: 'opacity 0.2s ease',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+          transition: 'opacity 0.2s ease'
         }}
         onClick={(e) => {
           e.stopPropagation();
@@ -1760,9 +1748,40 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
         onMouseLeave={(e) => e.currentTarget.style.opacity = 0.8}
       >
         <Search 
-          size={12} 
+          size={32} 
           style={{ 
-            color: concept.color // Icon in result's background color
+            color: '#BDB5B5' // Panel background color
+          }} 
+        />
+      </div>
+
+      {/* Bookmark Button - Panel background colored with fill toggle */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '50%',
+          right: '8px',
+          transform: 'translateY(-50%)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          opacity: 0.8,
+          transition: 'opacity 0.2s ease'
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          handleMaterialize();
+        }}
+        title={isBookmarked ? `"${concept.name}" is saved` : `Save "${concept.name}" to your graph`}
+        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+        onMouseLeave={(e) => e.currentTarget.style.opacity = 0.8}
+      >
+        <Bookmark 
+          size={32} 
+          style={{ 
+            color: '#BDB5B5', // Panel background color stroke
+            fill: isBookmarked ? '#BDB5B5' : 'transparent' // Fill when bookmarked
           }} 
         />
       </div>
@@ -1771,11 +1790,16 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
       <div style={{
         color: '#bdb5b5',
         fontFamily: "'EmOne', sans-serif",
-        fontSize: '13px',
+        fontSize: '16px', // Larger title
         fontWeight: 'bold',
-        marginBottom: '6px',
-        lineHeight: '1.2',
-        paddingRight: '20px' // Make room for origin badge
+        marginBottom: '8px',
+        lineHeight: '1.3',
+        paddingRight: '85px', // Make room for larger icons (32px + spacing)
+        wordWrap: 'break-word',
+        overflow: 'hidden',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical'
       }}>
         {concept.name}
       </div>
@@ -1784,15 +1808,18 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
       <div style={{
         color: '#bdb5b5',
         fontFamily: "'EmOne', sans-serif",
-        fontSize: '9px',
-        lineHeight: '1.3',
-        marginBottom: '6px',
-        opacity: 0.8,
-        maxHeight: '26px', // Limit to ~2 lines
+        fontSize: '11px',
+        lineHeight: '1.4',
+        marginBottom: '8px',
+        opacity: 0.9,
+        paddingRight: '85px', // Make room for larger icons
+        wordWrap: 'break-word',
         overflow: 'hidden',
-        textOverflow: 'ellipsis'
+        display: '-webkit-box',
+        WebkitLineClamp: 3, // Allow 3 lines with better wrapping
+        WebkitBoxOrient: 'vertical'
       }}>
-        {concept.description.length > 80 ? concept.description.substring(0, 80) + '...' : concept.description}
+        {concept.description}
       </div>
       
       {/* Bottom Info Bar */}
@@ -1800,23 +1827,24 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
         <div style={{
           color: '#bdb5b5',
           fontFamily: "'EmOne', sans-serif",
-          fontSize: '7px',
-          opacity: 0.6,
+          fontSize: '10px', // Larger for better readability
+          opacity: 0.8,
           display: 'flex',
           alignItems: 'center',
-          gap: '4px'
+          gap: '6px'
         }}>
           <span>🔗 {concept.relationships?.length || 0}</span>
           {concept.semanticMetadata?.confidence && (
             <span>• {Math.round(concept.semanticMetadata.confidence * 100)}%</span>
           )}
+          <span>• {concept.source === 'wikidata' ? 'Wikidata' : concept.source === 'dbpedia' ? 'DBpedia' : concept.source}</span>
         </div>
         
         {/* Visual Drag Indicator */}
         <div style={{
           color: '#bdb5b5',
-          fontSize: '8px',
-          opacity: 0.4
+          fontSize: '10px',
+          opacity: 0.5
         }}>
           ⋮⋮
         </div>
