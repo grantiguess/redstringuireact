@@ -318,3 +318,38 @@ header .editable-title-input::selection {
 .tab-content {
   /* ... existing code ... */
 }
+
+/* --- Typography scale for panel headers --- */
+.panel-title-lg {
+  font-size: 16px;
+  font-weight: bold;
+  color: #260000;
+  line-height: 1.2;
+}
+
+.panel-title-md {
+  font-size: 14px;
+  font-weight: bold;
+  color: #260000;
+  line-height: 1.2;
+}
+
+.panel-title-sm {
+  font-size: 12px;
+  font-weight: bold;
+  color: #260000;
+  line-height: 1.2;
+}
+
+.panel-subtitle {
+  font-size: 12px;
+  color: #666;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.panel-label {
+  font-size: 12px;
+  color: #8B0000;
+  font-weight: bold;
+}

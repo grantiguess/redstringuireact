@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Globe, Link, Book, Search, ExternalLink, Plus, X, Check, Tags, FileText, Eye, Settings, CheckCircle, RotateCcw, Zap, Loader2, AlertCircle, CheckSquare } from 'lucide-react';
 import { PANEL_CLOSE_ICON_SIZE } from '../constants';
-import StandardDivider from './StandardDivider.jsx';
 import { rdfResolver } from '../services/rdfResolver.js';
 import { enrichFromSemanticWeb, fastEnrichFromSemanticWeb } from '../services/semanticWebQuery.js';
 import { knowledgeFederation } from '../services/knowledgeFederation.js';
@@ -170,6 +169,24 @@ const ExternalLinkCard = ({ link, onRemove }) => {
         color: '#b31b1b',
         desc: 'arXiv preprint'
       };
+    } else if (uri.includes('dbpedia.org')) {
+      const resource = uri.split('/').pop();
+      const pretty = resource ? decodeURIComponent(resource).replace(/_/g, ' ') : 'DBpedia Resource';
+      return {
+        type: 'DBpedia',
+        display: pretty,
+        url: uri,
+        color: '#ff6600',
+        desc: 'Structured data from DBpedia'
+      };
+    } else if (uri.includes('schema.org')) {
+      return {
+        type: 'Schema.org',
+        display: uri.split('/').pop() || 'Schema Type',
+        url: uri,
+        color: '#0066cc',
+        desc: 'Schema.org vocabulary'
+      };
     } else {
       return {
         type: 'URL',
@@ -205,7 +222,7 @@ const ExternalLinkCard = ({ link, onRemove }) => {
         </div>
         <div style={{
           fontSize: '12px',
-          color: '#333',
+          color: '#666',
           fontFamily: "'EmOne', sans-serif",
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -214,20 +231,23 @@ const ExternalLinkCard = ({ link, onRemove }) => {
           {display}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+      <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
         <button
           onClick={() => window.open(url, '_blank')}
           style={{
-            width: '28px',
+            width: '32px',
             height: '28px',
             border: 'none',
             backgroundColor: 'transparent',
             cursor: 'pointer',
-            color: color
+            color: color,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
           }}
           title="Open external link"
         >
-          <ExternalLink size={14} />
+          <ExternalLink size={16} />
         </button>
         <button
           onClick={() => onRemove(link)}
@@ -250,6 +270,36 @@ const ExternalLinkCard = ({ link, onRemove }) => {
           <span style={{ fontWeight: 'bold', fontSize: '16px' }}>×</span>
         </button>
       </div>
+    </div>
+  );
+};
+
+// Compact card container for visual hierarchy without full-width dividers
+const SectionCard = ({ title, icon: Icon, rightEl = null, children, style = {} }) => {
+  return (
+    <div
+      style={{
+        border: '1px solid rgba(38,0,0,0.10)',
+        borderLeft: '3px solid #8B0000',
+        background: 'rgba(38,0,0,0.03)',
+        borderRadius: '8px',
+        padding: '10px',
+        marginBottom: '10px',
+        ...style
+      }}
+    >
+      {(title || rightEl) && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          {title ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {Icon && <Icon size={12} />}
+              <div className="panel-title-sm">{title}</div>
+            </div>
+          ) : <span />}
+          {rightEl}
+        </div>
+      )}
+      {children}
     </div>
   );
 };
@@ -465,59 +515,24 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
   };
 
   return (
-    <div style={{ 
-      marginBottom: '12px'
-    }}>
-      <div style={{ 
-        margin: '0 0 6px 0', 
-        fontSize: '12px', 
-        color: '#260000',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px'
-      }}>
-        <Tags size={12} />
-        <span style={{ fontWeight: 'bold' }}>RDF Schema</span>
-      </div>
-
-      {/* Show auto-synced RDF properties */}
-      <div style={{
-        fontSize: '12px',
-        marginBottom: '8px'
-      }}>
-        <div style={{ marginBottom: '6px', fontWeight: 'bold', color: '#333' }}>
-          Auto-Generated RDF Schema:
-        </div>
-        <div style={{ marginBottom: '3px', color: '#333' }}>
+    <SectionCard title="RDF Schema" icon={Tags}>
+      {/* Auto-synced RDF properties */}
+      <div style={{ fontSize: '12px', marginBottom: 6 }}>
+        <div style={{ marginBottom: 4, color: '#333' }}>
           <strong>rdfs:label:</strong> <code>"{nodeData.name || 'Untitled'}"</code>
         </div>
-        <div style={{ marginBottom: '0px', color: '#333' }}>
+        <div style={{ marginBottom: 0, color: '#333' }}>
           <strong>rdfs:comment:</strong> <code>"{(nodeData.description || 'No description').substring(0, 60)}{(nodeData.description || '').length > 60 ? '...' : ''}"</code>
+          <ProvenanceBadge provenance={nodeData.semanticProvenance} field="description" />
         </div>
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '4px', 
-          marginTop: '6px',
-          color: '#666', 
-          fontSize: '11px'
-        }}>
-          <CheckCircle size={12} />
-          Auto-synced
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, color: '#666', fontSize: 11 }}>
+          <CheckCircle size={12} /> Auto-synced
         </div>
       </div>
 
-      {/* Only rdfs:seeAlso needs manual input */}
-      <div style={{ marginBottom: '10px', marginLeft: '8px', marginRight: '24px' }}>
-        <label style={{ 
-          display: 'block', 
-          fontSize: '12px', 
-          color: '#8B0000', // Maroon label
-          marginBottom: '4px',
-          fontWeight: 'bold'
-        }}>
-          See Also (rdfs:seeAlso)
-        </label>
+      {/* rdfs:seeAlso */}
+      <div>
+        <div style={{ fontSize: 12, color: '#8B0000', fontWeight: 'bold', marginBottom: 6 }}>See Also</div>
         <input
           type="text"
           value={rdfsSeeAlso}
@@ -530,20 +545,14 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
             padding: '6px 8px',
             border: '1px solid #8B0000',
             borderRadius: '6px',
-            fontSize: '14px',
+            fontSize: '12px',
             fontFamily: "'EmOne', sans-serif",
             backgroundColor: 'transparent'
           }}
         />
-        <div style={{ 
-          fontSize: '11px', 
-          color: '#666', 
-          marginTop: '2px'
-        }}>
-          Comma-separated URLs to related resources
-        </div>
+        <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>Comma-separated URLs</div>
       </div>
-    </div>
+    </SectionCard>
   );
 };
 
@@ -582,56 +591,35 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
   ];
 
   return (
-    <div style={{
-      backgroundColor: '#bdb5b5', // Canvas color background
-      padding: '15px',
-      borderRadius: '8px',
-      border: '1px solid #e0e0e0'
-    }}>
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'space-between',
-        marginBottom: '10px' 
-      }}>
-        <h4 style={{ 
-          margin: '0', 
-          fontSize: '14px', 
-          color: '#8B0000', // Maroon header
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          padding: '6px 10px',
-          backgroundColor: '#EFE8E5',
-          borderRadius: '4px',
-          borderLeft: '3px solid #8B0000' // Maroon left border
-        }}>
-          <Search size={14} />
-          Semantic Classification
-        </h4>
+    <SectionCard
+      title="Semantic Classification"
+      icon={Search}
+      rightEl={(
         <button
           onClick={() => setShowSettings(!showSettings)}
           style={{
-            padding: '4px',
-            border: 'none',
+            padding: '4px 6px',
+            border: '1px solid #8B0000',
             backgroundColor: 'transparent',
+            borderRadius: '6px',
             cursor: 'pointer',
-            color: '#8B0000' // Maroon color
+            color: '#8B0000',
+            fontSize: '10px'
           }}
-          title="Federation settings"
+          title="Classification settings"
         >
-          <Settings size={14} />
+          Settings
         </button>
-      </div>
-
+      )}
+    >
       {/* Federation Settings */}
       {showSettings && (
         <div style={{
           padding: '10px',
-          backgroundColor: '#EFE8E5', // Canvas color background
+          backgroundColor: 'rgba(0,0,0,0.03)',
           borderRadius: '6px',
           marginBottom: '10px',
-          border: '1px solid #e0e0e0'
+          border: '1px solid #ddd'
         }}>
           <div style={{ fontSize: '12px', color: '#8B0000', marginBottom: '8px', fontWeight: 'bold' }}>
             Federation Mode:
@@ -671,28 +659,24 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
       {/* Current Type Display */}
       {nodeData.typeNodeId && (
         <div style={{
-          padding: '8px 10px',
-          backgroundColor: '#EFE8E5', // Canvas color background
-          borderLeft: '3px solid #8B0000', // Maroon left border
-          marginBottom: '10px',
+          padding: '6px 8px',
+          backgroundColor: 'rgba(0,0,0,0.02)',
+          marginBottom: '8px',
           fontSize: '12px',
-          borderRadius: '0 6px 6px 0' // Rounded right corners
+          borderRadius: '6px'
         }}>
-          <strong style={{ color: '#8B0000' }}>Current Type:</strong> {nodeData.typeNodeId}
-          <br />
-          <span style={{ color: '#666' }}>
-            This creates an rdfs:subClassOf relationship in RDF Schema
-          </span>
+          <strong style={{ color: '#260000' }}>Current Type:</strong> {nodeData.typeNodeId}
+          <span style={{ color: '#666', marginLeft: '6px', fontSize: '11px' }}>(rdfs:subClassOf)</span>
         </div>
       )}
 
       {/* Quick Ontology Mappings */}
-      <div style={{ marginBottom: '15px' }}>
+      <div style={{ marginBottom: '6px' }}>
         <label style={{ 
           display: 'block', 
           fontSize: '12px', 
-          color: '#8B0000', // Maroon label
-          marginBottom: '8px',
+          color: '#8B0000',
+          marginBottom: '6px',
           fontWeight: 'bold'
         }}>
           Quick Classifications (owl:equivalentClass):
@@ -708,10 +692,10 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
                   : addEquivalentClass(onto.id, 'quick-select')
                 }
                 style={{
-                  padding: '4px 8px',
-                  fontSize: '11px',
+                  padding: '3px 6px',
+                  fontSize: '10px',
                   border: `1px solid ${onto.color}`,
-                  backgroundColor: isSelected ? onto.color : '#EFE8E5', // Canvas color background when not selected
+                  backgroundColor: isSelected ? onto.color : 'transparent',
                   color: isSelected ? '#EFE8E5' : onto.color,
                   borderRadius: '12px',
                   cursor: 'pointer',
@@ -727,12 +711,12 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
 
       {/* Current Classifications */}
       {equivalentClasses.length > 0 && (
-        <div>
+        <div style={{ marginTop: 6 }}>
           <label style={{ 
             display: 'block', 
             fontSize: '12px', 
-            color: '#8B0000', // Maroon label
-            marginBottom: '8px',
+            color: '#8B0000', 
+            marginBottom: '6px',
             fontWeight: 'bold'
           }}>
             Current Classifications ({equivalentClasses.length}):
@@ -744,21 +728,21 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '6px 10px',
-                backgroundColor: '#EFE8E5', // Canvas color background
-                border: '1px solid #e0e0e0',
+                padding: '6px 8px',
+                backgroundColor: 'transparent',
+                border: '1px solid #ddd',
                 borderRadius: '4px',
-                marginBottom: '4px',
+                marginBottom: '6px',
                 fontSize: '12px'
               }}
             >
               <div>
                 <code style={{ 
-                  backgroundColor: '#EFE8E5', 
+                  backgroundColor: 'rgba(0,0,0,0.03)', 
                   padding: '2px 4px', 
                   borderRadius: '3px',
                   fontSize: '11px',
-                  color: '#333' // Dark text color for better readability
+                  color: '#333'
                 }}>
                   {cls['@id']}
                 </code>
@@ -766,7 +750,7 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
                   <span style={{ 
                     marginLeft: '8px', 
                     fontSize: '10px', 
-                    color: '#333', // Dark text color to match panel
+                    color: '#333',
                     fontStyle: 'italic'
                   }}>
                     via {cls.source}
@@ -802,7 +786,7 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
           <label style={{ 
             display: 'block', 
             fontSize: '12px', 
-            color: '#8B0000', // Maroon label
+            color: '#8B0000', 
             marginBottom: '8px',
             fontWeight: 'bold'
           }}>
@@ -818,7 +802,35 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
           </div>
         </div>
       )}
-    </div>
+    </SectionCard>
+  );
+};
+
+// Provenance badge component
+const ProvenanceBadge = ({ provenance, field }) => {
+  if (!provenance || !provenance[field]) return null;
+  
+  const p = provenance[field];
+  const sourceText = p.source === 'multi_source' ? 'Multi' : 
+                    p.source === 'single_strong' ? 'Single' : 'Auto';
+  
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        fontSize: '7px',
+        fontFamily: "'EmOne', sans-serif",
+        backgroundColor: 'rgba(139, 0, 0, 0.1)',
+        color: '#8B0000',
+        padding: '1px 3px',
+        borderRadius: '3px',
+        marginLeft: '4px',
+        cursor: 'help'
+      }}
+      title={`Auto-applied from ${sourceText} (${Math.round(p.confidence * 100)}% confidence) at ${new Date(p.appliedAt).toLocaleString()}`}
+    >
+      {sourceText}
+    </span>
   );
 };
 
@@ -838,14 +850,231 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
   });
   const [externalType, setExternalType] = useState('doi'); // 'doi' | 'wikipedia' | 'url'
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [autoApplied, setAutoApplied] = useState([]); // [{ field, prev, next, sourceMode, confidence, sourcesFound, ts }]
+  const lastEnrichAtRef = React.useRef(0);
+  const [lastSuggestionsMeta, setLastSuggestionsMeta] = useState(null); // { confidence, sourcesFound, items: [...] }
+  const [semanticIdentityMode, setSemanticIdentityMode] = useState('read'); // 'read' | 'write' | 'consolidated'
+  const [showConsolidatePreview, setShowConsolidatePreview] = useState(false);
+  const [consolidatePreview, setConsolidatePreview] = useState(null);
+  const [writeState, setWriteState] = useState({ isDirty: false, lastWrite: null, writeTarget: null });
+  const refineTerms = ['Character','Video game','Film','Person','Organization','Place','Work'];
 
 
   if (!nodeData) return null;
 
   const externalLinks = nodeData.externalLinks || [];
 
+  // Initialize semantic identity mode from node data
+  useEffect(() => {
+    const nodeSemanticMode = nodeData.semanticIdentity?.mode || 'read';
+    setSemanticIdentityMode(nodeSemanticMode);
+  }, [nodeData.id]);
+
+  // Update semantic identity schema on node
+  const updateSemanticIdentity = (updates) => {
+    const currentIdentity = nodeData.semanticIdentity || {
+      mode: 'read',
+      sources: [],
+      targets: [],
+      lastSync: null,
+      syncMetadata: {},
+      provenance: {}
+    };
+    
+    const newIdentity = { ...currentIdentity, ...updates };
+    onUpdate({ ...nodeData, semanticIdentity: newIdentity });
+  };
+
+  // Handle mode change
+  const handleModeChange = (newMode) => {
+    setSemanticIdentityMode(newMode);
+    updateSemanticIdentity({ 
+      mode: newMode,
+      lastModeChange: new Date().toISOString()
+    });
+  };
+
+  // Read sync pipeline: pull→diff→dedupe→apply with provenance
+  const performReadSync = async () => {
+    try {
+      setEnrichmentState({ isEnriching: true, progress: { stage: 'Syncing from semantic web...' }, results: null, error: null });
+      
+      // Pull from semantic web
+      const enrichmentResults = await fastEnrichFromSemanticWeb(nodeData.name, { timeout: 20000 });
+      
+      if (!enrichmentResults?.suggestions) {
+        throw new Error('No semantic web data found');
+      }
+      
+      // Create diff between current and incoming data
+      const incoming = enrichmentResults.suggestions;
+      const current = nodeData;
+      const diff = {
+        description: {
+          current: current.description || '',
+          incoming: incoming.description || '',
+          changed: (current.description || '') !== (incoming.description || '')
+        },
+        externalLinks: {
+          current: current.externalLinks || [],
+          incoming: incoming.externalLinks || [],
+          new: (incoming.externalLinks || []).filter(link => 
+            !(current.externalLinks || []).includes(canonicalizeLink(link))
+          )
+        },
+        equivalentClasses: {
+          current: current.equivalentClasses || [],
+          incoming: incoming.equivalentClasses || [],
+          new: (incoming.equivalentClasses || []).filter(cls => 
+            !(current.equivalentClasses || []).some(existing => 
+              (existing['@id'] || existing.id || '').toLowerCase() === 
+              (cls['@id'] || cls.id || '').toLowerCase()
+            )
+          )
+        }
+      };
+      
+      // Update semantic identity with sync metadata
+      updateSemanticIdentity({
+        lastSync: new Date().toISOString(),
+        syncMetadata: {
+          source: 'semantic_web',
+          confidence: enrichmentResults.suggestions.confidence || 0,
+          itemsFound: {
+            descriptions: diff.description.changed ? 1 : 0,
+            externalLinks: diff.externalLinks.new.length,
+            equivalentClasses: diff.equivalentClasses.new.length
+          }
+        }
+      });
+      
+      setEnrichmentState({ isEnriching: false, progress: {}, results: diff, error: null });
+      return diff;
+      
+    } catch (error) {
+      console.error('[ReadSync] Failed:', error);
+      setEnrichmentState({ isEnriching: false, progress: {}, results: null, error: error.message });
+      return null;
+    }
+  };
+
+  // Consolidate preview function
+  const generateConsolidatePreview = async () => {
+    const readData = await performReadSync();
+    if (!readData) return;
+    
+    // Create merged preview using simple merge logic
+    const merged = {
+      ...nodeData,
+      description: readData.description.incoming || nodeData.description,
+      externalLinks: [...(nodeData.externalLinks || []), ...readData.externalLinks.new],
+      equivalentClasses: [...(nodeData.equivalentClasses || []), ...readData.equivalentClasses.new],
+      lastConsolidated: new Date().toISOString()
+    };
+    
+    setConsolidatePreview({ original: nodeData, merged, diff: readData });
+    setShowConsolidatePreview(true);
+  };
+
+  // Apply consolidation
+  const applyConsolidation = () => {
+    if (consolidatePreview?.merged) {
+      onUpdate(consolidatePreview.merged);
+      updateSemanticIdentity({
+        mode: 'consolidated',
+        lastConsolidated: new Date().toISOString(),
+        consolidatedFrom: ['local', 'semantic_web']
+      });
+    }
+    setShowConsolidatePreview(false);
+    setConsolidatePreview(null);
+  };
+
+  // Write pipeline: dirty tracking→push→error handling
+  const performWrite = async (targetEndpoint = 'wikidata') => {
+    try {
+      if (!writeState.isDirty) {
+        console.log('[WriteSync] No changes to write');
+        return;
+      }
+
+      setEnrichmentState({ isEnriching: true, progress: { stage: 'Writing to semantic web...' }, results: null, error: null });
+      
+      // Guardrails: explicit writes only, single-source soft-apply
+      const writeData = {
+        name: nodeData.name,
+        description: nodeData.description,
+        externalLinks: nodeData.externalLinks || [],
+        equivalentClasses: nodeData.equivalentClasses || [],
+        writeMode: 'explicit', // Only explicit user-initiated writes
+        target: targetEndpoint
+      };
+      
+      // Simulate write operation (would be actual API call in production)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Update write state and semantic identity
+      setWriteState({ isDirty: false, lastWrite: new Date().toISOString(), writeTarget: targetEndpoint });
+      updateSemanticIdentity({
+        lastWrite: new Date().toISOString(),
+        writeMetadata: {
+          target: targetEndpoint,
+          itemsWritten: {
+            description: !!nodeData.description,
+            externalLinks: (nodeData.externalLinks || []).length,
+            equivalentClasses: (nodeData.equivalentClasses || []).length
+          }
+        }
+      });
+      
+      setEnrichmentState({ isEnriching: false, progress: {}, results: { success: true, target: targetEndpoint }, error: null });
+      
+    } catch (error) {
+      console.error('[WriteSync] Failed:', error);
+      setEnrichmentState({ isEnriching: false, progress: {}, results: null, error: `Write failed: ${error.message}` });
+    }
+  };
+
+  // Track dirty state when node data changes
+  useEffect(() => {
+    if (semanticIdentityMode === 'write') {
+      setWriteState(prev => ({ ...prev, isDirty: true }));
+    }
+  }, [nodeData.description, JSON.stringify(nodeData.externalLinks), JSON.stringify(nodeData.equivalentClasses), semanticIdentityMode]);
+
+  // Guardrails: prevent accidental auto-apply in write mode
+  const isWriteModeGuarded = semanticIdentityMode === 'write';
+  
+  // Override auto-apply when in write mode (guardrail)
+  const safeAutoApply = (updates) => {
+    if (isWriteModeGuarded) {
+      console.log('[Guardrail] Preventing auto-apply in write mode');
+      return false;
+    }
+    onUpdate(updates);
+    return true;
+  };
+
+  // Simple URI canonicalizer for dedupe
+  const canonicalizeLink = (uri) => {
+    try {
+      const u = new URL(uri);
+      u.hash = '';
+      // strip common tracking params
+      ['utm_source','utm_medium','utm_campaign','utm_term','utm_content'].forEach(p => u.searchParams.delete(p));
+      const pathname = u.pathname.endsWith('/') ? u.pathname.slice(0, -1) : u.pathname;
+      u.pathname = pathname;
+      u.protocol = u.protocol.toLowerCase();
+      u.hostname = u.hostname.toLowerCase();
+      return u.toString();
+    } catch {
+      return uri.trim();
+    }
+  };
+
   const addExternalLink = (uri) => {
-    const updatedLinks = [...externalLinks, uri];
+    const canon = canonicalizeLink(uri);
+    const updatedLinks = Array.from(new Set([...(externalLinks || []).map(canonicalizeLink), canon]));
     onUpdate({
       ...nodeData,
       externalLinks: updatedLinks
@@ -915,12 +1144,40 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
           // Apply description if absent
           if (!updates.description && enrichmentResults.suggestions.description) {
             updates.description = enrichmentResults.suggestions.description;
+            // Mark as auto-applied with provenance
+            if (!updates.semanticProvenance) updates.semanticProvenance = {};
+            updates.semanticProvenance.description = {
+              source: sourceMode,
+              confidence: conf,
+              appliedAt: new Date().toISOString(),
+              sourcesFound
+            };
           }
           // Merge external links
           if (Array.isArray(enrichmentResults.suggestions.externalLinks) && enrichmentResults.suggestions.externalLinks.length > 0) {
             const existing = new Set((updates.externalLinks || []));
-            enrichmentResults.suggestions.externalLinks.forEach(l => existing.add(l));
+            const newLinks = [];
+            enrichmentResults.suggestions.externalLinks.forEach(l => {
+              if (!existing.has(l)) {
+                newLinks.push(l);
+              }
+              existing.add(l);
+            });
             updates.externalLinks = Array.from(existing);
+            // Track provenance for new links
+            if (newLinks.length > 0) {
+              if (!updates.semanticProvenance) updates.semanticProvenance = {};
+              if (!updates.semanticProvenance.externalLinks) updates.semanticProvenance.externalLinks = [];
+              newLinks.forEach(link => {
+                updates.semanticProvenance.externalLinks.push({
+                  link,
+                  source: sourceMode,
+                  confidence: conf,
+                  appliedAt: new Date().toISOString(),
+                  sourcesFound
+                });
+              });
+            }
           }
           // Merge equivalent classes if provided
           if (Array.isArray(enrichmentResults.suggestions.equivalentClasses) && enrichmentResults.suggestions.equivalentClasses.length > 0) {
@@ -928,7 +1185,15 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
             const merged = [...prev, ...enrichmentResults.suggestions.equivalentClasses];
             updates.equivalentClasses = merged;
           }
-          onUpdate(updates);
+          if (!safeAutoApply(updates)) {
+            // Show as suggestions instead in write mode
+            setEnrichmentState({
+              isEnriching: false,
+              progress: {},
+              results: enrichmentResults.suggestions,
+              error: null
+            });
+          }
         }
       } catch (e) {
         // Swallow auto-import errors silently but log
@@ -974,9 +1239,80 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
     } else if (type === 'description' && !nodeData.description) {
       onUpdate({ ...nodeData, description: value });
     } else if (type === 'equivalentClass') {
-      const updatedClasses = [...(nodeData.equivalentClasses || []), value];
+      const prev = Array.isArray(nodeData.equivalentClasses) ? nodeData.equivalentClasses : [];
+      const exists = prev.some(cls => (cls['@id'] || cls.id || '').toLowerCase() === (value['@id'] || value.id || '').toLowerCase());
+      const updatedClasses = exists ? prev : [...prev, value];
       onUpdate({ ...nodeData, equivalentClasses: updatedClasses });
     }
+  };
+
+  // Debounced auto-enrich on name change with gating
+  useEffect(() => {
+    const name = (nodeData?.name || '').trim();
+    if (!name || name.toLowerCase() === 'new thing' || name.length < 3) return;
+    const now = Date.now();
+    const timeSince = now - (lastEnrichAtRef.current || 0);
+    // throttle to at most once per 2s
+    if (timeSince < 2000) return;
+    const t = setTimeout(async () => {
+      lastEnrichAtRef.current = Date.now();
+      try {
+        const enrichmentResults = await fastEnrichFromSemanticWeb(name, { timeout: 15000 });
+        const conf = Number(enrichmentResults?.suggestions?.confidence || 0);
+        const sources = enrichmentResults?.sources || {};
+        const sourcesFound = ['wikidata','dbpedia','wikipedia'].reduce((n,k)=> n + (sources[k]?.found ? 1 : 0), 0);
+
+        // simple title match check
+        const clean = (s) => (s || '').toLowerCase().replace(/[_-]+/g,' ').replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();
+        const nodeClean = clean(name);
+        const suggestionTitle = enrichmentResults?.suggestions?.title || name; // fallback
+        const suggClean = clean(suggestionTitle);
+        const strongTitle = nodeClean && suggClean && (nodeClean === suggClean || nodeClean.includes(suggClean) || suggClean.includes(nodeClean));
+
+        const safeApplyDesc = !nodeData.description && enrichmentResults?.suggestions?.description;
+        const links = Array.isArray(enrichmentResults?.suggestions?.externalLinks) ? enrichmentResults.suggestions.externalLinks : [];
+
+        // Apply policy: two sources + conf>=0.8 OR one strong source + conf>=0.9 and strong title
+        const oneStrongSource = (sources.wikipedia?.found || sources.wikidata?.found) && conf >= 0.9 && strongTitle;
+        if ((sourcesFound >= 2 && conf >= 0.8) || oneStrongSource) {
+          const updates = { ...nodeData };
+          if (safeApplyDesc) updates.description = enrichmentResults.suggestions.description;
+          if (links.length > 0) {
+            const canonMerged = new Set((updates.externalLinks || []).map(canonicalizeLink));
+            links.forEach(l => canonMerged.add(canonicalizeLink(l)));
+            updates.externalLinks = Array.from(canonMerged);
+          }
+          onUpdate(updates);
+          setAutoApplied(prev => [{ field: 'semanticWeb', prev: null, next: 'applied', sourceMode: oneStrongSource ? 'single' : 'multi', confidence: conf, sourcesFound, ts: Date.now() }, ...prev].slice(0,5));
+        } else {
+          // Present suggestions only, capture meta
+          const items = (enrichmentResults?.suggestions?.externalLinks || []).slice(0,5);
+          setLastSuggestionsMeta({
+            confidence: conf,
+            sourcesFound,
+            items
+          });
+          setEnrichmentState({ isEnriching: false, progress: {}, results: enrichmentResults.suggestions, error: null });
+        }
+      } catch (e) {
+        // no-op on failure
+      }
+    }, 600);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeData?.name]);
+
+  const runRefinedSearch = async (hint) => {
+    const name = (nodeData?.name || '').trim();
+    if (!name) return;
+    try {
+      const enrichmentResults = await fastEnrichFromSemanticWeb(`${name} ${hint}`, { timeout: 15000 });
+      const conf = Number(enrichmentResults?.suggestions?.confidence || 0);
+      const sources = enrichmentResults?.sources || {};
+      const sourcesFound = ['wikidata','dbpedia','wikipedia'].reduce((n,k)=> n + (sources[k]?.found ? 1 : 0), 0);
+      setLastSuggestionsMeta({ confidence: conf, sourcesFound, items: (enrichmentResults?.suggestions?.externalLinks || []).slice(0,5) });
+      setEnrichmentState({ isEnriching: false, progress: {}, results: enrichmentResults.suggestions, error: null });
+    } catch {}
   };
 
   // Handle mass knowledge import
@@ -1045,32 +1381,30 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
           <Globe size={16} />
           <span style={{ fontWeight: 'bold' }}>Semantic Web</span>
         </div>
-        <button
-          onClick={() => setShowAdvanced(!showAdvanced)}
-          style={{
-            padding: '4px 8px',
-            border: '1px solid #8B0000',
-            borderRadius: '6px',
-            background: 'transparent',
-            color: '#8B0000',
-            fontSize: '10px',
-            cursor: 'pointer',
-            fontWeight: 'bold'
-          }}
-        >
-          {showAdvanced ? 'Advanced — On' : 'Advanced'}
-        </button>
       </div>
 
-      {/* Semantic Profile */}
+      {/* Refine chips row */}
       <div style={{ marginBottom: '12px' }}>
-        <div style={{
-          margin: '0 0 6px 0',
-          fontSize: '12px',
-          color: '#260000',
-          fontWeight: 'bold'
-        }}>
-          Semantic Profile
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          {refineTerms.map(term => (
+            <button
+              key={term}
+              onClick={() => runRefinedSearch(term)}
+              style={{
+                padding: '2px 6px',
+                fontSize: '9px',
+                border: '1px solid #8B0000',
+                borderRadius: '8px',
+                background: 'transparent',
+                color: '#8B0000',
+                cursor: 'pointer',
+                fontFamily: "'EmOne', sans-serif"
+              }}
+              title={`Refine semantic search using "${term}" as context to find more relevant external references`}
+            >
+              {term}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -1080,24 +1414,38 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
         onUpdate={onUpdate} 
       />
 
-      <StandardDivider margin="15px 0" />
+      {/* Classification inside Semantic Profile */}
+      <div style={{ marginTop: '8px' }}>
+        <SemanticClassificationSection 
+          nodeData={nodeData} 
+          onUpdate={onUpdate}
+        />
+      </div>
+
+      {/* spacing only; avoid divider lines */}
+      <div style={{ height: 8 }} />
 
       {/* External Links Section (Rosetta Stone) */}
-      <div style={{ 
-        marginBottom: '16px'
-      }}>
-        <div style={{ 
-          margin: '0 0 8px 0', 
-          fontSize: '12px', 
-          color: '#260000',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px'
-        }}>
-          <Link size={12} />
-          <span style={{ fontWeight: 'bold' }}>External References (owl:sameAs)</span>
-        </div>
-
+      <SectionCard
+        title="External References (owl:sameAs)"
+        icon={Link}
+        rightEl={(
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {(autoApplied[0]?.confidence || lastSuggestionsMeta?.confidence) && (
+              <span style={{ fontSize: 10, color: '#666' }}>
+                Web {autoApplied[0]?.sourcesFound || lastSuggestionsMeta?.sourcesFound || 0} src • {Math.round((autoApplied[0]?.confidence || lastSuggestionsMeta?.confidence || 0) * 100)}%
+              </span>
+            )}
+            <button
+              onClick={() => { setShowAdvanced(true); setExternalType('wikipedia'); }}
+              title="Find a different match"
+              style={{ padding: '2px 6px', border: '1px solid #ccc', borderRadius: '6px', background: 'transparent', color: '#666', fontSize: '10px', cursor: 'pointer' }}
+            >
+              Not this?
+            </button>
+          </div>
+        )}
+      >
         {/* Unified reference input */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px' }}>
           <select
@@ -1125,14 +1473,10 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
 
         {/* Display existing links */}
         {externalLinks.length > 0 && (
-          <div style={{ marginTop: '10px' }}>
-            <h5 style={{ 
-              margin: '0 0 6px 0', 
-              fontSize: '12px', 
-              color: '#666'
-            }}>
+          <div style={{ marginTop: 8 }}>
+            <div style={{ margin: '0 0 6px 0', fontSize: 12, color: '#666' }}>
               Linked Resources ({externalLinks.length})
-            </h5>
+            </div>
             {externalLinks.map((link, index) => (
               <ExternalLinkCard
                 key={index}
@@ -1143,14 +1487,92 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
           </div>
         )}
 
-        {/* Semantic Web Actions */}
-        <div style={{ marginTop: '12px' }}>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+        {/* Close Candidates (when confidence is midrange) */}
+        {lastSuggestionsMeta && lastSuggestionsMeta.confidence >= 0.6 && lastSuggestionsMeta.confidence < 0.78 && (
+          <div style={{ marginTop: '10px' }}>
+            <h5 style={{ margin: '0 0 6px 0', fontSize: '12px', color: '#666' }}>
+              Close candidates
+            </h5>
+            {lastSuggestionsMeta.items.map((cand, idx) => (
+              <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px dashed #ccc', borderRadius: '6px', padding: '6px 8px', marginBottom: '6px' }}>
+                <code style={{ fontSize: '10px', padding: '2px 4px', background: 'rgba(0,0,0,0.05)', borderRadius: '2px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {cand.substring(0, 80)}{cand.length > 80 ? '…' : ''}
+                </code>
+                <div style={{ display: 'flex', gap: '6px', marginLeft: '8px' }}>
+                  <button onClick={() => addExternalLink(cand)} style={{ padding: '4px 6px', border: 'none', borderRadius: '4px', background: '#8B0000', color: '#EFE8E5', fontSize: '10px', cursor: 'pointer' }}>Use link</button>
+                  {!nodeData.description && enrichmentState.results?.description && (
+                    <button onClick={() => applySuggestion('description', enrichmentState.results.description)} style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: '4px', background: 'transparent', color: '#666', fontSize: '10px', cursor: 'pointer' }}>Replace description</button>
+                  )}
+                  <button onClick={() => {/* alias placeholder */}} style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: '4px', background: 'transparent', color: '#666', fontSize: '10px', cursor: 'pointer' }}>Add alias</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      {/* spacing only; avoid divider lines */}
+      <div style={{ height: 12 }} />
+
+      {/* Semantic Web Actions */}
+      <div style={{ marginTop: '12px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+          <button
+            onClick={handleEnrichFromSemanticWeb}
+            disabled={enrichmentState.isEnriching}
+            style={{
+              backgroundColor: enrichmentState.isEnriching ? '#666' : '#8B0000',
+              color: '#EFE8E5',
+              border: 'none',
+              padding: '6px 10px',
+              borderRadius: '4px',
+              cursor: enrichmentState.isEnriching ? 'not-allowed' : 'pointer',
+              fontSize: '11px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontWeight: 'bold'
+            }}
+            onMouseEnter={(e) => !enrichmentState.isEnriching && (e.currentTarget.style.backgroundColor = '#A52A2A')}
+            onMouseLeave={(e) => !enrichmentState.isEnriching && (e.currentTarget.style.backgroundColor = '#8B0000')}
+            title="Enrich from semantic web (Wikidata, DBpedia)"
+          >
+            {enrichmentState.isEnriching ? <Loader2 size={14} style={{animation: 'spin 1s linear infinite'}} /> : <Zap size={14} />}
+            {enrichmentState.isEnriching ? 'Enriching...' : 'Enrich from Web'}
+          </button>
+          
+          {showAdvanced && (
+          <button
+            onClick={handleMassImport}
+            disabled={enrichmentState.isEnriching || federationState.isImporting}
+            style={{
+              backgroundColor: (enrichmentState.isEnriching || federationState.isImporting) ? '#666' : '#4B0082',
+              color: '#EFE8E5',
+              border: 'none',
+              padding: '6px 10px',
+              borderRadius: '4px',
+              cursor: (enrichmentState.isEnriching || federationState.isImporting) ? 'not-allowed' : 'pointer',
+              fontSize: '11px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontWeight: 'bold'
+            }}
+            onMouseEnter={(e) => !(enrichmentState.isEnriching || federationState.isImporting) && (e.currentTarget.style.backgroundColor = '#6A0DAD')}
+            onMouseLeave={(e) => !(enrichmentState.isEnriching || federationState.isImporting) && (e.currentTarget.style.backgroundColor = '#4B0082')}
+            title="Import entire knowledge cluster (entities + relationships)"
+          >
+            {federationState.isImporting ? <Loader2 size={14} style={{animation: 'spin 1s linear infinite'}} /> : <Globe size={14} />}
+            {federationState.isImporting ? 'Importing...' : 'Mass Import'}
+          </button>
+          )}
+          
+          {showAdvanced && externalLinks.length > 0 && (
             <button
-              onClick={handleEnrichFromSemanticWeb}
+              onClick={resolveExternalLinks}
               disabled={enrichmentState.isEnriching}
               style={{
-                backgroundColor: enrichmentState.isEnriching ? '#666' : '#8B0000',
+                backgroundColor: enrichmentState.isEnriching ? '#666' : '#2E8B57',
                 color: '#EFE8E5',
                 border: 'none',
                 padding: '6px 10px',
@@ -1162,203 +1584,152 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
                 gap: '6px',
                 fontWeight: 'bold'
               }}
-              onMouseEnter={(e) => !enrichmentState.isEnriching && (e.currentTarget.style.backgroundColor = '#A52A2A')}
-              onMouseLeave={(e) => !enrichmentState.isEnriching && (e.currentTarget.style.backgroundColor = '#8B0000')}
-              title="Enrich from semantic web (Wikidata, DBpedia)"
+              onMouseEnter={(e) => !enrichmentState.isEnriching && (e.currentTarget.style.backgroundColor = '#3CB371')}
+              onMouseLeave={(e) => !enrichmentState.isEnriching && (e.currentTarget.style.backgroundColor = '#2E8B57')}
+              title="Resolve external links to RDF data"
             >
-              {enrichmentState.isEnriching ? <Loader2 size={14} style={{animation: 'spin 1s linear infinite'}} /> : <Zap size={14} />}
-              {enrichmentState.isEnriching ? 'Enriching...' : 'Enrich from Web'}
+              <RotateCcw size={14} />
+              Resolve Links
             </button>
-            
-            {showAdvanced && (
-            <button
-              onClick={handleMassImport}
-              disabled={enrichmentState.isEnriching || federationState.isImporting}
-              style={{
-                backgroundColor: (enrichmentState.isEnriching || federationState.isImporting) ? '#666' : '#4B0082',
-                color: '#EFE8E5',
-                border: 'none',
-                padding: '6px 10px',
-                borderRadius: '4px',
-                cursor: (enrichmentState.isEnriching || federationState.isImporting) ? 'not-allowed' : 'pointer',
-                fontSize: '11px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontWeight: 'bold'
-              }}
-              onMouseEnter={(e) => !(enrichmentState.isEnriching || federationState.isImporting) && (e.currentTarget.style.backgroundColor = '#6A0DAD')}
-              onMouseLeave={(e) => !(enrichmentState.isEnriching || federationState.isImporting) && (e.currentTarget.style.backgroundColor = '#4B0082')}
-              title="Import entire knowledge cluster (entities + relationships)"
-            >
-              {federationState.isImporting ? <Loader2 size={14} style={{animation: 'spin 1s linear infinite'}} /> : <Globe size={14} />}
-              {federationState.isImporting ? 'Importing...' : 'Mass Import'}
-            </button>
-            )}
-            
-            {showAdvanced && externalLinks.length > 0 && (
-              <button
-                onClick={resolveExternalLinks}
-                disabled={enrichmentState.isEnriching}
-                style={{
-                  backgroundColor: enrichmentState.isEnriching ? '#666' : '#2E8B57',
-                  color: '#EFE8E5',
-                  border: 'none',
-                  padding: '6px 10px',
-                  borderRadius: '4px',
-                  cursor: enrichmentState.isEnriching ? 'not-allowed' : 'pointer',
-                  fontSize: '11px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontWeight: 'bold'
-                }}
-                onMouseEnter={(e) => !enrichmentState.isEnriching && (e.currentTarget.style.backgroundColor = '#3CB371')}
-                onMouseLeave={(e) => !enrichmentState.isEnriching && (e.currentTarget.style.backgroundColor = '#2E8B57')}
-                title="Resolve external links to RDF data"
-              >
-                <RotateCcw size={14} />
-                Resolve Links
-              </button>
-            )}
+          )}
+        </div>
+
+        {/* Optional Wikipedia helper under Advanced */}
+        {showAdvanced && (
+          <div style={{ marginTop: '6px' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>Wikipedia Helper</label>
+            <WikipediaSearch onSelect={addExternalLink} />
           </div>
+        )}
 
-          {/* Optional Wikipedia helper under Advanced */}
-          {showAdvanced && (
-            <div style={{ marginTop: '6px' }}>
-              <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>Wikipedia Helper</label>
-              <WikipediaSearch onSelect={addExternalLink} />
-            </div>
-          )}
+        {/* Progress Display */}
+        {enrichmentState.isEnriching && (
+          <div style={{ 
+            fontSize: '11px', 
+            color: '#666'
+          }}>
+            <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>Enriching from semantic web...</div>
+            {Object.entries(enrichmentState.progress).map(([source, status]) => (
+              <div key={source} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                {status === 'pending' && <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ccc' }} />}
+                {status === 'active' && <Loader2 size={8} style={{ color: '#8B0000', animation: 'spin 1s linear infinite' }} />}
+                {status === 'completed' && <CheckSquare size={8} style={{ color: '#2E8B57' }} />}
+                <span>{source.replace('_', ' ')}...</span>
+              </div>
+            ))}
+          </div>
+        )}
 
-          {/* Progress Display */}
-          {enrichmentState.isEnriching && (
-            <div style={{ 
-              fontSize: '11px', 
-              color: '#666'
-            }}>
-              <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>Enriching from semantic web...</div>
-              {Object.entries(enrichmentState.progress).map(([source, status]) => (
-                <div key={source} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
-                  {status === 'pending' && <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ccc' }} />}
-                  {status === 'active' && <Loader2 size={8} style={{ color: '#8B0000', animation: 'spin 1s linear infinite' }} />}
-                  {status === 'completed' && <CheckSquare size={8} style={{ color: '#2E8B57' }} />}
-                  <span>{source.replace('_', ' ')}...</span>
+        {/* Error Display */}
+        {enrichmentState.error && (
+          <div style={{
+            fontSize: '11px',
+            color: '#dc3545',
+            padding: '8px',
+            backgroundColor: 'rgba(220, 53, 69, 0.1)',
+            borderRadius: '4px',
+            marginBottom: '10px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <AlertCircle size={12} />
+            {enrichmentState.error}
+          </div>
+        )}
+
+        {/* Results and Suggestions */}
+        {enrichmentState.results && (
+          <div style={{
+            fontSize: '12px'
+          }}>
+            <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#8B0000' }}>Enrichment Suggestions:</div>
+            
+            {enrichmentState.results.description && (
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Description:</div>
+                <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>
+                  {enrichmentState.results.description}
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Error Display */}
-          {enrichmentState.error && (
-            <div style={{
-              fontSize: '11px',
-              color: '#dc3545',
-              padding: '8px',
-              backgroundColor: 'rgba(220, 53, 69, 0.1)',
-              borderRadius: '4px',
-              marginBottom: '10px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}>
-              <AlertCircle size={12} />
-              {enrichmentState.error}
-            </div>
-          )}
-
-          {/* Results and Suggestions */}
-          {enrichmentState.results && (
-            <div style={{
-              fontSize: '12px'
-            }}>
-              <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#8B0000' }}>Enrichment Suggestions:</div>
-              
-              {enrichmentState.results.description && (
-                <div style={{ marginBottom: '8px' }}>
-                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Description:</div>
-                  <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>
-                    {enrichmentState.results.description}
-                  </div>
-                  {!nodeData.description && (
+                {!nodeData.description && (
+                  <button
+                    onClick={() => applySuggestion('description', enrichmentState.results.description)}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '10px',
+                      backgroundColor: '#2E8B57',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Apply Description
+                  </button>
+                )}
+              </div>
+            )}
+            
+            {enrichmentState.results.externalLinks.length > 0 && (
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>External Links:</div>
+                {enrichmentState.results.externalLinks.map((link, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <code style={{ fontSize: '10px', padding: '2px 4px', borderRadius: '2px', background: 'rgba(0,0,0,0.05)' }}>
+                      {link.substring(0, 50)}...
+                    </code>
                     <button
-                      onClick={() => applySuggestion('description', enrichmentState.results.description)}
+                      onClick={() => applySuggestion('externalLink', link)}
                       style={{
-                        padding: '4px 8px',
-                        fontSize: '10px',
+                        padding: '2px 6px',
+                        fontSize: '9px',
                         backgroundColor: '#2E8B57',
                         color: '#fff',
                         border: 'none',
-                        borderRadius: '3px',
+                        borderRadius: '2px',
                         cursor: 'pointer'
                       }}
                     >
-                      Apply Description
+                      Add
                     </button>
-                  )}
-                </div>
-              )}
-              
-              {enrichmentState.results.externalLinks.length > 0 && (
-                <div style={{ marginBottom: '8px' }}>
-                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>External Links:</div>
-                  {enrichmentState.results.externalLinks.map((link, idx) => (
-                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                      <code style={{ fontSize: '10px', padding: '2px 4px', borderRadius: '2px', background: 'rgba(0,0,0,0.05)' }}>
-                        {link.substring(0, 50)}...
-                      </code>
-                      <button
-                        onClick={() => applySuggestion('externalLink', link)}
-                        style={{
-                          padding: '2px 6px',
-                          fontSize: '9px',
-                          backgroundColor: '#2E8B57',
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: '2px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Add
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              {enrichmentState.results.equivalentClasses.length > 0 && (
-                <div style={{ marginBottom: '8px' }}>
-                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Classifications:</div>
-                  {enrichmentState.results.equivalentClasses.map((cls, idx) => (
-                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '10px' }}>{cls.label}</span>
-                      <span style={{ fontSize: '9px', color: '#666' }}>({cls.source})</span>
-                      <button
-                        onClick={() => applySuggestion('equivalentClass', cls)}
-                        style={{
-                          padding: '2px 6px',
-                          fontSize: '9px',
-                          backgroundColor: '#2E8B57',
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: '2px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Add
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              <div style={{ fontSize: '10px', color: '#666', marginTop: '8px' }}>Confidence: {(enrichmentState.results.confidence * 100).toFixed(0)}%</div>
-            </div>
-          )}
-        </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {enrichmentState.results.equivalentClasses.length > 0 && (
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Classifications:</div>
+                {enrichmentState.results.equivalentClasses.map((cls, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '10px' }}>{cls.label}</span>
+                    <span style={{ fontSize: '9px', color: '#666' }}>({cls.source})</span>
+                    <button
+                      onClick={() => applySuggestion('equivalentClass', cls)}
+                      style={{
+                        padding: '2px 6px',
+                        fontSize: '9px',
+                        backgroundColor: '#2E8B57',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '2px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <div style={{ fontSize: '10px', color: '#666', marginTop: '8px' }}>Confidence: {(enrichmentState.results.confidence * 100).toFixed(0)}%</div>
+          </div>
+        )}
       </div>
 
-      <StandardDivider margin="20px 0" />
+      {/* spacing only; avoid divider lines */}
+      <div style={{ height: 12 }} />
 
       {/* Mass Import Progress */}
       {federationState.isImporting && (
@@ -1419,11 +1790,7 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
       )}
 
       
-      {/* Semantic Classification Section */}
-      <SemanticClassificationSection 
-        nodeData={nodeData} 
-        onUpdate={onUpdate}
-      />
+      {/* Semantic Classification moved into Semantic Profile above */}
 
       {/* Resolved RDF Data Display */}
       {resolvedData.size > 0 && (
@@ -1461,6 +1828,152 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
               <div style={{ fontSize: '10px', color: '#8B0000' }}>Source: {link}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Undo chips */}
+      {autoApplied.length > 0 && (
+        <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          {autoApplied.slice(0,3).map((c, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', borderRadius: '12px', background: 'rgba(139,0,0,0.1)', color: '#260000', fontSize: '10px' }}>
+              Applied from web
+              <button
+                onClick={() => {
+                  // basic undo: reapply prev where possible
+                  const updates = { ...nodeData };
+                  // for now only handle description/links revert
+                  if (c.field === 'semanticWeb') {
+                    // noop placeholder; future granular
+                  }
+                  onUpdate(updates);
+                  setAutoApplied(prev => prev.filter((_, idx) => idx !== i));
+                }}
+                style={{ border: 'none', background: 'transparent', color: '#8B0000', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                Undo
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Advanced button moved to bottom */}
+      <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+        <button
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          style={{
+            padding: '6px 12px',
+            border: '1px solid #8B0000',
+            borderRadius: '6px',
+            background: 'transparent',
+            color: '#8B0000',
+            fontSize: '11px',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            fontFamily: "'EmOne', sans-serif"
+          }}
+        >
+          {showAdvanced ? 'Advanced — On' : 'Advanced'}
+        </button>
+      </div>
+
+      {/* Consolidate Preview Modal */}
+      {showConsolidatePreview && consolidatePreview && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000
+        }}>
+          <div style={{
+            backgroundColor: '#bdb5b5',
+            padding: '20px',
+            borderRadius: '8px',
+            maxWidth: '600px',
+            maxHeight: '80vh',
+            overflow: 'auto',
+            fontFamily: "'EmOne', sans-serif"
+          }}>
+            <h3 style={{ margin: '0 0 16px 0', color: '#260000' }}>Consolidate Preview</h3>
+            
+            <div style={{ marginBottom: '16px' }}>
+              <h4 style={{ margin: '0 0 8px 0', color: '#260000', fontSize: '14px' }}>Changes to apply:</h4>
+              
+              {consolidatePreview.diff.description.changed && (
+                <div style={{ marginBottom: '8px', padding: '8px', backgroundColor: 'rgba(220, 38, 38, 0.1)', borderRadius: '4px' }}>
+                  <strong>Description:</strong><br/>
+                  <span style={{ color: '#666', fontSize: '12px' }}>
+                    Current: {consolidatePreview.diff.description.current || '(empty)'}
+                  </span><br/>
+                  <span style={{ color: '#059669', fontSize: '12px' }}>
+                    New: {consolidatePreview.diff.description.incoming}
+                  </span>
+                </div>
+              )}
+              
+              {consolidatePreview.diff.externalLinks.new.length > 0 && (
+                <div style={{ marginBottom: '8px', padding: '8px', backgroundColor: 'rgba(5, 150, 105, 0.1)', borderRadius: '4px' }}>
+                  <strong>New External Links ({consolidatePreview.diff.externalLinks.new.length}):</strong><br/>
+                  {consolidatePreview.diff.externalLinks.new.slice(0, 3).map((link, i) => (
+                    <div key={i} style={{ fontSize: '11px', color: '#666' }}>• {link}</div>
+                  ))}
+                  {consolidatePreview.diff.externalLinks.new.length > 3 && (
+                    <div style={{ fontSize: '11px', color: '#666' }}>... and {consolidatePreview.diff.externalLinks.new.length - 3} more</div>
+                  )}
+                </div>
+              )}
+              
+              {consolidatePreview.diff.equivalentClasses.new.length > 0 && (
+                <div style={{ marginBottom: '8px', padding: '8px', backgroundColor: 'rgba(79, 70, 229, 0.1)', borderRadius: '4px' }}>
+                  <strong>New Classifications ({consolidatePreview.diff.equivalentClasses.new.length}):</strong><br/>
+                  {consolidatePreview.diff.equivalentClasses.new.slice(0, 3).map((cls, i) => (
+                    <div key={i} style={{ fontSize: '11px', color: '#666' }}>• {cls['@id'] || cls.id || 'Unknown'}</div>
+                  ))}
+                  {consolidatePreview.diff.equivalentClasses.new.length > 3 && (
+                    <div style={{ fontSize: '11px', color: '#666' }}>... and {consolidatePreview.diff.equivalentClasses.new.length - 3} more</div>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowConsolidatePreview(false)}
+                style={{
+                  padding: '8px 16px',
+                  border: '1px solid #666',
+                  borderRadius: '4px',
+                  backgroundColor: 'transparent',
+                  color: '#666',
+                  cursor: 'pointer',
+                  fontFamily: "'EmOne', sans-serif"
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={applyConsolidation}
+                style={{
+                  padding: '8px 16px',
+                  border: '1px solid #059669',
+                  borderRadius: '4px',
+                  backgroundColor: '#059669',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontFamily: "'EmOne', sans-serif",
+                  fontWeight: 'bold'
+                }}
+              >
+                Apply Consolidation
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

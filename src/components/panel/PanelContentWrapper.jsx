@@ -324,14 +324,24 @@ const PanelContentWrapper = ({
       }
       
       // Create edge between instances
-      const edgeId = `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      storeActions.addEdge(activeGraphId, {
-        id: edgeId,
-        sourceId: subjectInstanceId,
-        destinationId: objectInstanceId,
-        label: predicate,
-        color: '#666666'
-      });
+      // Dedupe: avoid duplicate edges with same S–P–O in current graph
+      try {
+        const edgesMap = useGraphStore.getState().edges;
+        const hasDuplicate = Array.isArray(currentGraph.edgeIds) && currentGraph.edgeIds.some((eid) => {
+          const e = edgesMap.get(eid);
+          return e && e.sourceId === subjectInstanceId && e.destinationId === objectInstanceId && e.label === predicate;
+        });
+        if (!hasDuplicate) {
+          const edgeId = `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          storeActions.addEdge(activeGraphId, {
+            id: edgeId,
+            sourceId: subjectInstanceId,
+            destinationId: objectInstanceId,
+            label: predicate,
+            color: '#666666'
+          });
+        }
+      } catch {}
       
       console.log('[PanelContentWrapper] Created semantic connection in graph:', {
         subjectPrototypeId,

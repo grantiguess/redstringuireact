@@ -166,7 +166,7 @@ const SavedNodeItem = ({ node, onClick, onDoubleClick, onUnsave, isActive }) => 
       onMouseLeave={() => setIsHovered(false)}
       style={{
         position: 'relative',
-        backgroundColor: node.color || NODE_DEFAULT_COLOR,
+        backgroundColor: node.semanticMetadata?.isSemanticNode ? getSemanticNodeColor(node) : (node.color || NODE_DEFAULT_COLOR),
         color: '#bdb5b5',
         borderRadius: '10px',
         padding: '4px 6px',
@@ -827,14 +827,24 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
     return cleaned || 'Unknown Concept';
   };
 
-  // Generate color for concept based on name hash
+  // Generate color for concept based on name hash - unified color system
   const generateConceptColor = (name) => {
-    const colors = ['#8B0000', '#8B4513', '#006400', '#4B0082', '#8B008B', '#FF6347', '#4682B4'];
+    const colors = ['#8B0000', '#8B4513', '#006400', '#4B0082', '#8B008B', '#CC4F35', '#4682B4'];
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
       hash = ((hash << 5) - hash + name.charCodeAt(i)) & 0xffffffff;
     }
     return colors[Math.abs(hash) % colors.length];
+  };
+
+  // Ensure semantic node uses consistent color across all views
+  const getSemanticNodeColor = (nodeData) => {
+    // If node has stored generated color from semantic metadata, use it
+    if (nodeData.semanticMetadata?.generatedColor) {
+      return nodeData.semanticMetadata.generatedColor;
+    }
+    // Otherwise use the node's current color or generate one
+    return nodeData.color || generateConceptColor(nodeData.name || 'Unknown');
   };
   
   // Create Redstring node prototype from discovered concept
@@ -877,7 +887,8 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
         ...concept.semanticMetadata,
         relationships: concept.relationships,
         originMetadata: originInfo,
-        isSemanticNode: true
+        isSemanticNode: true,
+        generatedColor: concept.color // Store the generated color for consistency
       },
       // Store the original description for potential use
       originalDescription: concept.description
@@ -1823,7 +1834,7 @@ const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemantic
         onMouseLeave={() => setIsHovered(false)}
       style={{
         position: 'relative',
-        backgroundColor: node.color || NODE_DEFAULT_COLOR,
+        backgroundColor: node.semanticMetadata?.isSemanticNode ? getSemanticNodeColor(node) : (node.color || NODE_DEFAULT_COLOR),
         color: '#bdb5b5',
         borderRadius: '10px',
         padding: '4px 6px',
@@ -1843,7 +1854,7 @@ const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemantic
         opacity: isDragging ? 0.5 : 1,
         fontFamily: "'EmOne', sans-serif",
         // Add semantic web glow effect
-        boxShadow: hasSemanticData ? `0 0 8px ${node.color || NODE_DEFAULT_COLOR}` : 'none',
+        boxShadow: hasSemanticData ? `0 0 8px ${node.semanticMetadata?.isSemanticNode ? getSemanticNodeColor(node) : (node.color || NODE_DEFAULT_COLOR)}` : 'none',
       }}
     >
       <span style={{
