@@ -1,0 +1,5 @@
+@prefix pref: <https://redstring.io/vocab/preferences/> .
+
+pref:DisplaySettings a pref:Settings ;
+    pref:theme "dark" ;
+    pref:language "en" .
