@@ -295,7 +295,7 @@ const LeftLibraryView = ({
 
       {savedNodesByType.size === 0 ? (
         <div style={{ color: '#666', fontSize: '0.9rem', fontFamily: "'EmOne', sans-serif", textAlign: 'center', marginTop: '20px' }}>
-          No saved nodes.
+          Bookmark Things to add them here.
         </div>
       ) : (
         Array.from(savedNodesByType.entries()).map(([typeId, group], index, array) => {
@@ -2835,6 +2835,9 @@ const DraggableTab = ({ tab, index, displayTitle, dragItemTitle, moveTabAction, 
 const MIN_PANEL_WIDTH = 100;
 const INITIAL_PANEL_WIDTH = 250;
 
+// Feature flag: toggle visibility of the "All Things" tab in the left panel header
+const ENABLE_ALL_THINGS_TAB = false;
+
 // Helper to read width from storage
 const getInitialWidth = (side, defaultValue) => {
   try {
@@ -3867,7 +3870,7 @@ const Panel = forwardRef(
     // --- Generate Content based on Side ---
     let panelContent = null;
     if (side === 'left') {
-        if (leftViewActive === 'all') {
+        if (ENABLE_ALL_THINGS_TAB && leftViewActive === 'all') {
             panelContent = (
               <LeftAllThingsView
                 allNodesByType={allNodesByType}
@@ -4139,14 +4142,16 @@ const Panel = forwardRef(
                     {side === 'left' ? (
                         // --- Left Panel Header --- 
                         <div style={{ flexGrow: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'stretch' }}>
-                            {/* All Things Button -> All Nodes */} 
-                            <div 
-                                title="All Things" 
-                                style={{ /* Common Button Styles */ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backgroundColor: leftViewActive === 'all' ? '#bdb5b5' : '#979090', zIndex: 2 }}
-                                onClick={() => setLeftViewActive('all')}
-                            >
-                                <LayoutGrid size={20} color="#260000" />
-                            </div>
+                            {/* All Things Button -> All Nodes */}
+                            {ENABLE_ALL_THINGS_TAB && (
+                                <div 
+                                    title="All Things" 
+                                    style={{ /* Common Button Styles */ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backgroundColor: leftViewActive === 'all' ? '#bdb5b5' : '#979090', zIndex: 2 }}
+                                    onClick={() => setLeftViewActive('all')}
+                                >
+                                    <LayoutGrid size={20} color="#260000" />
+                                </div>
+                            )}
                             {/* Library Button -> Saved Things */} 
                             <div 
                                 title="Saved Things" 

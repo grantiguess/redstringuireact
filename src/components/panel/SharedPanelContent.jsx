@@ -273,7 +273,7 @@ const WikipediaEnrichment = ({ nodeData, onUpdateNode }) => {
           }}
         >
           <BookOpen size={12} />
-          {isSearching ? 'Searching Wikipedia...' : 'Enrich from Wikipedia'}
+          {isSearching ? 'Searching Wikipedia...' : 'Pull from Wikipedia & Link'}
         </button>
       )}
 

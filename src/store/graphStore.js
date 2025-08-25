@@ -1856,6 +1856,18 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         }
       }
 
+      // Sanitize saved sets to remove references to missing prototypes
+      try {
+        if (storeState.savedNodeIds instanceof Set) {
+          storeState.savedNodeIds = new Set(Array.from(storeState.savedNodeIds).filter(id => storeState.nodePrototypes?.has?.(id)));
+        }
+        if (storeState.savedGraphIds instanceof Set) {
+          storeState.savedGraphIds = new Set(Array.from(storeState.savedGraphIds).filter(id => storeState.nodePrototypes?.has?.(id)));
+        }
+      } catch (e) {
+        console.warn('[graphStore] Failed to sanitize saved sets during load:', e);
+      }
+
       set({
         ...storeState,
         isUniverseLoaded: true,
