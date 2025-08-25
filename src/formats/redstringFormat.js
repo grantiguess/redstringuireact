@@ -249,7 +249,7 @@ export const exportToRedstring = (storeState, userDomain = null) => {
       "@type": "redstring:SpatialGraph", 
       "@id": `graph:${graphId}`,
       "rdfs:label": graph.name || `Graph ${graphId}`,
-      "rdfs:comment": graph.description || "RedString spatial graph",
+      "rdfs:comment": graph.description || "",
       
       // Graph-level properties
       "redstring:definingNodeIds": graph.definingNodeIds || [],

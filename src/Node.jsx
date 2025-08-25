@@ -17,6 +17,7 @@ const Node = ({
   isSelected,
   isDragging,
   onMouseDown,
+  onContextMenu,
   currentWidth,
   currentHeight,
   textAreaHeight,
@@ -197,7 +198,9 @@ const Node = ({
   return (
     <g
       className={`node ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isPreviewing ? 'previewing' : ''}`}
+      data-has-context-menu="true"
       onMouseDown={onMouseDown}
+      onContextMenu={onContextMenu}
       onTouchStart={(e) => {
         // Prevent OS text selection/callout and long-press gestures
         if (e && e.cancelable) { e.preventDefault(); e.stopPropagation(); }

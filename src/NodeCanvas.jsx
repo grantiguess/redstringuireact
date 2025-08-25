@@ -16,6 +16,7 @@ import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
 import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal, Bookmark, Plus, CornerUpLeft, CornerDownLeft } from 'lucide-react'; // Icons for PieMenu
 import ColorPicker from './ColorPicker';
 import { useDrop } from 'react-dnd';
+import { showContextMenu } from './components/GlobalContextMenu';
 
 // Import Zustand store and selectors/actions
 import useGraphStore, {
@@ -4907,12 +4908,6 @@ function NodeCanvas() {
         return;
       }
       
-      // If we're currently in carousel mode and losing selection, treat it as a transition
-      if (abstractionCarouselVisible && selectedNodeIdForPieMenu) {
-        console.log(`[NodeCanvas] Carousel visible but losing selection - starting transition`);
-        setIsTransitioningPieMenu(true);
-      }
-      
       // SPECIAL CASE: If carousel is exiting, don't clear the pie menu - let the exit complete first
       if (carouselAnimationState === 'exiting') {
         console.log(`[NodeCanvas] Carousel is exiting - not clearing pie menu yet`);
@@ -5178,6 +5173,188 @@ function NodeCanvas() {
     setHurtleAnimation(animationData);
     runHurtleAnimation(animationData);
   }, [containerRef, runHurtleAnimation]);
+
+  // Context Menu options for nodes - core functionality without pie menu transition logic
+  const getContextMenuOptions = useCallback((instanceId) => {
+    const node = nodes.find(n => n.id === instanceId);
+    if (!node) return [];
+
+    // Clockwise order starting from top center: Open Web, Decompose, Generalize/Specify, Delete, Edit, Save, Color
+    return [
+      // Open Web (expand-tab) - core functionality from PieMenu expand action
+      {
+        label: 'Open Web',
+        icon: <ArrowUpFromDot size={14} />,
+        action: () => {
+          const nodeData = nodes.find(n => n.id === instanceId);
+          if (nodeData) {
+            const prototypeId = nodeData.prototypeId;
+            if (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
+              // Node has definitions - start hurtle animation to first one
+              const targetGraphId = nodeData.definitionGraphIds[0];
+              startHurtleAnimation(instanceId, targetGraphId, prototypeId);
+            } else {
+              // Node has no definitions - create one first, then start hurtle animation
+              const sourceGraphId = activeGraphId; // Capture current graph before it changes
+              storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
+              
+              setTimeout(() => {
+                const currentState = useGraphStore.getState();
+                const updatedNodeData = currentState.nodePrototypes.get(prototypeId);
+                if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                  const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                  startHurtleAnimation(instanceId, newGraphId, prototypeId, sourceGraphId);
+                } else {
+                  console.error(`[Context Menu Open Web] Could not find new definition for node ${prototypeId} after creation.`);
+                }
+              }, 50);
+            }
+          }
+        }
+      },
+      // Decompose - directly toggle preview without pie menu animation
+      {
+        label: 'Decompose', 
+        icon: <PackageOpen size={14} />,
+        action: () => {
+          if (!abstractionCarouselVisible && carouselAnimationState === 'exiting') {
+            console.log('[Context Menu] Blocking decompose during carousel exit');
+            return;
+          }
+          
+          const nodeData = nodes.find(n => n.id === instanceId);
+          if (!nodeData) return;
+          
+          // Check if node has definition graphs to preview
+          if (!nodeData.definitionGraphIds || nodeData.definitionGraphIds.length === 0) {
+            // Node has no definitions - create one first, then set preview
+            console.log(`[Context Menu] Decompose: Node has no definitions, creating one first for ${instanceId}`);
+            const prototypeId = nodeData.prototypeId;
+            const sourceGraphId = activeGraphId;
+            storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
+            
+            setTimeout(() => {
+              const currentState = useGraphStore.getState();
+              const updatedNodeData = currentState.nodePrototypes.get(prototypeId);
+              if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                console.log(`[Context Menu] Decompose: Definition created, now setting preview for ${instanceId}`);
+                setSelectedInstanceIds(new Set([instanceId]));
+                setPreviewingNodeId(instanceId);
+                setSelectedNodeIdForPieMenu(instanceId);
+              } else {
+                console.error(`[Context Menu] Could not find new definition for node ${prototypeId} after creation.`);
+              }
+            }, 50);
+          } else {
+            // Node has definitions - directly toggle preview
+            console.log(`[Context Menu] Decompose clicked for instance: ${instanceId}. Toggling preview directly.`);
+            setSelectedInstanceIds(new Set([instanceId]));
+            
+            const selectedNodeIsPreviewing = previewingNodeId === instanceId;
+            if (selectedNodeIsPreviewing) { 
+              setPreviewingNodeId(null);
+            } else { 
+              setPreviewingNodeId(instanceId);
+            }
+            setSelectedNodeIdForPieMenu(instanceId);
+          }
+        }
+      },
+      // Generalize/Specify (abstraction) - directly open carousel without pie menu animation
+      {
+        label: 'Generalize / Specify',
+        icon: <Layers size={14} />,
+        action: () => {
+          if (!abstractionCarouselVisible && carouselAnimationState === 'exiting') {
+            console.log('[Context Menu] Blocking abstraction during carousel exit');
+            return;
+          }
+          // Directly set up abstraction carousel like onExitAnimationComplete does
+          console.log(`[Context Menu] Abstraction clicked for node: ${instanceId}. Opening carousel directly.`);
+          const nodeData = nodes.find(n => n.id === instanceId);
+          if (nodeData) {
+            setAbstractionCarouselNode(nodeData);
+            setCarouselAnimationState('entering');
+            setAbstractionCarouselVisible(true);
+            setSelectedNodeIdForPieMenu(instanceId);
+            setSelectedInstanceIds(new Set([instanceId]));
+          }
+        }
+      },
+      // Delete - same as PieMenu
+      {
+        label: 'Delete',
+        icon: <Trash2 size={14} />,
+        action: () => {
+          storeActions.removeNodeInstance(activeGraphId, instanceId);
+          setSelectedInstanceIds(new Set());
+          setSelectedNodeIdForPieMenu(null);
+        }
+      },
+      // Edit - same as PieMenu  
+      {
+        label: 'Edit',
+        icon: <Edit3 size={14} />,
+        action: () => {
+          const instance = nodes.find(n => n.id === instanceId);
+          if (instance) {
+            storeActions.openRightPanelNodeTab(instance.prototypeId, instance.name);
+            if (!rightPanelExpanded) {
+              setRightPanelExpanded(true);
+            }
+            setEditingNodeIdOnCanvas(instanceId);
+          }
+        }
+      },
+      // Save - same as PieMenu
+      {
+        label: (() => {
+          const node = nodes.find(n => n.id === instanceId);
+          return node && savedNodeIds.has(node.prototypeId) ? 'Unsave' : 'Save';
+        })(),
+        icon: <Bookmark size={14} fill={(() => {
+          const node = nodes.find(n => n.id === instanceId);
+          return node && savedNodeIds.has(node.prototypeId) ? 'maroon' : 'none';
+        })()} />,
+        action: () => {
+          const node = nodes.find(n => n.id === instanceId);
+          if (node) {
+            storeActions.toggleSavedNode(node.prototypeId);
+          }
+        }
+      },
+      // Color - needs to ensure node is selected for color picker context
+      {
+        label: 'Color',
+        icon: <Palette size={14} />,
+        action: () => {
+          const node = nodes.find(n => n.id === instanceId);
+          if (node) {
+            // Ensure node is selected for color picker context
+            setSelectedNodeIdForPieMenu(instanceId);
+            setSelectedInstanceIds(new Set([instanceId]));
+            
+            // Small delay to ensure selection is set, then open color picker
+            setTimeout(() => {
+              // Calculate screen coordinates like the PieMenu does
+              const dimensions = getNodeDimensions(node, previewingNodeId === node.id, null);
+              const nodeCenter = {
+                x: node.x + dimensions.currentWidth / 2,
+                y: node.y + dimensions.currentHeight / 2
+              };
+              const rect = containerRef.current?.getBoundingClientRect();
+              if (rect) {
+                const screenX = nodeCenter.x * zoomLevel + panOffset.x + rect.left;
+                const screenY = nodeCenter.y * zoomLevel + panOffset.y + rect.top;
+                
+                handlePieMenuColorPickerOpen(instanceId, { x: screenX, y: screenY });
+              }
+            }, 10);
+          }
+        }
+      }
+    ];
+  }, [nodes, savedNodeIds, abstractionCarouselVisible, carouselAnimationState, previewingNodeId, setPreviewingNodeId, setAbstractionCarouselNode, setCarouselAnimationState, setAbstractionCarouselVisible, setSelectedNodeIdForPieMenu, storeActions, activeGraphId, setSelectedInstanceIds, rightPanelExpanded, setRightPanelExpanded, setEditingNodeIdOnCanvas, getNodeDimensions, containerRef, zoomLevel, panOffset, handlePieMenuColorPickerOpen, startHurtleAnimation, useGraphStore]);
 
   // Cleanup animation on unmount
   useEffect(() => {
@@ -6683,6 +6860,11 @@ function NodeCanvas() {
                              isSelected={selectedInstanceIds.has(node.id)}
                              isDragging={false} // These are explicitly not the dragging node
                              onMouseDown={(e) => handleNodeMouseDown(node, e)}
+                             onContextMenu={(e) => {
+                               e.preventDefault();
+                               e.stopPropagation();
+                               showContextMenu(e.clientX, e.clientY, getContextMenuOptions(node.id));
+                             }}
                              isPreviewing={isPreviewing}
                              allNodes={nodes}
                              isEditingOnCanvas={node.id === editingNodeIdOnCanvas}
@@ -6849,6 +7031,11 @@ function NodeCanvas() {
                                isSelected={selectedInstanceIds.has(activeNodeToRender.id)}
                                isDragging={false} // Explicitly not the dragging node if rendered here
                                onMouseDown={(e) => handleNodeMouseDown(activeNodeToRender, e)}
+                               onContextMenu={(e) => {
+                                 e.preventDefault();
+                                 e.stopPropagation();
+                                 showContextMenu(e.clientX, e.clientY, getContextMenuOptions(activeNodeToRender.id));
+                               }}
                                isPreviewing={isPreviewing}
                                allNodes={nodes}
                                isEditingOnCanvas={activeNodeToRender.id === editingNodeIdOnCanvas}
@@ -6930,6 +7117,11 @@ function NodeCanvas() {
                                isSelected={selectedInstanceIds.has(draggingNodeToRender.id)}
                                isDragging={true} // This is the dragging node
                                onMouseDown={(e) => handleNodeMouseDown(draggingNodeToRender, e)}
+                               onContextMenu={(e) => {
+                                 e.preventDefault();
+                                 e.stopPropagation();
+                                 showContextMenu(e.clientX, e.clientY, getContextMenuOptions(draggingNodeToRender.id));
+                               }}
                                isPreviewing={isPreviewing}
                                allNodes={nodes}
                                isEditingOnCanvas={draggingNodeToRender.id === editingNodeIdOnCanvas}

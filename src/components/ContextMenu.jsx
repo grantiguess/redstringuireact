@@ -50,14 +50,8 @@ const ContextMenu = ({ x, y, options = [], onClose, onSelect }) => {
               transition: 'background-color 0.1s ease',
               fontWeight: 'bold'
             }}
-            onMouseEnter={(e) => {
-              if (!option.disabled) {
-                e.target.style.backgroundColor = 'rgba(128, 0, 0, 0.1)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = 'transparent';
-            }}
+            className="context-menu-item"
+            data-disabled={option.disabled}
             onClick={() => {
               if (!option.disabled && onSelect) {
                 onSelect(option);

@@ -37,11 +37,9 @@ const GlobalContextMenu = () => {
       
       if (!hasLocalContextMenu) {
         e.preventDefault();
-        setContextMenu({
-          x: e.clientX,
-          y: e.clientY,
-          options: [] // No options = shows "No Tools Here..."
-        });
+        // If there was already a menu open, just close it instead of showing "No Tools Here..."
+        // This prevents the menu from sticking when right-clicking elsewhere
+        setContextMenu(null);
       }
     };
 
