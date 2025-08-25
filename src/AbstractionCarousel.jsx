@@ -335,7 +335,9 @@ const AbstractionCarousel = ({
   onAddDimension, // Called when user adds a new dimension
   onDeleteDimension, // Called when user deletes a dimension
   onExpandDimension, // Called when user expands a dimension
-  onOpenInPanel // Called when user opens dimension in panel
+  onOpenInPanel, // Called when user opens dimension in panel
+  relativeMoveRequest, // 'up' | 'down' | null - request to move focus one level
+  onRelativeMoveHandled // callback to clear request once applied
 }) => {
   const carouselRef = useRef(null);
   
@@ -898,6 +900,32 @@ const AbstractionCarousel = ({
       // TODO: Handle navigation to other abstraction levels
     }
   }, [isVisible, selectedNode]);
+
+  // Handle external requests to move focus up/down one level
+  useEffect(() => {
+    if (!isVisible || !relativeMoveRequest || !abstractionChainWithDims.length) return;
+    const currentPos = physicsStateRef.current.realPosition;
+    const rounded = Math.round(currentPos);
+    const levels = abstractionChainWithDims
+      .filter(n => !n.isNonReachable && (n.type === 'current' || n.type === 'generic'))
+      .map(n => n.level);
+    const min = Math.min(...levels);
+    const max = Math.max(...levels);
+    let target = rounded;
+    if (relativeMoveRequest === 'up') {
+      target = Math.max(min, rounded - 1);
+    } else if (relativeMoveRequest === 'down') {
+      target = Math.min(max, rounded + 1);
+    }
+    if (target !== rounded) {
+      dispatchPhysics({ type: 'JUMP_TO_LEVEL', payload: target });
+      if (!animationFrameRef.current) {
+        lastFrameTimeRef.current = performance.now();
+        animationFrameRef.current = requestAnimationFrame(updatePhysicsRef.current);
+      }
+    }
+    onRelativeMoveHandled && onRelativeMoveHandled();
+  }, [relativeMoveRequest, isVisible, abstractionChainWithDims]);
 
   // Handle escape key and click-away to close
   useEffect(() => {

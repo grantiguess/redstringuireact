@@ -1380,6 +1380,8 @@ function NodeCanvas() {
   // Carousel PieMenu stage state
   const [carouselPieMenuStage, setCarouselPieMenuStage] = useState(1); // 1 = main stage, 2 = position selection stage
   const [isCarouselStageTransition, setIsCarouselStageTransition] = useState(false); // Flag to track internal stage transitions
+  // Request for AbstractionCarousel to move focus relative to current (up/down)
+  const [carouselRelativeMoveRequest, setCarouselRelativeMoveRequest] = useState(null); // 'up' | 'down' | null
 
   // Add logging for carousel stage changes
   useEffect(() => {
@@ -2232,6 +2234,24 @@ function NodeCanvas() {
                 console.error(`[PieMenu Action] No target node found`);
                 return;
               }
+
+              // If an existing more-general node already exists in the chain, navigate instead of creating
+              try {
+                const currentState = useGraphStore.getState();
+                const chainOwnerProtoId = abstractionCarouselNode?.prototypeId;
+                const chain = chainOwnerProtoId
+                  ? (currentState.nodePrototypes.get(chainOwnerProtoId)?.abstractionChains?.[currentAbstractionDimension] || [])
+                  : [];
+                const focusedProtoId = targetNode.prototypeId;
+                const idx = chain.indexOf(focusedProtoId);
+                if (idx > 0) {
+                  console.log('[PieMenu Action] Existing node above detected. Requesting carousel move up instead of creating.');
+                  setCarouselRelativeMoveRequest('up');
+                  return;
+                }
+              } catch (e) {
+                console.warn('[PieMenu Action] Failed to check abstraction chain for above navigation, falling back to creation.', e);
+              }
               
               // Set abstraction prompt with the target node (focused node in stage 2)
               setAbstractionPrompt({
@@ -2271,6 +2291,24 @@ function NodeCanvas() {
               if (!targetNode) {
                 console.error(`[PieMenu Action] No target node found`);
                 return;
+              }
+
+              // If an existing more-specific node already exists in the chain, navigate instead of creating
+              try {
+                const currentState = useGraphStore.getState();
+                const chainOwnerProtoId = abstractionCarouselNode?.prototypeId;
+                const chain = chainOwnerProtoId
+                  ? (currentState.nodePrototypes.get(chainOwnerProtoId)?.abstractionChains?.[currentAbstractionDimension] || [])
+                  : [];
+                const focusedProtoId = targetNode.prototypeId;
+                const idx = chain.indexOf(focusedProtoId);
+                if (idx > -1 && idx < chain.length - 1) {
+                  console.log('[PieMenu Action] Existing node below detected. Requesting carousel move down instead of creating.');
+                  setCarouselRelativeMoveRequest('down');
+                  return;
+                }
+              } catch (e) {
+                console.warn('[PieMenu Action] Failed to check abstraction chain for below navigation, falling back to creation.', e);
               }
               
               // Set abstraction prompt with the target node (focused node in stage 2)
@@ -5975,23 +6013,55 @@ function NodeCanvas() {
                   backgroundColor: '#bdb5b5',
                   opacity: 1,
                   pointerEvents: 'auto',
+                  overflow: 'visible',
               }}
               onMouseUp={handleMouseUp} // Uncommented
             >
               {/* Grid overlay (optimized) */}
               {(gridMode === 'always' || (gridMode === 'hover' && !!draggingNodeInfo)) && (
-                <g className="grid-overlay">
-                  {/* Thin line grid for 'always' using pattern */}
-                  {gridMode === 'always' && (
-                    <>
-                      <defs>
-                        <pattern id="grid-lines-pattern" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
-                          <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#716C6C" strokeWidth="0.75" vectorEffect="non-scaling-stroke" />
-                        </pattern>
-                      </defs>
-                      <rect x="0" y="0" width={canvasSize.width} height={canvasSize.height} fill="url(#grid-lines-pattern)" />
-                    </>
-                  )}
+                <g className="grid-overlay" pointerEvents="none">
+                  {/* Thin line grid for 'always' using individual lines for better zoom handling */}
+                  {gridMode === 'always' && (() => {
+                    const lines = [];
+                    const startX = Math.floor((-panOffset.x / zoomLevel) / gridSize) * gridSize - gridSize * 5;
+                    const startY = Math.floor((-panOffset.y / zoomLevel) / gridSize) * gridSize - gridSize * 5;
+                    const endX = startX + (viewportSize.width / zoomLevel) + gridSize * 10;
+                    const endY = startY + (viewportSize.height / zoomLevel) + gridSize * 10;
+                    
+                    // Vertical lines
+                    for (let x = startX; x <= endX; x += gridSize) {
+                      lines.push(
+                        <line
+                          key={`grid-v-${x}`}
+                          x1={x}
+                          y1={startY}
+                          x2={x}
+                          y2={endY}
+                          stroke="#716C6C"
+                          strokeWidth="0.75"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      );
+                    }
+                    
+                    // Horizontal lines
+                    for (let y = startY; y <= endY; y += gridSize) {
+                      lines.push(
+                        <line
+                          key={`grid-h-${y}`}
+                          x1={startX}
+                          y1={y}
+                          x2={endX}
+                          y2={y}
+                          stroke="#716C6C"
+                          strokeWidth="0.75"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      );
+                    }
+                    
+                    return <g>{lines}</g>;
+                  })()}
 
                   {/* Grid dots - only show when dragging nodes */}
                   {gridMode === 'hover' && !!draggingNodeInfo && (
@@ -7615,6 +7685,8 @@ function NodeCanvas() {
           onFocusedNodeDimensions={setCarouselFocusedNodeDimensions}
           onFocusedNodeChange={setCarouselFocusedNode}
           onExitAnimationComplete={onCarouselExitAnimationComplete}
+          relativeMoveRequest={carouselRelativeMoveRequest}
+          onRelativeMoveHandled={() => setCarouselRelativeMoveRequest(null)}
         />
       )}
       

@@ -34,9 +34,23 @@ class GitSyncEngine {
     this.isDragging = false; // Track if we're in a dragging operation
     this.dragStartTime = 0; // Track when dragging started
     
+    // Optional UI status handler
+    this.statusHandler = null;
+    
     console.log('[GitSyncEngine] Initialized with provider:', provider.name);
     console.log('[GitSyncEngine] Source of truth:', this.sourceOfTruth);
     console.log('[GitSyncEngine] Universe slug:', this.universeSlug);
+  }
+
+  // Allow UI to subscribe to status updates
+  onStatusChange(handler) {
+    this.statusHandler = typeof handler === 'function' ? handler : null;
+  }
+
+  notifyStatus(type, status) {
+    try {
+      if (this.statusHandler) this.statusHandler({ type, status });
+    } catch (_) {}
   }
 
   getLatestPath() {
@@ -273,6 +287,7 @@ class GitSyncEngine {
     // Rate limiting: enforce minimum interval between commits
     if (timeSinceLastCommit < this.minCommitInterval) {
       console.log('[GitSyncEngine] Rate limited: too soon since last commit');
+      this.notifyStatus('info', 'Rate limited: waiting before next commit');
       return;
     }
     
@@ -298,6 +313,7 @@ class GitSyncEngine {
       const isFromDragging = this.pendingCommits.some(commit => commit.isDragging);
       
       console.log(`[GitSyncEngine] Processing ${commitCount} pending commits${isFromDragging ? ' (from dragging)' : ''}...`);
+      this.notifyStatus('info', `Committing ${commitCount} update${commitCount === 1 ? '' : 's'}...`);
       
       // Get the most recent state (always use the latest, discard intermediate states)
       const latestState = this.pendingCommits[this.pendingCommits.length - 1].data;
@@ -320,9 +336,11 @@ class GitSyncEngine {
       this.lastCommitTime = now;
       
       console.log(`[GitSyncEngine] Successfully committed changes to Git repository (${commitCount} updates batched)`);
+      this.notifyStatus('success', `Committed ${commitCount} update${commitCount === 1 ? '' : 's'} to Git`);
       
     } catch (error) {
       console.error('[GitSyncEngine] Failed to commit:', error);
+      this.notifyStatus('error', `Commit failed: ${error.message || 'Unknown error'}`);
       
       // Check if it's a 409 conflict (file modified since last read)
       if (error.message && error.message.includes('409')) {
@@ -348,6 +366,7 @@ class GitSyncEngine {
   async forceCommit(storeState) {
     try {
       console.log('[GitSyncEngine] Force committing...');
+      this.notifyStatus('info', 'Force committing changes...');
       
       // Clear any pending debounce
       if (this.debounceTimeout) {
@@ -378,10 +397,12 @@ class GitSyncEngine {
       this.lastCommitTime = Date.now();
       
       console.log('[GitSyncEngine] Force commit successful');
+      this.notifyStatus('success', 'Force commit successful');
       return true;
       
     } catch (error) {
       console.error('[GitSyncEngine] Force commit failed:', error);
+      this.notifyStatus('error', `Force commit failed: ${error.message || 'Unknown error'}`);
       throw error;
     } finally {
       this.isCommitInProgress = false;

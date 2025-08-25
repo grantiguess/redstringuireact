@@ -109,10 +109,6 @@ const Node = ({
   const handleInputChange = (e) => {
     const newValue = e.target.value;
     setTempName(newValue);
-    // Trigger real-time update to the store for dynamic resizing
-    if (onCommitCanvasEdit && newValue.trim()) {
-      onCommitCanvasEdit(instanceId, newValue, true);
-    }
   };
 
   const hasThumbnail = Boolean(nodeThumbnailSrc);

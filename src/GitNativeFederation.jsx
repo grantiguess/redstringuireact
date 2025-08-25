@@ -168,6 +168,18 @@ const GitNativeFederation = () => {
       const newGitSyncEngine = new GitSyncEngine(currentProvider, sourceOfTruthMode, universeSlug, fileBaseName);
       setGitSyncEngine(newGitSyncEngine);
       setGitSyncEngineStore(newGitSyncEngine);
+      // Surface Git sync engine status in the panel
+      try {
+        newGitSyncEngine.onStatusChange((s) => {
+          setSyncStatus(s);
+          // Auto-clear transient info messages after a short delay
+          if (s?.type === 'info') {
+            setTimeout(() => {
+              setSyncStatus(null);
+            }, 3000);
+          }
+        });
+      } catch (_) {}
       
       // Try to load existing data from Git
       newGitSyncEngine.loadFromGit().then((redstringData) => {
@@ -826,7 +838,7 @@ const GitNativeFederation = () => {
       const { exportToRedstring } = await import('./formats/redstringFormat.js');
       const exportedData = exportToRedstring(testState);
       
-      if (!exportedData || !exportedData.prototypeSpace || !exportedData.spatialGraphCollection) {
+      if (!exportedData || !exportedData.prototypeSpace || !exportedData.spatialGraphs) {
         throw new Error('Export test failed: Invalid export data structure');
       }
 
