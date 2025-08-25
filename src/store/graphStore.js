@@ -133,6 +133,30 @@ const autoSaveMiddleware = (config) => {
 
 // Create store with async initialization
 const useGraphStore = create(autoSaveMiddleware((set, get) => {
+  // Grace period cleanup timer
+  let cleanupTimer = null;
+  
+  const startCleanupTimer = () => {
+    if (cleanupTimer) clearInterval(cleanupTimer);
+    // Run cleanup every minute
+    cleanupTimer = setInterval(() => {
+      const state = get();
+      if (state.pendingDeletions.size > 0) {
+        state.cleanupExpiredDeletions();
+      }
+    }, 60 * 1000); // 1 minute intervals
+  };
+  
+  const stopCleanupTimer = () => {
+    if (cleanupTimer) {
+      clearInterval(cleanupTimer);
+      cleanupTimer = null;
+    }
+  };
+  
+  // Start the timer initially
+  startCleanupTimer();
+  
   // Return both initial state and actions
   return {
     // Initialize with completely empty state - universe file is required
@@ -170,6 +194,11 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       return edgePrototypes;
     })(),
     edges: new Map(),
+    
+    // Grace period tracking for soft deletion
+    pendingDeletions: new Map(), // instanceId -> { timestamp, graphId, instanceData }
+    gracePeriodMs: 5 * 60 * 1000, // 5 minutes in milliseconds
+    
     openGraphIds: [],
     activeGraphId: null,
     activeDefinitionNodeId: null, // This now refers to a prototypeId
@@ -645,11 +674,38 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     graph.instances.set(instanceId, newInstance);
   })),
 
-  // Removes an instance from a graph and cleans up its connected edges.
+  // Marks an instance for deletion with a grace period instead of immediate removal
   removeNodeInstance: (graphId, instanceId) => set(produce((draft) => {
     const graph = draft.graphs.get(graphId);
     if (!graph || !graph.instances?.has(instanceId)) {
       console.warn(`[removeNodeInstance] Instance ${instanceId} not found in graph ${graphId}.`);
+      return;
+    }
+
+    const instance = graph.instances.get(instanceId);
+    
+    // Store the instance data for potential restoration
+    draft.pendingDeletions.set(instanceId, {
+      timestamp: Date.now(),
+      graphId: graphId,
+      instanceData: { ...instance },
+      // Store connected edges for restoration
+      connectedEdges: Array.from(draft.edges.entries()).filter(([edgeId, edge]) => 
+        edge.sourceId === instanceId || edge.destinationId === instanceId
+      ).map(([edgeId, edge]) => [edgeId, { ...edge }])
+    });
+
+    console.log(`[removeNodeInstance] Marked instance ${instanceId} for deletion with grace period`);
+    
+    // Ensure cleanup timer is running
+    startCleanupTimer();
+  })),
+
+  // Immediately and permanently deletes a node instance (bypasses grace period)
+  forceDeleteNodeInstance: (graphId, instanceId) => set(produce((draft) => {
+    const graph = draft.graphs.get(graphId);
+    if (!graph || !graph.instances?.has(instanceId)) {
+      console.warn(`[forceDeleteNodeInstance] Instance ${instanceId} not found in graph ${graphId}.`);
       return;
     }
 
@@ -674,6 +730,84 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
           }
       }
     });
+
+    // Remove from pending deletions if it was there
+    draft.pendingDeletions.delete(instanceId);
+
+    console.log(`[forceDeleteNodeInstance] Permanently deleted instance ${instanceId}`);
+  })),
+
+  // Restores a node instance from pending deletion
+  restoreNodeInstance: (instanceId) => set(produce((draft) => {
+    const pendingDeletion = draft.pendingDeletions.get(instanceId);
+    if (!pendingDeletion) {
+      console.warn(`[restoreNodeInstance] No pending deletion found for instance ${instanceId}.`);
+      return;
+    }
+
+    const { graphId, instanceData, connectedEdges } = pendingDeletion;
+    const graph = draft.graphs.get(graphId);
+    if (!graph) {
+      console.warn(`[restoreNodeInstance] Graph ${graphId} not found for restoration.`);
+      return;
+    }
+
+    // Restore the instance
+    graph.instances.set(instanceId, instanceData);
+
+    // Restore connected edges
+    connectedEdges.forEach(([edgeId, edgeData]) => {
+      draft.edges.set(edgeId, edgeData);
+      // Add back to graph's edgeIds if not already there
+      if (graph.edgeIds && !graph.edgeIds.includes(edgeId)) {
+        graph.edgeIds.push(edgeId);
+      }
+    });
+
+    // Remove from pending deletions
+    draft.pendingDeletions.delete(instanceId);
+
+    console.log(`[restoreNodeInstance] Restored instance ${instanceId} from pending deletion`);
+  })),
+
+  // Cleanup expired pending deletions
+  cleanupExpiredDeletions: () => set(produce((draft) => {
+    const now = Date.now();
+    const expiredIds = [];
+    
+    for (const [instanceId, deletion] of draft.pendingDeletions.entries()) {
+      if (now - deletion.timestamp > draft.gracePeriodMs) {
+        expiredIds.push(instanceId);
+      }
+    }
+
+    expiredIds.forEach(instanceId => {
+      const deletion = draft.pendingDeletions.get(instanceId);
+      console.log(`[cleanupExpiredDeletions] Grace period expired for instance ${instanceId}, permanently deleting`);
+      
+      // Permanently delete the node and its edges
+      const graph = draft.graphs.get(deletion.graphId);
+      if (graph) {
+        graph.instances.delete(instanceId);
+        
+        // Delete connected edges
+        deletion.connectedEdges.forEach(([edgeId]) => {
+          draft.edges.delete(edgeId);
+          if (graph.edgeIds) {
+            const index = graph.edgeIds.indexOf(edgeId);
+            if (index > -1) {
+              graph.edgeIds.splice(index, 1);
+            }
+          }
+        });
+      }
+      
+      draft.pendingDeletions.delete(instanceId);
+    });
+
+    if (expiredIds.length > 0) {
+      console.log(`[cleanupExpiredDeletions] Cleaned up ${expiredIds.length} expired deletions`);
+    }
   })),
 
   // Update a prototype's data using Immer's recipe. This affects all its instances.
@@ -2012,6 +2146,8 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     graphs: new Map(),
     nodePrototypes: new Map(),
     edges: new Map(),
+    pendingDeletions: new Map(),
+    gracePeriodMs: 5 * 60 * 1000, // Reset to default
     openGraphIds: [],
     activeGraphId: null,
     activeDefinitionNodeId: null,
