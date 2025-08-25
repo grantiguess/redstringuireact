@@ -11,8 +11,9 @@ const EdgeGlowIndicator = ({
   leftPanelExpanded, 
   rightPanelExpanded,
   previewingNodeId,
-  showViewportDebug = true,
-  showDirectionLines = true
+  containerRef,
+  showViewportDebug = false,
+  showDirectionLines = false
 }) => {
   // Get TypeList visibility from store
   const typeListMode = useGraphStore(state => state.typeListMode);
@@ -22,6 +23,10 @@ const EdgeGlowIndicator = ({
 
   const allNodeData = useMemo(() => {
     if (!nodes?.length || !viewportBounds) return [];
+
+    // Get container bounds once for all nodes - use the EXACT same pattern as NodeCanvas
+    const rect = containerRef?.current?.getBoundingClientRect();
+    if (!rect) return []; // No container, no coordinate calculations possible
 
     // Calculate the actual visible viewport area in canvas coordinates
     // This is the area within the calculated viewport bounds, not just what's on screen
@@ -44,11 +49,11 @@ const EdgeGlowIndicator = ({
       const nodeCenterY = node.y + (isNodePreviewing ? NODE_HEIGHT / 2 : dims.currentHeight / 2);
 
       // Calculate where the node center appears in overlay coordinates
-      // The SVG uses: transform: translate(panOffset.x, panOffset.y) scale(zoomLevel)
-      // So a point (x,y) in canvas coordinates becomes: (x * zoomLevel + panOffset.x, y * zoomLevel + panOffset.y) in screen coordinates
-      // Then we subtract viewportBounds to get overlay coordinates
-      const nodeScreenX = nodeCenterX * zoomLevel + panOffset.x;
-      const nodeScreenY = nodeCenterY * zoomLevel + panOffset.y;
+      // Use the EXACT same pattern as NodeCanvas.jsx line 2443-2445 and line 5524-5525:
+      // const screenX = nodeCenter.x * zoomLevel + panOffset.x + rect.left;
+      // const screenY = nodeCenter.y * zoomLevel + panOffset.y + rect.top;
+      const nodeScreenX = nodeCenterX * zoomLevel + panOffset.x + rect.left;
+      const nodeScreenY = nodeCenterY * zoomLevel + panOffset.y + rect.top;
       const nodeOverlayX = nodeScreenX - viewportBounds.x;
       const nodeOverlayY = nodeScreenY - viewportBounds.y;
       
@@ -75,7 +80,7 @@ const EdgeGlowIndicator = ({
     });
 
     return nodeData;
-  }, [nodes, panOffset, zoomLevel, viewportBounds, previewingNodeId]);
+  }, [nodes, panOffset, zoomLevel, viewportBounds, previewingNodeId, containerRef]);
 
   const offScreenGlows = useMemo(() => {
     const glows = [];
@@ -83,40 +88,71 @@ const EdgeGlowIndicator = ({
     allNodeData.forEach(nodeInfo => {
       if (!nodeInfo.isOutsideViewport) return; // Only create glows for nodes outside viewport
 
-      // Simple and direct: place dot on the edge closest to the node
+      // Calculate line intersection: where the line from viewport center to node intersects viewport boundary
       const containerW = viewportBounds.width;
       const containerH = viewportBounds.height;
+      const centerX = containerW / 2;
+      const centerY = containerH / 2;
       
       // Use the node position from nodeInfo
       const nodePxX = nodeInfo.nodeOverlayX;
       const nodePxY = nodeInfo.nodeOverlayY;
       
-      // Find which edge the node is closest to and place dot there
-      // These distances are already in overlay pixel space (accounts for zoom)
-      const distToLeft = Math.abs(nodePxX);
-      const distToRight = Math.abs(containerW - nodePxX);
-      const distToTop = Math.abs(nodePxY);
-      const distToBottom = Math.abs(containerH - nodePxY);
+      // Calculate direction vector from center to node
+      const dx = nodePxX - centerX;
+      const dy = nodePxY - centerY;
       
-      const minDist = Math.min(distToLeft, distToRight, distToTop, distToBottom);
-      
+      // Find intersection with viewport rectangle edges
       let screenX, screenY;
-      if (minDist === distToLeft) {
-        // Place on left edge
-        screenX = 0;
-        screenY = Math.max(0, Math.min(containerH, nodePxY));
-      } else if (minDist === distToRight) {
-        // Place on right edge
-        screenX = containerW;
-        screenY = Math.max(0, Math.min(containerH, nodePxY));
-      } else if (minDist === distToTop) {
-        // Place on top edge
-        screenX = Math.max(0, Math.min(containerW, nodePxX));
-        screenY = 0;
+      
+      // Calculate intersection with each edge and find the valid one
+      const intersections = [];
+      
+      // Left edge (x = 0)
+      if (dx !== 0) {
+        const t = -centerX / dx;
+        const y = centerY + t * dy;
+        if (t > 0 && y >= 0 && y <= containerH) {
+          intersections.push({ x: 0, y, t });
+        }
+      }
+      
+      // Right edge (x = containerW)
+      if (dx !== 0) {
+        const t = (containerW - centerX) / dx;
+        const y = centerY + t * dy;
+        if (t > 0 && y >= 0 && y <= containerH) {
+          intersections.push({ x: containerW, y, t });
+        }
+      }
+      
+      // Top edge (y = 0)
+      if (dy !== 0) {
+        const t = -centerY / dy;
+        const x = centerX + t * dx;
+        if (t > 0 && x >= 0 && x <= containerW) {
+          intersections.push({ x, y: 0, t });
+        }
+      }
+      
+      // Bottom edge (y = containerH)
+      if (dy !== 0) {
+        const t = (containerH - centerY) / dy;
+        const x = centerX + t * dx;
+        if (t > 0 && x >= 0 && x <= containerW) {
+          intersections.push({ x, y: containerH, t });
+        }
+      }
+      
+      // Use the intersection with the smallest t (closest to center)
+      if (intersections.length > 0) {
+        const closestIntersection = intersections.reduce((min, curr) => curr.t < min.t ? curr : min);
+        screenX = closestIntersection.x;
+        screenY = closestIntersection.y;
       } else {
-        // Place on bottom edge
-        screenX = Math.max(0, Math.min(containerW, nodePxX));
-        screenY = containerH;
+        // Fallback to center if no intersection found (shouldn't happen)
+        screenX = centerX;
+        screenY = centerY;
       }
 
       // Calculate intensity based on distance from viewport center

@@ -1,7 +1,7 @@
 /**
  * Git-Native Semantic Web Provider
  * Core abstraction for hot-swappable Git providers
- * Enables real-time responsiveness, true decentralization, and censorship resistance
+ * Enables real-time responsiveness, true decentralization, and distributed resilience
  */
 
 /**

@@ -4150,7 +4150,7 @@ const Panel = forwardRef(
               />
             );
         } else if (leftViewActive === 'federation') {
-            // Git-Native Federation view for revolutionary protocol
+            // Git-Native Federation view
             panelContent = (
                 <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                     <GitNativeFederation />

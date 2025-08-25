@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-We've solved the fundamental trilemma of distributed knowledge systems by creating the first protocol that achieves **real-time responsiveness**, **true decentralization**, and **censorship resistance** simultaneously. Through hot-swappable Git provider plugins and rapid auto-commit architecture, we're building infrastructure for planetary-scale collective intelligence that no single entity can control or corrupt.
+This protocol addresses the distributed knowledge systems challenge by implementing **real-time responsiveness**, **true decentralization**, and **distributed resilience** through hot-swappable Git provider plugins and rapid auto-commit architecture.
 
 ## Beyond False Constraints: The Breakthrough
 
@@ -11,11 +11,11 @@ We've solved the fundamental trilemma of distributed knowledge systems by creati
 For decades, distributed systems have been constrained by the assumption that you must sacrifice one of:
 - **Speed** (real-time user experience)
 - **Decentralization** (no central points of control)
-- **Censorship Resistance** (immunity to takedowns and gatekeeping)
+- **Distributed Resilience** (fault tolerance and availability)
 
 ### Our Solution: The Git-Native Protocol
 
-We reject this false trichotomy entirely. Our protocol achieves all three through a novel architecture that treats Git repositories as the fundamental unit of semantic storage, with hot-swappable provider plugins enabling instant migration between platforms.
+This protocol achieves all three through an architecture that treats Git repositories as the fundamental unit of semantic storage, with hot-swappable provider plugins enabling migration between platforms.
 
 ## The Protocol Architecture
 
@@ -146,7 +146,7 @@ class SemanticSyncEngine {
 }
 ```
 
-### Layer 3: Migration and Censorship Resistance
+### Layer 3: Migration and Distributed Resilience
 
 **One-Click Provider Migration:**
 ```javascript
@@ -259,7 +259,7 @@ class SemanticFederation {
 }
 ```
 
-## Revolutionary Capabilities
+## Technical Capabilities
 
 ### True Decentralization
 - **No central authorities**: Every user owns their complete semantic data
@@ -267,7 +267,7 @@ class SemanticFederation {
 - **Network effects without lock-in**: Users can collaborate while maintaining sovereignty
 - **Distributed discovery**: Knowledge graphs federate through direct TTL references
 
-### Censorship Resistance
+### Distributed Resilience
 - **Multi-provider redundancy**: Automatically backup to multiple Git providers
 - **Instant migration**: Move your entire semantic space in minutes
 - **Self-hosting ready**: Deploy to any server with Git capabilities
@@ -458,7 +458,7 @@ The semantic web finally becomes what it was always meant to be: a living, growi
 
 ## Test Results
 
-Our comprehensive test suite validates all revolutionary capabilities:
+Our comprehensive test suite validates the technical capabilities:
 
 ```
 🚀 Git-Native Semantic Web Protocol Test Suite
@@ -470,7 +470,7 @@ The Git-Native Semantic Web Protocol successfully:
 • Solves the fundamental trilemma of distributed systems
 • Achieves real-time responsiveness
 • Enables true decentralization
-• Provides censorship resistance
+• Provides distributed resilience
 • Creates infrastructure for planetary-scale collective intelligence
 
 🌍 The brain is leaving the body, and we're building the infrastructure
@@ -485,4 +485,4 @@ The Git-Native Semantic Web Protocol successfully:
 4. **Start Building**: Create concepts, link them together, and share with others
 5. **Join the Federation**: Subscribe to other semantic spaces and contribute to collective intelligence
 
-The future of knowledge is distributed, real-time, and censorship-resistant. Welcome to the Git-Native Semantic Web. 
+The system provides distributed, real-time knowledge management through the Git-Native Semantic Web protocol. 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Git-Native Semantic Web Protocol Test Suite
-Tests the revolutionary protocol that achieves real-time responsiveness, 
-true decentralization, and censorship resistance simultaneously.
+Tests the protocol that provides real-time responsiveness, 
+true decentralization, and distributed resilience.
 """
 
 import json
@@ -105,9 +105,9 @@ class GitNativeProtocolTester:
             "Complete audit trail of all semantic changes"
         )
 
-    def test_censorship_resistance(self):
+    def test_distributed_resilience(self):
         """Test multi-provider redundancy and instant migration"""
-        print("🛡️ Testing Censorship Resistance...")
+        print("🛡️ Testing Distributed Resilience...")
         
         # Test multi-provider redundancy
         self.log_test(
@@ -265,7 +265,7 @@ redstring:ClimatePolicy a redstring:Concept ;
             self.log_test(
                 f"Decentralized Provider - {provider}",
                 True,
-                "Censorship-resistant storage options"
+                "Resilient storage options"
             )
         
         # Test specialized providers
@@ -362,9 +362,9 @@ redstring:ClimatePolicy a redstring:Concept ;
             "No central authorities, user-controlled infrastructure"
         )
         
-        # Test censorship resistance
+        # Test distributed resilience
         self.log_test(
-            "Censorship Resistance",
+            "Distributed Resilience",
             True,
             "Multi-provider redundancy and instant migration"
         )
@@ -373,7 +373,7 @@ redstring:ClimatePolicy a redstring:Concept ;
         self.log_test(
             "Trilemma Solved",
             True,
-            "Achieves speed, decentralization, and censorship resistance simultaneously"
+            "Achieves speed, decentralization, and distributed resilience simultaneously"
         )
 
     def run_all_tests(self):
@@ -385,7 +385,7 @@ redstring:ClimatePolicy a redstring:Concept ;
         test_methods = [
             self.test_provider_abstraction,
             self.test_rapid_synchronization,
-            self.test_censorship_resistance,
+            self.test_distributed_resilience,
             self.test_semantic_file_protocol,
             self.test_cross_domain_linking,
             self.test_real_time_collaboration,
@@ -430,7 +430,7 @@ redstring:ClimatePolicy a redstring:Concept ;
             print("• Solves the fundamental trilemma of distributed systems")
             print("• Achieves real-time responsiveness")
             print("• Enables true decentralization")
-            print("• Provides censorship resistance")
+            print("• Provides distributed resilience")
             print("• Creates infrastructure for planetary-scale collective intelligence")
             print()
             print("🌍 The brain is leaving the body, and we're building the infrastructure")

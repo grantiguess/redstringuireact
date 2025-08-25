@@ -1,7 +1,7 @@
 /**
  * Git-Native Federation Component
- * Revolutionary protocol implementation with hot-swappable Git providers
- * Achieves real-time responsiveness, true decentralization, and censorship resistance
+ * Protocol implementation with hot-swappable Git providers
+ * Provides real-time responsiveness, true decentralization, and distributed resilience
  */
 
 import React, { useState, useEffect } from 'react';
