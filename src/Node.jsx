@@ -279,9 +279,19 @@ const Node = ({
 
       {/* ForeignObject for Name - Use absolute coords */}
       <foreignObject
-        x={nodeX} // Use absolute nodeX
+        x={(() => {
+          if (!isPreviewing) return nodeX; // normal mode
+          // Reserve space for header buttons on the left and nav on the right
+          const reserveLeft = hasAnyDefinitions ? 110 : 40;
+          return nodeX - reserveLeft;
+        })()} // Expand left in preview to preserve text wrap width
         y={nodeY} // Use absolute nodeY
-        width={currentWidth}
+        width={(() => {
+          if (!isPreviewing) return currentWidth; // normal mode
+          const reserveLeft = hasAnyDefinitions ? 110 : 40;
+          const reserveRight = hasAnyDefinitions ? 140 : 40;
+          return currentWidth + reserveLeft + reserveRight;
+        })()}
         height={textAreaHeight}
         style={{
             transition: 'width 0.3s ease, height 0.3s ease',
@@ -294,18 +304,21 @@ const Node = ({
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: isPreviewing ? 'flex-start' : 'center',
+            // In preview, center single-line vertically to align with header buttons
+            justifyContent: isPreviewing ? (isMultiline ? 'flex-start' : 'center') : 'center',
             width: '100%',
             height: '100%',
             // Use a single computed side padding consistently between
             // wrapping calculation and applied styles
             padding: (() => {
-              const sidePadding = isPreviewing
-                ? (hasAnyDefinitions ? 140 : (isMultiline ? 35 : 25))
-                : (isMultiline ? 30 : 22);
-              return isPreviewing
-                ? `30px ${sidePadding}px 15px`
-                : `20px ${sidePadding}px`;
+              const baseSidePadding = (isMultiline ? 30 : 22);
+              if (!isPreviewing) {
+                return `20px ${baseSidePadding}px`;
+              }
+              // In preview, compensate for reserved button space without changing text wrap width
+              const reserveLeft = hasAnyDefinitions ? 110 : 40;
+              const reserveRight = hasAnyDefinitions ? 140 : 40;
+              return `28px ${reserveRight + baseSidePadding}px 15px ${reserveLeft + baseSidePadding}px`;
             })(),
             boxSizing: 'border-box',
             pointerEvents: isEditingOnCanvas ? 'auto' : 'none',

@@ -5,6 +5,7 @@
  */
 
 import { exportToRedstring, importFromRedstring } from '../formats/redstringFormat.js';
+import { v4 as uuidv4 } from 'uuid';
 
 // Global state
 let fileHandle = null;
@@ -433,37 +434,78 @@ const setupAutoSave = (getStoreStateFn) => {
 };
 
 /**
- * Create default empty state
+ * Create default state for a brand-new universe:
+ * - Includes base "Thing" type
+ * - Creates a new prototype named "New Thing" typed by base Thing
+ * - Creates a definition graph for it and places one instance on the canvas
  */
 const createEmptyState = () => {
-  // Initialize with base "Thing" type
+  // Base "Thing" type
   const thingId = 'base-thing-prototype';
   const thingPrototype = {
     id: thingId,
     name: 'Thing',
     description: 'The base type for all things. Things are nodes, ideas, nouns, concepts, objects, whatever you want them to be. They will always be at the bottom of the abstraction stack. They are the "atoms" of your Redstring universe.',
-    color: '#8B0000', // maroon
-    typeNodeId: null, // No parent type - this is the base type
+    color: '#8B0000',
+    typeNodeId: null,
     definitionGraphIds: []
   };
-  
+
+  // New default prototype and its graph
+  const newThingPrototypeId = uuidv4();
+  const newGraphId = uuidv4();
+
   const prototypeMap = new Map();
   prototypeMap.set(thingId, thingPrototype);
-  
+  prototypeMap.set(newThingPrototypeId, {
+    id: newThingPrototypeId,
+    name: 'New Thing',
+    description: '',
+    color: '#8B0000',
+    typeNodeId: thingId, // Typed as Thing
+    definitionGraphIds: [newGraphId]
+  });
+
+  // Single instance on the canvas so users can immediately rename it
+  const instanceId = uuidv4();
+  const instancesMap = new Map();
+  instancesMap.set(instanceId, {
+    id: instanceId,
+    prototypeId: newThingPrototypeId,
+    x: 300,
+    y: 200,
+    scale: 1
+  });
+
+  const graphsMap = new Map();
+  graphsMap.set(newGraphId, {
+    id: newGraphId,
+    name: 'New Thing',
+    description: '',
+    picture: null,
+    color: '#8B0000',
+    directed: false,
+    instances: instancesMap,
+    edgeIds: [],
+    definingNodeIds: [newThingPrototypeId],
+    panOffset: null,
+    zoomLevel: null
+  });
+
   return {
-    graphs: new Map(),
-    nodePrototypes: prototypeMap, // Fixed: was "nodes", now "nodePrototypes" 
+    graphs: graphsMap,
+    nodePrototypes: prototypeMap,
     edges: new Map(),
-    openGraphIds: [],
-    activeGraphId: null,
-    activeDefinitionNodeId: null,
-    expandedGraphIds: new Set(),
+    openGraphIds: [newGraphId],
+    activeGraphId: newGraphId,
+    activeDefinitionNodeId: newThingPrototypeId,
+    expandedGraphIds: new Set([newGraphId]),
     rightPanelTabs: [{ type: 'home', isActive: true }],
     savedNodeIds: new Set(),
     savedGraphIds: new Set(),
-    
+
     // Universe file state
-    isUniverseLoaded: true, // Mark as loaded since we're creating it
+    isUniverseLoaded: true,
     isUniverseLoading: false,
     universeLoadingError: null,
     hasUniverseFile: true

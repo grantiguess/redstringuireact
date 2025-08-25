@@ -108,9 +108,10 @@ function NodeCanvas() {
   const toggleSavedGraph = useGraphStore((state) => state.toggleSavedGraph);
   const toggleShowConnectionNames = useGraphStore((state) => state.toggleShowConnectionNames);
   const updateMultipleNodeInstancePositions = useGraphStore((state) => state.updateMultipleNodeInstancePositions);
-  const removeDefinitionFromNode = useGraphStore((state) => state.removeFromDefinitionFromNode);
+  const removeDefinitionFromNode = useGraphStore((state) => state.removeDefinitionFromNode);
   const openGraphTabAndBringToTop = useGraphStore((state) => state.openGraphTabAndBringToTop);
   const cleanupOrphanedData = useGraphStore((state) => state.cleanupOrphanedData);
+  const cleanupOrphanedGraphs = useGraphStore((state) => state.cleanupOrphanedGraphs);
   const restoreFromSession = useGraphStore((state) => state.restoreFromSession);
   const loadUniverseFromFile = useGraphStore((state) => state.loadUniverseFromFile);
   const setUniverseError = useGraphStore((state) => state.setUniverseError);
@@ -543,7 +544,7 @@ function NodeCanvas() {
     createAndAssignGraphDefinition, createAndAssignGraphDefinitionWithoutActivation, closeRightPanelTab, activateRightPanelTab,
     openGraphTab, moveRightPanelTab, closeGraph, toggleGraphExpanded,
     toggleSavedNode, toggleSavedGraph, toggleShowConnectionNames, updateMultipleNodeInstancePositions, removeDefinitionFromNode,
-    openGraphTabAndBringToTop, cleanupOrphanedData, restoreFromSession,
+    openGraphTabAndBringToTop, cleanupOrphanedData, cleanupOrphanedGraphs, restoreFromSession,
     loadUniverseFromFile, setUniverseError, clearUniverse, setUniverseConnected,
     setSelectedEdgeIds, addSelectedEdgeId, removeSelectedEdgeId, clearSelectedEdgeIds, toggleShowConnectionNames,
     toggleEnableAutoRouting, setRoutingStyle, updateGraphView, setTypeListMode,
@@ -606,6 +607,12 @@ function NodeCanvas() {
         const definingNodeId = graph.definingNodeIds?.[0];
         const definingNode = definingNodeId ? nodePrototypesMap.get(definingNodeId) : null;
         
+        // Skip graphs that don't have a valid defining node prototype
+        if (!definingNodeId || !definingNode) {
+            console.warn(`[NodeCanvas] Graph ${graph.id} has invalid definingNodeId: ${definingNodeId}. Skipping from header. Available prototypes:`, Array.from(nodePrototypesMap.keys()));
+            return null;
+        }
+        
         // Ensure color is a string
         let nodeColor = NODE_DEFAULT_COLOR || '#800000'; // Default fallback
         if (definingNode?.color) {
@@ -629,6 +636,24 @@ function NodeCanvas() {
         };
     }).filter(Boolean);
   }, [openGraphIds, activeGraphId, graphsMap, nodePrototypesMap]);
+
+  // Debug logging for headerGraphs validation
+  useEffect(() => {
+    if (headerGraphs.length > 0) {
+      const invalidGraphs = headerGraphs.filter(graph => {
+        if (!graph.definingNodeId) return true;
+        return !nodePrototypesMap.has(graph.definingNodeId);
+      });
+      
+      if (invalidGraphs.length > 0) {
+        console.error('[NodeCanvas] Found invalid graphs in headerGraphs:', invalidGraphs);
+        console.error('[NodeCanvas] Available prototypes:', Array.from(nodePrototypesMap.keys()));
+        
+        // Clean up orphaned graphs
+        cleanupOrphanedGraphs();
+      }
+    }
+  }, [headerGraphs, nodePrototypesMap, cleanupOrphanedGraphs]);
 
   // console.log("[NodeCanvas] Derived activeGraphId:", activeGraphId, "Name:", activeGraphName);
 
@@ -672,6 +697,11 @@ function NodeCanvas() {
 
     tryUniverseRestore();
   }, []); // Run once on mount
+
+  // Clean up any invalid open graphs on mount and when store changes
+  useEffect(() => {
+    cleanupOrphanedGraphs();
+  }, [cleanupOrphanedGraphs, nodePrototypesMap]);
 
   // <<< Prevent Page Zoom >>>
   useEffect(() => {
@@ -737,19 +767,10 @@ function NodeCanvas() {
 
     // <<< Initial Graph Creation Logic (Revised) >>>
   useEffect(() => {
-      // Only run graph creation logic after universe has been loaded and we have a universe file
+      // Only run after universe has been loaded and we have a universe file
       if (!isUniverseLoaded || !hasUniverseFile) return;
-      
-      // Check if graph maps are loaded and if there's no active graph AND no open graphs
-      if (graphsMap.size > 0 && activeGraphId === null && openGraphIds.length === 0) {
-           console.log('[Effect: Initial Check] No active or open graphs found, creating default "New Thing".');
-           storeActions.createNewGraph({ name: 'New Thing' });
-      } else if (graphsMap.size === 0) {
-          // Handle the case where universe is loaded but empty
-           console.log('[Effect: Initial Check] Universe loaded but empty, creating default "New Thing".');
-           storeActions.createNewGraph({ name: 'New Thing' });
-      }
-  }, [graphsMap, activeGraphId, openGraphIds, isUniverseLoaded, hasUniverseFile]); // Re-enabled
+      // Intentionally do nothing here. We no longer auto-create a default graph.
+  }, [graphsMap, activeGraphId, openGraphIds, isUniverseLoaded, hasUniverseFile]);
 
   // Get raw data from store for memoization - derive from existing state
   const instances = useMemo(() => {
@@ -6912,8 +6933,8 @@ function NodeCanvas() {
                                storeActions.createAndAssignGraphDefinition(prototypeId);
                              }}
                              onAddNodeToDefinition={(prototypeId) => {
-                               // Create a new alternative definition for the node
-                               storeActions.createAndAssignGraphDefinition(prototypeId);
+                               // Create a new alternative definition for the node without activating/opening it
+                               storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
                              }}
                              onDeleteDefinition={(prototypeId, graphId) => {
                                // Delete the specific definition graph from the node
@@ -7083,8 +7104,8 @@ function NodeCanvas() {
                                  storeActions.createAndAssignGraphDefinition(prototypeId);
                                }}
                                onAddNodeToDefinition={(prototypeId) => {
-                                 // Create a new alternative definition for the node
-                                 storeActions.createAndAssignGraphDefinition(prototypeId);
+                                 // Create a new alternative definition for the node without activating/opening it
+                                 storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
                                }}
                                onDeleteDefinition={(prototypeId, graphId) => {
                                  // Delete the specific definition graph from the node
@@ -7169,8 +7190,8 @@ function NodeCanvas() {
                                  storeActions.createAndAssignGraphDefinition(prototypeId);
                                }}
                                onAddNodeToDefinition={(prototypeId) => {
-                                 // Create a new alternative definition for the node
-                                 storeActions.createAndAssignGraphDefinition(prototypeId);
+                                 // Create a new alternative definition for the node without activating/opening it
+                                 storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
                                }}
                                onDeleteDefinition={(prototypeId, graphId) => {
                                  // Delete the specific definition graph from the node

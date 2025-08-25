@@ -428,10 +428,43 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       draft.savedGraphIds.add(primaryId);
     }
 
+    // Update active definition node if it referenced the secondary
+    if (draft.activeDefinitionNodeId === secondaryId) {
+      draft.activeDefinitionNodeId = primaryId;
+    }
+
+    // Remap right panel tabs referencing the secondary prototype
+    if (Array.isArray(draft.rightPanelTabs)) {
+      draft.rightPanelTabs.forEach(tab => {
+        if (tab && tab.type === 'node' && tab.nodeId === secondaryId) {
+          tab.nodeId = primaryId;
+          if (primary?.name) tab.title = primary.name;
+        }
+      });
+    }
+
     // Update type node references in other prototypes
     for (const prototype of draft.nodePrototypes.values()) {
       if (prototype.typeNodeId === secondaryId) {
         prototype.typeNodeId = primaryId;
+      }
+    }
+
+    // Remap graphs' definingNodeIds from the secondary to the primary
+    for (const [graphId, graph] of draft.graphs.entries()) {
+      if (Array.isArray(graph.definingNodeIds) && graph.definingNodeIds.includes(secondaryId)) {
+        const remapped = graph.definingNodeIds.map(id => id === secondaryId ? primaryId : id);
+        // De-duplicate while preserving order
+        const seen = new Set();
+        const deduped = [];
+        for (const id of remapped) {
+          if (!seen.has(id)) {
+            seen.add(id);
+            deduped.push(id);
+          }
+        }
+        graph.definingNodeIds = deduped;
+        console.log(`[mergeNodePrototypes] Remapped graph ${graphId} definingNodeIds to`, graph.definingNodeIds);
       }
     }
 
@@ -533,6 +566,28 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         }
       }
     }
+
+    // Ensure all graphs previously owned by secondary now reference primary as a defining node
+    const graphsToRemap = new Set([
+      ...(primary.definitionGraphIds || []),
+      ...((secondary.definitionGraphIds || []))
+    ]);
+    graphsToRemap.forEach(graphId => {
+      const graph = draft.graphs.get(graphId);
+      if (!graph) return;
+      const current = Array.isArray(graph.definingNodeIds) ? graph.definingNodeIds : [];
+      if (current.includes(secondaryId) || !current.includes(primaryId)) {
+        const replaced = current.map(id => id === secondaryId ? primaryId : id);
+        if (!replaced.includes(primaryId)) replaced.unshift(primaryId);
+        const seen = new Set();
+        const deduped = [];
+        for (const id of replaced) {
+          if (!seen.has(id)) { seen.add(id); deduped.push(id); }
+        }
+        graph.definingNodeIds = deduped;
+        // Keep the graph listed under primary
+      }
+    });
 
     console.log(`[mergeDefinitionGraphs] Merged definition graphs using strategy: ${strategy}`);
   })),
@@ -1557,6 +1612,33 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   cleanupOrphanedData: () => set(produce((draft) => {
     console.log('[Store cleanupOrphanedData] Starting cleanup of orphaned data...');
     
+    // UI reference hygiene before deeper cleanup
+    // 1) Drop right panel node tabs that reference missing prototypes
+    if (Array.isArray(draft.rightPanelTabs)) {
+      const originalTabs = draft.rightPanelTabs.slice();
+      draft.rightPanelTabs = draft.rightPanelTabs.filter(tab => {
+        if (!tab || tab.type !== 'node') return true; // keep non-node tabs (e.g., home)
+        return draft.nodePrototypes.has(tab.nodeId);
+      });
+      if (draft.rightPanelTabs.length !== originalTabs.length) {
+        console.log('[Store cleanupOrphanedData] Pruned stale rightPanelTabs referencing deleted prototypes');
+      }
+      // Ensure there is at least a home tab and one active tab
+      if (draft.rightPanelTabs.length === 0 || draft.rightPanelTabs[0]?.type !== 'home') {
+        draft.rightPanelTabs.unshift({ type: 'home', isActive: true });
+      }
+      // Ensure one tab is active
+      if (!draft.rightPanelTabs.some(t => t && t.isActive)) {
+        draft.rightPanelTabs[0].isActive = true;
+      }
+    }
+    
+    // 2) Clear activeDefinitionNodeId if it references a missing prototype
+    if (draft.activeDefinitionNodeId && !draft.nodePrototypes.has(draft.activeDefinitionNodeId)) {
+      console.log(`[Store cleanupOrphanedData] Clearing stale activeDefinitionNodeId ${draft.activeDefinitionNodeId}`);
+      draft.activeDefinitionNodeId = null;
+    }
+    
     // Step 1: Find all referenced prototypes and instances
     const referencedPrototypeIds = new Set();
     
@@ -1750,6 +1832,27 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
             // Set a safe default
             edgeData.directionality = { arrowsToward: new Set() };
           }
+        }
+      }
+
+      // Sanitize UI references: drop node tabs pointing to non-existent prototypes
+      if (Array.isArray(storeState.rightPanelTabs)) {
+        try {
+          const tabs = storeState.rightPanelTabs.filter(tab => {
+            if (!tab || tab.type !== 'node') return true; // keep non-node tabs (e.g., home)
+            return storeState.nodePrototypes?.has?.(tab.nodeId);
+          });
+          // Ensure a home tab exists and is active if none active
+          if (tabs.length === 0 || tabs[0]?.type !== 'home') {
+            tabs.unshift({ type: 'home', isActive: true });
+          }
+          if (!tabs.some(t => t && t.isActive)) {
+            tabs[0].isActive = true;
+          }
+          storeState.rightPanelTabs = tabs;
+        } catch (e) {
+          console.warn('[graphStore] Failed to sanitize rightPanelTabs during load:', e);
+          storeState.rightPanelTabs = [{ type: 'home', isActive: true }];
         }
       }
 

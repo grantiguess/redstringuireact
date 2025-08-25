@@ -274,25 +274,6 @@ const LeftLibraryView = ({
         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
           Saved Things
         </h2>
-        <button
-          onClick={() => setShowDuplicateManager(true)}
-          title="Manage duplicate nodes"
-          style={{
-            background: '#4F46E5',
-            border: 'none',
-            borderRadius: '6px',
-            padding: '6px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            color: 'white',
-            transition: 'background-color 0.2s'
-          }}
-          onMouseOver={(e) => e.target.style.backgroundColor = '#4338CA'}
-          onMouseOut={(e) => e.target.style.backgroundColor = '#4F46E5'}
-        >
-          <Merge size={16} />
-        </button>
       </div>
 
       {showDuplicateManager && (
@@ -439,25 +420,6 @@ const LeftAllThingsView = ({
         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
           All Things
         </h2>
-        <button
-          onClick={() => setShowDuplicateManager(true)}
-          title="Manage duplicate nodes"
-          style={{
-            background: '#4F46E5',
-            border: 'none',
-            borderRadius: '6px',
-            padding: '6px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            color: 'white',
-            transition: 'background-color 0.2s'
-          }}
-          onMouseOver={(e) => e.target.style.backgroundColor = '#4338CA'}
-          onMouseOut={(e) => e.target.style.backgroundColor = '#4F46E5'}
-        >
-          <Merge size={16} />
-        </button>
       </div>
 
       {showDuplicateManager && (
@@ -735,83 +697,172 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
   };
 
 
-  // Common search logic - Use knowledge federation for better results
-  const performSearch = async (query) => {
-    
+  // --- Search utilities: normalization, variants, caching, ranking ---
+  const searchCacheRef = React.useRef(new Map());
+  const latestSearchTokenRef = React.useRef(null);
+
+  const CACHE_TTL_MS = 5 * 60 * 1000;
+
+  const normalizeQuery = (q) => {
+    if (!q) return '';
+    let s = String(q).trim();
+    // Remove surrounding quotes
+    s = s.replace(/^"|"$/g, '').replace(/^'|'$/g, '');
+    // Collapse whitespace
+    s = s.replace(/\s+/g, ' ').trim();
+    return s;
+  };
+
+  const stripParentheses = (q) => q.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+
+  const generateQueryVariants = (q) => {
+    const base = normalizeQuery(q);
+    const noParens = stripParentheses(base);
+    const variants = new Set([base]);
+    if (noParens && noParens.toLowerCase() !== base.toLowerCase()) variants.add(noParens);
+    return Array.from(variants);
+  };
+
+  const isJunkName = (name) => {
+    if (!name) return true;
+    const n = name.toLowerCase();
+    return n.startsWith('category:') || n.startsWith('template:') || n.startsWith('list of ') ||
+           n.includes('disambiguation') || n.startsWith('wikipedia:') || n.startsWith('wikimedia');
+  };
+
+  const isJunkType = (t) => {
+    if (!t) return false;
+    const n = String(t).toLowerCase();
+    return n.includes('disambiguation page') || n === 'human name' || n === 'given name' || n === 'family name' || n.includes('wikimedia');
+  };
+
+  const canonicalKey = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+  const scoreConcept = (concept, qNorm) => {
+    let score = 0;
+    const conf = concept?.semanticMetadata?.confidence ?? 0.5;
+    score += Math.round(conf * 50);
+    const name = concept?.name || '';
+    const desc = concept?.description || '';
+    if (qNorm && name.toLowerCase().includes(qNorm.toLowerCase())) score += 40;
+    if (qNorm && desc.toLowerCase().includes(qNorm.toLowerCase())) score += 20;
+    if (Array.isArray(concept.relationships) && concept.relationships.length > 0) score += 10;
+    if (isJunkName(name)) score -= 60;
+    if (isJunkType(concept?.category)) score -= 40;
+    if ((name || '').length <= 2) score -= 20;
+    return score;
+  };
+
+  const convertFederationResultToConcepts = (results, queryForConn, sliceRelationshipsTo = 5) => {
+    if (!results || !results.entities) return [];
+    return Array.from(results.entities.entries()).map(([entityName, entityData]) => {
+      const entityRelationships = (results.relationships || [])
+        .filter(rel => rel.source === entityName || rel.target === entityName)
+        .slice(0, sliceRelationshipsTo);
+      const bestDescription = entityData.descriptions && entityData.descriptions.length > 0
+        ? entityData.descriptions[0].text
+        : `A concept related to ${queryForConn}`;
+      const bestType = entityData.types && entityData.types.length > 0 ? entityData.types[0] : 'Thing';
+      return {
+        id: `federation-${entityName.replace(/\s+/g, '_')}`,
+        name: cleanTitle(entityName),
+        description: bestDescription,
+        category: bestType,
+        source: entityData.sources?.join(', ') || 'federated',
+        relationships: entityRelationships,
+        semanticMetadata: {
+          originalUri: entityData.externalLinks?.[0],
+          equivalentClasses: entityData.types || [],
+          externalLinks: entityData.externalLinks || [],
+          confidence: entityData.confidence || 0.8,
+          connectionInfo: {
+            type: 'federated',
+            value: entityName === queryForConn ? 'seed_entity' : 'related_entity',
+            originalEntity: queryForConn
+          }
+        },
+        color: generateConceptColor(entityName),
+        discoveredAt: new Date().toISOString(),
+        searchQuery: queryForConn
+      };
+    });
+  };
+
+  const fetchFederatedConcepts = async (query, options) => {
+    const { maxDepth, maxEntitiesPerLevel } = options || {};
+    const cacheKey = `${query}::d${maxDepth || 1}::p${maxEntitiesPerLevel || 15}`;
+    const now = Date.now();
+    const cached = searchCacheRef.current.get(cacheKey);
+    if (cached && now - cached.ts < CACHE_TTL_MS) {
+      return cached.data;
+    }
+    const results = await knowledgeFederation.importKnowledgeCluster(query, {
+      maxDepth: maxDepth ?? 1,
+      maxEntitiesPerLevel: maxEntitiesPerLevel ?? 15,
+      includeRelationships: true,
+      includeSources: ['wikidata', 'dbpedia', 'conceptnet'],
+      onProgress: (progress) => {
+        // Throttle logs implicitly by federation impl; keep lightweight here
+      }
+    });
+    const concepts = convertFederationResultToConcepts(results, query);
+    searchCacheRef.current.set(cacheKey, { ts: now, data: concepts });
+    return concepts;
+  };
+
+  const filterRankDedup = (concepts, q) => {
+    const qNorm = normalizeQuery(q);
+    const seen = new Set();
+    const filtered = [];
+    for (const c of concepts) {
+      const key = canonicalKey(c.name);
+      if (!key || seen.has(key)) continue;
+      if (isJunkName(c.name) || isJunkType(c.category)) continue;
+      const conf = c?.semanticMetadata?.confidence ?? 0.5;
+      if (conf < 0.35) continue;
+      seen.add(key);
+      filtered.push({ c, s: scoreConcept(c, qNorm) });
+    }
+    filtered.sort((a, b) => b.s - a.s);
+    return filtered.map(x => x.c);
+  };
+
+  // Common search logic with normalization, variants, shallow-first, caching, ranking
+  const performSearch = async (rawQuery) => {
+    const variants = generateQueryVariants(rawQuery);
+    const token = `search-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+    latestSearchTokenRef.current = token;
     setIsSearching(true);
-    const searchId = `concept-search-${Date.now()}`;
-    
     try {
-      // Use knowledge federation for relationship-based exploration (like mass import)
-      console.log(`[SemanticDiscovery] Starting knowledge federation search for "${query}"`);
-      const results = await knowledgeFederation.importKnowledgeCluster(query, {
-        maxDepth: 2, // Explore 2 levels deep for rich results
-        maxEntitiesPerLevel: 25, // Get more entities per level
-        includeRelationships: true,
-        includeSources: ['wikidata', 'dbpedia', 'conceptnet'], // Use all available sources
-        onProgress: (progress) => {
-          console.log(`[SemanticDiscovery] Progress: ${progress.stage} - ${progress.entity} (level ${progress.level})`);
+      // Shallow, fast searches for all variants in parallel
+      const variantPromises = variants.map(v => fetchFederatedConcepts(v, { maxDepth: 1, maxEntitiesPerLevel: 15 }));
+      const variantResults = await Promise.allSettled(variantPromises);
+      let combined = [];
+      variantResults.forEach((res, idx) => {
+        if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+          combined = combined.concat(res.value);
+        } else {
+          console.warn('[SemanticDiscovery] Variant search failed:', variants[idx]);
         }
       });
-      
-      // Convert knowledge federation results to Redstring concept format
-      const concepts = Array.from(results.entities.entries()).map(([entityName, entityData]) => {
-        // Get relationships for this entity
-        const entityRelationships = results.relationships
-          .filter(rel => rel.source === entityName || rel.target === entityName)
-          .slice(0, 5);
-        
-        // Get the best description from available sources
-        const bestDescription = entityData.descriptions && entityData.descriptions.length > 0
-          ? entityData.descriptions[0].text
-          : `A concept related to ${query}`;
-        
-        // Get the best type from available sources
-        const bestType = entityData.types && entityData.types.length > 0
-          ? entityData.types[0]
-          : 'Thing';
-        
-        return {
-          id: `federation-${entityName.replace(/\s+/g, '_')}`,
-          name: cleanTitle(entityName),
-          description: bestDescription,
-          category: bestType,
-          source: entityData.sources?.join(', ') || 'federated',
-          relationships: entityRelationships,
-          semanticMetadata: {
-            originalUri: entityData.externalLinks?.[0],
-            equivalentClasses: entityData.types || [],
-            externalLinks: entityData.externalLinks || [],
-            confidence: entityData.confidence || 0.8,
-            connectionInfo: {
-              type: 'federated',
-              value: entityName === query ? 'seed_entity' : 'related_entity',
-              originalEntity: query
-            }
-          },
-          color: generateConceptColor(entityName),
-          discoveredAt: new Date().toISOString(),
-          searchQuery: query
-        };
-      });
-      
-      console.log(`[SemanticDiscovery] Found ${concepts.length} concepts from knowledge federation`);
-      setDiscoveredConcepts(concepts);
-      
-      // Add to search history
-      setSearchHistory(prev => [{
-        id: searchId,
-        query: query,
+      const ranked = filterRankDedup(combined, rawQuery).slice(0, 30); // Cap initial set
+      if (latestSearchTokenRef.current !== token) return; // stale
+      console.log(`[SemanticDiscovery] Showing ${ranked.length} ranked concepts (from ${combined.length} raw)`);
+      setDiscoveredConcepts(ranked);
+      const historyItem = {
+        id: token,
+        query: normalizeQuery(rawQuery),
         timestamp: new Date(),
-        resultCount: concepts.length,
-        concepts: concepts.slice(0, 10) // Store first 10 for quick access
-      }, ...prev].slice(0, 20)); // Keep last 20 searches
-      
+        resultCount: ranked.length,
+        concepts: ranked.slice(0, 10)
+      };
+      setSearchHistory(prev => [historyItem, ...prev].slice(0, 20));
     } catch (error) {
       console.error('[SemanticDiscovery] Search failed:', error);
+      if (latestSearchTokenRef.current !== token) return;
       setDiscoveredConcepts([]);
     } finally {
-      setIsSearching(false);
+      if (latestSearchTokenRef.current === token) setIsSearching(false);
     }
   };
   
@@ -1215,75 +1266,26 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                   <button
                     onClick={async () => {
                       const lastSearch = searchHistory[0];
-                      if (lastSearch) {
-                        const existingNames = new Set(discoveredConcepts.map(c => c.name));
-                        
-                        try {
-                          setIsSearching(true);
-                          console.log(`[SemanticDiscovery] Loading more results for "${lastSearch.query}"`);
-                          
-                          // Use knowledge federation with higher limits for more results
-                          const results = await knowledgeFederation.importKnowledgeCluster(lastSearch.query, {
-                            maxDepth: 3, // Go deeper for "load more"
-                            maxEntitiesPerLevel: 40, // Higher limit for "load more"
-                            includeRelationships: true,
-                            includeSources: ['wikidata', 'dbpedia', 'conceptnet'],
-                            onProgress: (progress) => {
-                              console.log(`[SemanticDiscovery] Load more progress: ${progress.stage} - ${progress.entity} (level ${progress.level})`);
-                            }
-                          });
-                          
-                          // Convert knowledge federation results to concept format and filter out duplicates
-                          const newConcepts = Array.from(results.entities.entries())
-                            .map(([entityName, entityData]) => {
-                              // Get relationships for this entity
-                              const entityRelationships = results.relationships
-                                .filter(rel => rel.source === entityName || rel.target === entityName)
-                                .slice(0, 3);
-                              
-                              // Get the best description from available sources
-                              const bestDescription = entityData.descriptions && entityData.descriptions.length > 0
-                                ? entityData.descriptions[0].text
-                                : `A concept related to ${lastSearch.query}`;
-                              
-                              // Get the best type from available sources
-                              const bestType = entityData.types && entityData.types.length > 0
-                                ? entityData.types[0]
-                                : 'Thing';
-                              
-                              return {
-                                id: `federation-${entityName.replace(/\s+/g, '_')}`,
-                                name: cleanTitle(entityName),
-                                description: bestDescription,
-                                category: bestType,
-                                source: entityData.sources?.join(', ') || 'federated',
-                                relationships: entityRelationships,
-                                semanticMetadata: {
-                                  originalUri: entityData.externalLinks?.[0],
-                                  equivalentClasses: entityData.types || [],
-                                  externalLinks: entityData.externalLinks || [],
-                                  confidence: entityData.confidence || 0.8,
-                                  connectionInfo: {
-                                    type: 'federated',
-                                    value: entityName === lastSearch.query ? 'seed_entity' : 'related_entity',
-                                    originalEntity: lastSearch.query
-                                  }
-                                },
-                                color: generateConceptColor(entityName),
-                                searchQuery: lastSearch.query,
-                                discoveredAt: new Date().toISOString()
-                              };
-                            })
-                            .filter(concept => !existingNames.has(concept.name)); // Prevent duplicates
-                          
-                          console.log(`[SemanticDiscovery] Loaded ${newConcepts.length} additional concepts`);
-                          setDiscoveredConcepts(prev => [...prev, ...newConcepts]);
-                          
-                        } catch (error) {
-                          console.error('[SemanticDiscovery] Load more failed:', error);
-                        } finally {
-                          setIsSearching(false);
-                        }
+                      if (!lastSearch) return;
+                      try {
+                        setIsSearching(true);
+                        console.log(`[SemanticDiscovery] Loading more results for "${lastSearch.query}" with staged deeper search`);
+                        const variants = generateQueryVariants(lastSearch.query);
+                        const promises = variants.map(v => fetchFederatedConcepts(v, { maxDepth: 2, maxEntitiesPerLevel: 35 }));
+                        const settled = await Promise.allSettled(promises);
+                        let combined = [];
+                        settled.forEach((res) => { if (res.status === 'fulfilled') combined = combined.concat(res.value || []); });
+                        // Rank and dedup globally
+                        const ranked = filterRankDedup(combined, lastSearch.query);
+                        // Remove concepts already shown
+                        const existingKeys = new Set(discoveredConcepts.map(c => canonicalKey(c.name)));
+                        const additions = ranked.filter(c => !existingKeys.has(canonicalKey(c.name))).slice(0, 40);
+                        console.log(`[SemanticDiscovery] Loaded ${additions.length} additional concepts (from ${combined.length} raw)`);
+                        setDiscoveredConcepts(prev => [...prev, ...additions]);
+                      } catch (error) {
+                        console.error('[SemanticDiscovery] Load more failed:', error);
+                      } finally {
+                        setIsSearching(false);
                       }
                     }}
                     disabled={isSearching}

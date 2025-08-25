@@ -257,6 +257,38 @@ const RedstringMenu = ({
                           )}
                       </div>
                   );
+              } else if(item === 'Edit'){
+                  return (
+                      <div 
+                        key={index} 
+                        onMouseEnter={() => handleMenuItemHover('Edit')}
+                        onMouseLeave={handleMenuItemLeave}
+                        style={{ position: 'relative', width: '100%' }}
+                      >
+                          <button className="menu-item">
+                              <span>{item}</span>
+                              <ChevronRight size={16} className="menu-item-chevron" />
+                          </button>
+                          {openSubmenu === 'Edit' && (
+                            <div 
+                              className="submenu-container"
+                              onMouseEnter={handleSubmenuEnter}
+                              onMouseLeave={handleMenuItemLeave}
+                            >
+                                <div
+                                  className="submenu-item"
+                                  onClick={() => {
+                                    // Dispatch global event used by Panel to open DuplicateManager
+                                    window.dispatchEvent(new Event('openMergeModal'));
+                                  }}
+                                  style={{ cursor: 'pointer' }}
+                                >
+                                  Merge Duplicates
+                                </div>
+                            </div>
+                          )}
+                      </div>
+                  );
               } else if(item === 'View'){
                   return (
                       <div 

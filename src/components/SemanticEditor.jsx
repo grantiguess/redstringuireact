@@ -121,7 +121,43 @@ const SemanticLinkInput = ({ onAdd, placeholder, type, icon: Icon, defaultValue 
 };
 
 const ExternalLinkCard = ({ link, onRemove }) => {
+  const [wikidataLabel, setWikidataLabel] = useState(null);
+
+  const extractWikidataId = (uri) => {
+    if (!uri) return null;
+    if (uri.startsWith('wd:')) return uri.replace('wd:', '').trim();
+    try {
+      const u = new URL(uri);
+      if (u.hostname.includes('wikidata.org')) {
+        const parts = u.pathname.split('/').filter(Boolean);
+        // typical: /wiki/Q42
+        const last = parts[parts.length - 1] || '';
+        if (/^Q\d+$/i.test(last)) return last;
+      }
+    } catch {}
+    return null;
+  };
+
+  useEffect(() => {
+    const qid = extractWikidataId(link);
+    if (!qid) { setWikidataLabel(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(`https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${qid}&format=json&origin=*`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const entity = data?.entities?.[qid];
+        if (!entity) return;
+        const labels = entity.labels || {};
+        const label = labels.en?.value || Object.values(labels)[0]?.value || null;
+        if (!cancelled) setWikidataLabel(label || null);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [link]);
   const getDisplayInfo = (uri) => {
+    const wikipediaStyleColor = '#000000';
     if (uri.startsWith('doi:')) {
       return {
         type: 'DOI',
@@ -143,7 +179,17 @@ const ExternalLinkCard = ({ link, onRemove }) => {
         type: 'Wikidata',
         display: uri.replace('wd:', ''),
         url: `https://www.wikidata.org/wiki/${uri.replace('wd:', '')}`,
-        color: '#339966',
+        color: wikipediaStyleColor,
+        desc: 'Structured data from Wikidata'
+      };
+    } else if (uri.includes('wikidata.org')) {
+      const last = uri.split('/').pop();
+      const pretty = last || 'Wikidata Entity';
+      return {
+        type: 'Wikidata',
+        display: pretty,
+        url: uri,
+        color: wikipediaStyleColor,
         desc: 'Structured data from Wikidata'
       };
     } else if (uri.includes('wikipedia.org')) {
@@ -153,7 +199,7 @@ const ExternalLinkCard = ({ link, onRemove }) => {
         type: 'Wikipedia',
         display: pretty,
         url: uri,
-        color: '#000000',
+        color: wikipediaStyleColor,
         desc: 'Wikipedia article'
       };
     } else if (uri.includes('arxiv.org')) {
@@ -171,7 +217,7 @@ const ExternalLinkCard = ({ link, onRemove }) => {
         type: 'DBpedia',
         display: pretty,
         url: uri,
-        color: '#ff6600',
+        color: wikipediaStyleColor,
         desc: 'Structured data from DBpedia'
       };
     } else if (uri.includes('schema.org')) {
@@ -194,6 +240,7 @@ const ExternalLinkCard = ({ link, onRemove }) => {
   };
 
   const { type, display, url, color, desc } = getDisplayInfo(link);
+  const finalDisplay = wikidataLabel || display;
 
   return (
     <div style={{
@@ -223,7 +270,7 @@ const ExternalLinkCard = ({ link, onRemove }) => {
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap'
         }}>
-          {display}
+          {finalDisplay}
         </div>
       </div>
       <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>

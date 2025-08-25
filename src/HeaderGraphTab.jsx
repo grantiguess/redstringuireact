@@ -64,17 +64,26 @@ const HeaderGraphTab = ({ graph, onSelect, onDoubleClick, isActive, hideText = f
     return null;
   }, [graph.definingNodeId, nodePrototypes]);
   
+  const canDrag = !!graph.definingNodeId && !!nodePrototypes.get(graph.definingNodeId);
+  
+  // Log when a graph tab has an invalid definingNodeId
+  useEffect(() => {
+    if (graph.definingNodeId && !nodePrototypes.get(graph.definingNodeId)) {
+      console.warn(`[HeaderGraphTab] Graph ${graph.id} has invalid definingNodeId: ${graph.definingNodeId}. Available prototypes:`, Array.from(nodePrototypes.keys()));
+    }
+  }, [graph.id, graph.definingNodeId, nodePrototypes]);
+  
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: SPAWNABLE_NODE,
     item: () => ({ 
       prototypeId: graph.definingNodeId,
       nodeName: definingNodeName // Include node name for fallback matching
     }),
-    canDrag: () => !!graph.definingNodeId,
+    canDrag: () => canDrag,
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
     }),
-  }), [graph, definingNodeName]);
+  }), [graph, definingNodeName, nodePrototypes, canDrag]);
 
   useEffect(() => {
     preview(getEmptyImage(), { captureDraggingState: true });
@@ -86,7 +95,7 @@ const HeaderGraphTab = ({ graph, onSelect, onDoubleClick, isActive, hideText = f
     borderRadius: '12px',
     color: isActive ? '#bdb5b5' : 'rgba(240, 240, 240, 0.5)',
     textShadow: '0 1px 2px rgba(0,0,0,0.5)',
-    cursor: 'pointer',
+    cursor: canDrag ? 'pointer' : 'not-allowed',
     margin: '0 5px',
     transition: 'all 0.2s ease',
     whiteSpace: 'nowrap',
@@ -100,28 +109,28 @@ const HeaderGraphTab = ({ graph, onSelect, onDoubleClick, isActive, hideText = f
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     flexShrink: 0,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.5 : (canDrag ? 1 : 0.6),
   };
 
   const handleClick = (e) => {
-    if (!isActive && onSelect) {
+    if (!isActive && onSelect && canDrag) {
       onSelect(graph.id);
     }
   };
 
   const handleDoubleClick = (e) => {
-    if (onDoubleClick && isActive) {
+    if (onDoubleClick && isActive && canDrag) {
       onDoubleClick(e);
     }
   };
 
   return (
     <div
-      ref={drag}
+      ref={canDrag ? drag : null}
       style={tabStyle}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
-      title={graph.name}
+      title={canDrag ? graph.name : `${graph.name} (prototype not available)`}
     >
       <span style={{ 
         opacity: hideText ? 0 : 1,
