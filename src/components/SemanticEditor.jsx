@@ -697,28 +697,30 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
       {showSettings && (
         <div style={{
           padding: '10px',
-          backgroundColor: 'rgba(0,0,0,0.03)',
+          backgroundColor: 'rgba(38,0,0,0.03)',
           borderRadius: '6px',
           marginBottom: '10px',
-          border: '1px solid #ddd'
+          border: '1px solid rgba(38,0,0,0.10)'
         }}>
           <div style={{ fontSize: '12px', color: '#8B0000', marginBottom: '8px', fontWeight: 'bold' }}>
             Federation Mode:
           </div>
           <div style={{ display: 'flex', gap: '10px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#260000' }}>
               <input
                 type="radio"
                 checked={federationMode === 'node'}
                 onChange={() => setFederationMode('node')}
+                style={{ accentColor: '#8B0000' }}
               />
               Per-node classification
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#260000' }}>
               <input
                 type="radio"
                 checked={federationMode === 'domain'}
                 onChange={() => setFederationMode('domain')}
+                style={{ accentColor: '#8B0000' }}
               />
               Domain-wide settings
             </label>
@@ -730,8 +732,8 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
             fontStyle: 'italic'
           }}>
             {federationMode === 'node' 
-              ? 'Each node can have custom ontology mappings'
-              : 'Use domain-wide federation settings for consistent classification'
+              ? 'Applies type and class links to this thing only. Suggestions and changes stay local.'
+              : 'Reuses types and class links across your project. Suggestions draw from other things to keep names consistent.'
             }
           </div>
         </div>

@@ -279,7 +279,7 @@ const Node = ({
             width: '100%',
             height: '100%',
             padding: isPreviewing 
-              ? `15px ${hasAnyDefinitions ? 25 : 20}px` 
+              ? `15px ${hasAnyDefinitions ? 140 : 20}px` 
               : `15px 15px`,
             boxSizing: 'border-box',
             pointerEvents: isEditingOnCanvas ? 'auto' : 'none',
@@ -307,7 +307,7 @@ const Node = ({
                 color: '#bdb5b5',
                 whiteSpace: 'normal',
                 overflowWrap: 'break-word',
-                wordBreak: 'keep-all',
+                wordBreak: 'break-word',
                 textAlign: 'center',
                 minWidth: 0,
                 display: 'inline-block',

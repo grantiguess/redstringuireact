@@ -66,9 +66,9 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
     if (isPreviewing) {
         baseWidth = PREVIEW_NODE_WIDTH;
         baseHeight = PREVIEW_NODE_MIN_HEIGHT;
-        // Account for the actual padding used in preview mode (110px on each side for nodes with definitions, 60px for those without)
-        // We'll use the larger padding to be safe, or we could pass this information as a parameter
-        const previewHorizontalPadding = 110; // This matches the padding in Node.jsx for nodes with definitions
+        // Account for the actual padding used in preview mode (140px on each side for nodes with definitions, 20px for those without)
+        // Navigation arrows need more space - being aggressive to avoid any overlap
+        const previewHorizontalPadding = 140; // This matches the padding in Node.jsx for nodes with definitions
         textWidthTarget = baseWidth - 2 * previewHorizontalPadding;
     } else if (hasImage) {
         baseWidth = EXPANDED_NODE_WIDTH;
