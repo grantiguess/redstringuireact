@@ -14,7 +14,7 @@ const SHRINK_ANIMATION_DURATION = 150; // ms, matches CSS (FASTER)
 const STAGGER_DELAY = 40; // ms, slightly reduced
 const EXIT_ANIMATION_BUFFER = 50; // ms, extra buffer for animation to complete visually
 
-const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComplete }) => {
+const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComplete, focusedNode }) => {
   // animationState can be: null (initial/hidden), 'popping', 'visible_steady', 'shrinking'
   const [animationState, setAnimationState] = useState(null);
 

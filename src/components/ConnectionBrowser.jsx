@@ -3,6 +3,7 @@ import { ArrowRight, Plus, CircleDot, RefreshCw } from 'lucide-react';
 import useGraphStore from '../store/graphStore';
 import { knowledgeFederation } from '../services/knowledgeFederation';
 import { fastEnrichFromSemanticWeb } from '../services/semanticWebQuery.js';
+import ToggleSlider from './ToggleSlider.jsx';
 import './ConnectionBrowser.css';
 
 /**
@@ -236,32 +237,24 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
   return (
     <div className="connection-browser">
       {/* Scope Slider */}
-      <div className="connection-scope-control">
-        <div className="scope-slider">
-          <button
-            className={`scope-button ${connectionScope === 'graph' ? 'active' : ''}`}
-            onClick={() => setConnectionScope('graph')}
-          >
-            In Graph
-          </button>
-          <button
-            className={`scope-button ${connectionScope === 'all' ? 'active' : ''}`}
-            onClick={() => setConnectionScope('all')}
-          >
-            All Connections
-          </button>
-        </div>
-        <div className="connection-count">
-          {isLoading ? (
+      <ToggleSlider
+        options={[
+          { value: 'graph', label: 'In Graph' },
+          { value: 'all', label: 'All Connections' }
+        ]}
+        value={connectionScope}
+        onChange={setConnectionScope}
+        rightContent={
+          isLoading ? (
             <div className="loading-indicator">
               <RefreshCw size={12} className="spin" />
               <span>Loading...</span>
             </div>
           ) : (
             `${filteredConnections.length} connection${filteredConnections.length !== 1 ? 's' : ''}`
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
       
       {/* Connection List */}
       <div className="connection-list">

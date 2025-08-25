@@ -600,6 +600,14 @@ export async function fastEnrichFromSemanticWeb(entityName, options = {}) {
       wikipedia: wikipediaResult.status
     });
 
+    // Process results with Wikipedia prioritization
+    // First, collect all sources without applying any data
+    const sourceData = {
+      wikidata: null,
+      dbpedia: null,
+      wikipedia: null
+    };
+
     // Process Wikidata results
     if (wikidataResults.status === 'fulfilled' && wikidataResults.value.length > 0) {
       const wdResult = wikidataResults.value[0];
@@ -607,14 +615,11 @@ export async function fastEnrichFromSemanticWeb(entityName, options = {}) {
         found: true,
         results: wikidataResults.value
       };
-      
-      if (wdResult.item?.value) {
-        results.suggestions.externalLinks.push(wdResult.item.value);
-      }
-      if (wdResult.itemDescription?.value) {
-        results.suggestions.description = wdResult.itemDescription.value;
-        results.suggestions.confidence = Math.max(results.suggestions.confidence, 0.9);
-      }
+      sourceData.wikidata = {
+        externalLink: wdResult.item?.value,
+        description: wdResult.itemDescription?.value,
+        confidence: 0.9
+      };
     } else {
       results.sources.wikidata = {
         found: false,
@@ -629,14 +634,11 @@ export async function fastEnrichFromSemanticWeb(entityName, options = {}) {
         found: true,
         results: dbpediaResults.value
       };
-      
-      if (dbResult.resource?.value) {
-        results.suggestions.externalLinks.push(dbResult.resource.value);
-      }
-      if (dbResult.comment?.value && !results.suggestions.description) {
-        results.suggestions.description = dbResult.comment.value;
-        results.suggestions.confidence = Math.max(results.suggestions.confidence, 0.8);
-      }
+      sourceData.dbpedia = {
+        externalLink: dbResult.resource?.value,
+        description: dbResult.comment?.value,
+        confidence: 0.8
+      };
     } else {
       results.sources.dbpedia = {
         found: false,
@@ -651,19 +653,37 @@ export async function fastEnrichFromSemanticWeb(entityName, options = {}) {
         found: true,
         result: wpResult
       };
-      
-      if (wpResult.url) {
-        results.suggestions.externalLinks.push(wpResult.url);
-      }
-      if (wpResult.description && !results.suggestions.description) {
-        results.suggestions.description = wpResult.description;
-        results.suggestions.confidence = Math.max(results.suggestions.confidence, 0.7);
-      }
+      sourceData.wikipedia = {
+        externalLink: wpResult.url,
+        description: wpResult.description,
+        confidence: 0.95 // Highest confidence for Wikipedia definitions
+      };
     } else {
       results.sources.wikipedia = {
         found: false,
         error: wikipediaResult.reason?.message
       };
+    }
+
+    // Apply results with Wikipedia-first prioritization
+    // Priority order: Wikipedia > DBpedia > Wikidata
+    const sources = ['wikipedia', 'dbpedia', 'wikidata'];
+    
+    for (const sourceName of sources) {
+      const data = sourceData[sourceName];
+      if (!data) continue;
+      
+      // Add external links (all sources)
+      if (data.externalLink) {
+        results.suggestions.externalLinks.push(data.externalLink);
+      }
+      
+      // Set description only if we don't have one yet (Wikipedia gets first chance)
+      if (data.description && !results.suggestions.description) {
+        results.suggestions.description = data.description;
+        results.suggestions.confidence = Math.max(results.suggestions.confidence, data.confidence);
+        console.log(`[SemanticWebQuery] Using ${sourceName} description for "${sanitizedEntityName}": "${data.description.substring(0, 100)}..."`);
+      }
     }
 
     // Remove duplicates from external links
@@ -773,6 +793,14 @@ export async function enrichFromSemanticWeb(entityName, options = {}) {
       wikipedia: wikipediaResult.status
     });
 
+    // Process results with Wikipedia prioritization
+    // First, collect all sources without applying any data
+    const sourceData = {
+      wikidata: null,
+      dbpedia: null,
+      wikipedia: null
+    };
+
     // Process Wikidata results
     if (wikidataResults.status === 'fulfilled' && wikidataResults.value.length > 0) {
       const wdResult = wikidataResults.value[0];
@@ -780,14 +808,11 @@ export async function enrichFromSemanticWeb(entityName, options = {}) {
         found: true,
         results: wikidataResults.value
       };
-      
-      if (wdResult.item?.value) {
-        results.suggestions.externalLinks.push(wdResult.item.value);
-      }
-      if (wdResult.itemDescription?.value) {
-        results.suggestions.description = wdResult.itemDescription.value;
-        results.suggestions.confidence = Math.max(results.suggestions.confidence, 0.9);
-      }
+      sourceData.wikidata = {
+        externalLink: wdResult.item?.value,
+        description: wdResult.itemDescription?.value,
+        confidence: 0.9
+      };
     } else {
       results.sources.wikidata = {
         found: false,
@@ -802,14 +827,11 @@ export async function enrichFromSemanticWeb(entityName, options = {}) {
         found: true,
         results: dbpediaResults.value
       };
-      
-      if (dbResult.resource?.value) {
-        results.suggestions.externalLinks.push(dbResult.resource.value);
-      }
-      if (dbResult.comment?.value && !results.suggestions.description) {
-        results.suggestions.description = dbResult.comment.value;
-        results.suggestions.confidence = Math.max(results.suggestions.confidence, 0.8);
-      }
+      sourceData.dbpedia = {
+        externalLink: dbResult.resource?.value,
+        description: dbResult.comment?.value,
+        confidence: 0.8
+      };
     } else {
       results.sources.dbpedia = {
         found: false,
@@ -824,19 +846,37 @@ export async function enrichFromSemanticWeb(entityName, options = {}) {
         found: true,
         result: wpResult
       };
-      
-      if (wpResult.url) {
-        results.suggestions.externalLinks.push(wpResult.url);
-      }
-      if (wpResult.description && !results.suggestions.description) {
-        results.suggestions.description = wpResult.description;
-        results.suggestions.confidence = Math.max(results.suggestions.confidence, 0.7);
-      }
+      sourceData.wikipedia = {
+        externalLink: wpResult.url,
+        description: wpResult.description,
+        confidence: 0.95 // Highest confidence for Wikipedia definitions
+      };
     } else {
       results.sources.wikipedia = {
         found: false,
         error: wikipediaResult.reason?.message
       };
+    }
+
+    // Apply results with Wikipedia-first prioritization
+    // Priority order: Wikipedia > DBpedia > Wikidata
+    const sources = ['wikipedia', 'dbpedia', 'wikidata'];
+    
+    for (const sourceName of sources) {
+      const data = sourceData[sourceName];
+      if (!data) continue;
+      
+      // Add external links (all sources)
+      if (data.externalLink) {
+        results.suggestions.externalLinks.push(data.externalLink);
+      }
+      
+      // Set description only if we don't have one yet (Wikipedia gets first chance)
+      if (data.description && !results.suggestions.description) {
+        results.suggestions.description = data.description;
+        results.suggestions.confidence = Math.max(results.suggestions.confidence, data.confidence);
+        console.log(`[SemanticWebQuery] Using ${sourceName} description for "${sanitizedEntityName}": "${data.description.substring(0, 100)}..."`);
+      }
     }
 
     // Remove duplicates from external links

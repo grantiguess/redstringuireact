@@ -3,51 +3,7 @@
   width: 100%;
 }
 
-/* Scope Control Slider */
-.connection-scope-control {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  padding: 0 4px;
-}
-
-.scope-slider {
-  display: flex;
-  background-color: #2a2a2a;
-  border-radius: 8px;
-  padding: 2px;
-  border: 1px solid #444;
-}
-
-.scope-button {
-  padding: 6px 12px;
-  border: none;
-  background: transparent;
-  color: #bbb;
-  font-family: 'EmOne', sans-serif;
-  font-size: 12px;
-  cursor: pointer;
-  border-radius: 6px;
-  transition: all 0.15s ease;
-  white-space: nowrap;
-}
-
-.scope-button:hover {
-  color: #ddd;
-  background-color: rgba(255, 255, 255, 0.1);
-}
-
-.scope-button.active {
-  background-color: #8B0000;
-  color: #fff;
-}
-
-.connection-count {
-  font-family: 'EmOne', sans-serif;
-  font-size: 11px;
-  color: #888;
-}
+/* Connection Browser now uses ToggleSlider component */
 
 /* Connection List */
 .connection-list {
@@ -268,10 +224,5 @@
   .predicate-label {
     font-size: 8px;
     max-width: 80px;
-  }
-  
-  .scope-button {
-    padding: 5px 8px;
-    font-size: 11px;
   }
 }

@@ -3,6 +3,7 @@ import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR, PANEL_CLOSE_ICON_SIZE } from './constants';
 import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Wand, Settings, RotateCcw, Send, Bot, User, Key, Square, Search, Merge, Copy, Loader2 } from 'lucide-react';
+import ToggleSlider from './components/ToggleSlider.jsx';
 import { v4 as uuidv4 } from 'uuid';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
@@ -1144,21 +1145,23 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
       
       <div className="panel-content-inner semantic-discovery-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* Header */}
-      <div className="semantic-discovery-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
+      <div className="semantic-discovery-header" style={{ marginBottom: '16px' }}>
+        <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif", marginBottom: '12px' }}>
           Semantic Discovery
         </h2>
-        <div className="semantic-discovery-tabs" style={{ display: 'flex', gap: '4px' }}>
-            {['discover', 'history'].map(mode => (
-            <button
-              key={mode}
-              className={`semantic-tab-button ${viewMode === mode ? 'active' : ''}`}
-              onClick={() => setViewMode(mode)}
-            >
-              {mode.charAt(0).toUpperCase() + mode.slice(1)}
-            </button>
-          ))}
-        </div>
+        <ToggleSlider
+          options={[
+            { value: 'discover', label: 'Discover' },
+            { value: 'history', label: 'History' }
+          ]}
+          value={viewMode}
+          onChange={setViewMode}
+          rightContent={
+            viewMode === 'history' && searchHistory.length > 0 ? (
+              `${searchHistory.length} search${searchHistory.length !== 1 ? 'es' : ''}`
+            ) : null
+          }
+        />
       </div>
 
       {viewMode === 'discover' && (

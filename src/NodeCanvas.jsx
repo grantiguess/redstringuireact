@@ -2026,40 +2026,64 @@ function NodeCanvas() {
           label: 'Expand',
           icon: ArrowUpFromDot,
           position: 'right-outer',
-          action: (nodeId) => {
+          action: (originalNodeId) => {
             setIsPieMenuActionInProgress(true);
             setTimeout(() => setIsPieMenuActionInProgress(false), 100);
             
-            console.log(`[PieMenu Action] Expand clicked for carousel node: ${nodeId}. Starting hurtle animation and closing carousel.`);
-            const nodeData = nodes.find(n => n.id === nodeId);
-            if (nodeData) {
-              const prototypeId = nodeData.prototypeId;
-              if (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
-                // Node has definitions - start hurtle animation to first one
-                const graphIdToOpen = nodeData.definitionGraphIds[0];
-                startHurtleAnimation(nodeId, graphIdToOpen, prototypeId);
+            // In carousel mode, use the focused node's prototype for expansion operations
+            const focusedPrototypeId = carouselFocusedNode ? carouselFocusedNode.prototypeId : null;
+            const originalNodeData = nodes.find(n => n.id === originalNodeId);
+            
+            if (!originalNodeData) {
+              console.error(`[PieMenu Action] Could not find original node data for ID: ${originalNodeId}`);
+              return;
+            }
+            
+            // Use focused node's prototype if available, otherwise use original node's prototype
+            const targetPrototypeId = focusedPrototypeId || originalNodeData.prototypeId;
+            
+            console.log(`[PieMenu Action] Expand clicked for carousel. Original node: ${originalNodeId}, Target prototype: ${targetPrototypeId}, Focused node:`, carouselFocusedNode);
+            
+            // Get the prototype data to check for definitions
+            const currentState = useGraphStore.getState();
+            const prototypeData = currentState.nodePrototypes.get(targetPrototypeId);
+            
+            if (prototypeData) {
+              if (prototypeData.definitionGraphIds && prototypeData.definitionGraphIds.length > 0) {
+                // Node has definitions - use current definition index if available, otherwise first one
+                const contextKey = `${targetPrototypeId}-${activeGraphId}`;
+                const currentDefinitionIndex = nodeDefinitionIndices.get(contextKey) || 0;
+                const definitionIndex = Math.min(currentDefinitionIndex, prototypeData.definitionGraphIds.length - 1);
+                const graphIdToOpen = prototypeData.definitionGraphIds[definitionIndex];
+                
+                console.log(`[PieMenu Action] Opening definition ${definitionIndex + 1}/${prototypeData.definitionGraphIds.length} for prototype ${targetPrototypeId}`);
+                
+                // Use original node ID for hurtle animation (visual effect), but target prototype for the definition
+                startHurtleAnimation(originalNodeId, graphIdToOpen, targetPrototypeId);
                 // Close carousel after animation starts
                 setSelectedNodeIdForPieMenu(null);
                 setIsTransitioningPieMenu(true);
               } else {
                 // Node has no definitions - create one first, then start hurtle animation
                 const sourceGraphId = activeGraphId; // Capture current graph before it changes
-                storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
+                storeActions.createAndAssignGraphDefinitionWithoutActivation(targetPrototypeId);
                 
                 setTimeout(() => {
-                  const currentState = useGraphStore.getState();
-                  const updatedNodeData = currentState.nodePrototypes.get(prototypeId);
+                  const updatedState = useGraphStore.getState();
+                  const updatedNodeData = updatedState.nodePrototypes.get(targetPrototypeId);
                   if (updatedNodeData?.definitionGraphIds?.length > 0) {
                     const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
-                    startHurtleAnimation(nodeId, newGraphId, prototypeId, sourceGraphId);
+                    startHurtleAnimation(originalNodeId, newGraphId, targetPrototypeId, sourceGraphId);
                     // Close carousel after animation starts
                     setSelectedNodeIdForPieMenu(null);
                     setIsTransitioningPieMenu(true);
                   } else {
-                    console.error(`[PieMenu Expand] Could not find new definition for node ${prototypeId} after creation.`);
+                    console.error(`[PieMenu Expand] Could not find new definition for node ${targetPrototypeId} after creation.`);
                   }
                 }, 50);
               }
+            } else {
+              console.error(`[PieMenu Action] Could not find prototype data for ID: ${targetPrototypeId}`);
             }
           }
         }
@@ -6979,6 +7003,7 @@ function NodeCanvas() {
                            node={currentPieMenuData.node}
                            buttons={currentPieMenuData.buttons}
                            nodeDimensions={currentPieMenuData.nodeDimensions}
+                           focusedNode={carouselFocusedNode}
                            isVisible={(
                              currentPieMenuData?.node?.id === selectedNodeIdForPieMenu &&
                              (!isTransitioningPieMenu || abstractionPrompt.visible || carouselAnimationState === 'exiting') &&

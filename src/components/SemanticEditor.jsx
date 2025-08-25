@@ -1314,7 +1314,7 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
     }
   };
 
-  // Debounced auto-enrich on name change with gating
+  // Debounced auto-enrich on name change - links only, no auto bio population
   useEffect(() => {
     const name = (nodeData?.name || '').trim();
     if (!name || name.toLowerCase() === 'new thing' || name.length < 3) return;
@@ -1337,21 +1337,23 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
         const suggClean = clean(suggestionTitle);
         const strongTitle = nodeClean && suggClean && (nodeClean === suggClean || nodeClean.includes(suggClean) || suggClean.includes(nodeClean));
 
-        const safeApplyDesc = !nodeData.description && enrichmentResults?.suggestions?.description;
+        // NEVER auto-apply descriptions - user requested this be manual only
+        const safeApplyDesc = false; // Disabled auto bio population
         const links = Array.isArray(enrichmentResults?.suggestions?.externalLinks) ? enrichmentResults.suggestions.externalLinks : [];
 
         // Apply policy: two sources + conf>=0.8 OR one strong source + conf>=0.9 and strong title
+        // BUT only for external links, never for descriptions
         const oneStrongSource = (sources.wikipedia?.found || sources.wikidata?.found) && conf >= 0.9 && strongTitle;
         if ((sourcesFound >= 2 && conf >= 0.8) || oneStrongSource) {
           const updates = { ...nodeData };
-          if (safeApplyDesc) updates.description = enrichmentResults.suggestions.description;
+          // Only add external links, never auto-populate description
           if (links.length > 0) {
             const canonMerged = new Set((updates.externalLinks || []).map(canonicalizeLink));
             links.forEach(l => canonMerged.add(canonicalizeLink(l)));
             updates.externalLinks = Array.from(canonMerged);
+            onUpdate(updates);
+            setAutoApplied(prev => [{ field: 'externalLinks', prev: null, next: 'applied', sourceMode: oneStrongSource ? 'single' : 'multi', confidence: conf, sourcesFound, ts: Date.now() }, ...prev].slice(0,5));
           }
-          onUpdate(updates);
-          setAutoApplied(prev => [{ field: 'semanticWeb', prev: null, next: 'applied', sourceMode: oneStrongSource ? 'single' : 'multi', confidence: conf, sourcesFound, ts: Date.now() }, ...prev].slice(0,5));
         } else {
           // Present suggestions only, capture meta
           const items = (enrichmentResults?.suggestions?.externalLinks || []).slice(0,5);

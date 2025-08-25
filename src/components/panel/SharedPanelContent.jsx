@@ -284,13 +284,19 @@ const WikipediaEnrichment = ({ nodeData, onUpdateNode }) => {
     }
   };
 
-  // Show the enrichment button only if node has no description or no Wikipedia link
-  // Also check if the description is meaningful (not empty, not default placeholder text)
+  // Show the enrichment button only if node has no meaningful description AND no Wikipedia link
+  // Be more strict about what constitutes "meaningful" content to reduce intrusiveness
   const hasMeaningfulDescription = nodeData.description && 
     nodeData.description.trim() !== '' && 
-    nodeData.description !== 'Double-click to add a bio...';
+    nodeData.description !== 'Double-click to add a bio...' &&
+    nodeData.description.trim().length > 10; // Require at least 10 characters
   
-  const showEnrichButton = !hasMeaningfulDescription || !nodeData.semanticMetadata?.wikipediaUrl;
+  const hasWikipediaLink = nodeData.semanticMetadata?.wikipediaUrl;
+  
+  // Only show enrichment button if BOTH conditions are true:
+  // 1. No meaningful description exists
+  // 2. No Wikipedia link exists
+  const showEnrichButton = !hasMeaningfulDescription && !hasWikipediaLink;
   const isAlreadyLinked = nodeData.semanticMetadata?.wikipediaUrl;
 
   if (!showEnrichButton && !showDisambiguation) return null;
@@ -691,7 +697,7 @@ const SharedPanelContent = ({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [tempTitle, setTempTitle] = useState('');
 
-  // Auto-enrich external links (Wikidata/DBpedia/Wikipedia) on mount if none exist
+  // Auto-enrich external links (but not bio descriptions) on mount if none exist
   useEffect(() => {
     let didCancel = false;
     const hasAnySemanticLinks = (() => {
@@ -721,6 +727,7 @@ const SharedPanelContent = ({
           }
         }
         if (changed) {
+          // Only update external links, never auto-populate description/bio
           onNodeUpdate({ ...nodeData, externalLinks: Array.from(existing) });
         }
       } catch (_) {
@@ -1172,8 +1179,9 @@ const SharedPanelContent = ({
                             border: 'none',
                             color: '#999',
                             cursor: 'pointer',
-                            padding: 0,
-                            lineHeight: 1
+                            padding: '0 2px',
+                            lineHeight: 1,
+                            fontSize: '14px'
                           }}
                           onMouseEnter={(e) => { e.currentTarget.style.color = '#666'; }}
                           onMouseLeave={(e) => { e.currentTarget.style.color = '#999'; }}
@@ -1206,8 +1214,9 @@ const SharedPanelContent = ({
                             border: 'none',
                             color: '#999',
                             cursor: 'pointer',
-                            padding: 0,
-                            lineHeight: 1
+                            padding: '0 2px',
+                            lineHeight: 1,
+                            fontSize: '14px'
                           }}
                           onMouseEnter={(e) => { e.currentTarget.style.color = '#666'; }}
                           onMouseLeave={(e) => { e.currentTarget.style.color = '#999'; }}
@@ -1240,8 +1249,9 @@ const SharedPanelContent = ({
                             border: 'none',
                             color: '#999',
                             cursor: 'pointer',
-                            padding: 0,
-                            lineHeight: 1
+                            padding: '0 2px',
+                            lineHeight: 1,
+                            fontSize: '14px'
                           }}
                           onMouseEnter={(e) => { e.currentTarget.style.color = '#666'; }}
                           onMouseLeave={(e) => { e.currentTarget.style.color = '#999'; }}
