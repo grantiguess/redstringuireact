@@ -2168,14 +2168,12 @@ function NodeCanvas() {
                 // Node has no definitions - create one first, then start hurtle animation
                 const sourceGraphId = activeGraphId; // Capture current graph before it changes
                 storeActions.createAndAssignGraphDefinitionWithoutActivation(targetPrototypeId);
-                
                 setTimeout(() => {
                   const updatedState = useGraphStore.getState();
                   const updatedNodeData = updatedState.nodePrototypes.get(targetPrototypeId);
                   if (updatedNodeData?.definitionGraphIds?.length > 0) {
                     const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
                     startHurtleAnimation(originalNodeId, newGraphId, targetPrototypeId, sourceGraphId);
-                    // Close carousel after animation starts
                     setSelectedNodeIdForPieMenu(null);
                     setIsTransitioningPieMenu(true);
                   } else {
@@ -4430,6 +4428,26 @@ function NodeCanvas() {
         return;
       }
 
+      // Resolve the correct chain owner: if selected node belongs to another node's chain for
+      // this dimension, modify that owner's chain; otherwise, use the selected node as owner.
+      const currentStateForChain = useGraphStore.getState();
+      const allPrototypes = currentStateForChain.nodePrototypes;
+      const targetProtoForMembership = targetPrototypeId; // the prototype relative to which we insert
+      let chainOwnerPrototypeId = abstractionCarouselNode.prototypeId;
+      try {
+        // If the selected/target prototype appears inside some other prototype's chain
+        // for the current dimension, that prototype is the chain owner we should modify
+        for (const [protoId, proto] of allPrototypes.entries()) {
+          const chain = proto?.abstractionChains?.[currentAbstractionDimension];
+          if (chain && Array.isArray(chain) && chain.includes(targetProtoForMembership)) {
+            chainOwnerPrototypeId = protoId;
+            break;
+          }
+        }
+      } catch (_) {
+        // Fall back to the current carousel node as owner
+      }
+
       // Create new node with color gradient
       const newNodeId = uuidv4();
       let newNodeColor = color;
@@ -4451,10 +4469,10 @@ function NodeCanvas() {
         definitionGraphIds: []
       });
       
-      // Add to the abstraction chain relative to the currently selected node
-      // Use the original carousel node as the chain owner, but insert relative to the currently selected node
+      // Add to the abstraction chain relative to the currently selected/focused node
+      // Use the resolved chain owner rather than always the carousel node
       console.log(`[Abstraction Submit] About to call addToAbstractionChain with:`, {
-        chainOwnerNodeId: abstractionCarouselNode.prototypeId,
+        chainOwnerNodeId: chainOwnerPrototypeId,
         dimension: currentAbstractionDimension,
         direction: abstractionPrompt.direction,
         newNodeId: newNodeId,
@@ -4462,7 +4480,7 @@ function NodeCanvas() {
       });
       
       addToAbstractionChain(
-        abstractionCarouselNode.prototypeId,     // the node whose chain we're modifying (original carousel node)
+        chainOwnerPrototypeId,                   // the node whose chain we're modifying (actual chain owner)
         currentAbstractionDimension,            // dimension (Physical, Conceptual, etc.)
         abstractionPrompt.direction,            // 'above' or 'below'
         newNodeId,                              // the new node to add
@@ -5423,28 +5441,25 @@ function NodeCanvas() {
         icon: <ArrowUpFromDot size={14} />,
         action: () => {
           const nodeData = nodes.find(n => n.id === instanceId);
-          if (nodeData) {
-            const prototypeId = nodeData.prototypeId;
-            if (nodeData.definitionGraphIds && nodeData.definitionGraphIds.length > 0) {
-              // Node has definitions - start hurtle animation to first one
-              const targetGraphId = nodeData.definitionGraphIds[0];
-              startHurtleAnimation(instanceId, targetGraphId, prototypeId);
-            } else {
-              // Node has no definitions - create one first, then start hurtle animation
-              const sourceGraphId = activeGraphId; // Capture current graph before it changes
-              storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
-              
-              setTimeout(() => {
-                const currentState = useGraphStore.getState();
-                const updatedNodeData = currentState.nodePrototypes.get(prototypeId);
-                if (updatedNodeData?.definitionGraphIds?.length > 0) {
-                  const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
-                  startHurtleAnimation(instanceId, newGraphId, prototypeId, sourceGraphId);
-                } else {
-                  console.error(`[Context Menu Open Web] Could not find new definition for node ${prototypeId} after creation.`);
-                }
-              }, 50);
-            }
+          if (!nodeData) return;
+          const prototypeId = nodeData.prototypeId;
+          const currentState = useGraphStore.getState();
+          const proto = currentState.nodePrototypes.get(prototypeId);
+          if (proto?.definitionGraphIds && proto.definitionGraphIds.length > 0) {
+            const targetGraphId = proto.definitionGraphIds[0];
+            startHurtleAnimation(instanceId, targetGraphId, prototypeId);
+          } else {
+            const sourceGraphId = activeGraphId;
+            storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
+            setTimeout(() => {
+              const refreshed = useGraphStore.getState().nodePrototypes.get(prototypeId);
+              if (refreshed?.definitionGraphIds?.length > 0) {
+                const newGraphId = refreshed.definitionGraphIds[refreshed.definitionGraphIds.length - 1];
+                startHurtleAnimation(instanceId, newGraphId, prototypeId, sourceGraphId);
+              } else {
+                console.error(`[Context Menu Open Web] Could not find new definition for node ${prototypeId} after creation.`);
+              }
+            }, 50);
           }
         }
       },
