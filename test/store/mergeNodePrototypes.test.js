@@ -40,8 +40,10 @@ describe('mergeNodePrototypes', () => {
     state1.updateGraph(createdGraphId, (g) => {
       g.definingNodeIds = [secondaryId];
     });
-    // Reflect definition on secondary
-    useGraphStore.setState((s) => ({ nodePrototypes: new Map(s.nodePrototypes.set(secondaryId, { ...s.nodePrototypes.get(secondaryId), definitionGraphIds: [createdGraphId] })) }));
+    // Update the secondary to reflect definition
+    state1.updateNodePrototype(secondaryId, (proto) => {
+      proto.definitionGraphIds = [createdGraphId];
+    });
 
     // Add instance that references secondary
     addNodeInstance(createdGraphId, secondaryId, { x: 10, y: 20 }, 'inst-1');

@@ -284,7 +284,7 @@ const TypeList = ({ nodes, setSelectedNodes, selectedNodes = new Set() }) => {
           cursor: 'pointer',
           color: '#bdb5b5',
           zIndex: 20000, // Higher than panels (10000)
-          boxShadow: '0 2px 5px rgba(0, 0, 0, 0.2)'
+          boxShadow: '0 0 0 3px #BDB5B5, 0 2px 5px rgba(0, 0, 0, 0.2)'
         }}
       >
         {/* Icon size is HEADER_HEIGHT * 0.6 = 30 (matches panel icon size) */}

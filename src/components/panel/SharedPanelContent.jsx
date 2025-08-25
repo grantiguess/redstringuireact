@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useDrag } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend';
 import { Palette, ArrowUpFromDot, ImagePlus, BookOpen, ExternalLink } from 'lucide-react';
-import { NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR } from '../../constants.js';
+import { NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR, THUMBNAIL_MAX_DIMENSION } from '../../constants.js';
+import { generateThumbnail } from '../../utils.js';
 import CollapsibleSection from '../CollapsibleSection.jsx';
 import SemanticEditor from '../SemanticEditor.jsx';
 import ConnectionBrowser from '../ConnectionBrowser.jsx';
@@ -89,6 +90,7 @@ const getWikipediaPage = async (title) => {
       const summaryData = await summaryResponse.json();
       let description = summaryData.extract || summaryData.description;
       let pageUrl = summaryData.content_urls?.desktop?.page;
+      const originalImage = summaryData.originalimage?.source;
       
       // If this is a section link, try to get section-specific content
       if (sectionId) {
@@ -111,6 +113,7 @@ const getWikipediaPage = async (title) => {
         description: description,
         url: pageUrl,
         thumbnail: summaryData.thumbnail?.source,
+        originalImage,
         isSection: !!sectionId,
         sectionId: sectionId
       };
@@ -204,6 +207,9 @@ const WikipediaEnrichment = ({ nodeData, onUpdateNode }) => {
     if (pageData.thumbnail) {
       updates.semanticMetadata.wikipediaThumbnail = pageData.thumbnail;
     }
+    if (pageData.originalImage) {
+      updates.semanticMetadata.wikipediaOriginalImage = pageData.originalImage;
+    }
 
     // Add Wikipedia link to external links (stored directly on nodeData.externalLinks)
     const currentExternalLinks = nodeData.externalLinks || [];
@@ -221,8 +227,46 @@ const WikipediaEnrichment = ({ nodeData, onUpdateNode }) => {
     }
 
     await onUpdateNode(updates);
+
+    // Auto-set image from Wikipedia if available
+    const imgUrl = pageData.originalImage || pageData.thumbnail;
+    if (imgUrl) {
+      await setWikipediaImageFromUrl(imgUrl);
+    }
+
     setSearchResult(null);
     setShowDisambiguation(false);
+  };
+
+  const urlToDataUrl = (url) => {
+    return fetch(url, { mode: 'cors' })
+      .then((res) => res.blob())
+      .then((blob) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      }));
+  };
+
+  const setWikipediaImageFromUrl = async (imageUrl) => {
+    if (!imageUrl) return;
+    try {
+      const dataUrl = await urlToDataUrl(imageUrl);
+      const img = new Image();
+      const aspectRatio = await new Promise((resolve, reject) => {
+        img.onload = () => {
+          const ratio = (img.naturalHeight > 0 && img.naturalWidth > 0) ? (img.naturalHeight / img.naturalWidth) : 1;
+          resolve(ratio || 1);
+        };
+        img.onerror = reject;
+        img.src = dataUrl;
+      });
+      const thumbSrc = await generateThumbnail(dataUrl, THUMBNAIL_MAX_DIMENSION);
+      await onUpdateNode({ imageSrc: dataUrl, thumbnailSrc: thumbSrc, imageAspectRatio: aspectRatio });
+    } catch (error) {
+      console.warn('[Wikipedia] Failed to set image from URL:', error);
+    }
   };
 
   const handleDisambiguationSelect = async (option) => {
@@ -368,6 +412,28 @@ const WikipediaEnrichment = ({ nodeData, onUpdateNode }) => {
             View
           </button>
           <button
+            onClick={() => {
+              const imgUrl = nodeData.semanticMetadata?.wikipediaOriginalImage || nodeData.semanticMetadata?.wikipediaThumbnail;
+              setWikipediaImageFromUrl(imgUrl);
+            }}
+            disabled={!(nodeData.semanticMetadata?.wikipediaOriginalImage || nodeData.semanticMetadata?.wikipediaThumbnail)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '2px',
+              padding: '2px 4px',
+              border: '1px solid #8B0000',
+              borderRadius: '3px',
+              background: 'transparent',
+              color: '#8B0000',
+              fontSize: '8px',
+              cursor: (nodeData.semanticMetadata?.wikipediaOriginalImage || nodeData.semanticMetadata?.wikipediaThumbnail) ? 'pointer' : 'not-allowed',
+              fontFamily: "'EmOne', sans-serif"
+            }}
+          >
+            Set as image
+          </button>
+          <button
             onClick={async () => {
               // Remove Wikipedia data from node
               const updates = {
@@ -377,7 +443,8 @@ const WikipediaEnrichment = ({ nodeData, onUpdateNode }) => {
                   wikipediaTitle: undefined,
                   wikipediaEnriched: undefined,
                   wikipediaEnrichedAt: undefined,
-                  wikipediaThumbnail: undefined
+                  wikipediaThumbnail: undefined,
+                  wikipediaOriginalImage: undefined
                 }
               };
 

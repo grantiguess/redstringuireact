@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { THUMBNAIL_MAX_DIMENSION } from '../../constants.js';
+import { generateThumbnail } from '../../utils.js';
 import SharedPanelContent from './SharedPanelContent.jsx';
 import useGraphStore from '../../store/graphStore.js';
 import ColorPicker from '../../ColorPicker.jsx';
@@ -142,9 +144,11 @@ const PanelContentWrapper = ({
         const img = new Image();
         img.onload = async () => {
           try {
-            const aspectRatio = img.naturalHeight / img.naturalWidth || 1;
+            const aspectRatio = (img.naturalHeight > 0 && img.naturalWidth > 0) ? (img.naturalHeight / img.naturalWidth) : 1;
+            const thumbSrc = await generateThumbnail(fullImageSrc, THUMBNAIL_MAX_DIMENSION);
             const nodeDataToSave = { 
-              imageSrc: fullImageSrc, 
+              imageSrc: fullImageSrc,
+              thumbnailSrc: thumbSrc,
               imageAspectRatio: aspectRatio 
             };
             storeActions.updateNodePrototype(nodeId, draft => {
