@@ -23,6 +23,7 @@ class GitSyncEngine {
     this.commitLoop = null;
     this.lastCommittedHash = null; // Hash of last committed state
     this.hasChanges = false; // Track if there are actual changes
+    this.isCommitInProgress = false; // Prevent overlapping commits
     
     // Rate limiting and debouncing
     this.minCommitInterval = 2000; // Minimum 2 seconds between commits
@@ -273,6 +274,11 @@ class GitSyncEngine {
       return;
     }
     
+    if (this.isCommitInProgress) {
+      console.log('[GitSyncEngine] Commit already in progress, skipping this cycle');
+      return;
+    }
+    this.isCommitInProgress = true;
     try {
       const commitCount = this.pendingCommits.length;
       const isFromDragging = this.pendingCommits.some(commit => commit.isDragging);
@@ -319,6 +325,8 @@ class GitSyncEngine {
           this.pendingCommits = this.pendingCommits.slice(-10);
         }
       }
+    } finally {
+      this.isCommitInProgress = false;
     }
   }
   
@@ -339,6 +347,11 @@ class GitSyncEngine {
       this.isDragging = false;
       this.dragStartTime = 0;
       
+      // Wait if background commit is in progress
+      while (this.isCommitInProgress) {
+        await new Promise(r => setTimeout(r, 50));
+      }
+      this.isCommitInProgress = true;
       const redstringData = exportToRedstring(storeState);
       const jsonString = JSON.stringify(redstringData, null, 2);
       
@@ -362,6 +375,8 @@ class GitSyncEngine {
     } catch (error) {
       console.error('[GitSyncEngine] Force commit failed:', error);
       throw error;
+    } finally {
+      this.isCommitInProgress = false;
     }
   }
   

@@ -674,7 +674,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     graph.instances.set(instanceId, newInstance);
   })),
 
-  // Marks an instance for deletion with a grace period instead of immediate removal
+  // Remove instance immediately (hard delete) and clean up connected edges
   removeNodeInstance: (graphId, instanceId) => set(produce((draft) => {
     const graph = draft.graphs.get(graphId);
     if (!graph || !graph.instances?.has(instanceId)) {
@@ -682,23 +682,28 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       return;
     }
 
-    const instance = graph.instances.get(instanceId);
-    
-    // Store the instance data for potential restoration
-    draft.pendingDeletions.set(instanceId, {
-      timestamp: Date.now(),
-      graphId: graphId,
-      instanceData: { ...instance },
-      // Store connected edges for restoration
-      connectedEdges: Array.from(draft.edges.entries()).filter(([edgeId, edge]) => 
-        edge.sourceId === instanceId || edge.destinationId === instanceId
-      ).map(([edgeId, edge]) => [edgeId, { ...edge }])
+    // Delete connected edges first
+    const edgesToDelete = [];
+    for (const [edgeId, edge] of draft.edges.entries()) {
+      if (edge.sourceId === instanceId || edge.destinationId === instanceId) {
+        edgesToDelete.push(edgeId);
+      }
+    }
+    edgesToDelete.forEach(edgeId => {
+      draft.edges.delete(edgeId);
+      if (graph.edgeIds) {
+        const index = graph.edgeIds.indexOf(edgeId);
+        if (index > -1) graph.edgeIds.splice(index, 1);
+      }
     });
 
-    console.log(`[removeNodeInstance] Marked instance ${instanceId} for deletion with grace period`);
-    
-    // Ensure cleanup timer is running
-    startCleanupTimer();
+    // Delete the instance
+    graph.instances.delete(instanceId);
+
+    // Ensure any soft-deletion bookkeeping is cleared
+    draft.pendingDeletions.delete(instanceId);
+
+    console.log(`[removeNodeInstance] Permanently deleted instance ${instanceId} and ${edgesToDelete.length} connected edges`);
   })),
 
   // Immediately and permanently deletes a node instance (bypasses grace period)

@@ -85,9 +85,6 @@ function NodeCanvas() {
   const addNodeInstance = useGraphStore((state) => state.addNodeInstance);
   const removeNodeInstance = useGraphStore((state) => state.removeNodeInstance);
   const forceDeleteNodeInstance = useGraphStore((state) => state.forceDeleteNodeInstance);
-  const restoreNodeInstance = useGraphStore((state) => state.restoreNodeInstance);
-  const cleanupExpiredDeletions = useGraphStore((state) => state.cleanupExpiredDeletions);
-  const pendingDeletions = useGraphStore((state) => state.pendingDeletions);
   const removeEdge = useGraphStore((state) => state.removeEdge);
   const updateGraph = useGraphStore((state) => state.updateGraph);
   const createNewGraph = useGraphStore((state) => state.createNewGraph);
@@ -506,8 +503,6 @@ function NodeCanvas() {
     addNodeInstance,
     removeNodeInstance,
     forceDeleteNodeInstance,
-    restoreNodeInstance,
-    cleanupExpiredDeletions,
     removeEdge,
     updateGraph,
     createNewGraph,
@@ -546,7 +541,7 @@ function NodeCanvas() {
     deleteNodePrototype,
     deleteGraph,
   }), [
-    updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance, forceDeleteNodeInstance, restoreNodeInstance, cleanupExpiredDeletions, removeEdge, updateGraph, createNewGraph,
+    updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance, forceDeleteNodeInstance, removeEdge, updateGraph, createNewGraph,
     setActiveGraph, setActiveDefinitionNode, setNodeType, openRightPanelNodeTab,
     createAndAssignGraphDefinition, createAndAssignGraphDefinitionWithoutActivation, closeRightPanelTab, activateRightPanelTab,
     openGraphTab, moveRightPanelTab, closeGraph, toggleGraphExpanded,
@@ -7645,80 +7640,7 @@ function NodeCanvas() {
 
 
 
-      {/* Pending Deletions Notification */}
-      {pendingDeletions.size > 0 && (
-        <div style={{
-          position: 'fixed',
-          bottom: '20px',
-          right: '20px',
-          backgroundColor: 'rgba(139, 0, 0, 0.95)',
-          color: '#EFE8E5',
-          borderRadius: '8px',
-          padding: '12px 16px',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-          zIndex: 1000,
-          fontFamily: "'EmOne', sans-serif",
-          fontSize: '14px',
-          maxWidth: '300px',
-          backdropFilter: 'blur(10px)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-            <Clock size={16} />
-            <strong>Pending Deletions ({pendingDeletions.size})</strong>
-          </div>
-          <div style={{ fontSize: '12px', marginBottom: '12px', opacity: 0.9 }}>
-            Nodes deleted in the last 5 minutes can be restored.
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              onClick={() => {
-                // Restore the most recent deletion
-                const mostRecent = Array.from(pendingDeletions.entries())
-                  .sort(([,a], [,b]) => b.timestamp - a.timestamp)[0];
-                if (mostRecent) {
-                  restoreNodeInstance(mostRecent[0]);
-                }
-              }}
-              style={{
-                padding: '6px 12px',
-                backgroundColor: 'transparent',
-                border: '1px solid #EFE8E5',
-                borderRadius: '4px',
-                color: '#EFE8E5',
-                cursor: 'pointer',
-                fontSize: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
-            >
-              <Undo2 size={12} />
-              Restore Latest
-            </button>
-            <button
-              onClick={() => {
-                // Show detailed list or restore all
-                if (confirm(`Restore all ${pendingDeletions.size} pending deletions?`)) {
-                  Array.from(pendingDeletions.keys()).forEach(instanceId => {
-                    restoreNodeInstance(instanceId);
-                  });
-                }
-              }}
-              style={{
-                padding: '6px 12px',
-                backgroundColor: 'transparent',
-                border: '1px solid #EFE8E5',
-                borderRadius: '4px',
-                color: '#EFE8E5',
-                cursor: 'pointer',
-                fontSize: '12px'
-              }}
-            >
-              Restore All
-            </button>
-          </div>
-        </div>
-      )}
+      
 
       {/* <div>NodeCanvas Simplified - Testing Loop</div> */}
     </div>

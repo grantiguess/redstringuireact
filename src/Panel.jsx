@@ -887,7 +887,7 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
     
     try {
       console.log(`[SemanticDiscovery] Starting search for "${rawQuery}" (token: ${token})`);
-      setSearchProgress('Querying sources...');
+      setSearchProgress('Pulling strings...');
       
       // Shallow, fast searches for all variants in parallel
       const variantPromises = variants.map(v => fetchFederatedConcepts(v, { maxDepth: 1, maxEntitiesPerLevel: 15 }));
@@ -1057,7 +1057,9 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
       relationships: concept.relationships || []
     };
     
-    const existingNodeId = storeActions?.addNodePrototypeWithDeduplication({
+    // Use regular addNodePrototype since addNodePrototypeWithDeduplication may not be available
+    if (storeActions?.addNodePrototype) {
+      storeActions.addNodePrototype({
       id: newNodeId,
       name: concept.name,
       description: '', // No custom bio - will show origin info instead
@@ -1073,16 +1075,16 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
       },
       // Store the original description for potential use
       originalDescription: concept.description
-    });
+      });
+      
+      // Auto-save semantic nodes to Library
+      storeActions?.toggleSavedNode(newNodeId);
+    } else {
+      console.error('[SemanticDiscovery] storeActions.addNodePrototype is not available');
+    }
     
-    // Use the returned ID (either new or existing) for further operations
-    const finalNodeId = existingNodeId || newNodeId;
-    
-    // Auto-save semantic nodes to Library
-    storeActions?.toggleSavedNode(finalNodeId);
-    
-    console.log(`[SemanticDiscovery] Created/merged semantic prototype: ${concept.name} (ID: ${finalNodeId})`);
-    return finalNodeId;
+    console.log(`[SemanticDiscovery] Created/merged semantic prototype: ${concept.name} (ID: ${newNodeId})`);
+    return newNodeId;
   };
 
   return (
@@ -1705,12 +1707,11 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
   return (
     <div
       ref={drag}
-      onClick={() => onSelect(isSelected ? null : concept)}
       style={{
-        padding: '10px',
+        padding: '10px 70px 10px 10px', // More right padding for better icon spacing
         background: concept.color,
         borderRadius: '12px', // More rounded like actual nodes
-        border: isSelected ? '2px solid #260000' : '1px solid rgba(189,181,181,0.3)',
+        border: '1px solid rgba(189,181,181,0.3)',
         cursor: 'grab',
         opacity: isDragging ? 0.5 : 1,
         transition: 'all 0.2s ease',
@@ -1718,17 +1719,20 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
         boxShadow: isDragging ? '0 4px 12px rgba(0,0,0,0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
         position: 'relative',
         userSelect: 'none',
-        animation: `conceptSlideIn 0.3s ease ${index * 50}ms both`
+        animation: `conceptSlideIn 0.3s ease ${index * 50}ms both`,
+        pointerEvents: 'auto' // Ensure drag still works
       }}
-      title="Drag to canvas or click to select"
+      title="Drag to canvas"
     >
-      {/* Search Button - Large, panel background colored icon */}
+      {/* Search Button - Large, panel background colored icon with square hit box */}
       <div
         style={{
           position: 'absolute',
           top: '50%',
-          right: '45px',
+          right: '50px', // More spacing from edge
           transform: 'translateY(-50%)',
+          width: '44px', // Square hit box
+          height: '44px', // Square hit box
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -1750,18 +1754,21 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
         <Search 
           size={32} 
           style={{ 
-            color: '#BDB5B5' // Panel background color
+            color: '#BDB5B5', // Panel background color
+            pointerEvents: 'none' // Allow clicks/hover to pass through to container
           }} 
         />
       </div>
 
-      {/* Bookmark Button - Panel background colored with fill toggle */}
+      {/* Bookmark Button - Panel background colored with fill toggle and square hit box */}
       <div
         style={{
           position: 'absolute',
           top: '50%',
-          right: '8px',
+          right: '10px', // More spacing from edge
           transform: 'translateY(-50%)',
+          width: '44px', // Square hit box
+          height: '44px', // Square hit box
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -1781,7 +1788,8 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
           size={32} 
           style={{ 
             color: '#BDB5B5', // Panel background color stroke
-            fill: isBookmarked ? '#BDB5B5' : 'transparent' // Fill when bookmarked
+            fill: isBookmarked ? '#BDB5B5' : 'transparent', // Fill when bookmarked
+            pointerEvents: 'none' // Allow clicks/hover to pass through to container
           }} 
         />
       </div>
@@ -1794,7 +1802,7 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
         fontWeight: 'bold',
         marginBottom: '8px',
         lineHeight: '1.3',
-        paddingRight: '85px', // Make room for larger icons (32px + spacing)
+        paddingRight: '45px', // Adjusted for chip padding + icons
         wordWrap: 'break-word',
         overflow: 'hidden',
         display: '-webkit-box',
@@ -1812,7 +1820,7 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
         lineHeight: '1.4',
         marginBottom: '8px',
         opacity: 0.9,
-        paddingRight: '85px', // Make room for larger icons
+        paddingRight: '45px', // Adjusted for chip padding + icons
         wordWrap: 'break-word',
         overflow: 'hidden',
         display: '-webkit-box',

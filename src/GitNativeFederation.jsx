@@ -175,8 +175,9 @@ const GitNativeFederation = () => {
             const mergedData = newGitSyncEngine.mergeWithLocalContent(redstringData, currentState);
             
             if (mergedData) {
-              // Import the merged data (only if local is empty)
-              importFromRedstring(mergedData, storeActions);
+              // Import the merged data (only if local is empty) and load into store
+              const { storeState: importedState } = importFromRedstring(mergedData, storeActions);
+              storeActions.loadUniverseFromFile(importedState);
               setSyncStatus({
                 type: 'success',
                 status: sourceOfTruthMode === SOURCE_OF_TRUTH.LOCAL 
@@ -195,8 +196,9 @@ const GitNativeFederation = () => {
           } else {
             console.log('[GitNativeFederation] No local content, loading Git data');
             
-            // Import the data into the store
-            importFromRedstring(redstringData, storeActions);
+            // Import the data and load into the store
+            const { storeState: importedState } = importFromRedstring(redstringData, storeActions);
+            storeActions.loadUniverseFromFile(importedState);
             
             setSyncStatus({
               type: 'success',
