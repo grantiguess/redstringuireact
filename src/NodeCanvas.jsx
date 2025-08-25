@@ -1425,6 +1425,9 @@ function NodeCanvas() {
   const [abstractionControlPanelShouldShow, setAbstractionControlPanelShouldShow] = useState(false);
   const [isPieMenuActionInProgress, setIsPieMenuActionInProgress] = useState(false);
   
+  // Pending swap operation state
+  const [pendingSwapOperation, setPendingSwapOperation] = useState(null);
+  
 
 
   // Define carousel callbacks outside conditional rendering to avoid hook violations
@@ -1465,6 +1468,68 @@ function NodeCanvas() {
     // Capture the node ID before cleaning up
     const nodeIdToShowPieMenu = abstractionCarouselNode?.id;
     
+    // Execute pending swap operation if it exists
+    if (pendingSwapOperation) {
+      const { originalNodeId, originalInstance, focusedPrototypeId, newPrototype } = pendingSwapOperation;
+      
+      console.log(`[NodeCanvas] Executing pending swap: Replacing canvas node ${originalInstance.prototypeId} with focused carousel node ${focusedPrototypeId}`);
+      
+      // Calculate original dimensions before the swap
+      const originalDimensions = getNodeDimensions(originalInstance, false, null);
+      
+      // Create a temporary node with the new prototype to calculate new dimensions
+      const tempNodeWithNewPrototype = {
+        ...originalInstance,
+        prototypeId: focusedPrototypeId,
+        name: newPrototype?.name || originalInstance.name,
+        color: newPrototype?.color || originalInstance.color,
+        thumbnailSrc: newPrototype?.thumbnailSrc || originalInstance.thumbnailSrc,
+        definitionGraphIds: newPrototype?.definitionGraphIds || []
+      };
+      const newDimensions = getNodeDimensions(tempNodeWithNewPrototype, false, null);
+      
+      // Calculate the center point of the original node
+      const originalCenterX = originalInstance.x + (originalDimensions.currentWidth / 2);
+      const originalCenterY = originalInstance.y + (originalDimensions.currentHeight / 2);
+      
+      // Calculate new position to keep the same center point
+      const newX = originalCenterX - (newDimensions.currentWidth / 2);
+      const newY = originalCenterY - (newDimensions.currentHeight / 2);
+      
+      console.log(`[NodeCanvas] Adjusting position for dimension change:`, {
+        originalPos: { x: originalInstance.x, y: originalInstance.y },
+        originalDims: { w: originalDimensions.currentWidth, h: originalDimensions.currentHeight },
+        newDims: { w: newDimensions.currentWidth, h: newDimensions.currentHeight },
+        newPos: { x: newX, y: newY }
+      });
+      
+      // Update the instance to use the focused node's prototype and adjust position
+      storeActions.updateNodeInstance(activeGraphId, originalNodeId, (instance) => {
+        instance.prototypeId = focusedPrototypeId;
+        instance.x = newX;
+        instance.y = newY;
+      });
+      
+      // Update the carousel node to be based on the new prototype
+      // This preserves the carousel for future use but with the new starting point
+      if (newPrototype) {
+        setAbstractionCarouselNode({
+          ...originalInstance,
+          prototypeId: focusedPrototypeId,
+          name: newPrototype.name,
+          color: newPrototype.color,
+          definitionGraphIds: newPrototype.definitionGraphIds || [],
+          x: newX, // Update position here too for consistency
+          y: newY
+        });
+      }
+      
+      console.log(`[NodeCanvas] Swap operation completed successfully with position adjustment`);
+      
+      // Clear the pending operation
+      setPendingSwapOperation(null);
+    }
+    
     // Set exit in progress flag
     carouselExitInProgressRef.current = true;
     
@@ -1486,7 +1551,7 @@ function NodeCanvas() {
       setJustCompletedCarouselExit(false);
       carouselExitInProgressRef.current = false;
     }, 300); // Quick timeout - allows normal interaction almost immediately
-  }, [abstractionCarouselNode?.id]);
+  }, [abstractionCarouselNode?.id, pendingSwapOperation, activeGraphId, storeActions]);
 
   // Use the local state values populated by subscribe
   const projectTitle = activeGraphName ?? 'Loading...';
@@ -1575,6 +1640,9 @@ function NodeCanvas() {
       setCarouselFocusedNodeDimensions(null);
       setCarouselFocusedNode(null);
     setCarouselAnimationState('hidden');
+    
+    // Clear pending swap operation
+    setPendingSwapOperation(null);
 
     // Clear connection control panel
     setControlPanelVisible(false);
@@ -1947,19 +2015,42 @@ function NodeCanvas() {
           label: 'Swap',
           icon: SendToBack,
           position: 'right-inner',
-          action: (nodeId) => {
+          action: (originalNodeId) => {
             setIsPieMenuActionInProgress(true);
             setTimeout(() => setIsPieMenuActionInProgress(false), 100);
 
-            console.log(`[PieMenu Action] Swap clicked for node: ${nodeId}. This will replace the canvas node.`);
-            // The swap functionality will replace the current instance in the canvas
-            // with the selected node from the carousel
-            const currentInstance = nodes.find(n => n.id === nodeId);
-            if (currentInstance) {
-              // This would replace the current instance's prototype with the carousel node's prototype
-              // For now, just log it - the actual implementation would update the instance
-              console.log(`Would swap canvas node ${currentInstance.prototypeId} with carousel selection`);
+            // Get the focused carousel node's prototype ID
+            const focusedPrototypeId = carouselFocusedNode ? carouselFocusedNode.prototypeId : null;
+            const originalInstance = nodes.find(n => n.id === originalNodeId);
+            
+            if (!originalInstance) {
+              console.error(`[PieMenu Action] Could not find original instance: ${originalNodeId}`);
+              return;
             }
+            
+            if (!focusedPrototypeId) {
+              console.error(`[PieMenu Action] No focused carousel node available for swap`);
+              return;
+            }
+            
+            console.log(`[PieMenu Action] Swap: Scheduling swap of canvas node ${originalInstance.prototypeId} with focused carousel node ${focusedPrototypeId}`);
+            
+            // Store the swap operation to be executed after animations complete
+            const currentState = useGraphStore.getState();
+            const newPrototype = currentState.nodePrototypes.get(focusedPrototypeId);
+            
+            setPendingSwapOperation({
+              originalNodeId,
+              originalInstance,
+              focusedPrototypeId,
+              newPrototype
+            });
+            
+            console.log(`[PieMenu Action] Swap scheduled. Starting carousel exit animation.`);
+            
+            // Start the exit animation sequence
+            setSelectedNodeIdForPieMenu(null);
+            setIsTransitioningPieMenu(true);
           }
         },
         {

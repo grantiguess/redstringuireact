@@ -1458,13 +1458,6 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
                 Web {autoApplied[0]?.sourcesFound || lastSuggestionsMeta?.sourcesFound || 0} src • {Math.round((autoApplied[0]?.confidence || lastSuggestionsMeta?.confidence || 0) * 100)}%
               </span>
             )}
-            <button
-              onClick={() => { setShowAdvanced(true); setExternalType('wikipedia'); }}
-              title="Find a different match"
-              style={{ padding: '3px 8px', border: '1px solid #ccc', borderRadius: '6px', background: 'transparent', color: '#260000', fontSize: '12px', cursor: 'pointer', marginRight: '6px' }}
-            >
-              Not this?
-            </button>
           </div>
         )}
       >
