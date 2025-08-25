@@ -93,7 +93,7 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
     document.body.removeChild(tempSpan);
 
     // --- Shared Constant ---
-    const TEXT_V_PADDING = 15; // Consistent vertical padding
+    const TEXT_V_PADDING_TOTAL = 35; // Total vertical padding (25px top + 10px bottom for preview mode)
 
     // --- Calculate Dimensions Based on State ---
     let currentWidth, currentHeight, textAreaHeight, imageWidth, calculatedImageHeight, innerNetworkWidth, innerNetworkHeight, descriptionAreaHeight;
@@ -102,7 +102,7 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
         currentWidth = baseWidth;
         // Calculate textAreaHeight dynamically based on actual text wrapping with correct width
         const textBlockHeight = calculateTextAreaHeight(nodeName, textWidthTarget);
-        textAreaHeight = Math.max(NODE_HEIGHT, textBlockHeight + 2 * TEXT_V_PADDING);
+        textAreaHeight = Math.max(NODE_HEIGHT, textBlockHeight + TEXT_V_PADDING_TOTAL);
         
         innerNetworkWidth = currentWidth - 2 * NODE_PADDING;
         
@@ -148,7 +148,7 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
         // Calculate text block height based on expanded width
         const textBlockHeight = calculateTextAreaHeight(nodeName, textWidthTarget);
         // Text area height is text height + vertical padding, with a minimum.
-        textAreaHeight = Math.max(NODE_HEIGHT, textBlockHeight + 2 * TEXT_V_PADDING);
+        textAreaHeight = Math.max(NODE_HEIGHT, textBlockHeight + TEXT_V_PADDING_TOTAL);
 
         // Calculate image dimensions
         imageWidth = currentWidth - 2 * NODE_PADDING;
@@ -188,7 +188,8 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
         }
         
         // Total height is the text block height plus padding, with a minimum of NODE_HEIGHT
-        currentHeight = Math.max(NODE_HEIGHT, textBlockHeight + 2 * TEXT_V_PADDING);
+        // For non-preview nodes, use symmetric padding (15px top + 15px bottom = 30px total)
+        currentHeight = Math.max(NODE_HEIGHT, textBlockHeight + 30);
 
         // The text area itself now effectively is the full height to allow vertical centering.
         textAreaHeight = currentHeight;

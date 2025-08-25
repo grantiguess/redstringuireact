@@ -275,11 +275,11 @@ const Node = ({
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent: isPreviewing ? 'flex-start' : 'center',
             width: '100%',
             height: '100%',
             padding: isPreviewing 
-              ? `15px ${hasAnyDefinitions ? 140 : 20}px` 
+              ? `25px ${hasAnyDefinitions ? 140 : 20}px 10px` 
               : `15px 15px`,
             boxSizing: 'border-box',
             pointerEvents: isEditingOnCanvas ? 'auto' : 'none',
@@ -305,7 +305,7 @@ const Node = ({
                 fontSize: '20px',
                 fontWeight: 'bold',
                 color: '#bdb5b5',
-                lineHeight: '28px', // Match LINE_HEIGHT_ESTIMATE from constants
+                lineHeight: '32px', // Increased line spacing for better readability
                 whiteSpace: 'normal',
                 overflowWrap: 'break-word',
                 wordBreak: 'break-word',
