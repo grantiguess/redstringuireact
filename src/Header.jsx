@@ -21,6 +21,9 @@ const Header = ({
   // Receive debug props
   debugMode, 
   setDebugMode,
+  // View option: trackpad zoom
+  trackpadZoomEnabled,
+  onToggleTrackpadZoom,
   bookmarkActive = false,
   onBookmarkToggle,
   // Connection names props
@@ -287,6 +290,8 @@ const Header = ({
             }}
             debugMode={debugMode} 
             setDebugMode={setDebugMode}
+            trackpadZoomEnabled={trackpadZoomEnabled}
+            onToggleTrackpadZoom={onToggleTrackpadZoom}
             showConnectionNames={showConnectionNames}
             onToggleShowConnectionNames={onToggleShowConnectionNames}
             enableAutoRouting={enableAutoRouting}
@@ -356,6 +361,8 @@ const Header = ({
           }}
           debugMode={debugMode} 
           setDebugMode={setDebugMode}
+          trackpadZoomEnabled={trackpadZoomEnabled}
+          onToggleTrackpadZoom={onToggleTrackpadZoom}
           showConnectionNames={showConnectionNames}
           onToggleShowConnectionNames={onToggleShowConnectionNames}
           enableAutoRouting={enableAutoRouting}

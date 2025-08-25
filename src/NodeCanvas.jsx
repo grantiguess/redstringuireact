@@ -710,6 +710,9 @@ function NodeCanvas() {
     cleanupOrphanedGraphs();
   }, [cleanupOrphanedGraphs, nodePrototypesMap]);
 
+  // View option: allow browser-level trackpad pinch zoom when enabled
+  const [trackpadZoomEnabled, setTrackpadZoomEnabled] = useState(false);
+
   // <<< Prevent Page Zoom >>>
   useEffect(() => {
     const preventPageZoom = (e) => {
@@ -734,6 +737,7 @@ function NodeCanvas() {
     };
 
     const preventWheelZoom = (e) => {
+      if (trackpadZoomEnabled) return;
       // Prevent Ctrl+wheel zoom (both Mac and Windows)
       if (e.ctrlKey || e.metaKey) {
         // Only prevent if this wheel event is NOT over our canvas or panel tab bar
@@ -748,6 +752,7 @@ function NodeCanvas() {
     };
 
     const preventGestureZoom = (e) => {
+      if (trackpadZoomEnabled) return;
       // Prevent gesture-based zoom on touch devices
       if (e.scale && e.scale !== 1) {
         e.preventDefault();
@@ -770,7 +775,7 @@ function NodeCanvas() {
       document.removeEventListener('gesturechange', preventGestureZoom, { capture: true });
       document.removeEventListener('gestureend', preventGestureZoom, { capture: true });
     };
-  }, []); // Run once on mount
+  }, [trackpadZoomEnabled]);
 
     // <<< Initial Graph Creation Logic (Revised) >>>
   useEffect(() => {
@@ -2928,6 +2933,10 @@ function NodeCanvas() {
   };
 
   const handleWheel = async (e) => {
+    // Allow browser-level pinch zoom when enabled (e.g., Chrome trackpad magnifier)
+    if (trackpadZoomEnabled && (e.ctrlKey || e.metaKey)) {
+      return;
+    }
     const rect = containerRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
@@ -3037,7 +3046,7 @@ function NodeCanvas() {
     }));
 
     // 1. Mac Pinch-to-Zoom (Ctrl key pressed) - always zoom regardless of device
-    if (isMac && e.ctrlKey) {
+    if (isMac && e.ctrlKey && !trackpadZoomEnabled) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
         const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
@@ -3190,6 +3199,9 @@ function NodeCanvas() {
       const preventDefaultWheel = (e) => { 
         // Allow wheel events over panel tab bars
         const isOverPanelTabBar = e.target.closest('[data-panel-tabs="true"]');
+        if (trackpadZoomEnabled) {
+          return; // don't block wheel; let browser handle pinch-zoom if applicable
+        }
         if (!isOverPanelTabBar) {
           e.preventDefault(); 
         }
@@ -3197,7 +3209,7 @@ function NodeCanvas() {
       container.addEventListener('wheel', preventDefaultWheel, { passive: false });
       return () => container.removeEventListener('wheel', preventDefaultWheel);
     }
-  }, []);
+  }, [trackpadZoomEnabled]);
 
   // --- Clean routing helpers (orthogonal, low-bend path with simple detours) ---
   // Inflate a rectangle by padding
@@ -5557,6 +5569,8 @@ function NodeCanvas() {
          // Receive debug props
          debugMode={debugMode}
          setDebugMode={setDebugMode}
+         trackpadZoomEnabled={trackpadZoomEnabled}
+         onToggleTrackpadZoom={() => setTrackpadZoomEnabled(prev => !prev)}
          bookmarkActive={bookmarkActive}
          onBookmarkToggle={handleToggleBookmark}
          showConnectionNames={showConnectionNames}

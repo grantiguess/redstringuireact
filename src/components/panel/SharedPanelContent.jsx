@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDrag } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend';
-import { Palette, ArrowUpFromDot, ImagePlus, BookOpen, ExternalLink, Trash2 } from 'lucide-react';
+import { Palette, ArrowUpFromDot, ImagePlus, BookOpen, ExternalLink, Trash2, Bookmark, TextSearch } from 'lucide-react';
 import { NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR, THUMBNAIL_MAX_DIMENSION } from '../../constants.js';
 import { generateThumbnail } from '../../utils.js';
 import CollapsibleSection from '../CollapsibleSection.jsx';
@@ -9,6 +9,7 @@ import SemanticEditor from '../SemanticEditor.jsx';
 import ConnectionBrowser from '../ConnectionBrowser.jsx';
 import StandardDivider from '../StandardDivider.jsx';
 import { fastEnrichFromSemanticWeb } from '../../services/semanticWebQuery.js';
+import useGraphStore from '../../store/graphStore.js';
 
 // Helper function to determine the correct article ("a" or "an")
 const getArticleFor = (word) => {
@@ -864,6 +865,48 @@ const SharedPanelContent = ({
     </div>
   );
 
+  // Secondary row: Save toggle + Text Search to open Semantic Discovery
+  const savedNodeIds = useGraphStore((state) => state.savedNodeIds);
+  const toggleSavedNode = useGraphStore((state) => state.toggleSavedNode);
+  const isSaved = !!(savedNodeIds && nodeData?.id && savedNodeIds.has(nodeData.id));
+
+  const handleSemanticDiscoverySearch = () => {
+    const query = nodeData?.name || '';
+    if (!query.trim()) return;
+    try {
+      // Ask left panel to switch to Semantic Discovery
+      window.dispatchEvent(new CustomEvent('openSemanticDiscovery', { detail: { query } }));
+      // Also trigger search directly if the view is already active
+      if (typeof window !== 'undefined' && typeof window.triggerSemanticSearch === 'function') {
+        window.triggerSemanticSearch(query);
+      }
+    } catch {}
+  };
+
+  const secondaryButtons = (
+    <div style={{ 
+      display: 'flex', 
+      alignItems: 'center', 
+      gap: '8px',
+      flexWrap: 'nowrap'
+    }}>
+      <Bookmark
+        size={20}
+        color={isSaved ? '#260000' : '#716C6C'}
+        style={{ cursor: 'pointer', flexShrink: 0 }}
+        onClick={() => toggleSavedNode && nodeData?.id && toggleSavedNode(nodeData.id)}
+        title={isSaved ? 'Remove from Saved Things' : 'Save to Saved Things'}
+      />
+      <TextSearch
+        size={20}
+        color="#260000"
+        style={{ cursor: 'pointer', flexShrink: 0 }}
+        onClick={handleSemanticDiscoverySearch}
+        title="Search this in Semantic Discovery"
+      />
+    </div>
+  );
+
   return (
     <div className="shared-panel-content">
       {/* Header Section */}
@@ -883,7 +926,12 @@ const SharedPanelContent = ({
           onTitleSave={handleTitleSave}
         />
         
-        {!isUltraSlim && actionButtons}
+        {!isUltraSlim && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+            {actionButtons}
+            {secondaryButtons}
+          </div>
+        )}
       </div>
 
       {/* Type Section - under title */}
@@ -936,12 +984,9 @@ const SharedPanelContent = ({
                   </button>
                 </div>
                 
-                <div style={{ 
-                  display: 'flex',
-                  gap: '8px',
-                  marginLeft: '2px'
-                }}>
-                  {actionButtons}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px', marginLeft: '2px' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>{actionButtons}</div>
+                  <div style={{ display: 'flex', gap: '8px' }}>{secondaryButtons}</div>
                 </div>
               </>
             ) : (

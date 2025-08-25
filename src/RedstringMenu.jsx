@@ -9,6 +9,8 @@ const RedstringMenu = ({
   onHoverView, 
   debugMode, 
   setDebugMode,
+  trackpadZoomEnabled,
+  onToggleTrackpadZoom,
   showConnectionNames,
   onToggleShowConnectionNames,
   // Connections visualization controls
@@ -313,6 +315,13 @@ const RedstringMenu = ({
                                   style={{ cursor: 'pointer' }}
                                 >
                                   {debugMode ? 'Hide Debug Overlay' : 'Show Debug Overlay'}
+                                </div>
+                                <div
+                                  className="submenu-item"
+                                  onClick={() => onToggleTrackpadZoom?.()}
+                                  style={{ cursor: 'pointer' }}
+                                >
+                                  {trackpadZoomEnabled ? 'Disable Trackpad Zoom (Browser)' : 'Enable Trackpad Zoom (Browser)'}
                                 </div>
                                 <div
                                   className="submenu-item"

@@ -120,7 +120,7 @@ const SemanticLinkInput = ({ onAdd, placeholder, type, icon: Icon, defaultValue 
   );
 };
 
-const ExternalLinkCard = ({ link, onRemove }) => {
+const ExternalLinkCard = ({ link, onRemove, provenance = null }) => {
   const [wikidataLabel, setWikidataLabel] = useState(null);
 
   const extractWikidataId = (uri) => {
@@ -241,6 +241,14 @@ const ExternalLinkCard = ({ link, onRemove }) => {
 
   const { type, display, url, color, desc } = getDisplayInfo(link);
   const finalDisplay = wikidataLabel || display;
+  const prov = provenance;
+  const contextText = (() => {
+    if (!prov) return null;
+    const parts = [];
+    if (typeof prov.sourcesFound === 'number' && prov.sourcesFound > 0) parts.push(`Web ${prov.sourcesFound} src`);
+    if (typeof prov.confidence === 'number') parts.push(`${Math.round(prov.confidence * 100)}%`);
+    return parts.length > 0 ? parts.join(' • ') : null;
+  })();
 
   return (
     <div style={{
@@ -272,6 +280,14 @@ const ExternalLinkCard = ({ link, onRemove }) => {
         }}>
           {finalDisplay}
         </div>
+        {contextText && (
+          <div
+            title={prov?.appliedAt ? `Applied ${new Date(prov.appliedAt).toLocaleString()}` : undefined}
+            style={{ fontSize: '10px', color: '#999', marginTop: '2px' }}
+          >
+            {contextText}
+          </div>
+        )}
       </div>
       <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
         <button
@@ -1493,13 +1509,21 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
             <div style={{ margin: '0 0 6px 0', fontSize: '14px', color: '#260000' }}>
               Linked Resources ({externalLinks.length})
             </div>
-            {externalLinks.map((link, index) => (
-              <ExternalLinkCard
-                key={index}
-                link={link}
-                onRemove={removeExternalLink}
-              />
-            ))}
+            {externalLinks.map((link, index) => {
+              let prov = null;
+              const provList = nodeData?.semanticProvenance?.externalLinks;
+              if (Array.isArray(provList)) {
+                prov = provList.find(p => p.link === link) || null;
+              }
+              return (
+                <ExternalLinkCard
+                  key={index}
+                  link={link}
+                  onRemove={removeExternalLink}
+                  provenance={prov}
+                />
+              );
+            })}
           </div>
         )}
 

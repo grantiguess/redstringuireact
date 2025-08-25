@@ -2,7 +2,7 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, us
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR, PANEL_CLOSE_ICON_SIZE } from './constants';
-import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Wand, Settings, RotateCcw, Send, Bot, User, Key, Square, Search, Merge, Copy, Loader2 } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Wand, Settings, RotateCcw, Send, Bot, User, Key, Square, Search, Merge, Copy, Loader2, TextSearch } from 'lucide-react';
 import ToggleSlider from './components/ToggleSlider.jsx';
 import { v4 as uuidv4 } from 'uuid';
 import './Panel.css'
@@ -3467,6 +3467,26 @@ const Panel = forwardRef(
         return () => window.removeEventListener('openMergeModal', handleOpenMergeModal);
     }, [side, storeActions]);
 
+    // Event listener: open Semantic Discovery (triggered by text-search icon)
+    useEffect(() => {
+        const handler = (e) => {
+            try {
+                if (side === 'left') {
+                    setLeftViewActive('semantic');
+                    const query = e?.detail?.query;
+                    if (query && typeof window !== 'undefined' && typeof window.triggerSemanticSearch === 'function') {
+                        setTimeout(() => window.triggerSemanticSearch(query), 0);
+                    }
+                } else if (side === 'right') {
+                    const query = e?.detail?.query;
+                    window.dispatchEvent(new CustomEvent('openSemanticDiscovery', { detail: { query } }));
+                }
+            } catch {}
+        };
+        window.addEventListener('openSemanticDiscovery', handler);
+        return () => window.removeEventListener('openSemanticDiscovery', handler);
+    }, [side]);
+
     useEffect(() => {
       // Load initial widths from localStorage ONCE on mount
       if (!initialWidthsSet.current) {
@@ -4349,7 +4369,7 @@ const Panel = forwardRef(
                                 style={{ /* Common Button Styles */ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backgroundColor: leftViewActive === 'semantic' ? '#bdb5b5' : '#979090', zIndex: 2 }}
                                 onClick={() => setLeftViewActive('semantic')}
                             >
-                                <Search size={20} color="#260000" />
+                                <TextSearch size={20} color="#260000" />
                             </div>
                             {/* AI Collaboration Button */}
                             <div 

@@ -140,10 +140,24 @@ const Node = ({
   // Get the node's definition graph IDs from the prototype
   const hasMultipleDefinitions = definitionGraphIds.length > 1;
   const hasAnyDefinitions = definitionGraphIds.length > 0;
+  // Access store state before any memoizations that depend on it
+  const storeState = useGraphStore();
+
+  // Determine display title: prefer current graph title in preview, else node name
+  const currentGraphName = useMemo(() => {
+    if (!definitionGraphIds.length) return null;
+    const gid = definitionGraphIds[currentDefinitionIndex] || definitionGraphIds[0];
+    if (!gid) return null;
+    const graphData = storeState.graphs.get(gid);
+    const title = graphData?.name;
+    return (typeof title === 'string' && title.trim()) ? title.trim() : null;
+  }, [definitionGraphIds, currentDefinitionIndex, storeState.graphs]);
+
+  const displayTitle = (isPreviewing && currentGraphName) ? currentGraphName : nodeName;
 
   // Determine if text will be multiline for conditional padding
   const isMultiline = useMemo(() => {
-    if (!nodeName) return false;
+    if (!displayTitle) return false;
     
     // Estimate available width for text based on current width and the
     // actual single-line side padding that will be applied in the UI.
@@ -157,15 +171,12 @@ const Node = ({
     const averageCharWidth = 12; // From constants
     const charsPerLine = Math.floor(availableWidth / averageCharWidth);
     
-    return nodeName.length > charsPerLine;
-  }, [nodeName, currentWidth, isPreviewing, hasAnyDefinitions]);
+    return displayTitle.length > charsPerLine;
+  }, [displayTitle, currentWidth, isPreviewing, hasAnyDefinitions]);
 
   // Get the currently displayed graph ID
   const currentGraphId = definitionGraphIds[currentDefinitionIndex] || definitionGraphIds[0];
 
-  // Get the store state once and use it for both selectors
-  const storeState = useGraphStore();
-  
   // Filter nodes and edges for the current graph definition
   const currentGraphNodes = useMemo(() => {
     if (!currentGraphId) return [];
@@ -229,7 +240,7 @@ const Node = ({
         onMouseDown?.(synthetic);
       }}
       role="graphics-symbol"
-      aria-label={nodeName}
+      aria-label={displayTitle}
       style={{
           // Apply only scaling transform, position is handled by element attributes
           transform: isDragging ? `scale(${nodeScale})` : 'scale(1)',
@@ -357,7 +368,7 @@ const Node = ({
               }}
               lang="en"
             >
-              {nodeName}
+              {displayTitle}
             </span>
           )}
         </div>
