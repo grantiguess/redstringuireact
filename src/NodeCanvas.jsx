@@ -4446,7 +4446,6 @@ function NodeCanvas() {
       storeActions.addNodePrototype({
         id: newNodeId,
         name: name.trim(),
-        description: `A ${abstractionPrompt.direction === 'above' ? 'more abstract' : 'more specific'} concept related to ${currentlySelectedNode.name}`,
         color: newNodeColor,
         typeNodeId: 'base-thing-prototype',
         definitionGraphIds: []

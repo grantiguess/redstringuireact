@@ -80,7 +80,7 @@ const EdgeGlowIndicator = ({
     });
 
     return nodeData;
-  }, [nodes, panOffset, zoomLevel, viewportBounds, previewingNodeId, containerRef]);
+  }, [nodes, panOffset, zoomLevel, viewportBounds, previewingNodeId, containerRef, leftPanelExpanded, rightPanelExpanded]);
 
   const offScreenGlows = useMemo(() => {
     const glows = [];
@@ -187,7 +187,7 @@ const EdgeGlowIndicator = ({
     });
 
     return glows;
-  }, [allNodeData, nodes, viewportBounds]);
+  }, [allNodeData, nodes, viewportBounds, leftPanelExpanded, rightPanelExpanded]);
 
   if (!viewportBounds) return null;
 
@@ -316,7 +316,9 @@ const EdgeGlowIndicator = ({
                         : edge === 'top' ? 90
                         : -90; // bottom
 
-        // Position so flare rides halfway on the screen edge
+        // Position to ride halfway on the screen edge
+        // The EdgeGlowIndicator container is positioned at viewportBounds.x/y
+        // So flares should be positioned at the actual screen edge coordinates
         let translateX = screenX;
         let translateY = screenY;
         
