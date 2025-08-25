@@ -544,7 +544,7 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
             fontSize: '14px',
             fontFamily: "'EmOne', sans-serif",
             backgroundColor: 'transparent',
-            marginRight: '6px'
+            boxSizing: 'border-box'
           }}
         />
         <div style={{ fontSize: '12px', color: '#260000', marginTop: 2 }}>Comma-separated URLs</div>
@@ -560,9 +560,6 @@ const titleCase = (s = '') => s
   .join(' ');
 
 const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
-  const [federationMode, setFederationMode] = useState('node'); // 'node' or 'domain'
-  const [showSettings, setShowSettings] = useState(false);
-
   // Store access for types
   const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
   const addNodePrototype = useGraphStore(state => state.addNodePrototype);
@@ -649,23 +646,6 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
     <SectionCard
       title="Semantic Classification"
       icon={Search}
-      rightEl={(
-        <button
-          onClick={() => setShowSettings(!showSettings)}
-          style={{
-            padding: '4px 6px',
-            border: '1px solid #8B0000',
-            backgroundColor: 'transparent',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            color: '#8B0000',
-            fontSize: '10px'
-          }}
-          title="Classification settings"
-        >
-          Settings
-        </button>
-      )}
     >
       {/* Primary Type chip */}
       <div style={{ marginBottom: '8px' }}>
@@ -693,81 +673,6 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
         )}
       </div>
 
-      {/* Federation Settings */}
-      {showSettings && (
-        <div style={{
-          padding: '10px',
-          backgroundColor: 'rgba(38,0,0,0.03)',
-          borderRadius: '6px',
-          marginBottom: '10px',
-          border: '1px solid rgba(38,0,0,0.10)'
-        }}>
-          <div style={{ fontSize: '12px', color: '#8B0000', marginBottom: '8px', fontWeight: 'bold' }}>
-            Federation Mode:
-          </div>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#260000' }}>
-              <input
-                type="radio"
-                checked={federationMode === 'node'}
-                onChange={() => setFederationMode('node')}
-                style={{ accentColor: '#8B0000' }}
-              />
-              Per-node classification
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#260000' }}>
-              <input
-                type="radio"
-                checked={federationMode === 'domain'}
-                onChange={() => setFederationMode('domain')}
-                style={{ accentColor: '#8B0000' }}
-              />
-              Domain-wide settings
-            </label>
-          </div>
-          <div style={{ 
-            fontSize: '12px', 
-            color: '#260000', 
-            marginTop: '6px',
-            fontStyle: 'italic'
-          }}>
-            {federationMode === 'node' 
-              ? 'Applies type and class links to this thing only. Suggestions and changes stay local.'
-              : 'Reuses types and class links across your project. Suggestions draw from other things to keep names consistent.'
-            }
-          </div>
-        </div>
-      )}
-
-      {/* Current Type Display */}
-      {nodeData.typeNodeId && (
-        <div style={{
-          padding: '6px 8px',
-          backgroundColor: 'rgba(38,0,0,0.03)',
-          marginBottom: '8px',
-          fontSize: '14px',
-          borderRadius: '6px',
-          border: '1px solid rgba(38,0,0,0.10)',
-          color: '#260000',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px'
-        }}>
-          <strong style={{ color: '#260000' }}>Current Type:</strong>
-          <code style={{
-            padding: '2px 6px',
-            borderRadius: '6px',
-            backgroundColor: 'rgba(38,0,0,0.06)',
-            border: '1px solid rgba(38,0,0,0.10)',
-            color: '#260000',
-            fontSize: '12px'
-          }}>
-            {nodeData.typeNodeId}
-          </code>
-          <span style={{ color: '#260000', marginLeft: '6px', fontSize: '12px' }}>(rdfs:subClassOf)</span>
-        </div>
-      )}
-
       {/* Quick Ontology Mappings */}
       <div style={{ marginBottom: '6px' }}>
         <label style={{ 
@@ -793,7 +698,7 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
                   padding: '4px 8px',
                   fontSize: '12px',
                   border: `1px solid ${onto.color}`,
-                  backgroundColor: isSelected ? onto.color : 'transparent',
+                  backgroundColor: isSelected ? onto.color : '#DEDADA',
                   color: isSelected ? '#EFE8E5' : onto.color,
                   borderRadius: '12px',
                   cursor: 'pointer',

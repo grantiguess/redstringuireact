@@ -13,7 +13,7 @@ import ConnectionControlPanel from './ConnectionControlPanel.jsx'; // Import the
 import AbstractionControlPanel from './AbstractionControlPanel.jsx'; // Import the AbstractionControlPanel component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
-import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal, Bookmark, Plus, CornerUpLeft, CornerDownLeft } from 'lucide-react'; // Icons for PieMenu
+import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal, Bookmark, Plus, CornerUpLeft, CornerDownLeft, Merge } from 'lucide-react'; // Icons for PieMenu
 import ColorPicker from './ColorPicker';
 import { useDrop } from 'react-dnd';
 import { showContextMenu } from './components/GlobalContextMenu';
@@ -1778,7 +1778,33 @@ function NodeCanvas() {
         
         const prototype = nodePrototypesMap.get(prototypeId);
         if (!prototype) {
-             console.error(`Dropped prototype with ID ${prototypeId} not found in nodePrototypesMap.`);
+            console.error(`Dropped prototype with ID ${prototypeId} not found in nodePrototypesMap. This may be due to a recently merged node. Available prototypes:`, Array.from(nodePrototypesMap.keys()));
+            
+            // Try to find a prototype with the same name as a fallback
+            const potentialMatches = Array.from(nodePrototypesMap.values()).filter(p => 
+                item.nodeName && p.name.toLowerCase() === item.nodeName.toLowerCase()
+            );
+            
+            if (potentialMatches.length > 0) {
+                console.log(`[NodeCanvas] Found potential match for "${item.nodeName}": ${potentialMatches[0].name} (ID: ${potentialMatches[0].id})`);
+                // Use the first match as a fallback
+                const fallbackPrototype = potentialMatches[0];
+                const dimensions = getNodeDimensions(fallbackPrototype, false, null);
+                
+                let position = {
+                    x: x - (dimensions.currentWidth / 2),
+                    y: y - (dimensions.currentHeight / 2)
+                };
+                
+                if (gridMode !== 'off') {
+                    const snapped = snapToGridAnimated(x, y, dimensions.currentWidth, dimensions.currentHeight, null);
+                    position = { x: snapped.x, y: snapped.y };
+                }
+                
+                storeActions.addNodeInstance(activeGraphId, fallbackPrototype.id, position);
+                return;
+            }
+            
              return;
         }
         
@@ -5174,6 +5200,28 @@ function NodeCanvas() {
     runHurtleAnimation(animationData);
   }, [containerRef, runHurtleAnimation]);
 
+  // Context Menu options for canvas background
+  const getCanvasContextMenuOptions = useCallback(() => {
+    return [
+      {
+        label: 'Merge Duplicates',
+        icon: <Merge size={14} />,
+        action: () => {
+          console.log('[Canvas Context Menu] Merge Duplicates clicked');
+          // Open saved things tab and then merge modal
+          storeActions.setRightPanelExpanded(true);
+          storeActions.setActiveTab('saved');
+          // Add a small delay to ensure tab switch completes, then trigger merge modal
+          setTimeout(() => {
+            // The merge modal will be triggered from the saved things panel
+            // We'll need to add this functionality to the Panel component
+            window.dispatchEvent(new CustomEvent('openMergeModal'));
+          }, 100);
+        }
+      }
+    ];
+  }, [storeActions]);
+
   // Context Menu options for nodes - core functionality without pie menu transition logic
   const getContextMenuOptions = useCallback((instanceId) => {
     const node = nodes.find(n => n.id === instanceId);
@@ -5605,6 +5653,14 @@ function NodeCanvas() {
           onTouchStart={handleTouchStartCanvas}
           onTouchMove={handleTouchMoveCanvas}
           onTouchEnd={handleTouchEndCanvas}
+          onContextMenu={(e) => {
+            // Only show context menu on empty canvas areas (not on nodes or other elements)
+            if (e.target === e.currentTarget || e.target.classList.contains('canvas') || e.target.tagName === 'svg') {
+              e.preventDefault();
+              e.stopPropagation();
+              showContextMenu(e.clientX, e.clientY, getCanvasContextMenuOptions());
+            }
+          }}
         >
           {isUniverseLoading ? (
             // Show loading state while checking for universe file

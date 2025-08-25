@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useDrag } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend';
+import useGraphStore from './store/graphStore';
 
 const SPAWNABLE_NODE = 'spawnable_node';
 
@@ -52,14 +53,28 @@ const colorToRgba = (color, alpha) => {
 };
 
 const HeaderGraphTab = ({ graph, onSelect, onDoubleClick, isActive, hideText = false }) => {
+  const nodePrototypes = useGraphStore(state => state.nodePrototypes);
+  
+  // Get the defining node's name for fallback matching
+  const definingNodeName = useMemo(() => {
+    if (graph.definingNodeId) {
+      const definingNode = nodePrototypes.get(graph.definingNodeId);
+      return definingNode?.name;
+    }
+    return null;
+  }, [graph.definingNodeId, nodePrototypes]);
+  
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: SPAWNABLE_NODE,
-    item: () => ({ prototypeId: graph.definingNodeId }),
+    item: () => ({ 
+      prototypeId: graph.definingNodeId,
+      nodeName: definingNodeName // Include node name for fallback matching
+    }),
     canDrag: () => !!graph.definingNodeId,
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
     }),
-  }), [graph]);
+  }), [graph, definingNodeName]);
 
   useEffect(() => {
     preview(getEmptyImage(), { captureDraggingState: true });

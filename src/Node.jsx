@@ -141,6 +141,21 @@ const Node = ({
   const hasMultipleDefinitions = definitionGraphIds.length > 1;
   const hasAnyDefinitions = definitionGraphIds.length > 0;
 
+  // Determine if text will be multiline for conditional padding
+  const isMultiline = useMemo(() => {
+    if (!nodeName) return false;
+    
+    // Estimate available width for text based on current width and base padding
+    const basePadding = isPreviewing ? (hasAnyDefinitions ? 140 : 30) : 25;
+    const availableWidth = currentWidth - (2 * basePadding);
+    
+    // Quick character-based estimation (more accurate than previous method)
+    const averageCharWidth = 12; // From constants
+    const charsPerLine = Math.floor(availableWidth / averageCharWidth);
+    
+    return nodeName.length > charsPerLine;
+  }, [nodeName, currentWidth, isPreviewing, hasAnyDefinitions]);
+
   // Get the currently displayed graph ID
   const currentGraphId = definitionGraphIds[currentDefinitionIndex] || definitionGraphIds[0];
 
@@ -279,8 +294,8 @@ const Node = ({
             width: '100%',
             height: '100%',
             padding: isPreviewing 
-              ? `30px ${hasAnyDefinitions ? 140 : 25}px 15px` 
-              : `20px 20px`,
+              ? `30px ${hasAnyDefinitions ? 140 : (isMultiline ? 35 : 25)}px 15px` 
+              : `20px ${isMultiline ? 30 : 22}px`,
             boxSizing: 'border-box',
             pointerEvents: isEditingOnCanvas ? 'auto' : 'none',
             userSelect: 'none',

@@ -4,6 +4,7 @@ import GraphPreview from './GraphPreview'; // <<< Import GraphPreview
 import { XCircle } from 'lucide-react'; // <<< Import XCircle
 import { useDrag } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend';
+import useGraphStore from './store/graphStore';
 // import './GraphListItem.css'; // We'll create this later
 
 const SPAWNABLE_NODE = 'spawnable_node';
@@ -19,10 +20,24 @@ const GraphListItem = forwardRef(({
   onToggleExpand // <<< Receive onToggleExpand prop
 }, ref) => {
   const [isHovered, setIsHovered] = useState(false);
+  const nodePrototypes = useGraphStore(state => state.nodePrototypes);
+  
+  // Get the defining node's name for fallback matching
+  const definingNodeName = useMemo(() => {
+    const definingNodeId = graphData.definingNodeIds?.[0];
+    if (definingNodeId) {
+      const definingNode = nodePrototypes.get(definingNodeId);
+      return definingNode?.name;
+    }
+    return null;
+  }, [graphData.definingNodeIds, nodePrototypes]);
   
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: SPAWNABLE_NODE,
-    item: { prototypeId: graphData.definingNodeIds?.[0] },
+    item: { 
+      prototypeId: graphData.definingNodeIds?.[0],
+      nodeName: definingNodeName // Include node name for fallback matching
+    },
     canDrag: () => {
       const canDrag = !!graphData.definingNodeIds?.[0];
       console.log('[GraphListItem] canDrag check for', graphData.name, 'definingNodeId:', graphData.definingNodeIds?.[0], 'canDrag:', canDrag);
@@ -31,7 +46,7 @@ const GraphListItem = forwardRef(({
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
     }),
-  }), [graphData.id, graphData.definingNodeIds]);
+  }), [graphData.id, graphData.definingNodeIds, definingNodeName]);
 
   useEffect(() => {
     preview(getEmptyImage(), { captureDraggingState: true });

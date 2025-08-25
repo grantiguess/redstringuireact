@@ -145,11 +145,14 @@ const SavedNodeItem = ({ node, onClick, onDoubleClick, onUnsave, isActive }) => 
   const [isHovered, setIsHovered] = React.useState(false);
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: ItemTypes.SPAWNABLE_NODE,
-    item: { prototypeId: node.id },
+    item: { 
+      prototypeId: node.id,
+      nodeName: node.name // Include node name for fallback matching
+    },
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
     }),
-  }), [node.id]);
+  }), [node.id, node.name]);
 
   useEffect(() => {
     preview(getEmptyImage(), { captureDraggingState: true });
@@ -248,8 +251,25 @@ const LeftLibraryView = ({
 }) => {
   const [showDuplicateManager, setShowDuplicateManager] = useState(false);
 
+  // Context menu options for saved things tab
+  const getTabContextMenuOptions = () => [
+    {
+      label: 'Merge Duplicates',
+      icon: <Merge size={14} />,
+      action: () => setShowDuplicateManager(true)
+    }
+  ];
+
   return (
-    <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div 
+      className="panel-content-inner" 
+      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showContextMenu(e.clientX, e.clientY, getTabContextMenuOptions());
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
           Saved Things
@@ -396,8 +416,25 @@ const LeftAllThingsView = ({
 }) => {
   const [showDuplicateManager, setShowDuplicateManager] = useState(false);
 
+  // Context menu options for all things tab
+  const getTabContextMenuOptions = () => [
+    {
+      label: 'Merge Duplicates',
+      icon: <Merge size={14} />,
+      action: () => setShowDuplicateManager(true)
+    }
+  ];
+
   return (
-    <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div 
+      className="panel-content-inner" 
+      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showContextMenu(e.clientX, e.clientY, getTabContextMenuOptions());
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
           All Things
@@ -1797,11 +1834,14 @@ const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemantic
   
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: ItemTypes.SPAWNABLE_NODE,
-    item: { prototypeId: node.id },
+    item: { 
+      prototypeId: node.id,
+      nodeName: node.name // Include node name for fallback matching
+    },
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
     }),
-  }), [node.id]);
+  }), [node.id, node.name]);
 
   useEffect(() => {
     preview(getEmptyImage(), { captureDraggingState: true });
@@ -2115,8 +2155,29 @@ const LeftGridView = ({
   toggleGraphExpanded,
   createNewGraph,
 }) => {
+  // Context menu options for open things tab
+  const getTabContextMenuOptions = () => [
+    {
+      label: 'Merge Duplicates',
+      icon: <Merge size={14} />,
+      action: () => {
+        // For Open Things, we need to trigger the merge modal through the main Panel component
+        // Since Open Things doesn't have its own duplicate manager, we'll dispatch the event
+        window.dispatchEvent(new CustomEvent('openMergeModal'));
+      }
+    }
+  ];
+
   return (
-    <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div 
+      className="panel-content-inner" 
+      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showContextMenu(e.clientX, e.clientY, getTabContextMenuOptions());
+      }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
           Open Things
@@ -3121,6 +3182,9 @@ const Panel = forwardRef(
 
     // Add new state for type creation dialog
     const [typeNamePrompt, setTypeNamePrompt] = useState({ visible: false, name: '', color: null, targetNodeId: null, targetNodeName: '' });
+    
+    // Add merge modal state for handling events from canvas/tabs
+    const [showMergeModal, setShowMergeModal] = useState(false);
 
     // Refs
     const isResizing = useRef(false);
@@ -3227,6 +3291,26 @@ const Panel = forwardRef(
         setColorPickerVisible(false);
         setColorPickerNodeId(null);
     }, [leftViewActive]); // Close when switching left panel views
+
+    // Event listener for opening merge modal from canvas/tabs
+    useEffect(() => {
+        const handleOpenMergeModal = () => {
+            console.log('[Panel] Opening merge modal from external trigger');
+            // Switch to saved tab and open merge modal
+            if (side === 'right') {
+                storeActions.setActiveTab('saved');
+                setShowMergeModal(true);
+            } else if (side === 'left') {
+                setLeftViewActive('library');
+                // For left panel, we'll use the showDuplicateManager from LeftLibraryView
+                // We need to trigger it somehow - for now we'll just console log
+                console.log('[Panel] Left panel merge modal triggered - switching to library view');
+            }
+        };
+
+        window.addEventListener('openMergeModal', handleOpenMergeModal);
+        return () => window.removeEventListener('openMergeModal', handleOpenMergeModal);
+    }, [side, storeActions]);
 
     useEffect(() => {
       // Load initial widths from localStorage ONCE on mount
@@ -4297,6 +4381,16 @@ const Panel = forwardRef(
                 subtitle={`a more generic way to refer to ${typeNamePrompt.targetNodeName},<br/>also known as a superclass or a type.`}
                 searchTerm={typeNamePrompt.name}
                 showCreateNewOption={true}
+              />
+            )}
+
+            {/* Merge Modal */}
+            {showMergeModal && (
+              <DuplicateManager
+                onClose={() => setShowMergeModal(false)}
+                nodePrototypes={nodePrototypes}
+                storeActions={storeActions}
+                instances={instances}
               />
             )}
 

@@ -74,11 +74,11 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
     } else if (hasImage) {
         baseWidth = EXPANDED_NODE_WIDTH;
         baseHeight = NODE_HEIGHT; // Start with base, image adds later
-        textWidthTarget = baseWidth - 40; // Account for 20px horizontal padding on each side
+        textWidthTarget = baseWidth - 56; // Account for average padding (28px per side: between 22px single-line and 30px multi-line)
     } else {
         baseWidth = NODE_WIDTH;
         baseHeight = NODE_HEIGHT;
-        textWidthTarget = baseWidth - 40; // Account for 20px horizontal padding on each side
+        textWidthTarget = baseWidth - 56; // Account for average padding (28px per side: between 22px single-line and 30px multi-line)
     }
 
     // --- Text Measurement ---
@@ -184,7 +184,7 @@ export const getNodeDimensions = (node, isPreviewing = false, descriptionContent
             textBlockHeight = LINE_HEIGHT_ESTIMATE;
         } else {
             // Otherwise, calculate wrapping based on the node's actual current width.
-            const actualTextWidth = currentWidth - 40; // Account for 20px padding on each side
+            const actualTextWidth = currentWidth - 56; // Account for average padding (28px per side: between 22px single-line and 30px multi-line)
             textBlockHeight = calculateTextAreaHeight(nodeName, actualTextWidth);
         }
         
