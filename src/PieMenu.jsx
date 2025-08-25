@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { NODE_CORNER_RADIUS } from './constants'; // Import node corner radius
 import './PieMenu.css'; // Animation styles
 
-const BUBBLE_SIZE = 50; // Diameter of the bubble (increased ~1.25x)
-const BUBBLE_PADDING = 16; // Increased gap to sit slightly further from node
-const ICON_SIZE = 25; // Icon size scaled proportionally (~1.25x)
+const BUBBLE_SIZE = 60; // Diameter of the bubble (1.5x original 40)
+const BUBBLE_PADDING = 16; // Slightly further from node than original 10
+const ICON_SIZE = 30; // Icon size (1.5x original 20)
 const NUM_FIXED_POSITIONS = 8;
 const FIXED_ANGLE_STEP = (2 * Math.PI) / NUM_FIXED_POSITIONS; // PI/4 or 45 degrees
 const START_ANGLE_OFFSET = -Math.PI / 2; // Start at the top position (North)

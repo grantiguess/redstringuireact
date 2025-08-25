@@ -8,6 +8,7 @@ import CollapsibleSection from '../CollapsibleSection.jsx';
 import SemanticEditor from '../SemanticEditor.jsx';
 import ConnectionBrowser from '../ConnectionBrowser.jsx';
 import StandardDivider from '../StandardDivider.jsx';
+import { fastEnrichFromSemanticWeb } from '../../services/semanticWebQuery.js';
 
 // Helper function to determine the correct article ("a" or "an")
 const getArticleFor = (word) => {
@@ -690,6 +691,66 @@ const SharedPanelContent = ({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [tempTitle, setTempTitle] = useState('');
 
+  // Auto-enrich external links (Wikidata/DBpedia/Wikipedia) on mount if none exist
+  useEffect(() => {
+    let didCancel = false;
+    const hasAnySemanticLinks = (() => {
+      const links = [
+        ...(nodeData.externalLinks || []),
+        nodeData.semanticMetadata?.wikipediaUrl || null,
+        nodeData.semanticMetadata?.wikidataUrl || null
+      ].filter(Boolean);
+      return links.some(l => String(l).includes('wikipedia.org') || String(l).includes('wikidata.org') || String(l).includes('dbpedia.org'));
+    })();
+
+    if (!nodeData?.name || hasAnySemanticLinks) return;
+
+    (async () => {
+      try {
+        const result = await fastEnrichFromSemanticWeb(nodeData.name, { timeout: 15000 });
+        if (didCancel || !result || !result.suggestions) return;
+        const newLinks = Array.isArray(result.suggestions.externalLinks) ? result.suggestions.externalLinks : [];
+        if (newLinks.length === 0) return;
+
+        const existing = new Set((nodeData.externalLinks || []).map(String));
+        let changed = false;
+        for (const l of newLinks) {
+          if (!existing.has(String(l))) {
+            existing.add(String(l));
+            changed = true;
+          }
+        }
+        if (changed) {
+          onNodeUpdate({ ...nodeData, externalLinks: Array.from(existing) });
+        }
+      } catch (_) {
+        // best-effort, ignore errors
+      }
+    })();
+
+    return () => { didCancel = true; };
+  }, [nodeData.id]);
+
+  const unlinkSource = async (domain) => {
+    try {
+      const currentLinks = nodeData.externalLinks || [];
+      const filteredLinks = currentLinks.filter(link => !String(link).includes(domain));
+      const updates = { externalLinks: filteredLinks };
+      if (domain === 'wikipedia.org' && nodeData.semanticMetadata) {
+        updates.semanticMetadata = {
+          ...nodeData.semanticMetadata,
+          wikipediaUrl: undefined,
+          wikipediaTitle: undefined,
+          wikipediaEnriched: undefined,
+          wikipediaEnrichedAt: undefined,
+          wikipediaThumbnail: undefined,
+          wikipediaOriginalImage: undefined
+        };
+      }
+      await onNodeUpdate(updates);
+    } catch (_) {}
+  };
+
   const handleBioDoubleClick = () => {
     setTempBio(nodeData.description || '');
     setIsEditingBio(true);
@@ -1088,45 +1149,108 @@ const SharedPanelContent = ({
 
               return (
                 <>
-                  {hasWikipedia && (
-                    <div style={{ marginBottom: '8px' }}>
-                      <strong>Wikipedia:</strong>
-                      <a
-                        href={links.find(l => String(l).includes('wikipedia.org'))}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: '#8B0000', marginLeft: '8px' }}
-                      >
-                        View Article
-                      </a>
-                    </div>
-                  )}
-                  {hasWikidata && (
-                    <div style={{ marginBottom: '8px' }}>
-                      <strong>Wikidata:</strong>
-                      <a
-                        href={links.find(l => String(l).includes('wikidata.org'))}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: '#8B0000', marginLeft: '8px' }}
-                      >
-                        View Data
-                      </a>
-                    </div>
-                  )}
-                  {hasDBpedia && (
-                    <div style={{ marginBottom: '8px' }}>
-                      <strong>DBpedia:</strong>
-                      <a
-                        href={links.find(l => String(l).includes('dbpedia.org'))}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: '#8B0000', marginLeft: '8px' }}
-                      >
-                        View Resource
-                      </a>
-                    </div>
-                  )}
+                  {hasWikipedia && (() => {
+                    const url = links.find(l => String(l).includes('wikipedia.org'));
+                    return (
+                      <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div>
+                          <strong>Wikipedia:</strong>
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: '#8B0000', marginLeft: '8px' }}
+                          >
+                            View Article
+                          </a>
+                        </div>
+                        <button
+                          onClick={() => unlinkSource('wikipedia.org')}
+                          title="Unlink Wikipedia"
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#999',
+                            cursor: 'pointer',
+                            padding: 0,
+                            lineHeight: 1
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = '#666'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = '#999'; }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })()}
+                  {hasWikidata && (() => {
+                    const url = links.find(l => String(l).includes('wikidata.org'));
+                    return (
+                      <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div>
+                          <strong>Wikidata:</strong>
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: '#8B0000', marginLeft: '8px' }}
+                          >
+                            View Data
+                          </a>
+                        </div>
+                        <button
+                          onClick={() => unlinkSource('wikidata.org')}
+                          title="Unlink Wikidata"
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#999',
+                            cursor: 'pointer',
+                            padding: 0,
+                            lineHeight: 1
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = '#666'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = '#999'; }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })()}
+                  {hasDBpedia && (() => {
+                    const url = links.find(l => String(l).includes('dbpedia.org'));
+                    return (
+                      <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div>
+                          <strong>DBpedia:</strong>
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: '#8B0000', marginLeft: '8px' }}
+                          >
+                            View Resource
+                          </a>
+                        </div>
+                        <button
+                          onClick={() => unlinkSource('dbpedia.org')}
+                          title="Unlink DBpedia"
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#999',
+                            cursor: 'pointer',
+                            padding: 0,
+                            lineHeight: 1
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = '#666'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = '#999'; }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })()}
 
                   {!(hasWikipedia || hasWikidata || hasDBpedia) && (
                     <div style={{ 
@@ -1255,87 +1379,7 @@ const SharedPanelContent = ({
         />
       </CollapsibleSection>
 
-      {/* Show Semantic Profile if node has semantic metadata */}
-      {nodeData.semanticMetadata && (
-        <>
-          <StandardDivider margin="20px 0" />
-          <CollapsibleSection 
-            title="Semantic Profile" 
-            defaultExpanded={false}
-          >
-            <div className="semantic-profile">
-              <div style={{ padding: '12px', fontSize: '11px', color: '#260000', fontFamily: "'EmOne', sans-serif" }}>
-                <div style={{ marginBottom: '8px' }}>
-                  <strong>Source:</strong> {nodeData.semanticMetadata.source || 'Semantic Web'}
-                </div>
-                {nodeData.semanticMetadata.originalUri && (
-                  <div style={{ marginBottom: '8px' }}>
-                    <strong>URI:</strong> 
-                    <a href={nodeData.semanticMetadata.originalUri} target="_blank" rel="noopener noreferrer" 
-                       style={{ color: '#8B0000', marginLeft: '8px' }}>
-                      View Original
-                    </a>
-                  </div>
-                )}
-                {nodeData.semanticMetadata.confidence && (
-                  <div style={{ marginBottom: '8px' }}>
-                    <strong>Confidence:</strong> {Math.round(nodeData.semanticMetadata.confidence * 100)}%
-                  </div>
-                )}
-                {nodeData.semanticMetadata.equivalentClasses?.length > 0 && (
-                  <div style={{ marginBottom: '8px' }}>
-                    <strong>Equivalent Classes:</strong>
-                    <div style={{ marginTop: '4px', fontSize: '10px' }}>
-                      {nodeData.semanticMetadata.equivalentClasses.map((cls, idx) => (
-                        <span key={idx} style={{ 
-                          display: 'inline-block', 
-                          margin: '2px', 
-                          padding: '2px 6px', 
-                          background: 'rgba(139,0,0,0.1)', 
-                          borderRadius: '3px' 
-                        }}>
-                          {cls}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {/* Show imported triplets/relationships */}
-                {nodeData.semanticMetadata.relationships && nodeData.semanticMetadata.relationships.length > 0 && (
-                  <div style={{ marginTop: '12px' }}>
-                    <strong>Imported Relationships:</strong>
-                    <div style={{ marginTop: '6px', fontSize: '10px' }}>
-                      {nodeData.semanticMetadata.relationships.map((rel, idx) => (
-                        <div key={idx} style={{
-                          padding: '4px 6px',
-                          margin: '2px 0',
-                          background: 'rgba(255,255,255,0.02)',
-                          border: '1px solid #333',
-                          borderRadius: '3px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}>
-                          <span style={{ fontWeight: 'bold', color: '#8B0000' }}>{rel.subject}</span>
-                          <span style={{ color: '#666' }}>→</span>
-                          <span style={{ fontStyle: 'italic', fontSize: '9px' }}>{rel.relation}</span>
-                          <span style={{ color: '#666' }}>→</span>
-                          <span style={{ fontWeight: 'bold', color: '#8B0000' }}>{rel.target}</span>
-                          {rel.confidence && (
-                            <span style={{ marginLeft: 'auto', fontSize: '8px', color: '#666' }}>
-                              ({Math.round(rel.confidence * 100)}%)
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </CollapsibleSection>
-        </>
-      )}
+      {/* Removed Semantic Profile section per requirements */}
     </div>
   );
 };
