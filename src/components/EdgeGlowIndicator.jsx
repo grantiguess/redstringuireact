@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useViewportBounds } from '../hooks/useViewportBounds';
 import { getNodeDimensions } from '../utils';
-import { HEADER_HEIGHT } from '../constants';
+import { HEADER_HEIGHT, NODE_HEIGHT } from '../constants';
 import useGraphStore from '../store/graphStore';
 
 const EdgeGlowIndicator = ({ 
@@ -10,6 +10,7 @@ const EdgeGlowIndicator = ({
   zoomLevel, 
   leftPanelExpanded, 
   rightPanelExpanded,
+  previewingNodeId,
   showViewportDebug = true,
   showDirectionLines = true
 }) => {
@@ -32,20 +33,19 @@ const EdgeGlowIndicator = ({
     const nodeData = [];
 
     nodes.forEach(node => {
-      // Get node dimensions
-      const dims = getNodeDimensions(node, false, null);
-      const nodeLeft = node.x;
-      const nodeTop = node.y;
-      const nodeRight = node.x + dims.currentWidth;
-      const nodeBottom = node.y + dims.currentHeight;
-
-      // Calculate the center of the node
-      const nodeCenterX = nodeLeft + dims.currentWidth / 2;
-      const nodeCenterY = nodeTop + dims.currentHeight / 2;
+      // Get node dimensions using the same pattern as working connections
+      const isNodePreviewing = previewingNodeId === node.id;
+      const dims = getNodeDimensions(node, isNodePreviewing, null);
+      
+      // Calculate the center of the node using the EXACT same pattern as working connections
+      // From NodeCanvas.jsx line 6040-6043: const x1 = sourceNode.x + sNodeDims.currentWidth / 2;
+      // and line 6041: const y1 = sourceNode.y + (isSNodePreviewing ? NODE_HEIGHT / 2 : sNodeDims.currentHeight / 2);
+      const nodeCenterX = node.x + dims.currentWidth / 2;
+      const nodeCenterY = node.y + (isNodePreviewing ? NODE_HEIGHT / 2 : dims.currentHeight / 2);
 
       // Calculate where the node center appears in overlay coordinates
       // The SVG uses: transform: translate(panOffset.x, panOffset.y) scale(zoomLevel)
-      // So a point (x,y) in SVG coordinates becomes: (x * zoomLevel + panOffset.x, y * zoomLevel + panOffset.y) in screen coordinates
+      // So a point (x,y) in canvas coordinates becomes: (x * zoomLevel + panOffset.x, y * zoomLevel + panOffset.y) in screen coordinates
       // Then we subtract viewportBounds to get overlay coordinates
       const nodeScreenX = nodeCenterX * zoomLevel + panOffset.x;
       const nodeScreenY = nodeCenterY * zoomLevel + panOffset.y;
@@ -75,7 +75,7 @@ const EdgeGlowIndicator = ({
     });
 
     return nodeData;
-  }, [nodes, panOffset, zoomLevel, viewportBounds]);
+  }, [nodes, panOffset, zoomLevel, viewportBounds, previewingNodeId]);
 
   const offScreenGlows = useMemo(() => {
     const glows = [];
@@ -142,7 +142,7 @@ const EdgeGlowIndicator = ({
     });
 
     return glows;
-  }, [nodes, panOffset, zoomLevel, viewportBounds]);
+  }, [allNodeData, nodes, viewportBounds]);
 
   if (!viewportBounds) return null;
 

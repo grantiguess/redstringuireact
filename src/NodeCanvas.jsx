@@ -7414,6 +7414,7 @@ function NodeCanvas() {
             zoomLevel={zoomLevel}
             leftPanelExpanded={leftPanelExpanded}
             rightPanelExpanded={rightPanelExpanded}
+            previewingNodeId={previewingNodeId}
           />
 
           {/* Overlay panel resizers (outside panels) */}
