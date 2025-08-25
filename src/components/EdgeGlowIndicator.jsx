@@ -195,7 +195,7 @@ const EdgeGlowIndicator = ({
     <div
       style={{
         position: 'fixed',
-        left: viewportBounds.x,
+        left: Math.max(0, viewportBounds.x), // Ensure container is never off-screen
         top: viewportBounds.y,
         width: viewportBounds.width,
         height: viewportBounds.height,
@@ -217,6 +217,23 @@ const EdgeGlowIndicator = ({
             pointerEvents: 'none',
             boxShadow: 'inset 0 0 20px rgba(255, 0, 0, 0.3)',
             zIndex: 999999
+          }}
+        />
+      )}
+      
+      {/* Debug container outline */}
+      {showViewportDebug && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: '100%',
+            height: '100%',
+            border: '2px solid rgba(0, 255, 0, 0.8)',
+            boxSizing: 'border-box',
+            pointerEvents: 'none',
+            zIndex: 999998
           }}
         />
       )}
@@ -299,6 +316,14 @@ const EdgeGlowIndicator = ({
           <div style={{ position: 'absolute', top: '55px', left: '5px', color: 'red', fontSize: '10px' }}>
             Y Offset: {viewportBounds?.y || 'N/A'} | Expected: {HEADER_HEIGHT}
           </div>
+          <div style={{ position: 'absolute', top: '70px', left: '5px', color: 'red', fontSize: '10px' }}>
+            Container: left={Math.max(0, viewportBounds.x)} | Flares: {offScreenGlows.length}
+          </div>
+          {offScreenGlows.slice(0, 3).map((glow, idx) => (
+            <div key={`debug-${glow.id}`} style={{ position: 'absolute', top: `${85 + idx * 15}px`, left: '5px', color: 'red', fontSize: '10px' }}>
+              {glow.label}: edge={glow.edge}, pos=({Math.round(glow.screenX)},{Math.round(glow.screenY)})
+            </div>
+          ))}
         </>
       )}
       
@@ -306,9 +331,9 @@ const EdgeGlowIndicator = ({
       {offScreenGlows.map(glow => {
         const { id, screenX, screenY, color, intensity, edge } = glow;
 
-        // Flare sizing: smaller all around, less wide
-        const flareLength = 8 + intensity * 4; // px
-        const flareThickness = 40 + intensity * 8; // px
+        // Flare sizing: extend further out while staying anchored at same spot
+        const flareLength = 16 + intensity * 8; // px - increased to extend further
+        const flareThickness = 48 + intensity * 12; // px - increased width
 
         // Orientation by edge
         const rotation = edge === 'left' ? 0
@@ -323,11 +348,11 @@ const EdgeGlowIndicator = ({
         let translateY = screenY;
         
         // Position to ride halfway on the screen edge
-        // Account for flare width so they don't extend off-screen
-        if (edge === 'left') translateX = flareThickness / 2;
-        else if (edge === 'right') translateX = viewportBounds.width - flareThickness / 2;
-        else if (edge === 'top') translateY = flareThickness / 2;
-        else if (edge === 'bottom') translateY = viewportBounds.height - flareThickness / 2;
+        // For left edge, ensure it's at the actual screen edge, not container edge
+        if (edge === 'left') translateX = 0;
+        else if (edge === 'right') translateX = viewportBounds.width;
+        else if (edge === 'top') translateY = 0;
+        else if (edge === 'bottom') translateY = viewportBounds.height;
 
         // Colors
         const coreColor = color;

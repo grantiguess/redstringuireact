@@ -14,11 +14,6 @@ const SHRINK_ANIMATION_DURATION = 150; // ms, matches CSS (FASTER)
 const STAGGER_DELAY = 40; // ms, slightly reduced
 const EXIT_ANIMATION_BUFFER = 50; // ms, extra buffer for animation to complete visually
 
-// Z-index constants for proper layering
-const Z_INDEX_BELOW_NODES = 500; // Below nodes during animations
-const Z_INDEX_ABOVE_NODES = 1500; // Above nodes when visible
-const Z_INDEX_BELOW_PANELS = 9999; // Below panels (10000)
-
 const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComplete, focusedNode }) => {
   // animationState can be: null (initial/hidden), 'popping', 'visible_steady', 'shrinking'
   const [animationState, setAnimationState] = useState(null);
@@ -161,26 +156,13 @@ const PieMenu = ({ node, buttons, nodeDimensions, isVisible, onExitAnimationComp
     dynamicClassName += ' is-popping'; // Attempt to pop
   }
 
-  // Determine z-index based on animation state
-  let currentZIndex;
-  if (animationState === 'popping' || animationState === 'shrinking') {
-    // During animations, place below nodes
-    currentZIndex = Z_INDEX_BELOW_NODES;
-  } else if (animationState === 'visible_steady') {
-    // When visible and steady, place above nodes
-    currentZIndex = Z_INDEX_ABOVE_NODES;
-  } else {
-    // Fallback to below nodes
-    currentZIndex = Z_INDEX_BELOW_NODES;
-  }
-
-  //console.log(`[PieMenu] Render: Rendering PieMenu. isVisible=${isVisible}, animationState=${animationState}, zIndex=${currentZIndex}`);
+  //console.log(`[PieMenu] Render: Rendering PieMenu. isVisible=${isVisible}, animationState=${animationState}`);
   
   // Check if this is a carousel mode (buttons have position property)
   const isCarouselMode = buttons.some(button => button.position);
   
   return (
-    <g className="pie-menu" style={{ zIndex: currentZIndex }}>
+    <g className="pie-menu">
       {buttons.map((button, index) => {
         let bubbleX, bubbleY;
         
