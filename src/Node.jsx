@@ -305,6 +305,7 @@ const Node = ({
                 fontSize: '20px',
                 fontWeight: 'bold',
                 color: '#bdb5b5',
+                lineHeight: '28px', // Match LINE_HEIGHT_ESTIMATE from constants
                 whiteSpace: 'normal',
                 overflowWrap: 'break-word',
                 wordBreak: 'break-word',
