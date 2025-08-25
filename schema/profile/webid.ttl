@@ -1,0 +1,6 @@
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix schema: <http://schema.org/> .
+
+<#me> a foaf:Person ;
+    foaf:name "grantiguess-redstringuireact Owner" ;
+    schema:url <https://github.com/grantiguess/redstringuireact> .
