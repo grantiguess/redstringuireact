@@ -442,7 +442,7 @@ export class CustomProvider extends SemanticProvider {
 
 This protocol isn't just solving technical problems—it's building the nervous system for a new form of collective consciousness. By making semantic knowledge truly ownable, shareable, and evolvable, we create conditions for unprecedented collaboration between human and artificial intelligence.
 
-The brain is leaving the body, and we're building the infrastructure for its next evolutionary leap. Not through centralized platforms that extract value and impose control, but through protocols that amplify human agency while enabling planetary-scale coordination.
+This protocol provides infrastructure for distributed knowledge management through decentralized systems that amplify human agency while enabling large-scale coordination.
 
 Every person becomes a neuron in a larger intelligence. Every concept becomes a building block for collective understanding. Every connection becomes a pathway for shared cognition.
 
@@ -473,8 +473,7 @@ The Git-Native Semantic Web Protocol successfully:
 • Provides distributed resilience
 • Creates infrastructure for planetary-scale collective intelligence
 
-🌍 The brain is leaving the body, and we're building the infrastructure
-   for its next evolutionary leap.
+🌍 Building infrastructure for distributed knowledge management systems.
 ```
 
 ## Getting Started

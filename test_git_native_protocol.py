@@ -433,7 +433,7 @@ redstring:ClimatePolicy a redstring:Concept ;
             print("• Provides distributed resilience")
             print("• Creates infrastructure for planetary-scale collective intelligence")
             print()
-            print("🌍 The brain is leaving the body, and we're building the infrastructure")
+            print("🌍 Building infrastructure for distributed knowledge management")
             print("   for its next evolutionary leap.")
         else:
             print("⚠️  Some tests failed. Please review the implementation.")
