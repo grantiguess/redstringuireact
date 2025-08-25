@@ -165,12 +165,21 @@ const EdgeGlowIndicator = ({
       const node = nodes.find(n => n.id === nodeInfo.id);
       const nodeColor = node?.color || node?.prototype?.color || '#8B0000';
 
+      // Determine which edge we're on (to orient the flare)
+      const edgeEpsilon = 0.75;
+      let edge = 'left';
+      if (Math.abs(screenX - 0) < edgeEpsilon) edge = 'left';
+      else if (Math.abs(screenX - containerW) < edgeEpsilon) edge = 'right';
+      else if (Math.abs(screenY - 0) < edgeEpsilon) edge = 'top';
+      else if (Math.abs(screenY - containerH) < edgeEpsilon) edge = 'bottom';
+
       glows.push({
         id: nodeInfo.id,
         screenX, // Already relative to overlay container
         screenY, // Already relative to overlay container
         color: nodeColor,
         intensity,
+        edge,
         nodeCenterX: nodeInfo.nodeCenterX,
         nodeCenterY: nodeInfo.nodeCenterY,
         label: nodeInfo.label
@@ -295,61 +304,90 @@ const EdgeGlowIndicator = ({
       
       {/* Render individual glow dots */}
       {offScreenGlows.map(glow => {
-        const { id, screenX, screenY, color, intensity } = glow;
-        const size = 24; // Size of the glow dot
-        const glowRadius = size * 2; // Size of the glow effect
+        const { id, screenX, screenY, color, intensity, edge } = glow;
+
+        // Flare sizing: smaller all around, less wide
+        const flareLength = 8 + intensity * 4; // px
+        const flareThickness = 40 + intensity * 8; // px
+
+        // Orientation by edge
+        const rotation = edge === 'left' ? 0
+                        : edge === 'right' ? 180
+                        : edge === 'top' ? 90
+                        : -90; // bottom
+
+        // Position so flare rides halfway on the screen edge
+        let translateX = screenX;
+        let translateY = screenY;
         
+        // Position to ride halfway on the screen edge
+        if (edge === 'left') translateX = 0;
+        else if (edge === 'right') translateX = viewportBounds.width;
+        else if (edge === 'top') translateY = 0;
+        else if (edge === 'bottom') translateY = viewportBounds.height;
+
+        // Colors
+        const coreColor = color;
+        const glowAlpha = Math.round(intensity * 255 * 0.20).toString(16).padStart(2, '0');
+        const midAlpha = Math.round(intensity * 255 * 0.35).toString(16).padStart(2, '0');
+        const coreAlpha = Math.round(intensity * 255 * 0.50).toString(16).padStart(2, '0');
+
         return (
           <div
             key={id}
             style={{
               position: 'absolute',
-              left: screenX - size / 2,
-              top: screenY - size / 2,
-              width: size,
-              height: size,
-              borderRadius: '50%',
-              background: `radial-gradient(circle, ${color}${Math.round(intensity * 255 * 0.8).toString(16).padStart(2, '0')} 0%, ${color}${Math.round(intensity * 255 * 0.4).toString(16).padStart(2, '0')} 50%, transparent 100%)`,
-              boxShadow: `0 0 ${glowRadius}px ${color}${Math.round(intensity * 255 * 0.3).toString(16).padStart(2, '0')}`,
-              transition: 'opacity 0.3s ease-in-out, transform 0.3s ease-in-out',
-              transform: `scale(${0.7 + intensity * 0.3})`,
-              animation: `pulse-glow-${id} ${2 + Math.random()}s ease-in-out infinite`,
-              pointerEvents: 'none'
+              left: 0,
+              top: 0,
+              width: 0,
+              height: 0,
+              pointerEvents: 'none',
+              transform: `translate(${translateX}px, ${translateY}px) rotate(${rotation}deg)`,
+              transformOrigin: 'center',
+              zIndex: 1
             }}
           >
-            {/* Add CSS animation keyframes */}
-            <style>
-              {`
-                @keyframes pulse-glow-${id} {
-                  0%, 100% { 
-                    opacity: ${intensity * 0.7}; 
-                    transform: scale(${0.7 + intensity * 0.3});
-                  }
-                  50% { 
-                    opacity: ${intensity * 1}; 
-                    transform: scale(${0.8 + intensity * 0.4});
-                  }
-                }
-              `}
-            </style>
-            {showViewportDebug && (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: screenX + 14,
-                  top: screenY - 4,
-                  color: '#260000',
-                  background: 'rgba(255,255,255,0.85)',
-                  padding: '2px 6px',
-                  borderRadius: 6,
-                  fontSize: 11,
-                  whiteSpace: 'nowrap',
-                  pointerEvents: 'none'
-                }}
-              >
-                {glow.label}
-              </div>
-            )}
+            {/* Outer soft glow (very wide along edge, much more spread, curved) */}
+            <div
+              style={{
+                position: 'absolute',
+                left: -flareLength / 2,
+                top: -flareThickness / 2,
+                width: flareLength,
+                height: flareThickness,
+                borderRadius: flareThickness,
+                background: `radial-gradient(ellipse, ${coreColor}${midAlpha} 0%, ${coreColor}${glowAlpha} 30%, transparent 100%)`,
+                filter: `blur(${Math.max(8, flareThickness * 0.6)}px)`,
+              }}
+            />
+
+            {/* Mid glow (very wide along edge, much more spread, curved) */}
+            <div
+              style={{
+                position: 'absolute',
+                left: -flareLength / 2,
+                top: -flareThickness / 2,
+                width: flareLength,
+                height: flareThickness,
+                borderRadius: flareThickness,
+                background: `radial-gradient(ellipse, ${coreColor}${coreAlpha} 0%, ${coreColor}${midAlpha} 40%, transparent 100%)`,
+                filter: 'blur(6px)'
+              }}
+            />
+
+            {/* Enhanced box shadow for more glow spread */}
+            <div
+              style={{
+                position: 'absolute',
+                left: -flareLength / 2,
+                top: -flareThickness / 2,
+                width: flareLength,
+                height: flareThickness,
+                borderRadius: flareThickness,
+                boxShadow: `0 0 ${Math.max(16, flareThickness * 0.8)}px ${coreColor}${glowAlpha}`,
+                opacity: 0.15
+              }}
+            />
           </div>
         );
       })}
