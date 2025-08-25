@@ -2,7 +2,7 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, us
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR, PANEL_CLOSE_ICON_SIZE } from './constants';
-import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Wand, Settings, RotateCcw, Send, Bot, User, Key, Square, Search, Merge, Copy } from 'lucide-react';
+import { ArrowLeftFromLine, ArrowRightFromLine, Info, ImagePlus, XCircle, BookOpen, LayoutGrid, Plus, Bookmark, ArrowUpFromDot, Palette, ArrowBigRightDash, X, Globe, Wand, Settings, RotateCcw, Send, Bot, User, Key, Square, Search, Merge, Copy, Loader2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import './Panel.css'
 import { generateThumbnail } from './utils'; // Import thumbnail generator
@@ -553,6 +553,53 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
   const [manualQuery, setManualQuery] = useState('');
   const [expandingNodeId, setExpandingNodeId] = useState(null);
   const [semanticExpansionResults, setSemanticExpansionResults] = useState([]);
+  const [searchProgress, setSearchProgress] = useState('');
+
+  // Persist discovery history and search results across sessions (localStorage)
+  useEffect(() => {
+    try {
+      const historyRaw = localStorage.getItem('redstring_semantic_discovery_history');
+      if (historyRaw) {
+        const parsed = JSON.parse(historyRaw).map((item) => ({
+          ...item,
+          timestamp: item.timestamp ? new Date(item.timestamp) : new Date(),
+        }));
+        setSearchHistory(parsed);
+      }
+      
+      const resultsRaw = localStorage.getItem('redstring_semantic_search_results');
+      if (resultsRaw) {
+        const results = JSON.parse(resultsRaw);
+        setDiscoveredConcepts(results);
+      }
+    } catch (e) {
+      console.warn('[SemanticDiscovery] Failed to load from storage', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('redstring_semantic_discovery_history', JSON.stringify(searchHistory));
+    } catch (e) {
+      // Non-fatal
+    }
+  }, [searchHistory]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('redstring_semantic_search_results', JSON.stringify(discoveredConcepts));
+    } catch (e) {
+      // Non-fatal
+    }
+  }, [discoveredConcepts]);
+
+  const handleDeleteHistoryItem = (id) => {
+    setSearchHistory((prev) => prev.filter((h) => h.id !== id));
+  };
+
+  const handleClearHistory = () => {
+    setSearchHistory([]);
+  };
 
   // Get dual context (panel + graph)
   const getContexts = () => {
@@ -833,10 +880,20 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
     const token = `search-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
     latestSearchTokenRef.current = token;
     setIsSearching(true);
+    setDiscoveredConcepts([]);
+    setSelectedConcept(null);
+    setSearchProgress('Initializing search...');
+    
     try {
+      console.log(`[SemanticDiscovery] Starting search for "${rawQuery}" (token: ${token})`);
+      setSearchProgress('Querying sources...');
+      
       // Shallow, fast searches for all variants in parallel
       const variantPromises = variants.map(v => fetchFederatedConcepts(v, { maxDepth: 1, maxEntitiesPerLevel: 15 }));
       const variantResults = await Promise.allSettled(variantPromises);
+      
+      setSearchProgress('Processing and ranking results...');
+      
       let combined = [];
       variantResults.forEach((res, idx) => {
         if (res.status === 'fulfilled' && Array.isArray(res.value)) {
@@ -861,8 +918,12 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
       console.error('[SemanticDiscovery] Search failed:', error);
       if (latestSearchTokenRef.current !== token) return;
       setDiscoveredConcepts([]);
+      setSearchProgress('Search failed');
     } finally {
-      if (latestSearchTokenRef.current === token) setIsSearching(false);
+      if (latestSearchTokenRef.current === token) {
+        setIsSearching(false);
+        setSearchProgress('');
+      }
     }
   };
   
@@ -916,13 +977,44 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
   };
 
   // Generate color for concept based on name hash - unified color system
+  // Uses the same saturation and brightness as maroon (#8B0000) but with different hues
+  // This matches the ColorPicker's approach for consistent, muted colors
   const generateConceptColor = (name) => {
-    const colors = ['#8B0000', '#8B4513', '#006400', '#4B0082', '#8B008B', '#CC4F35', '#4682B4'];
+    // Hue values that create pleasant, readable colors with maroon's saturation/brightness
+    const hues = [0, 25, 90, 140, 200, 260, 300]; // Red, Orange-Red, Green, Cyan-Green, Blue, Purple, Magenta
+    
+    // Convert HSV to hex (same logic as ColorPicker)
+    const hsvToHex = (h, s, v) => {
+      const c = v * s;
+      const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+      const m = v - c;
+
+      let r, g, b;
+      if (h >= 0 && h < 60) { r = c; g = x; b = 0; }
+      else if (h >= 60 && h < 120) { r = x; g = c; b = 0; }
+      else if (h >= 120 && h < 180) { r = 0; g = c; b = x; }
+      else if (h >= 180 && h < 240) { r = 0; g = x; b = c; }
+      else if (h >= 240 && h < 300) { r = x; g = 0; b = c; }
+      else { r = c; g = 0; b = x; }
+
+      r = Math.round((r + m) * 255);
+      g = Math.round((g + m) * 255);
+      b = Math.round((b + m) * 255);
+
+      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+    };
+    
+    // Use maroon's saturation (1.0) and brightness (~0.545) for consistency
+    const targetSaturation = 1.0;
+    const targetBrightness = 0.545;
+    
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
       hash = ((hash << 5) - hash + name.charCodeAt(i)) & 0xffffffff;
     }
-    return colors[Math.abs(hash) % colors.length];
+    
+    const selectedHue = hues[Math.abs(hash) % hues.length];
+    return hsvToHex(selectedHue, targetSaturation, targetBrightness);
   };
 
   // Ensure semantic node uses consistent color across all views
@@ -1042,30 +1134,26 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
               transform: translateX(0);
             }
           }
+          
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
         `}
       </style>
       
       <div className="panel-content-inner semantic-discovery-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+      <div className="semantic-discovery-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif" }}>
           Semantic Discovery
         </h2>
-        <div className="view-mode-tabs" style={{ display: 'flex', gap: '4px' }}>
+        <div className="semantic-discovery-tabs" style={{ display: 'flex', gap: '4px' }}>
             {['discover', 'history'].map(mode => (
             <button
               key={mode}
+              className={`semantic-tab-button ${viewMode === mode ? 'active' : ''}`}
               onClick={() => setViewMode(mode)}
-              style={{
-                padding: '4px 8px',
-                border: '1px solid #444',
-                borderRadius: '4px',
-                background: viewMode === mode ? '#8B0000' : 'transparent',
-                color: viewMode === mode ? '#fff' : '#666',
-                fontFamily: "'EmOne', sans-serif",
-                fontSize: '10px',
-                cursor: 'pointer'
-              }}
             >
               {mode.charAt(0).toUpperCase() + mode.slice(1)}
             </button>
@@ -1078,7 +1166,7 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
           {/* Enhanced Context Display */}
           {(contexts.panel || contexts.graph || selectedNode) && (
             <div className="contexts-display" style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '11px', color: '#666', fontFamily: "'EmOne', sans-serif", marginBottom: '8px', fontWeight: 'bold' }}>
+              <div style={{ fontSize: '11px', color: '#260000', fontFamily: "'EmOne', sans-serif", marginBottom: '8px', fontWeight: 'bold' }}>
                 Quick Search
               </div>
               
@@ -1230,10 +1318,17 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                     fontSize: '11px',
                     fontFamily: "'EmOne', sans-serif",
                     cursor: isSearching ? 'wait' : 'pointer',
-                    fontWeight: 'bold'
+                    fontWeight: 'bold',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
                   }}
                 >
-                  {isSearching ? '...' : 'Go'}
+                  {isSearching ? (
+                    <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                  ) : (
+                    <Search size={14} />
+                  )}
                 </button>
               </div>
             </div>
@@ -1313,10 +1408,42 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                       }
                     }}
                   >
-                    {isSearching ? '🔍 Loading...' : '🔍 Load More'}
+                    {isSearching ? 'Loading...' : 'Load More'}
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Loading indicator for regular search */}
+          {isSearching && !expandingNodeId && discoveredConcepts.length === 0 && (
+            <div className="semantic-search-loading" style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+              <div style={{
+                width: '40px',
+                height: '40px',
+                border: '4px solid #bdb5b5',
+                borderTop: '4px solid #8B0000',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                marginBottom: '16px'
+              }} />
+              <div style={{ 
+                fontSize: '12px', 
+                color: '#260000', 
+                fontFamily: "'EmOne', sans-serif", 
+                fontWeight: 'bold',
+                marginBottom: '8px'
+              }}>
+                Searching semantic web...
+              </div>
+              <div style={{ 
+                fontSize: '10px', 
+                color: '#666',
+                fontFamily: "'EmOne', sans-serif",
+                textAlign: 'center'
+              }}>
+                {searchProgress || 'Please wait while we find related concepts'}
+              </div>
             </div>
           )}
 
@@ -1444,8 +1571,28 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
 
       {viewMode === 'history' && (
         <div className="search-history-view" style={{ flex: 1, overflow: 'auto' }}>
-          <div style={{ marginBottom: '12px', fontSize: '12px', color: '#260000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold' }}>
-            Discovery History ({searchHistory.length})
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <div style={{ fontSize: '12px', color: '#260000', fontFamily: "'EmOne', sans-serif", fontWeight: 'bold' }}>
+              Discovery History ({searchHistory.length})
+            </div>
+            {searchHistory.length > 0 && (
+              <button
+                title="Clear all history"
+                onClick={handleClearHistory}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid #666',
+                  color: '#666',
+                  width: '18px',
+                  height: '18px',
+                  lineHeight: 1,
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                ×
+              </button>
+            )}
           </div>
           {searchHistory.length === 0 ? (
             <div style={{ padding: '20px', textAlign: 'center', color: '#666', fontSize: '11px', fontFamily: "'EmOne', sans-serif" }}>
@@ -1460,7 +1607,23 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                 border: '1px solid #333',
                 borderRadius: '6px'
               }}>
-                <div style={{ fontSize: '11px', color: '#260000', fontWeight: 'bold' }}>{historyItem.query}</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: '11px', color: '#260000', fontWeight: 'bold' }}>{historyItem.query}</div>
+                  <button
+                    title="Remove from history"
+                    onClick={() => handleDeleteHistoryItem(historyItem.id)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#999',
+                      cursor: 'pointer',
+                      padding: 0,
+                      lineHeight: 1
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
                 <div style={{ fontSize: '9px', color: '#666', marginTop: '2px' }}>
                   {historyItem.timestamp.toLocaleString()} • {historyItem.resultCount} concepts
                 </div>

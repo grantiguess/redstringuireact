@@ -1538,6 +1538,7 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
       {/* Semantic Web Actions */}
       <div style={{ marginTop: '12px' }}>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+          {/* Hidden: Enrich from Web button
           <button
             onClick={handleEnrichFromSemanticWeb}
             disabled={enrichmentState.isEnriching}
@@ -1561,6 +1562,7 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
             {enrichmentState.isEnriching ? <Loader2 size={14} style={{animation: 'spin 1s linear infinite'}} /> : <Zap size={14} />}
             {enrichmentState.isEnriching ? 'Enriching...' : 'Enrich from Web'}
           </button>
+          */}
           
           {showAdvanced && (
           <button
@@ -1852,7 +1854,7 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
         </div>
       )}
 
-      {/* Undo chips */}
+      {/* Hidden: Undo chips for "Applied from web"
       {autoApplied.length > 0 && (
         <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
           {autoApplied.slice(0,3).map((c, i) => (
@@ -1877,8 +1879,9 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
           ))}
         </div>
       )}
+      */}
 
-      {/* Advanced button moved to bottom */}
+      {/* Hidden: Advanced button moved to bottom
       <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
         <button
           onClick={() => setShowAdvanced(!showAdvanced)}
@@ -1897,6 +1900,7 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
           {showAdvanced ? 'Advanced — On' : 'Advanced'}
         </button>
       </div>
+      */}
 
       {/* Consolidate Preview Modal */}
       {showConsolidatePreview && consolidatePreview && (

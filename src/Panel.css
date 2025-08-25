@@ -353,3 +353,44 @@ header .editable-title-input::selection {
   color: #8B0000;
   font-weight: bold;
 }
+
+/* Semantic Discovery header and tabs */
+.semantic-discovery-header {
+  gap: 8px;
+}
+
+.semantic-discovery-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.semantic-tab-button {
+  padding: 4px 8px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: transparent;
+  color: #260000; /* canvas-colored text by default */
+  font-family: 'EmOne', sans-serif;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.semantic-tab-button.active {
+  background: #8B0000;
+  color: #EFE8E5; /* match panel light text */
+}
+
+/* At <= 400px, move tabs under title with padding */
+@media (max-width: 400px) {
+  .semantic-discovery-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .semantic-discovery-tabs {
+    margin-top: 8px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    border-top: 1px solid #333;
+    width: 100%;
+  }
+}
