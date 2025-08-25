@@ -3471,14 +3471,24 @@ const Panel = forwardRef(
     useEffect(() => {
         const handler = (e) => {
             try {
+                const query = e?.detail?.query;
                 if (side === 'left') {
                     setLeftViewActive('semantic');
-                    const query = e?.detail?.query;
-                    if (query && typeof window !== 'undefined' && typeof window.triggerSemanticSearch === 'function') {
-                        setTimeout(() => window.triggerSemanticSearch(query), 0);
+                    if (query) {
+                        // Retry until the view registers triggerSemanticSearch
+                        let attempts = 0;
+                        const maxAttempts = 20; // ~1s at 50ms intervals
+                        const intervalId = setInterval(() => {
+                            attempts += 1;
+                            if (typeof window !== 'undefined' && typeof window.triggerSemanticSearch === 'function') {
+                                try { window.triggerSemanticSearch(query); } catch {}
+                                clearInterval(intervalId);
+                            } else if (attempts >= maxAttempts) {
+                                clearInterval(intervalId);
+                            }
+                        }, 50);
                     }
                 } else if (side === 'right') {
-                    const query = e?.detail?.query;
                     window.dispatchEvent(new CustomEvent('openSemanticDiscovery', { detail: { query } }));
                 }
             } catch {}

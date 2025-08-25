@@ -892,7 +892,8 @@ const SharedPanelContent = ({
     }}>
       <Bookmark
         size={20}
-        color={isSaved ? '#260000' : '#716C6C'}
+        color="#260000"
+        fill={isSaved ? '#260000' : 'none'}
         style={{ cursor: 'pointer', flexShrink: 0 }}
         onClick={() => toggleSavedNode && nodeData?.id && toggleSavedNode(nodeData.id)}
         title={isSaved ? 'Remove from Saved Things' : 'Save to Saved Things'}
@@ -927,7 +928,7 @@ const SharedPanelContent = ({
         />
         
         {!isUltraSlim && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', alignSelf: 'center' }}>
             {actionButtons}
             {secondaryButtons}
           </div>
@@ -984,7 +985,7 @@ const SharedPanelContent = ({
                   </button>
                 </div>
                 
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px', marginLeft: '2px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px', marginLeft: '2px' }}>
                   <div style={{ display: 'flex', gap: '8px' }}>{actionButtons}</div>
                   <div style={{ display: 'flex', gap: '8px' }}>{secondaryButtons}</div>
                 </div>
