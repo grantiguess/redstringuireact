@@ -4,6 +4,7 @@ import { PANEL_CLOSE_ICON_SIZE } from '../constants';
 import { rdfResolver } from '../services/rdfResolver.js';
 import { enrichFromSemanticWeb, fastEnrichFromSemanticWeb } from '../services/semanticWebQuery.js';
 import { knowledgeFederation } from '../services/knowledgeFederation.js';
+import useGraphStore from '../store/graphStore';
 
 // DOI validation regex
 const DOI_REGEX = /^10\.\d{4,}\/[-._;()\/:a-zA-Z0-9]+$/;
@@ -82,8 +83,8 @@ const SemanticLinkInput = ({ onAdd, placeholder, type, icon: Icon, defaultValue 
   };
 
   return (
-    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-      <Icon size={16} style={{ color: '#666', marginTop: '1px' }} />
+    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
+      <Icon size={16} style={{ color: '#260000', marginTop: '1px' }} />
       <input
         type="text"
         value={input}
@@ -93,33 +94,27 @@ const SemanticLinkInput = ({ onAdd, placeholder, type, icon: Icon, defaultValue 
         style={{
           flex: 1,
           padding: '6px 8px',
-          border: `1px solid ${isValid ? '#28a745' : input ? '#dc3545' : '#260000'}`,
-          borderRadius: '4px',
+          border: `1px solid ${isValid ? '#28a745' : (input ? '#dc3545' : '#8B0000')}`,
+          borderRadius: '6px',
           fontSize: '14px',
-          fontFamily: "'EmOne', sans-serif"
+          fontFamily: "'EmOne', sans-serif",
+          backgroundColor: 'transparent'
         }}
       />
       <button
         onClick={handleAdd}
         disabled={!isValid}
         style={{
-          width: '32px',
-          height: '32px',
-          border: 'none',
+          padding: '6px 10px',
+          border: '1px solid #8B0000',
           borderRadius: '6px',
-          backgroundColor: '#8B0000',
-          color: '#EFE8E5',
+          backgroundColor: isValid ? '#8B0000' : 'transparent',
+          color: isValid ? '#EFE8E5' : '#8B0000',
           cursor: isValid ? 'pointer' : 'not-allowed',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'all 0.2s ease',
-          opacity: isValid ? 1 : 0.5
+          fontSize: '12px'
         }}
-        onMouseEnter={(e) => isValid && (e.target.style.backgroundColor = '#A00000')}
-        onMouseLeave={(e) => isValid && (e.target.style.backgroundColor = '#8B0000')}
       >
-        <span style={{ fontSize: '20px', fontWeight: 'bold', color: '#EFE8E5', lineHeight: 1 }}>+</span>
+        Add
       </button>
     </div>
   );
@@ -285,6 +280,7 @@ const SectionCard = ({ title, icon: Icon, rightEl = null, children, style = {} }
         borderRadius: '8px',
         padding: '10px',
         marginBottom: '10px',
+        overflow: 'hidden',
         ...style
       }}
     >
@@ -547,7 +543,8 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
             borderRadius: '6px',
             fontSize: '14px',
             fontFamily: "'EmOne', sans-serif",
-            backgroundColor: 'transparent'
+            backgroundColor: 'transparent',
+            marginRight: '6px'
           }}
         />
         <div style={{ fontSize: '12px', color: '#260000', marginTop: 2 }}>Comma-separated URLs</div>
@@ -556,12 +553,29 @@ const RDFSchemaPropertiesSection = ({ nodeData, onUpdate }) => {
   );
 };
 
+const titleCase = (s = '') => s
+  .split(/\s+|_/)
+  .filter(Boolean)
+  .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+  .join(' ');
+
 const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
   const [federationMode, setFederationMode] = useState('node'); // 'node' or 'domain'
   const [showSettings, setShowSettings] = useState(false);
 
+  // Store access for types
+  const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
+  const addNodePrototype = useGraphStore(state => state.addNodePrototype);
+  const setNodeType = useGraphStore(state => state.setNodeType);
+  const openRightPanelNodeTab = useGraphStore(state => state.openRightPanelNodeTab);
+
   const equivalentClasses = nodeData.equivalentClasses || [];
   const abstractionChains = nodeData.abstractionChains || {};
+
+  const typePrototype = useMemo(() => {
+    if (!nodeData.typeNodeId) return null;
+    return nodePrototypesMap.get(nodeData.typeNodeId) || null;
+  }, [nodeData.typeNodeId, nodePrototypesMap]);
 
   const addEquivalentClass = (uri, source = 'manual') => {
     const updatedClasses = [...equivalentClasses, { "@id": uri, "source": source }];
@@ -577,6 +591,47 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
       ...nodeData,
       equivalentClasses: updatedClasses
     });
+  };
+
+  const deriveNameFromUri = (uri) => {
+    if (!uri) return 'Type';
+    let raw = uri;
+    const colonIdx = uri.indexOf(':');
+    if (colonIdx > -1) raw = uri.slice(colonIdx + 1);
+    try {
+      raw = decodeURIComponent(raw);
+    } catch {}
+    raw = raw.split('/').pop() || raw;
+    raw = raw.replace(/_/g, ' ');
+    return titleCase(raw);
+  };
+
+  const promoteClassToType = (uri) => {
+    const prettyName = deriveNameFromUri(uri);
+    // Try to find existing prototype by normalized name (case-insensitive)
+    let existing = null;
+    for (const proto of nodePrototypesMap.values()) {
+      if ((proto.name || '').toLowerCase() === prettyName.toLowerCase()) {
+        existing = proto;
+        break;
+      }
+    }
+    let targetTypeId = existing?.id;
+    if (!targetTypeId) {
+      // Create new type prototype (avoid bloat by reusing name; user can merge later if needed)
+      const newTypeId = `type-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      addNodePrototype({
+        id: newTypeId,
+        name: prettyName,
+        description: '',
+        color: '#8B0000',
+        typeNodeId: null,
+        definitionGraphIds: []
+      });
+      targetTypeId = newTypeId;
+    }
+    // Set as primary type
+    setNodeType(nodeData.id, targetTypeId);
   };
 
   // Common ontology mappings
@@ -612,6 +667,32 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
         </button>
       )}
     >
+      {/* Primary Type chip */}
+      <div style={{ marginBottom: '8px' }}>
+        <div style={{ fontSize: '14px', color: '#8B0000', fontWeight: 'bold', marginBottom: 6 }}>Primary Type</div>
+        {typePrototype ? (
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 10px',
+            background: typePrototype.color || '#8B0000',
+            color: '#bdb5b5',
+            borderRadius: '12px',
+            border: '1px solid rgba(0,0,0,0.15)',
+            cursor: 'pointer'
+          }}
+          onClick={() => openRightPanelNodeTab?.(typePrototype.id)}
+          title="Open type"
+          >
+            <span style={{ fontWeight: 'bold' }}>{titleCase(typePrototype.name || 'Thing')}</span>
+            <span style={{ fontSize: '10px', opacity: 0.8 }}>(type)</span>
+          </div>
+        ) : (
+          <div style={{ fontSize: '12px', color: '#260000' }}>None set</div>
+        )}
+      </div>
+
       {/* Federation Settings */}
       {showSettings && (
         <div style={{
@@ -660,12 +741,27 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
       {nodeData.typeNodeId && (
         <div style={{
           padding: '6px 8px',
-          backgroundColor: 'rgba(0,0,0,0.02)',
+          backgroundColor: 'rgba(38,0,0,0.03)',
           marginBottom: '8px',
           fontSize: '14px',
-          borderRadius: '6px'
+          borderRadius: '6px',
+          border: '1px solid rgba(38,0,0,0.10)',
+          color: '#260000',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px'
         }}>
-          <strong style={{ color: '#260000' }}>Current Type:</strong> {nodeData.typeNodeId}
+          <strong style={{ color: '#260000' }}>Current Type:</strong>
+          <code style={{
+            padding: '2px 6px',
+            borderRadius: '6px',
+            backgroundColor: 'rgba(38,0,0,0.06)',
+            border: '1px solid rgba(38,0,0,0.10)',
+            color: '#260000',
+            fontSize: '12px'
+          }}>
+            {nodeData.typeNodeId}
+          </code>
           <span style={{ color: '#260000', marginLeft: '6px', fontSize: '12px' }}>(rdfs:subClassOf)</span>
         </div>
       )}
@@ -722,20 +818,20 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
           Current Classifications ({equivalentClasses.length}):
         </label>
           {equivalentClasses.map((cls, index) => (
-                          <div
-                key={index}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '6px 8px',
-                  backgroundColor: 'transparent',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  marginBottom: '6px',
-                  fontSize: '14px'
-                }}
-              >
+            <div
+              key={index}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '6px 8px',
+                backgroundColor: 'transparent',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                marginBottom: '6px',
+                fontSize: '14px'
+              }}
+            >
               <div>
                 <code style={{ 
                   backgroundColor: 'rgba(0,0,0,0.03)', 
@@ -757,7 +853,24 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
                   </span>
                 )}
               </div>
-                              <button
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  onClick={() => promoteClassToType(cls['@id'])}
+                  style={{
+                    padding: '3px 8px',
+                    border: '1px solid #8B0000',
+                    background: 'transparent',
+                    color: '#8B0000',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    lineHeight: 1
+                  }}
+                  title="Promote this external class to a local Type and set as Primary"
+                >
+                  Promote to Type
+                </button>
+                <button
                   onClick={() => removeEquivalentClass(cls['@id'])}
                   style={{
                     padding: '3px 8px',
@@ -775,6 +888,7 @@ const SemanticClassificationSection = ({ nodeData, onUpdate }) => {
                 >
                   <X size={14} strokeWidth={3} style={{ color: '#EFE8E5' }} />
                 </button>
+              </div>
             </div>
           ))}
         </div>
@@ -1391,7 +1505,7 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
             <button
               onClick={() => { setShowAdvanced(true); setExternalType('wikipedia'); }}
               title="Find a different match"
-              style={{ padding: '3px 8px', border: '1px solid #ccc', borderRadius: '6px', background: 'transparent', color: '#260000', fontSize: '12px', cursor: 'pointer' }}
+              style={{ padding: '3px 8px', border: '1px solid #ccc', borderRadius: '6px', background: 'transparent', color: '#260000', fontSize: '12px', cursor: 'pointer', marginRight: '6px' }}
             >
               Not this?
             </button>
@@ -1408,7 +1522,8 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
               border: '1px solid #8B0000',
               borderRadius: '6px',
               fontSize: '14px',
-              color: '#260000'
+              color: '#260000',
+              background: 'transparent'
             }}
           >
             <option value="doi">DOI</option>

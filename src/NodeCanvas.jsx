@@ -5212,7 +5212,7 @@ function NodeCanvas() {
           }
         }
       },
-      // Decompose - directly toggle preview without pie menu animation
+      // Decompose - open pie menu and auto-trigger decompose
       {
         label: 'Decompose', 
         icon: <PackageOpen size={14} />,
@@ -5222,42 +5222,20 @@ function NodeCanvas() {
             return;
           }
           
-          const nodeData = nodes.find(n => n.id === instanceId);
-          if (!nodeData) return;
+          console.log(`[Context Menu] Decompose clicked - opening pie menu`);
           
-          // Check if node has definition graphs to preview
-          if (!nodeData.definitionGraphIds || nodeData.definitionGraphIds.length === 0) {
-            // Node has no definitions - create one first, then set preview
-            console.log(`[Context Menu] Decompose: Node has no definitions, creating one first for ${instanceId}`);
-            const prototypeId = nodeData.prototypeId;
-            const sourceGraphId = activeGraphId;
-            storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
-            
-            setTimeout(() => {
-              const currentState = useGraphStore.getState();
-              const updatedNodeData = currentState.nodePrototypes.get(prototypeId);
-              if (updatedNodeData?.definitionGraphIds?.length > 0) {
-                console.log(`[Context Menu] Decompose: Definition created, now setting preview for ${instanceId}`);
-                setSelectedInstanceIds(new Set([instanceId]));
-                setPreviewingNodeId(instanceId);
-                setSelectedNodeIdForPieMenu(instanceId);
-              } else {
-                console.error(`[Context Menu] Could not find new definition for node ${prototypeId} after creation.`);
-              }
-            }, 50);
-          } else {
-            // Node has definitions - directly toggle preview
-            console.log(`[Context Menu] Decompose clicked for instance: ${instanceId}. Toggling preview directly.`);
-            setSelectedInstanceIds(new Set([instanceId]));
-            
-            const selectedNodeIsPreviewing = previewingNodeId === instanceId;
-            if (selectedNodeIsPreviewing) { 
-              setPreviewingNodeId(null);
-            } else { 
-              setPreviewingNodeId(instanceId);
+          // Open the pie menu for this node
+          setSelectedInstanceIds(new Set([instanceId]));
+          setSelectedNodeIdForPieMenu(instanceId);
+          
+          // After pie menu appears, auto-trigger the decompose button
+          setTimeout(() => {
+            const decomposeButton = targetPieMenuButtons.find(btn => btn.id === 'decompose-preview');
+            if (decomposeButton && decomposeButton.action) {
+              console.log(`[Context Menu] Auto-triggering decompose button`);
+              decomposeButton.action(instanceId);
             }
-            setSelectedNodeIdForPieMenu(instanceId);
-          }
+          }, 100); // Small delay to let pie menu appear first
         }
       },
       // Generalize/Specify (abstraction) - directly open carousel without pie menu animation
@@ -5354,7 +5332,7 @@ function NodeCanvas() {
         }
       }
     ];
-  }, [nodes, savedNodeIds, abstractionCarouselVisible, carouselAnimationState, previewingNodeId, setPreviewingNodeId, setAbstractionCarouselNode, setCarouselAnimationState, setAbstractionCarouselVisible, setSelectedNodeIdForPieMenu, storeActions, activeGraphId, setSelectedInstanceIds, rightPanelExpanded, setRightPanelExpanded, setEditingNodeIdOnCanvas, getNodeDimensions, containerRef, zoomLevel, panOffset, handlePieMenuColorPickerOpen, startHurtleAnimation, useGraphStore]);
+  }, [nodes, savedNodeIds, abstractionCarouselVisible, carouselAnimationState, previewingNodeId, setPreviewingNodeId, setAbstractionCarouselNode, setCarouselAnimationState, setAbstractionCarouselVisible, setSelectedNodeIdForPieMenu, storeActions, activeGraphId, setSelectedInstanceIds, rightPanelExpanded, setRightPanelExpanded, setEditingNodeIdOnCanvas, getNodeDimensions, containerRef, zoomLevel, panOffset, handlePieMenuColorPickerOpen, startHurtleAnimation, useGraphStore, setIsTransitioningPieMenu]);
 
   // Cleanup animation on unmount
   useEffect(() => {
