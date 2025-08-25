@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useReducer } from 'react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
 import { NODE_WIDTH, NODE_HEIGHT, NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR, NODE_PADDING } from './constants';
 import { getNodeDimensions } from './utils';
 import useGraphStore from './store/graphStore';
@@ -666,6 +667,21 @@ const AbstractionCarousel = ({
     return -interpolatedOffset * zoomLevel;
   }, [physicsState.realPosition, zoomLevel, levelOffsets]);
 
+  // Hints: fade-in on open, fade-out on first scroll
+  const [hintsDismissed, setHintsDismissed] = useState(false);
+  const [hintOpacity, setHintOpacity] = useState(0);
+
+  useEffect(() => {
+    if (isVisible) {
+      setHintsDismissed(false);
+      setHintOpacity(0);
+      const t = setTimeout(() => setHintOpacity(1), 30);
+      return () => clearTimeout(t);
+    } else {
+      setHintOpacity(0);
+    }
+  }, [isVisible]);
+
   // Physics update loop using reducer
   const updatePhysics = useCallback((currentTime) => {
     if (!isVisible) {
@@ -792,6 +808,11 @@ const AbstractionCarousel = ({
     
     // Mark that user has started scrolling
     dispatchPhysics({ type: 'SET_USER_SCROLLED', payload: true });
+    // Dismiss hints on first scroll with fade-out
+    if (!hintsDismissed) {
+      setHintsDismissed(true);
+      setHintOpacity(0);
+    }
     
     // Allow new input to interrupt snapping
     dispatchPhysics({ type: 'INTERRUPT_SNAPPING' });
@@ -847,7 +868,7 @@ const AbstractionCarousel = ({
       lastFrameTimeRef.current = performance.now();
       animationFrameRef.current = requestAnimationFrame(updatePhysicsRef.current);
     }
-  }, [isVisible]); // Remove updatePhysics dependency to avoid frequent recreations
+  }, [isVisible, hintsDismissed]); // Remove updatePhysics dependency to avoid frequent recreations
 
   // Set up global, non-passive wheel event listener when carousel is visible
   useEffect(() => {
@@ -915,6 +936,58 @@ const AbstractionCarousel = ({
 
   const carouselPosition = getCarouselPosition();
   const stackOffset = getStackOffset();
+
+  // Compute hint placement levels and positions
+  const reachableChainLevels = useMemo(() => {
+    return abstractionChainWithDims
+      .filter(n => !n.isNonReachable && (n.type === 'current' || n.type === 'generic'))
+      .map(n => n.level);
+  }, [abstractionChainWithDims]);
+
+  const chainLevelStats = useMemo(() => {
+    if (!reachableChainLevels.length) return null;
+    return {
+      min: Math.min(...reachableChainLevels),
+      max: Math.max(...reachableChainLevels),
+      count: reachableChainLevels.length
+    };
+  }, [reachableChainLevels]);
+
+  const computeNodeCenterYForLevel = useCallback((level) => {
+    const levelOffset = levelOffsets[level] ?? (level * (NODE_HEIGHT + LEVEL_SPACING));
+    return window.innerHeight * 2 + (levelOffset * zoomLevel);
+  }, [levelOffsets, zoomLevel]);
+
+  let topHintPos = null;
+  let bottomHintPos = null;
+  if (chainLevelStats) {
+    const centerLevel = Math.round(physicsState.realPosition);
+    const topLevel = chainLevelStats.count < 7
+      ? chainLevelStats.min
+      : Math.max(chainLevelStats.min, centerLevel - 3);
+    const bottomLevel = chainLevelStats.count < 7
+      ? chainLevelStats.max
+      : Math.min(chainLevelStats.max, centerLevel + 3);
+
+    const topItem = abstractionChainWithDims.find(i => i.level === topLevel);
+    const bottomItem = abstractionChainWithDims.find(i => i.level === bottomLevel);
+    const topHeight = topItem?.baseDimensions?.currentHeight || NODE_HEIGHT;
+    const bottomHeight = bottomItem?.baseDimensions?.currentHeight || NODE_HEIGHT;
+
+    const nodeX = window.innerWidth * 0.5;
+    const topCenterY = computeNodeCenterYForLevel(topLevel);
+    const bottomCenterY = computeNodeCenterYForLevel(bottomLevel);
+    const margin = 60; // px margin away from node box
+
+    topHintPos = {
+      x: nodeX,
+      y: topCenterY - (topHeight / 2) * zoomLevel - margin
+    };
+    bottomHintPos = {
+      x: nodeX,
+      y: bottomCenterY + (bottomHeight / 2) * zoomLevel + margin
+    };
+  }
 
   return (
     <div
@@ -1239,6 +1312,61 @@ const AbstractionCarousel = ({
           );
         })}
       </svg>
+
+      {/* Static hint overlays: fade-in on open, fade-out on first scroll */}
+      {isVisible && topHintPos && bottomHintPos && (
+        <svg
+          style={{
+            position: 'absolute',
+            left: '-50vw',
+            top: '-200vh',
+            width: '100vw',
+            height: '400vh',
+            pointerEvents: 'none',
+            transform: `translateY(${stackOffset}px)`,
+            opacity: hintsDismissed ? 0 : hintOpacity,
+            transition: 'opacity 180ms ease'
+          }}
+        >
+          {/* Top hint: text above, up chevron below the text */}
+          <g transform={`translate(${topHintPos.x}, ${topHintPos.y})`}>
+            <text
+              x={0}
+              y={-46}
+              textAnchor="middle"
+              dominantBaseline="baseline"
+              fontSize={30}
+              fontFamily="'EmOne', sans-serif"
+              fill="#260000"
+              stroke="#BDB5B5"
+              strokeWidth={2}
+              style={{ paintOrder: 'stroke fill' }}
+            >
+              More General
+            </text>
+            <ChevronUp className="hint-arrow-up" x={-20} y={-34} size={40} color="#260000" strokeWidth={3} />
+          </g>
+
+          {/* Bottom hint: down chevron, then text below */}
+          <g transform={`translate(${bottomHintPos.x}, ${bottomHintPos.y})`}>
+            <ChevronDown className="hint-arrow-down" x={-20} y={-2} size={40} color="#260000" strokeWidth={3} />
+            <text
+              x={0}
+              y={46}
+              textAnchor="middle"
+              dominantBaseline="hanging"
+              fontSize={30}
+              fontFamily="'EmOne', sans-serif"
+              fill="#260000"
+              stroke="#BDB5B5"
+              strokeWidth={2}
+              style={{ paintOrder: 'stroke fill' }}
+            >
+              More Specific
+            </text>
+          </g>
+        </svg>
+      )}
 
       {/* Navigation hints - now shows continuous position */}
       {debugMode && (

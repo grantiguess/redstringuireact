@@ -1031,136 +1031,120 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                 Quick Search
               </div>
               
-              {/* Enhanced Action Grid */}
+              {/* Enhanced Action Grid - node-style representations */}
               <div style={{ display: 'grid', gap: '6px', marginBottom: '12px' }}>
                 {contexts.panel && (
-                  <button
+                  <div
                     onClick={() => {
                       const query = contexts.panel.nodeName;
                       if (query.trim()) {
                         performSearch(query);
                       }
                     }}
-                    disabled={isSearching}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px',
-                      padding: '8px 10px',
-                      border: '1px solid #8B0000',
-                      borderRadius: '6px',
-                      background: isSearching ? '#6b0000' : '#8B0000',
-                      color: '#EFE8E5',
-                      fontFamily: "'EmOne', sans-serif",
-                      fontSize: '11px',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      padding: '2px 0',
                       cursor: isSearching ? 'wait' : 'pointer',
-                      fontWeight: 'bold',
-                      transition: 'all 0.2s ease',
-                      boxShadow: '0 2px 4px rgba(139,0,0,0.2)'
+                      userSelect: 'none'
                     }}
-                    onMouseEnter={(e) => {
-                      if (!isSearching) {
-                        e.target.style.background = '#a00000';
-                        e.target.style.transform = 'translateY(-1px)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSearching) {
-                        e.target.style.background = '#8B0000';
-                        e.target.style.transform = 'translateY(0)';
-                      }
-                    }}
+                    title="Quick search from Panel context"
                   >
-                    📋 <span style={{ fontWeight: 'normal' }}>Panel:</span> {contexts.panel.nodeName.length > 18 ? contexts.panel.nodeName.substring(0, 18) + '...' : contexts.panel.nodeName}
-                  </button>
+                    <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '6px 10px',
+                        borderRadius: '12px',
+                        background: contexts.panel.nodeData?.color || '#8B0000'
+                      }}>
+                        <Search size={14} style={{ color: '#EFE8E5' }} />
+                        <span style={{ color: '#EFE8E5', fontFamily: "'EmOne', sans-serif", fontSize: 12, fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>
+                          {contexts.panel.nodeName}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#260000', fontFamily: "'EmOne', sans-serif", marginLeft: 0, paddingBottom: 6 }}>from Panel</div>
+                  </div>
                 )}
-                
+
                 {contexts.graph && (
-                  <button
+                  <div
                     onClick={() => {
                       const query = contexts.graph.nodeName;
                       if (query.trim()) {
                         performSearch(query);
                       }
                     }}
-                    disabled={isSearching}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px',
-                      padding: '8px 10px',
-                      border: '1px solid #4B0082',
-                      borderRadius: '6px',
-                      background: isSearching ? '#3a0066' : '#4B0082',
-                      color: '#EFE8E5',
-                      fontFamily: "'EmOne', sans-serif",
-                      fontSize: '11px',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      padding: '2px 0',
                       cursor: isSearching ? 'wait' : 'pointer',
-                      fontWeight: 'bold',
-                      transition: 'all 0.2s ease',
-                      boxShadow: '0 2px 4px rgba(75,0,130,0.2)'
+                      userSelect: 'none'
                     }}
-                    onMouseEnter={(e) => {
-                      if (!isSearching) {
-                        e.target.style.background = '#5a0099';
-                        e.target.style.transform = 'translateY(-1px)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSearching) {
-                        e.target.style.background = '#4B0082';
-                        e.target.style.transform = 'translateY(0)';
-                      }
-                    }}
+                    title="Quick search from Graph context"
                   >
-                    🎯 <span style={{ fontWeight: 'normal' }}>Graph:</span> {contexts.graph.nodeName.length > 18 ? contexts.graph.nodeName.substring(0, 18) + '...' : contexts.graph.nodeName}
-                  </button>
+                    <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '6px 10px',
+                        borderRadius: '12px',
+                        background: contexts.graph.nodeData?.color || '#4B0082'
+                      }}>
+                        <Search size={14} style={{ color: '#EFE8E5' }} />
+                        <span style={{ color: '#EFE8E5', fontFamily: "'EmOne', sans-serif", fontSize: 12, fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>
+                          {contexts.graph.nodeName}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#260000', fontFamily: "'EmOne', sans-serif", marginLeft: 0, paddingBottom: 6 }}>from Active Web</div>
+                  </div>
                 )}
-                
-                {/* Expand Semantically Button for Selected Node */}
+
                 {selectedNode && (
-                  <button
+                  <div
                     onClick={() => {
-                      // Trigger semantic expansion for selected node on canvas
                       const nodePrototype = nodePrototypesMap.get(selectedNode.prototypeId);
                       if (nodePrototype?.name) {
-                        setExpandingNodeId(selectedNode.prototypeId);
-                        performSemanticExpansion(nodePrototype.name, selectedNode.prototypeId);
+                        performSearch(nodePrototype.name);
                       }
                     }}
-                    disabled={isSearching}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px',
-                      padding: '8px 10px',
-                      border: '1px solid #228B22',
-                      borderRadius: '6px',
-                      background: isSearching && expandingNodeId ? '#1a4d1a' : (isSearching ? '#1e6b1e' : '#228B22'),
-                      color: '#EFE8E5',
-                      fontFamily: "'EmOne', sans-serif",
-                      fontSize: '11px',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      padding: '2px 0',
                       cursor: isSearching ? 'wait' : 'pointer',
-                      fontWeight: 'bold',
-                      transition: 'all 0.2s ease',
-                      boxShadow: '0 2px 4px rgba(34,139,34,0.2)',
-                      opacity: isSearching && expandingNodeId ? 0.8 : 1
+                      userSelect: 'none'
                     }}
-                    onMouseEnter={(e) => {
-                      if (!isSearching) {
-                        e.target.style.background = '#2aa52a';
-                        e.target.style.transform = 'translateY(-1px)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSearching) {
-                        e.target.style.background = '#228B22';
-                        e.target.style.transform = 'translateY(0)';
-                      }
-                    }}
+                    title="Quick search from Selected"
                   >
-                    {isSearching && expandingNodeId ? '⚡ Expanding...' : '⭐ Expand'} <span style={{ fontWeight: 'normal' }}>Selected</span>
-                  </button>
+                    <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '6px 10px',
+                        borderRadius: '12px',
+                        background: (nodePrototypesMap.get(selectedNode.prototypeId)?.color) || '#228B22'
+                      }}>
+                        <Search size={14} style={{ color: '#EFE8E5' }} />
+                        <span style={{ color: '#EFE8E5', fontFamily: "'EmOne', sans-serif", fontSize: 12, fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>
+                          {nodePrototypesMap.get(selectedNode.prototypeId)?.name || 'Selected'}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#260000', fontFamily: "'EmOne', sans-serif", marginLeft: 0, paddingBottom: 6 }}>from Selected</div>
+                  </div>
                 )}
               </div>
               
@@ -1175,11 +1159,11 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                   style={{
                     flex: 1,
                     padding: '6px 8px',
-                    border: '1px solid #8B0000',
+                    border: '1px solid #260000',
                     borderRadius: '4px',
                     fontSize: '11px',
                     fontFamily: "'EmOne', sans-serif",
-                    background: '#1a1a1a',
+                    background: 'transparent',
                     color: '#260000'
                   }}
                 />
@@ -1188,10 +1172,10 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                   disabled={isSearching || !manualQuery?.trim()}
                   style={{
                     padding: '6px 12px',
-                    border: '1px solid #8B0000',
+                    border: '1px solid #260000',
                     borderRadius: '4px',
-                    background: '#8B0000',
-                    color: '#EFE8E5',
+                    background: 'transparent',
+                    color: '#260000',
                     fontSize: '11px',
                     fontFamily: "'EmOne', sans-serif",
                     cursor: isSearching ? 'wait' : 'pointer',
