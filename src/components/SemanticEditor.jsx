@@ -244,10 +244,8 @@ const ExternalLinkCard = ({ link, onRemove, provenance = null }) => {
   const prov = provenance;
   const contextText = (() => {
     if (!prov) return null;
-    const parts = [];
-    if (typeof prov.sourcesFound === 'number' && prov.sourcesFound > 0) parts.push(`Web ${prov.sourcesFound} src`);
-    if (typeof prov.confidence === 'number') parts.push(`${Math.round(prov.confidence * 100)}%`);
-    return parts.length > 0 ? parts.join(' • ') : null;
+    if (typeof prov.confidence === 'number') return `Confidence ${Math.round(prov.confidence * 100)}%`;
+    return null;
   })();
 
   return (
@@ -1467,41 +1465,59 @@ const SemanticEditor = ({ nodeData, onUpdate, isUltraSlim = false }) => {
       <SectionCard
         title="External References (owl:sameAs)"
         icon={Link}
-        rightEl={(
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {(autoApplied[0]?.confidence || lastSuggestionsMeta?.confidence) && (
-              <span style={{ fontSize: '12px', color: '#260000' }}>
-                Web {autoApplied[0]?.sourcesFound || lastSuggestionsMeta?.sourcesFound || 0} src • {Math.round((autoApplied[0]?.confidence || lastSuggestionsMeta?.confidence || 0) * 100)}%
-              </span>
-            )}
-          </div>
-        )}
       >
         {/* Unified reference input */}
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px' }}>
-          <select
-            value={externalType}
-            onChange={(e) => setExternalType(e.target.value)}
-            style={{
-              padding: '6px 8px',
-              border: '1px solid #8B0000',
-              borderRadius: '6px',
-              fontSize: '14px',
-              color: '#260000',
-              background: 'transparent'
-            }}
-          >
-            <option value="doi">DOI</option>
-            <option value="wikipedia">Wikipedia</option>
-            <option value="url">Other URL</option>
-          </select>
-          <SemanticLinkInput
-            onAdd={addExternalLink}
-            placeholder={externalType === 'doi' ? '10.1000/182 or https://doi.org/10.1000/182' : (externalType === 'wikipedia' ? 'https://en.wikipedia.org/wiki/...' : 'https://example.com/resource')}
-            type={externalType === 'doi' ? 'doi' : 'url'}
-            icon={externalType === 'doi' ? Book : ExternalLink}
-          />
-        </div>
+        {isUltraSlim ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+            <select
+              value={externalType}
+              onChange={(e) => setExternalType(e.target.value)}
+              style={{
+                padding: '6px 8px',
+                border: '1px solid #8B0000',
+                borderRadius: '6px',
+                fontSize: '14px',
+                color: '#260000',
+                background: 'transparent'
+              }}
+            >
+              <option value="doi">DOI</option>
+              <option value="wikipedia">Wikipedia</option>
+              <option value="url">Other URL</option>
+            </select>
+            <SemanticLinkInput
+              onAdd={addExternalLink}
+              placeholder={externalType === 'doi' ? '10.1000/182 or https://doi.org/10.1000/182' : (externalType === 'wikipedia' ? 'https://en.wikipedia.org/wiki/...' : 'https://example.com/resource')}
+              type={externalType === 'doi' ? 'doi' : 'url'}
+              icon={externalType === 'doi' ? Book : ExternalLink}
+            />
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px' }}>
+            <select
+              value={externalType}
+              onChange={(e) => setExternalType(e.target.value)}
+              style={{
+                padding: '6px 8px',
+                border: '1px solid #8B0000',
+                borderRadius: '6px',
+                fontSize: '14px',
+                color: '#260000',
+                background: 'transparent'
+              }}
+            >
+              <option value="doi">DOI</option>
+              <option value="wikipedia">Wikipedia</option>
+              <option value="url">Other URL</option>
+            </select>
+            <SemanticLinkInput
+              onAdd={addExternalLink}
+              placeholder={externalType === 'doi' ? '10.1000/182 or https://doi.org/10.1000/182' : (externalType === 'wikipedia' ? 'https://en.wikipedia.org/wiki/...' : 'https://example.com/resource')}
+              type={externalType === 'doi' ? 'doi' : 'url'}
+              icon={externalType === 'doi' ? Book : ExternalLink}
+            />
+          </div>
+        )}
 
         {/* Display existing links */}
         {externalLinks.length > 0 && (

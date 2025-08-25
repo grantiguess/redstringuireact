@@ -11,6 +11,7 @@ import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import AbstractionCarousel from './AbstractionCarousel.jsx'; // Import the AbstractionCarousel component
 import ConnectionControlPanel from './ConnectionControlPanel.jsx'; // Import the ConnectionControlPanel component
 import AbstractionControlPanel from './AbstractionControlPanel.jsx'; // Import the AbstractionControlPanel component
+import EdgeGlowIndicator from './components/EdgeGlowIndicator.jsx'; // Import the EdgeGlowIndicator component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
 import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal, Bookmark, Plus, CornerUpLeft, CornerDownLeft, Merge, Undo2, Clock } from 'lucide-react'; // Icons for PieMenu
@@ -7405,6 +7406,15 @@ function NodeCanvas() {
                )}
             </svg>
           )}
+
+          {/* Edge glow indicators for off-screen nodes */}
+          <EdgeGlowIndicator
+            nodes={hydratedNodes}
+            panOffset={panOffset}
+            zoomLevel={zoomLevel}
+            leftPanelExpanded={leftPanelExpanded}
+            rightPanelExpanded={rightPanelExpanded}
+          />
 
           {/* Overlay panel resizers (outside panels) */}
           {renderPanelResizers()}

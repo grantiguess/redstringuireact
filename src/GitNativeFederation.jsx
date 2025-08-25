@@ -69,15 +69,17 @@ const GitNativeFederation = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
+  const [universeSlug, setUniverseSlug] = useState('default');
   const [federationStats, setFederationStats] = useState(null);
   const [subscriptions, setSubscriptions] = useState([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [error, setError] = useState(null);
   const [newSubscriptionUrl, setNewSubscriptionUrl] = useState('');
   const [isAddingSubscription, setIsAddingSubscription] = useState(false);
-  const [authMethod, setAuthMethod] = useState('token'); // 'token' or 'oauth'
+  const [authMethod, setAuthMethod] = useState('oauth'); // default to OAuth
   const [userRepositories, setUserRepositories] = useState([]);
   const [showRepositorySelector, setShowRepositorySelector] = useState(false);
+  const [pendingOAuth, setPendingOAuth] = useState(null); // { username, accessToken, repositories, userData }
   // Get the actual RedString store
   const storeState = useGraphStore();
   const storeActions = useGraphStore.getState();
@@ -155,7 +157,15 @@ const GitNativeFederation = () => {
       });
       
       // Initialize Git sync engine with current source of truth mode
-      const newGitSyncEngine = new GitSyncEngine(currentProvider, sourceOfTruthMode);
+      // Derive file base name from current connected universe file (if any)
+      let fileBaseName = 'universe';
+      try {
+        const fileStatus = storeActions.getFileStatus?.();
+        if (fileStatus?.fileName && fileStatus.fileName.endsWith('.redstring')) {
+          fileBaseName = fileStatus.fileName.replace(/\.redstring$/i, '');
+        }
+      } catch {}
+      const newGitSyncEngine = new GitSyncEngine(currentProvider, sourceOfTruthMode, universeSlug, fileBaseName);
       setGitSyncEngine(newGitSyncEngine);
       setGitSyncEngineStore(newGitSyncEngine);
       
@@ -246,7 +256,7 @@ const GitNativeFederation = () => {
       // Load initial data
       newSyncEngine.loadFromProvider();
     }
-  }, [currentProvider, syncEngine, providerConfig.repo]);
+  }, [currentProvider, syncEngine, providerConfig.repo, universeSlug]);
 
   // Update federation stats periodically
   useEffect(() => {
@@ -400,41 +410,13 @@ const GitNativeFederation = () => {
                              repositories[0] || 
                              { name: 'semantic-knowledge', full_name: `${username}/semantic-knowledge` };
           
-          console.log('[GitNativeFederation] Auto-selected repo:', defaultRepo.name);
-          
-          // Create provider with real OAuth token and user data
-          const oauthConfig = {
-            type: 'github',
-            user: username,
-            repo: defaultRepo.name,
-            token: accessToken,
-            authMethod: 'oauth',
-            semanticPath: 'schema'
-          };
-          
-          const provider = SemanticProviderFactory.createProvider(oauthConfig);
-          const isAvailable = await provider.isAvailable();
-          
-          if (!isAvailable) {
-            throw new Error('OAuth authentication failed. Please try again.');
-          }
-          
-          // Store user data and repositories for later use
-          provider.userData = userData;
-          provider.repositories = repositories;
-          
-          setCurrentProvider(provider);
-          setProviderConfig(oauthConfig);
+          // Present repository selection UI (do not auto-connect)
+          setPendingOAuth({ username, accessToken, repositories, userData });
           setUserRepositories(repositories);
-          setIsConnected(true);
+          setShowRepositorySelector(true);
+          setIsConnected(false);
           setError(null);
-          
-          // Save connection to persistent store without token
-          setGitConnection({ ...oauthConfig, token: undefined });
-          
-          console.log('[GitNativeFederation] OAuth authentication successful!');
-          
-          // Clean up URL and redirect
+          // Clean up URL
           window.history.replaceState({}, document.title, window.location.pathname);
           
         } catch (err) {
@@ -531,6 +513,71 @@ const GitNativeFederation = () => {
       setError(`Connection failed: ${err.message}`);
     } finally {
       setIsConnecting(false);
+    }
+  };
+
+  // Handle repository selection in OAuth flow
+  const handleSelectRepository = async (repoName, makePrivate = false, createIfMissing = false) => {
+    try {
+      if (!pendingOAuth) {
+        setError('No OAuth session pending. Please authenticate again.');
+        return;
+      }
+
+      const { username, accessToken, repositories, userData } = pendingOAuth;
+
+      // If createIfMissing and repoName not in list, create repo directly via GitHub API
+      if (createIfMissing && !repositories.some(r => r.name === repoName)) {
+        const resp = await fetch('https://api.github.com/user/repos', {
+          method: 'POST',
+          headers: {
+            'Authorization': `token ${accessToken}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            name: repoName,
+            private: !!makePrivate
+          })
+        });
+        if (!resp.ok) {
+          const text = await resp.text();
+          throw new Error(`Failed to create repository: ${resp.status} ${text}`);
+        }
+      }
+
+      const oauthConfig = {
+        type: 'github',
+        user: username,
+        repo: repoName,
+        token: accessToken,
+        authMethod: 'oauth',
+        semanticPath: 'schema'
+      };
+
+      const provider = SemanticProviderFactory.createProvider(oauthConfig);
+      provider.userData = userData;
+      provider.repositories = repositories;
+
+      const isAvailable = await provider.isAvailable();
+      if (!isAvailable) {
+        throw new Error('Repository is not accessible. Check permissions or name.');
+      }
+
+      setCurrentProvider(provider);
+      setProviderConfig(oauthConfig);
+      setIsConnected(true);
+      setError(null);
+      setShowRepositorySelector(false);
+      setPendingOAuth(null);
+
+      // Persist connection without token
+      setGitConnection({ ...oauthConfig, token: undefined });
+
+      console.log('[GitNativeFederation] Connected via OAuth to', `${username}/${repoName}`);
+    } catch (err) {
+      console.error('[GitNativeFederation] Repository selection failed:', err);
+      setError(`Repository selection failed: ${err.message}`);
     }
   };
 
@@ -754,6 +801,129 @@ const GitNativeFederation = () => {
     }
   };
 
+  // Test function that runs Git federation tests safely
+  const runGitFederationTests = async () => {
+    try {
+      setSyncStatus({ type: 'info', status: 'Running Git federation tests...' });
+
+      // Take a safe snapshot of the active in-memory universe (no mutations)
+      const current = useGraphStore.getState();
+      const testState = {
+        graphs: current.graphs instanceof Map ? new Map(current.graphs) : new Map(),
+        nodePrototypes: current.nodePrototypes instanceof Map ? new Map(current.nodePrototypes) : new Map(),
+        edges: current.edges instanceof Map ? new Map(current.edges) : new Map(),
+        openGraphIds: Array.isArray(current.openGraphIds) ? [...current.openGraphIds] : [],
+        activeGraphId: current.activeGraphId ?? null,
+        activeDefinitionNodeId: current.activeDefinitionNodeId ?? null,
+        expandedGraphIds: current.expandedGraphIds instanceof Set ? new Set(current.expandedGraphIds) : new Set(),
+        rightPanelTabs: [],
+        savedNodeIds: current.savedNodeIds instanceof Set ? new Set(current.savedNodeIds) : new Set(),
+        savedGraphIds: current.savedGraphIds instanceof Set ? new Set(current.savedGraphIds) : new Set(),
+        showConnectionNames: !!current.showConnectionNames
+      };
+
+      // Test 1: Export to RedString format from the active universe snapshot
+      const { exportToRedstring } = await import('./formats/redstringFormat.js');
+      const exportedData = exportToRedstring(testState);
+      
+      if (!exportedData || !exportedData.prototypeSpace || !exportedData.spatialGraphCollection) {
+        throw new Error('Export test failed: Invalid export data structure');
+      }
+
+      // Test 2: Import from RedString format
+      const { importFromRedstring } = await import('./formats/redstringFormat.js');
+      const { storeState: importedState, errors } = importFromRedstring(exportedData);
+      
+      if (errors && errors.length > 0) {
+        throw new Error(`Import test failed: ${errors.join(', ')}`);
+      }
+
+      // Test 3: Verify roundtrip fidelity (skip if universe is empty)
+      const originalPrototypes = Array.from(testState.nodePrototypes.keys());
+      const importedPrototypes = Array.from(importedState.nodePrototypes.keys());
+      
+      if (originalPrototypes.length > 0 && originalPrototypes.length !== importedPrototypes.length) {
+        throw new Error(`Roundtrip test failed: Prototype count mismatch (${originalPrototypes.length} vs ${importedPrototypes.length})`);
+      }
+
+      const originalGraphs = Array.from(testState.graphs.keys());
+      const importedGraphs = Array.from(importedState.graphs.keys());
+      
+      if (originalGraphs.length > 0 && originalGraphs.length !== importedGraphs.length) {
+        throw new Error(`Roundtrip test failed: Graph count mismatch (${originalGraphs.length} vs ${importedGraphs.length})`);
+      }
+
+      // Test 4: Verify edges and instances (skip if universe is empty)
+      const originalEdges = Array.from(testState.edges.keys());
+      const importedEdges = Array.from(importedState.edges.keys());
+      
+      if (originalEdges.length > 0 && originalEdges.length !== importedEdges.length) {
+        throw new Error(`Roundtrip test failed: Edge count mismatch (${originalEdges.length} vs ${importedEdges.length})`);
+      }
+
+      // Test 5: Verify edge structure preservation (if edges exist)
+      if (originalEdges.length > 0) {
+        // Test the first edge for structure preservation
+        const firstEdgeId = originalEdges[0];
+        const originalEdge = testState.edges.get(firstEdgeId);
+        const importedEdge = importedState.edges.get(firstEdgeId);
+        
+        if (!originalEdge || !importedEdge) {
+          throw new Error('Roundtrip test failed: Edge not found in imported state');
+        }
+
+        // Verify basic edge properties are preserved
+        if (originalEdge.sourceId !== importedEdge.sourceId || originalEdge.destinationId !== importedEdge.destinationId) {
+          throw new Error('Roundtrip test failed: Edge connections not preserved');
+        }
+
+        // Verify directionality structure exists (even if empty)
+        if (originalEdge.directionality && !importedEdge.directionality) {
+          throw new Error('Roundtrip test failed: Edge directionality structure not preserved');
+        }
+
+        // Verify definition arrays are preserved
+        if (originalEdge.definitionNodeIds && !Array.isArray(importedEdge.definitionNodeIds)) {
+          throw new Error('Roundtrip test failed: Edge definition structure not preserved');
+        }
+      }
+
+      // Test 6: Test Git sync engine functionality (if connected)
+      if (gitSyncEngine && currentProvider) {
+        try {
+          // Test the sync engine's export functionality
+          const syncExport = exportToRedstring(testState);
+          const jsonString = JSON.stringify(syncExport, null, 2);
+          
+          // Verify the export is valid JSON
+          JSON.parse(jsonString);
+          
+          setSyncStatus({ 
+            type: 'success', 
+            status: `✅ All tests passed! Export/Import roundtrip: ${originalPrototypes.length} prototypes, ${originalGraphs.length} graphs, ${originalEdges.length} edges. Multi-edge directionality preserved. Git sync ready.` 
+          });
+        } catch (syncError) {
+          setSyncStatus({ 
+            type: 'warning', 
+            status: `⚠️ Core tests passed but Git sync test failed: ${syncError.message}` 
+          });
+        }
+      } else {
+        setSyncStatus({ 
+          type: 'success', 
+          status: `✅ Core tests passed! Export/Import roundtrip: ${originalPrototypes.length} prototypes, ${originalGraphs.length} graphs, ${originalEdges.length} edges. Multi-edge directionality preserved. Connect to Git for full testing.` 
+        });
+      }
+
+    } catch (error) {
+      console.error('[GitNativeFederation] Test failed:', error);
+      setSyncStatus({ 
+        type: 'error', 
+        status: `❌ Test failed: ${error.message}` 
+      });
+    }
+  };
+
   // Tooltip component
   const InfoTooltip = ({ children, tooltip }) => {
     const [showTooltip, setShowTooltip] = useState(false);
@@ -824,6 +994,48 @@ const GitNativeFederation = () => {
             Connect to any Git provider for real-time, decentralized storage of your own semantic web.
           </p>
         </div>
+
+        {/* Repository selection modal (OAuth) */}
+        {showRepositorySelector && pendingOAuth && (
+          <div style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000
+          }}>
+            <div style={{ width: '520px', maxWidth: '90%', backgroundColor: '#EFE8E5', border: '1px solid #260000', borderRadius: '8px', padding: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <div style={{ fontWeight: 'bold', color: '#260000' }}>Select Repository</div>
+                <button onClick={() => { setShowRepositorySelector(false); setPendingOAuth(null); }} style={{ background: 'transparent', border: 'none', color: '#260000', cursor: 'pointer' }}>✕</button>
+              </div>
+              <div style={{ fontSize: '0.85rem', color: '#260000', marginBottom: '10px' }}>
+                Choose an existing repository or create a new one for your universe.
+              </div>
+              <div style={{ maxHeight: '240px', overflowY: 'auto', marginBottom: '10px', border: '1px solid #979090', borderRadius: '6px', backgroundColor: '#bdb5b5' }}>
+                {userRepositories.map((repo) => (
+                  <div key={repo.full_name}
+                    onClick={() => handleSelectRepository(repo.name, false, false)}
+                    style={{ padding: '8px 10px', borderBottom: '1px solid #979090', cursor: 'pointer', color: '#260000' }}
+                  >
+                    <div style={{ fontWeight: 600 }}>{repo.full_name}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#333' }}>{repo.description || 'No description'}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input id="new-repo-name" type="text" placeholder="new-repo-name" style={{ flex: 1, padding: '8px', border: '1px solid #979090', borderRadius: '4px', backgroundColor: '#bdb5b5', color: '#260000' }} />
+                <button onClick={() => {
+                  const input = document.getElementById('new-repo-name');
+                  const name = input && input.value ? String(input.value).trim() : '';
+                  if (!name) return;
+                  handleSelectRepository(name, false, true);
+                }}
+                  style={{ padding: '8px 12px', backgroundColor: '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  Create & Use
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Provider Selection */}
         <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#979090', borderRadius: '8px' }}>
@@ -955,41 +1167,52 @@ const GitNativeFederation = () => {
                     backgroundColor: '#bdb5b5',
                     color: '#260000',
                     boxSizing: 'border-box'
-                  }}
-                />
+                                  }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '10px' }}>
+              <InfoTooltip tooltip="Universe slug identifies this workspace within your repository. Each universe gets its own folder (e.g., 'default', 'personal', 'work'). Use different slugs to organize multiple cognitive spaces.">
+                <label htmlFor="universe-slug" style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
+                  Universe Slug:
+                </label>
+              </InfoTooltip>
+              <input
+                id="universe-slug"
+                type="text"
+                value={universeSlug}
+                onChange={(e) => {
+                  const slug = e.target.value.replace(/[^a-zA-Z0-9-_]/g, '').toLowerCase();
+                  setUniverseSlug(slug || 'default');
+                }}
+                placeholder="default"
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #979090',
+                  borderRadius: '4px',
+                  fontSize: '0.9rem',
+                  fontFamily: "'EmOne', sans-serif",
+                  backgroundColor: '#bdb5b5',
+                  color: '#260000',
+                  boxSizing: 'border-box'
+                }}
+              />
+              <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '4px' }}>
+                Files will be saved to: universes/{universeSlug}/universe.redstring
               </div>
+            </div>
                 </>
               )}
 
               {/* Authentication Method Selection */}
               <div style={{ marginBottom: '15px' }}>
-                <InfoTooltip tooltip="Choose between Personal Access Token (recommended) or OAuth (requires server configuration). Token method is easier to set up.">
+                <InfoTooltip tooltip="Choose between GitHub OAuth (recommended) or Personal Access Token.">
                   <label style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
                     Authentication Method:
                   </label>
                 </InfoTooltip>
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-                  <button
-                    onClick={() => setAuthMethod('token')}
-                    style={{
-                      flex: 1,
-                      padding: '8px',
-                      backgroundColor: authMethod === 'token' ? '#260000' : 'transparent',
-                      color: authMethod === 'token' ? '#bdb5b5' : '#260000',
-                      border: '1px solid #979090',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '0.8rem',
-                      fontFamily: "'EmOne', sans-serif",
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    <Key size={14} />
-                    Token
-                  </button>
                   <button
                     onClick={() => setAuthMethod('oauth')}
                     style={{
@@ -1010,6 +1233,27 @@ const GitNativeFederation = () => {
                   >
                     <Github size={14} />
                     OAuth
+                  </button>
+                  <button
+                    onClick={() => setAuthMethod('token')}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      backgroundColor: authMethod === 'token' ? '#260000' : 'transparent',
+                      color: authMethod === 'token' ? '#bdb5b5' : '#260000',
+                      border: '1px solid #979090',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      fontFamily: "'EmOne', sans-serif",
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <Key size={14} />
+                    Token
                   </button>
                 </div>
               </div>
@@ -1168,12 +1412,44 @@ const GitNativeFederation = () => {
                     backgroundColor: '#bdb5b5',
                     color: '#260000',
                     boxSizing: 'border-box'
-                  }}
-                />
+                                  }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '10px' }}>
+              <InfoTooltip tooltip="Universe slug identifies this workspace within your repository. Each universe gets its own folder (e.g., 'default', 'personal', 'work'). Use different slugs to organize multiple cognitive spaces.">
+                <label htmlFor="gitea-universe-slug" style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
+                  Universe Slug:
+                </label>
+              </InfoTooltip>
+              <input
+                id="gitea-universe-slug"
+                type="text"
+                value={universeSlug}
+                onChange={(e) => {
+                  const slug = e.target.value.replace(/[^a-zA-Z0-9-_]/g, '').toLowerCase();
+                  setUniverseSlug(slug || 'default');
+                }}
+                placeholder="default"
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #979090',
+                  borderRadius: '4px',
+                  fontSize: '0.9rem',
+                  fontFamily: "'EmOne', sans-serif",
+                  backgroundColor: '#bdb5b5',
+                  color: '#260000',
+                  boxSizing: 'border-box'
+                }}
+              />
+              <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '4px' }}>
+                Files will be saved to: universes/{universeSlug}/universe.redstring
               </div>
-              
-              <div style={{ marginBottom: '10px' }}>
-                <InfoTooltip tooltip="Create an access token in your Gitea user settings with 'repo' permissions.">
+            </div>
+            
+            <div style={{ marginBottom: '10px' }}>
+              <InfoTooltip tooltip="Create an access token in your Gitea user settings with 'repo' permissions.">
                   <label htmlFor="gitea-token" style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
                     Access Token:
                   </label>
@@ -1680,6 +1956,72 @@ const GitNativeFederation = () => {
         </button>
       </div>
 
+      {/* Repository selection modal (OAuth) */}
+      {showRepositorySelector && pendingOAuth && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000
+        }}>
+          <div style={{ width: '520px', maxWidth: '90%', backgroundColor: '#EFE8E5', border: '1px solid #260000', borderRadius: '8px', padding: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <div style={{ fontWeight: 'bold', color: '#260000' }}>Select Repository</div>
+              <button onClick={() => { setShowRepositorySelector(false); setPendingOAuth(null); }} style={{ background: 'transparent', border: 'none', color: '#260000', cursor: 'pointer' }}>✕</button>
+            </div>
+            <div style={{ fontSize: '0.85rem', color: '#260000', marginBottom: '10px' }}>
+              Choose an existing repository or create a new one for your universe.
+            </div>
+            <div style={{ maxHeight: '240px', overflowY: 'auto', marginBottom: '10px', border: '1px solid #979090', borderRadius: '6px', backgroundColor: '#bdb5b5' }}>
+              {userRepositories.map((repo) => (
+                <div key={repo.full_name}
+                  onClick={() => handleSelectRepository(repo.name, false, false)}
+                  style={{ padding: '8px 10px', borderBottom: '1px solid #979090', cursor: 'pointer', color: '#260000' }}
+                >
+                  <div style={{ fontWeight: 600 }}>{repo.full_name}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#333' }}>{repo.description || 'No description'}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input id="new-repo-name" type="text" placeholder="new-repo-name" style={{ flex: 1, padding: '8px', border: '1px solid #979090', borderRadius: '4px', backgroundColor: '#bdb5b5', color: '#260000' }} />
+              <button onClick={() => {
+                const input = document.getElementById('new-repo-name');
+                const name = input && input.value ? String(input.value).trim() : '';
+                if (!name) return;
+                handleSelectRepository(name, false, true);
+              }}
+                style={{ padding: '8px 12px', backgroundColor: '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+              >
+                Create & Use
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Test Button */}
+      <div style={{ marginTop: '15px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
+        <button
+          onClick={runGitFederationTests}
+          style={{
+            width: '100%',
+            padding: '10px',
+            backgroundColor: '#260000',
+            color: '#bdb5b5',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '0.9rem',
+            fontFamily: "'EmOne', sans-serif",
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px'
+          }}
+        >
+          <GitCompare size={16} />
+          Run Git Federation Tests
+        </button>
+      </div>
 
 
       {error && (

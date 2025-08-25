@@ -12,9 +12,11 @@ const SOURCE_OF_TRUTH = {
 };
 
 class GitSyncEngine {
-  constructor(provider, sourceOfTruth = SOURCE_OF_TRUTH.LOCAL) {
+  constructor(provider, sourceOfTruth = SOURCE_OF_TRUTH.LOCAL, universeSlug = 'default', fileBaseName = 'universe') {
     this.provider = provider;
     this.sourceOfTruth = sourceOfTruth; // Configurable source of truth
+    this.universeSlug = (universeSlug || 'default').trim() || 'default';
+    this.fileBaseName = (fileBaseName || 'universe').replace(/\.redstring$/i, '');
     this.localState = new Map(); // Instant updates
     this.pendingCommits = []; // Queue of pending changes
     this.commitInterval = 5000; // 5-second auto-commits
@@ -34,6 +36,18 @@ class GitSyncEngine {
     
     console.log('[GitSyncEngine] Initialized with provider:', provider.name);
     console.log('[GitSyncEngine] Source of truth:', this.sourceOfTruth);
+    console.log('[GitSyncEngine] Universe slug:', this.universeSlug);
+  }
+
+  getLatestPath() {
+    return `universes/${this.universeSlug}/${this.fileBaseName}.redstring`;
+  }
+
+  getBackupPath() {
+    const ts = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}`;
+    return `universes/${this.universeSlug}/backups/${this.fileBaseName}-${stamp}.redstring`;
   }
   
   /**
@@ -293,13 +307,11 @@ class GitSyncEngine {
       const redstringData = exportToRedstring(latestState);
       const jsonString = JSON.stringify(redstringData, null, 2);
       
-      // Save to Git repository (no .ttl suffix)
-      await this.provider.writeFileRaw('universe.redstring', jsonString);
+      // Save latest snapshot to a fixed path
+      await this.provider.writeFileRaw(this.getLatestPath(), jsonString);
       
-      // Small delay to reduce race conditions and allow GitHub to process the first write
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      await this.provider.writeFileRaw('backup.redstring', jsonString);
+      // Write a timestamped backup (unique path avoids 409s)
+      await this.provider.writeFileRaw(this.getBackupPath(), jsonString);
       
       // Update tracking
       this.lastCommittedHash = latestHash;
@@ -355,12 +367,8 @@ class GitSyncEngine {
       const redstringData = exportToRedstring(storeState);
       const jsonString = JSON.stringify(redstringData, null, 2);
       
-      await this.provider.writeFileRaw('universe.redstring', jsonString);
-      
-      // Small delay to reduce race conditions and allow GitHub to process the first write
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      await this.provider.writeFileRaw('backup.redstring', jsonString);
+      await this.provider.writeFileRaw(this.getLatestPath(), jsonString);
+      await this.provider.writeFileRaw(this.getBackupPath(), jsonString);
       
       // Update tracking for force commit
       const currentHash = this.generateStateHash(storeState);
@@ -387,20 +395,14 @@ class GitSyncEngine {
     try {
       console.log('[GitSyncEngine] Loading from Git repository...');
       
-      // Try to load the main universe file (raw JSON)
+      // Try to load the main universe file (raw JSON) for this slug
       let content;
       try {
-        content = await this.provider.readFileRaw('universe.redstring');
+        content = await this.provider.readFileRaw(this.getLatestPath());
         console.log('[GitSyncEngine] Loaded main universe file');
       } catch (error) {
-        console.log('[GitSyncEngine] Main file not found, trying backup...');
-        try {
-          content = await this.provider.readFileRaw('backup.redstring');
-          console.log('[GitSyncEngine] Loaded backup file');
-        } catch (backupError) {
-          console.log('[GitSyncEngine] No existing files found, starting fresh');
-          return null; // Return null to indicate no existing data
-        }
+        console.log('[GitSyncEngine] Main file not found for slug, starting fresh');
+        return null;
       }
       
       // Check if content is empty or whitespace

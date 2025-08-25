@@ -5,12 +5,13 @@ import { HEADER_HEIGHT } from '../constants';
  * Computes the central usable viewport bounds by subtracting left/right panel widths
  * and the bottom TypeList bar from window dimensions.
  * Accounts for collapsed panels by using 0 width when panels are not expanded.
+ * Includes space for resizer handles when panels are expanded.
  *
  * Listens to window resize and custom panel events:
  *  - panelWidthChanging, panelWidthChanged
  * Also reads persisted widths from localStorage on mount for initial render.
  */
-export const useViewportBounds = (leftExpanded = true, rightExpanded = true) => {
+export const useViewportBounds = (leftExpanded = true, rightExpanded = true, typeListVisible = false) => {
   const readPersistedWidth = (key, fallback) => {
     try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); } catch { return fallback; }
   };
@@ -18,9 +19,12 @@ export const useViewportBounds = (leftExpanded = true, rightExpanded = true) => 
   const [leftWidth, setLeftWidth] = useState(() => readPersistedWidth('panelWidth_left', 280));
   const [rightWidth, setRightWidth] = useState(() => readPersistedWidth('panelWidth_right', 280));
   const [windowSize, setWindowSize] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
-  // The TypeList bar height equals HEADER_HEIGHT when visible. We conservatively reserve it.
-  // If needed, this could subscribe to a store for actual visibility.
-  const [typeListHeight] = useState(HEADER_HEIGHT);
+  
+  // TypeList height - only reserve space when it's actually visible
+  const typeListHeight = typeListVisible ? HEADER_HEIGHT : 0;
+  
+  // Resizer handle space (12px offset from PanelResizerHandle)
+  const resizerHandleSpace = 12;
 
   useEffect(() => {
     const onResize = () => setWindowSize({ w: window.innerWidth, h: window.innerHeight });
@@ -48,15 +52,30 @@ export const useViewportBounds = (leftExpanded = true, rightExpanded = true) => 
   }, []);
 
   const bounds = useMemo(() => {
-    const margin = 12; // global margin for selector spacing from edges
     const effectiveLeftWidth = leftExpanded ? leftWidth : 0;
     const effectiveRightWidth = rightExpanded ? rightWidth : 0;
-    const x = Math.max(margin + effectiveLeftWidth, 0);
-    const y = HEADER_HEIGHT + margin; // below header
-    const width = Math.max(windowSize.w - effectiveLeftWidth - effectiveRightWidth - margin * 2, 320);
-    const height = Math.max(windowSize.h - y - typeListHeight - margin, 200);
-    return { x, y, width, height, leftWidth: effectiveLeftWidth, rightWidth: effectiveRightWidth, windowWidth: windowSize.w, windowHeight: windowSize.h, bottomReserved: typeListHeight };
-  }, [leftWidth, rightWidth, windowSize, typeListHeight, leftExpanded, rightExpanded]);
+    
+    // In flexbox layout, the canvas area starts immediately after the left panel
+    // and extends to the right panel, with no additional margins
+    const x = effectiveLeftWidth;
+    const y = HEADER_HEIGHT; // The header is at 0,0, so canvas starts at HEADER_HEIGHT
+    const width = windowSize.w - effectiveLeftWidth - effectiveRightWidth;
+    const height = windowSize.h - HEADER_HEIGHT - (typeListVisible ? HEADER_HEIGHT : 0);
+    
+    return { 
+      x, 
+      y, 
+      width, 
+      height, 
+      leftWidth: effectiveLeftWidth, 
+      rightWidth: effectiveRightWidth, 
+      windowWidth: windowSize.w, 
+      windowHeight: windowSize.h, 
+      bottomReserved: typeListVisible ? HEADER_HEIGHT : 0,
+      leftHandleSpace: 0, // No handle space needed in flexbox layout
+      rightHandleSpace: 0
+    };
+  }, [leftWidth, rightWidth, windowSize, typeListHeight, leftExpanded, rightExpanded, typeListVisible]);
 
   return bounds;
 };

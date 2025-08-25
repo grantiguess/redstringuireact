@@ -54,8 +54,8 @@ describe('GitSyncEngine', () => {
     const ok = await engine.forceCommit(state);
     expect(ok).toBe(true);
     expect(provider.writeFileRaw).toHaveBeenCalledTimes(2);
-    expect(provider.writeFileRaw.mock.calls[0][0]).toBe('universe.redstring');
-    expect(provider.writeFileRaw.mock.calls[1][0]).toBe('backup.redstring');
+    expect(provider.writeFileRaw.mock.calls[0][0]).toBe('universes/default/universe.redstring');
+    expect(provider.writeFileRaw.mock.calls[1][0]).toMatch(/^universes\/default\/backups\/\d{8}-\d{6}\.redstring$/);
   });
 
   it('loadFromGit returns parsed data when file exists', async () => {
@@ -67,6 +67,7 @@ describe('GitSyncEngine', () => {
     const data = await engine.loadFromGit();
     expect(data).toBeDefined();
     expect(data.hello).toBe('world');
+    expect(provider.readFileRaw).toHaveBeenCalledWith('universes/default/universe.redstring');
   });
 
   it('processPendingCommits keeps queue on 409 conflict and retries later', async () => {
