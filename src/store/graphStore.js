@@ -255,7 +255,8 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   addNodePrototype: (prototypeData) => set(produce((draft) => {
     const prototypeId = prototypeData.id || uuidv4();
     if (!draft.nodePrototypes.has(prototypeId)) {
-        draft.nodePrototypes.set(prototypeId, { ...prototypeData, id: prototypeId });
+        const createdAt = prototypeData.createdAt || new Date().toISOString();
+        draft.nodePrototypes.set(prototypeId, { ...prototypeData, id: prototypeId, createdAt });
     }
   })),
 
@@ -304,7 +305,8 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       } else {
         // No duplicate found, create new node
         const prototypeId = prototypeData.id || uuidv4();
-        draft.nodePrototypes.set(prototypeId, { ...prototypeData, id: prototypeId });
+        const createdAt = prototypeData.createdAt || new Date().toISOString();
+        draft.nodePrototypes.set(prototypeId, { ...prototypeData, id: prototypeId, createdAt });
         resultId = prototypeId;
       }
     }));
@@ -969,7 +971,8 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         color: initialData.color || NODE_DEFAULT_COLOR,
         typeNodeId: initialData.typeNodeId || null, // Node that serves as this node's type
         // No positional data in prototype
-        definitionGraphIds: [newGraphId] // This prototype defines the new graph
+        definitionGraphIds: [newGraphId], // This prototype defines the new graph
+        createdAt: new Date().toISOString()
     };
     draft.nodePrototypes.set(definingPrototypeId, definingPrototypeData);
 
@@ -1014,7 +1017,8 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         description: initialData.description || '',
         color: initialData.color || NODE_DEFAULT_COLOR,
         typeNodeId: initialData.typeNodeId || null,
-        definitionGraphIds: [graphId]
+        definitionGraphIds: [graphId],
+        createdAt: new Date().toISOString()
       });
       const newGraphData = {
         id: graphId,
@@ -1323,7 +1327,8 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         picture: '',
         color: NODE_DEFAULT_COLOR,
         // No positional data in prototype
-        definitionGraphIds: [graphId] // This node defines the current graph
+        definitionGraphIds: [graphId], // This node defines the current graph
+        createdAt: new Date().toISOString()
       };
       
       // Add the defining node to the nodes map

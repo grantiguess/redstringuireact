@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDrag } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend';
-import { Palette, ArrowUpFromDot, ImagePlus, BookOpen, ExternalLink } from 'lucide-react';
+import { Palette, ArrowUpFromDot, ImagePlus, BookOpen, ExternalLink, Trash2 } from 'lucide-react';
 import { NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR, THUMBNAIL_MAX_DIMENSION } from '../../constants.js';
 import { generateThumbnail } from '../../utils.js';
 import CollapsibleSection from '../CollapsibleSection.jsx';
@@ -743,6 +743,13 @@ const SharedPanelContent = ({
     }
   };
 
+  const handleImageDelete = (event) => {
+    if (event && typeof event.stopPropagation === 'function') {
+      event.stopPropagation();
+    }
+    onNodeUpdate({ imageSrc: null, thumbnailSrc: null, imageAspectRatio: null });
+  };
+
   if (!nodeData) {
     return (
       <div style={{ padding: '10px', color: '#aaa', fontFamily: "'EmOne', sans-serif" }}>
@@ -1066,42 +1073,74 @@ const SharedPanelContent = ({
             <div style={{ marginBottom: '8px' }}>
               <strong>Created:</strong> {nodeData.createdAt ? new Date(nodeData.createdAt).toLocaleDateString() : 'Unknown'}
             </div>
-            {nodeData.semanticMetadata?.wikipediaUrl && (
-              <div style={{ marginBottom: '8px' }}>
-                <strong>Wikipedia:</strong> 
-                <a 
-                  href={nodeData.semanticMetadata.wikipediaUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  style={{ color: '#8B0000', marginLeft: '8px' }}
-                >
-                  View Article
-                </a>
-              </div>
-            )}
-            {nodeData.semanticMetadata?.wikidataUrl && (
-              <div style={{ marginBottom: '8px' }}>
-                <strong>Wikidata:</strong> 
-                <a 
-                  href={nodeData.semanticMetadata.wikidataUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  style={{ color: '#8B0000', marginLeft: '8px' }}
-                >
-                  View Data
-                </a>
-              </div>
-            )}
-            {(!nodeData.semanticMetadata?.wikipediaUrl && !nodeData.semanticMetadata?.wikidataUrl) && (
-              <div style={{ 
-                fontSize: '10px', 
-                color: '#999', 
-                fontStyle: 'italic',
-                marginTop: '8px'
-              }}>
-                No external sources linked yet. Use the Wikipedia enrichment button above to add external data.
-              </div>
-            )}
+
+            {/* External source links: Wikipedia, Wikidata, DBpedia from either semanticMetadata or externalLinks */}
+            {(() => {
+              const links = [
+                ...(nodeData.externalLinks || []),
+                nodeData.semanticMetadata?.wikipediaUrl || null,
+                nodeData.semanticMetadata?.wikidataUrl || null
+              ].filter(Boolean);
+
+              const hasWikipedia = links.some(l => typeof l === 'string' && l.includes('wikipedia.org'));
+              const hasWikidata = links.some(l => typeof l === 'string' && l.includes('wikidata.org'));
+              const hasDBpedia = links.some(l => typeof l === 'string' && l.includes('dbpedia.org'));
+
+              return (
+                <>
+                  {hasWikipedia && (
+                    <div style={{ marginBottom: '8px' }}>
+                      <strong>Wikipedia:</strong>
+                      <a
+                        href={links.find(l => String(l).includes('wikipedia.org'))}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: '#8B0000', marginLeft: '8px' }}
+                      >
+                        View Article
+                      </a>
+                    </div>
+                  )}
+                  {hasWikidata && (
+                    <div style={{ marginBottom: '8px' }}>
+                      <strong>Wikidata:</strong>
+                      <a
+                        href={links.find(l => String(l).includes('wikidata.org'))}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: '#8B0000', marginLeft: '8px' }}
+                      >
+                        View Data
+                      </a>
+                    </div>
+                  )}
+                  {hasDBpedia && (
+                    <div style={{ marginBottom: '8px' }}>
+                      <strong>DBpedia:</strong>
+                      <a
+                        href={links.find(l => String(l).includes('dbpedia.org'))}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: '#8B0000', marginLeft: '8px' }}
+                      >
+                        View Resource
+                      </a>
+                    </div>
+                  )}
+
+                  {!(hasWikipedia || hasWikidata || hasDBpedia) && (
+                    <div style={{ 
+                      fontSize: '10px', 
+                      color: '#999', 
+                      fontStyle: 'italic',
+                      marginTop: '8px'
+                    }}>
+                      From Redstring
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
       </CollapsibleSection>
@@ -1112,7 +1151,19 @@ const SharedPanelContent = ({
       {/* Image Section */}
       {nodeData.imageSrc && (
         <CollapsibleSection 
-          title="Image" 
+          title={(
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>Image</span>
+            </span>
+          )}
+          rightAdornment={(
+            <Trash2 
+              size={14}
+              style={{ cursor: 'pointer', marginRight: '8px', color: 'inherit' }}
+              title="Delete image"
+              onClick={(e) => { e.stopPropagation(); handleImageDelete(e); }}
+            />
+          )}
           defaultExpanded={true}
         >
           <div style={{

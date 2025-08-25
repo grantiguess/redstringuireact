@@ -6,7 +6,8 @@ const CollapsibleSection = ({
   children, 
   defaultExpanded = true, 
   icon: Icon,
-  count
+  count,
+  rightAdornment
 }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
@@ -46,15 +47,18 @@ const CollapsibleSection = ({
             </span>
           )}
         </div>
-        <span style={{
-          display: 'inline-block',
-          transition: 'transform 0.2s ease',
-          transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-          fontSize: '14px',
-          color: '#666'
-        }}>
-          ▶
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', color: '#333' }}>
+          {rightAdornment}
+          <span style={{
+            display: 'inline-block',
+            transition: 'transform 0.2s ease',
+            transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            fontSize: '14px',
+            color: '#666'
+          }}>
+            ▶
+          </span>
+        </div>
       </div>
       {/* Section Content */}
       {isExpanded && (
