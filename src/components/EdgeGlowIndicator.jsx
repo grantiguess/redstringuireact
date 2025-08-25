@@ -323,10 +323,11 @@ const EdgeGlowIndicator = ({
         let translateY = screenY;
         
         // Position to ride halfway on the screen edge
-        if (edge === 'left') translateX = 0;
-        else if (edge === 'right') translateX = viewportBounds.width;
-        else if (edge === 'top') translateY = 0;
-        else if (edge === 'bottom') translateY = viewportBounds.height;
+        // Account for flare width so they don't extend off-screen
+        if (edge === 'left') translateX = flareThickness / 2;
+        else if (edge === 'right') translateX = viewportBounds.width - flareThickness / 2;
+        else if (edge === 'top') translateY = flareThickness / 2;
+        else if (edge === 'bottom') translateY = viewportBounds.height - flareThickness / 2;
 
         // Colors
         const coreColor = color;
