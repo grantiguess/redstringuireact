@@ -1665,9 +1665,14 @@ function NodeCanvas() {
     const shouldShow = Boolean(selectedEdgeId && !connectionNamePrompt.visible);
     
     if (shouldShow) {
-      // Show the panel immediately
+      // Show the panel immediately and hide others
       setControlPanelShouldShow(true);
       setControlPanelVisible(true);
+      // Hide other control panels
+      setNodeControlPanelVisible(false);
+      setNodeControlPanelShouldShow(false);
+      setAbstractionControlPanelVisible(false);
+      setAbstractionControlPanelShouldShow(false);
     } else if (selectedEdgeId === null && controlPanelVisible) {
       // Edge was deselected - start exit animation but keep panel mounted
       setControlPanelVisible(false);
@@ -1686,9 +1691,14 @@ function NodeCanvas() {
     const shouldShow = Boolean(abstractionCarouselVisible && abstractionCarouselNode);
     
     if (shouldShow) {
-      // Show the panel immediately when carousel is visible
+      // Show the panel immediately when carousel is visible and hide others
       setAbstractionControlPanelShouldShow(true);
       setAbstractionControlPanelVisible(true);
+      // Hide other control panels
+      setNodeControlPanelVisible(false);
+      setNodeControlPanelShouldShow(false);
+      setControlPanelVisible(false);
+      setControlPanelShouldShow(false);
     } else if (!abstractionCarouselVisible && abstractionControlPanelVisible) {
       // Carousel was hidden - start exit animation but keep panel mounted
       setAbstractionControlPanelVisible(false);
@@ -1707,6 +1717,11 @@ function NodeCanvas() {
     if (shouldShow) {
       setNodeControlPanelShouldShow(true);
       setNodeControlPanelVisible(true);
+      // Hide other control panels
+      setControlPanelVisible(false);
+      setControlPanelShouldShow(false);
+      setAbstractionControlPanelVisible(false);
+      setAbstractionControlPanelShouldShow(false);
     } else if (!shouldShow && nodeControlPanelVisible) {
       setNodeControlPanelVisible(false);
     }
@@ -1716,7 +1731,7 @@ function NodeCanvas() {
     setNodeControlPanelShouldShow(false);
     // Clear the last selected prototypes when animation completes
     setLastSelectedNodePrototypes([]);
-  }, []);
+  }, [setNodeControlPanelShouldShow]);
 
   const selectedNodePrototypes = useMemo(() => {
     const list = [];

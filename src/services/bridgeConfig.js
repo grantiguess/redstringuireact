@@ -39,10 +39,16 @@ export function getOAuthBaseUrl() {
   } catch {}
 
   if (typeof window !== 'undefined' && window.location) {
-    const { protocol, hostname } = window.location;
-    // Dedicated OAuth server port
-    const port = 3002;
-    return `${protocol}//${hostname}:${port}`;
+    const { protocol, hostname, port } = window.location;
+    
+    // In production (Cloud Run), use the same origin as the main app
+    if (hostname.includes('run.app') || port === '4000') {
+      return `${protocol}//${hostname}${port ? ':' + port : ''}`;
+    }
+    
+    // In development, use dedicated OAuth server port
+    const oauthPort = 3002;
+    return `${protocol}//${hostname}:${oauthPort}`;
   }
 
   // Server-side or unknown: fallback to localhost
