@@ -33,8 +33,8 @@ const PredicateRail = ({ color = '#4A5568', leftActive, rightActive, onToggleLef
   return (
     <div className="predicate-rail" onClick={onClickCenter}>
       <TriangleCap direction="left" color={color} variant={leftActive ? 'solid' : 'ghost'} onClick={(e) => { e.stopPropagation(); onToggleLeft?.(); }} />
-      <div className="predicate-rect" style={{ backgroundColor: color, minWidth: Math.max(100, centerWidth) }}>
-        {!!label && <span className="predicate-label" style={{ color: '#bdb5b5' }}>{label}</span>}
+      <div className="predicate-rect" style={{ backgroundColor: color }}>
+        <span className="predicate-label">{label || 'Connection'}</span>
       </div>
       <TriangleCap direction="right" color={color} variant={rightActive ? 'solid' : 'ghost'} onClick={(e) => { e.stopPropagation(); onToggleRight?.(); }} />
     </div>

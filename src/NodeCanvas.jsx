@@ -14,6 +14,7 @@ import AbstractionControlPanel from './AbstractionControlPanel.jsx'; // Import t
 import NodeControlPanel from './NodeControlPanel.jsx';
 import EdgeGlowIndicator from './components/EdgeGlowIndicator.jsx'; // Import the EdgeGlowIndicator component
 import { getNodeDimensions } from './utils.js';
+import { getPrototypeIdFromItem } from './utils/abstraction.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
 import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal, Bookmark, Plus, CornerUpLeft, CornerDownLeft, Merge, Undo2, Clock } from 'lucide-react'; // Icons for PieMenu
 import ColorPicker from './ColorPicker';
@@ -2184,6 +2185,21 @@ function NodeCanvas() {
           icon: ArrowUpFromDot,
           position: 'right-outer',
           action: (originalNodeId) => {
+            console.log('[Carousel Expand] Up-dot clicked.', {
+              originalNodeId,
+              focusedCarouselNode: carouselFocusedNode ? {
+                id: carouselFocusedNode.id,
+                name: carouselFocusedNode.name,
+                prototypeId: carouselFocusedNode.prototypeId
+              } : null,
+              activeGraphId,
+              abstractionCarouselNode: abstractionCarouselNode ? {
+                id: abstractionCarouselNode.id,
+                name: abstractionCarouselNode.name,
+                prototypeId: abstractionCarouselNode.prototypeId
+              } : null,
+              dimension: currentAbstractionDimension
+            });
             setIsPieMenuActionInProgress(true);
             setTimeout(() => setIsPieMenuActionInProgress(false), 100);
             
@@ -2199,7 +2215,10 @@ function NodeCanvas() {
             // Use focused node's prototype if available, otherwise use original node's prototype
             const targetPrototypeId = focusedPrototypeId || originalNodeData.prototypeId;
             
-            console.log(`[PieMenu Action] Expand clicked for carousel. Original node: ${originalNodeId}, Target prototype: ${targetPrototypeId}, Focused node:`, carouselFocusedNode);
+            console.log('[Carousel Expand] Resolved target prototype.', {
+              targetPrototypeId,
+              fromFocused: Boolean(focusedPrototypeId && focusedPrototypeId === targetPrototypeId)
+            });
             
             // Get the prototype data to check for definitions
             const currentState = useGraphStore.getState();
@@ -2213,29 +2232,81 @@ function NodeCanvas() {
                 const definitionIndex = Math.min(currentDefinitionIndex, prototypeData.definitionGraphIds.length - 1);
                 const graphIdToOpen = prototypeData.definitionGraphIds[definitionIndex];
                 
-                console.log(`[PieMenu Action] Opening definition ${definitionIndex + 1}/${prototypeData.definitionGraphIds.length} for prototype ${targetPrototypeId}`);
+                console.log('[Carousel Expand] Opening existing definition.', {
+                  targetPrototypeId,
+                  totalDefinitions: prototypeData.definitionGraphIds.length,
+                  definitionIndex,
+                  graphIdToOpen
+                });
                 
                 // Use original node ID for hurtle animation (visual effect), but target prototype for the definition
+                console.log('[Carousel Expand] Starting hurtle animation to existing definition.', {
+                  fromInstanceId: originalNodeId,
+                  toGraphId: graphIdToOpen,
+                  definitionNodeId: targetPrototypeId
+                });
                 startHurtleAnimation(originalNodeId, graphIdToOpen, targetPrototypeId);
                 // Close carousel after animation starts
                 setSelectedNodeIdForPieMenu(null);
                 setIsTransitioningPieMenu(true);
               } else {
-                // Node has no definitions - create one first, then start hurtle animation
+                // No definitions recorded. Try to find any existing graph already defining this prototype
                 const sourceGraphId = activeGraphId; // Capture current graph before it changes
-                storeActions.createAndAssignGraphDefinitionWithoutActivation(targetPrototypeId);
-                setTimeout(() => {
-                  const updatedState = useGraphStore.getState();
-                  const updatedNodeData = updatedState.nodePrototypes.get(targetPrototypeId);
-                  if (updatedNodeData?.definitionGraphIds?.length > 0) {
-                    const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
-                    startHurtleAnimation(originalNodeId, newGraphId, targetPrototypeId, sourceGraphId);
-                    setSelectedNodeIdForPieMenu(null);
-                    setIsTransitioningPieMenu(true);
-                  } else {
-                    console.error(`[PieMenu Expand] Could not find new definition for node ${targetPrototypeId} after creation.`);
+                let orphanGraphId = null;
+                try {
+                  for (const [gId, g] of currentState.graphs.entries()) {
+                    if (Array.isArray(g.definingNodeIds) && g.definingNodeIds.includes(targetPrototypeId)) {
+                      orphanGraphId = gId;
+                      break;
+                    }
                   }
-                }, 50);
+                } catch (_) {}
+
+                if (orphanGraphId) {
+                  console.log('[Carousel Expand] Found existing definition graph not listed on prototype. Repairing and opening.', {
+                    targetPrototypeId,
+                    orphanGraphId
+                  });
+                  // Self-heal: add to prototype.definitionGraphIds if missing
+                  storeActions.updateNodePrototype(targetPrototypeId, draft => {
+                    draft.definitionGraphIds = Array.isArray(draft.definitionGraphIds) ? draft.definitionGraphIds : [];
+                    if (!draft.definitionGraphIds.includes(orphanGraphId)) {
+                      draft.definitionGraphIds.push(orphanGraphId);
+                    }
+                  });
+                  console.log('[Carousel Expand] Starting hurtle animation to repaired definition.', {
+                    fromInstanceId: originalNodeId,
+                    toGraphId: orphanGraphId,
+                    definitionNodeId: targetPrototypeId
+                  });
+                  startHurtleAnimation(originalNodeId, orphanGraphId, targetPrototypeId, sourceGraphId);
+                  setSelectedNodeIdForPieMenu(null);
+                  setIsTransitioningPieMenu(true);
+                } else {
+                  // Create a new definition graph if none exists anywhere
+                  console.log('[Carousel Expand] No definitions found. Creating a new definition graph for prototype.', {
+                    targetPrototypeId,
+                    sourceGraphId
+                  });
+                  storeActions.createAndAssignGraphDefinitionWithoutActivation(targetPrototypeId);
+                  setTimeout(() => {
+                    const updatedState = useGraphStore.getState();
+                    const updatedNodeData = updatedState.nodePrototypes.get(targetPrototypeId);
+                    if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                      const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                      console.log('[Carousel Expand] New definition graph created. Launching animation.', {
+                        targetPrototypeId,
+                        newGraphId,
+                        sourceGraphId
+                      });
+                      startHurtleAnimation(originalNodeId, newGraphId, targetPrototypeId, sourceGraphId);
+                      setSelectedNodeIdForPieMenu(null);
+                      setIsTransitioningPieMenu(true);
+                    } else {
+                      console.error(`[PieMenu Expand] Could not find new definition for node ${targetPrototypeId} after creation.`);
+                    }
+                  }, 50);
+                }
               }
             } else {
               console.error(`[PieMenu Action] Could not find prototype data for ID: ${targetPrototypeId}`);
@@ -2289,13 +2360,15 @@ function NodeCanvas() {
                 return;
               }
 
+              // Normalize to prototypeId for abstraction prompt
+              const targetPrototype = getPrototypeIdFromItem(targetNode);
               // Set abstraction prompt with the target node (focused node in stage 2)
               setAbstractionPrompt({
                 visible: true,
                 name: '',
                 color: null,
                 direction: 'above',
-                nodeId: targetNode.id,
+                nodeId: targetPrototype,
                 carouselLevel: abstractionCarouselNode // Pass the carousel state
               });
               
@@ -2329,13 +2402,15 @@ function NodeCanvas() {
                 return;
               }
 
+              // Normalize to prototypeId for abstraction prompt
+              const targetPrototypeBelow = getPrototypeIdFromItem(targetNode);
               // Set abstraction prompt with the target node (focused node in stage 2)
               setAbstractionPrompt({
                 visible: true,
                 name: '',
                 color: null,
                 direction: 'below',
-                nodeId: targetNode.id,
+                nodeId: targetPrototypeBelow,
                 carouselLevel: abstractionCarouselNode // Pass the carousel state
               });
               
