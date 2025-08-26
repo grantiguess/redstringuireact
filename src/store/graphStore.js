@@ -64,6 +64,7 @@ const _createAndAssignGraphDefinition = (draft, prototypeId) => {
         color: prototype.color || NODE_DEFAULT_COLOR,
         directed: true,
         instances: new Map(), // Initialize with empty instances map
+        groups: new Map(), // Map<groupId, { id, name, color, memberInstanceIds: string[] }>
         edgeIds: [],
         definingNodeIds: [prototypeId], // This is the ID of the prototype
     };
@@ -276,6 +277,32 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     })(),
 
   // --- Actions --- (Operating on plain data)
+    // Grouping actions
+    createGroup: (graphId, { name = 'Group', color = '#8B0000', memberInstanceIds = [] } = {}) => set(produce((draft) => {
+      const graph = draft.graphs.get(graphId);
+      if (!graph) {
+        console.warn(`[createGroup] Graph ${graphId} not found.`);
+        return;
+      }
+      if (!graph.groups) graph.groups = new Map();
+      const id = uuidv4();
+      graph.groups.set(id, { id, name, color, memberInstanceIds: Array.from(new Set(memberInstanceIds)) });
+    })),
+
+    updateGroup: (graphId, groupId, recipe) => set(produce((draft) => {
+      const graph = draft.graphs.get(graphId);
+      if (!graph?.groups) return;
+      const group = graph.groups.get(groupId);
+      if (!group) return;
+      recipe(group);
+    })),
+
+    deleteGroup: (graphId, groupId) => set(produce((draft) => {
+      const graph = draft.graphs.get(graphId);
+      if (!graph?.groups) return;
+      graph.groups.delete(groupId);
+    })),
+
 
   // This action is deprecated. All loading now goes through loadUniverseFromFile.
   loadGraph: (graphInstance) => {},
@@ -1124,6 +1151,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         color: initialData.color || NODE_DEFAULT_COLOR,
         directed: initialData.directed !== undefined ? initialData.directed : false,
         instances: new Map(), // Initialize with empty instances map
+        groups: new Map(), // Map<groupId, { id, name, color, memberInstanceIds: string[] }>
         edgeIds: [],
         definingNodeIds: [definingPrototypeId], // This graph is defined by the new prototype
         panOffset: null,
@@ -1167,6 +1195,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         color: initialData.color || NODE_DEFAULT_COLOR,
         directed: initialData.directed !== undefined ? initialData.directed : false,
         instances: new Map(),
+        groups: new Map(),
         edgeIds: [],
         definingNodeIds: [definingPrototypeId],
         panOffset: null,

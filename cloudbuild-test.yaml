@@ -5,7 +5,7 @@ steps:
   # Step 1: Install dependencies
   - name: 'node:18'
     entrypoint: npm
-    args: ['ci', '--only=production']
+    args: ['ci']
     id: 'install-deps'
 
   # Step 2: Build the frontend for test
@@ -58,13 +58,13 @@ steps:
       - '--memory'
       - '512Mi'  # Smaller for test
       - '--cpu'
-      - '0.5'    # Smaller for test
+      - '1'      # Must be 1 for concurrency > 1
       - '--concurrency'
-      - '50'     # Smaller for test
+      - '10'     # Smaller for test
       - '--max-instances'
       - '3'      # Smaller for test
       - '--set-env-vars'
-      - 'NODE_ENV=test,PORT=4000,OAUTH_PORT=3002'
+      - 'NODE_ENV=test,OAUTH_PORT=3002'
       - '--set-secrets'
       - 'GITHUB_CLIENT_ID=${_TEST_GITHUB_CLIENT_ID_SECRET}:latest,GITHUB_CLIENT_SECRET=${_TEST_GITHUB_CLIENT_SECRET_SECRET}:latest'
     id: 'deploy-test'
@@ -76,11 +76,6 @@ substitutions:
   _TEST_GITHUB_CLIENT_ID: 'your-test-client-id'  # For build-time (frontend)
   _TEST_GITHUB_CLIENT_ID_SECRET: 'github-client-id-test'  # Test Secret Manager secret
   _TEST_GITHUB_CLIENT_SECRET_SECRET: 'github-client-secret-test'  # Test Secret Manager secret
-
-# Build configuration
-options:
-  machineType: 'E2_STANDARD_2'
-  diskSizeGb: '50'
 
 # Build timeout
 timeout: '900s'

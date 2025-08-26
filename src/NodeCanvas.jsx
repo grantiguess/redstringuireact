@@ -11,6 +11,7 @@ import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import AbstractionCarousel from './AbstractionCarousel.jsx'; // Import the AbstractionCarousel component
 import AbstractionControlPanel from './AbstractionControlPanel.jsx'; // Import the AbstractionControlPanel component
 import NodeControlPanel from './NodeControlPanel.jsx';
+import UnifiedBottomControlPanel from './UnifiedBottomControlPanel.jsx';
 import EdgeGlowIndicator from './components/EdgeGlowIndicator.jsx'; // Import the EdgeGlowIndicator component
 import { getNodeDimensions } from './utils.js';
 import { getPrototypeIdFromItem } from './utils/abstraction.js';
@@ -111,6 +112,8 @@ function NodeCanvas() {
   const toggleSavedGraph = useGraphStore((state) => state.toggleSavedGraph);
   const toggleShowConnectionNames = useGraphStore((state) => state.toggleShowConnectionNames);
   const updateMultipleNodeInstancePositions = useGraphStore((state) => state.updateMultipleNodeInstancePositions);
+  const createGroup = useGraphStore((state) => state.createGroup);
+  const deleteGroup = useGraphStore((state) => state.deleteGroup);
   const removeDefinitionFromNode = useGraphStore((state) => state.removeDefinitionFromNode);
   const openGraphTabAndBringToTop = useGraphStore((state) => state.openGraphTabAndBringToTop);
   const cleanupOrphanedData = useGraphStore((state) => state.cleanupOrphanedData);
@@ -150,6 +153,7 @@ function NodeCanvas() {
   const isDraggingRight = useRef(false);
   const dragStartXRef = useRef(0);
   const startWidthRef = useRef(0);
+  const groupLongPressTimeout = useRef(null);
   const [isHoveringLeftResizer, setIsHoveringLeftResizer] = useState(false);
   const [isHoveringRightResizer, setIsHoveringRightResizer] = useState(false);
   // Track latest widths in refs to avoid stale closures in global listeners
@@ -1429,6 +1433,8 @@ function NodeCanvas() {
   const [isPieMenuActionInProgress, setIsPieMenuActionInProgress] = useState(false);
   const [nodeControlPanelVisible, setNodeControlPanelVisible] = useState(false);
   const [nodeControlPanelShouldShow, setNodeControlPanelShouldShow] = useState(false);
+  const [groupControlPanelShouldShow, setGroupControlPanelShouldShow] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState(null);
   
   // Pending swap operation state
   const [pendingSwapOperation, setPendingSwapOperation] = useState(null);
@@ -1701,6 +1707,11 @@ function NodeCanvas() {
     setLastSelectedNodePrototypes([]);
   }, [setNodeControlPanelShouldShow]);
 
+  const handleGroupControlPanelAnimationComplete = useCallback(() => {
+    setGroupControlPanelShouldShow(false);
+    setSelectedGroup(null);
+  }, [setGroupControlPanelShouldShow]);
+
   const selectedNodePrototypes = useMemo(() => {
     const list = [];
     if (!nodes || nodes.length === 0) return list;
@@ -1810,6 +1821,45 @@ function NodeCanvas() {
     // For now, just log - could implement additional menu
     console.log('[NodePanel] More options clicked');
   }, []);
+
+  const handleNodePanelGroup = useCallback(() => {
+    if (!activeGraphId) return;
+    if (selectedInstanceIds.size < 2) return;
+    const memberInstanceIds = Array.from(selectedInstanceIds);
+    // Derive a default name and color from the first selected prototype
+    const firstInstance = nodes.find(n => n.id === memberInstanceIds[0]);
+    const defaultName = 'Group';
+    const defaultColor = (firstInstance && firstInstance.color) || NODE_DEFAULT_COLOR;
+    try {
+      createGroup(activeGraphId, { name: defaultName, color: defaultColor, memberInstanceIds });
+    } catch (e) {
+      console.warn('[Group] Failed to create group:', e);
+    }
+  }, [activeGraphId, selectedInstanceIds, nodes, createGroup]);
+
+  // Group control panel action handlers
+  const handleGroupPanelUngroup = useCallback(() => {
+    if (!activeGraphId || !selectedGroup) return;
+    try {
+      deleteGroup(activeGraphId, selectedGroup.id);
+      setSelectedGroup(null);
+      setGroupControlPanelShouldShow(false);
+    } catch (e) {
+      console.warn('[Group] Failed to delete group:', e);
+    }
+  }, [activeGraphId, selectedGroup, deleteGroup]);
+
+  const handleGroupPanelEdit = useCallback(() => {
+    if (!selectedGroup) return;
+    // TODO: Implement group name editing
+    console.log('[Group] Edit group name:', selectedGroup.name);
+  }, [selectedGroup]);
+
+  const handleGroupPanelColor = useCallback(() => {
+    if (!activeGraphId || !selectedGroup) return;
+    // TODO: Implement group color picker
+    console.log('[Group] Change group color:', selectedGroup.color);
+  }, [activeGraphId, selectedGroup]);
 
 
 
@@ -4128,9 +4178,18 @@ function NodeCanvas() {
       }
     }
 
-    // Dragging Node Logic (only after long-press has set draggingNodeInfo)
+    // Dragging Node or Group Logic (only after long-press has set draggingNodeInfo)
     if (draggingNodeInfo) {
         requestAnimationFrame(() => { // Keep RAF
+            // Group drag via label
+            if (draggingNodeInfo.groupId && Array.isArray(draggingNodeInfo.memberOffsets)) {
+                const mouseCanvasX = (e.clientX - panOffset.x) / zoomLevel;
+                const mouseCanvasY = (e.clientY - panOffset.y) / zoomLevel;
+                const positionUpdates = draggingNodeInfo.memberOffsets.map(({ id, dx, dy }) => ({ instanceId: id, x: mouseCanvasX - dx, y: mouseCanvasY - dy }));
+                storeActions.updateMultipleNodeInstancePositions(activeGraphId, positionUpdates);
+                return;
+            }
+
             // Multi-node drag
             if (draggingNodeInfo.relativeOffsets) {
                 const primaryInstanceId = draggingNodeInfo.primaryId;
@@ -6194,7 +6253,86 @@ function NodeCanvas() {
                   overflow: 'visible',
               }}
               onMouseUp={handleMouseUp} // Uncommented
+              onMouseMove={handleMouseMove}
             >
+              {/* Groups layer - render group rectangles behind nodes */}
+              {(() => {
+                const graphData = activeGraphId ? graphsMap.get(activeGraphId) : null;
+                const groups = graphData?.groups ? Array.from(graphData.groups.values()) : [];
+                if (!groups.length) return null;
+                return (
+                  <g className="groups-layer">
+                    {groups.map(group => {
+                      // Compute bounding box of member nodes with margin
+                      const members = hydratedNodes.filter(n => group.memberInstanceIds.includes(n.id));
+                      if (!members.length) return null;
+                      const dims = members.map(n => getNodeDimensions(n, false, null));
+                      const xs = members.map((n, i) => n.x);
+                      const ys = members.map((n, i) => n.y);
+                      const rights = members.map((n, i) => n.x + dims[i].currentWidth);
+                      const bottoms = members.map((n, i) => n.y + dims[i].currentHeight);
+                      const minX = Math.min(...xs);
+                      const minY = Math.min(...ys);
+                      const maxX = Math.max(...rights);
+                      const maxY = Math.max(...bottoms);
+                      const margin = 48; // much more space from nodes
+                      const rectX = minX - margin;
+                      const rectY = minY - margin;
+                      const rectW = (maxX - minX) + margin * 2;
+                      const rectH = (maxY - minY) + margin * 2;
+                      const cornerR = 12;
+                      const strokeColor = group.color || '#8B0000';
+                      const labelHeight = 96; // 3x larger
+                      const labelPaddingX = 20; // more padding
+                      const labelY = rectY - labelHeight - 12; // more space above
+                      const labelText = group.name || 'Group';
+                      // Estimate label width based on average char width
+                      const labelWidth = Math.max(120, labelText.length * 12 + labelPaddingX * 2); // wider and larger text
+                      const labelX = rectX; // left aligned with group left edge
+                      return (
+                        <g key={group.id} className="group" data-group-id={group.id}>
+                          <rect x={rectX} y={rectY} width={rectW} height={rectH} rx={cornerR} ry={cornerR} fill="none" stroke={strokeColor} strokeWidth={5} />
+                          {/* Draggable label behaving like a node handle (selection/drag wired later) */}
+                          <g className="group-label" style={{ cursor: 'pointer' }}
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               // Select group and show control panel
+                               setSelectedGroup(group);
+                               setGroupControlPanelShouldShow(true);
+                               setNodeControlPanelShouldShow(false); // Hide node panel
+                             }}
+                             onMouseDown={(e) => {
+                               e.stopPropagation();
+                               // Long-press to start drag, just like nodes
+                               clearTimeout(groupLongPressTimeout.current);
+                               const downX = e.clientX; const downY = e.clientY;
+                               groupLongPressTimeout.current = setTimeout(() => {
+                                 const mouseCanvasX = (downX - panOffset.x) / zoomLevel;
+                                 const mouseCanvasY = (downY - panOffset.y) / zoomLevel;
+                                 const offsets = members.map(m => ({ id: m.id, dx: mouseCanvasX - m.x, dy: mouseCanvasY - m.y }));
+                                 setDraggingNodeInfo({ groupId: group.id, memberOffsets: offsets });
+                               }, LONG_PRESS_DURATION);
+                             }}
+                             onMouseUp={() => { clearTimeout(groupLongPressTimeout.current); }}
+                             onMouseLeave={() => { clearTimeout(groupLongPressTimeout.current); }}
+                          >
+                            <rect x={labelX} y={labelY} width={labelWidth} height={labelHeight} rx={10} ry={10}
+                                  fill="#bdb5b5" stroke={strokeColor} strokeWidth={5}
+                                  style={{
+                                    transform: draggingNodeInfo?.groupId === group.id ? `scale(1.08)` : 'scale(1)',
+                                    transformOrigin: `${labelX + labelWidth/2}px ${labelY + labelHeight/2}px`,
+                                    filter: draggingNodeInfo?.groupId === group.id ? 'drop-shadow(0px 5px 10px rgba(0,0,0,0.3))' : 'none'
+                                  }}
+                            />
+                            <text x={labelX + labelPaddingX} y={labelY + labelHeight * 0.68} fontFamily="EmOne, sans-serif" fontSize={24}
+                                  fill={strokeColor} fontWeight="bold">{labelText}</text>
+                          </g>
+                        </g>
+                      );
+                    })}
+                  </g>
+                );
+              })()}
               {/* Grid overlay (optimized) */}
               {(gridMode === 'always' || (gridMode === 'hover' && !!draggingNodeInfo)) && (
                 <g className="grid-overlay" pointerEvents="none">
@@ -7834,8 +7972,23 @@ function NodeCanvas() {
           onSave={handleNodePanelSave}
           onPalette={handleNodePanelPalette}
           onMore={handleNodePanelMore}
+          onGroup={handleNodePanelGroup}
           hasLeftNav={false}
           hasRightNav={false}
+        />
+      )}
+
+      {/* GroupControlPanel Component - with animation */}
+      {(groupControlPanelShouldShow) && (
+        <UnifiedBottomControlPanel
+          mode="group"
+          isVisible={groupControlPanelShouldShow}
+          typeListOpen={typeListMode !== 'closed'}
+          onAnimationComplete={handleGroupControlPanelAnimationComplete}
+          selectedGroup={selectedGroup}
+          onUngroup={handleGroupPanelUngroup}
+          onGroupEdit={handleGroupPanelEdit}
+          onGroupColor={handleGroupPanelColor}
         />
       )}
 

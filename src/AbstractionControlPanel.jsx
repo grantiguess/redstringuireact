@@ -5,8 +5,8 @@ import UnifiedBottomControlPanel from './UnifiedBottomControlPanel';
 
 const AbstractionControlPanel = ({ 
   selectedNode, 
-  currentDimension = 'Data Abstraction Axis', 
-  availableDimensions = ['Data Abstraction Axis'], 
+  currentDimension = 'Abstraction Axis 1', 
+  availableDimensions = ['Abstraction Axis 1'], 
   onDimensionChange,
   onAddDimension,
   onDeleteDimension,
@@ -56,7 +56,7 @@ const AbstractionControlPanel = ({
 
   const handleAddDimension = () => {
     // Create a new dimension name
-    const newDimensionName = `Data Abstraction Axis ${availableDimensions.length + 1}`;
+    const newDimensionName = `Abstraction Axis ${availableDimensions.length + 1}`;
     onAddDimension?.(newDimensionName);
   };
 
@@ -108,13 +108,24 @@ const AbstractionControlPanel = ({
       handleSaveName();
     } else if (e.key === 'Escape') {
       handleCancelEdit();
+    } else if (e.key === 'Backspace' && editingName.trim() === '') {
+      // Prevent backspace from deleting the node when the field is empty
+      e.preventDefault();
     }
   };
 
   // Create the hierarchy display content
   const hierarchyContent = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <div className="piemenu-button" onClick={() => handleDimensionNavigate('left')} title="Previous" style={{ visibility: hasPreviousDimension ? 'visible' : 'hidden' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div 
+        className="piemenu-button" 
+        onClick={() => handleDimensionNavigate('left')} 
+        title="Previous" 
+        style={{ 
+          opacity: hasPreviousDimension ? 1 : 0.3,
+          cursor: hasPreviousDimension ? 'pointer' : 'default'
+        }}
+      >
         <ChevronLeft size={18} />
       </div>
       
@@ -126,16 +137,21 @@ const AbstractionControlPanel = ({
           onKeyDown={handleKeyPress}
           onBlur={handleSaveName}
           style={{
-            backgroundColor: '#bdb5b5',
-            border: '1px solid #ddd',
-            borderRadius: '6px',
-            padding: '4px 8px',
+            backgroundColor: '#DEDADA',
+            border: 'none',
+            borderRadius: '16px',
+            padding: '8px 12px',
             color: '#000000',
-            fontSize: '14px',
+            fontSize: '16px',
             fontWeight: 'bold',
             textAlign: 'center',
             minWidth: '120px',
-            outline: 'none'
+            minHeight: '40px',
+            outline: 'none',
+            wordWrap: 'break-word',
+            whiteSpace: 'normal',
+            resize: 'none',
+            width: 'fit-content'
           }}
           autoFocus
         />
@@ -144,29 +160,39 @@ const AbstractionControlPanel = ({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            backgroundColor: '#bdb5b5',
-            borderRadius: '8px',
-            padding: '6px 12px',
-            border: '1px solid #ddd',
-            minWidth: '120px'
+            justifyContent: 'center',
+            backgroundColor: '#DEDADA',
+            borderRadius: '16px',
+            padding: '8px 12px',
+            border: 'none',
+            minWidth: '120px',
+            minHeight: '40px',
+            wordWrap: 'break-word',
+            whiteSpace: 'normal',
+            width: 'fit-content'
           }}
         >
           <span style={{ 
             color: '#000000',
-            fontSize: '14px',
+            fontSize: '16px',
             fontWeight: 'bold',
-            textAlign: 'center'
+            textAlign: 'center',
+            lineHeight: '1.2'
           }}>
-            {currentDimension} Hierarchy
+            {currentDimension}
           </span>
-          <div className="piemenu-button" onClick={handleEditName} title="Edit Name" style={{ padding: '2px' }}>
-            <Edit3 size={14} />
-          </div>
         </div>
       )}
       
-      <div className="piemenu-button" onClick={() => handleDimensionNavigate('right')} title="Next" style={{ visibility: hasNextDimension ? 'visible' : 'hidden' }}>
+      <div 
+        className="piemenu-button" 
+        onClick={() => handleDimensionNavigate('right')} 
+        title="Next" 
+        style={{ 
+          opacity: hasNextDimension ? 1 : 0.3,
+          cursor: hasNextDimension ? 'pointer' : 'default'
+        }}
+      >
         <ChevronRight size={18} />
       </div>
     </div>
@@ -187,6 +213,7 @@ const AbstractionControlPanel = ({
       onAdd={handleAddDimension}
       onUp={handleExpandDimension}
       onOpenInPanel={handleOpenInPanel}
+      onEdit={handleEditName}
       onDelete={handleDeleteDimension}
       
       // Only show delete if there are multiple dimensions

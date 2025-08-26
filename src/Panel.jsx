@@ -3399,11 +3399,11 @@ const Panel = forwardRef(
 
     // Debug section state
     useEffect(() => {
-        console.log('[Panel] Section state updated:', {
-            sectionCollapsed,
-            sectionMaxHeights,
-            leftViewActive
-        });
+        // console.log('[Panel] Section state updated:', {
+        //     sectionCollapsed,
+        //     sectionMaxHeights,
+        //     leftViewActive
+        // });
     }, [sectionCollapsed, sectionMaxHeights, leftViewActive]);
 
     // <<< Effect to scroll to TOP when new item added >>>

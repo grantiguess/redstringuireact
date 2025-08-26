@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Trash2, Plus, ArrowUpFromDot, ArrowRight, ChevronLeft, ChevronRight, PackageOpen, Layers, Edit3, Bookmark, Palette, MoreHorizontal } from 'lucide-react';
+import { Trash2, Plus, ArrowUpFromDot, ArrowRight, ChevronLeft, ChevronRight, PackageOpen, Layers, Edit3, Bookmark, Palette, MoreHorizontal, Group, Ungroup } from 'lucide-react';
 import './UnifiedBottomControlPanel.css';
 
 // Small helper to render a triangle cap (rounded-ish via strokeJoin/lineJoin aesthetics)
@@ -52,7 +52,7 @@ const PredicateRail = ({ color = '#4A5568', leftActive, rightActive, onToggleLef
   );
 };
 
-// Modes: 'nodes' | 'connections' | 'abstraction'
+// Modes: 'nodes' | 'connections' | 'abstraction' | 'group'
 const UnifiedBottomControlPanel = ({
   mode = 'nodes',
   isVisible = true,
@@ -73,6 +73,12 @@ const UnifiedBottomControlPanel = ({
   // Abstraction mode props
   customContent,
 
+  // Group mode props
+  selectedGroup, // { id, name, color, memberInstanceIds }
+  onUngroup,
+  onGroupEdit,
+  onGroupColor,
+
   // Pie menu button handlers
   onDelete,
   onAdd,
@@ -86,6 +92,7 @@ const UnifiedBottomControlPanel = ({
   onSave,
   onPalette,
   onMore,
+  onGroup,
 
   // Optional navigations (shown on node mode)
   onLeftNav,
@@ -128,6 +135,8 @@ const UnifiedBottomControlPanel = ({
 
   const isNodes = mode === 'nodes';
   const isAbstraction = mode === 'abstraction';
+  const isGroup = mode === 'group';
+  const multipleSelected = isNodes && Array.isArray(selectedNodes) && selectedNodes.length > 1;
 
   return (
     <div
@@ -149,6 +158,10 @@ const UnifiedBottomControlPanel = ({
             selectedNodes && selectedNodes.length > 0 ? selectedNodes.map(n => (
               <NodePill key={n.id} name={n.name} color={n.color} onClick={() => onNodeClick?.(n)} />
             )) : null
+          ) : isGroup ? (
+            selectedGroup ? (
+              <NodePill name={selectedGroup.name} color={selectedGroup.color} />
+            ) : null
           ) : isAbstraction ? (
             customContent
           ) : (
@@ -192,6 +205,9 @@ const UnifiedBottomControlPanel = ({
               // Node mode: Show all available node actions
               <>
                 <div className="piemenu-button" onClick={onUp} title="Open Web"><ArrowUpFromDot size={18} /></div>
+                {multipleSelected && (
+                  <div className="piemenu-button" onClick={onGroup} title="Group Selection"><Group size={18} /></div>
+                )}
                 <div className="piemenu-button" onClick={onDecompose || onAdd} title="Decompose"><PackageOpen size={18} /></div>
                 <div className="piemenu-button" onClick={onAbstraction || onOpenInPanel} title="Abstraction"><Layers size={18} /></div>
                 <div className="piemenu-button" onClick={onDelete} title="Delete"><Trash2 size={18} /></div>
@@ -200,12 +216,20 @@ const UnifiedBottomControlPanel = ({
                 <div className="piemenu-button" onClick={onPalette || onOpenInPanel} title="Palette"><Palette size={18} /></div>
                 <div className="piemenu-button" onClick={onMore || onDelete} title="More"><MoreHorizontal size={18} /></div>
               </>
+            ) : isGroup ? (
+              // Group mode: Show group actions (ungroup, edit, color)
+              <>
+                <div className="piemenu-button" onClick={onUngroup} title="Ungroup"><Ungroup size={18} /></div>
+                <div className="piemenu-button" onClick={onGroupEdit} title="Edit Name"><Edit3 size={18} /></div>
+                <div className="piemenu-button" onClick={onGroupColor} title="Change Color"><Palette size={18} /></div>
+              </>
             ) : isAbstraction ? (
-              // Abstraction mode: Show abstraction actions (add, up with dot, right)
+              // Abstraction mode: Show abstraction actions (add, up with dot, right, edit)
               <>
                 <div className="piemenu-button" onClick={onAdd} title="Add Dimension"><Plus size={18} /></div>
                 <div className="piemenu-button" onClick={onUp} title="Expand Dimension"><ArrowUpFromDot size={18} /></div>
                 <div className="piemenu-button" onClick={onOpenInPanel} title="Open in Panel"><ArrowRight size={18} /></div>
+                <div className="piemenu-button" onClick={onEdit} title="Edit Name"><Edit3 size={18} /></div>
                 <div className="piemenu-button" onClick={onDelete} title="Delete Dimension"><Trash2 size={18} /></div>
               </>
             ) : (

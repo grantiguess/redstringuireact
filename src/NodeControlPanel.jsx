@@ -17,6 +17,7 @@ const NodeControlPanel = ({
   onSave,
   onPalette,
   onMore,
+  onGroup,
   onLeftNav,
   onRightNav,
   hasLeftNav = false,
@@ -44,6 +45,7 @@ const NodeControlPanel = ({
       onSave={onSave}
       onPalette={onPalette}
       onMore={onMore}
+      onGroup={onGroup}
       onLeftNav={onLeftNav}
       onRightNav={onRightNav}
       hasLeftNav={hasLeftNav}
