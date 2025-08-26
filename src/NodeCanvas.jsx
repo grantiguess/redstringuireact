@@ -9,7 +9,6 @@ import Node from './Node.jsx';
 import PlusSign from './PlusSign.jsx'; // Import the new PlusSign component
 import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import AbstractionCarousel from './AbstractionCarousel.jsx'; // Import the AbstractionCarousel component
-import ConnectionControlPanel from './ConnectionControlPanel.jsx'; // Import the ConnectionControlPanel component
 import AbstractionControlPanel from './AbstractionControlPanel.jsx'; // Import the AbstractionControlPanel component
 import NodeControlPanel from './NodeControlPanel.jsx';
 import EdgeGlowIndicator from './components/EdgeGlowIndicator.jsx'; // Import the EdgeGlowIndicator component
@@ -1402,8 +1401,7 @@ function NodeCanvas() {
   const [hoveredEdgeInfo, setHoveredEdgeInfo] = useState(null); // Track hovered edge and which end
 
   // Connection control panel animation state
-  const [controlPanelVisible, setControlPanelVisible] = useState(false);
-  const [controlPanelShouldShow, setControlPanelShouldShow] = useState(false);
+
 
   // New states for PieMenu transition
   const [selectedNodeIdForPieMenu, setSelectedNodeIdForPieMenu] = useState(null);
@@ -1651,40 +1649,14 @@ function NodeCanvas() {
     // Clear pending swap operation
     setPendingSwapOperation(null);
 
-    // Clear connection control panel
-    setControlPanelVisible(false);
-    setControlPanelShouldShow(false);
+
 
     // Clear abstraction control panel
     setAbstractionControlPanelVisible(false);
     setAbstractionControlPanelShouldShow(false);
   }, [activeGraphId, abstractionCarouselVisible, justCompletedCarouselExit, isTransitioningPieMenu]); // Protect from cleanup during carousel transitions
 
-  // --- Connection Control Panel Management ---
-  useEffect(() => {
-    const shouldShow = Boolean(selectedEdgeId && !connectionNamePrompt.visible);
-    
-    if (shouldShow) {
-      // Show the panel immediately and hide others
-      setControlPanelShouldShow(true);
-      setControlPanelVisible(true);
-      // Hide other control panels
-      setNodeControlPanelVisible(false);
-      setNodeControlPanelShouldShow(false);
-      setAbstractionControlPanelVisible(false);
-      setAbstractionControlPanelShouldShow(false);
-    } else if (selectedEdgeId === null && controlPanelVisible) {
-      // Edge was deselected - start exit animation but keep panel mounted
-      setControlPanelVisible(false);
-      // Don't set controlPanelShouldShow to false yet - let the animation complete
-    } else if (!shouldShow && selectedEdgeId && controlPanelVisible) {
-      // Dialog opened while edge is still selected - hide panel with animation
-      setControlPanelVisible(false);
-    } else if (!shouldShow && !selectedEdgeId) {
-      // Other cases where panel should be hidden
-      setControlPanelVisible(false);
-    }
-  }, [selectedEdgeId, connectionNamePrompt.visible, controlPanelVisible]);
+
 
   // --- Abstraction Control Panel Management ---
   useEffect(() => {
@@ -1697,8 +1669,6 @@ function NodeCanvas() {
       // Hide other control panels
       setNodeControlPanelVisible(false);
       setNodeControlPanelShouldShow(false);
-      setControlPanelVisible(false);
-      setControlPanelShouldShow(false);
     } else if (!abstractionCarouselVisible && abstractionControlPanelVisible) {
       // Carousel was hidden - start exit animation but keep panel mounted
       setAbstractionControlPanelVisible(false);
@@ -1718,8 +1688,6 @@ function NodeCanvas() {
       setNodeControlPanelShouldShow(true);
       setNodeControlPanelVisible(true);
       // Hide other control panels
-      setControlPanelVisible(false);
-      setControlPanelShouldShow(false);
       setAbstractionControlPanelVisible(false);
       setAbstractionControlPanelShouldShow(false);
     } else if (!shouldShow && nodeControlPanelVisible) {
@@ -1843,22 +1811,7 @@ function NodeCanvas() {
     console.log('[NodePanel] More options clicked');
   }, []);
 
-  // Handle control panel callbacks
-  const handleControlPanelClose = useCallback(() => {
-    setSelectedEdgeId(null);
-    clearSelectedEdgeIds();
-  }, [setSelectedEdgeId, clearSelectedEdgeIds]);
 
-  const handleOpenConnectionDialog = useCallback((edgeId) => {
-    setConnectionNamePrompt({ visible: true, name: '', color: NODE_DEFAULT_COLOR, edgeId });
-  }, [setConnectionNamePrompt]);
-
-  // Handle control panel animation completion
-  const handleControlPanelAnimationComplete = useCallback(() => {
-    // This callback is only for the exit animation.
-    // When it's called, we know it's safe to unmount the component.
-    setControlPanelShouldShow(false);
-  }, [setControlPanelShouldShow]);
 
   // Handle abstraction control panel callbacks
   const handleAbstractionDimensionChange = useCallback((newDimension) => {
@@ -5230,8 +5183,6 @@ function NodeCanvas() {
       } else if (isDeleteKey && edgeSelected) {
         console.log('[NodeCanvas] Delete key pressed with edge selected:', {
           selectedEdgeId,
-          controlPanelShouldShow,
-          controlPanelVisible,
           connectionNamePromptVisible: connectionNamePrompt.visible,
           shouldPreventDeletion: connectionNamePrompt.visible
         });
@@ -7888,18 +7839,7 @@ function NodeCanvas() {
         />
       )}
 
-      {/* ConnectionControlPanel Component - with animation */}
-      {(controlPanelShouldShow || controlPanelVisible) && (
-        <ConnectionControlPanel
-          selectedEdge={edgesMap.get(selectedEdgeId)}
-          onClose={handleControlPanelClose}
-          typeListOpen={typeListMode !== 'closed'}
-          onOpenConnectionDialog={handleOpenConnectionDialog}
-          isVisible={controlPanelVisible}
-          onAnimationComplete={handleControlPanelAnimationComplete}
-          onStartHurtleAnimationFromPanel={startHurtleAnimationFromPanel}
-        />
-      )}
+
 
       {/* AbstractionControlPanel Component - with animation */}
       {(abstractionControlPanelShouldShow || abstractionControlPanelVisible) && (

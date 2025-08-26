@@ -52,7 +52,7 @@ const PredicateRail = ({ color = '#4A5568', leftActive, rightActive, onToggleLef
   );
 };
 
-// Modes: 'nodes' | 'connections'
+// Modes: 'nodes' | 'connections' | 'abstraction'
 const UnifiedBottomControlPanel = ({
   mode = 'nodes',
   isVisible = true,
@@ -69,6 +69,9 @@ const UnifiedBottomControlPanel = ({
   onToggleLeftArrow, // (tripleId) => void
   onToggleRightArrow, // (tripleId) => void
   onPredicateClick, // (tripleId) => void
+
+  // Abstraction mode props
+  customContent,
 
   // Pie menu button handlers
   onDelete,
@@ -124,6 +127,7 @@ const UnifiedBottomControlPanel = ({
   if (!shouldRender) return null;
 
   const isNodes = mode === 'nodes';
+  const isAbstraction = mode === 'abstraction';
 
   return (
     <div
@@ -145,6 +149,8 @@ const UnifiedBottomControlPanel = ({
             selectedNodes && selectedNodes.length > 0 ? selectedNodes.map(n => (
               <NodePill key={n.id} name={n.name} color={n.color} onClick={() => onNodeClick?.(n)} />
             )) : null
+          ) : isAbstraction ? (
+            customContent
           ) : (
             triples.map(t => (
               <div className="triple-item" key={t.id}>
@@ -193,6 +199,14 @@ const UnifiedBottomControlPanel = ({
                 <div className="piemenu-button" onClick={onSave || onAdd} title="Save"><Bookmark size={18} /></div>
                 <div className="piemenu-button" onClick={onPalette || onOpenInPanel} title="Palette"><Palette size={18} /></div>
                 <div className="piemenu-button" onClick={onMore || onDelete} title="More"><MoreHorizontal size={18} /></div>
+              </>
+            ) : isAbstraction ? (
+              // Abstraction mode: Show abstraction actions (add, up with dot, right)
+              <>
+                <div className="piemenu-button" onClick={onAdd} title="Add Dimension"><Plus size={18} /></div>
+                <div className="piemenu-button" onClick={onUp} title="Expand Dimension"><ArrowUpFromDot size={18} /></div>
+                <div className="piemenu-button" onClick={onOpenInPanel} title="Open in Panel"><ArrowRight size={18} /></div>
+                <div className="piemenu-button" onClick={onDelete} title="Delete Dimension"><Trash2 size={18} /></div>
               </>
             ) : (
               // Connection mode: Show connection actions
