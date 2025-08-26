@@ -22,5 +22,5 @@ fi
 echo "✅ OAuth server started successfully (PID: $OAUTH_PID)"
 
 # Start main server
-echo "🌐 Starting main server on port 4000..."
-node deployment/server.js
+echo "🌐 Starting app + semantic server on port 4000..."
+node deployment/app-semantic-server.js

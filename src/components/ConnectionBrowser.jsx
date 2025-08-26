@@ -3,15 +3,29 @@ import { ArrowRight, Plus, CircleDot, RefreshCw } from 'lucide-react';
 import useGraphStore from '../store/graphStore';
 import { knowledgeFederation } from '../services/knowledgeFederation';
 import { fastEnrichFromSemanticWeb } from '../services/semanticWebQuery.js';
-import ToggleSlider from './ToggleSlider.jsx';
+import Dropdown from './Dropdown.jsx';
 import './ConnectionBrowser.css';
 
 /**
  * RDF Triplet Visual Component
  * Displays subject -> predicate -> object relationships as connected nodes
+ * Styled to match NodeCanvas connections with proper arrows and directionality
  */
-const RDFTriplet = ({ subject, predicate, object, subjectColor, objectColor, onMaterialize }) => {
+const RDFTriplet = ({ 
+  subject, 
+  predicate, 
+  object, 
+  subjectColor, 
+  objectColor, 
+  onMaterialize, 
+  connection // Full connection object for access to directionality info
+}) => {
   const defaultColor = '#8B0000'; // Default maroon for semantic connections
+  const canvasColor = '#EFE8E5'; // Canvas background color for text fill
+  
+  // Determine if this connection has directionality
+  const isDirected = connection?.type === 'native' && connection?.directionality !== 'undirected';
+  const isUndirected = connection?.type === 'native' && connection?.directionality === 'undirected';
   
   return (
     <div className="rdf-triplet" onClick={() => onMaterialize && onMaterialize({ subject, predicate, object })}>
@@ -24,11 +38,72 @@ const RDFTriplet = ({ subject, predicate, object, subjectColor, objectColor, onM
           <span className="node-label">{typeof subject === 'string' ? subject : JSON.stringify(subject)}</span>
         </div>
         
-        {/* Connection Arrow with Predicate */}
+        {/* Connection with SVG Arrow and Label */}
         <div className="triplet-connection">
-          <div className="connection-line" />
-          <ArrowRight className="connection-arrow" size={14} />
-          <span className="predicate-label">{typeof predicate === 'string' ? predicate : JSON.stringify(predicate)}</span>
+          <svg 
+            width="120" 
+            height="40" 
+            style={{ overflow: 'visible' }}
+            className="connection-svg"
+          >
+            {/* Connection Line */}
+            <line
+              x1="10"
+              y1="20"
+              x2="110"
+              y2="20"
+              stroke={subjectColor || defaultColor}
+              strokeWidth="4"
+              strokeLinecap="round"
+            />
+            
+            {/* Arrow or circle for directionality */}
+            {isUndirected ? (
+              // Circle for undirected connections
+              <circle
+                cx="110"
+                cy="20"
+                r="6"
+                fill={subjectColor || defaultColor}
+              />
+            ) : (
+              // Arrow for directed connections (or semantic web)
+              <g transform="translate(110, 20) rotate(90)">
+                <polygon
+                  points="-8,10 8,10 0,-10"
+                  fill={subjectColor || defaultColor}
+                  stroke={subjectColor || defaultColor}
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  paintOrder="stroke fill"
+                />
+              </g>
+            )}
+            
+            {/* Connection Label - styled like NodeCanvas */}
+            <text
+              x="60"
+              y="20"
+              fill={canvasColor}
+              fontSize="14"
+              fontWeight="bold"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              stroke={subjectColor || defaultColor}
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              paintOrder="stroke fill"
+              style={{ 
+                pointerEvents: 'none', 
+                fontFamily: "'EmOne', sans-serif",
+                userSelect: 'none'
+              }}
+            >
+              {typeof predicate === 'string' ? predicate : JSON.stringify(predicate)}
+            </text>
+          </svg>
         </div>
         
         {/* Object Node */}
@@ -50,29 +125,30 @@ const RDFTriplet = ({ subject, predicate, object, subjectColor, objectColor, onM
 
 /**
  * Connection Browser Component
- * Shows semantic web connections with In Graph ↔ All Connections slider
+ * Shows connections with dropdown: In Graph | Universe | Semantic Web
  */
 const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
-  const [connectionScope, setConnectionScope] = useState('all'); // 'graph' | 'all'
-  const [connections, setConnections] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [connectionScope, setConnectionScope] = useState('semantic'); // 'graph' | 'universe' | 'semantic'
+  const [semanticConnections, setSemanticConnections] = useState([]);
+  const [nativeConnections, setNativeConnections] = useState([]);
+  const [isLoadingSemanticWeb, setIsLoadingSemanticWeb] = useState(false);
   const [error, setError] = useState(null);
   
-  const { activeGraphId, nodePrototypes, graphs } = useGraphStore();
+  const { activeGraphId, nodePrototypes, graphs, edges } = useGraphStore();
   
-  // Load connections from federated knowledge system
+  // Load semantic web connections from federated knowledge system
   useEffect(() => {
     if (!nodeData?.name || nodeData.name.trim() === '') {
-      console.log('[ConnectionBrowser] No valid node name, skipping connection load');
+      console.log('[ConnectionBrowser] No valid node name, skipping semantic web connection load');
       return;
     }
     
-    const loadConnections = async () => {
-      setIsLoading(true);
+    const loadSemanticConnections = async () => {
+      setIsLoadingSemanticWeb(true);
       setError(null);
       
       try {
-        console.log(`[ConnectionBrowser] Loading federated connections for: "${nodeData.name}"`);
+        console.log(`[ConnectionBrowser] Loading semantic web connections for: "${nodeData.name}"`);
         
         // Use fast enrichment for immediate results
         const enrichmentResults = await fastEnrichFromSemanticWeb(nodeData.name, {
@@ -91,7 +167,7 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
             object: 'Wikidata',
             confidence: 0.9,
             source: 'wikidata',
-            inCurrentGraph: false
+            type: 'semantic'
           });
         }
         
@@ -103,7 +179,7 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
             object: 'DBpedia',
             confidence: 0.9,
             source: 'dbpedia',
-            inCurrentGraph: false
+            type: 'semantic'
           });
         }
         
@@ -115,7 +191,7 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
             object: 'Wikipedia',
             confidence: 0.8,
             source: 'wikipedia',
-            inCurrentGraph: false
+            type: 'semantic'
           });
         }
         
@@ -129,16 +205,16 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
               object: link.split('/').pop() || link,
               confidence: 0.7,
               source: 'semantic_web',
-              inCurrentGraph: false
+              type: 'semantic'
             });
           });
         }
         
-        setConnections(federatedConnections);
-        console.log(`[ConnectionBrowser] Loaded ${federatedConnections.length} federated connections`);
+        setSemanticConnections(federatedConnections);
+        console.log(`[ConnectionBrowser] Loaded ${federatedConnections.length} semantic web connections`);
         
       } catch (err) {
-        console.error('[ConnectionBrowser] Failed to load connections:', err);
+        console.error('[ConnectionBrowser] Failed to load semantic web connections:', err);
         setError(err.message);
         
         // Fallback to mock data on error
@@ -150,7 +226,7 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
             object: 'company',
             confidence: 0.9,
             source: 'wikidata',
-            inCurrentGraph: false
+            type: 'semantic'
           },
           {
             id: '2', 
@@ -159,50 +235,122 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
             object: 'California',
             confidence: 0.85,
             source: 'dbpedia',
-            inCurrentGraph: false
+            type: 'semantic'
           }
         ];
-        setConnections(mockConnections);
+        setSemanticConnections(mockConnections);
       } finally {
-        setIsLoading(false);
+        setIsLoadingSemanticWeb(false);
       }
     };
     
-    loadConnections();
+    loadSemanticConnections();
   }, [nodeData?.name]);
-  
-  // Check if nodes exist in current graph
-  const checkIfInCurrentGraph = (sourceName, targetName) => {
-    if (!graphs || !activeGraphId) return false;
-    
-    const currentGraph = graphs.get(activeGraphId);
-    if (!currentGraph?.instances) return false;
-    
-    let hasSource = false;
-    let hasTarget = false;
-    
-    for (const instance of currentGraph.instances.values()) {
-      const prototype = nodePrototypes?.get(instance.prototypeId);
-      if (prototype) {
-        if (prototype.name.toLowerCase() === sourceName.toLowerCase()) {
-          hasSource = true;
-        }
-        if (prototype.name.toLowerCase() === targetName.toLowerCase()) {
-          hasTarget = true;
+
+  // Load native Redstring connections for this node
+  useEffect(() => {
+    if (!nodeData?.id) {
+      console.log('[ConnectionBrowser] No node ID, skipping native connection load');
+      return;
+    }
+
+    const loadNativeConnections = () => {
+      const connections = [];
+      
+      // Find all instances of this node prototype across all graphs
+      const nodeInstances = [];
+      for (const [graphId, graph] of graphs.entries()) {
+        if (graph.instances) {
+          for (const [instanceId, instance] of graph.instances.entries()) {
+            if (instance.prototypeId === nodeData.id) {
+              nodeInstances.push({
+                instanceId,
+                graphId,
+                instance
+              });
+            }
+          }
         }
       }
-    }
+      
+      // For each instance, find all edges connected to it
+      for (const nodeInstance of nodeInstances) {
+        const { instanceId, graphId, instance } = nodeInstance;
+        const graph = graphs.get(graphId);
+        
+        if (graph?.edgeIds) {
+          for (const edgeId of graph.edgeIds) {
+            const edge = edges.get(edgeId);
+            if (!edge) continue;
+            
+            let isSource = false;
+            let isDestination = false;
+            let connectedInstanceId = null;
+            
+            // Check if this instance is involved in the edge
+            if (edge.sourceId === instanceId) {
+              isSource = true;
+              connectedInstanceId = edge.destinationId;
+            } else if (edge.destinationId === instanceId) {
+              isDestination = true;
+              connectedInstanceId = edge.sourceId;
+            }
+            
+            if (connectedInstanceId) {
+              // Get the connected instance and its prototype
+              const connectedInstance = graph.instances?.get(connectedInstanceId);
+              const connectedPrototype = connectedInstance ? nodePrototypes.get(connectedInstance.prototypeId) : null;
+              
+              if (connectedInstance && connectedPrototype) {
+                // Get edge prototype for the connection label
+                const edgePrototype = nodePrototypes.get(edge.typeNodeId) || { name: 'Connection' };
+                
+                const connection = {
+                  id: `native-${edgeId}`,
+                  subject: isSource ? nodeData.name : connectedPrototype.name,
+                  predicate: edgePrototype.name,
+                  object: isSource ? connectedPrototype.name : nodeData.name,
+                  confidence: 1.0, // Native connections have 100% confidence
+                  source: 'redstring',
+                  type: 'native',
+                  graphId,
+                  graphName: graph.name,
+                  edgeId,
+                  sourceInstanceId: edge.sourceId,
+                  destinationInstanceId: edge.destinationId,
+                  inCurrentGraph: graphId === activeGraphId
+                };
+                
+                connections.push(connection);
+              }
+            }
+          }
+        }
+      }
+      
+      setNativeConnections(connections);
+      console.log(`[ConnectionBrowser] Loaded ${connections.length} native connections for node ${nodeData.name}`);
+    };
     
-    return hasSource && hasTarget;
-  };
+    loadNativeConnections();
+  }, [nodeData?.id, graphs, edges, nodePrototypes, activeGraphId]);
   
   // Filter connections based on scope
   const filteredConnections = useMemo(() => {
-    if (connectionScope === 'graph') {
-      return connections.filter(conn => conn.inCurrentGraph);
+    switch (connectionScope) {
+      case 'graph':
+        // Show only native connections that are in the current active graph
+        return nativeConnections.filter(conn => conn.inCurrentGraph);
+      case 'universe':
+        // Show all native connections across all graphs
+        return nativeConnections;
+      case 'semantic':
+        // Show semantic web connections
+        return semanticConnections;
+      default:
+        return [];
     }
-    return connections;
-  }, [connections, connectionScope]);
+  }, [connectionScope, nativeConnections, semanticConnections]);
   
   // Get appropriate color for nodes based on existing prototypes
   const getNodeColor = (nodeName) => {
@@ -234,13 +382,17 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
     );
   }
   
+  // Determine loading state based on current scope
+  const isLoading = connectionScope === 'semantic' ? isLoadingSemanticWeb : false;
+
   return (
     <div className="connection-browser">
-      {/* Scope Slider */}
-      <ToggleSlider
+      {/* Scope Dropdown */}
+      <Dropdown
         options={[
           { value: 'graph', label: 'In Graph' },
-          { value: 'all', label: 'All Connections' }
+          { value: 'universe', label: 'Universe' },
+          { value: 'semantic', label: 'Semantic Web' }
         ]}
         value={connectionScope}
         onChange={setConnectionScope}
@@ -258,13 +410,13 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
       
       {/* Connection List */}
       <div className="connection-list">
-        {error ? (
+        {error && connectionScope === 'semantic' ? (
           <div className="connection-error">
-            <span>Error loading connections: {error}</span>
+            <span>Error loading semantic web connections: {error}</span>
             <button 
               className="retry-button"
               onClick={() => {
-                setConnections([]);
+                setSemanticConnections([]);
                 setError(null);
                 // Trigger reload by changing a dependency
                 const event = new CustomEvent('retryConnections');
@@ -277,12 +429,29 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection }) => {
         ) : isLoading ? (
           <div className="connection-loading">
             <RefreshCw size={20} className="spin" />
-            <span>Loading connections from semantic web...</span>
+            <span>
+              {connectionScope === 'semantic' 
+                ? 'Loading connections from semantic web...' 
+                : 'Loading connections...'
+              }
+            </span>
           </div>
         ) : filteredConnections.length === 0 ? (
           <div className="no-connections">
             <CircleDot size={20} color="#666" />
-            <span>No {connectionScope === 'graph' ? 'graph' : 'available'} connections found</span>
+            <span>
+              No {connectionScope === 'graph' ? 'graph' : 
+                   connectionScope === 'universe' ? 'universe' : 
+                   'semantic web'} connections found
+            </span>
+            {connectionScope !== 'semantic' && (
+              <div style={{ fontSize: '0.75rem', color: '#999', marginTop: '4px' }}>
+                {connectionScope === 'graph' 
+                  ? 'Connect nodes in this graph to see relationships here'
+                  : 'Connect instances of this node across any graph'
+                }
+              </div>
+            )}
           </div>
         ) : (
           filteredConnections.map((connection) => (

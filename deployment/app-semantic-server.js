@@ -1,6 +1,8 @@
 /**
- * Production Server for RedString UI React
- * Serves static files and handles OAuth for multiple clients
+ * RedString App + Semantic Web Server
+ * - Serves static UI
+ * - Proxies OAuth to the OAuth server
+ * - Exposes local semantic web endpoints (JSON-LD, N-Quads, Turtle)
  */
 
 import express from 'express';
@@ -198,3 +200,5 @@ app.listen(PORT, () => {
 });
 
 export default app;
+
+
