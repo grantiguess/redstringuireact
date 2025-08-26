@@ -6,25 +6,19 @@ This repository contains the RedString UI React application with semantic data m
 
 ### OAuth Fix (If experiencing 404 errors)
 
-If you're experiencing OAuth 404 errors, run the fix script:
+The OAuth permissions are now automatically configured during deployment. If you're experiencing OAuth 404 errors, simply redeploy:
 
+**For Production:**
 ```bash
-./deployment/gcp/fix-oauth-permissions.sh
+./deployment/gcp/deploy_prod.sh
 ```
 
-Or use the comprehensive deployment script:
-
+**For Test Environment:**
 ```bash
-./deployment/gcp/deploy-with-oauth-fix.sh
+./deployment/gcp/deploy_test.sh
 ```
 
-### Test OAuth Fix
-
-After applying the fix, test the endpoints:
-
-```bash
-node test-oauth-fix.js
-```
+These scripts automatically fix the IAM permissions needed for OAuth secrets.
 
 ## Structure
 
@@ -56,8 +50,8 @@ The application uses GitHub OAuth for authentication. OAuth secrets are stored i
 ### Production Deployment
 
 ```bash
-# Build and deploy with OAuth fix
-./deployment/gcp/deploy-with-oauth-fix.sh
+# Deploy to production (includes OAuth fix)
+./deployment/gcp/deploy_prod.sh
 ```
 
 ### Manual Deployment

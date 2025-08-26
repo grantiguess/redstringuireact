@@ -88,6 +88,30 @@ for secret in "${REQUIRED_SECRETS[@]}"; do
     fi
 done
 
+# Fix OAuth permissions for Cloud Run service account
+echo -e "${YELLOW}🔧 Fixing OAuth permissions for Cloud Run service account...${NC}"
+SERVICE_ACCOUNT="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+
+# Grant project-wide Secret Manager access
+echo -e "   📋 Granting project-wide Secret Manager access..."
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:${SERVICE_ACCOUNT}" \
+  --role="roles/secretmanager.secretAccessor" \
+  --quiet
+
+# Grant access to specific secrets
+echo -e "   📋 Granting access to specific GitHub OAuth secrets..."
+for secret in "${REQUIRED_SECRETS[@]}"; do
+    gcloud secrets add-iam-policy-binding ${secret} \
+      --project=${PROJECT_ID} \
+      --member="serviceAccount:${SERVICE_ACCOUNT}" \
+      --role="roles/secretmanager.secretAccessor" \
+      --quiet
+    echo -e "   ✅ ${secret} access granted"
+done
+
+echo -e "${GREEN}✅ OAuth permissions configured${NC}"
+
 # Pre-deployment checks
 echo -e "${YELLOW}🔍 Pre-deployment checks...${NC}"
 

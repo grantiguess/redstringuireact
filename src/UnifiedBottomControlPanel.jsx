@@ -142,12 +142,9 @@ const UnifiedBottomControlPanel = ({
           ) : null}
 
           {isNodes ? (
-            (selectedNodes && selectedNodes.length > 0
-              ? selectedNodes
-              : [{ id: 'single', name: 'Node', color: '#800000' }]
-            ).map(n => (
+            selectedNodes && selectedNodes.length > 0 ? selectedNodes.map(n => (
               <NodePill key={n.id} name={n.name} color={n.color} onClick={() => onNodeClick?.(n)} />
-            ))
+            )) : null
           ) : (
             triples.map(t => (
               <div className="triple-item" key={t.id}>

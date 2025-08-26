@@ -16,17 +16,19 @@ for Revision service account 784175375476-compute@developer.gserviceaccount.com
 
 ## Quick Fix
 
-Run the permission fix script:
+The OAuth permissions are now automatically fixed during deployment. Simply run the existing deployment scripts:
 
+**For Production:**
 ```bash
-./deployment/gcp/fix-oauth-permissions.sh
+./deployment/gcp/deploy_prod.sh
 ```
 
-Or run the comprehensive deployment script:
-
+**For Test Environment:**
 ```bash
-./deployment/gcp/deploy-with-oauth-fix.sh
+./deployment/gcp/deploy_test.sh
 ```
+
+These scripts now automatically configure the necessary IAM permissions for OAuth secrets.
 
 ## Manual Fix Steps
 
@@ -229,7 +231,8 @@ GitHub OAuth API
 - `oauth-server.js` - Dedicated OAuth server
 - `deployment/server.js` - Main server with OAuth proxy
 - `cloudbuild.yaml` - Deployment configuration
-- `deployment/gcp/fix-oauth-permissions.sh` - Permission fix script
+- `deployment/gcp/deploy_prod.sh` - Production deployment script (includes OAuth fix)
+- `deployment/gcp/deploy_test.sh` - Test deployment script (includes OAuth fix)
 
 ## Environment Variables
 
