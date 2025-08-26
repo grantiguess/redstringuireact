@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Trash2, ArrowUpFromDot, Plus, ArrowRight } f
 import './ConnectionControlPanel.css';
 import useGraphStore from './store/graphStore';
 import NodeType from './NodeType';
-import BottomControlPanel from './BottomControlPanel';
+import UnifiedBottomControlPanel from './UnifiedBottomControlPanel';
 
 const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConnectionDialog, isVisible = true, onAnimationComplete, onStartHurtleAnimationFromPanel }) => {
   const nodePrototypesMap = useGraphStore((state) => state.nodePrototypes);
@@ -23,29 +23,52 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
     }
   }, [selectedEdge]);
 
-  // Only render when we have edge data to work with
-  if (!lastValidEdge) return null;
+  // Access graph context for subject/object rendering
+  const graphsMap = useGraphStore((state) => state.graphs);
+  const activeGraphId = useGraphStore((state) => state.activeGraphId);
+  const selectedEdgeIds = useGraphStore((state) => state.selectedEdgeIds);
 
-  const destinationNode = nodePrototypesMap.get(lastValidEdge.destinationId);
-  
-  // Check for edge type in definitionNodeIds first, then fallback to typeNodeId
-  const currentEdgeType = lastValidEdge.definitionNodeIds && lastValidEdge.definitionNodeIds.length > 0 
-    ? nodePrototypesMap.get(lastValidEdge.definitionNodeIds[0])
-    : lastValidEdge.typeNodeId 
-      ? edgePrototypesMap.get(lastValidEdge.typeNodeId)
-      : null;
-  
-  // Check if this is a base connection (or equivalent)
-  const isBaseConnection = !currentEdgeType || currentEdgeType?.id === 'base-connection-prototype';
-
-  // Get the connection color for glow effect
-  const getConnectionColor = () => {
-    if (currentEdgeType) {
-      return currentEdgeType.color || '#4A5568';
+  // Build the list of edges to show (support multi-select)
+  const edgesToShow = React.useMemo(() => {
+    const list = [];
+    if (selectedEdgeIds && selectedEdgeIds.size > 0) {
+      selectedEdgeIds.forEach((id) => {
+        const e = useGraphStore.getState().edges.get(id);
+        if (e) list.push(e);
+      });
+    } else if (lastValidEdge) {
+      list.push(lastValidEdge);
     }
-    return destinationNode?.color || '#4A5568';
+    return list;
+  }, [lastValidEdge, selectedEdgeIds]);
+
+  if (edgesToShow.length === 0) return null;
+
+  const graph = graphsMap.get(activeGraphId);
+
+  const resolvePredicate = (edge) => {
+    const byDef = edge.definitionNodeIds && edge.definitionNodeIds.length > 0 
+      ? nodePrototypesMap.get(edge.definitionNodeIds[0])
+      : null;
+    if (byDef) return byDef;
+    return edge.typeNodeId ? edgePrototypesMap.get(edge.typeNodeId) : null;
   };
-  const connectionColor = getConnectionColor();
+
+  const triples = edgesToShow.map((edge) => {
+    const subjectInstance = graph?.instances?.get(edge.sourceId);
+    const objectInstance = graph?.instances?.get(edge.destinationId);
+    const subjectProto = subjectInstance ? nodePrototypesMap.get(subjectInstance.prototypeId) : null;
+    const objectProto = objectInstance ? nodePrototypesMap.get(objectInstance.prototypeId) : null;
+    const predicate = resolvePredicate(edge);
+    return {
+      id: edge.id,
+      subject: subjectProto ? { id: subjectProto.id, name: subjectProto.name, color: subjectProto.color } : { id: edge.sourceId, name: 'Node', color: '#4A5568' },
+      object: objectProto ? { id: objectProto.id, name: objectProto.name, color: objectProto.color } : { id: edge.destinationId, name: 'Node', color: '#4A5568' },
+      predicate: predicate ? { id: predicate.id, name: predicate.name, color: predicate.color || '#4A5568' } : { id: 'base-connection-prototype', name: 'Connection', color: '#4A5568' },
+      hasLeftArrow: edge.directionality?.arrowsToward?.has(edge.sourceId),
+      hasRightArrow: edge.directionality?.arrowsToward?.has(edge.destinationId)
+    };
+  });
 
   const handleNodeClick = () => {
     // Always open the naming dialog when clicking the center connection display
@@ -54,17 +77,14 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
     }
   };
 
-  const handleArrowToggle = (direction) => {
-    const nodeId = direction === 'left' ? lastValidEdge.sourceId : lastValidEdge.destinationId;
-    
-    updateEdge(lastValidEdge.id, (draft) => {
+  const toggleArrowFor = (edgeId, nodeId) => {
+    updateEdge(edgeId, (draft) => {
       if (!draft.directionality) {
         draft.directionality = { arrowsToward: new Set() };
       }
       if (!draft.directionality.arrowsToward) {
         draft.directionality.arrowsToward = new Set();
       }
-      
       if (draft.directionality.arrowsToward.has(nodeId)) {
         draft.directionality.arrowsToward.delete(nodeId);
       } else {
@@ -74,7 +94,9 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
   };
 
   const handleDeleteConnection = () => {
-    if (lastValidEdge?.id) {
+    if (selectedEdgeIds && selectedEdgeIds.size > 0) {
+      Array.from(selectedEdgeIds).forEach((id) => removeEdge(id));
+    } else if (lastValidEdge?.id) {
       removeEdge(lastValidEdge.id);
     }
   };
@@ -146,67 +168,30 @@ const ConnectionControlPanel = ({ selectedEdge, typeListOpen = false, onOpenConn
     }
   };
 
-  const hasLeftArrow = lastValidEdge.directionality?.arrowsToward?.has(lastValidEdge.sourceId);
-  const hasRightArrow = lastValidEdge.directionality?.arrowsToward?.has(lastValidEdge.destinationId);
-
-  // Create center content for the connection display
-  const centerContent = (
-    <div 
-      className="connection-node-display" 
-      onClick={handleNodeClick}
-    >
-      {isBaseConnection ? (
-        <div className="base-connection-node" style={{
-          backgroundColor: '#bdb5b5', // Canvas color background
-          borderRadius: '8px',
-          padding: '6px 12px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          border: '1px solid #ddd'
-        }}>
-          <span style={{ 
-            color: '#000000', // Black text
-            fontSize: '16px',
-            fontWeight: 'bold',
-            fontFamily: "'EmOne', sans-serif"
-          }}>
-            +
-          </span>
-          <span style={{ 
-            color: '#000000', // Black text
-            fontSize: '14px',
-            fontWeight: 'bold',
-            fontFamily: "'EmOne', sans-serif"
-          }}>
-            Connection
-          </span>
-        </div>
-      ) : (
-        <NodeType 
-          name={currentEdgeType.name}
-          color={currentEdgeType.color}
-          onClick={handleNodeClick}
-        />
-      )}
-    </div>
-  );
-
   return (
-    <BottomControlPanel
-      centerContent={centerContent}
-      onLeftArrow={() => handleArrowToggle('left')}
-      onRightArrow={() => handleArrowToggle('right')}
-      hasLeftArrow={hasLeftArrow}
-      hasRightArrow={hasRightArrow}
-      onDelete={handleDeleteConnection}
-      onAdd={handleAddConnection}
-      onUp={handleOpenDefinition}
-      onRightPanel={handleOpenInPanel}
+    <UnifiedBottomControlPanel
+      mode="connections"
       isVisible={isVisible}
       typeListOpen={typeListOpen}
       onAnimationComplete={onAnimationComplete}
       className="connection-control-panel"
+      triples={triples}
+      onToggleLeftArrow={(edgeId) => {
+        const e = useGraphStore.getState().edges.get(edgeId);
+        if (!e) return;
+        toggleArrowFor(edgeId, e.sourceId);
+      }}
+      onToggleRightArrow={(edgeId) => {
+        const e = useGraphStore.getState().edges.get(edgeId);
+        if (!e) return;
+        toggleArrowFor(edgeId, e.destinationId);
+      }}
+      onPredicateClick={(edgeId) => onOpenConnectionDialog?.(edgeId)}
+      onNodeClick={() => { /* optional: navigate to node */ }}
+      onDelete={handleDeleteConnection}
+      onAdd={handleAddConnection}
+      onUp={handleOpenDefinition}
+      onOpenInPanel={handleOpenInPanel}
     />
   );
 };

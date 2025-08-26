@@ -78,21 +78,7 @@
   bottom: 70px;
 }
 
-.bottom-control-content {
-  display: flex;
-  align-items: center;
-  background: #260000;
-  border-radius: 25px;
-  padding: 8px 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  min-height: 50px;
-  min-width: 200px;
-  max-width: 500px;
-  gap: 16px;
-  white-space: nowrap;
-  overflow: visible;
-  font-family: 'EmOne', sans-serif;
-}
+.bottom-control-content { display: flex; align-items: center; background: #260000; border-radius: 25px; padding: 8px 16px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); min-height: 50px; min-width: 200px; max-width: 500px; gap: 16px; white-space: nowrap; overflow: visible; font-family: 'EmOne', sans-serif; }
 
 /* Bubble controls container */
 .bubble-controls {
@@ -148,23 +134,7 @@
 }
 
 /* Bubble button base styles */
-.delete-button,
-.add-button,
-.up-button,
-.panel-button {
-  background: #DEDADA;
-  border: 3px solid maroon;
-  border-radius: 50%;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: maroon;
-}
+.delete-button, .add-button, .up-button, .panel-button { background: #DEDADA; border: 3px solid maroon; border-radius: 50%; width: 32px; height: 32px; padding: 0; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; color: maroon; }
 
 .delete-button:hover,
 .add-button:hover,

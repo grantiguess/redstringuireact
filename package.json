@@ -14,6 +14,10 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "start": "node deployment/server.js",
+    "prod": "npm run build && npm start",
+    "prod:docker": "docker build -f deployment/docker/Dockerfile -t redstring . && docker run -p 4000:4000 -p 3002:3002 redstring",
+    "prod:compose": "cd deployment/docker && docker-compose up -d",
     "test": "vitest",
     "test:format": "vitest test/formats/ --run",
     "test:consistency": "vitest test/formats/consistency.test.js --run",
@@ -27,8 +31,8 @@
     "test:ai:all": "npm run test:tools && npm run test:mcp && npm run test:bridge && npm run test:agent:add-node && npm run test:pending",
     "ai-connect": "node ai-connection-wizard-simple.js",
     "ai-wizard": "node ai-connection-wizard-simple.js",
-    "server": "node server.js",
-    "dev:full": "concurrently \"npm run server\" \"npm run dev\"",
+    "server": "node deployment/server.js",
+    "dev:full": "concurrently \"npm run oauth\" \"npm run server\" \"npm run dev\"",
     "setup:oauth": "node setup-oauth.js"
   },
   "dependencies": {

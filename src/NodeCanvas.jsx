@@ -11,6 +11,7 @@ import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import AbstractionCarousel from './AbstractionCarousel.jsx'; // Import the AbstractionCarousel component
 import ConnectionControlPanel from './ConnectionControlPanel.jsx'; // Import the ConnectionControlPanel component
 import AbstractionControlPanel from './AbstractionControlPanel.jsx'; // Import the AbstractionControlPanel component
+import NodeControlPanel from './NodeControlPanel.jsx';
 import EdgeGlowIndicator from './components/EdgeGlowIndicator.jsx'; // Import the EdgeGlowIndicator component
 import { getNodeDimensions } from './utils.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
@@ -1427,6 +1428,8 @@ function NodeCanvas() {
   const [abstractionControlPanelVisible, setAbstractionControlPanelVisible] = useState(false);
   const [abstractionControlPanelShouldShow, setAbstractionControlPanelShouldShow] = useState(false);
   const [isPieMenuActionInProgress, setIsPieMenuActionInProgress] = useState(false);
+  const [nodeControlPanelVisible, setNodeControlPanelVisible] = useState(false);
+  const [nodeControlPanelShouldShow, setNodeControlPanelShouldShow] = useState(false);
   
   // Pending swap operation state
   const [pendingSwapOperation, setPendingSwapOperation] = useState(null);
@@ -1694,6 +1697,59 @@ function NodeCanvas() {
       setAbstractionControlPanelVisible(false);
     }
   }, [abstractionCarouselVisible, abstractionCarouselNode, abstractionControlPanelVisible]);
+
+  // --- Node Control Panel Management ---
+  useEffect(() => {
+    const nodesSelected = selectedInstanceIds.size > 0;
+    const edgeSelected = selectedEdgeId !== null || selectedEdgeIds.size > 0;
+    const shouldShow = Boolean(nodesSelected && !edgeSelected && !abstractionCarouselVisible && !connectionNamePrompt.visible);
+    if (shouldShow) {
+      setNodeControlPanelShouldShow(true);
+      setNodeControlPanelVisible(true);
+    } else if (!shouldShow && nodeControlPanelVisible) {
+      setNodeControlPanelVisible(false);
+    }
+  }, [selectedInstanceIds, selectedEdgeId, selectedEdgeIds, abstractionCarouselVisible, connectionNamePrompt.visible, nodeControlPanelVisible]);
+
+  const handleNodeControlPanelAnimationComplete = useCallback(() => {
+    setNodeControlPanelShouldShow(false);
+  }, []);
+
+  const selectedNodePrototypes = useMemo(() => {
+    const list = [];
+    if (!nodes || nodes.length === 0) return list;
+    selectedInstanceIds.forEach((instanceId) => {
+      const inst = nodes.find(n => n.id === instanceId);
+      if (inst && inst.prototypeId) {
+        const proto = nodePrototypesMap.get(inst.prototypeId);
+        if (proto) list.push(proto);
+      }
+    });
+    return list;
+  }, [selectedInstanceIds, nodes, nodePrototypesMap]);
+
+  const handleNodePanelDelete = useCallback(() => {
+    if (!activeGraphId || selectedInstanceIds.size === 0) return;
+    const idsToDelete = Array.from(selectedInstanceIds);
+    idsToDelete.forEach(id => storeActions.removeNodeInstance(activeGraphId, id));
+    setSelectedInstanceIds(new Set());
+  }, [activeGraphId, selectedInstanceIds, storeActions.removeNodeInstance]);
+
+  const handleNodePanelAdd = useCallback(() => {
+    setNodeNamePrompt({ visible: true, name: '', color: NODE_DEFAULT_COLOR });
+  }, []);
+
+  const handleNodePanelUp = useCallback(() => {
+    const first = selectedNodePrototypes[0];
+    if (!first) return;
+    storeActions.openRightPanelNodeTab(first.id, first.name);
+  }, [selectedNodePrototypes, storeActions.openRightPanelNodeTab]);
+
+  const handleNodePanelOpenInPanel = useCallback(() => {
+    const first = selectedNodePrototypes[0];
+    if (!first) return;
+    storeActions.openRightPanelNodeTab(first.id, first.name);
+  }, [selectedNodePrototypes, storeActions.openRightPanelNodeTab]);
   // Handle control panel callbacks
   const handleControlPanelClose = useCallback(() => {
     setSelectedEdgeId(null);
@@ -2233,24 +2289,6 @@ function NodeCanvas() {
                 return;
               }
 
-              // If an existing more-general node already exists in the chain, navigate instead of creating
-              try {
-                const currentState = useGraphStore.getState();
-                const chainOwnerProtoId = abstractionCarouselNode?.prototypeId;
-                const chain = chainOwnerProtoId
-                  ? (currentState.nodePrototypes.get(chainOwnerProtoId)?.abstractionChains?.[currentAbstractionDimension] || [])
-                  : [];
-                const focusedProtoId = targetNode.prototypeId;
-                const idx = chain.indexOf(focusedProtoId);
-                if (idx > 0) {
-                  console.log('[PieMenu Action] Existing node above detected. Requesting carousel move up instead of creating.');
-                  setCarouselRelativeMoveRequest('up');
-                  return;
-                }
-              } catch (e) {
-                console.warn('[PieMenu Action] Failed to check abstraction chain for above navigation, falling back to creation.', e);
-              }
-              
               // Set abstraction prompt with the target node (focused node in stage 2)
               setAbstractionPrompt({
                 visible: true,
@@ -2291,24 +2329,6 @@ function NodeCanvas() {
                 return;
               }
 
-              // If an existing more-specific node already exists in the chain, navigate instead of creating
-              try {
-                const currentState = useGraphStore.getState();
-                const chainOwnerProtoId = abstractionCarouselNode?.prototypeId;
-                const chain = chainOwnerProtoId
-                  ? (currentState.nodePrototypes.get(chainOwnerProtoId)?.abstractionChains?.[currentAbstractionDimension] || [])
-                  : [];
-                const focusedProtoId = targetNode.prototypeId;
-                const idx = chain.indexOf(focusedProtoId);
-                if (idx > -1 && idx < chain.length - 1) {
-                  console.log('[PieMenu Action] Existing node below detected. Requesting carousel move down instead of creating.');
-                  setCarouselRelativeMoveRequest('down');
-                  return;
-                }
-              } catch (e) {
-                console.warn('[PieMenu Action] Failed to check abstraction chain for below navigation, falling back to creation.', e);
-              }
-              
               // Set abstraction prompt with the target node (focused node in stage 2)
               setAbstractionPrompt({
                 visible: true,
@@ -7652,6 +7672,22 @@ function NodeCanvas() {
         setSelectedNodes={setSelectedInstanceIds}
         selectedNodes={selectedInstanceIds}
       />
+
+      {/* NodeControlPanel Component - with animation */}
+      {(nodeControlPanelShouldShow || nodeControlPanelVisible) && (
+        <NodeControlPanel
+          selectedNodePrototypes={selectedNodePrototypes}
+          isVisible={nodeControlPanelVisible}
+          typeListOpen={typeListMode !== 'closed'}
+          onAnimationComplete={handleNodeControlPanelAnimationComplete}
+          onDelete={handleNodePanelDelete}
+          onAdd={handleNodePanelAdd}
+          onUp={handleNodePanelUp}
+          onOpenInPanel={handleNodePanelOpenInPanel}
+          hasLeftNav={false}
+          hasRightNav={false}
+        />
+      )}
 
       {/* ConnectionControlPanel Component - with animation */}
       {(controlPanelShouldShow || controlPanelVisible) && (

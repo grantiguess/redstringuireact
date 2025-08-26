@@ -405,24 +405,13 @@ const AbstractionCarousel = ({
     const thingNode = nodePrototypesMap.get(thingNodeId);
     
     if (chainNodeIds.length === 0) {
-      // No chain exists yet - show default layout with proper hierarchy
-      // Thing is at the top (most abstract, non-reachable)
-      if (thingNode) {
-        chain.push({ 
-          ...thingNode, 
-          type: 'generic', 
-          level: -1, 
-          color: generateProgressiveColor(baseColor, -1),
-          isNonReachable: true // Flag to prevent scrolling to this as center
-        });
-      }
-      
-      // Current node at level 0
+      // No chain exists yet - show default layout with only the current node
       chain.push({ 
         ...selectedNode, 
         type: 'current', 
         level: 0,
-        textColor: getTextColor(selectedNode.color)
+        textColor: getTextColor(selectedNode.color),
+        prototypeId: selectedNode.prototypeId
       });
     } else {
       // Chain exists - build it properly with current node always at level 0
@@ -439,16 +428,7 @@ const AbstractionCarousel = ({
         return [];
       }
       
-      // Always put Thing at the top if it exists (non-reachable)
-      if (thingNode && !chainNodeIds.includes(thingNodeId)) {
-        chain.push({ 
-          ...thingNode, 
-          type: 'generic', 
-          level: -currentNodeIndex - 1, // Position Thing above everything
-          color: generateProgressiveColor(baseColor, -currentNodeIndex - 1),
-          isNonReachable: true
-        });
-      }
+      // Removed injected base "Thing" entry to reduce confusion
       
       // Add all nodes in the chain, with current node always at level 0
       chainNodeIds.forEach((nodeId, index) => {
