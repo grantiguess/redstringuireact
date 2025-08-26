@@ -17,5 +17,9 @@ RUN npm run build
 # Expose ports
 EXPOSE 4000 3002
 
-# Simple startup command
-CMD ["sh", "-c", "node oauth-server.js & node deployment/server.js & wait"]
+# Copy and use startup script
+COPY deployment/docker/start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
+# Use startup script
+CMD ["/app/start.sh"]
