@@ -29,7 +29,7 @@
   bottom: 70px;
 }
 
-.unified-bottom-content { display: flex; flex-direction: column; gap: 12px; background: #260000; border-radius: 28px; padding: 12px 12px 10px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); min-height: 100px; min-width: 320px; width: fit-content; max-width: 80vw; margin: 0 auto; color: #bdb5b5; font-family: 'EmOne', sans-serif; }
+.unified-bottom-content { display: flex; flex-direction: column; gap: 12px; background: #260000; border-radius: 28px; padding: 18px 12px 10px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); min-height: 100px; min-width: 320px; width: fit-content; max-width: 80vw; margin: 0 auto; color: #bdb5b5; font-family: 'EmOne', sans-serif; }
 
 .info-row { display: flex; align-items: center; justify-content: center; gap: 12px; overflow-x: auto; padding-bottom: 0; scrollbar-width: thin; scrollbar-color: #bdb5b5 transparent; width: 100%; }
 
@@ -87,7 +87,7 @@
 
 .predicate-label { color: #bdb5b5; font-weight: bold; font-size: 14px; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-family: 'EmOne', sans-serif; text-align: center; }
 
-.predicate-arrow { width: 34px; height: 34px; cursor: pointer; }
+.predicate-arrow { width: 40px; height: 40px; cursor: pointer; }
 
 .predicate-arrow.ghost polygon {
   fill: none;
