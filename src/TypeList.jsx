@@ -1,4 +1,4 @@
-import { useMemo, useRef, useCallback, useEffect } from 'react';
+import React, { useMemo, useRef, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import './TypeList.css';
 import { HEADER_HEIGHT } from './constants';

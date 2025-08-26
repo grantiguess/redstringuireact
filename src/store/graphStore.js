@@ -2073,58 +2073,64 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     }
     
     const chain = node.abstractionChains[dimension];
+
+    // Prevent duplicate entries of the node being added
+    if (chain.includes(newNodeId)) {
+      console.log(`[Store] Skipping addToAbstractionChain: ${newNodeId} already in ${dimension} chain for ${nodeId}`);
+    } else {
     
-    // If insertRelativeToNodeId is provided, insert relative to that node
-    if (insertRelativeToNodeId && insertRelativeToNodeId !== nodeId) {
-      const relativeIndex = chain.indexOf(insertRelativeToNodeId);
-      if (relativeIndex !== -1) {
-        if (direction === 'above') {
-          // More abstract - insert before the relative node
-          chain.splice(relativeIndex, 0, newNodeId);
-        } else {
-          // More specific - insert after the relative node
-          chain.splice(relativeIndex + 1, 0, newNodeId);
-        }
-        console.log(`Added ${newNodeId} ${direction} ${insertRelativeToNodeId} in ${dimension} dimension. Chain:`, chain);
-        return;
-      } else {
-        console.warn(`Relative node ${insertRelativeToNodeId} not found in chain, inserting both nodes`);
-        // If the relative node isn't in the chain yet, we need to handle this case
-        // Insert both the relative node and the new node in the correct order
-        const chainOwnerIndex = chain.indexOf(nodeId);
-        if (chainOwnerIndex !== -1) {
+      // If insertRelativeToNodeId is provided, insert relative to that node
+      if (insertRelativeToNodeId && insertRelativeToNodeId !== nodeId) {
+        const relativeIndex = chain.indexOf(insertRelativeToNodeId);
+        if (relativeIndex !== -1) {
           if (direction === 'above') {
-            // Insert relative node at chain owner position, then new node above it
-            chain.splice(chainOwnerIndex, 0, newNodeId, insertRelativeToNodeId);
+            // More abstract - insert before the relative node
+            chain.splice(relativeIndex, 0, newNodeId);
           } else {
-            // Insert relative node at chain owner position, then new node below it  
-            chain.splice(chainOwnerIndex, 0, insertRelativeToNodeId, newNodeId);
+            // More specific - insert after the relative node
+            chain.splice(relativeIndex + 1, 0, newNodeId);
           }
-          console.log(`Added relative node ${insertRelativeToNodeId} and new node ${newNodeId} ${direction} it. Chain:`, chain);
+          console.log(`Added ${newNodeId} ${direction} ${insertRelativeToNodeId} in ${dimension} dimension. Chain:`, chain);
           return;
+        } else {
+          console.warn(`Relative node ${insertRelativeToNodeId} not found in chain, inserting both nodes`);
+          // If the relative node isn't in the chain yet, we need to handle this case
+          // Insert both the relative node and the new node in the correct order
+          const chainOwnerIndex = chain.indexOf(nodeId);
+          if (chainOwnerIndex !== -1) {
+            if (direction === 'above') {
+              // Insert relative node at chain owner position, then new node above it
+              chain.splice(chainOwnerIndex, 0, newNodeId, insertRelativeToNodeId);
+            } else {
+              // Insert relative node at chain owner position, then new node below it  
+              chain.splice(chainOwnerIndex, 0, insertRelativeToNodeId, newNodeId);
+            }
+            console.log(`Added relative node ${insertRelativeToNodeId} and new node ${newNodeId} ${direction} it. Chain:`, chain);
+            return;
+          }
         }
       }
+      
+      // Fallback: insert relative to the chain owner (original behavior)
+      const currentIndex = chain.indexOf(nodeId);
+      
+      if (currentIndex === -1) {
+        // Node not in chain, add it first
+        chain.push(nodeId);
+      }
+      
+      // Add new node in the right position relative to chain owner
+      const updatedCurrentIndex = chain.indexOf(nodeId);
+      if (direction === 'above') {
+        // More abstract - insert before the chain owner
+        chain.splice(updatedCurrentIndex, 0, newNodeId);
+      } else {
+        // More specific - insert after the chain owner
+        chain.splice(updatedCurrentIndex + 1, 0, newNodeId);
+      }
+      
+      console.log(`Added ${newNodeId} ${direction} ${nodeId} in ${dimension} dimension. Chain:`, chain);
     }
-    
-    // Fallback: insert relative to the chain owner (original behavior)
-    const currentIndex = chain.indexOf(nodeId);
-    
-    if (currentIndex === -1) {
-      // Node not in chain, add it first
-      chain.push(nodeId);
-    }
-    
-    // Add new node in the right position relative to chain owner
-    const updatedCurrentIndex = chain.indexOf(nodeId);
-    if (direction === 'above') {
-      // More abstract - insert before the chain owner
-      chain.splice(updatedCurrentIndex, 0, newNodeId);
-    } else {
-      // More specific - insert after the chain owner
-      chain.splice(updatedCurrentIndex + 1, 0, newNodeId);
-    }
-    
-    console.log(`Added ${newNodeId} ${direction} ${nodeId} in ${dimension} dimension. Chain:`, chain);
   })),
   
   // Remove a node from an abstraction chain

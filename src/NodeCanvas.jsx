@@ -4568,7 +4568,7 @@ function NodeCanvas() {
     
     return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
   };
-  const handleAbstractionSubmit = ({ name, color }) => {
+  const handleAbstractionSubmit = ({ name, color, existingPrototypeId }) => {
     console.log(`[Abstraction Submit] Called with:`, { name, color, promptState: abstractionPrompt });
     console.log(`[Abstraction Submit] Current abstractionCarouselNode:`, abstractionCarouselNode);
     console.log(`[Abstraction Submit] Looking for node with ID:`, abstractionPrompt.nodeId);
@@ -4641,26 +4641,31 @@ function NodeCanvas() {
         // Fall back to the current carousel node as owner
       }
 
-      // Create new node with color gradient
-      const newNodeId = uuidv4();
-      let newNodeColor = color;
-      if (!newNodeColor) {
-        const isAbove = abstractionPrompt.direction === 'above';
-        const abstractionLevel = isAbove ? 0.3 : -0.2;
-        const targetColor = isAbove ? '#EFE8E5' : '#000000';
-        newNodeColor = interpolateColor(currentlySelectedNode.color || '#8B0000', targetColor, Math.abs(abstractionLevel));
+      // Determine the node to insert into the chain: existing or new
+      let newNodeId = existingPrototypeId;
+      if (!newNodeId) {
+        // Create new node with color gradient
+        let newNodeColor = color;
+        if (!newNodeColor) {
+          const isAbove = abstractionPrompt.direction === 'above';
+          const abstractionLevel = isAbove ? 0.3 : -0.2;
+          const targetColor = isAbove ? '#EFE8E5' : '#000000';
+          newNodeColor = interpolateColor(currentlySelectedNode.color || '#8B0000', targetColor, Math.abs(abstractionLevel));
+        }
+        
+        console.log(`[Abstraction Submit] Creating new node with color:`, newNodeColor);
+        
+        // Create the new node prototype
+        storeActions.addNodePrototype({
+          id: (newNodeId = uuidv4()),
+          name: name.trim(),
+          color: newNodeColor,
+          typeNodeId: 'base-thing-prototype',
+          definitionGraphIds: []
+        });
+      } else {
+        console.log(`[Abstraction Submit] Using existing prototype ${newNodeId} instead of creating new`);
       }
-      
-      console.log(`[Abstraction Submit] Creating new node with color:`, newNodeColor);
-      
-      // Create the new node prototype
-      storeActions.addNodePrototype({
-        id: newNodeId,
-        name: name.trim(),
-        color: newNodeColor,
-        typeNodeId: 'base-thing-prototype',
-        definitionGraphIds: []
-      });
       
       // Add to the abstraction chain relative to the currently selected/focused node
       // Use the resolved chain owner rather than always the carousel node
@@ -4676,7 +4681,7 @@ function NodeCanvas() {
         chainOwnerPrototypeId,                   // the node whose chain we're modifying (actual chain owner)
         currentAbstractionDimension,            // dimension (Physical, Conceptual, etc.)
         abstractionPrompt.direction,            // 'above' or 'below'
-        newNodeId,                              // the new node to add
+        newNodeId,                              // the node to add (existing or newly created)
         targetPrototypeId                       // insert relative to this node (focused node in carousel)
       );
       
@@ -7781,7 +7786,7 @@ function NodeCanvas() {
                   }
                 }}
                 onSubmit={handleAbstractionSubmit}
-                onNodeSelect={(node) => { console.log(`[Abstraction] Selected existing node:`, node); handleAbstractionSubmit({ name: node.name, color: node.color }); }}
+                onNodeSelect={(node) => { console.log(`[Abstraction] Selected existing node:`, node); handleAbstractionSubmit({ name: node.name, color: node.color, existingPrototypeId: node.id }); }}
                 initialName={abstractionPrompt.name}
                 initialColor={abstractionPrompt.color}
                 title={`Add ${abstractionPrompt.direction === 'above' ? 'Above' : 'Below'}`}

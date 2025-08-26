@@ -13,8 +13,11 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// In Docker, we're in /app and dist is at /app/dist 
+const distPath = path.join(process.cwd(), 'dist');
+
 // Serve static files from the dist directory
-app.use(express.static(path.join(__dirname, 'dist')));
+app.use(express.static(distPath));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -23,7 +26,7 @@ app.get('/health', (req, res) => {
 
 // Handle client-side routing - serve index.html for all non-API routes
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
 app.listen(PORT, () => {
