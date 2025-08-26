@@ -11,6 +11,12 @@ const NodeControlPanel = ({
   onAdd,
   onUp,
   onOpenInPanel,
+  onDecompose,
+  onAbstraction,
+  onEdit,
+  onSave,
+  onPalette,
+  onMore,
   onLeftNav,
   onRightNav,
   hasLeftNav = false,
@@ -32,6 +38,12 @@ const NodeControlPanel = ({
       onAdd={onAdd}
       onUp={onUp}
       onOpenInPanel={onOpenInPanel}
+      onDecompose={onDecompose}
+      onAbstraction={onAbstraction}
+      onEdit={onEdit}
+      onSave={onSave}
+      onPalette={onPalette}
+      onMore={onMore}
       onLeftNav={onLeftNav}
       onRightNav={onRightNav}
       hasLeftNav={hasLeftNav}

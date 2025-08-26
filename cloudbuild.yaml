@@ -2,22 +2,7 @@
 # Builds and deploys to Cloud Run
 
 steps:
-  # Step 1: Install dependencies
-  - name: 'node:18'
-    entrypoint: npm
-    args: ['ci']
-    id: 'install-deps'
-
-  # Step 2: Build the frontend
-  - name: 'node:18'
-    entrypoint: npm
-    args: ['run', 'build']
-    env:
-      - 'NODE_ENV=production'
-    id: 'build-frontend'
-    waitFor: ['install-deps']
-
-  # Step 3: Build Docker image
+  # Step 1: Build Docker image
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
@@ -29,15 +14,14 @@ steps:
       - 'gcr.io/$PROJECT_ID/redstring-app:latest'
       - '.'
     id: 'build-image'
-    waitFor: ['build-frontend']
 
-  # Step 4: Push to Container Registry
+  # Step 2: Push to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/redstring-app:$BUILD_ID']
     id: 'push-image'
     waitFor: ['build-image']
 
-  # Step 5: Deploy to Cloud Run (Production)
+  # Step 3: Deploy to Cloud Run (Production)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: 'gcloud'
     args:
@@ -62,7 +46,7 @@ steps:
       - '--max-instances'
       - '10'
       - '--set-env-vars'
-      - 'NODE_ENV=production,PORT=4000,OAUTH_PORT=3002'
+      - 'NODE_ENV=production,OAUTH_PORT=3002'
       - '--set-secrets'
       - 'GITHUB_CLIENT_ID=github-client-id:latest,GITHUB_CLIENT_SECRET=github-client-secret:latest,VITE_GITHUB_CLIENT_ID=github-client-id:latest'
     id: 'deploy-prod'

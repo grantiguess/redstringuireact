@@ -2,28 +2,20 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files first
 COPY package*.json ./
 
-# Install only production dependencies
-RUN npm ci --omit=dev
+# Install dependencies
+RUN npm install
 
-# Copy built frontend (already built in Cloud Build)
-COPY dist ./dist
+# Copy all source files
+COPY . .
 
-# Copy server files
-COPY deployment/server.js ./
-COPY oauth-server.js ./
-
-# Copy startup script
-COPY deployment/docker/docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh
+# Build the React app
+RUN npm run build
 
 # Expose ports
 EXPOSE 4000 3002
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:4000/health || exit 1
-
-CMD ["./docker-entrypoint.sh"]
+# Simple startup command
+CMD ["sh", "-c", "node oauth-server.js & node deployment/server.js & wait"]

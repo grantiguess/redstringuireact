@@ -33,7 +33,7 @@
 
 .info-row { display: flex; align-items: center; justify-content: center; gap: 12px; overflow-x: auto; padding-bottom: 0; scrollbar-width: thin; scrollbar-color: #bdb5b5 transparent; width: 100%; }
 
-.piemenu-row { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.piemenu-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 8px; }
 
 .piemenu-buttons {
   display: flex;

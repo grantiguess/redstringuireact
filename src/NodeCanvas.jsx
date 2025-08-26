@@ -1714,6 +1714,8 @@ function NodeCanvas() {
 
   const handleNodeControlPanelAnimationComplete = useCallback(() => {
     setNodeControlPanelShouldShow(false);
+    // Clear the last selected prototypes when animation completes
+    setLastSelectedNodePrototypes([]);
   }, []);
 
   const selectedNodePrototypes = useMemo(() => {
@@ -1728,6 +1730,28 @@ function NodeCanvas() {
     });
     return list;
   }, [selectedInstanceIds, nodes, nodePrototypesMap]);
+
+  // Keep the last selected node prototypes during exit animation
+  const [lastSelectedNodePrototypes, setLastSelectedNodePrototypes] = useState([]);
+  
+  // Update last selected prototypes when selection changes
+  useEffect(() => {
+    if (selectedNodePrototypes.length > 0) {
+      setLastSelectedNodePrototypes(selectedNodePrototypes);
+    }
+  }, [selectedNodePrototypes]);
+
+  // Use last selected prototypes if current ones are empty but panel is still visible
+  const nodePrototypesForPanel = useMemo(() => {
+    if (selectedNodePrototypes.length > 0) {
+      return selectedNodePrototypes;
+    }
+    // If no current selection but panel is still visible (during exit animation), use last known selection
+    if (nodeControlPanelVisible && lastSelectedNodePrototypes.length > 0) {
+      return lastSelectedNodePrototypes;
+    }
+    return [];
+  }, [selectedNodePrototypes, nodeControlPanelVisible, lastSelectedNodePrototypes]);
 
   const handleNodePanelDelete = useCallback(() => {
     if (!activeGraphId || selectedInstanceIds.size === 0) return;
@@ -1751,6 +1775,59 @@ function NodeCanvas() {
     if (!first) return;
     storeActions.openRightPanelNodeTab(first.id, first.name);
   }, [selectedNodePrototypes, storeActions.openRightPanelNodeTab]);
+
+  // Additional node panel action handlers
+  const handleNodePanelDecompose = useCallback(() => {
+    const first = selectedNodePrototypes[0];
+    if (!first) return;
+    // Trigger decompose action similar to pie menu
+    setPreviewingNodeId(first.id);
+    setSelectedInstanceIds(new Set([first.id]));
+  }, [selectedNodePrototypes, setPreviewingNodeId, setSelectedInstanceIds]);
+
+  const handleNodePanelAbstraction = useCallback(() => {
+    const first = selectedNodePrototypes[0];
+    if (!first) return;
+    // Trigger abstraction carousel
+    const nodeData = nodes.find(n => n.prototypeId === first.id);
+    if (nodeData) {
+      setAbstractionCarouselNode(nodeData);
+      setCarouselAnimationState('entering');
+      setAbstractionCarouselVisible(true);
+      setSelectedNodeIdForPieMenu(nodeData.id);
+      setSelectedInstanceIds(new Set([nodeData.id]));
+    }
+  }, [selectedNodePrototypes, nodes, setAbstractionCarouselNode, setCarouselAnimationState, setAbstractionCarouselVisible, setSelectedNodeIdForPieMenu, setSelectedInstanceIds]);
+
+  const handleNodePanelEdit = useCallback(() => {
+    const first = selectedNodePrototypes[0];
+    if (!first) return;
+    // Open right panel and enable editing
+    storeActions.openRightPanelNodeTab(first.id, first.name);
+    if (!rightPanelExpanded) {
+      setRightPanelExpanded(true);
+    }
+    // Find the instance to edit
+    const instance = nodes.find(n => n.prototypeId === first.id);
+    if (instance) {
+      setEditingNodeIdOnCanvas(instance.id);
+    }
+  }, [selectedNodePrototypes, storeActions, rightPanelExpanded, setRightPanelExpanded, nodes, setEditingNodeIdOnCanvas]);
+
+  const handleNodePanelSave = useCallback(() => {
+    const first = selectedNodePrototypes[0];
+    if (!first) return;
+    // Toggle saved state
+    storeActions.toggleSavedNode(first.id);
+  }, [selectedNodePrototypes, storeActions]);
+
+
+
+  const handleNodePanelMore = useCallback(() => {
+    // For now, just log - could implement additional menu
+    console.log('[NodePanel] More options clicked');
+  }, []);
+
   // Handle control panel callbacks
   const handleControlPanelClose = useCallback(() => {
     setSelectedEdgeId(null);
@@ -2042,6 +2119,27 @@ function NodeCanvas() {
       }
     }
   }, [activePieMenuColorNodeId, nodes, storeActions]);
+
+  // Node panel palette handler (moved here after refs are defined)
+  const handleNodePanelPalette = useCallback(() => {
+    const first = selectedNodePrototypes[0];
+    if (!first) return;
+    // Open color picker for the first selected node
+    const instance = nodes.find(n => n.prototypeId === first.id);
+    if (instance) {
+      // Calculate position for color picker
+      const nodeCenter = {
+        x: instance.x + 50, // Approximate center
+        y: instance.y + 25
+      };
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const screenX = nodeCenter.x * zoomLevel + panOffset.x + rect.left;
+        const screenY = nodeCenter.y * zoomLevel + panOffset.y + rect.top;
+        handlePieMenuColorPickerOpen(instance.id, { x: screenX, y: screenY });
+      }
+    }
+  }, [selectedNodePrototypes, nodes, containerRef, zoomLevel, panOffset, handlePieMenuColorPickerOpen]);
 
   // Pie Menu Button Configuration - now targetPieMenuButtons and dynamic
   const targetPieMenuButtons = useMemo(() => {
@@ -7751,7 +7849,7 @@ function NodeCanvas() {
       {/* NodeControlPanel Component - with animation */}
       {(nodeControlPanelShouldShow || nodeControlPanelVisible) && (
         <NodeControlPanel
-          selectedNodePrototypes={selectedNodePrototypes}
+          selectedNodePrototypes={nodePrototypesForPanel}
           isVisible={nodeControlPanelVisible}
           typeListOpen={typeListMode !== 'closed'}
           onAnimationComplete={handleNodeControlPanelAnimationComplete}
@@ -7759,6 +7857,12 @@ function NodeCanvas() {
           onAdd={handleNodePanelAdd}
           onUp={handleNodePanelUp}
           onOpenInPanel={handleNodePanelOpenInPanel}
+          onDecompose={handleNodePanelDecompose}
+          onAbstraction={handleNodePanelAbstraction}
+          onEdit={handleNodePanelEdit}
+          onSave={handleNodePanelSave}
+          onPalette={handleNodePanelPalette}
+          onMore={handleNodePanelMore}
           hasLeftNav={false}
           hasRightNav={false}
         />

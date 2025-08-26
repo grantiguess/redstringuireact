@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Trash2, Plus, ArrowUpFromDot, ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trash2, Plus, ArrowUpFromDot, ArrowRight, ChevronLeft, ChevronRight, PackageOpen, Layers, Edit3, Bookmark, Palette, MoreHorizontal } from 'lucide-react';
 import './UnifiedBottomControlPanel.css';
 
 // Small helper to render a triangle cap (rounded-ish via strokeJoin/lineJoin aesthetics)
@@ -75,6 +75,14 @@ const UnifiedBottomControlPanel = ({
   onAdd,
   onUp,
   onOpenInPanel,
+  
+  // Additional node action handlers
+  onDecompose,
+  onAbstraction,
+  onEdit,
+  onSave,
+  onPalette,
+  onMore,
 
   // Optional navigations (shown on node mode)
   onLeftNav,
@@ -177,10 +185,27 @@ const UnifiedBottomControlPanel = ({
         {/* Row 2: Pie-menu buttons */}
         <div className="piemenu-row">
           <div className="piemenu-buttons">
-            <div className="piemenu-button" onClick={onDelete} title="Delete"><Trash2 size={18} /></div>
-            <div className="piemenu-button" onClick={onAdd} title="Add"><Plus size={18} /></div>
-            <div className="piemenu-button" onClick={onUp} title="Open definition"><ArrowUpFromDot size={18} /></div>
-            <div className="piemenu-button" onClick={onOpenInPanel} title="Open in panel"><ArrowRight size={18} /></div>
+            {isNodes ? (
+              // Node mode: Show all available node actions
+              <>
+                <div className="piemenu-button" onClick={onUp} title="Open Web"><ArrowUpFromDot size={18} /></div>
+                <div className="piemenu-button" onClick={onDecompose || onAdd} title="Decompose"><PackageOpen size={18} /></div>
+                <div className="piemenu-button" onClick={onAbstraction || onOpenInPanel} title="Abstraction"><Layers size={18} /></div>
+                <div className="piemenu-button" onClick={onDelete} title="Delete"><Trash2 size={18} /></div>
+                <div className="piemenu-button" onClick={onEdit || onUp} title="Edit"><Edit3 size={18} /></div>
+                <div className="piemenu-button" onClick={onSave || onAdd} title="Save"><Bookmark size={18} /></div>
+                <div className="piemenu-button" onClick={onPalette || onOpenInPanel} title="Palette"><Palette size={18} /></div>
+                <div className="piemenu-button" onClick={onMore || onDelete} title="More"><MoreHorizontal size={18} /></div>
+              </>
+            ) : (
+              // Connection mode: Show connection actions
+              <>
+                <div className="piemenu-button" onClick={onDelete} title="Delete"><Trash2 size={18} /></div>
+                <div className="piemenu-button" onClick={onAdd} title="Add"><Plus size={18} /></div>
+                <div className="piemenu-button" onClick={onUp} title="Open definition"><ArrowUpFromDot size={18} /></div>
+                <div className="piemenu-button" onClick={onOpenInPanel} title="Open in panel"><ArrowRight size={18} /></div>
+              </>
+            )}
           </div>
         </div>
       </div>
