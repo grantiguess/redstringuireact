@@ -5,8 +5,8 @@ import UnifiedBottomControlPanel from './UnifiedBottomControlPanel';
 
 const AbstractionControlPanel = ({ 
   selectedNode, 
-  currentDimension = 'Abstraction Axis 1', 
-  availableDimensions = ['Abstraction Axis 1'], 
+  currentDimension = 'Generalization Axis', 
+  availableDimensions = ['Generalization Axis'], 
   onDimensionChange,
   onAddDimension,
   onDeleteDimension,
@@ -56,7 +56,7 @@ const AbstractionControlPanel = ({
 
   const handleAddDimension = () => {
     // Create a new dimension name
-    const newDimensionName = `Abstraction Axis ${availableDimensions.length + 1}`;
+    const newDimensionName = `Generalization Axis ${availableDimensions.length + 1}`;
     onAddDimension?.(newDimensionName);
   };
 
@@ -130,46 +130,46 @@ const AbstractionControlPanel = ({
       </div>
       
       {isEditingName ? (
-        <input
-          type="text"
-          value={editingName}
-          onChange={(e) => setEditingName(e.target.value)}
-          onKeyDown={handleKeyPress}
+        <div
+          contentEditable
+          suppressContentEditableWarning
+          onInput={(e) => setEditingName(e.currentTarget.textContent || '')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); handleSaveName(); }
+            else { handleKeyPress(e); }
+          }}
           onBlur={handleSaveName}
           style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             backgroundColor: '#DEDADA',
             border: 'none',
             borderRadius: '16px',
-            padding: '8px 12px',
+            padding: '8px 16px',
             color: '#000000',
             fontSize: '16px',
             fontWeight: 'bold',
             textAlign: 'center',
-            minWidth: '120px',
             minHeight: '40px',
             outline: 'none',
-            wordWrap: 'break-word',
             whiteSpace: 'normal',
-            resize: 'none',
-            width: 'fit-content'
+            wordBreak: 'break-word',
+            lineHeight: '1.2'
           }}
-          autoFocus
-        />
+        >{editingName}</div>
       ) : (
         <div 
           style={{
-            display: 'flex',
+            display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: '#DEDADA',
             borderRadius: '16px',
-            padding: '8px 12px',
+            padding: '8px 16px',
             border: 'none',
-            minWidth: '120px',
             minHeight: '40px',
-            wordWrap: 'break-word',
-            whiteSpace: 'normal',
-            width: 'fit-content'
+            width: 'auto'
           }}
         >
           <span style={{ 
@@ -177,7 +177,9 @@ const AbstractionControlPanel = ({
             fontSize: '16px',
             fontWeight: 'bold',
             textAlign: 'center',
-            lineHeight: '1.2'
+            lineHeight: '1.2',
+            whiteSpace: 'normal',
+            wordBreak: 'break-word'
           }}>
             {currentDimension}
           </span>

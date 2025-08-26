@@ -329,7 +329,7 @@ const AbstractionCarousel = ({
   onScaleChange, // New callback to report the focused node's current scale
   onFocusedNodeDimensions, // New callback to report the focused node's dimensions
   onFocusedNodeChange, // New callback to report which node is currently focused
-  currentDimension = 'Physical', // Current abstraction axis/dimension
+  currentDimension = 'Generalization Axis', // Current abstraction axis/dimension
   availableDimensions = [], // Available abstraction axes for this node
   onDimensionChange, // Called when user changes dimension
   onAddDimension, // Called when user adds a new dimension

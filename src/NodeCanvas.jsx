@@ -1424,8 +1424,8 @@ function NodeCanvas() {
   const [justCompletedCarouselExit, setJustCompletedCarouselExit] = useState(false);
   
   // Abstraction dimension management
-  const [abstractionDimensions, setAbstractionDimensions] = useState(['Physical']);
-  const [currentAbstractionDimension, setCurrentAbstractionDimension] = useState('Physical');
+  const [abstractionDimensions, setAbstractionDimensions] = useState(['Generalization Axis']);
+  const [currentAbstractionDimension, setCurrentAbstractionDimension] = useState('Generalization Axis');
   
   // Abstraction control panel states
   const [abstractionControlPanelVisible, setAbstractionControlPanelVisible] = useState(false);
@@ -6282,12 +6282,12 @@ function NodeCanvas() {
                       const rectH = (maxY - minY) + margin * 2;
                       const cornerR = 12;
                       const strokeColor = group.color || '#8B0000';
-                      const labelHeight = 96; // 3x larger
-                      const labelPaddingX = 20; // more padding
-                      const labelY = rectY - labelHeight - 12; // more space above
+                      const labelHeight = 80; // Better proportioned height
+                      const labelPaddingX = 24; // more padding for larger text
+                      const labelY = rectY - labelHeight - 8; // less space above
                       const labelText = group.name || 'Group';
-                      // Estimate label width based on average char width
-                      const labelWidth = Math.max(120, labelText.length * 12 + labelPaddingX * 2); // wider and larger text
+                      // Estimate label width based on average char width - make it fit the text better
+                      const labelWidth = Math.max(140, labelText.length * 16 + labelPaddingX * 2); // wider for larger text
                       const labelX = rectX; // left aligned with group left edge
                       return (
                         <g key={group.id} className="group" data-group-id={group.id}>
@@ -6316,7 +6316,7 @@ function NodeCanvas() {
                              onMouseUp={() => { clearTimeout(groupLongPressTimeout.current); }}
                              onMouseLeave={() => { clearTimeout(groupLongPressTimeout.current); }}
                           >
-                            <rect x={labelX} y={labelY} width={labelWidth} height={labelHeight} rx={10} ry={10}
+                            <rect x={labelX} y={labelY} width={labelWidth} height={labelHeight} rx={20} ry={20}
                                   fill="#bdb5b5" stroke={strokeColor} strokeWidth={5}
                                   style={{
                                     transform: draggingNodeInfo?.groupId === group.id ? `scale(1.08)` : 'scale(1)',
@@ -6324,7 +6324,7 @@ function NodeCanvas() {
                                     filter: draggingNodeInfo?.groupId === group.id ? 'drop-shadow(0px 5px 10px rgba(0,0,0,0.3))' : 'none'
                                   }}
                             />
-                            <text x={labelX + labelPaddingX} y={labelY + labelHeight * 0.68} fontFamily="EmOne, sans-serif" fontSize={24}
+                            <text x={labelX + labelPaddingX} y={labelY + labelHeight * 0.65} fontFamily="EmOne, sans-serif" fontSize={32}
                                   fill={strokeColor} fontWeight="bold">{labelText}</text>
                           </g>
                         </g>
