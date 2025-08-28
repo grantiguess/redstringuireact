@@ -1050,11 +1050,10 @@ const GitNativeFederation = () => {
         )}
 
         {/* Provider Selection */}
-        <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#979090', borderRadius: '8px' }}>
+        <div style={{ marginBottom: '20px', marginTop: '30px', padding: '15px', backgroundColor: '#979090', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-            <h4 style={{ color: '#260000', margin: 0, fontSize: '0.9rem' }}>
-              <Settings size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-              Provider Configuration
+            <h4 style={{ color: '#260000', margin: 0, fontSize: '1.3rem' }}>
+                Setup
             </h4>
             <button
               onClick={() => setShowAdvanced(!showAdvanced)}
@@ -1302,17 +1301,6 @@ const GitNativeFederation = () => {
               {/* OAuth Configuration */}
               {authMethod === 'oauth' && (
                 <>
-                  <div style={{ 
-                    padding: '12px', 
-                    backgroundColor: '#EFE8E5', 
-                    borderRadius: '6px', 
-                    fontSize: '0.8rem',
-                    color: '#e65100',
-                    marginBottom: '15px',
-                    border: '1px solid #ff9800'
-                  }}>
-                    <strong>⚠️ OAuth Setup Required:</strong> GitHub OAuth requires GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables in the OAuth server (port 3002). Use Token method for easier setup.
-                  </div>
                   <div style={{ marginBottom: '10px' }}>
                     <InfoTooltip tooltip="GitHub OAuth requires proper configuration. Only use if you have set up OAuth credentials in the bridge server.">
                       <label style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>

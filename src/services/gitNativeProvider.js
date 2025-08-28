@@ -1007,7 +1007,7 @@ export class SemanticProviderFactory {
       },
       {
         type: 'gitea',
-        name: 'Self-Hosted Gitea',
+        name: 'Self-Host',
         description: 'Self-hosted Gitea instance',
         authMechanism: 'token',
         configFields: ['endpoint', 'user', 'repo', 'token', 'semanticPath']

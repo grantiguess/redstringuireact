@@ -213,12 +213,53 @@ const ModalDemo = () => {
         >
           Show Alpha Welcome
         </button>
+
+        <button
+          onClick={() => {
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('redstring-alpha-welcome-seen');
+              localStorage.removeItem('redstring-has-used-before');
+              alert('LocalStorage cleared! Refresh the page to see first-time experience.');
+            }
+          }}
+          style={{
+            padding: '12px 20px',
+            border: '2px solid #666',
+            borderRadius: '8px',
+            backgroundColor: '#f8f8f8',
+            color: '#666',
+            cursor: 'pointer',
+            fontFamily: "'EmOne', sans-serif",
+            fontSize: '1rem',
+            fontWeight: 'bold'
+          }}
+        >
+          Reset First-Time Experience
+        </button>
       </div>
 
       <p style={{ margin: '20px 0', fontSize: '0.9rem', color: '#666' }}>
         These modals use the same viewport calculation system as EdgeGlowIndicator and UnifiedSelector.
         They automatically position themselves within the available canvas or panel space with proper margins.
       </p>
+
+      <div style={{
+        marginTop: '20px',
+        padding: '16px',
+        backgroundColor: 'rgba(139, 0, 0, 0.05)',
+        borderRadius: '8px',
+        border: '1px solid rgba(139, 0, 0, 0.2)'
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', color: '#8B0000', fontSize: '1rem' }}>
+          🧪 Testing Features
+        </h4>
+        <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.85rem', color: '#666' }}>
+          <li><strong>Alpha Modal:</strong> Shows welcome message for Redstring's open alpha</li>
+          <li><strong>Reset Button:</strong> Clears localStorage to test first-time experience</li>
+          <li><strong>Keyboard Shortcut:</strong> <code>Ctrl+W</code> to show alpha modal anywhere in the app</li>
+          <li><strong>Auto-show:</strong> Appears automatically on first app launch</li>
+        </ul>
+      </div>
 
       {/* Canvas Modal */}
       <CanvasModal
@@ -250,6 +291,9 @@ const ModalDemo = () => {
         isVisible={alphaModalVisible}
         onClose={() => setAlphaModalVisible(false)}
         onDontShowAgain={() => console.log('User chose not to show alpha welcome again')}
+        width={520}
+        height={720}
+        margin={20}
       />
     </div>
   );

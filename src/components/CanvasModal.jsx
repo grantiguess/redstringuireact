@@ -49,7 +49,7 @@ const CanvasModal = ({
     }
   };
 
-  // Calculate position within viewport
+  // Calculate position within viewport, accounting for header and TypeList
   const getModalPosition = () => {
     const viewportX = viewportBounds.x;
     const viewportY = viewportBounds.y;
@@ -60,31 +60,39 @@ const CanvasModal = ({
 
     switch (position) {
       case 'top-left':
-        left = viewportX + margin;
-        top = viewportY + margin;
+        left = viewportX + 20;
+        top = viewportY + 20;
         break;
       case 'top-right':
-        left = viewportX + viewportWidth - width - margin;
-        top = viewportY + margin;
+        left = viewportX + viewportWidth - width - 20;
+        top = viewportY + 20;
         break;
       case 'bottom-left':
-        left = viewportX + margin;
-        top = viewportY + viewportHeight - (height === 'auto' ? 300 : height) - margin;
+        const modalHeightBottomLeft = typeof height === 'number' ? height : 400;
+        left = viewportX + 20;
+        top = viewportY + viewportHeight - modalHeightBottomLeft - 20;
         break;
       case 'bottom-right':
-        left = viewportX + viewportWidth - width - margin;
-        top = viewportY + viewportHeight - (height === 'auto' ? 300 : height) - margin;
+        const modalHeightBottomRight = typeof height === 'number' ? height : 400;
+        left = viewportX + viewportWidth - width - 20;
+        top = viewportY + viewportHeight - modalHeightBottomRight - 20;
         break;
       case 'center':
       default:
+        const modalHeight = typeof height === 'number' ? height : 400;
         left = viewportX + (viewportWidth - width) / 2;
-        top = viewportY + (viewportHeight - (height === 'auto' ? 300 : height)) / 2;
+        top = viewportY + (viewportHeight - modalHeight) / 2;
         break;
     }
 
-    // Ensure modal stays within viewport bounds
-    left = Math.max(viewportX + margin, Math.min(left, viewportX + viewportWidth - width - margin));
-    top = Math.max(viewportY + margin, Math.min(top, viewportY + viewportHeight - (height === 'auto' ? 300 : height) - margin));
+    // Ensure modal stays within viewport bounds, accounting for header and TypeList
+    // Use consistent 20px margins from all edges
+    const modalHeight = typeof height === 'number' ? height : 400;
+    const minTop = viewportY + 20;
+    const maxTop = viewportY + viewportHeight - modalHeight - 20;
+
+    left = Math.max(viewportX + 20, Math.min(left, viewportX + viewportWidth - width - 20));
+    top = Math.max(minTop, Math.min(top, maxTop));
 
     return { left, top };
   };
@@ -123,7 +131,6 @@ const CanvasModal = ({
           maxWidth: `${viewportBounds.width - margin * 2}px`,
           maxHeight: `${viewportBounds.height - margin * 2}px`,
           backgroundColor: '#bdb5b5', // Canvas color
-          border: '2px solid #260000', // Maroon border
           borderRadius: '12px',
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
           zIndex: 9999,

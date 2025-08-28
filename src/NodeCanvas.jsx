@@ -6144,7 +6144,7 @@ function NodeCanvas() {
           ) : (!isUniverseLoaded || !hasUniverseFile) ? (
             // Show universe file setup screen
             <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#555', padding: '20px' }}>
-              <div style={{ fontSize: '32px', marginBottom: '20px' }}>
+              <div style={{ fontSize: '32px', marginBottom: '20px', fontFamily: "'EmOne', sans-serif" }}>
                 Welcome to Redstring
               </div>
               {universeLoadingError ? (
@@ -6158,14 +6158,14 @@ function NodeCanvas() {
                 </div>
               ) : (
                 <div style={{ textAlign: 'center', maxWidth: '500px', marginBottom: '30px' }}>
-                  <div style={{ fontSize: '20px', marginBottom: '15px' }}>
+                  <div style={{ fontSize: '20px', marginBottom: '15px', fontFamily: "'EmOne', sans-serif" }}>
                     An open, recursive knowledge graph interface.
                     <br />
                   </div>
-                  <div style={{ fontSize: '14px', color: '#666' }}>
+                  <div style={{ fontSize: '14px', color: '#666', fontFamily: "'EmOne', sans-serif" }}>
                     Create your universe.redstring file once, and it will auto-reconnect on every visit.
                   </div>
-                  <div style={{ fontSize: '14px', color: '#888', marginTop: '10px' }}>
+                  <div style={{ fontSize: '14px', color: '#888', marginTop: '10px', fontFamily: "'EmOne', sans-serif" }}>
                     Save to your Documents folder for easy auto-discovery.
                   </div>
                 </div>

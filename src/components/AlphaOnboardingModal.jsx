@@ -34,198 +34,169 @@ const AlphaOnboardingModal = ({
   };
 
   const modalContent = (
-    <div>
+    <div style={{
+      padding: '24px', // More generous padding with taller modal
+      boxSizing: 'border-box',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      position: 'relative'
+    }}>
+      {/* Close button in top right */}
+      <button
+        onClick={handleClose}
+        style={{
+          position: 'absolute',
+          top: '16px',
+          right: '16px',
+          background: 'none',
+          border: 'none',
+          color: '#666',
+          cursor: 'pointer',
+          padding: '6px',
+          borderRadius: '4px',
+          fontSize: '16px',
+          fontWeight: 'bold',
+          fontFamily: "'EmOne', sans-serif",
+          zIndex: 10
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.color = '#260000'}
+        onMouseLeave={(e) => e.currentTarget.style.color = '#666'}
+      >
+        ✕
+      </button>
+
       {/* Welcome Header */}
-      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-        <div style={{
-          fontSize: '2.5rem',
-          marginBottom: '8px',
-          color: '#8B0000'
-        }}>
-          🎯
-        </div>
+      <div style={{ textAlign: 'center', marginBottom: '16px', flexShrink: 0 }}>
         <h2 style={{
-          margin: '0 0 8px 0',
+          margin: '0 0 6px 0',
           color: '#260000',
-          fontSize: '1.8rem',
-          fontWeight: 'bold'
+          fontSize: '1.4rem',
+          fontWeight: 'bold',
+          fontFamily: "'EmOne', sans-serif"
         }}>
           Welcome to Redstring
         </h2>
         <div style={{
-          fontSize: '1.1rem',
-          color: '#666',
-          fontStyle: 'italic'
+          margin: '0 0 6px 0',
+          fontSize: '0.8rem',
+          color: '#716C6C',
+          fontFamily: "'EmOne', sans-serif"
         }}>
-          Open Alpha - Your feedback shapes the future
+          Open Alpha
         </div>
       </div>
 
       {/* Main Content */}
-      <div style={{ marginBottom: '24px', lineHeight: '1.6' }}>
+      <div
+        style={{
+          flex: 1,
+          lineHeight: '1.4',
+          marginBottom: '12px',
+          fontFamily: "'EmOne', sans-serif"
+        }}
+      >
         <p style={{
           margin: '0 0 16px 0',
-          fontSize: '1rem',
-          color: '#333'
+          fontSize: '0.95rem',
+          color: '#333',
+          fontFamily: "'EmOne', sans-serif"
         }}>
-          <strong>Redstring</strong> is a knowledge graph platform that lets you build, connect, and explore
+          <strong>Redstring</strong> is an open knowledge graph platform that lets you build, connect, and explore
           ideas through semantic relationships. We're currently in <strong>open alpha</strong>, which means
-          you're among the first to experience this new way of organizing information.
+          you're one of the first people to experience this new way of working with information.
         </p>
 
-        <div style={{
-          backgroundColor: 'rgba(139, 0, 0, 0.05)',
-          border: '1px solid rgba(139, 0, 0, 0.2)',
-          borderRadius: '8px',
-          padding: '16px',
-          marginBottom: '16px'
+                <div style={{
+          backgroundColor: 'transparent',
+          padding: '12px',
+          marginBottom: '12px'
         }}>
           <h4 style={{
-            margin: '0 0 12px 0',
+            margin: '0 0 8px 0',
             color: '#8B0000',
-            fontSize: '1.1rem',
-            fontWeight: 'bold'
+            fontSize: '1rem',
+            fontWeight: 'bold',
+            fontFamily: "'EmOne', sans-serif"
           }}>
-            🚀 What You Can Do
+            Features
           </h4>
           <ul style={{
             margin: 0,
-            paddingLeft: '20px',
-            fontSize: '0.9rem',
-            color: '#333'
+            paddingLeft: '16px',
+            fontSize: '0.85rem',
+            color: '#333',
+            lineHeight: '1.3',
+            fontFamily: "'EmOne', sans-serif"
           }}>
             <li>Create and connect nodes in your knowledge graph</li>
             <li>Explore semantic relationships between concepts</li>
+            <li><strong>Decompose</strong> complex concepts into smaller parts</li>
+            <li><strong>Generalize</strong> specific instances into broader categories</li>
             <li>Import data from external semantic web sources</li>
             <li>Build rich, interconnected knowledge structures</li>
           </ul>
         </div>
 
         <div style={{
-          backgroundColor: 'rgba(255, 193, 7, 0.1)',
-          border: '1px solid rgba(255, 193, 7, 0.3)',
-          borderRadius: '8px',
-          padding: '16px',
-          marginBottom: '16px'
+          backgroundColor: 'rgba(139, 0, 0, 0.05)',
+          border: '1px solid rgba(139, 0, 0, 0.2)',
+          borderRadius: '6px',
+          padding: '12px',
+          marginBottom: '12px'
         }}>
           <h4 style={{
-            margin: '0 0 12px 0',
-            color: '#856404',
-            fontSize: '1.1rem',
-            fontWeight: 'bold'
+            margin: '0 0 8px 0',
+            color: '#8B0000',
+            fontSize: '1rem',
+            fontWeight: 'bold',
+            fontFamily: "'EmOne', sans-serif"
           }}>
-            ⚠️ Current Limitations
+            Limitations
           </h4>
           <ul style={{
             margin: 0,
-            paddingLeft: '20px',
-            fontSize: '0.9rem',
-            color: '#856404'
+            paddingLeft: '16px',
+            fontSize: '0.85rem',
+            color: '#333',
+            lineHeight: '1.3',
+            fontFamily: "'EmOne', sans-serif"
           }}>
-            <li><strong>Mobile Experience:</strong> We're still optimizing for mobile devices</li>
+            <li><strong>Mobile:</strong> Not functional yet</li>
             <li><strong>Performance:</strong> Some features may be slower during alpha</li>
-            <li><strong>Data Persistence:</strong> Your work is saved, but backup frequently</li>
-            <li><strong>External Sources:</strong> Some semantic web endpoints may have CORS restrictions</li>
+            <li><strong>Data:</strong> Your work is saved, but backup frequently</li>
+            <li><strong>The Wizard: Is still sleeping</strong></li>
+            <li><strong>Git: Partially implemented</strong></li>
+            <li><strong>External Sources:</strong> Some endpoints may have CORS restrictions</li>
           </ul>
         </div>
-
-        <p style={{
-          margin: '0 0 16px 0',
-          fontSize: '0.95rem',
-          color: '#666',
-          fontStyle: 'italic'
-        }}>
-          Your feedback is invaluable during this alpha phase. Every issue you report,
-          every suggestion you make, helps us build a better Redstring for everyone.
-        </p>
       </div>
 
-      {/* Action Buttons */}
+      {/* Action Button */}
       <div style={{
+        flexShrink: 0,
         display: 'flex',
-        gap: '12px',
-        justifyContent: 'space-between',
+        justifyContent: 'center',
         alignItems: 'center',
-        flexWrap: 'wrap'
+        marginTop: '0px',
+        marginBottom: '12px'
       }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          fontSize: '0.9rem',
-          color: '#666'
-        }}>
-          <input
-            type="checkbox"
-            id="dont-show-again"
-            checked={dontShowAgain}
-            onChange={(e) => setDontShowAgain(e.target.checked)}
-            style={{
-              cursor: 'pointer'
-            }}
-          />
-          <label
-            htmlFor="dont-show-again"
-            style={{
-              cursor: 'pointer',
-              margin: 0
-            }}
-          >
-            Don't show this again
-          </label>
-        </div>
-
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={handleClose}
-            style={{
-              padding: '10px 20px',
-              border: 'none',
-              borderRadius: '6px',
-              backgroundColor: '#666',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '0.9rem',
-              fontWeight: 'bold',
-              fontFamily: "'EmOne', sans-serif"
-            }}
-          >
-            {dontShowAgain ? 'Got it!' : 'Maybe Later'}
-          </button>
-          <button
-            onClick={handleClose}
-            style={{
-              padding: '10px 20px',
-              border: 'none',
-              borderRadius: '6px',
-              backgroundColor: '#8B0000',
-              color: '#bdb5b5',
-              cursor: 'pointer',
-              fontSize: '0.9rem',
-              fontWeight: 'bold',
-              fontFamily: "'EmOne', sans-serif"
-            }}
-          >
-            Start Exploring
-          </button>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div style={{
-        marginTop: '24px',
-        paddingTop: '16px',
-        borderTop: '1px solid rgba(38, 0, 0, 0.1)',
-        textAlign: 'center',
-        fontSize: '0.8rem',
-        color: '#888'
-      }}>
-        <div style={{ marginBottom: '4px' }}>
-          Found an issue or have feedback?
-        </div>
-        <div style={{ fontStyle: 'italic' }}>
-          Use the tools menu or contact us directly
-        </div>
+        <button
+          onClick={handleClose}
+          style={{
+            padding: '10px 24px',
+            border: 'none',
+            borderRadius: '8px',
+            backgroundColor: '#8B0000',
+            color: '#bdb5b5',
+            cursor: 'pointer',
+            fontSize: '1rem',
+            fontWeight: 'bold',
+            fontFamily: "'EmOne', sans-serif"
+          }}
+        >
+          Make My First Universe
+        </button>
       </div>
     </div>
   );
@@ -235,9 +206,10 @@ const AlphaOnboardingModal = ({
       isVisible={isVisible}
       onClose={handleClose}
       title=""
-      width={500}
+      width={520}
+      height={720}
       position="center"
-      margin={24}
+      margin={20}
       {...canvasModalProps}
     >
       {modalContent}

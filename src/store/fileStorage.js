@@ -571,6 +571,23 @@ export const createUniverseFile = async () => {
       console.log('[FileStorage] User cancelled file creation');
       return null;
     }
+    
+    // Handle NotAllowedError - common on Windows when File System Access API
+    // is blocked by user agent or platform context (e.g., iframe, PWA, etc.)
+    if (error.name === 'NotAllowedError' || 
+        error.message.includes('not allowed by the user agent') ||
+        error.message.includes('not allowed by the platform')) {
+      console.warn('[FileStorage] File System Access API blocked, falling back to browser storage:', error.message);
+      
+      // Fall back to browser storage mode
+      const initialState = createEmptyState();
+      const redstringData = exportToRedstring(initialState);
+      await storeBrowserUniverse(redstringData);
+      lastSaveTime = Date.now();
+      console.log('[FileStorage] Created browser-stored universe (Windows fallback mode)');
+      return initialState;
+    }
+    
     console.error('[FileStorage] Failed to create universe file:', error);
     throw error;
   }
@@ -641,6 +658,27 @@ export const openUniverseFile = async () => {
       console.log('[FileStorage] User cancelled file selection');
       return null;
     }
+    
+    // Handle NotAllowedError - common on Windows when File System Access API
+    // is blocked by user agent or platform context (e.g., iframe, PWA, etc.)
+    if (error.name === 'NotAllowedError' || 
+        error.message.includes('not allowed by the user agent') ||
+        error.message.includes('not allowed by the platform')) {
+      console.warn('[FileStorage] File System Access API blocked, falling back to browser storage:', error.message);
+      
+      // Try to load from browser storage instead
+      const data = await loadBrowserUniverse();
+      if (data) {
+        const importResult = importFromRedstring(data);
+        console.log('[FileStorage] Opened browser-stored universe (Windows fallback mode)');
+        return importResult.storeState;
+      }
+      
+      // If no browser storage either, return null to let user create new universe
+      console.log('[FileStorage] No browser-stored universe found, user needs to create new one');
+      return null;
+    }
+    
     console.error('[FileStorage] Failed to open universe file:', error);
     throw error;
   }
