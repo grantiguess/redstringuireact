@@ -195,7 +195,7 @@ const EdgeGlowIndicator = ({
     <div
       style={{
         position: 'fixed',
-        left: Math.max(0, viewportBounds.x), // Ensure container is never off-screen
+        left: viewportBounds.x, // Remove Math.max constraint to allow off-screen positioning
         top: viewportBounds.y,
         width: viewportBounds.width,
         height: viewportBounds.height,
@@ -332,8 +332,8 @@ const EdgeGlowIndicator = ({
         const { id, screenX, screenY, color, intensity, edge } = glow;
 
         // Flare sizing: extend further out while staying anchored at same spot
-        const flareLength = 16 + intensity * 8; // px - increased to extend further
-        const flareThickness = 48 + intensity * 12; // px - increased width
+        const flareLength = 14 + intensity * 6; // px - reduced from 20+10 to 14+6 for smaller size
+        const flareThickness = 28 + intensity * 8; // px - increased from 16+4 to 28+8 for more spread
 
         // Orientation by edge
         const rotation = edge === 'left' ? 0
@@ -341,24 +341,20 @@ const EdgeGlowIndicator = ({
                         : edge === 'top' ? 90
                         : -90; // bottom
 
-        // Position to ride halfway on the screen edge
+        // Position to ride slightly further out from the screen edge (3px offset)
         // The EdgeGlowIndicator container is positioned at viewportBounds.x/y
         // So flares should be positioned at the actual screen edge coordinates
         let translateX = screenX;
         let translateY = screenY;
         
-        // Position to ride halfway on the screen edge
-        // For left edge, ensure it's at the actual screen edge, not container edge
-        if (edge === 'left') translateX = 0;
-        else if (edge === 'right') translateX = viewportBounds.width;
-        else if (edge === 'top') translateY = 0;
-        else if (edge === 'bottom') translateY = viewportBounds.height;
+        // Position 3px further out from each edge for better visibility
+        if (edge === 'left') translateX = -3; // 3px to the left of left edge
+        else if (edge === 'right') translateX = viewportBounds.width + 3; // 3px to the right of right edge
+        else if (edge === 'top') translateY = -3; // 3px above top edge
+        else if (edge === 'bottom') translateY = viewportBounds.height + 3; // 3px below bottom edge
 
-        // Colors
-        const coreColor = color;
-        const glowAlpha = Math.round(intensity * 255 * 0.20).toString(16).padStart(2, '0');
-        const midAlpha = Math.round(intensity * 255 * 0.35).toString(16).padStart(2, '0');
-        const coreAlpha = Math.round(intensity * 255 * 0.50).toString(16).padStart(2, '0');
+        // Single optimized glow layer with combined effects - higher opacity
+        const glowAlpha = Math.round(intensity * 255 * 0.6).toString(16).padStart(2, '0'); // increased from 0.4 to 0.6
 
         return (
           <div
@@ -375,7 +371,7 @@ const EdgeGlowIndicator = ({
               zIndex: 1
             }}
           >
-            {/* Outer soft glow (very wide along edge, much more spread, curved) */}
+            {/* Single optimized glow layer */}
             <div
               style={{
                 position: 'absolute',
@@ -384,36 +380,9 @@ const EdgeGlowIndicator = ({
                 width: flareLength,
                 height: flareThickness,
                 borderRadius: flareThickness,
-                background: `radial-gradient(ellipse, ${coreColor}${midAlpha} 0%, ${coreColor}${glowAlpha} 30%, transparent 100%)`,
-                filter: `blur(${Math.max(8, flareThickness * 0.6)}px)`,
-              }}
-            />
-
-            {/* Mid glow (very wide along edge, much more spread, curved) */}
-            <div
-              style={{
-                position: 'absolute',
-                left: -flareLength / 2,
-                top: -flareThickness / 2,
-                width: flareLength,
-                height: flareThickness,
-                borderRadius: flareThickness,
-                background: `radial-gradient(ellipse, ${coreColor}${coreAlpha} 0%, ${coreColor}${midAlpha} 40%, transparent 100%)`,
-                filter: 'blur(6px)'
-              }}
-            />
-
-            {/* Enhanced box shadow for more glow spread */}
-            <div
-              style={{
-                position: 'absolute',
-                left: -flareLength / 2,
-                top: -flareThickness / 2,
-                width: flareLength,
-                height: flareThickness,
-                borderRadius: flareThickness,
-                boxShadow: `0 0 ${Math.max(16, flareThickness * 0.8)}px ${coreColor}${glowAlpha}`,
-                opacity: 0.15
+                background: `radial-gradient(ellipse, ${color}${glowAlpha} 0%, ${color}30 60%, transparent 100%)`, // increased opacity from 20 to 30
+                filter: `blur(${Math.max(3, flareThickness * 0.25)}px)`, // increased blur from 0.15 to 0.25 for more spread
+                boxShadow: `0 0 ${Math.max(6, flareThickness * 0.3)}px ${color}${glowAlpha}`, // increased box shadow from 0.2 to 0.3 for more spread
               }}
             />
           </div>

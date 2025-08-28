@@ -1417,6 +1417,7 @@ const SharedPanelContent = ({
         <ConnectionBrowser 
           nodeData={nodeData}
           onMaterializeConnection={onMaterializeConnection}
+          isUltraSlim={isUltraSlim}
         />
       </CollapsibleSection>
 

@@ -1,0 +1,64 @@
+/* Modal Components Styles */
+
+/* Canvas Modal Styles */
+.canvas-modal {
+  /* Additional canvas modal specific styles can go here */
+}
+
+.canvas-modal:focus {
+  outline: 2px solid #8B0000;
+  outline-offset: 2px;
+}
+
+/* Panel Modal Styles */
+.panel-modal {
+  /* Additional panel modal specific styles can go here */
+}
+
+.panel-modal:focus {
+  outline: 2px solid #8B0000;
+  outline-offset: 2px;
+}
+
+/* Modal Animations */
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.canvas-modal,
+.panel-modal {
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .canvas-modal,
+  .panel-modal {
+    width: 90vw !important;
+    max-width: none !important;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .canvas-modal,
+  .panel-modal {
+    border-width: 3px;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .canvas-modal,
+  .panel-modal {
+    animation: none;
+  }
+}
