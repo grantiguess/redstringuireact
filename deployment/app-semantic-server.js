@@ -70,6 +70,36 @@ app.post('/api/github/oauth/token', async (req, res) => {
   }
 });
 
+// GitHub App proxies to OAuth server
+app.post('/api/github/app/installation-token', async (req, res) => {
+  try {
+    const response = await fetch(`http://localhost:${OAUTH_PORT}/api/github/app/installation-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('OAuth proxy error (installation-token):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
+app.get('/api/github/app/installation/:installation_id', async (req, res) => {
+  try {
+    const { installation_id } = req.params;
+    const response = await fetch(`http://localhost:${OAUTH_PORT}/api/github/app/installation/${encodeURIComponent(installation_id)}`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('OAuth proxy error (installation details):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
 // Serve static files from the dist directory
 app.use(express.static(distPath));
 

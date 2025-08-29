@@ -8,6 +8,7 @@ import express from 'express';
 import cors from 'cors';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
+import jwt from 'jsonwebtoken';
 
 // Load environment variables
 dotenv.config();
@@ -296,7 +297,6 @@ app.post('/api/github/app/installation-token', async (req, res) => {
     console.log('[GitHubApp] Generating installation token for installation:', installation_id);
 
     // Generate JWT for app authentication
-    const jwt = require('jsonwebtoken');
     const payload = {
       iat: Math.floor(Date.now() / 1000) - 60,
       exp: Math.floor(Date.now() / 1000) + (10 * 60),
@@ -360,7 +360,6 @@ app.get('/api/github/app/installation/:installation_id', async (req, res) => {
     }
 
     // Generate JWT for app authentication
-    const jwt = require('jsonwebtoken');
     const payload = {
       iat: Math.floor(Date.now() / 1000) - 60,
       exp: Math.floor(Date.now() / 1000) + (10 * 60),

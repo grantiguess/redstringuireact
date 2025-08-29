@@ -18,7 +18,8 @@ export const RENDERER_PRESETS = {
     padding: 16,
     interactive: true,
     showHoverEffects: true,
-    showConnectionDots: true
+    showConnectionDots: true,
+    alignNodesHorizontally: true
   },
 
   // For small previews in lists/cards

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GitHub App Setup Script for RedString
+# GitHub App Setup Script for Redstring
 # This script helps set up environment variables and deploy the GitHub App integration
 
 set -e
@@ -14,13 +14,13 @@ PURPLE='\033[0;35m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-echo -e "${BOLD}${PURPLE}🔧 RedString GitHub App Setup${NC}"
+echo -e "${BOLD}${PURPLE}🔧 Redstring GitHub App Setup${NC}"
 echo -e "${PURPLE}===================================${NC}"
 echo ""
 
 # Check if we're in the right directory
 if [ ! -f "oauth-server.js" ]; then
-    echo -e "${RED}❌ oauth-server.js not found. Please run this script from the RedString project root.${NC}"
+    echo -e "${RED}❌ oauth-server.js not found. Please run this script from the Redstring project root.${NC}"
     exit 1
 fi
 
@@ -28,18 +28,73 @@ echo -e "${BLUE}📋 This script will help you configure GitHub App credentials.
 echo -e "${BLUE}Make sure you've created your GitHub App first!${NC}"
 echo ""
 
-# Get GitHub App credentials
-echo -e "${YELLOW}🔑 GitHub App Credentials${NC}"
-read -p "$(echo -e ${BLUE}Enter your GitHub App ID: ${NC})" GITHUB_APP_ID
-read -p "$(echo -e ${BLUE}Enter your GitHub App Client ID: ${NC})" GITHUB_APP_CLIENT_ID
-read -sp "$(echo -e ${BLUE}Enter your GitHub App Client Secret: ${NC})" GITHUB_APP_CLIENT_SECRET
-echo ""
-read -sp "$(echo -e ${BLUE}Enter your Webhook Secret: ${NC})" GITHUB_APP_WEBHOOK_SECRET
-echo ""
+# Check if github.env file exists
+if [ -f "github.env" ]; then
+    echo -e "${GREEN}📁 Found github.env file - loading configuration...${NC}"
+    source github.env
+    
+    # Validate required fields
+    if [ -z "$GITHUB_APP_ID" ] || [ "$GITHUB_APP_ID" = "123456" ]; then
+        echo -e "${RED}❌ Please edit github.env and set your actual GitHub App ID${NC}"
+        exit 1
+    fi
+    
+    if [ -z "$GITHUB_APP_CLIENT_ID" ] || [ "$GITHUB_APP_CLIENT_ID" = "Iv1.abc123def456" ]; then
+        echo -e "${RED}❌ Please edit github.env and set your actual GitHub App Client ID${NC}"
+        exit 1
+    fi
+    
+    if [ -z "$GITHUB_APP_CLIENT_SECRET" ] || [ "$GITHUB_APP_CLIENT_SECRET" = "your_client_secret_here" ]; then
+        echo -e "${RED}❌ Please edit github.env and set your actual GitHub App Client Secret${NC}"
+        exit 1
+    fi
+    
+    if [ -z "$GITHUB_APP_WEBHOOK_SECRET" ] || [ "$GITHUB_APP_WEBHOOK_SECRET" = "your_webhook_secret_here" ]; then
+        echo -e "${RED}❌ Please edit github.env and set your actual GitHub App Webhook Secret${NC}"
+        exit 1
+    fi
+    
+    if [ -z "$PRIVATE_KEY_PATH" ] || [ "$PRIVATE_KEY_PATH" = "./github-app.private-key.pem" ]; then
+        echo -e "${RED}❌ Please edit github.env and set the correct path to your .pem file${NC}"
+        exit 1
+    fi
+    
+    echo -e "${GREEN}✅ Configuration loaded from github.env${NC}"
+    echo -e "${BLUE}   App ID: ${GITHUB_APP_ID}${NC}"
+    echo -e "${BLUE}   Client ID: ${GITHUB_APP_CLIENT_ID}${NC}"
+    echo -e "${BLUE}   Private Key: ${PRIVATE_KEY_PATH}${NC}"
+    echo -e "${BLUE}   Deployment Target: ${DEPLOY_TARGET}${NC}"
+    echo ""
+else
+    echo -e "${YELLOW}📁 github.env file not found. Creating template...${NC}"
+    echo -e "${BLUE}Please edit github.env with your credentials and run this script again.${NC}"
+    echo ""
+    
+    # Create the template
+    cat > github.env << 'EOF'
+# GitHub App Configuration
+# Edit this file with your GitHub App credentials, then run setup-github-app.sh
 
-# Get private key file path
-echo -e "${YELLOW}📄 Private Key Configuration${NC}"
-read -p "$(echo -e ${BLUE}Enter path to your private key .pem file: ${NC})" PRIVATE_KEY_PATH
+# GitHub App Credentials
+GITHUB_APP_ID="123456"
+GITHUB_APP_CLIENT_ID="Iv1.abc123def456"
+GITHUB_APP_CLIENT_SECRET="your_client_secret_here"
+GITHUB_APP_WEBHOOK_SECRET="your_webhook_secret_here"
+
+# Path to your downloaded private key .pem file
+PRIVATE_KEY_PATH="./github-app.private-key.pem"
+
+# Google Cloud Project ID (leave empty to use current project)
+GCP_PROJECT_ID=""
+
+# Deployment target (1=local, 2=gcp, 3=both)
+DEPLOY_TARGET="3"
+EOF
+    
+    echo -e "${GREEN}✅ github.env template created${NC}"
+    echo -e "${YELLOW}Please edit github.env with your actual credentials and run this script again.${NC}"
+    exit 0
+fi
 
 if [ ! -f "$PRIVATE_KEY_PATH" ]; then
     echo -e "${RED}❌ Private key file not found at: $PRIVATE_KEY_PATH${NC}"
@@ -53,12 +108,16 @@ echo ""
 echo -e "${GREEN}✅ All credentials collected!${NC}"
 echo ""
 
-# Ask about deployment target
+# Show deployment configuration
 echo -e "${YELLOW}🚀 Deployment Configuration${NC}"
-echo "1) Local development (.env file)"
-echo "2) Google Cloud production (Secret Manager)"
-echo "3) Both"
-read -p "$(echo -e ${BLUE}Choose deployment target (1-3): ${NC})" DEPLOY_TARGET
+echo -e "   Target: ${BOLD}${DEPLOY_TARGET}${NC}"
+case $DEPLOY_TARGET in
+    1) echo "   Mode: Local development (.env file)" ;;
+    2) echo "   Mode: Google Cloud production (Secret Manager)" ;;
+    3) echo "   Mode: Both local and Google Cloud" ;;
+    *) echo -e "${RED}❌ Invalid deployment target: ${DEPLOY_TARGET}${NC}"; exit 1 ;;
+esac
+echo ""
 
 # Create local .env file
 if [ "$DEPLOY_TARGET" = "1" ] || [ "$DEPLOY_TARGET" = "3" ]; then
@@ -93,10 +152,16 @@ if [ "$DEPLOY_TARGET" = "2" ] || [ "$DEPLOY_TARGET" = "3" ]; then
     fi
 
     # Get current project
-    PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
-    if [ -z "$PROJECT_ID" ]; then
-        read -p "$(echo -e ${BLUE}Enter your Google Cloud Project ID: ${NC})" PROJECT_ID
+    if [ -n "$GCP_PROJECT_ID" ]; then
+        PROJECT_ID="$GCP_PROJECT_ID"
         gcloud config set project $PROJECT_ID
+        echo -e "${BLUE}Using project from github.env: ${BOLD}${PROJECT_ID}${NC}"
+    else
+        PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+        if [ -z "$PROJECT_ID" ]; then
+            read -p "Enter your Google Cloud Project ID: " PROJECT_ID
+            gcloud config set project $PROJECT_ID
+        fi
     fi
 
     echo -e "${BLUE}Using project: ${BOLD}$PROJECT_ID${NC}"
@@ -186,7 +251,7 @@ echo -e "   Features: ${BOLD}${GREEN}OAuth + GitHub App${NC}"
 echo ""
 
 # Confirmation
-read -p "$(echo -e ${YELLOW}🚨 Deploy to PRODUCTION? [y/N]: ${NC})" -n 1 -r
+read -p "🚨 Deploy to PRODUCTION? [y/N]: " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo -e "${YELLOW}⏹️  Deployment cancelled${NC}"
@@ -311,7 +376,9 @@ echo -e "${BOLD}${GREEN}🎉 GitHub App Setup Complete!${NC}"
 echo -e "${GREEN}================================${NC}"
 echo ""
 echo -e "${BLUE}📋 Next Steps:${NC}"
-echo -e "1. ${BOLD}Deploy to production:${NC} ${BLUE}./deployment/gcp/deploy_github_app_prod.sh${NC}"
+echo -e "1. ${BOLD}Deploy to production:${NC}"
+echo -e "   • ${BLUE}Cloud Build (recommended):${NC} ${BLUE}./deployment/gcp/deploy_github_app_cloudbuild.sh${NC}"
+echo -e "   • ${BLUE}Local build:${NC} ${BLUE}./deployment/gcp/deploy_github_app_prod.sh${NC}"
 echo -e "2. ${BOLD}Update GitHub App webhook URL${NC} to your production URL"
 echo -e "3. ${BOLD}Test installation flow${NC} on redstring.io"
 echo -e "4. ${BOLD}Monitor logs${NC} for any issues"
@@ -328,4 +395,4 @@ fi
 echo -e "${PURPLE}🔗 GitHub App Installation URL:${NC}"
 echo -e "${BOLD}https://github.com/apps/redstring-semantic-sync/installations/new${NC}"
 echo ""
-echo -e "${GREEN}Your RedString semantic web integration is now bulletproof! 🛡️${NC}"
+echo -e "${GREEN}Your Redstring semantic web integration is now bulletproof! 🛡️${NC}"

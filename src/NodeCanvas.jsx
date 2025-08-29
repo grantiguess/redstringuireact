@@ -77,6 +77,10 @@ const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1;        // Sensitivity for standard mouse
 const KEYBOARD_PAN_SPEED = 12;                  // for keyboard panning (much faster)
 const KEYBOARD_ZOOM_SPEED = 0.01;               // for keyboard zooming (extra smooth)
 
+// Double-tap zoom constants
+const DOUBLE_TAP_THRESHOLD = 300;               // Max time between taps (ms)
+const ZOOM_SPEED_MULTIPLIER = 2.0;              // Speed multiplier for double-tap mode
+
 function NodeCanvas() {
   const svgRef = useRef(null);
   const wrapperRef = useRef(null);
@@ -862,6 +866,12 @@ function NodeCanvas() {
     height: (window.innerHeight - HEADER_HEIGHT) * 4,
   });
   const [zoomLevel, setZoomLevel] = useState(1);
+  
+  // Double-tap zoom state
+  const [doubleTapSpeedActive, setDoubleTapSpeedActive] = useState(false);
+  const lastSpaceTapRef = useRef(0);
+  const lastShiftTapRef = useRef(0);
+  
   // Hover state for grid when mode is 'hover'
 
 
@@ -3315,7 +3325,9 @@ function NodeCanvas() {
     if (isMac && e.ctrlKey && !trackpadZoomEnabled) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
-        const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
+        const baseSensitivity = TRACKPAD_ZOOM_SENSITIVITY;
+        const effectiveSensitivity = doubleTapSpeedActive ? baseSensitivity * ZOOM_SPEED_MULTIPLIER : baseSensitivity;
+        const zoomDelta = deltaY * effectiveSensitivity;
         const currentZoomForWorker = zoomLevel;
         const currentPanOffsetForWorker = panOffset;
         const opId = ++zoomOpIdRef.current;
@@ -3337,7 +3349,7 @@ function NodeCanvas() {
             gesture: 'pinch-zoom',
             zooming: true,
             panning: false,
-            sensitivity: TRACKPAD_ZOOM_SENSITIVITY,
+            sensitivity: effectiveSensitivity,
             zoomLevel: result.zoomLevel.toFixed(2),
             panOffsetX: result.panOffset.x.toFixed(2),
             panOffsetY: result.panOffset.y.toFixed(2),
@@ -3400,7 +3412,9 @@ function NodeCanvas() {
     if (deviceType === 'mouse' || deviceType === 'mouse_wheel' || (deviceType === 'undetermined' && deltaY !== 0 && Math.abs(deltaX) < 0.15)) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
-        const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
+        const baseSensitivity = SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY;
+        const effectiveSensitivity = doubleTapSpeedActive ? baseSensitivity * ZOOM_SPEED_MULTIPLIER : baseSensitivity;
+        const zoomDelta = deltaY * effectiveSensitivity; 
         const currentZoomForWorker = zoomLevel;
         const currentPanOffsetForWorker = panOffset;
         const opId = ++zoomOpIdRef.current;
@@ -3424,7 +3438,7 @@ function NodeCanvas() {
                 gesture: 'wheel-zoom',
                 zooming: true,
                 panning: false,
-                sensitivity: SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY,
+                sensitivity: effectiveSensitivity,
                 deltaY: deltaY.toFixed(2),
                 zoomLevel: result.zoomLevel.toFixed(2),
                 panOffsetX: result.panOffset.x.toFixed(2),
@@ -5214,6 +5228,34 @@ function NodeCanvas() {
     );
   };
 
+  // Double-tap detection for speed zoom
+  const handleDoubleTap = useCallback((key) => {
+    const now = Date.now();
+    let lastTapRef;
+    
+    if (key === ' ') {
+      lastTapRef = lastSpaceTapRef;
+    } else if (key === 'Shift') {
+      lastTapRef = lastShiftTapRef;
+    } else {
+      return false; // Only handle space and shift
+    }
+    
+    const timeSinceLastTap = now - lastTapRef.current;
+    lastTapRef.current = now;
+    
+    if (timeSinceLastTap < DOUBLE_TAP_THRESHOLD) {
+      // Double-tap detected!
+      console.log(`[Double-tap] ${key} double-tap detected! Activating 2x zoom speed`);
+      setDoubleTapSpeedActive(true);
+      return true; // Double-tap detected
+    }
+    
+    return false; // Single tap
+  }, []);
+
+
+
   const handleToggleRightPanel = useCallback(() => {
     setRightPanelExpanded(prev => !prev);
   }, []);
@@ -5244,7 +5286,11 @@ function NodeCanvas() {
       
       // Only handle these specific keys if NOT in a text input
       if (!isTextInput) {
-        if (e.key === '1') {
+        // Check for double-tap zoom keys (space and shift)
+        if (e.key === ' ' || e.key === 'Shift') {
+          handleDoubleTap(e.key);
+          // Note: Don't prevent default here to allow normal behavior
+        } else if (e.key === '1') {
           e.preventDefault();
           handleToggleLeftPanel();
         } else if (e.key === '2') {
@@ -5264,9 +5310,23 @@ function NodeCanvas() {
       }
     };
 
+    const handleGlobalKeyUp = (e) => {
+      // Deactivate zoom speed when space or shift is released
+      if (e.key === ' ' || e.key === 'Shift') {
+        if (doubleTapSpeedActive) {
+          console.log(`[Double-tap] ${e.key} released, deactivating 2x zoom speed`);
+          setDoubleTapSpeedActive(false);
+        }
+      }
+    };
+
     document.addEventListener('keydown', handleGlobalKeyDown);
-    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [handleToggleLeftPanel, handleToggleRightPanel, storeActions]);
+    document.addEventListener('keyup', handleGlobalKeyUp);
+    return () => {
+      document.removeEventListener('keydown', handleGlobalKeyDown);
+      document.removeEventListener('keyup', handleGlobalKeyUp);
+    };
+  }, [handleToggleLeftPanel, handleToggleRightPanel, handleDoubleTap, storeActions, doubleTapSpeedActive]);
 
 
 
@@ -8005,6 +8065,8 @@ function NodeCanvas() {
               hideOverlay={() => setDebugMode(false)}
             />
           )}
+          
+
         </div>
 
         {/* Dynamic Particle Transfer - starts under node, grows during acceleration, perfect z-layering */}
