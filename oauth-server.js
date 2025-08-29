@@ -269,6 +269,199 @@ app.post('/api/github/oauth/token', async (req, res) => {
   }
 });
 
+// GitHub App endpoints
+// Generate installation access token (server-side only for security)
+app.post('/api/github/app/installation-token', async (req, res) => {
+  try {
+    const { installation_id } = req.body;
+    
+    if (!installation_id) {
+      return res.status(400).json({
+        error: 'Installation ID is required',
+        service: 'oauth-server'
+      });
+    }
+
+    const appId = process.env.GITHUB_APP_ID;
+    const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+
+    if (!appId || !privateKey) {
+      return res.status(500).json({
+        error: 'GitHub App not configured',
+        hint: 'Set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY environment variables',
+        service: 'oauth-server'
+      });
+    }
+
+    console.log('[GitHubApp] Generating installation token for installation:', installation_id);
+
+    // Generate JWT for app authentication
+    const jwt = require('jsonwebtoken');
+    const payload = {
+      iat: Math.floor(Date.now() / 1000) - 60,
+      exp: Math.floor(Date.now() / 1000) + (10 * 60),
+      iss: parseInt(appId, 10)
+    };
+
+    const appJWT = jwt.sign(payload, privateKey, { algorithm: 'RS256' });
+
+    // Get installation access token
+    const tokenResponse = await fetch(`https://api.github.com/app/installations/${installation_id}/access_tokens`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `Bearer ${appJWT}`,
+        'User-Agent': 'Redstring-GitHubApp-Server/1.0'
+      }
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      console.error('[GitHubApp] Installation token request failed:', {
+        status: tokenResponse.status,
+        statusText: tokenResponse.statusText,
+        errorText
+      });
+      throw new Error(`GitHub API error: ${tokenResponse.status} ${errorText}`);
+    }
+
+    const tokenData = await tokenResponse.json();
+    console.log('[GitHubApp] Installation token generated successfully');
+
+    res.json({
+      token: tokenData.token,
+      expires_at: tokenData.expires_at,
+      permissions: tokenData.permissions,
+      service: 'oauth-server'
+    });
+
+  } catch (error) {
+    console.error('[GitHubApp] Installation token generation failed:', error);
+    res.status(500).json({
+      error: error.message,
+      service: 'oauth-server'
+    });
+  }
+});
+
+// Get installation data
+app.get('/api/github/app/installation/:installation_id', async (req, res) => {
+  try {
+    const { installation_id } = req.params;
+    
+    const appId = process.env.GITHUB_APP_ID;
+    const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+
+    if (!appId || !privateKey) {
+      return res.status(500).json({
+        error: 'GitHub App not configured',
+        service: 'oauth-server'
+      });
+    }
+
+    // Generate JWT for app authentication
+    const jwt = require('jsonwebtoken');
+    const payload = {
+      iat: Math.floor(Date.now() / 1000) - 60,
+      exp: Math.floor(Date.now() / 1000) + (10 * 60),
+      iss: parseInt(appId, 10)
+    };
+
+    const appJWT = jwt.sign(payload, privateKey, { algorithm: 'RS256' });
+
+    // Get installation data
+    const installationResponse = await fetch(`https://api.github.com/app/installations/${installation_id}`, {
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `Bearer ${appJWT}`,
+        'User-Agent': 'Redstring-GitHubApp-Server/1.0'
+      }
+    });
+
+    if (!installationResponse.ok) {
+      throw new Error(`GitHub API error: ${installationResponse.status}`);
+    }
+
+    const installationData = await installationResponse.json();
+
+    // Get installation repositories
+    const reposResponse = await fetch(`https://api.github.com/app/installations/${installation_id}/repositories`, {
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `Bearer ${appJWT}`,
+        'User-Agent': 'Redstring-GitHubApp-Server/1.0'
+      }
+    });
+
+    let repositories = [];
+    if (reposResponse.ok) {
+      const reposData = await reposResponse.json();
+      repositories = reposData.repositories || [];
+    }
+
+    res.json({
+      installation: installationData,
+      repositories,
+      account: installationData.account,
+      permissions: installationData.permissions,
+      service: 'oauth-server'
+    });
+
+  } catch (error) {
+    console.error('[GitHubApp] Installation data request failed:', error);
+    res.status(500).json({
+      error: error.message,
+      service: 'oauth-server'
+    });
+  }
+});
+
+// GitHub App webhook handler
+app.post('/api/github/app/webhook', async (req, res) => {
+  const event = req.headers['x-github-event'];
+  const signature = req.headers['x-hub-signature-256'];
+  const payload = req.body;
+
+  console.log('[GitHubApp] Webhook received:', {
+    event,
+    action: payload.action,
+    installationId: payload.installation?.id
+  });
+
+  // TODO: Verify webhook signature for security
+  // const isValid = verifyWebhookSignature(signature, JSON.stringify(payload));
+  // if (!isValid) {
+  //   return res.status(401).json({ error: 'Invalid signature' });
+  // }
+
+  switch (event) {
+    case 'installation':
+      if (payload.action === 'created') {
+        console.log('[GitHubApp] New installation:', {
+          installationId: payload.installation.id,
+          account: payload.installation.account.login,
+          repositories: payload.repositories?.length || 0
+        });
+      } else if (payload.action === 'deleted') {
+        console.log('[GitHubApp] Installation removed:', payload.installation.id);
+      }
+      break;
+
+    case 'installation_repositories':
+      console.log('[GitHubApp] Repository access changed:', {
+        installationId: payload.installation.id,
+        added: payload.repositories_added?.length || 0,
+        removed: payload.repositories_removed?.length || 0
+      });
+      break;
+
+    default:
+      console.log('[GitHubApp] Unhandled webhook event:', event);
+  }
+
+  res.status(200).json({ received: true });
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🔐 OAuth Server running on port ${PORT}`);
@@ -276,6 +469,8 @@ app.listen(PORT, () => {
   
   const clientId = process.env.GITHUB_CLIENT_ID;
   const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+  const appId = process.env.GITHUB_APP_ID;
+  const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
   
   if (clientId && clientSecret) {
     console.log('✅ GitHub OAuth configured');
@@ -283,6 +478,14 @@ app.listen(PORT, () => {
     console.log(`📋 Client Secret length: ${clientSecret.length}`);
   } else {
     console.log('⚠️  GitHub OAuth not configured - set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET');
+  }
+
+  if (appId && privateKey) {
+    console.log('✅ GitHub App configured');
+    console.log(`📋 App ID: ${appId}`);
+    console.log(`📋 Private Key length: ${privateKey.length}`);
+  } else {
+    console.log('⚠️  GitHub App not configured - set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY');
     console.log('🔍 Check Secret Manager permissions for Cloud Run service account');
   }
 });

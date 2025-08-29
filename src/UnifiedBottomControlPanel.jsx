@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Trash2, Plus, ArrowUpFromDot, ArrowRight, ChevronLeft, ChevronRight, PackageOpen, Layers, Edit3, Bookmark, Palette, MoreHorizontal, Group, Ungroup } from 'lucide-react';
-import MiniConnectionCanvas from './MiniConnectionCanvas';
+import UniversalNodeRenderer from './UniversalNodeRenderer';
+import { RENDERER_PRESETS } from './UniversalNodeRenderer.presets';
 import './UnifiedBottomControlPanel.css';
 
 // Small helper to render a triangle cap (rounded-ish via strokeJoin/lineJoin aesthetics)
@@ -166,22 +167,47 @@ const UnifiedBottomControlPanel = ({
           ) : isAbstraction ? (
             customContent
           ) : (
-            <MiniConnectionCanvas
-              connections={triples}
-              width={Math.max(400, triples.length * 200)}
-              height={120}
-              onNodeClick={onNodeClick}
-              onConnectionClick={onPredicateClick}
-              onToggleArrow={(connectionId, targetNodeId) => {
-                // Determine if this is left or right arrow based on target
-                const triple = triples.find(t => t.id === connectionId);
-                if (triple && triple.subject?.id === targetNodeId) {
-                  onToggleLeftArrow?.(connectionId);
-                } else if (triple && triple.object?.id === targetNodeId) {
-                  onToggleRightArrow?.(connectionId);
+            (() => {
+              // Extract unique nodes from triples
+              const nodesMap = new Map();
+              triples.forEach(t => {
+                if (t.subject?.id) {
+                  nodesMap.set(t.subject.id, {
+                    id: t.subject.id,
+                    name: t.subject.name,
+                    color: t.subject.color
+                  });
                 }
-              }}
-            />
+                if (t.object?.id) {
+                  nodesMap.set(t.object.id, {
+                    id: t.object.id,
+                    name: t.object.name,
+                    color: t.object.color
+                  });
+                }
+              });
+              const nodes = Array.from(nodesMap.values());
+              
+              return (
+                <UniversalNodeRenderer
+                  {...RENDERER_PRESETS.CONNECTION_PANEL}
+                  nodes={nodes}
+                  connections={triples}
+                  containerWidth={Math.max(400, triples.length * 200)}
+                  onNodeClick={onNodeClick}
+                  onConnectionClick={onPredicateClick}
+                  onToggleArrow={(connectionId, targetNodeId) => {
+                    // Determine if this is left or right arrow based on target
+                    const triple = triples.find(t => t.id === connectionId);
+                    if (triple && triple.subject?.id === targetNodeId) {
+                      onToggleLeftArrow?.(connectionId);
+                    } else if (triple && triple.object?.id === targetNodeId) {
+                      onToggleRightArrow?.(connectionId);
+                    }
+                  }}
+                />
+              );
+            })()
           )}
 
           {isNodes ? (
