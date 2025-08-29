@@ -163,9 +163,11 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
     // Initialize with completely empty state - universe file is required
     graphs: new Map(),
     nodePrototypes: (() => {
-      // Initialize with base "Thing" type
-      const thingId = 'base-thing-prototype';
+      // Initialize with base "Thing" and "Connection" types
       const nodePrototypes = new Map();
+      
+      // Base "Thing" type
+      const thingId = 'base-thing-prototype';
       nodePrototypes.set(thingId, {
         id: thingId,
         name: 'Thing',
@@ -176,6 +178,20 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         isSpecificityChainNode: false, // Not part of any specificity chain
         hasSpecificityChain: false // Does not define a specificity chain
       });
+      
+      // Base "Connection" type
+      const connectionId = 'base-connection-prototype';
+      nodePrototypes.set(connectionId, {
+        id: connectionId,
+        name: 'Connection',
+        description: 'The base type for all connections. Connections are edges, relationships, verbs, actions, whatever you want them to be. They will always be at the bottom of the connection abstraction stack.',
+        color: '#000000', // Black
+        typeNodeId: null, // No parent type - this is the most basic connection type
+        definitionGraphIds: [],
+        isSpecificityChainNode: false, // Not part of any specificity chain
+        hasSpecificityChain: false // Does not define a specificity chain
+      });
+      
       return nodePrototypes;
     })(),
     edgePrototypes: (() => {
@@ -2068,7 +2084,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   
   // --- Simple Abstraction Actions ---
   
-  // Add a node above (more abstract) or below (more specific) in a dimension chain
+  // Add a node above (more specific) or below (more general) in a dimension chain
   addToAbstractionChain: (nodeId, dimension, direction, newNodeId, insertRelativeToNodeId) => set(produce((draft) => {
     console.log(`[Store] addToAbstractionChain called with:`, {
       nodeId,
@@ -2113,10 +2129,10 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         const relativeIndex = chain.indexOf(insertRelativeToNodeId);
         if (relativeIndex !== -1) {
           if (direction === 'above') {
-            // More abstract - insert before the relative node
+            // More specific - insert before the relative node
             chain.splice(relativeIndex, 0, newNodeId);
           } else {
-            // More specific - insert after the relative node
+            // More general - insert after the relative node
             chain.splice(relativeIndex + 1, 0, newNodeId);
           }
           console.log(`Added ${newNodeId} ${direction} ${insertRelativeToNodeId} in ${dimension} dimension. Chain:`, chain);
@@ -2151,10 +2167,10 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       // Add new node in the right position relative to chain owner
       const updatedCurrentIndex = chain.indexOf(nodeId);
       if (direction === 'above') {
-        // More abstract - insert before the chain owner
+        // More specific - insert before the chain owner
         chain.splice(updatedCurrentIndex, 0, newNodeId);
       } else {
-        // More specific - insert after the chain owner
+        // More general - insert after the chain owner
         chain.splice(updatedCurrentIndex + 1, 0, newNodeId);
       }
       
@@ -2253,9 +2269,13 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   deleteNodePrototype: (prototypeId) => set(produce((draft) => {
     console.log(`[Store deleteNodePrototype] Deleting prototype: ${prototypeId}`);
     
-    // Check if this is the base "Thing" type - prevent deletion
+    // Check if this is the base "Thing" or "Connection" type - prevent deletion
     if (prototypeId === 'base-thing-prototype') {
       console.warn(`[Store deleteNodePrototype] Cannot delete base "Thing" type.`);
+      return;
+    }
+    if (prototypeId === 'base-connection-prototype') {
+      console.warn(`[Store deleteNodePrototype] Cannot delete base "Connection" type.`);
       return;
     }
     

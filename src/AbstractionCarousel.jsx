@@ -131,12 +131,12 @@ const generateProgressiveColor = (baseColor, level) => {
   // Reduce saturation significantly for less gaudy colors
   const reducedSaturation = Math.max(0, s - 25); // Reduce saturation by 25%
   
-  // For generic levels (negative), make progressively lighter
-  // For specific levels (positive), make progressively darker
+  // For specific levels (negative), make progressively lighter
+  // For general levels (positive), make progressively darker
   let newLightness = l;
   
   if (level < 0) {
-    // Generic levels: lighter with bigger first jump for better contrast
+    // Specific levels: lighter with bigger first jump for better contrast
     if (level === -1) {
       // First level above center gets an even bigger jump for better contrast
       newLightness = Math.min(90, l + 40); // 40% lighter for first step (increased from 25%)
@@ -149,8 +149,8 @@ const generateProgressiveColor = (baseColor, level) => {
       const lighteningFactor = linearBase + (stepsFromFirst * linearIncrement);
       newLightness = Math.min(90, l + lighteningFactor);
     }
-  } else if (level > 0) {
-    // Specific levels: darker with more linear progression
+      } else if (level > 0) {
+    // General levels: darker with more linear progression
     // Make the darkening more gradual and linear too
     const linearDarkeningFactor = level * 6; // Even gentler than before (was 8)
     newLightness = Math.max(10, l - linearDarkeningFactor);
@@ -435,9 +435,9 @@ const AbstractionCarousel = ({
         const node = nodePrototypesMap.get(nodeId);
         if (node) {
           const level = index - currentNodeIndex; // Current node will be at level 0
-          const nodeType = nodeId === selectedNode.prototypeId ? 'current' : 'generic';
+          const nodeType = nodeId === selectedNode.prototypeId ? 'current' : 'related';
           
-          // Calculate color based on level - nodes below current (positive levels) get darker
+          // Calculate color based on level - nodes more general than current (positive levels) get darker
           let nodeColor;
           if (nodeType === 'current') {
             nodeColor = selectedNode.color;
@@ -445,10 +445,10 @@ const AbstractionCarousel = ({
             nodeColor = generateProgressiveColor(baseColor, level);
           }
           
-          // For nodes more specific than current (positive levels), ensure dark background + bright text
+          // For nodes more general than current (positive levels), ensure dark background + bright text
           let textColor = getTextColor(nodeColor);
           if (level > 0) {
-            // Force bright text for darker specific nodes
+            // Force bright text for darker general nodes
             textColor = '#EFE8E5';
           }
           
@@ -1360,7 +1360,7 @@ const AbstractionCarousel = ({
               strokeWidth={2}
               style={{ paintOrder: 'stroke fill' }}
             >
-              More General
+              More Specific
             </text>
             <ChevronUp className="hint-arrow-up" x={-20} y={-34} size={40} color="#260000" strokeWidth={3} />
           </g>
@@ -1380,7 +1380,7 @@ const AbstractionCarousel = ({
               strokeWidth={2}
               style={{ paintOrder: 'stroke fill' }}
             >
-              More Specific
+              Less Specific
             </text>
           </g>
         </svg>
@@ -1399,7 +1399,7 @@ const AbstractionCarousel = ({
           userSelect: 'none',
           textAlign: 'left'
         }}>
-          <div style={{ marginBottom: '8px' }}>↑ Generic</div>
+          <div style={{ marginBottom: '8px' }}>↑ Specific</div>
           <div style={{ 
             color: '#333', 
             fontWeight: 'bold',
@@ -1409,7 +1409,7 @@ const AbstractionCarousel = ({
           }}>
             Level {physicsState.realPosition.toFixed(1)}
           </div>
-          <div>↓ Specific</div>
+          <div>↓ General</div>
           
           {/* Physics debug info */}
           <div style={{ 

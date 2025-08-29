@@ -11,6 +11,7 @@ import PieMenu from './PieMenu.jsx'; // Import the PieMenu component
 import AbstractionCarousel from './AbstractionCarousel.jsx'; // Import the AbstractionCarousel component
 import AbstractionControlPanel from './AbstractionControlPanel.jsx'; // Import the AbstractionControlPanel component
 import NodeControlPanel from './NodeControlPanel.jsx';
+import ConnectionControlPanel from './ConnectionControlPanel.jsx';
 import UnifiedBottomControlPanel from './UnifiedBottomControlPanel.jsx';
 import EdgeGlowIndicator from './components/EdgeGlowIndicator.jsx'; // Import the EdgeGlowIndicator component
 import { getNodeDimensions } from './utils.js';
@@ -53,6 +54,7 @@ import {
   PAN_DRAG_SENSITIVITY,
   SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY,
   NODE_DEFAULT_COLOR,
+  CONNECTION_DEFAULT_COLOR,
   MODAL_CLOSE_ICON_SIZE
 } from './constants';
 
@@ -1434,7 +1436,9 @@ function NodeCanvas() {
   const [nodeControlPanelShouldShow, setNodeControlPanelShouldShow] = useState(false);
   const [groupControlPanelShouldShow, setGroupControlPanelShouldShow] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState(null);
-  
+  const [connectionControlPanelVisible, setConnectionControlPanelVisible] = useState(false);
+  const [connectionControlPanelShouldShow, setConnectionControlPanelShouldShow] = useState(false);
+
   // Pending swap operation state
   const [pendingSwapOperation, setPendingSwapOperation] = useState(null);
   
@@ -1697,11 +1701,35 @@ function NodeCanvas() {
     }
   }, [selectedInstanceIds, selectedEdgeId, selectedEdgeIds, abstractionCarouselVisible, connectionNamePrompt.visible, nodeControlPanelVisible]);
 
+  // --- Connection Control Panel Management ---
+  useEffect(() => {
+    const nodesSelected = selectedInstanceIds.size > 0;
+    const edgeSelected = selectedEdgeId !== null || selectedEdgeIds.size > 0;
+    const shouldShow = Boolean(edgeSelected && !nodesSelected && !abstractionCarouselVisible && !connectionNamePrompt.visible);
+    if (shouldShow) {
+      setConnectionControlPanelShouldShow(true);
+      setConnectionControlPanelVisible(true);
+      // Hide other control panels
+      setNodeControlPanelVisible(false);
+      setNodeControlPanelShouldShow(false);
+      setAbstractionControlPanelVisible(false);
+      setAbstractionControlPanelShouldShow(false);
+      setGroupControlPanelShouldShow(false);
+      setSelectedGroup(null);
+    } else if (!shouldShow && connectionControlPanelVisible) {
+      setConnectionControlPanelVisible(false);
+    }
+  }, [selectedInstanceIds, selectedEdgeId, selectedEdgeIds, abstractionCarouselVisible, connectionNamePrompt.visible, connectionControlPanelVisible]);
+
   const handleNodeControlPanelAnimationComplete = useCallback(() => {
     setNodeControlPanelShouldShow(false);
     // Clear the last selected prototypes when animation completes
     setLastSelectedNodePrototypes([]);
   }, [setNodeControlPanelShouldShow]);
+
+  const handleConnectionControlPanelAnimationComplete = useCallback(() => {
+    setConnectionControlPanelShouldShow(false);
+  }, [setConnectionControlPanelShouldShow]);
 
   const handleGroupControlPanelAnimationComplete = useCallback(() => {
     setGroupControlPanelShouldShow(false);
@@ -5211,7 +5239,8 @@ function NodeCanvas() {
         activeElement.type === 'number'
       );
       
-      console.log('[Key Shortcuts] Key pressed:', e.key, 'Active element:', activeElement?.tagName, 'Is text input:', isTextInput);
+      //Debug logging for any key press
+      //console.log('[Key Shortcuts] Key pressed:', e.key, 'Active element:', activeElement?.tagName, 'Is text input:', isTextInput);
       
       // Only handle these specific keys if NOT in a text input
       if (!isTextInput) {
@@ -7964,7 +7993,7 @@ function NodeCanvas() {
                 initialName={abstractionPrompt.name}
                 initialColor={abstractionPrompt.color}
                 title={`Add ${abstractionPrompt.direction === 'above' ? 'Above' : 'Below'}`}
-                subtitle={`Create a ${abstractionPrompt.direction === 'above' ? 'more abstract' : 'more specific'} node in the abstraction chain`}
+                subtitle={`Create a ${abstractionPrompt.direction === 'above' ? 'more specific' : 'more general'} node in the abstraction chain`}
                 abstractionDirection={abstractionPrompt.direction}
               />
             );
@@ -8062,7 +8091,23 @@ function NodeCanvas() {
         />
       )}
 
-
+      {/* ConnectionControlPanel Component - with animation */}
+      {(connectionControlPanelShouldShow || connectionControlPanelVisible) && (
+        <ConnectionControlPanel
+          selectedEdge={edgesMap.get(selectedEdgeId)}
+          selectedEdges={Array.from(selectedEdgeIds).map(id => edgesMap.get(id)).filter(Boolean)}
+          isVisible={connectionControlPanelVisible}
+          typeListOpen={typeListMode !== 'closed'}
+          onAnimationComplete={handleConnectionControlPanelAnimationComplete}
+          onClose={() => {
+            setSelectedEdgeId(null);
+            setSelectedEdgeIds(new Set());
+          }}
+          onOpenConnectionDialog={(edgeId) => {
+            setConnectionNamePrompt({ visible: true, name: '', color: CONNECTION_DEFAULT_COLOR, edgeId });
+          }}
+        />
+      )}
 
       {/* AbstractionControlPanel Component - with animation */}
       {(abstractionControlPanelShouldShow || abstractionControlPanelVisible) && (

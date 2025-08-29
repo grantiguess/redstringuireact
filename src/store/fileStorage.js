@@ -6,6 +6,7 @@
 
 import { exportToRedstring, importFromRedstring } from '../formats/redstringFormat.js';
 import { v4 as uuidv4 } from 'uuid';
+import { CONNECTION_DEFAULT_COLOR } from '../constants.js';
 
 // Global state
 let fileHandle = null;
@@ -451,12 +452,24 @@ const createEmptyState = () => {
     definitionGraphIds: []
   };
 
+  // Base "Connection" type
+  const connectionId = 'base-connection-prototype';
+  const connectionPrototype = {
+    id: connectionId,
+    name: 'Connection',
+    description: 'The base type for all connections. Connections are edges, relationships, verbs, actions, predicates, links, or whatever you want them to be. They will always be at the bottom of the connection abstraction stack. They are the "bonds" of your Redstring Universe.',
+    color: CONNECTION_DEFAULT_COLOR,
+    typeNodeId: null,
+    definitionGraphIds: []
+  };
+
   // New default prototype and its graph
   const newThingPrototypeId = uuidv4();
   const newGraphId = uuidv4();
 
   const prototypeMap = new Map();
   prototypeMap.set(thingId, thingPrototype);
+  prototypeMap.set(connectionId, connectionPrototype);
   prototypeMap.set(newThingPrototypeId, {
     id: newThingPrototypeId,
     name: 'New Thing',

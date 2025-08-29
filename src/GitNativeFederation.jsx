@@ -44,6 +44,7 @@ import { SemanticFederation } from './services/semanticFederation.js';
 import { GitSyncEngine, SOURCE_OF_TRUTH } from './services/gitSyncEngine.js';
 import useGraphStore from './store/graphStore.js';
 import { importFromRedstring } from './formats/redstringFormat.js';
+import { persistentAuth } from './services/persistentAuth.js';
 
 const GitNativeFederation = () => {
   const [currentProvider, setCurrentProvider] = useState(null);
@@ -80,6 +81,8 @@ const GitNativeFederation = () => {
   const [userRepositories, setUserRepositories] = useState([]);
   const [showRepositorySelector, setShowRepositorySelector] = useState(false);
   const [pendingOAuth, setPendingOAuth] = useState(null); // { username, accessToken, repositories, userData }
+  const [authStatus, setAuthStatus] = useState(persistentAuth.getAuthStatus());
+  const [connectionHealth, setConnectionHealth] = useState('unknown'); // 'healthy', 'degraded', 'failed', 'unknown'
   // Get the actual RedString store
   const storeState = useGraphStore();
   const storeActions = useGraphStore.getState();
@@ -97,47 +100,185 @@ const GitNativeFederation = () => {
     gitSourceOfTruth === 'git' ? SOURCE_OF_TRUTH.GIT : SOURCE_OF_TRUTH.LOCAL
   );
 
-  // Restore Git connection on mount
+  // Set up persistent authentication event handlers
   useEffect(() => {
-    if (gitConnection && !currentProvider) {
-      console.log('[GitNativeFederation] Restoring saved Git connection:', gitConnection);
-      
-      // Check if this is a demo connection - clear it and don't restore
-      if (gitConnection.token === 'demo_token_secure' || gitConnection.user === 'demo-user') {
-        console.log('[GitNativeFederation] Clearing saved demo connection');
-        clearGitConnection();
-        return;
-      }
-      
-      // Show restoring status
+    console.log('[GitNativeFederation] Setting up persistent auth event handlers');
+    
+    const handleTokenStored = (data) => {
+      console.log('[GitNativeFederation] Token stored event received');
+      setAuthStatus(persistentAuth.getAuthStatus());
+      setConnectionHealth('healthy');
+    };
+    
+    const handleTokenValidated = (data) => {
+      console.log('[GitNativeFederation] Token validated event received');
+      setAuthStatus(persistentAuth.getAuthStatus());
+      setConnectionHealth('healthy');
+    };
+    
+    const handleAuthExpired = (error) => {
+      console.warn('[GitNativeFederation] Authentication expired:', error);
+      setAuthStatus(persistentAuth.getAuthStatus());
+      setConnectionHealth('failed');
+      setError('Authentication expired. Please reconnect to continue using Git features.');
+    };
+    
+    const handleReAuthRequired = (data) => {
+      console.warn('[GitNativeFederation] Re-authentication required:', data);
+      setConnectionHealth('failed');
       setSyncStatus({
-        type: 'success',
-        status: 'Restoring saved connection...'
+        type: 'error',
+        status: `Re-authentication required: ${data.reason}`
       });
+    };
+    
+    const handleHealthCheck = (healthData) => {
+      console.log('[GitNativeFederation] Health check result:', healthData);
+      setConnectionHealth(healthData.isValid ? 'healthy' : 'degraded');
       
-      // Restore provider config (use session token for OAuth if available)
-      let restoredConfig = gitConnection;
-      try {
-        const sessionToken = sessionStorage.getItem('github_access_token');
-        if ((!gitConnection.token || gitConnection.authMethod === 'oauth') && sessionToken) {
-          restoredConfig = { ...gitConnection, token: sessionToken };
+      if (!healthData.isValid) {
+        setSyncStatus({
+          type: 'warning',
+          status: 'Connection degraded - some features may be limited'
+        });
+      }
+    };
+    
+    const handleAuthDegraded = (data) => {
+      console.warn('[GitNativeFederation] Authentication degraded:', data);
+      setConnectionHealth('degraded');
+      setSyncStatus({
+        type: 'warning',
+        status: `Connection issues: ${data.reason}`
+      });
+    };
+    
+    // Register event listeners
+    persistentAuth.on('tokenStored', handleTokenStored);
+    persistentAuth.on('tokenValidated', handleTokenValidated);
+    persistentAuth.on('authExpired', handleAuthExpired);
+    persistentAuth.on('reAuthRequired', handleReAuthRequired);
+    persistentAuth.on('healthCheck', handleHealthCheck);
+    persistentAuth.on('authDegraded', handleAuthDegraded);
+    
+    // Cleanup function
+    return () => {
+      persistentAuth.off('tokenStored', handleTokenStored);
+      persistentAuth.off('tokenValidated', handleTokenValidated);
+      persistentAuth.off('authExpired', handleAuthExpired);
+      persistentAuth.off('reAuthRequired', handleReAuthRequired);
+      persistentAuth.off('healthCheck', handleHealthCheck);
+      persistentAuth.off('authDegraded', handleAuthDegraded);
+      console.log('[GitNativeFederation] Cleaned up persistent auth event handlers');
+    };
+  }, []);
+
+  // Restore Git connection on mount with automatic recovery
+  useEffect(() => {
+    const restoreConnection = async () => {
+      if (gitConnection && !currentProvider) {
+        console.log('[GitNativeFederation] Restoring saved Git connection:', gitConnection);
+        
+        // Check if this is a demo connection - clear it and don't restore
+        if (gitConnection.token === 'demo_token_secure' || gitConnection.user === 'demo-user') {
+          console.log('[GitNativeFederation] Clearing saved demo connection');
+          clearGitConnection();
+          return;
         }
-      } catch {}
-      setProviderConfig(restoredConfig);
-      setSelectedProvider(restoredConfig.type);
-      
-      // Create provider from restored config
-      const provider = SemanticProviderFactory.createProvider(restoredConfig);
-      setCurrentProvider(provider);
-      setIsConnected(true);
-      
-      console.log('[GitNativeFederation] Git connection restored successfully');
-      
-      // Clear the status after 3 seconds
-      setTimeout(() => {
-        setSyncStatus(null);
-      }, 3000);
-    }
+        
+        // Show restoring status
+        setSyncStatus({
+          type: 'success',
+          status: 'Restoring saved connection...'
+        });
+        
+        // Restore provider config (use persistent auth token if available)
+        let restoredConfig = gitConnection;
+        try {
+          // Try to get token from persistent auth service first
+          const authStatus = persistentAuth.getAuthStatus();
+          if (authStatus.isAuthenticated && (!gitConnection.token || gitConnection.authMethod === 'oauth')) {
+            const token = await persistentAuth.getAccessToken();
+            if (token) {
+              restoredConfig = { ...gitConnection, token };
+              console.log('[GitNativeFederation] Using persistent auth token for connection restoration');
+            }
+          }
+          
+          // Fallback to session storage if persistent auth doesn't work
+          if (!restoredConfig.token) {
+            const sessionToken = sessionStorage.getItem('github_access_token');
+            if (sessionToken) {
+              restoredConfig = { ...gitConnection, token: sessionToken };
+              console.log('[GitNativeFederation] Using session token as fallback for connection restoration');
+            }
+          }
+        } catch (error) {
+          console.warn('[GitNativeFederation] Error during token restoration:', error);
+        }
+        
+        try {
+          // Test the connection before considering it restored
+          const provider = SemanticProviderFactory.createProvider(restoredConfig);
+          const isAvailable = await provider.isAvailable();
+          
+          if (isAvailable) {
+            setProviderConfig(restoredConfig);
+            setSelectedProvider(restoredConfig.type);
+            setCurrentProvider(provider);
+            setIsConnected(true);
+            setConnectionHealth('healthy');
+            
+            console.log('[GitNativeFederation] Git connection restored and verified successfully');
+            
+            // Clear the status after 3 seconds
+            setTimeout(() => {
+              setSyncStatus(null);
+            }, 3000);
+          } else {
+            console.warn('[GitNativeFederation] Restored connection failed availability test');
+            setConnectionHealth('failed');
+            setSyncStatus({
+              type: 'warning',
+              status: 'Connection restored but needs re-authentication'
+            });
+            
+            // Try to handle authentication issues automatically
+            if (gitConnection.authMethod === 'oauth') {
+              console.log('[GitNativeFederation] Attempting automatic token validation for OAuth connection');
+              try {
+                await persistentAuth.refreshAccessToken();
+                // If successful, retry the connection
+                const retryProvider = SemanticProviderFactory.createProvider(restoredConfig);
+                const retryAvailable = await retryProvider.isAvailable();
+                
+                if (retryAvailable) {
+                  setCurrentProvider(retryProvider);
+                  setIsConnected(true);
+                  setConnectionHealth('healthy');
+                  console.log('[GitNativeFederation] Connection recovered after token validation');
+                }
+              } catch (authError) {
+                console.error('[GitNativeFederation] Automatic token validation failed:', authError);
+                setSyncStatus({
+                  type: 'error',
+                  status: 'Authentication expired - please reconnect'
+                });
+              }
+            }
+          }
+        } catch (connectionError) {
+          console.error('[GitNativeFederation] Connection restoration failed:', connectionError);
+          setConnectionHealth('failed');
+          setSyncStatus({
+            type: 'error',
+            status: `Connection failed: ${connectionError.message}`
+          });
+        }
+      }
+    };
+    
+    restoreConnection();
   }, [gitConnection, currentProvider, clearGitConnection]);
 
   // Initialize sync engine, federation, and Git storage when provider changes
@@ -295,13 +436,27 @@ const GitNativeFederation = () => {
   useEffect(() => {
     const handleOAuthCallback = async () => {
       console.log('[GitNativeFederation] OAuth callback handler started');
+      console.log('[GitNativeFederation] Current location:', {
+        href: window.location.href,
+        origin: window.location.origin,
+        pathname: window.location.pathname,
+        search: window.location.search,
+        hash: window.location.hash
+      });
       
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       const state = urlParams.get('state');
       const error = urlParams.get('error');
       
-      console.log('[GitNativeFederation] URL params:', { code: !!code, state: !!state, error });
+      console.log('[GitNativeFederation] URL params:', { 
+        code: !!code, 
+        state: !!state, 
+        error,
+        codeLength: code ? code.length : 0,
+        stateValue: state,
+        fullSearchString: window.location.search
+      });
       
       if (error) {
         console.error('[GitNativeFederation] OAuth error from GitHub:', error);
@@ -346,6 +501,16 @@ const GitNativeFederation = () => {
           let tokenResponse;
           let lastError;
           
+          // Use the same redirect URI that was used in the initial OAuth request
+          const redirectUri = window.location.origin + '/oauth/callback';
+          
+          console.log('[GitNativeFederation] Token exchange configuration:', {
+            redirectUri,
+            currentOrigin: window.location.origin,
+            code: code.substring(0, 8) + '...',
+            state
+          });
+          
           tokenResponse = await oauthFetch('/api/github/oauth/token', {
             method: 'POST',
             headers: {
@@ -354,7 +519,7 @@ const GitNativeFederation = () => {
             body: JSON.stringify({
               code,
               state,
-              redirect_uri: window.location.origin + '/oauth/callback'
+              redirect_uri: redirectUri
             })
           });
           
@@ -371,7 +536,6 @@ const GitNativeFederation = () => {
           console.log('[GitNativeFederation] Token exchange successful');
           
           const accessToken = tokenData.access_token;
-          try { sessionStorage.setItem('github_access_token', accessToken); } catch {}
           
           console.log('[GitNativeFederation] Fetching user information...');
           
@@ -415,7 +579,17 @@ const GitNativeFederation = () => {
           
           console.log('[GitNativeFederation] Found repositories:', repositories.length);
           
-          console.log('[GitNativeFederation] Found repositories:', repositories.length);
+          // Store tokens and user data using persistent auth service
+          const tokenStoreSuccess = persistentAuth.storeTokens(tokenData, userData);
+          if (!tokenStoreSuccess) {
+            console.warn('[GitNativeFederation] Failed to store tokens with persistent auth service');
+            // Fallback to session storage for immediate use
+            try { 
+              sessionStorage.setItem('github_access_token', accessToken); 
+            } catch (e) {
+              console.error('[GitNativeFederation] Failed to store token in session storage:', e);
+            }
+          }
           
           // Auto-select the first repository (but let user change it later)
           const defaultRepo = repositories.find(repo => repo.name.includes('semantic') || repo.name.includes('knowledge')) || 
@@ -615,9 +789,17 @@ const GitNativeFederation = () => {
       if (clientId && clientId !== 'your-github-client-id' && clientId !== 'your-github-client-id-here') {
         console.log('[GitNativeFederation] Using real GitHub OAuth');
         
-        const redirectUri = encodeURIComponent(window.location.origin + '/oauth/callback');
+        // Ensure redirect URI uses the correct domain (redstring.io in production)
+        const currentOrigin = window.location.origin;
+        const redirectUri = encodeURIComponent(currentOrigin + '/oauth/callback');
         const scope = encodeURIComponent('repo');
         const state = Math.random().toString(36).substring(7);
+        
+        console.log('[GitNativeFederation] OAuth redirect configuration:', {
+          redirectUri: decodeURIComponent(redirectUri),
+          currentOrigin,
+          clientId: clientId.substring(0, 8) + '...' // Log partial for debugging
+        });
         
         sessionStorage.setItem('github_oauth_state', state);
         

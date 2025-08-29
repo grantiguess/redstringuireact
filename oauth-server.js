@@ -73,6 +73,57 @@ app.get('/api/github/oauth/client-id', (req, res) => {
   }
 });
 
+// Refresh OAuth access token
+app.post('/api/github/oauth/refresh', async (req, res) => {
+  try {
+    const { refresh_token } = req.body;
+    
+    console.log('[OAuth] Refresh token request:', {
+      hasRefreshToken: !!refresh_token,
+      refreshTokenLength: refresh_token ? refresh_token.length : 0
+    });
+    
+    if (!refresh_token) {
+      return res.status(400).json({ 
+        error: 'Missing refresh token',
+        service: 'oauth-server'
+      });
+    }
+    
+    const clientId = process.env.GITHUB_CLIENT_ID;
+    const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+    
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ 
+        error: 'GitHub OAuth not configured',
+        service: 'oauth-server'
+      });
+    }
+    
+    console.log('[OAuth] Refreshing access token...');
+    
+    // GitHub doesn't actually support refresh tokens in the traditional sense
+    // But we can validate the existing token and return it if still valid
+    // In a real implementation, you'd store refresh tokens and manage them properly
+    
+    // For now, we'll treat the "refresh_token" as an indication to validate current auth
+    // This is a simplified implementation - in production you'd want proper refresh token flow
+    
+    res.status(501).json({
+      error: 'Token refresh not yet implemented',
+      message: 'GitHub OAuth uses long-lived tokens. Please re-authenticate if your token has expired.',
+      service: 'oauth-server'
+    });
+    
+  } catch (error) {
+    console.error('[OAuth] Token refresh failed:', error);
+    res.status(500).json({ 
+      error: error.message,
+      service: 'oauth-server'
+    });
+  }
+});
+
 // Exchange OAuth code for access token with enhanced error handling
 app.post('/api/github/oauth/token', async (req, res) => {
   try {

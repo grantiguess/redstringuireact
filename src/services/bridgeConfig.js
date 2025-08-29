@@ -15,10 +15,19 @@ export function getBridgeBaseUrl() {
   } catch {}
 
   if (typeof window !== 'undefined' && window.location) {
-    const { protocol, hostname } = window.location;
+    const { protocol, hostname, port } = window.location;
+    
+    // In production (custom domain or Cloud Run), use the same origin
+    if (hostname === 'redstring.io' || 
+        hostname.includes('.redstring.io') ||
+        hostname.includes('run.app') ||
+        protocol === 'https:') {
+      return `${protocol}//${hostname}${port && port !== '443' && port !== '80' ? ':' + port : ''}`;
+    }
+    
     // Default development bridge port for AI/MCP
-    const port = 3001;
-    return `${protocol}//${hostname}:${port}`;
+    const bridgePort = 3001;
+    return `${protocol}//${hostname}:${bridgePort}`;
   }
 
   // Server-side or unknown: fallback to localhost
@@ -41,9 +50,13 @@ export function getOAuthBaseUrl() {
   if (typeof window !== 'undefined' && window.location) {
     const { protocol, hostname, port } = window.location;
     
-    // In production (Cloud Run), use the same origin as the main app
-    if (hostname.includes('run.app') || port === '4000') {
-      return `${protocol}//${hostname}${port ? ':' + port : ''}`;
+    // In production (Cloud Run or custom domain), use the same origin as the main app
+    if (hostname.includes('run.app') || 
+        port === '4000' || 
+        hostname === 'redstring.io' || 
+        hostname.includes('.redstring.io') ||
+        protocol === 'https:') {
+      return `${protocol}//${hostname}${port && port !== '443' && port !== '80' ? ':' + port : ''}`;
     }
     
     // In development, use dedicated OAuth server port

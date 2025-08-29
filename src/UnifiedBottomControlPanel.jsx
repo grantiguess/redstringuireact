@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Trash2, Plus, ArrowUpFromDot, ArrowRight, ChevronLeft, ChevronRight, PackageOpen, Layers, Edit3, Bookmark, Palette, MoreHorizontal, Group, Ungroup } from 'lucide-react';
+import MiniConnectionCanvas from './MiniConnectionCanvas';
 import './UnifiedBottomControlPanel.css';
 
 // Small helper to render a triangle cap (rounded-ish via strokeJoin/lineJoin aesthetics)
@@ -165,28 +166,22 @@ const UnifiedBottomControlPanel = ({
           ) : isAbstraction ? (
             customContent
           ) : (
-            triples.map(t => (
-              <div className="triple-item" key={t.id}>
-                <div className="triple-left">
-                  <NodePill name={t.subject?.name} color={t.subject?.color} onClick={() => onNodeClick?.(t.subject)} />
-                </div>
-                <div className="triple-center">
-                  <PredicateRail
-                  color={t.predicate?.color || '#4A5568'}
-                  leftActive={!!t.hasLeftArrow}
-                  rightActive={!!t.hasRightArrow}
-                  onToggleLeft={() => onToggleLeftArrow?.(t.id)}
-                  onToggleRight={() => onToggleRightArrow?.(t.id)}
-                  onClickCenter={() => onPredicateClick?.(t.id)}
-                  centerWidth={Math.max(140, (t.predicate?.name?.length || 9) * 9)}
-                  label={t.predicate?.name}
-                  />
-                </div>
-                <div className="triple-right">
-                  <NodePill name={t.object?.name} color={t.object?.color} onClick={() => onNodeClick?.(t.object)} />
-                </div>
-              </div>
-            ))
+            <MiniConnectionCanvas
+              connections={triples}
+              width={Math.max(400, triples.length * 200)}
+              height={120}
+              onNodeClick={onNodeClick}
+              onConnectionClick={onPredicateClick}
+              onToggleArrow={(connectionId, targetNodeId) => {
+                // Determine if this is left or right arrow based on target
+                const triple = triples.find(t => t.id === connectionId);
+                if (triple && triple.subject?.id === targetNodeId) {
+                  onToggleLeftArrow?.(connectionId);
+                } else if (triple && triple.object?.id === targetNodeId) {
+                  onToggleRightArrow?.(connectionId);
+                }
+              }}
+            />
           )}
 
           {isNodes ? (
