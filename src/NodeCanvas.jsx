@@ -1438,7 +1438,7 @@ function NodeCanvas() {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [connectionControlPanelVisible, setConnectionControlPanelVisible] = useState(false);
   const [connectionControlPanelShouldShow, setConnectionControlPanelShouldShow] = useState(false);
-
+  
   // Pending swap operation state
   const [pendingSwapOperation, setPendingSwapOperation] = useState(null);
   
@@ -2427,24 +2427,24 @@ function NodeCanvas() {
                     targetPrototypeId,
                     sourceGraphId
                   });
-                  storeActions.createAndAssignGraphDefinitionWithoutActivation(targetPrototypeId);
-                  setTimeout(() => {
-                    const updatedState = useGraphStore.getState();
-                    const updatedNodeData = updatedState.nodePrototypes.get(targetPrototypeId);
-                    if (updatedNodeData?.definitionGraphIds?.length > 0) {
-                      const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                storeActions.createAndAssignGraphDefinitionWithoutActivation(targetPrototypeId);
+                setTimeout(() => {
+                  const updatedState = useGraphStore.getState();
+                  const updatedNodeData = updatedState.nodePrototypes.get(targetPrototypeId);
+                  if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                    const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
                       console.log('[Carousel Expand] New definition graph created. Launching animation.', {
                         targetPrototypeId,
                         newGraphId,
                         sourceGraphId
                       });
-                      startHurtleAnimation(originalNodeId, newGraphId, targetPrototypeId, sourceGraphId);
-                      setSelectedNodeIdForPieMenu(null);
-                      setIsTransitioningPieMenu(true);
-                    } else {
-                      console.error(`[PieMenu Expand] Could not find new definition for node ${targetPrototypeId} after creation.`);
-                    }
-                  }, 50);
+                    startHurtleAnimation(originalNodeId, newGraphId, targetPrototypeId, sourceGraphId);
+                    setSelectedNodeIdForPieMenu(null);
+                    setIsTransitioningPieMenu(true);
+                  } else {
+                    console.error(`[PieMenu Expand] Could not find new definition for node ${targetPrototypeId} after creation.`);
+                  }
+                }, 50);
                 }
               }
             } else {
@@ -3595,7 +3595,7 @@ function NodeCanvas() {
       // Much longer debounce during pan/zoom to prevent flicker
       clearLabelsTimeoutRef.current = setTimeout(() => {
         if (!isPanningOrZooming.current) {
-          placedLabelsRef.current = new Map();
+    placedLabelsRef.current = new Map();
         }
       }, 750); // Increased to 750ms for even more stability
     } else {
@@ -4727,25 +4727,25 @@ function NodeCanvas() {
       // Determine the node to insert into the chain: existing or new
       let newNodeId = existingPrototypeId;
       if (!newNodeId) {
-        // Create new node with color gradient
-        let newNodeColor = color;
-        if (!newNodeColor) {
-          const isAbove = abstractionPrompt.direction === 'above';
-          const abstractionLevel = isAbove ? 0.3 : -0.2;
-          const targetColor = isAbove ? '#EFE8E5' : '#000000';
-          newNodeColor = interpolateColor(currentlySelectedNode.color || '#8B0000', targetColor, Math.abs(abstractionLevel));
-        }
-        
-        console.log(`[Abstraction Submit] Creating new node with color:`, newNodeColor);
-        
-        // Create the new node prototype
-        storeActions.addNodePrototype({
+      // Create new node with color gradient
+      let newNodeColor = color;
+      if (!newNodeColor) {
+        const isAbove = abstractionPrompt.direction === 'above';
+        const abstractionLevel = isAbove ? 0.3 : -0.2;
+        const targetColor = isAbove ? '#EFE8E5' : '#000000';
+        newNodeColor = interpolateColor(currentlySelectedNode.color || '#8B0000', targetColor, Math.abs(abstractionLevel));
+      }
+      
+      console.log(`[Abstraction Submit] Creating new node with color:`, newNodeColor);
+      
+      // Create the new node prototype
+      storeActions.addNodePrototype({
           id: (newNodeId = uuidv4()),
-          name: name.trim(),
-          color: newNodeColor,
-          typeNodeId: 'base-thing-prototype',
-          definitionGraphIds: []
-        });
+        name: name.trim(),
+        color: newNodeColor,
+        typeNodeId: 'base-thing-prototype',
+        definitionGraphIds: []
+      });
       } else {
         console.log(`[Abstraction Submit] Using existing prototype ${newNodeId} instead of creating new`);
       }
@@ -6850,8 +6850,8 @@ function NodeCanvas() {
                                }
                              }
                              
-                                                         // Smart label placement based on routing style
-                            if (enableAutoRouting && routingStyle === 'manhattan') {
+                             // Smart label placement based on routing style
+                             if (enableAutoRouting && routingStyle === 'manhattan') {
                               // Always try cached placement first to prevent flicker
                               const cached = placedLabelsRef.current.get(edge.id);
                               if (cached && cached.position) {
@@ -6860,41 +6860,41 @@ function NodeCanvas() {
                                 midY = stabilized.y;
                                 angle = stabilized.angle || 0;
                               } else {
-                                 const pathPoints = generateManhattanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
-                                 const placement = chooseLabelPlacement(pathPoints, connectionName, 24, edge.id);
-                                 if (placement) {
-                                   midX = placement.x;
-                                   midY = placement.y;
-                                   angle = placement.angle || 0;
-                                   
-                                   // Register this label placement
-                                   const labelRect = {
-                                     minX: midX - estimateTextWidth(connectionName, 24) / 2,
-                                     maxX: midX + estimateTextWidth(connectionName, 24) / 2,
-                                     minY: midY - 24 * 1.1 / 2,
-                                     maxY: midY + 24 * 1.1 / 2,
-                                   };
+                               const pathPoints = generateManhattanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
+                               const placement = chooseLabelPlacement(pathPoints, connectionName, 24, edge.id);
+                               if (placement) {
+                                 midX = placement.x;
+                                 midY = placement.y;
+                                 angle = placement.angle || 0;
+                                 
+                                 // Register this label placement
+                                 const labelRect = {
+                                   minX: midX - estimateTextWidth(connectionName, 24) / 2,
+                                   maxX: midX + estimateTextWidth(connectionName, 24) / 2,
+                                   minY: midY - 24 * 1.1 / 2,
+                                   maxY: midY + 24 * 1.1 / 2,
+                                 };
                                    const stabilized = stabilizeLabelPosition(edge.id, midX, midY, angle);
-                                   placedLabelsRef.current.set(edge.id, {
-                                     rect: labelRect,
+                                 placedLabelsRef.current.set(edge.id, {
+                                   rect: labelRect,
                                      position: { x: stabilized.x, y: stabilized.y, angle: stabilized.angle }
-                                   });
+                                 });
+                               } else {
+                                 // Fallback to simple Manhattan logic
+                                 const horizontalLen = Math.abs(endX - startX);
+                                 const verticalLen = Math.abs(endY - startY);
+                                 if (horizontalLen >= verticalLen) {
+                                   midX = (startX + endX) / 2;
+                                   midY = startY;
+                                   angle = 0;
                                  } else {
-                                   // Fallback to simple Manhattan logic
-                                   const horizontalLen = Math.abs(endX - startX);
-                                   const verticalLen = Math.abs(endY - startY);
-                                   if (horizontalLen >= verticalLen) {
-                                     midX = (startX + endX) / 2;
-                                     midY = startY;
-                                     angle = 0;
-                                   } else {
-                                     midX = endX;
-                                     midY = (startY + endY) / 2;
-                                     angle = 90;
+                                   midX = endX;
+                                   midY = (startY + endY) / 2;
+                                   angle = 90;
                                    }
                                  }
-                              }
-                                                         } else if (enableAutoRouting && routingStyle === 'clean') {
+                               }
+                             } else if (enableAutoRouting && routingStyle === 'clean') {
                               // Always try cached placement first to prevent flicker
                               const cached = placedLabelsRef.current.get(edge.id);
                               if (cached && cached.position) {
@@ -6903,33 +6903,33 @@ function NodeCanvas() {
                                 midY = stabilized.y;
                                 angle = stabilized.angle || 0;
                               } else {
-                                 const pathPoints = generateCleanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
-                                 const placement = chooseLabelPlacement(pathPoints, connectionName, 24, edge.id);
-                                 if (placement) {
-                                   midX = placement.x;
-                                   midY = placement.y;
-                                   angle = placement.angle || 0;
-                                   
-                                   // Register this label placement
-                                   const labelRect = {
-                                     minX: midX - estimateTextWidth(connectionName, 24) / 2,
-                                     maxX: midX + estimateTextWidth(connectionName, 24) / 2,
-                                     minY: midY - 24 * 1.1 / 2,
-                                     maxY: midY + 24 * 1.1 / 2,
-                                   };
+                               const pathPoints = generateCleanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
+                               const placement = chooseLabelPlacement(pathPoints, connectionName, 24, edge.id);
+                               if (placement) {
+                                 midX = placement.x;
+                                 midY = placement.y;
+                                 angle = placement.angle || 0;
+                                 
+                                 // Register this label placement
+                                 const labelRect = {
+                                   minX: midX - estimateTextWidth(connectionName, 24) / 2,
+                                   maxX: midX + estimateTextWidth(connectionName, 24) / 2,
+                                   minY: midY - 24 * 1.1 / 2,
+                                   maxY: midY + 24 * 1.1 / 2,
+                                 };
                                    const stabilized = stabilizeLabelPosition(edge.id, midX, midY, angle);
-                                   placedLabelsRef.current.set(edge.id, {
-                                     rect: labelRect,
+                                 placedLabelsRef.current.set(edge.id, {
+                                   rect: labelRect,
                                      position: { x: stabilized.x, y: stabilized.y, angle: stabilized.angle }
-                                   });
-                                 } else {
-                                   // Fallback to midpoint
-                                   midX = (x1 + x2) / 2;
-                                   midY = (y1 + y2) / 2;
-                                   angle = 0;
+                                 });
+                               } else {
+                                 // Fallback to midpoint
+                                 midX = (x1 + x2) / 2;
+                                 midY = (y1 + y2) / 2;
+                                 angle = 0;
                                  }
                                }
-                                                         } else {
+                             } else {
                               // Straight line: reuse cached placement when available to prevent flicker
                               const cached = placedLabelsRef.current.get(edge.id);
                               if (cached && cached.position) {
@@ -6939,9 +6939,9 @@ function NodeCanvas() {
                                 angle = stabilized.angle || Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
                               } else {
                                 // Fallback to original behavior
-                                midX = (x1 + x2) / 2;
-                                midY = (y1 + y2) / 2;
-                                angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+                               midX = (x1 + x2) / 2;
+                               midY = (y1 + y2) / 2;
+                               angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
 
                                 // Cache this position for future reuse
                                 const labelRect = {
@@ -6956,7 +6956,7 @@ function NodeCanvas() {
                                   position: { x: stabilized.x, y: stabilized.y, angle: stabilized.angle }
                                 });
                               }
-                            }
+                             }
                              
                              // Adjust angle to keep text readable (never upside down)
                              const adjustedAngle = (angle > 90 || angle < -90) ? angle + 180 : angle;
