@@ -77,10 +77,6 @@ const MOUSE_WHEEL_ZOOM_SENSITIVITY = 1;        // Sensitivity for standard mouse
 const KEYBOARD_PAN_SPEED = 12;                  // for keyboard panning (much faster)
 const KEYBOARD_ZOOM_SPEED = 0.01;               // for keyboard zooming (extra smooth)
 
-// Double-tap zoom constants
-const DOUBLE_TAP_THRESHOLD = 300;               // Max time between taps (ms)
-const ZOOM_SPEED_MULTIPLIER = 2.0;              // Speed multiplier for double-tap mode
-
 function NodeCanvas() {
   const svgRef = useRef(null);
   const wrapperRef = useRef(null);
@@ -155,6 +151,27 @@ function NodeCanvas() {
     centerClient: { x: 0, y: 0 },
     centerWorld: { x: 0, y: 0 },
   });
+  
+  // Pinch zoom smoothing system
+  const pinchSmoothingRef = useRef({
+    targetZoom: 1,
+    targetPanX: 0,
+    targetPanY: 0,
+    currentZoom: 1,
+    currentPanX: 0,
+    currentPanY: 0,
+    animationId: null,
+    smoothing: 0.08, // Lower = smoother, higher = more responsive (reduced for less jitter)
+    isAnimating: false, // Track if we're actively animating
+    // Performance tracking
+    lastFrameTime: 0,
+    frameCount: 0,
+    inputEventCount: 0,
+    lastInputTime: 0,
+    avgFrameDelta: 16.67, // Target 60fps
+    lastLogTime: 0,
+  });
+  
   const isDraggingLeft = useRef(false);
   const isDraggingRight = useRef(false);
   const dragStartXRef = useRef(0);
@@ -167,6 +184,15 @@ function NodeCanvas() {
   const rightWidthRef = useRef(rightPanelWidth);
   useEffect(() => { leftWidthRef.current = leftPanelWidth; }, [leftPanelWidth]);
   useEffect(() => { rightWidthRef.current = rightPanelWidth; }, [rightPanelWidth]);
+  
+  // Cleanup pinch zoom animation on unmount
+  useEffect(() => {
+    return () => {
+      if (pinchSmoothingRef.current?.animationId) {
+        cancelAnimationFrame(pinchSmoothingRef.current.animationId);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const onPanelChanged = (e) => {
@@ -404,6 +430,7 @@ function NodeCanvas() {
     }
     if (e.touches && e.touches.length >= 2) {
       // Pinch-to-zoom setup
+      console.log('🤏 PINCH START - Setting up pinch gesture');
       const t1 = e.touches[0];
       const t2 = e.touches[1];
       const dx = t2.clientX - t1.clientX;
@@ -421,6 +448,11 @@ function NodeCanvas() {
         centerClient: { x: centerX, y: centerY },
         centerWorld: { x: worldX, y: worldY },
       };
+      console.log('🤏 PINCH INITIALIZED:', {
+        startDist: Math.round(dist * 10) / 10,
+        startZoom: Math.round(zoomLevel * 1000) / 1000,
+        center: { x: Math.round(centerX), y: Math.round(centerY) }
+      });
       return;
     }
     const { clientX, clientY } = normalizeTouchEvent(e);
@@ -442,6 +474,14 @@ function NodeCanvas() {
       e.preventDefault();
       e.stopPropagation();
     }
+    
+    // Debug touch events
+    console.log('👋 TOUCH MOVE:', {
+      touchCount: e.touches?.length,
+      pinchActive: pinchRef.current.active,
+      condition: e.touches && e.touches.length >= 2 && pinchRef.current.active
+    });
+    
     if (e.touches && e.touches.length >= 2 && pinchRef.current.active) {
       // Pinch-to-zoom update
       const t1 = e.touches[0];
@@ -452,6 +492,23 @@ function NodeCanvas() {
       const ratio = dist / (pinchRef.current.startDist || 1);
       let newZoom = pinchRef.current.startZoom * ratio;
       newZoom = Math.min(Math.max(newZoom, MIN_ZOOM), MAX_ZOOM);
+      
+      // Log raw input data periodically
+      const smoothing = pinchSmoothingRef.current;
+      if (smoothing.inputEventCount % 20 === 1) { // Log every 20th touch
+        console.log('👆 Raw Touch Input:', {
+          touches: e.touches.length,
+          distance: Math.round(dist * 10) / 10,
+          ratio: Math.round(ratio * 1000) / 1000,
+          startDist: Math.round(pinchRef.current.startDist * 10) / 10,
+          startZoom: Math.round(pinchRef.current.startZoom * 1000) / 1000,
+          newZoom: Math.round(newZoom * 1000) / 1000,
+          center: {
+            x: Math.round((t1.clientX + t2.clientX) / 2),
+            y: Math.round((t1.clientY + t2.clientY) / 2)
+          }
+        });
+      }
       // Recompute center (allow pinch centroid to move)
       const centerX = (t1.clientX + t2.clientX) / 2;
       const centerY = (t1.clientY + t2.clientY) / 2;
@@ -470,8 +527,15 @@ function NodeCanvas() {
         x: Math.min(Math.max(newPanX, minX), maxX),
         y: Math.min(Math.max(newPanY, minY), maxY),
       };
-      setZoomLevel(newZoom);
-      setPanOffset(clampedPan);
+      
+      // Use smoothing system for pinch zoom instead of direct updates
+      console.log('🚨 TOUCH MOVE - Calling startPinchSmoothing:', {
+        newZoom: Math.round(newZoom * 1000) / 1000,
+        panX: Math.round(clampedPan.x * 10) / 10,
+        panY: Math.round(clampedPan.y * 10) / 10,
+        touchCount: e.touches?.length
+      });
+      startPinchSmoothing(newZoom, clampedPan.x, clampedPan.y);
       return;
     }
     const { clientX, clientY } = normalizeTouchEvent(e);
@@ -866,12 +930,6 @@ function NodeCanvas() {
     height: (window.innerHeight - HEADER_HEIGHT) * 4,
   });
   const [zoomLevel, setZoomLevel] = useState(1);
-  
-  // Double-tap zoom state
-  const [doubleTapSpeedActive, setDoubleTapSpeedActive] = useState(false);
-  const lastSpaceTapRef = useRef(0);
-  const lastShiftTapRef = useRef(0);
-  
   // Hover state for grid when mode is 'hover'
 
 
@@ -930,6 +988,12 @@ function NodeCanvas() {
   useEffect(() => {
     // Guard until basic view state is present
     if (!viewportSize || !canvasSize) return;
+    
+    // Skip expensive culling during pinch zoom animation to prevent jitter
+    if (pinchSmoothingRef.current.isAnimating) {
+      return;
+    }
+    
     let rafId = null;
     const compute = () => {
       // Derive canvas-space viewport
@@ -1448,7 +1512,7 @@ function NodeCanvas() {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [connectionControlPanelVisible, setConnectionControlPanelVisible] = useState(false);
   const [connectionControlPanelShouldShow, setConnectionControlPanelShouldShow] = useState(false);
-  
+
   // Pending swap operation state
   const [pendingSwapOperation, setPendingSwapOperation] = useState(null);
   
@@ -2437,24 +2501,24 @@ function NodeCanvas() {
                     targetPrototypeId,
                     sourceGraphId
                   });
-                storeActions.createAndAssignGraphDefinitionWithoutActivation(targetPrototypeId);
-                setTimeout(() => {
-                  const updatedState = useGraphStore.getState();
-                  const updatedNodeData = updatedState.nodePrototypes.get(targetPrototypeId);
-                  if (updatedNodeData?.definitionGraphIds?.length > 0) {
-                    const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                  storeActions.createAndAssignGraphDefinitionWithoutActivation(targetPrototypeId);
+                  setTimeout(() => {
+                    const updatedState = useGraphStore.getState();
+                    const updatedNodeData = updatedState.nodePrototypes.get(targetPrototypeId);
+                    if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                      const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
                       console.log('[Carousel Expand] New definition graph created. Launching animation.', {
                         targetPrototypeId,
                         newGraphId,
                         sourceGraphId
                       });
-                    startHurtleAnimation(originalNodeId, newGraphId, targetPrototypeId, sourceGraphId);
-                    setSelectedNodeIdForPieMenu(null);
-                    setIsTransitioningPieMenu(true);
-                  } else {
-                    console.error(`[PieMenu Expand] Could not find new definition for node ${targetPrototypeId} after creation.`);
-                  }
-                }, 50);
+                      startHurtleAnimation(originalNodeId, newGraphId, targetPrototypeId, sourceGraphId);
+                      setSelectedNodeIdForPieMenu(null);
+                      setIsTransitioningPieMenu(true);
+                    } else {
+                      console.error(`[PieMenu Expand] Could not find new definition for node ${targetPrototypeId} after creation.`);
+                    }
+                  }, 50);
                 }
               }
             } else {
@@ -2834,6 +2898,193 @@ function NodeCanvas() {
 
   // --- Utility Functions ---
   const lerp = (a, b, t) => a + (b - a) * t;
+  
+  // Smooth pinch zoom animation
+  const animatePinchSmoothing = useCallback(() => {
+    console.log('🎬 ANIMATION FRAME CALLED');
+    const smoothing = pinchSmoothingRef.current;
+    if (!smoothing) {
+      console.error('❌ smoothing ref is null!');
+      return;
+    }
+    const now = performance.now();
+    
+    // Track animation frame timing
+    const frameDelta = smoothing.lastFrameTime ? now - smoothing.lastFrameTime : 16.67;
+    smoothing.lastFrameTime = now;
+    smoothing.frameCount++;
+    
+    // Update rolling average frame delta
+    smoothing.avgFrameDelta = smoothing.avgFrameDelta * 0.9 + frameDelta * 0.1;
+    
+    // Adjust smoothing based on frame timing to maintain consistency
+    const frameTimeRatio = frameDelta / 16.67; // 16.67ms = 60fps target
+    const adjustedSmoothing = Math.min(0.15, smoothing.smoothing * frameTimeRatio);
+    
+    // Store previous values for delta logging
+    const prevZoom = smoothing.currentZoom;
+    const prevPanX = smoothing.currentPanX;
+    const prevPanY = smoothing.currentPanY;
+    
+    // Lerp towards target values with frame-time compensation
+    smoothing.currentZoom = lerp(smoothing.currentZoom, smoothing.targetZoom, adjustedSmoothing);
+    smoothing.currentPanX = lerp(smoothing.currentPanX, smoothing.targetPanX, adjustedSmoothing);
+    smoothing.currentPanY = lerp(smoothing.currentPanY, smoothing.targetPanY, adjustedSmoothing);
+    
+    // Round to prevent subpixel jitter
+    smoothing.currentZoom = Math.round(smoothing.currentZoom * 10000) / 10000;
+    smoothing.currentPanX = Math.round(smoothing.currentPanX * 100) / 100;
+    smoothing.currentPanY = Math.round(smoothing.currentPanY * 100) / 100;
+    
+    // Calculate deltas for logging
+    const zoomDelta = smoothing.currentZoom - prevZoom;
+    const panXDelta = smoothing.currentPanX - prevPanX;
+    const panYDelta = smoothing.currentPanY - prevPanY;
+    
+    // Batch state updates to reduce renders and potential jitter
+    if (React?.startTransition) {
+      React.startTransition(() => {
+        setZoomLevel(smoothing.currentZoom);
+        setPanOffset({ x: smoothing.currentPanX, y: smoothing.currentPanY });
+      });
+    } else {
+      // Fallback if startTransition not available
+      setZoomLevel(smoothing.currentZoom);
+      setPanOffset({ x: smoothing.currentPanX, y: smoothing.currentPanY });
+    }
+    
+    // Check if we're close enough to the target to stop animating
+    const zoomDiff = Math.abs(smoothing.currentZoom - smoothing.targetZoom);
+    const panXDiff = Math.abs(smoothing.currentPanX - smoothing.targetPanX);
+    const panYDiff = Math.abs(smoothing.currentPanY - smoothing.targetPanY);
+    
+    // Log performance metrics every 500ms
+    if (now - smoothing.lastLogTime > 500) {
+      console.log('🎯 Pinch Animation Stats:', {
+        fps: Math.round(1000 / smoothing.avgFrameDelta),
+        avgFrameDelta: Math.round(smoothing.avgFrameDelta * 100) / 100,
+        currentFrameDelta: Math.round(frameDelta * 100) / 100,
+        frameTimeRatio: Math.round(frameTimeRatio * 100) / 100,
+        adjustedSmoothing: Math.round(adjustedSmoothing * 1000) / 1000,
+        frameCount: smoothing.frameCount,
+        inputEvents: smoothing.inputEventCount,
+        deltas: {
+          zoom: Math.round(zoomDelta * 10000) / 10000,
+          panX: Math.round(panXDelta * 100) / 100,
+          panY: Math.round(panYDelta * 100) / 100
+        },
+        diffs: {
+          zoom: Math.round(zoomDiff * 10000) / 10000,
+          panX: Math.round(panXDiff * 100) / 100,
+          panY: Math.round(panYDiff * 100) / 100
+        }
+      });
+      smoothing.lastLogTime = now;
+    }
+    
+    // Continue animation if we're not close enough (threshold: 0.001 for zoom, 0.1 for pan)
+    if (zoomDiff > 0.001 || panXDiff > 0.1 || panYDiff > 0.1) {
+      smoothing.animationId = requestAnimationFrame(animatePinchSmoothing);
+    } else {
+      // Snap to final values and stop animation
+      setZoomLevel(smoothing.targetZoom);
+      setPanOffset({ x: smoothing.targetPanX, y: smoothing.targetPanY });
+      smoothing.currentZoom = smoothing.targetZoom;
+      smoothing.currentPanX = smoothing.targetPanX;
+      smoothing.currentPanY = smoothing.targetPanY;
+      smoothing.animationId = null;
+      smoothing.isAnimating = false;
+      
+      console.log('🏁 Pinch Animation Complete:', {
+        totalFrames: smoothing.frameCount,
+        totalInputs: smoothing.inputEventCount,
+        avgFPS: Math.round(1000 / smoothing.avgFrameDelta)
+      });
+      
+      // Reset counters
+      smoothing.frameCount = 0;
+      smoothing.inputEventCount = 0;
+      
+      // Trigger culling update after animation completes
+      // The culling useEffect will run on the next render cycle
+    }
+  }, []);
+  
+  // Start or update pinch zoom smoothing
+  const startPinchSmoothing = useCallback((targetZoom, targetPanX, targetPanY) => {
+    console.log('🟢 startPinchSmoothing CALLED:', {
+      targetZoom: Math.round(targetZoom * 1000) / 1000,
+      targetPanX: Math.round(targetPanX * 10) / 10,
+      targetPanY: Math.round(targetPanY * 10) / 10,
+      refExists: !!pinchSmoothingRef.current
+    });
+    
+    const smoothing = pinchSmoothingRef.current;
+    const now = performance.now();
+    
+    // Track input event timing
+    const inputDelta = smoothing.lastInputTime ? now - smoothing.lastInputTime : 0;
+    smoothing.lastInputTime = now;
+    smoothing.inputEventCount++;
+    
+    // Throttle extremely frequent input events to prevent jitter
+    if (inputDelta < 8 && smoothing.isAnimating) { // Throttle to max ~120Hz
+      console.log('⚡ Input throttled:', { inputDelta: Math.round(inputDelta * 10) / 10 });
+      return;
+    }
+    
+    // Emergency fallback - if smoothing isn't working, use direct updates
+    if (!animatePinchSmoothing || typeof animatePinchSmoothing !== 'function') {
+      console.warn('🚨 EMERGENCY FALLBACK - Using direct updates');
+      setZoomLevel(targetZoom);
+      setPanOffset({ x: targetPanX, y: targetPanY });
+      return;
+    }
+    
+    // Log input event details
+    if (smoothing.inputEventCount % 10 === 1) { // Log every 10th input
+      console.log('📱 Input Event:', {
+        eventCount: smoothing.inputEventCount,
+        inputDelta: Math.round(inputDelta * 10) / 10,
+        targetZoom: Math.round(targetZoom * 1000) / 1000,
+        targetPan: {
+          x: Math.round(targetPanX * 10) / 10,
+          y: Math.round(targetPanY * 10) / 10
+        },
+        currentZoom: Math.round(smoothing.currentZoom * 1000) / 1000,
+        isAnimating: smoothing.isAnimating
+      });
+    }
+    
+    // Set new targets
+    smoothing.targetZoom = targetZoom;
+    smoothing.targetPanX = targetPanX;
+    smoothing.targetPanY = targetPanY;
+    
+    // Initialize current values if not already animating
+    if (!smoothing.animationId) {
+      console.log('🚀 Starting Pinch Animation');
+      smoothing.currentZoom = zoomLevel;
+      smoothing.currentPanX = panOffset.x;
+      smoothing.currentPanY = panOffset.y;
+      smoothing.isAnimating = true;
+      smoothing.lastFrameTime = now;
+      console.log('🔧 About to call requestAnimationFrame with:', typeof animatePinchSmoothing);
+      smoothing.animationId = requestAnimationFrame(animatePinchSmoothing);
+      console.log('🔧 Animation ID:', smoothing.animationId);
+    }
+  }, [zoomLevel, panOffset.x, panOffset.y, animatePinchSmoothing]);
+  
+  // Stop pinch zoom smoothing
+  const stopPinchSmoothing = useCallback(() => {
+    const smoothing = pinchSmoothingRef.current;
+    if (smoothing.animationId) {
+      cancelAnimationFrame(smoothing.animationId);
+      smoothing.animationId = null;
+      smoothing.isAnimating = false;
+    }
+  }, []);
+  
   const clampCoordinates = (x, y) => {
     const boundedX = Math.min(Math.max(x, 0), canvasSize.width);
     const boundedY = Math.min(Math.max(y, 0), canvasSize.height);
@@ -3325,9 +3576,7 @@ function NodeCanvas() {
     if (isMac && e.ctrlKey && !trackpadZoomEnabled) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
-        const baseSensitivity = TRACKPAD_ZOOM_SENSITIVITY;
-        const effectiveSensitivity = doubleTapSpeedActive ? baseSensitivity * ZOOM_SPEED_MULTIPLIER : baseSensitivity;
-        const zoomDelta = deltaY * effectiveSensitivity;
+        const zoomDelta = deltaY * TRACKPAD_ZOOM_SENSITIVITY;
         const currentZoomForWorker = zoomLevel;
         const currentPanOffsetForWorker = panOffset;
         const opId = ++zoomOpIdRef.current;
@@ -3349,7 +3598,7 @@ function NodeCanvas() {
             gesture: 'pinch-zoom',
             zooming: true,
             panning: false,
-            sensitivity: effectiveSensitivity,
+            sensitivity: TRACKPAD_ZOOM_SENSITIVITY,
             zoomLevel: result.zoomLevel.toFixed(2),
             panOffsetX: result.panOffset.x.toFixed(2),
             panOffsetY: result.panOffset.y.toFixed(2),
@@ -3412,9 +3661,7 @@ function NodeCanvas() {
     if (deviceType === 'mouse' || deviceType === 'mouse_wheel' || (deviceType === 'undetermined' && deltaY !== 0 && Math.abs(deltaX) < 0.15)) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
-        const baseSensitivity = SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY;
-        const effectiveSensitivity = doubleTapSpeedActive ? baseSensitivity * ZOOM_SPEED_MULTIPLIER : baseSensitivity;
-        const zoomDelta = deltaY * effectiveSensitivity; 
+        const zoomDelta = deltaY * SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY; 
         const currentZoomForWorker = zoomLevel;
         const currentPanOffsetForWorker = panOffset;
         const opId = ++zoomOpIdRef.current;
@@ -3438,7 +3685,7 @@ function NodeCanvas() {
                 gesture: 'wheel-zoom',
                 zooming: true,
                 panning: false,
-                sensitivity: effectiveSensitivity,
+                sensitivity: SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY,
                 deltaY: deltaY.toFixed(2),
                 zoomLevel: result.zoomLevel.toFixed(2),
                 panOffsetX: result.panOffset.x.toFixed(2),
@@ -3609,7 +3856,7 @@ function NodeCanvas() {
       // Much longer debounce during pan/zoom to prevent flicker
       clearLabelsTimeoutRef.current = setTimeout(() => {
         if (!isPanningOrZooming.current) {
-    placedLabelsRef.current = new Map();
+          placedLabelsRef.current = new Map();
         }
       }, 750); // Increased to 750ms for even more stability
     } else {
@@ -4741,25 +4988,25 @@ function NodeCanvas() {
       // Determine the node to insert into the chain: existing or new
       let newNodeId = existingPrototypeId;
       if (!newNodeId) {
-      // Create new node with color gradient
-      let newNodeColor = color;
-      if (!newNodeColor) {
-        const isAbove = abstractionPrompt.direction === 'above';
-        const abstractionLevel = isAbove ? 0.3 : -0.2;
-        const targetColor = isAbove ? '#EFE8E5' : '#000000';
-        newNodeColor = interpolateColor(currentlySelectedNode.color || '#8B0000', targetColor, Math.abs(abstractionLevel));
-      }
-      
-      console.log(`[Abstraction Submit] Creating new node with color:`, newNodeColor);
-      
-      // Create the new node prototype
-      storeActions.addNodePrototype({
+        // Create new node with color gradient
+        let newNodeColor = color;
+        if (!newNodeColor) {
+          const isAbove = abstractionPrompt.direction === 'above';
+          const abstractionLevel = isAbove ? 0.3 : -0.2;
+          const targetColor = isAbove ? '#EFE8E5' : '#000000';
+          newNodeColor = interpolateColor(currentlySelectedNode.color || '#8B0000', targetColor, Math.abs(abstractionLevel));
+        }
+        
+        console.log(`[Abstraction Submit] Creating new node with color:`, newNodeColor);
+        
+        // Create the new node prototype
+        storeActions.addNodePrototype({
           id: (newNodeId = uuidv4()),
-        name: name.trim(),
-        color: newNodeColor,
-        typeNodeId: 'base-thing-prototype',
-        definitionGraphIds: []
-      });
+          name: name.trim(),
+          color: newNodeColor,
+          typeNodeId: 'base-thing-prototype',
+          definitionGraphIds: []
+        });
       } else {
         console.log(`[Abstraction Submit] Using existing prototype ${newNodeId} instead of creating new`);
       }
@@ -5228,34 +5475,6 @@ function NodeCanvas() {
     );
   };
 
-  // Double-tap detection for speed zoom
-  const handleDoubleTap = useCallback((key) => {
-    const now = Date.now();
-    let lastTapRef;
-    
-    if (key === ' ') {
-      lastTapRef = lastSpaceTapRef;
-    } else if (key === 'Shift') {
-      lastTapRef = lastShiftTapRef;
-    } else {
-      return false; // Only handle space and shift
-    }
-    
-    const timeSinceLastTap = now - lastTapRef.current;
-    lastTapRef.current = now;
-    
-    if (timeSinceLastTap < DOUBLE_TAP_THRESHOLD) {
-      // Double-tap detected!
-      console.log(`[Double-tap] ${key} double-tap detected! Activating 2x zoom speed`);
-      setDoubleTapSpeedActive(true);
-      return true; // Double-tap detected
-    }
-    
-    return false; // Single tap
-  }, []);
-
-
-
   const handleToggleRightPanel = useCallback(() => {
     setRightPanelExpanded(prev => !prev);
   }, []);
@@ -5281,16 +5500,11 @@ function NodeCanvas() {
         activeElement.type === 'number'
       );
       
-      //Debug logging for any key press
-      //console.log('[Key Shortcuts] Key pressed:', e.key, 'Active element:', activeElement?.tagName, 'Is text input:', isTextInput);
+      console.log('[Key Shortcuts] Key pressed:', e.key, 'Active element:', activeElement?.tagName, 'Is text input:', isTextInput);
       
       // Only handle these specific keys if NOT in a text input
       if (!isTextInput) {
-        // Check for double-tap zoom keys (space and shift)
-        if (e.key === ' ' || e.key === 'Shift') {
-          handleDoubleTap(e.key);
-          // Note: Don't prevent default here to allow normal behavior
-        } else if (e.key === '1') {
+        if (e.key === '1') {
           e.preventDefault();
           handleToggleLeftPanel();
         } else if (e.key === '2') {
@@ -5310,23 +5524,9 @@ function NodeCanvas() {
       }
     };
 
-    const handleGlobalKeyUp = (e) => {
-      // Deactivate zoom speed when space or shift is released
-      if (e.key === ' ' || e.key === 'Shift') {
-        if (doubleTapSpeedActive) {
-          console.log(`[Double-tap] ${e.key} released, deactivating 2x zoom speed`);
-          setDoubleTapSpeedActive(false);
-        }
-      }
-    };
-
     document.addEventListener('keydown', handleGlobalKeyDown);
-    document.addEventListener('keyup', handleGlobalKeyUp);
-    return () => {
-      document.removeEventListener('keydown', handleGlobalKeyDown);
-      document.removeEventListener('keyup', handleGlobalKeyUp);
-    };
-  }, [handleToggleLeftPanel, handleToggleRightPanel, handleDoubleTap, storeActions, doubleTapSpeedActive]);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [handleToggleLeftPanel, handleToggleRightPanel, storeActions]);
 
 
 
@@ -6910,8 +7110,8 @@ function NodeCanvas() {
                                }
                              }
                              
-                             // Smart label placement based on routing style
-                             if (enableAutoRouting && routingStyle === 'manhattan') {
+                                                         // Smart label placement based on routing style
+                            if (enableAutoRouting && routingStyle === 'manhattan') {
                               // Always try cached placement first to prevent flicker
                               const cached = placedLabelsRef.current.get(edge.id);
                               if (cached && cached.position) {
@@ -6920,41 +7120,41 @@ function NodeCanvas() {
                                 midY = stabilized.y;
                                 angle = stabilized.angle || 0;
                               } else {
-                               const pathPoints = generateManhattanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
-                               const placement = chooseLabelPlacement(pathPoints, connectionName, 24, edge.id);
-                               if (placement) {
-                                 midX = placement.x;
-                                 midY = placement.y;
-                                 angle = placement.angle || 0;
-                                 
-                                 // Register this label placement
-                                 const labelRect = {
-                                   minX: midX - estimateTextWidth(connectionName, 24) / 2,
-                                   maxX: midX + estimateTextWidth(connectionName, 24) / 2,
-                                   minY: midY - 24 * 1.1 / 2,
-                                   maxY: midY + 24 * 1.1 / 2,
-                                 };
+                                 const pathPoints = generateManhattanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
+                                 const placement = chooseLabelPlacement(pathPoints, connectionName, 24, edge.id);
+                                 if (placement) {
+                                   midX = placement.x;
+                                   midY = placement.y;
+                                   angle = placement.angle || 0;
+                                   
+                                   // Register this label placement
+                                   const labelRect = {
+                                     minX: midX - estimateTextWidth(connectionName, 24) / 2,
+                                     maxX: midX + estimateTextWidth(connectionName, 24) / 2,
+                                     minY: midY - 24 * 1.1 / 2,
+                                     maxY: midY + 24 * 1.1 / 2,
+                                   };
                                    const stabilized = stabilizeLabelPosition(edge.id, midX, midY, angle);
-                                 placedLabelsRef.current.set(edge.id, {
-                                   rect: labelRect,
+                                   placedLabelsRef.current.set(edge.id, {
+                                     rect: labelRect,
                                      position: { x: stabilized.x, y: stabilized.y, angle: stabilized.angle }
-                                 });
-                               } else {
-                                 // Fallback to simple Manhattan logic
-                                 const horizontalLen = Math.abs(endX - startX);
-                                 const verticalLen = Math.abs(endY - startY);
-                                 if (horizontalLen >= verticalLen) {
-                                   midX = (startX + endX) / 2;
-                                   midY = startY;
-                                   angle = 0;
+                                   });
                                  } else {
-                                   midX = endX;
-                                   midY = (startY + endY) / 2;
-                                   angle = 90;
+                                   // Fallback to simple Manhattan logic
+                                   const horizontalLen = Math.abs(endX - startX);
+                                   const verticalLen = Math.abs(endY - startY);
+                                   if (horizontalLen >= verticalLen) {
+                                     midX = (startX + endX) / 2;
+                                     midY = startY;
+                                     angle = 0;
+                                   } else {
+                                     midX = endX;
+                                     midY = (startY + endY) / 2;
+                                     angle = 90;
                                    }
                                  }
-                               }
-                             } else if (enableAutoRouting && routingStyle === 'clean') {
+                              }
+                                                         } else if (enableAutoRouting && routingStyle === 'clean') {
                               // Always try cached placement first to prevent flicker
                               const cached = placedLabelsRef.current.get(edge.id);
                               if (cached && cached.position) {
@@ -6963,33 +7163,33 @@ function NodeCanvas() {
                                 midY = stabilized.y;
                                 angle = stabilized.angle || 0;
                               } else {
-                               const pathPoints = generateCleanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
-                               const placement = chooseLabelPlacement(pathPoints, connectionName, 24, edge.id);
-                               if (placement) {
-                                 midX = placement.x;
-                                 midY = placement.y;
-                                 angle = placement.angle || 0;
-                                 
-                                 // Register this label placement
-                                 const labelRect = {
-                                   minX: midX - estimateTextWidth(connectionName, 24) / 2,
-                                   maxX: midX + estimateTextWidth(connectionName, 24) / 2,
-                                   minY: midY - 24 * 1.1 / 2,
-                                   maxY: midY + 24 * 1.1 / 2,
-                                 };
+                                 const pathPoints = generateCleanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
+                                 const placement = chooseLabelPlacement(pathPoints, connectionName, 24, edge.id);
+                                 if (placement) {
+                                   midX = placement.x;
+                                   midY = placement.y;
+                                   angle = placement.angle || 0;
+                                   
+                                   // Register this label placement
+                                   const labelRect = {
+                                     minX: midX - estimateTextWidth(connectionName, 24) / 2,
+                                     maxX: midX + estimateTextWidth(connectionName, 24) / 2,
+                                     minY: midY - 24 * 1.1 / 2,
+                                     maxY: midY + 24 * 1.1 / 2,
+                                   };
                                    const stabilized = stabilizeLabelPosition(edge.id, midX, midY, angle);
-                                 placedLabelsRef.current.set(edge.id, {
-                                   rect: labelRect,
+                                   placedLabelsRef.current.set(edge.id, {
+                                     rect: labelRect,
                                      position: { x: stabilized.x, y: stabilized.y, angle: stabilized.angle }
-                                 });
-                               } else {
-                                 // Fallback to midpoint
-                                 midX = (x1 + x2) / 2;
-                                 midY = (y1 + y2) / 2;
-                                 angle = 0;
+                                   });
+                                 } else {
+                                   // Fallback to midpoint
+                                   midX = (x1 + x2) / 2;
+                                   midY = (y1 + y2) / 2;
+                                   angle = 0;
                                  }
                                }
-                             } else {
+                                                         } else {
                               // Straight line: reuse cached placement when available to prevent flicker
                               const cached = placedLabelsRef.current.get(edge.id);
                               if (cached && cached.position) {
@@ -6999,9 +7199,9 @@ function NodeCanvas() {
                                 angle = stabilized.angle || Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
                               } else {
                                 // Fallback to original behavior
-                               midX = (x1 + x2) / 2;
-                               midY = (y1 + y2) / 2;
-                               angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+                                midX = (x1 + x2) / 2;
+                                midY = (y1 + y2) / 2;
+                                angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
 
                                 // Cache this position for future reuse
                                 const labelRect = {
@@ -7016,7 +7216,7 @@ function NodeCanvas() {
                                   position: { x: stabilized.x, y: stabilized.y, angle: stabilized.angle }
                                 });
                               }
-                             }
+                            }
                              
                              // Adjust angle to keep text readable (never upside down)
                              const adjustedAngle = (angle > 90 || angle < -90) ? angle + 180 : angle;
@@ -8053,7 +8253,7 @@ function NodeCanvas() {
                 initialName={abstractionPrompt.name}
                 initialColor={abstractionPrompt.color}
                 title={`Add ${abstractionPrompt.direction === 'above' ? 'Above' : 'Below'}`}
-                subtitle={`Create a ${abstractionPrompt.direction === 'above' ? 'more specific' : 'more general'} node in the abstraction chain`}
+                subtitle={`Create a ${abstractionPrompt.direction === 'above' ? 'more abstract' : 'more specific'} node in the abstraction chain`}
                 abstractionDirection={abstractionPrompt.direction}
               />
             );
@@ -8065,8 +8265,6 @@ function NodeCanvas() {
               hideOverlay={() => setDebugMode(false)}
             />
           )}
-          
-
         </div>
 
         {/* Dynamic Particle Transfer - starts under node, grows during acceleration, perfect z-layering */}
