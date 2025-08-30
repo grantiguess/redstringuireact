@@ -496,11 +496,6 @@ const UniversalNodeRenderer = ({
   };
 
   const handleConnectionMouseEnter = (connection) => {
-    console.log(`[Handler] Connection ENTER ${connection.id}`, {
-      hadTimeout: !!hoverTimeoutRef.current,
-      currentHovered: hoveredConnectionId,
-      stableHovered: stableHoveredConnectionId
-    });
     
     // Clear any pending leave timeout
     if (hoverTimeoutRef.current) {
@@ -514,16 +509,11 @@ const UniversalNodeRenderer = ({
   };
 
   const handleConnectionMouseLeave = (connection) => {
-    console.log(`[Handler] Connection LEAVE ${connection.id}`, {
-      currentHovered: hoveredConnectionId,
-      stableHovered: stableHoveredConnectionId
-    });
     
     setHoveredConnectionId(null);
     
     // Debounce the stable hover state to prevent flicker
     hoverTimeoutRef.current = setTimeout(() => {
-      console.log(`[Handler] Connection TIMEOUT FIRED ${connection.id} - hiding dots`);
       setStableHoveredConnectionId(null);
       onConnectionHover?.(connection, false);
     }, 100); // 100ms delay before actually hiding dots
@@ -574,38 +564,6 @@ const UniversalNodeRenderer = ({
           const isHovered = hoveredConnectionId === conn.id;
           const isStableHovered = stableHoveredConnectionId === conn.id;
           
-          // Debug logging - show connection data
-          if (isHovered) {
-            const originalConn = connections.find(c => c.id === conn.id);
-            console.log(`[UniversalNodeRenderer] Connection ${conn.id} hovered:`, {
-              originalPath: conn.path,
-              sourcePoint: conn.sourcePoint,
-              targetPoint: conn.targetPoint,
-              hasSourceArrow: conn.hasSourceArrow,
-              hasTargetArrow: conn.hasTargetArrow,
-              connectionName: conn.connectionName,
-              color: conn.color,
-              originalConnection: originalConn,
-              showConnectionDots,
-              interactive,
-              transform,
-              // Check all possible name/color sources
-              nameCheck: {
-                'conn.name': conn.name,
-                'conn.label': conn.label,
-                'conn.connectionName': conn.connectionName,
-                'originalConn?.name': originalConn?.name,
-                'originalConn?.label': originalConn?.label,
-                'originalConn?.edgePrototype?.name': originalConn?.edgePrototype?.name
-              },
-              colorCheck: {
-                'conn.color': conn.color,
-                'originalConn?.color': originalConn?.color,
-                'originalConn?.edgePrototype?.color': originalConn?.edgePrototype?.color
-              }
-            });
-          }
-          
           // Calculate adjusted connection path for consistent dot/arrow positioning
           const dotRadius = Math.max(6, 10 * transform.scale);
           let adjustedPath = conn.path;
@@ -648,27 +606,6 @@ const UniversalNodeRenderer = ({
             }
           }
           
-          if (isHovered) {
-            console.log(`[UniversalNodeRenderer] Rendering hovered connection ${conn.id}:`, {
-              originalPath: conn.path,
-              adjustedPath,
-              pathsMatch: conn.path === adjustedPath,
-              willShorten: conn.path !== adjustedPath,
-              strokeWidth: isHovered ? conn.strokeWidth * 1.35 : conn.strokeWidth,
-              filter: 'none', // Currently disabled
-              dotRadius,
-              willShowDots: interactive && showConnectionDots && ((!conn.hasSourceArrow) || (!conn.hasTargetArrow)),
-              pathLength: adjustedPath.length,
-              pathValid: adjustedPath.startsWith('M') && adjustedPath.includes('L'),
-              // Debug path shortening
-              sourceHasArrow: conn.hasSourceArrow,
-              targetHasArrow: conn.hasTargetArrow,
-              shouldShorten: (!conn.hasSourceArrow) || (!conn.hasTargetArrow),
-              showConnectionDots,
-              interactive
-            });
-          }
-
           return (
             <g key={`connection-${conn.id}`}>
               {/* Glow filter disabled - was causing connections to disappear */}
@@ -686,30 +623,14 @@ const UniversalNodeRenderer = ({
                     pointerEvents: 'stroke'
                   }}
                   onMouseEnter={(e) => {
-                    console.log(`[UniversalNodeRenderer] Mouse enter connection ${conn.id} (invisible hover area)`, {
-                      target: e.target.tagName,
-                      clientX: e.clientX,
-                      clientY: e.clientY,
-                      currentHovered: hoveredConnectionId,
-                      stableHovered: stableHoveredConnectionId
-                    });
                     handleConnectionMouseEnter(conn);
                   }}
                   onMouseLeave={(e) => {
                     // Don't leave if moving to a dot (prevents flicker)
                     if (e.relatedTarget?.tagName === 'circle') {
-                      console.log(`[UniversalNodeRenderer] Mouse moving to dot - ignoring leave event for ${conn.id}`);
                       return;
                     }
                     
-                    console.log(`[UniversalNodeRenderer] Mouse leave connection ${conn.id} (invisible hover area)`, {
-                      target: e.target.tagName,
-                      clientX: e.clientX,
-                      clientY: e.clientY,
-                      relatedTarget: e.relatedTarget?.tagName,
-                      currentHovered: hoveredConnectionId,
-                      stableHovered: stableHoveredConnectionId
-                    });
                     handleConnectionMouseLeave(conn);
                   }}
                   onClick={() => onConnectionClick?.(conn)}
@@ -857,7 +778,7 @@ const UniversalNodeRenderer = ({
                 sourcePoint={adjustedSourcePoint}
                 targetPoint={adjustedTargetPoint}
                 transform={transform}
-                isHovered={isStableHovered}
+                isHovered={true}
               />
               
               {/* Render dots within the connection group to access adjusted points */}

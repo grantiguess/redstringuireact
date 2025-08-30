@@ -14,25 +14,29 @@ const ConnectionControlPanel = ({
   onOpenConnectionDialog,
   onStartHurtleAnimationFromPanel
 }) => {
+  // Individual stable subscriptions - avoid creating new objects
   const edgePrototypesMap = useGraphStore((state) => state.edgePrototypes);
   const nodePrototypesMap = useGraphStore((state) => state.nodePrototypes);
-  const graphsMap = useGraphStore((state) => state.graphs);
   const activeGraphId = useGraphStore((state) => state.activeGraphId);
+  const graphsMap = useGraphStore((state) => state.graphs);
   
-  // Get instances from the active graph
-  const instances = useMemo(() => {
+  // Get instances from the active graph with stable memoization
+  const activeGraphInstances = useMemo(() => {
     if (!activeGraphId || !graphsMap) return null;
-    return graphsMap.get(activeGraphId)?.instances;
+    return graphsMap.get(activeGraphId)?.instances || null;
   }, [activeGraphId, graphsMap]);
 
   // Convert edges to triples format for UnifiedBottomControlPanel
   const triples = useMemo(() => {
     const edges = selectedEdge ? [selectedEdge] : selectedEdges;
-    if (!edges || edges.length === 0 || !instances) return [];
+    if (!edges || edges.length === 0 || !activeGraphInstances) return [];
+
+    // Remove excessive console logging to prevent performance issues
+    // console.log('[ConnectionControlPanel] Converting edges to triples:', { edges, instances: activeGraphInstances.size });
 
     return edges.map(edge => {
-      const sourceNode = instances.get(edge.sourceId);
-      const targetNode = instances.get(edge.destinationId || edge.targetId);
+      const sourceNode = activeGraphInstances.get(edge.sourceId);
+      const targetNode = activeGraphInstances.get(edge.destinationId || edge.targetId);
       const sourcePrototype = sourceNode ? nodePrototypesMap.get(sourceNode.prototypeId) : null;
       const targetPrototype = targetNode ? nodePrototypesMap.get(targetNode.prototypeId) : null;
       // Get edge prototype - check both typeNodeId and prototypeId for compatibility
@@ -44,7 +48,7 @@ const ConnectionControlPanel = ({
       const hasLeftArrow = arrowsToward.has(edge.sourceId); // Arrow points TO source (left side)
       const hasRightArrow = arrowsToward.has(edge.destinationId || edge.targetId); // Arrow points TO target (right side)
 
-      return {
+      const triple = {
         id: edge.id,
         sourceId: edge.sourceId,
         destinationId: edge.destinationId || edge.targetId,
@@ -69,8 +73,11 @@ const ConnectionControlPanel = ({
         hasLeftArrow,
         hasRightArrow
       };
+
+      // Removed excessive console logging to prevent performance issues
+      return triple;
     });
-  }, [selectedEdge, selectedEdges, edgePrototypesMap, nodePrototypesMap, instances]);
+  }, [selectedEdge, selectedEdges, edgePrototypesMap, nodePrototypesMap, activeGraphInstances]);
 
   const handleToggleLeftArrow = (tripleId) => {
     const updateEdge = useGraphStore.getState().updateEdge;

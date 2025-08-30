@@ -81,58 +81,61 @@ function NodeCanvas() {
   const svgRef = useRef(null);
   const wrapperRef = useRef(null);
 
-  // <<< Access store actions individually to avoid creating new objects >>>
-  const updateNodePrototype = useGraphStore((state) => state.updateNodePrototype);
-  const updateNodeInstance = useGraphStore((state) => state.updateNodeInstance);
-  const updateEdge = useGraphStore((state) => state.updateEdge);
-  const addEdge = useGraphStore((state) => state.addEdge);
-  const addNodePrototype = useGraphStore((state) => state.addNodePrototype);
-  const addNodeInstance = useGraphStore((state) => state.addNodeInstance);
-  const removeNodeInstance = useGraphStore((state) => state.removeNodeInstance);
-  const forceDeleteNodeInstance = useGraphStore((state) => state.forceDeleteNodeInstance);
-  const removeEdge = useGraphStore((state) => state.removeEdge);
-  const updateGraph = useGraphStore((state) => state.updateGraph);
-  const createNewGraph = useGraphStore((state) => state.createNewGraph);
-  const setActiveGraph = useGraphStore((state) => state.setActiveGraph);
-  const setActiveDefinitionNode = useGraphStore((state) => state.setActiveDefinitionNode);
-  const setSelectedEdgeId = useGraphStore((state) => state.setSelectedEdgeId);
-  const setSelectedEdgeIds = useGraphStore((state) => state.setSelectedEdgeIds);
-  const addSelectedEdgeId = useGraphStore((state) => state.addSelectedEdgeId);
-  const removeSelectedEdgeId = useGraphStore((state) => state.removeSelectedEdgeId);
-  const clearSelectedEdgeIds = useGraphStore((state) => state.clearSelectedEdgeIds);
-  const setNodeType = useGraphStore((state) => state.setNodeType);
-  const openRightPanelNodeTab = useGraphStore((state) => state.openRightPanelNodeTab);
-  const createAndAssignGraphDefinition = useGraphStore((state) => state.createAndAssignGraphDefinition);
-  const createAndAssignGraphDefinitionWithoutActivation = useGraphStore((state) => state.createAndAssignGraphDefinitionWithoutActivation);
-  const closeRightPanelTab = useGraphStore((state) => state.closeRightPanelTab);
-  const activateRightPanelTab = useGraphStore((state) => state.activateRightPanelTab);
-  const openGraphTab = useGraphStore((state) => state.openGraphTab);
-  const moveRightPanelTab = useGraphStore((state) => state.moveRightPanelTab);
-  const closeGraph = useGraphStore((state) => state.closeGraph);
-  const toggleGraphExpanded = useGraphStore((state) => state.toggleGraphExpanded);
-  const toggleSavedNode = useGraphStore((state) => state.toggleSavedNode);
-  const toggleSavedGraph = useGraphStore((state) => state.toggleSavedGraph);
-  const toggleShowConnectionNames = useGraphStore((state) => state.toggleShowConnectionNames);
-  const updateMultipleNodeInstancePositions = useGraphStore((state) => state.updateMultipleNodeInstancePositions);
-  const createGroup = useGraphStore((state) => state.createGroup);
-  const deleteGroup = useGraphStore((state) => state.deleteGroup);
-  const removeDefinitionFromNode = useGraphStore((state) => state.removeDefinitionFromNode);
-  const openGraphTabAndBringToTop = useGraphStore((state) => state.openGraphTabAndBringToTop);
-  const cleanupOrphanedData = useGraphStore((state) => state.cleanupOrphanedData);
-  const cleanupOrphanedGraphs = useGraphStore((state) => state.cleanupOrphanedGraphs);
-  const restoreFromSession = useGraphStore((state) => state.restoreFromSession);
-  const loadUniverseFromFile = useGraphStore((state) => state.loadUniverseFromFile);
-  const setUniverseError = useGraphStore((state) => state.setUniverseError);
-  const clearUniverse = useGraphStore((state) => state.clearUniverse);
-  const setUniverseConnected = useGraphStore((state) => state.setUniverseConnected);
-  const addToAbstractionChain = useGraphStore((state) => state.addToAbstractionChain);
-  const removeFromAbstractionChain = useGraphStore((state) => state.removeFromAbstractionChain);
-  const updateGraphView = useGraphStore((state) => state.updateGraphView);
-  const setTypeListMode = useGraphStore((state) => state.setTypeListMode);
-  const toggleEnableAutoRouting = useGraphStore((state) => state.toggleEnableAutoRouting);
-  const setRoutingStyle = useGraphStore((state) => state.setRoutingStyle);
-  const deleteNodePrototype = useGraphStore((state) => state.deleteNodePrototype);
-  const deleteGraph = useGraphStore((state) => state.deleteGraph);
+  // <<< OPTIMIZED: Use direct getState() calls for stable action methods >>>
+  // Zustand actions are stable - we can use direct references instead of subscriptions
+  const {
+    updateNodePrototype,
+    updateNodeInstance,
+    updateEdge,
+    addEdge,
+    addNodePrototype,
+    addNodeInstance,
+    removeNodeInstance,
+    forceDeleteNodeInstance,
+    removeEdge,
+    updateGraph,
+    createNewGraph,
+    setActiveGraph,
+    setActiveDefinitionNode,
+    setSelectedEdgeId,
+    setSelectedEdgeIds,
+    addSelectedEdgeId,
+    removeSelectedEdgeId,
+    clearSelectedEdgeIds,
+    setNodeType,
+    openRightPanelNodeTab,
+    createAndAssignGraphDefinition,
+    createAndAssignGraphDefinitionWithoutActivation,
+    closeRightPanelTab,
+    activateRightPanelTab,
+    openGraphTab,
+    moveRightPanelTab,
+    closeGraph,
+    toggleGraphExpanded,
+    toggleSavedNode,
+    toggleSavedGraph,
+    toggleShowConnectionNames,
+    updateMultipleNodeInstancePositions,
+    createGroup,
+    deleteGroup,
+    removeDefinitionFromNode,
+    openGraphTabAndBringToTop,
+    cleanupOrphanedData,
+    cleanupOrphanedGraphs,
+    restoreFromSession,
+    loadUniverseFromFile,
+    setUniverseError,
+    clearUniverse,
+    setUniverseConnected,
+    addToAbstractionChain,
+    removeFromAbstractionChain,
+    updateGraphView,
+    setTypeListMode,
+    toggleEnableAutoRouting,
+    setRoutingStyle,
+    deleteNodePrototype,
+    deleteGraph
+  } = useGraphStore.getState();
 
   // Panel overlay resizers rendered in canvas (do not overlap panel DOM)
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
@@ -541,66 +544,20 @@ function NodeCanvas() {
     touchMultiPanRef.current = false;
   };
 
-  // Create a stable actions object only when needed for props
-  const storeActions = useMemo(() => ({
-    updateNodePrototype,
-    updateNodeInstance,
-    addEdge,
-    addNodePrototype,
-    addNodeInstance,
-    removeNodeInstance,
-    forceDeleteNodeInstance,
-    removeEdge,
-    updateGraph,
-    createNewGraph,
-    setActiveGraph,
-    setActiveDefinitionNode,
-    setNodeType,
-    openRightPanelNodeTab,
-    createAndAssignGraphDefinition,
-    createAndAssignGraphDefinitionWithoutActivation,
-    closeRightPanelTab,
-    activateRightPanelTab,
-    openGraphTab,
-    moveRightPanelTab,
-    closeGraph,
-    toggleGraphExpanded,
-    toggleSavedNode,
-    toggleSavedGraph,
-    updateMultipleNodeInstancePositions,
-    removeDefinitionFromNode,
-    openGraphTabAndBringToTop,
-    cleanupOrphanedData,
-    restoreFromSession,
-    loadUniverseFromFile,
-    setUniverseError,
-    clearUniverse,
-    setUniverseConnected,
-    setSelectedEdgeIds,
-    addSelectedEdgeId,
-    removeSelectedEdgeId,
-    clearSelectedEdgeIds,
-    toggleShowConnectionNames,
-    toggleEnableAutoRouting,
-    setRoutingStyle,
-    updateGraphView,
-    setTypeListMode,
-    deleteNodePrototype,
-    deleteGraph,
-  }), [
-    updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance, forceDeleteNodeInstance, removeEdge, updateGraph, createNewGraph,
-    setActiveGraph, setActiveDefinitionNode, setNodeType, openRightPanelNodeTab,
-    createAndAssignGraphDefinition, createAndAssignGraphDefinitionWithoutActivation, closeRightPanelTab, activateRightPanelTab,
-    openGraphTab, moveRightPanelTab, closeGraph, toggleGraphExpanded,
-    toggleSavedNode, toggleSavedGraph, toggleShowConnectionNames, updateMultipleNodeInstancePositions, removeDefinitionFromNode,
-    openGraphTabAndBringToTop, cleanupOrphanedData, cleanupOrphanedGraphs, restoreFromSession,
-    loadUniverseFromFile, setUniverseError, clearUniverse, setUniverseConnected,
-    setSelectedEdgeIds, addSelectedEdgeId, removeSelectedEdgeId, clearSelectedEdgeIds, toggleShowConnectionNames,
-    toggleEnableAutoRouting, setRoutingStyle, updateGraphView, setTypeListMode,
-    deleteNodePrototype, deleteGraph
-  ]);
+  // Create stable actions object - since actions are extracted from getState(), they're stable
+  const storeActions = {
+    updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance,
+    forceDeleteNodeInstance, removeEdge, updateGraph, createNewGraph, setActiveGraph, setActiveDefinitionNode,
+    setNodeType, openRightPanelNodeTab, createAndAssignGraphDefinition, createAndAssignGraphDefinitionWithoutActivation,
+    closeRightPanelTab, activateRightPanelTab, openGraphTab, moveRightPanelTab, closeGraph, toggleGraphExpanded,
+    toggleSavedNode, toggleSavedGraph, updateMultipleNodeInstancePositions, removeDefinitionFromNode,
+    openGraphTabAndBringToTop, cleanupOrphanedData, cleanupOrphanedGraphs, restoreFromSession, loadUniverseFromFile,
+    setUniverseError, clearUniverse, setUniverseConnected, setSelectedEdgeIds, addSelectedEdgeId, removeSelectedEdgeId,
+    clearSelectedEdgeIds, toggleShowConnectionNames, toggleEnableAutoRouting, setRoutingStyle, updateGraphView,
+    setTypeListMode, deleteNodePrototype, deleteGraph
+  };
 
-  // <<< SELECT STATE DIRECTLY - Use individual subscriptions to prevent infinite loops >>>
+  // <<< OPTIMIZED: Individual stable subscriptions - Zustand will optimize these automatically >>>
   const activeGraphId = useGraphStore(state => state.activeGraphId);
   const activeDefinitionNodeId = useGraphStore(state => state.activeDefinitionNodeId);
   const selectedEdgeId = useGraphStore(state => state.selectedEdgeId);
