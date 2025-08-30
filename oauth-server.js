@@ -13,6 +13,33 @@ import jwt from 'jsonwebtoken';
 // Load environment variables
 dotenv.config();
 
+// Environment-based logging control
+const isProduction = process.env.NODE_ENV === 'production';
+const LOG_LEVEL = process.env.LOG_LEVEL || (isProduction ? 'warn' : 'info');
+
+// Create a logger that respects environment settings
+const logger = {
+  info: (...args) => {
+    if (LOG_LEVEL === 'info' || LOG_LEVEL === 'debug') {
+      console.log(...args);
+    }
+  },
+  warn: (...args) => {
+    if (LOG_LEVEL === 'warn' || LOG_LEVEL === 'info' || LOG_LEVEL === 'debug') {
+      console.warn(...args);
+    }
+  },
+  error: (...args) => {
+    // Always log errors
+    console.error(...args);
+  },
+  debug: (...args) => {
+    if (LOG_LEVEL === 'debug') {
+      console.log('[DEBUG]', ...args);
+    }
+  }
+};
+
 const app = express();
 const PORT = process.env.OAUTH_PORT || 3002;
 
@@ -49,7 +76,7 @@ app.get('/api/github/oauth/client-id', (req, res) => {
     const clientIdValid = clientId && clientId.trim().length > 0;
     const clientSecretValid = clientSecret && clientSecret.trim().length > 0;
     
-    console.log('[OAuth] Client ID request:', {
+    logger.debug('[OAuth] Client ID request:', {
       configured: isConfigured,
       clientIdValid,
       clientSecretValid,
@@ -65,7 +92,7 @@ app.get('/api/github/oauth/client-id', (req, res) => {
       service: 'oauth-server' 
     });
   } catch (error) {
-    console.error('[OAuth] Failed to get client ID:', error);
+    logger.error('[OAuth] Failed to get client ID:', error);
     res.status(500).json({ 
       error: 'Failed to get client ID',
       service: 'oauth-server',
@@ -79,7 +106,7 @@ app.post('/api/github/oauth/refresh', async (req, res) => {
   try {
     const { refresh_token } = req.body;
     
-    console.log('[OAuth] Refresh token request:', {
+    logger.debug('[OAuth] Refresh token request:', {
       hasRefreshToken: !!refresh_token,
       refreshTokenLength: refresh_token ? refresh_token.length : 0
     });
@@ -101,7 +128,7 @@ app.post('/api/github/oauth/refresh', async (req, res) => {
       });
     }
     
-    console.log('[OAuth] Refreshing access token...');
+    logger.debug('[OAuth] Refreshing access token...');
     
     // GitHub doesn't actually support refresh tokens in the traditional sense
     // But we can validate the existing token and return it if still valid
@@ -130,7 +157,7 @@ app.post('/api/github/oauth/token', async (req, res) => {
   try {
     const { code, state, redirect_uri } = req.body;
     
-    console.log('[OAuth] Token exchange request:', {
+    logger.debug('[OAuth] Token exchange request:', {
       hasCode: !!code,
       hasState: !!state,
       hasRedirectUri: !!redirect_uri,
@@ -151,7 +178,7 @@ app.post('/api/github/oauth/token', async (req, res) => {
     
     // Enhanced validation with detailed error messages
     if (!clientId || !clientSecret) {
-      console.error('[OAuth] Missing credentials:', {
+      logger.error('[OAuth] Missing credentials:', {
         hasClientId: !!clientId,
         hasClientSecret: !!clientSecret,
         clientIdLength: clientId ? clientId.length : 0,
@@ -176,7 +203,7 @@ app.post('/api/github/oauth/token', async (req, res) => {
     const clientSecretValid = clientSecret.trim().length > 0;
     
     if (!clientIdValid || !clientSecretValid) {
-      console.error('[OAuth] Invalid credentials format:', {
+      logger.error('[OAuth] Invalid credentials format:', {
         clientIdValid,
         clientSecretValid,
         clientIdLength: clientId.length,
@@ -195,7 +222,7 @@ app.post('/api/github/oauth/token', async (req, res) => {
       });
     }
     
-    console.log('[OAuth] Exchanging code for token...');
+    logger.debug('[OAuth] Exchanging code for token...');
     
     // Exchange code for access token with GitHub
     const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
@@ -214,7 +241,7 @@ app.post('/api/github/oauth/token', async (req, res) => {
       })
     });
     
-    console.log('[OAuth] GitHub response status:', tokenResponse.status);
+    logger.debug('[OAuth] GitHub response status:', tokenResponse.status);
     
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
@@ -245,7 +272,7 @@ app.post('/api/github/oauth/token', async (req, res) => {
       throw new Error(`GitHub OAuth error: ${tokenData.error_description || tokenData.error}`);
     }
     
-    console.log('[OAuth] Token exchange successful');
+    logger.info('[OAuth] Token exchange successful');
     
     // Return token data to frontend
     res.json({
@@ -294,7 +321,7 @@ app.post('/api/github/app/installation-token', async (req, res) => {
       });
     }
 
-    console.log('[GitHubApp] Generating installation token for installation:', installation_id);
+    logger.debug('[GitHubApp] Generating installation token for installation:', installation_id);
 
     // Generate JWT for app authentication
     const payload = {
@@ -326,7 +353,7 @@ app.post('/api/github/app/installation-token', async (req, res) => {
     }
 
     const tokenData = await tokenResponse.json();
-    console.log('[GitHubApp] Installation token generated successfully');
+    logger.info('[GitHubApp] Installation token generated successfully');
 
     res.json({
       token: tokenData.token,
@@ -357,7 +384,7 @@ app.get('/api/github/app/installations', async (req, res) => {
       });
     }
 
-    console.log('[GitHubApp] Listing installations...');
+    logger.debug('[GitHubApp] Listing installations...');
 
     // Generate JWT for app authentication
     const payload = {
@@ -388,7 +415,7 @@ app.get('/api/github/app/installations', async (req, res) => {
     }
 
     const installations = await installationsResponse.json();
-    console.log('[GitHubApp] Found installations:', installations.length);
+    logger.info('[GitHubApp] Found installations:', installations.length);
 
     // Return installations sorted by most recent
     const sortedInstallations = installations.sort((a, b) => 
@@ -483,7 +510,7 @@ app.post('/api/github/app/webhook', async (req, res) => {
   const signature = req.headers['x-hub-signature-256'];
   const payload = req.body;
 
-  console.log('[GitHubApp] Webhook received:', {
+  logger.debug('[GitHubApp] Webhook received:', {
     event,
     action: payload.action,
     installationId: payload.installation?.id
@@ -498,26 +525,26 @@ app.post('/api/github/app/webhook', async (req, res) => {
   switch (event) {
     case 'installation':
       if (payload.action === 'created') {
-        console.log('[GitHubApp] New installation:', {
+        logger.info('[GitHubApp] New installation:', {
           installationId: payload.installation.id,
           account: payload.installation.account.login,
           repositories: payload.repositories?.length || 0
         });
       } else if (payload.action === 'deleted') {
-        console.log('[GitHubApp] Installation removed:', payload.installation.id);
+        logger.info('[GitHubApp] Installation removed:', payload.installation.id);
       }
       break;
 
     case 'installation_repositories':
-      console.log('[GitHubApp] Repository access changed:', {
+      logger.info('[GitHubApp] Repository access changed:', {
         installationId: payload.installation.id,
         added: payload.repositories_added?.length || 0,
         removed: payload.repositories_removed?.length || 0
-      });
+        });
       break;
 
     default:
-      console.log('[GitHubApp] Unhandled webhook event:', event);
+      logger.debug('[GitHubApp] Unhandled webhook event:', event);
   }
 
   res.status(200).json({ received: true });
@@ -525,8 +552,8 @@ app.post('/api/github/app/webhook', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🔐 OAuth Server running on port ${PORT}`);
-  console.log(`📋 Health check: http://localhost:${PORT}/health`);
+  logger.info(`🔐 OAuth Server running on port ${PORT}`);
+  logger.info(`📋 Health check: http://localhost:${PORT}/health`);
   
   const clientId = process.env.GITHUB_CLIENT_ID;
   const clientSecret = process.env.GITHUB_CLIENT_SECRET;
@@ -534,25 +561,25 @@ app.listen(PORT, () => {
   const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
   
   if (clientId && clientSecret) {
-    console.log('✅ GitHub OAuth configured');
-    console.log(`📋 Client ID length: ${clientId.length}`);
-    console.log(`📋 Client Secret length: ${clientSecret.length}`);
+    logger.info('✅ GitHub OAuth configured');
+    logger.debug(`📋 Client ID length: ${clientId.length}`);
+    logger.debug(`📋 Client Secret length: ${clientSecret.length}`);
   } else {
-    console.log('⚠️  GitHub OAuth not configured - set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET');
+    logger.warn('⚠️  GitHub OAuth not configured - set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET');
   }
 
   if (appId && privateKey) {
-    console.log('✅ GitHub App configured');
-    console.log(`📋 App ID: ${appId}`);
-    console.log(`📋 Private Key length: ${privateKey.length}`);
+    logger.info('✅ GitHub App configured');
+    logger.debug(`📋 App ID: ${appId}`);
+    logger.debug(`📋 Private Key length: ${privateKey.length}`);
   } else {
-    console.log('⚠️  GitHub App not configured - set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY');
-    console.log('🔍 Check Secret Manager permissions for Cloud Run service account');
+    logger.warn('⚠️  GitHub App not configured - set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY');
+    logger.warn('🔍 Check Secret Manager permissions for Cloud Run service account');
   }
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('🔐 OAuth Server shutting down...');
+  logger.info('🔐 OAuth Server shutting down...');
   process.exit(0);
 });

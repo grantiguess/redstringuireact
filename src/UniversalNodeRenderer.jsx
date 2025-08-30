@@ -244,6 +244,7 @@ const UniversalNodeRenderer = ({
 
   // Helper to get connection display name
   const getConnectionName = useCallback((connection) => {
+    if (connection.connectionName) return connection.connectionName;
     if (connection.name) return connection.name;
     if (connection.label) return connection.label;
     if (connection.edgePrototype?.name) return connection.edgePrototype.name;

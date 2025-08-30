@@ -17,6 +17,33 @@ import * as $rdf from 'rdflib';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Environment-based logging control
+const isProduction = process.env.NODE_ENV === 'production';
+const LOG_LEVEL = process.env.LOG_LEVEL || (isProduction ? 'warn' : 'info');
+
+// Create a logger that respects environment settings
+const logger = {
+  info: (...args) => {
+    if (LOG_LEVEL === 'info' || LOG_LEVEL === 'debug') {
+      console.log(...args);
+    }
+  },
+  warn: (...args) => {
+    if (LOG_LEVEL === 'warn' || LOG_LEVEL === 'info' || LOG_LEVEL === 'debug') {
+      console.warn(...args);
+    }
+  },
+  error: (...args) => {
+    // Always log errors
+    console.error(...args);
+  },
+  debug: (...args) => {
+    if (LOG_LEVEL === 'debug') {
+      console.log('[DEBUG]', ...args);
+    }
+  }
+};
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 const OAUTH_PORT = process.env.OAUTH_PORT || 3002;
@@ -45,7 +72,7 @@ app.get('/api/github/oauth/client-id', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error('OAuth proxy error (client-id):', error);
+    logger.error('OAuth proxy error (client-id):', error);
     res.status(500).json({ error: 'OAuth service unavailable' });
   }
 });
@@ -56,7 +83,7 @@ app.get('/api/github/oauth/health', async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error('OAuth proxy error (health):', error);
+    logger.error('OAuth proxy error (health):', error);
     res.status(500).json({ error: 'OAuth service unavailable' });
   }
 });
@@ -73,7 +100,7 @@ app.post('/api/github/oauth/token', async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('OAuth proxy error (token):', error);
+    logger.error('OAuth proxy error (token):', error);
     res.status(500).json({ error: 'OAuth service unavailable' });
   }
 });
@@ -91,7 +118,7 @@ app.post('/api/github/app/installation-token', async (req, res) => {
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('OAuth proxy error (installation-token):', error);
+    logger.error('OAuth proxy error (installation-token):', error);
     res.status(500).json({ error: 'OAuth service unavailable' });
   }
 });
@@ -189,7 +216,7 @@ app.get(['/semantic/universe.nq', '/semantic/:slug/universe.nq'], async (req, re
     if (err.code === 'ENOENT') {
       return res.status(404).json({ error: 'Universe not found' });
     }
-    console.error('Semantic N-Quads error:', err);
+    logger.error('Semantic N-Quads error:', err);
     res.status(500).json({ error: 'Failed to convert universe to N-Quads' });
   }
 });
@@ -207,7 +234,7 @@ app.get(['/semantic/universe.ttl', '/semantic/:slug/universe.ttl'], async (req, 
     if (err.code === 'ENOENT') {
       return res.status(404).json({ error: 'Universe not found' });
     }
-    console.error('Semantic Turtle error:', err);
+    logger.error('Semantic Turtle error:', err);
     res.status(500).json({ error: 'Failed to convert universe to Turtle' });
   }
 });
@@ -229,7 +256,7 @@ app.post(['/semantic/universe.jsonld', '/semantic/:slug/universe.jsonld'], async
     await fs.writeFile(filePath, JSON.stringify(body, null, 2), 'utf8');
     res.status(200).json({ status: 'ok', slug, path: filePath });
   } catch (err) {
-    console.error('Semantic JSON-LD write error:', err);
+    logger.error('Semantic JSON-LD write error:', err);
     res.status(500).json({ error: 'Failed to write universe' });
   }
 });
@@ -243,16 +270,16 @@ app.post(['/sparql', '/semantic/:slug/sparql'], (req, res) => {
 app.get('/github/app/callback', (req, res) => {
   const { installation_id, setup_action, state } = req.query;
   
-  console.log('[GitHub App Callback] ===== CALLBACK RECEIVED =====');
-  console.log('[GitHub App Callback] Query params:', req.query);
-  console.log('[GitHub App Callback] Headers:', {
+  logger.debug('[GitHub App Callback] ===== CALLBACK RECEIVED =====');
+  logger.debug('[GitHub App Callback] Query params:', req.query);
+  logger.debug('[GitHub App Callback] Headers:', {
     'user-agent': req.headers['user-agent'],
     'referer': req.headers.referer,
     'x-forwarded-for': req.headers['x-forwarded-for'],
     'x-real-ip': req.headers['x-real-ip']
   });
-  console.log('[GitHub App Callback] Full URL:', req.url);
-  console.log('[GitHub App Callback] =====================================');
+  logger.debug('[GitHub App Callback] Full URL:', req.url);
+  logger.debug('[GitHub App Callback] =====================================');
   
   // Redirect to the frontend with the parameters preserved
   const params = new URLSearchParams();
@@ -261,7 +288,7 @@ app.get('/github/app/callback', (req, res) => {
   if (state) params.set('state', state);
   
   const redirectUrl = `/?${params.toString()}`;
-  console.log('[GitHub App Callback] Redirecting to:', redirectUrl);
+  logger.info('[GitHub App Callback] Redirecting to:', redirectUrl);
   
   res.redirect(redirectUrl);
 });
@@ -272,8 +299,8 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 RedString server running on port ${PORT}`);
-  console.log(`📋 Health check: http://localhost:${PORT}/health`);
+  logger.info(`🚀 RedString server running on port ${PORT}`);
+  logger.info(`📋 Health check: http://localhost:${PORT}/health`);
 });
 
 export default app;

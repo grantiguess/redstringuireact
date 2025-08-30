@@ -92,7 +92,7 @@ gcloud run deploy $SERVICE_NAME \
     --concurrency 25 \
     --max-instances 3 \
     --set-env-vars "NODE_ENV=test,OAUTH_PORT=3002" \
-    --set-secrets "GITHUB_CLIENT_ID=github-client-id-test:latest,GITHUB_CLIENT_SECRET=github-client-secret-test:latest"
+    --set-secrets "GITHUB_APP_ID=github-app-id:latest,GITHUB_APP_PRIVATE_KEY=github-app-private-key:latest"
 
 # Get service URL
 PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")

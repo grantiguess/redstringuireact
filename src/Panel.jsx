@@ -3191,6 +3191,7 @@ const Panel = forwardRef(
 
     // Reserve bottom space for TypeList footer bar when visible
     const typeListMode = useGraphStore(state => state.typeListMode);
+
     const isTypeListVisible = typeListMode !== 'closed';
     const bottomSafeArea = isTypeListVisible ? HEADER_HEIGHT + 10 : 0; // footer height + small gap
     let effectiveBottomPadding = isTypeListVisible ? bottomSafeArea : 0; // refined after leftViewActive initializes

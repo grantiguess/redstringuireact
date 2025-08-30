@@ -14,29 +14,27 @@ const ConnectionControlPanel = ({
   onOpenConnectionDialog,
   onStartHurtleAnimationFromPanel
 }) => {
-  // Individual stable subscriptions - avoid creating new objects
   const edgePrototypesMap = useGraphStore((state) => state.edgePrototypes);
   const nodePrototypesMap = useGraphStore((state) => state.nodePrototypes);
-  const activeGraphId = useGraphStore((state) => state.activeGraphId);
   const graphsMap = useGraphStore((state) => state.graphs);
+  const activeGraphId = useGraphStore((state) => state.activeGraphId);
   
-  // Get instances from the active graph with stable memoization
-  const activeGraphInstances = useMemo(() => {
+  // Get instances from the active graph
+  const instances = useMemo(() => {
     if (!activeGraphId || !graphsMap) return null;
-    return graphsMap.get(activeGraphId)?.instances || null;
+    return graphsMap.get(activeGraphId)?.instances;
   }, [activeGraphId, graphsMap]);
 
   // Convert edges to triples format for UnifiedBottomControlPanel
   const triples = useMemo(() => {
     const edges = selectedEdge ? [selectedEdge] : selectedEdges;
-    if (!edges || edges.length === 0 || !activeGraphInstances) return [];
+    if (!edges || edges.length === 0 || !instances) return [];
 
-    // Remove excessive console logging to prevent performance issues
-    // console.log('[ConnectionControlPanel] Converting edges to triples:', { edges, instances: activeGraphInstances.size });
+    console.log('[ConnectionControlPanel] Converting edges to triples:', { edges, instances: instances.size });
 
     return edges.map(edge => {
-      const sourceNode = activeGraphInstances.get(edge.sourceId);
-      const targetNode = activeGraphInstances.get(edge.destinationId || edge.targetId);
+      const sourceNode = instances.get(edge.sourceId);
+      const targetNode = instances.get(edge.destinationId || edge.targetId);
       const sourcePrototype = sourceNode ? nodePrototypesMap.get(sourceNode.prototypeId) : null;
       const targetPrototype = targetNode ? nodePrototypesMap.get(targetNode.prototypeId) : null;
       // Get edge prototype - check both typeNodeId and prototypeId for compatibility
@@ -74,10 +72,10 @@ const ConnectionControlPanel = ({
         hasRightArrow
       };
 
-      // Removed excessive console logging to prevent performance issues
+      console.log('[ConnectionControlPanel] Created triple:', { edgeId: edge.id, tripleId: triple.id, triple });
       return triple;
     });
-  }, [selectedEdge, selectedEdges, edgePrototypesMap, nodePrototypesMap, activeGraphInstances]);
+  }, [selectedEdge, selectedEdges, edgePrototypesMap, nodePrototypesMap, instances]);
 
   const handleToggleLeftArrow = (tripleId) => {
     const updateEdge = useGraphStore.getState().updateEdge;

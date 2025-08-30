@@ -11,6 +11,33 @@ import committer from './src/services/Committer.js';
 // Lazily import the scheduler to avoid pulling UI store modules at startup
 let scheduler = null;
 
+// Environment-based logging control
+const isProduction = process.env.NODE_ENV === 'production';
+const LOG_LEVEL = process.env.LOG_LEVEL || (isProduction ? 'warn' : 'info');
+
+// Create a logger that respects environment settings
+const logger = {
+  info: (...args) => {
+    if (LOG_LEVEL === 'info' || LOG_LEVEL === 'debug') {
+      console.log(...args);
+    }
+  },
+  warn: (...args) => {
+    if (LOG_LEVEL === 'warn' || LOG_LEVEL === 'info' || LOG_LEVEL === 'debug') {
+      console.warn(...args);
+    }
+  },
+  error: (...args) => {
+    // Always log errors
+    console.error(...args);
+  },
+  debug: (...args) => {
+    if (LOG_LEVEL === 'debug') {
+      console.log('[DEBUG]', ...args);
+    }
+  }
+};
+
 const app = express();
 const PORT = process.env.BRIDGE_PORT || 3001;
 
@@ -33,8 +60,7 @@ function appendChat(role, text, extra = {}) {
     if (chatLog.length > 1000) chatLog = chatLog.slice(-800);
     telemetry.push({ ts: entry.ts, type: 'chat', role, text: entry.text, ...extra });
     try { eventLog.append({ type: 'chat', role, text: entry.text, ...extra }); } catch {}
-    // eslint-disable-next-line no-console
-    console.log(`[Chat][${role}] ${entry.text}`);
+    logger.debug(`[Chat][${role}] ${entry.text}`);
   } catch {}
 }
 

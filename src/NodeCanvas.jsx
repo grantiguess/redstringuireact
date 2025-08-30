@@ -535,8 +535,14 @@ function NodeCanvas() {
     // End pinch if active
     if (pinchRef.current.active) {
       pinchRef.current.active = false;
-      // Clear the flag after a delay to allow store updates to resume
-      setTimeout(() => { isPanningOrZooming.current = false; }, 100);
+      
+      // Save the final view state after pinch ends to persist user's final position
+      setTimeout(() => {
+        isPanningOrZooming.current = false;
+        if (activeGraphId && panOffset && zoomLevel) {
+          updateGraphViewInStore();
+        }
+      }, 100);
     }
     const { clientX, clientY } = normalizeTouchEvent(e);
     const synthetic = {
@@ -2816,10 +2822,15 @@ function NodeCanvas() {
       }
       
       // Set a timeout to save after operations stop
-      // Use longer timeout during pinch operations to prevent Panel jitter
-      const saveDelay = pinchRef.current.active ? 1000 : 300; // 1sec for pinch, 300ms for other operations
+      // Completely prevent store updates during active pinch operations to eliminate Panel jitter
+      if (pinchRef.current.active) {
+        // Don't save to store during active pinch - this prevents Panel re-renders
+        return;
+      }
+      
+      const saveDelay = 300; // Standard delay for non-pinch operations
       saveViewStateTimeout.current = setTimeout(() => {
-        if (!isPanningOrZooming.current && !pinchRef.current.active) {
+        if (!isPanningOrZooming.current) {
           updateGraphViewInStore();
         }
       }, saveDelay);
@@ -3780,8 +3791,9 @@ function NodeCanvas() {
     if (prev) {
       const dx = Math.abs(snappedX - prev.x) * zoomLevel;
       const dy = Math.abs(snappedY - prev.y) * zoomLevel;
-      // Ignore sub-pixel to small-pixel jitter (deadband of 2px on screen)
-      if (dx <= 2 && dy <= 2) {
+      // Ignore sub-pixel to small-pixel jitter (deadband of 1px on screen)
+      // Reduced from 2px to 1px to allow labels to move more responsively
+      if (dx <= 1 && dy <= 1) {
         return { x: prev.x, y: prev.y, angle: prev.angle ?? angle };
       }
     }
@@ -3810,6 +3822,28 @@ function NodeCanvas() {
       }
     };
   }, [visibleEdges]);
+
+  // Also clear labels when nodes are being dragged to ensure labels move with connections
+  useEffect(() => {
+    if (draggingNodeInfo) {
+      // Clear label cache when dragging starts to allow labels to recalculate
+      placedLabelsRef.current = new Map();
+    }
+  }, [draggingNodeInfo]);
+
+  // Clear labels when mouse moves significantly to ensure labels follow connections
+  const lastMousePosRef = useRef({ x: 0, y: 0 });
+  const clearLabelsOnMouseMove = useCallback((e) => {
+    const currentPos = { x: e.clientX, y: e.clientY };
+    const lastPos = lastMousePosRef.current;
+    const distance = Math.hypot(currentPos.x - lastPos.x, currentPos.y - lastPos.y);
+    
+    // If mouse moved more than 10px, clear label cache to allow recalculation
+    if (distance > 10) {
+      placedLabelsRef.current = new Map();
+      lastMousePosRef.current = currentPos;
+    }
+  }, []);
 
   // Advanced label placement system with stacking and side placement
   const chooseLabelPlacement = (pathPoints, connectionName, fontSize = 24, edgeId = null) => {
@@ -4241,6 +4275,10 @@ function NodeCanvas() {
 
   const handleMouseMove = async (e) => {
     if (isPaused || !activeGraphId) return;
+    
+    // Clear label cache when mouse moves significantly to ensure labels follow connections
+    clearLabelsOnMouseMove(e);
+    
     const rect = containerRef.current.getBoundingClientRect();
     const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
     const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
