@@ -430,7 +430,7 @@ function NodeCanvas() {
     }
     if (e.touches && e.touches.length >= 2) {
       // Pinch-to-zoom setup
-      console.log('🤏 PINCH START - Setting up pinch gesture');
+      
       const t1 = e.touches[0];
       const t2 = e.touches[1];
       const dx = t2.clientX - t1.clientX;
@@ -448,11 +448,6 @@ function NodeCanvas() {
         centerClient: { x: centerX, y: centerY },
         centerWorld: { x: worldX, y: worldY },
       };
-      console.log('🤏 PINCH INITIALIZED:', {
-        startDist: Math.round(dist * 10) / 10,
-        startZoom: Math.round(zoomLevel * 1000) / 1000,
-        center: { x: Math.round(centerX), y: Math.round(centerY) }
-      });
       return;
     }
     const { clientX, clientY } = normalizeTouchEvent(e);
@@ -475,13 +470,6 @@ function NodeCanvas() {
       e.stopPropagation();
     }
     
-    // Debug touch events
-    console.log('👋 TOUCH MOVE:', {
-      touchCount: e.touches?.length,
-      pinchActive: pinchRef.current.active,
-      condition: e.touches && e.touches.length >= 2 && pinchRef.current.active
-    });
-    
     if (e.touches && e.touches.length >= 2 && pinchRef.current.active) {
       // Pinch-to-zoom update
       const t1 = e.touches[0];
@@ -496,18 +484,6 @@ function NodeCanvas() {
       // Log raw input data periodically
       const smoothing = pinchSmoothingRef.current;
       if (smoothing.inputEventCount % 20 === 1) { // Log every 20th touch
-        console.log('👆 Raw Touch Input:', {
-          touches: e.touches.length,
-          distance: Math.round(dist * 10) / 10,
-          ratio: Math.round(ratio * 1000) / 1000,
-          startDist: Math.round(pinchRef.current.startDist * 10) / 10,
-          startZoom: Math.round(pinchRef.current.startZoom * 1000) / 1000,
-          newZoom: Math.round(newZoom * 1000) / 1000,
-          center: {
-            x: Math.round((t1.clientX + t2.clientX) / 2),
-            y: Math.round((t1.clientY + t2.clientY) / 2)
-          }
-        });
       }
       // Recompute center (allow pinch centroid to move)
       const centerX = (t1.clientX + t2.clientX) / 2;
@@ -528,14 +504,9 @@ function NodeCanvas() {
         y: Math.min(Math.max(newPanY, minY), maxY),
       };
       
-      // Use smoothing system for pinch zoom instead of direct updates
-      console.log('🚨 TOUCH MOVE - Calling startPinchSmoothing:', {
-        newZoom: Math.round(newZoom * 1000) / 1000,
-        panX: Math.round(clampedPan.x * 10) / 10,
-        panY: Math.round(clampedPan.y * 10) / 10,
-        touchCount: e.touches?.length
-      });
-      startPinchSmoothing(newZoom, clampedPan.x, clampedPan.y);
+      // Use direct updates for now to stop render loop
+      setZoomLevel(newZoom);
+      setPanOffset(clampedPan);
       return;
     }
     const { clientX, clientY } = normalizeTouchEvent(e);
@@ -687,7 +658,7 @@ function NodeCanvas() {
         
         // Skip graphs that don't have a valid defining node prototype
         if (!definingNodeId || !definingNode) {
-            console.warn(`[NodeCanvas] Graph ${graph.id} has invalid definingNodeId: ${definingNodeId}. Skipping from header. Available prototypes:`, Array.from(nodePrototypesMap.keys()));
+            
             return null;
         }
         
@@ -724,8 +695,8 @@ function NodeCanvas() {
       });
       
       if (invalidGraphs.length > 0) {
-        console.error('[NodeCanvas] Found invalid graphs in headerGraphs:', invalidGraphs);
-        console.error('[NodeCanvas] Available prototypes:', Array.from(nodePrototypesMap.keys()));
+        
+        
         
         // Clean up orphaned graphs
         cleanupOrphanedGraphs();
@@ -733,16 +704,16 @@ function NodeCanvas() {
     }
   }, [headerGraphs, nodePrototypesMap, cleanupOrphanedGraphs]);
 
-  // console.log("[NodeCanvas] Derived activeGraphId:", activeGraphId, "Name:", activeGraphName);
+  // 
 
   // <<< Universe File Loading >>>
   useEffect(() => {
     const tryUniverseRestore = async () => {
       try {
-        console.log('[NodeCanvas] Attempting universe file restoration...');
+        
         const result = await storeActions.restoreFromSession();
         
-        console.log('[NodeCanvas] Universe restoration result:', result);
+        
         
         if (result && result.success) {
           // Load the restored state using new universe actions
@@ -759,16 +730,16 @@ function NodeCanvas() {
           if (result.autoConnected) {
             // Auto-connected to universe file - enable auto-save
             enableAutoSave(() => useGraphStore.getState());
-            console.log('[NodeCanvas] Auto-connected to universe file with auto-save enabled');
+            
           }
         } else {
           // No universe file found - set error state
           const message = result?.message || 'No universe file found. Please create a new universe or open an existing one.';
-          console.log('[NodeCanvas] No universe file found:', message);
+          
           storeActions.setUniverseError(message);
         }
       } catch (error) {
-        console.error('[NodeCanvas] Universe restoration failed:', error);
+        
         storeActions.setUniverseError(`Universe restore failed: ${error.message}`);
       }
     };
@@ -936,7 +907,7 @@ function NodeCanvas() {
   // --- Grid Snapping Helpers ---
   const snapToGrid = (mouseX, mouseY, nodeWidth, nodeHeight) => {
     if (gridMode === 'off') {
-      console.log('[Grid Snap] Grid mode is off, no snapping');
+      
       return { x: mouseX, y: mouseY };
     }
     
@@ -949,8 +920,8 @@ function NodeCanvas() {
     const snappedX = nearestGridX - (nodeWidth / 2);
     const snappedY = nearestGridY - (nodeHeight / 2);
     
-    console.log('[Grid Snap] Input:', { mouseX, mouseY, nodeWidth, nodeHeight, gridMode, gridSize });
-    console.log('[Grid Snap] Snapped to grid vertex:', { nearestGridX, nearestGridY, snappedX, snappedY });
+    
+    
     
     return { x: snappedX, y: snappedY };
   };
@@ -1417,7 +1388,7 @@ function NodeCanvas() {
       
       return portAssignments;
     } catch (error) {
-      console.warn('Clean routing port assignment failed:', error);
+      
       return new Map();
     }
   }, [enableAutoRouting, routingStyle, visibleEdges, nodeById, baseDimsById, nodes]);
@@ -1444,7 +1415,7 @@ function NodeCanvas() {
 
   // Add logging for abstraction prompt state changes
   useEffect(() => {
-    console.log(`[Abstraction Prompt] State changed:`, abstractionPrompt);
+    
   }, [abstractionPrompt]);
   
   // Dialog color picker state
@@ -1465,7 +1436,7 @@ function NodeCanvas() {
 
   // Add logging for carousel stage changes
   useEffect(() => {
-    console.log(`[Carousel Stage] Changed to stage:`, carouselPieMenuStage);
+    
   }, [carouselPieMenuStage]);
 
   const [rightPanelExpanded, setRightPanelExpanded] = useState(true); // Default to open?
@@ -1531,22 +1502,22 @@ function NodeCanvas() {
 
   const onCarouselReplaceNode = useCallback((oldNodeId, newNodeData) => {
     // TODO: Implement node replacement functionality
-    console.log('Replace node:', oldNodeId, 'with:', newNodeData);
+    
   }, []);
 
   // Prevent carousel stage resets while abstraction prompt is open
   useEffect(() => {
     if (abstractionPrompt.visible && carouselPieMenuStage !== 2) {
-      console.log(`[Carousel Stage] Abstraction prompt visible, ensuring stage stays at 2`);
-      console.log(`[Carousel Stage] Current selectedNodeIdForPieMenu: ${selectedNodeIdForPieMenu}`);
-      console.log(`[Carousel Stage] Current isTransitioningPieMenu: ${isTransitioningPieMenu}`);
+      
+      
+      
       setCarouselPieMenuStage(2);
       // Don't mark this as a stage transition to avoid hiding the pie menu
       // setIsCarouselStageTransition(true);
       
       // Ensure the pie menu remains visible during abstraction prompt
       if (!selectedNodeIdForPieMenu && abstractionCarouselNode) {
-        console.log(`[Carousel Stage] Restoring selectedNodeIdForPieMenu to keep pie menu visible`);
+        
         setSelectedNodeIdForPieMenu(abstractionCarouselNode.id);
       }
     }
@@ -1560,7 +1531,7 @@ function NodeCanvas() {
     if (pendingSwapOperation) {
       const { originalNodeId, originalInstance, focusedPrototypeId, newPrototype } = pendingSwapOperation;
       
-      console.log(`[NodeCanvas] Executing pending swap: Replacing canvas node ${originalInstance.prototypeId} with focused carousel node ${focusedPrototypeId}`);
+      
       
       // Calculate original dimensions before the swap
       const originalDimensions = getNodeDimensions(originalInstance, false, null);
@@ -1612,7 +1583,7 @@ function NodeCanvas() {
         });
       }
       
-      console.log(`[NodeCanvas] Swap operation completed successfully with position adjustment`);
+      
       
       // Clear the pending operation
       setPendingSwapOperation(null);
@@ -1629,7 +1600,7 @@ function NodeCanvas() {
     
     // Now show the regular pie menu for the node that was in the carousel
     if (nodeIdToShowPieMenu) {
-      console.log(`[NodeCanvas] Carousel exit complete - restoring selection and pie menu for node: ${nodeIdToShowPieMenu}`);
+      
       setSelectedInstanceIds(new Set([nodeIdToShowPieMenu])); // Restore selection
       setSelectedNodeIdForPieMenu(nodeIdToShowPieMenu);
     }
@@ -1654,7 +1625,7 @@ function NodeCanvas() {
   useEffect(() => {
     // This effect runs whenever the active graph changes.
     // We clear any graph-specific UI state to ensure a clean slate.
-    console.log(`[NodeCanvas] activeGraphId changed to: ${activeGraphId}, cleaning up UI state`);
+    
     console.log(`[NodeCanvas] Current state during cleanup:`, {
       abstractionCarouselVisible,
       abstractionPromptVisible: abstractionPrompt.visible,
@@ -1664,35 +1635,35 @@ function NodeCanvas() {
     
     // DON'T clean up if the abstraction carousel is visible (regardless of prompt state)
     if (abstractionCarouselVisible) {
-      console.log(`[NodeCanvas] Skipping cleanup - abstraction carousel is visible`);
+      
       return;
     }
     
     // DON'T clean up if we just completed a carousel exit (to prevent clearing restored state)
     if (justCompletedCarouselExit) {
-      console.log(`[NodeCanvas] Skipping cleanup - just completed carousel exit`);
+      
       return;
     }
     
     // DON'T clean up if we're transitioning the pie menu (carousel exit in progress)
     if (isTransitioningPieMenu) {
-      console.log(`[NodeCanvas] Skipping cleanup - pie menu transition in progress`);
+      
       return;
     }
     
     // DON'T clean up if carousel exit is in progress (ref-based check)
     if (carouselExitInProgressRef.current) {
-      console.log(`[NodeCanvas] Skipping cleanup - carousel exit in progress (ref)`);
+      
       return;
     }
     
     // DON'T clean up if we have a selected node and pie menu is active (indicates recent restoration)
     if (selectedInstanceIds.size === 1 && selectedNodeIdForPieMenu && !abstractionCarouselVisible) {
-      console.log(`[NodeCanvas] Skipping cleanup - active selection with pie menu (likely just restored)`);
+      
       return;
     }
     
-    console.log(`[NodeCanvas] 📍 CLEAR #1: Graph cleanup clearing selectedInstanceIds`);
+    
     setSelectedInstanceIds(new Set());
     setPreviewingNodeId(null);
     setEditingNodeIdOnCanvas(null);
@@ -1717,7 +1688,7 @@ function NodeCanvas() {
     setActivePieMenuColorNodeId(null);
 
     // Clear abstraction carousel
-    console.log(`[NodeCanvas] Cleaning up abstraction carousel state`);
+    
     setAbstractionCarouselVisible(false);
     setAbstractionCarouselNode(null);
     setPendingAbstractionNodeId(null);
@@ -1917,7 +1888,7 @@ function NodeCanvas() {
 
   const handleNodePanelMore = useCallback(() => {
     // For now, just log - could implement additional menu
-    console.log('[NodePanel] More options clicked');
+    
   }, []);
 
   const handleNodePanelGroup = useCallback(() => {
@@ -1931,7 +1902,7 @@ function NodeCanvas() {
     try {
       createGroup(activeGraphId, { name: defaultName, color: defaultColor, memberInstanceIds });
     } catch (e) {
-      console.warn('[Group] Failed to create group:', e);
+      
     }
   }, [activeGraphId, selectedInstanceIds, nodes, createGroup]);
 
@@ -1943,20 +1914,20 @@ function NodeCanvas() {
       setSelectedGroup(null);
       setGroupControlPanelShouldShow(false);
     } catch (e) {
-      console.warn('[Group] Failed to delete group:', e);
+      
     }
   }, [activeGraphId, selectedGroup, deleteGroup]);
 
   const handleGroupPanelEdit = useCallback(() => {
     if (!selectedGroup) return;
     // TODO: Implement group name editing
-    console.log('[Group] Edit group name:', selectedGroup.name);
+    
   }, [selectedGroup]);
 
   const handleGroupPanelColor = useCallback(() => {
     if (!activeGraphId || !selectedGroup) return;
     // TODO: Implement group color picker
-    console.log('[Group] Change group color:', selectedGroup.color);
+    
   }, [activeGraphId, selectedGroup]);
 
 
@@ -1985,7 +1956,7 @@ function NodeCanvas() {
   const handleExpandAbstractionDimension = useCallback((node, dimension, iconRect) => {
     // For now, just open the node in a new tab
     // In the future, this could create/open a graph definition for the abstraction chain
-    console.log(`[Abstraction] Expanding ${dimension} dimension for node:`, node.name);
+    
     // Could implement hurtle animation here similar to other expand buttons
   }, []);
 
@@ -2002,21 +1973,21 @@ function NodeCanvas() {
     const activeGraph = graphsMap.get(activeGraphId);
     const definingNodeId = activeGraph?.definingNodeIds?.[0];
     const isActive = definingNodeId ? savedNodeIds.has(definingNodeId) : false;
-    //console.log('[NodeCanvas bookmarkActive] activeGraphId:', activeGraphId, 'definingNodeId:', definingNodeId, 'savedNodeIds:', Array.from(savedNodeIds), 'isActive:', isActive);
+    //
     return isActive;
   }, [activeGraphId, graphsMap, savedNodeIds]);
 
   const handleToggleBookmark = useCallback(() => {
     // Get current state for logging
     const currentState = useGraphStore.getState();
-    console.log('[NodeCanvas handleToggleBookmark] activeGraphId:', currentState.activeGraphId);
+    
 
     if (currentState.activeGraphId) {
       // Toggle the current graph
-      console.log('[NodeCanvas handleToggleBookmark] Toggling saved state for current graph:', currentState.activeGraphId);
+      
       storeActions.toggleSavedGraph(currentState.activeGraphId);
     } else {
-      console.warn('[NodeCanvas handleToggleBookmark] No active graph found. Cannot toggle.');
+      
     }
   }, [storeActions]); // Dependency only on storeActions as we read fresh state inside
   // --- Refs (Keep these) ---
@@ -2037,7 +2008,7 @@ function NodeCanvas() {
 
         // Handle semantic concepts that need materialization
         if (item.needsMaterialization && item.conceptData) {
-            console.log(`[NodeCanvas] Materializing semantic concept: ${item.conceptData.name}`);
+            
             
             // Check if this semantic concept already exists as a prototype
             const existingPrototype = Array.from(nodePrototypesMap.values()).find(proto => 
@@ -2052,7 +2023,7 @@ function NodeCanvas() {
             if (existingPrototype) {
                 // Use existing prototype
                 prototypeId = existingPrototype.id;
-                console.log(`[NodeCanvas] Reusing existing semantic prototype: ${item.conceptData.name} (ID: ${prototypeId})`);
+                
             } else {
                 // Create new prototype
                 prototypeId = `semantic-node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -2087,7 +2058,7 @@ function NodeCanvas() {
                 // Auto-save semantic nodes to Library
                 storeActions.toggleSavedNode(prototypeId);
                 
-                console.log(`[NodeCanvas] Created new semantic prototype: ${item.conceptData.name} (ID: ${prototypeId})`);
+                
             }
             
             // Now use the prototype ID for positioning
@@ -2114,20 +2085,20 @@ function NodeCanvas() {
             // Add instance to the canvas
             storeActions.addNodeInstance(activeGraphId, prototypeId, position);
             
-            console.log(`[NodeCanvas] Successfully materialized and placed semantic node: ${item.conceptData.name}`);
+            
             return;
         }
 
         // Handle regular nodes (existing logic)
         const { prototypeId } = item;
         if (!prototypeId) {
-            console.error("Dropped item is missing prototypeId", item);
+            
             return;
         }
         
         const prototype = nodePrototypesMap.get(prototypeId);
         if (!prototype) {
-            console.error(`Dropped prototype with ID ${prototypeId} not found in nodePrototypesMap. This may be due to a recently merged node. Available prototypes:`, Array.from(nodePrototypesMap.keys()));
+            
             
             // Try to find a prototype with the same name as a fallback
             const potentialMatches = Array.from(nodePrototypesMap.values()).filter(p => 
@@ -2135,7 +2106,7 @@ function NodeCanvas() {
             );
             
             if (potentialMatches.length > 0) {
-                console.log(`[NodeCanvas] Found potential match for "${item.nodeName}": ${potentialMatches[0].name} (ID: ${potentialMatches[0].id})`);
+                
                 // Use the first match as a fallback
                 const fallbackPrototype = potentialMatches[0];
                 const dimensions = getNodeDimensions(fallbackPrototype, false, null);
@@ -2278,7 +2249,7 @@ function NodeCanvas() {
               setJustCompletedCarouselExit(true);
               setIsPieMenuActionInProgress(true);
               setTimeout(() => setIsPieMenuActionInProgress(false), 100);
-              console.log(`[PieMenu Action] Back clicked for node: ${nodeId}. Closing AbstractionCarousel.`);
+              
               // This will trigger the pie menu to shrink, and its onExitAnimationComplete will trigger the carousel to close.
               setIsTransitioningPieMenu(true);
             }
@@ -2297,16 +2268,16 @@ function NodeCanvas() {
             const originalInstance = nodes.find(n => n.id === originalNodeId);
             
             if (!originalInstance) {
-              console.error(`[PieMenu Action] Could not find original instance: ${originalNodeId}`);
+              
               return;
             }
             
             if (!focusedPrototypeId) {
-              console.error(`[PieMenu Action] No focused carousel node available for swap`);
+              
               return;
             }
             
-            console.log(`[PieMenu Action] Swap: Scheduling swap of canvas node ${originalInstance.prototypeId} with focused carousel node ${focusedPrototypeId}`);
+            
             
             // Store the swap operation to be executed after animations complete
             const currentState = useGraphStore.getState();
@@ -2319,7 +2290,7 @@ function NodeCanvas() {
               newPrototype
             });
             
-            console.log(`[PieMenu Action] Swap scheduled. Starting carousel exit animation.`);
+            
             
             // Start the exit animation sequence
             setSelectedNodeIdForPieMenu(null);
@@ -2332,8 +2303,8 @@ function NodeCanvas() {
           icon: Plus,
           position: 'right-second',
           action: (nodeId) => {
-            console.log(`[PieMenu Action] *** PLUS BUTTON CLICKED *** Create Definition clicked for carousel node: ${nodeId}. Transitioning to position selection stage.`);
-            console.log(`[PieMenu Action] Current stage: ${carouselPieMenuStage}, transitioning to stage 2`);
+            
+            
             console.log(`[PieMenu Action] State before transition:`, {
               carouselPieMenuStage,
               isCarouselStageTransition: false,
@@ -2345,7 +2316,7 @@ function NodeCanvas() {
             setIsTransitioningPieMenu(true); // This will trigger the pie menu to shrink
             
             // The stage will be changed in onExitAnimationComplete after the shrink animation completes
-            console.log(`[PieMenu Action] *** STAGE TRANSITION STARTED *** Triggering pie menu shrink`);
+            
           }
         },
         {
@@ -2357,24 +2328,24 @@ function NodeCanvas() {
             setIsPieMenuActionInProgress(true);
             setTimeout(() => setIsPieMenuActionInProgress(false), 100);
 
-            console.log(`[PieMenu Action] Delete clicked for carousel node: ${nodeId}`);
+            
             
             const selectedNode = carouselFocusedNode || nodes.find(n => n.id === nodeId);
             if (!selectedNode) {
-              console.error(`[PieMenu Action] No node found with ID: ${nodeId}`);
+              
               return;
             }
 
             // Get the current abstraction carousel data to find the original node
             const carouselNode = abstractionCarouselNode;
             if (!carouselNode) {
-              console.error(`[PieMenu Action] No carousel data available`);
+              
               return;
             }
 
             // Prevent deletion of the original node that the carousel is built around
             if (selectedNode.prototypeId === carouselNode.prototypeId) {
-              console.warn(`[PieMenu Action] Cannot delete the original node that the carousel is built around`);
+              
               return;
             }
 
@@ -2385,7 +2356,7 @@ function NodeCanvas() {
               selectedNode.prototypeId      // the node to remove
             );
 
-            console.log(`[PieMenu Action] Removed node "${selectedNode.name}" from ${carouselNode.name}'s ${currentAbstractionDimension} abstraction chain`);
+            
             
             // Don't close the pie menu after deletion - stay in the carousel to see the updated chain
             // setSelectedNodeIdForPieMenu(null);
@@ -2421,7 +2392,7 @@ function NodeCanvas() {
             const originalNodeData = nodes.find(n => n.id === originalNodeId);
             
             if (!originalNodeData) {
-              console.error(`[PieMenu Action] Could not find original node data for ID: ${originalNodeId}`);
+              
               return;
             }
             
@@ -2516,20 +2487,20 @@ function NodeCanvas() {
                       setSelectedNodeIdForPieMenu(null);
                       setIsTransitioningPieMenu(true);
                     } else {
-                      console.error(`[PieMenu Expand] Could not find new definition for node ${targetPrototypeId} after creation.`);
+                      
                     }
                   }, 50);
                 }
               }
             } else {
-              console.error(`[PieMenu Action] Could not find prototype data for ID: ${targetPrototypeId}`);
+              
             }
           }
         }
       ];
       } else if (carouselPieMenuStage === 2) {
         // Stage 2: Position selection menu - Back on left-inner, vertical stack on right
-        console.log(`[PieMenu Buttons] Generating stage 2 buttons for carousel mode`);
+        
         const stage2Buttons = [
           {
             id: 'carousel-back-stage2',
@@ -2537,13 +2508,13 @@ function NodeCanvas() {
             icon: ArrowLeft,
             position: 'left-inner',
             action: (nodeId) => {
-              console.log(`[PieMenu Action] Back clicked in stage 2. Returning to main carousel menu.`);
+              
               // Start the stage transition by triggering the pie menu to shrink first
               setIsCarouselStageTransition(true); // Mark this as an internal stage transition
               setIsTransitioningPieMenu(true); // This will trigger the pie menu to shrink
               
               // The stage will be changed in onExitAnimationComplete after the shrink animation completes
-              console.log(`[PieMenu Action] *** STAGE TRANSITION STARTED *** Triggering pie menu shrink`);
+              
             }
           },
           {
@@ -2552,9 +2523,9 @@ function NodeCanvas() {
             icon: CornerUpLeft,
             position: 'right-top',
             action: (nodeId) => {
-              console.log(`[PieMenu Action] Add Above clicked for carousel node: ${nodeId}`);
-              console.log(`[PieMenu Action] Current carouselFocusedNode:`, carouselFocusedNode);
-              console.log(`[PieMenu Action] Current carouselPieMenuStage: ${carouselPieMenuStage}`);
+              
+              
+              
               
               // In stage 2, use the focused carousel node, otherwise use the clicked node
               const targetNode = carouselPieMenuStage === 2 && carouselFocusedNode 
@@ -2569,7 +2540,7 @@ function NodeCanvas() {
               });
               
               if (!targetNode) {
-                console.error(`[PieMenu Action] No target node found`);
+                
                 return;
               }
 
@@ -2585,7 +2556,7 @@ function NodeCanvas() {
                 carouselLevel: abstractionCarouselNode // Pass the carousel state
               });
               
-              console.log(`[PieMenu Action] Add Above abstraction prompt set for targetNodeId: ${targetNode.id}`);
+              
             }
           },
           {
@@ -2594,9 +2565,9 @@ function NodeCanvas() {
             icon: CornerDownLeft,
             position: 'right-bottom',
             action: (nodeId) => {
-              console.log(`[PieMenu Action] Add Below clicked for carousel node: ${nodeId}`);
-              console.log(`[PieMenu Action] Current carouselFocusedNode:`, carouselFocusedNode);
-              console.log(`[PieMenu Action] Current carouselPieMenuStage: ${carouselPieMenuStage}`);
+              
+              
+              
               
               // In stage 2, use the focused carousel node, otherwise use the clicked node
               const targetNode = carouselPieMenuStage === 2 && carouselFocusedNode 
@@ -2611,7 +2582,7 @@ function NodeCanvas() {
               });
               
               if (!targetNode) {
-                console.error(`[PieMenu Action] No target node found`);
+                
                 return;
               }
 
@@ -2627,11 +2598,11 @@ function NodeCanvas() {
                 carouselLevel: abstractionCarouselNode // Pass the carousel state
               });
               
-              console.log(`[PieMenu Action] Add Below abstraction prompt set for targetNodeId: ${targetNode.id}`);
+              
             }
           }
         ];
-        console.log(`[PieMenu Buttons] Generated ${stage2Buttons.length} stage 2 buttons:`, stage2Buttons.map(b => b.id));
+        
         return stage2Buttons;
       }
     }
@@ -2651,11 +2622,11 @@ function NodeCanvas() {
           action: (nodeId) => {
             // Prevent compose action during carousel transitions (only for non-carousel mode)
             if (!abstractionCarouselVisible && carouselAnimationState === 'exiting') {
-              console.log('[PieMenu Action] Blocking compose during carousel exit');
+              
               return;
             }
             
-            // console.log(`[PieMenu Action] Compose clicked for node: ${nodeId}. Starting transition.`);
+            // 
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
             // setPreviewingNodeId(null); // This will be set after animation
           }
@@ -2693,7 +2664,7 @@ function NodeCanvas() {
                     const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
                     startHurtleAnimation(instanceId, newGraphId, prototypeId, sourceGraphId);
                   } else {
-                    console.error(`[PieMenu Expand] Could not find new definition for node ${prototypeId} after creation.`);
+                    
                   }
                 }, 50);
               }
@@ -2707,11 +2678,11 @@ function NodeCanvas() {
           action: (instanceId) => {
             // Prevent decompose action during carousel transitions (only for non-carousel mode)
             if (!abstractionCarouselVisible && carouselAnimationState === 'exiting') {
-              console.log('[PieMenu Action] Blocking decompose during carousel exit');
+              
               return;
             }
             
-            console.log(`[PieMenu Action] Decompose clicked for instance: ${instanceId}. Starting transition.`);
+            
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
             // previewingNodeId (which is an instanceId) will be set in onExitAnimationComplete after animation
           }
@@ -2719,18 +2690,18 @@ function NodeCanvas() {
         { id: 'abstraction', label: 'Abstraction', icon: Layers, action: (instanceId) => {
             // Prevent abstraction action during carousel transitions (only for non-carousel mode)
             if (!abstractionCarouselVisible && carouselAnimationState === 'exiting') {
-              console.log('[PieMenu Action] Blocking abstraction during carousel exit');
+              
               return;
             }
             
-            console.log(`[PieMenu Action] Abstraction clicked for node: ${instanceId}.`);
+            
             setPendingAbstractionNodeId(instanceId); // Store the instance ID for later
             setIsTransitioningPieMenu(true); // Start transition, current menu will hide
             // Abstraction carousel will be set up in onExitAnimationComplete after animation
         } },
         { id: 'delete', label: 'Delete', icon: Trash2, action: (instanceId) => {
           storeActions.removeNodeInstance(activeGraphId, instanceId);
-          console.log(`[NodeCanvas] 📍 CLEAR #2: Delete action clearing selectedInstanceIds for node ${instanceId}`);
+          
           setSelectedInstanceIds(new Set()); // Deselect after deleting
           setSelectedNodeIdForPieMenu(null); // Ensure pie menu hides
         } },
@@ -2794,7 +2765,7 @@ function NodeCanvas() {
             }
         } },
         { id: 'more', label: 'More', icon: MoreHorizontal, action: (instanceId) => {
-            console.log(`[PieMenu Action] More options clicked for node: ${instanceId}. Future: show additional menu/submenu.`);
+            
             // TODO: Implement additional options menu/submenu
         } }
       ];
@@ -2823,12 +2794,12 @@ function NodeCanvas() {
 
       if (graphData && graphData.panOffset && typeof graphData.zoomLevel === 'number') {
         // Restore the stored view state immediately
-        // console.log(`[NodeCanvas] Restoring view state for graph ${activeGraphId}:`, storedViewState);
+        // 
         setPanOffset(graphData.panOffset);
         setZoomLevel(graphData.zoomLevel);
       } else {
         // No stored state, center the view as before
-        // console.log(`[NodeCanvas] No stored view state for graph ${activeGraphId}, centering view`);
+        // 
 
       // Target the center of the canvas
       const targetCanvasX = canvasSize.width / 2;
@@ -2901,10 +2872,15 @@ function NodeCanvas() {
   
   // Smooth pinch zoom animation
   const animatePinchSmoothing = useCallback(() => {
-    console.log('🎬 ANIMATION FRAME CALLED');
     const smoothing = pinchSmoothingRef.current;
-    if (!smoothing) {
-      console.error('❌ smoothing ref is null!');
+    if (!smoothing || !smoothing.isAnimating) {
+      // Animation should not be running
+      if (smoothing?.animationId) {
+        cancelAnimationFrame(smoothing.animationId);
+        smoothing.animationId = null;
+        smoothing.isAnimating = false;
+        
+      }
       return;
     }
     const now = performance.now();
@@ -3029,13 +3005,13 @@ function NodeCanvas() {
     
     // Throttle extremely frequent input events to prevent jitter
     if (inputDelta < 8 && smoothing.isAnimating) { // Throttle to max ~120Hz
-      console.log('⚡ Input throttled:', { inputDelta: Math.round(inputDelta * 10) / 10 });
+      
       return;
     }
     
     // Emergency fallback - if smoothing isn't working, use direct updates
     if (!animatePinchSmoothing || typeof animatePinchSmoothing !== 'function') {
-      console.warn('🚨 EMERGENCY FALLBACK - Using direct updates');
+      
       setZoomLevel(targetZoom);
       setPanOffset({ x: targetPanX, y: targetPanY });
       return;
@@ -3063,15 +3039,15 @@ function NodeCanvas() {
     
     // Initialize current values if not already animating
     if (!smoothing.animationId) {
-      console.log('🚀 Starting Pinch Animation');
+      
       smoothing.currentZoom = zoomLevel;
       smoothing.currentPanX = panOffset.x;
       smoothing.currentPanY = panOffset.y;
       smoothing.isAnimating = true;
       smoothing.lastFrameTime = now;
-      console.log('🔧 About to call requestAnimationFrame with:', typeof animatePinchSmoothing);
+      
       smoothing.animationId = requestAnimationFrame(animatePinchSmoothing);
-      console.log('🔧 Animation ID:', smoothing.animationId);
+      
     }
   }, [zoomLevel, panOffset.x, panOffset.y, animatePinchSmoothing]);
   
@@ -3610,7 +3586,7 @@ function NodeCanvas() {
             }
           }, 100);
         } catch (error) {
-          console.error('Mac pinch zoom calculation failed:', error);
+          
           setDebugData((prev) => ({ ...prev, info: 'Mac pinch zoom error', error: error.message }));
           isPanningOrZooming.current = false;
         }
@@ -3698,7 +3674,7 @@ function NodeCanvas() {
               }
             }, 100);
         } catch (error) {
-            console.error('Wheel zoom calculation failed:', error);
+            
             setDebugData((prev) => ({ ...prev, info: 'Wheel zoom error', error: error.message }));
             isPanningOrZooming.current = false;
         }
@@ -3716,7 +3692,7 @@ function NodeCanvas() {
         deltaX: deltaX.toFixed(2),
         deltaY: deltaY.toFixed(2),
       }));
-      // console.warn('Unhandled wheel event:', { deltaX, deltaY, deviceType, ctrlKey: e.ctrlKey, isMac });
+      // 
     }
   };
 
@@ -4457,7 +4433,7 @@ function NodeCanvas() {
         });
         setSelectedInstanceIds(finalSelection);
       } catch (error) {
-        console.error("Selection calc failed:", error);
+        
       }
       return;
     }
@@ -4524,9 +4500,9 @@ function NodeCanvas() {
                     // Get mouse position in canvas coordinates
                     const mouseCanvasX = (e.clientX - panOffset.x) / zoomLevel;
                     const mouseCanvasY = (e.clientY - panOffset.y) / zoomLevel;
-                    console.log('[Grid Snap] Multi-node drag - mouse pos:', { mouseCanvasX, mouseCanvasY, gridMode, gridSize });
+                    
                                          const snapped = snapToGridAnimated(mouseCanvasX, mouseCanvasY, dims.currentWidth, dims.currentHeight, { x: primaryNode.x, y: primaryNode.y });
-                    console.log('[Grid Snap] Multi-node drag - after smooth snap:', { x: snapped.x, y: snapped.y, dims: dims.currentWidth + 'x' + dims.currentHeight });
+                    
                     newPrimaryX = snapped.x;
                     newPrimaryY = snapped.y;
                   }
@@ -4561,9 +4537,9 @@ function NodeCanvas() {
                   
                   // Apply smooth grid snapping to single node
                   if (gridMode !== 'off') {
-                    console.log('[Grid Snap] Single node drag - mouse pos:', { mouseCanvasX, mouseCanvasY, gridMode, gridSize });
+                    
                                          const snapped = snapToGridAnimated(mouseCanvasX, mouseCanvasY, dims.currentWidth, dims.currentHeight, { x: node.x, y: node.y });
-                    console.log('[Grid Snap] Single node drag - after smooth snap:', { x: snapped.x, y: snapped.y, dims: dims.currentWidth + 'x' + dims.currentHeight });
+                    
                     newX = snapped.x;
                     newY = snapped.y;
                   } else {
@@ -4714,10 +4690,11 @@ function NodeCanvas() {
               .map(nd => nd.id);
             setSelectedInstanceIds(prev => new Set([...prev, ...finalSelectedIds]));
           })
-          .catch(error => console.error("Final selection calc failed:", error));
-        ignoreCanvasClick.current = true;
-        setSelectionStart(null);
-        setSelectionRect(null);
+          .catch(error => {
+            ignoreCanvasClick.current = true;
+            setSelectionStart(null);
+            setSelectionRect(null);
+          });
     }
 
     // Finalize panning state
@@ -4808,7 +4785,7 @@ function NodeCanvas() {
 
       // DEFENSIVE: If carousel is visible but pie menu isn't, force close carousel
       if (abstractionCarouselVisible && !selectedNodeIdForPieMenu) {
-        console.log(`[NodeCanvas] 🔧 DEFENSIVE: Carousel stuck without pie menu - force closing`);
+        
         setAbstractionCarouselVisible(false);
         setAbstractionCarouselNode(null);
         setCarouselAnimationState('hidden');
@@ -4820,24 +4797,24 @@ function NodeCanvas() {
 
       // If carousel is visible and exiting, don't handle canvas clicks
       if (abstractionCarouselVisible && carouselAnimationState === 'exiting') {
-        console.log(`[NodeCanvas] Carousel is exiting - ignoring canvas click`);
+        
         return;
       }
 
       if (selectedInstanceIds.size > 0) {
           // Don't clear selection if we just completed a carousel exit
           if (justCompletedCarouselExit) {
-            console.log(`[NodeCanvas] Skipping canvas click selection clear - just completed carousel exit`);
+            
             return;
           }
           
           // Don't clear selection if carousel exit is in progress
           if (carouselExitInProgressRef.current) {
-            console.log(`[NodeCanvas] Skipping canvas click selection clear - carousel exit in progress`);
+            
             return;
           }
           
-          console.log(`[NodeCanvas] 📍 CLEAR #3: Canvas click clearing selection of ${selectedInstanceIds.size} items`);
+          
           setSelectedInstanceIds(new Set());
           // Pie menu will be handled by useEffect on selectedInstanceIds, no direct setShowPieMenu here
           return;
@@ -4913,9 +4890,9 @@ function NodeCanvas() {
     return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
   };
   const handleAbstractionSubmit = ({ name, color, existingPrototypeId }) => {
-    console.log(`[Abstraction Submit] Called with:`, { name, color, promptState: abstractionPrompt });
-    console.log(`[Abstraction Submit] Current abstractionCarouselNode:`, abstractionCarouselNode);
-    console.log(`[Abstraction Submit] Looking for node with ID:`, abstractionPrompt.nodeId);
+    
+    
+    
     
     if (name.trim() && abstractionPrompt.nodeId && abstractionCarouselNode) {
       // The nodeId could be either a canvas instance ID or a prototype ID (from focused carousel node)
@@ -4961,7 +4938,7 @@ function NodeCanvas() {
       });
       
       if (!currentlySelectedNode || !targetPrototypeId) {
-        console.error(`[Abstraction Submit] No node found with ID: ${abstractionPrompt.nodeId}`);
+        
         return;
       }
 
@@ -4997,7 +4974,7 @@ function NodeCanvas() {
           newNodeColor = interpolateColor(currentlySelectedNode.color || '#8B0000', targetColor, Math.abs(abstractionLevel));
         }
         
-        console.log(`[Abstraction Submit] Creating new node with color:`, newNodeColor);
+        
         
         // Create the new node prototype
         storeActions.addNodePrototype({
@@ -5008,7 +4985,7 @@ function NodeCanvas() {
           definitionGraphIds: []
         });
       } else {
-        console.log(`[Abstraction Submit] Using existing prototype ${newNodeId} instead of creating new`);
+        
       }
       
       // Add to the abstraction chain relative to the currently selected/focused node
@@ -5029,12 +5006,12 @@ function NodeCanvas() {
         targetPrototypeId                       // insert relative to this node (focused node in carousel)
       );
       
-      console.log(`[Abstraction] Added new node "${name.trim()}" ${abstractionPrompt.direction} ${currentlySelectedNode.name} in ${abstractionCarouselNode.name}'s ${currentAbstractionDimension} dimension`);
-      console.log(`[Abstraction] Target prototype ID used: ${targetPrototypeId}`);
+      
+      
       
       // Close the abstraction prompt but keep pie menu in stage 2
       // Ensure carousel stays visible by maintaining its state
-      console.log(`[Abstraction Submit] Current selectedNodeIdForPieMenu before submit completion: ${selectedNodeIdForPieMenu}`);
+      
       setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null, carouselLevel: null });
       
       // Explicitly maintain carousel visibility and stay in stage 2 (don't go back to stage 1)
@@ -5043,10 +5020,10 @@ function NodeCanvas() {
       
       // Ensure pie menu stays selected for the carousel node
       if (abstractionCarouselNode && !selectedNodeIdForPieMenu) {
-        console.log(`[Abstraction Submit] Restoring selectedNodeIdForPieMenu after successful submit`);
+        
         setSelectedNodeIdForPieMenu(abstractionCarouselNode.id);
       }
-      console.log(`[Abstraction Submit] selectedNodeIdForPieMenu after submit: ${selectedNodeIdForPieMenu}`);
+      
       setIsCarouselStageTransition(true);
       
       // Ensure the carousel node is still selected for pie menu
@@ -5481,7 +5458,7 @@ function NodeCanvas() {
 
   const handleToggleLeftPanel = useCallback(() => {
     setLeftPanelExpanded(prev => !prev);
-    // console.log("[Left Panel Toggle] New state:", !leftPanelExpanded);
+    // 
   }, [leftPanelExpanded]);
 
   // Panel toggle and TypeList keyboard shortcuts - work even when inputs are focused
@@ -5500,7 +5477,7 @@ function NodeCanvas() {
         activeElement.type === 'number'
       );
       
-      console.log('[Key Shortcuts] Key pressed:', e.key, 'Active element:', activeElement?.tagName, 'Is text input:', isTextInput);
+      
       
       // Only handle these specific keys if NOT in a text input
       if (!isTextInput) {
@@ -5512,14 +5489,14 @@ function NodeCanvas() {
           handleToggleRightPanel();
         } else if (e.key === '3') {
           e.preventDefault();
-          console.log('[Key 3] Key 3 pressed, cycling TypeList mode');
+          
           // Cycle TypeList mode: connection -> node -> closed -> connection
           const currentMode = useGraphStore.getState().typeListMode;
           const newMode = currentMode === 'connection' ? 'node' : 
                          currentMode === 'node' ? 'closed' : 'connection';
-          console.log('[Key 3] Cycling TypeList mode:', { currentMode, newMode });
+          
           storeActions.setTypeListMode(newMode);
-          console.log('[Key 3] setTypeListMode called with:', newMode);
+          
         }
       }
     };
@@ -5531,7 +5508,7 @@ function NodeCanvas() {
 
 
   const handleLeftPanelFocusChange = useCallback((isFocused) => {
-    //console.log(`[Left Panel Focus Change] Setting isLeftPanelInputFocused to: ${isFocused}`);
+    //
     setIsLeftPanelInputFocused(isFocused);
   }, []);
 
@@ -5554,7 +5531,7 @@ function NodeCanvas() {
         });
 
         // Clear local selection state AFTER dispatching actions
-        console.log(`[NodeCanvas] 📍 CLEAR #4: Keyboard delete clearing selectedInstanceIds after deleting ${idsToDelete.length} nodes`);
+        
         setSelectedInstanceIds(new Set());
       } else if (isDeleteKey && edgeSelected) {
         console.log('[NodeCanvas] Delete key pressed with edge selected:', {
@@ -5579,7 +5556,7 @@ function NodeCanvas() {
             clearSelectedEdgeIds();
           }
         } else {
-          console.log('[NodeCanvas] Edge deletion prevented - connection selector is open');
+          
         }
       }
     };
@@ -5594,7 +5571,7 @@ function NodeCanvas() {
         // Use localStoreActions
         storeActions.updateGraph(currentActiveId, draft => { draft.name = newTitle || 'Untitled'; });
     } else {
-        // console.warn("handleProjectTitleChange: No active graph ID found in store.");
+        // 
     }
   };
 
@@ -5660,7 +5637,7 @@ function NodeCanvas() {
     
     // Add stack trace for unexpected clears to debug the issue
     if (selectedInstanceIds.size === 0 && selectedNodeIdForPieMenu && !justCompletedCarouselExit) {
-      console.log(`[NodeCanvas] ⚠️ UNEXPECTED SELECTION CLEAR - Stack trace:`, new Error().stack);
+      
     }
     
     if (selectedInstanceIds.size === 1) {
@@ -5676,30 +5653,30 @@ function NodeCanvas() {
       
       // SPECIAL CASE: If abstraction prompt is visible, don't close pie menu yet
       if (abstractionPrompt.visible && abstractionCarouselVisible) {
-        console.log(`[NodeCanvas] Abstraction prompt visible - keeping pie menu open despite selection change`);
+        
         return;
       }
       
       // SPECIAL CASE: If carousel is exiting, don't clear the pie menu - let the exit complete first
       if (carouselAnimationState === 'exiting') {
-        console.log(`[NodeCanvas] Carousel is exiting - not clearing pie menu yet`);
+        
         return;
       }
       
       // SPECIAL CASE: If we just completed carousel exit, don't clear the pie menu 
       if (justCompletedCarouselExit) {
-        console.log(`[NodeCanvas] Just completed carousel exit - not clearing pie menu`);
+        
         return;
       }
       
       // SPECIAL CASE: If carousel is visible and we're losing selection, start exit animation
       if (abstractionCarouselVisible && selectedNodeIdForPieMenu) {
-        console.log(`[NodeCanvas] Carousel visible and losing selection - starting exit animation`);
+        
         setCarouselAnimationState('exiting');
         return;
       }
       
-      console.log(`[NodeCanvas] Setting selectedNodeIdForPieMenu to null due to selection change`);
+      
       setSelectedNodeIdForPieMenu(null);
     }
   }, [selectedInstanceIds, isTransitioningPieMenu, abstractionPrompt.visible, abstractionCarouselVisible, selectedNodeIdForPieMenu, carouselAnimationState, justCompletedCarouselExit]); // Added carousel protection flags
@@ -5743,7 +5720,7 @@ function NodeCanvas() {
           });
         }
         
-        console.log(`[NodeCanvas] Preparing pie menu for node ${selectedNodeIdForPieMenu}. Stage: ${carouselPieMenuStage}. Buttons:`, targetPieMenuButtons.map(b => b.id));
+        
         
         setCurrentPieMenuData({ 
           node: nodeForPieMenu, 
@@ -5752,7 +5729,7 @@ function NodeCanvas() {
         });
         setIsPieMenuRendered(true); // Ensure PieMenu is in DOM to animate in
       } else {
-        //console.log(`[NodeCanvas] Node ${selectedNodeIdForPieMenu} not found, but was set for pie menu. Hiding.`);
+        //
         setCurrentPieMenuData(null); // Keep this for safety if node genuinely disappears
         // isPieMenuRendered will be set to false by onExitAnimationComplete if it was visible
       }
@@ -5762,7 +5739,7 @@ function NodeCanvas() {
         // The PieMenu will become invisible due to the isVisible prop calculation.
         // currentPieMenuData should NOT be nulled here, as PieMenu needs it to animate out.
         // It will be nulled in onExitAnimationComplete.
-        //console.log("[NodeCanvas] selectedNodeIdForPieMenu is null and not transitioning. PieMenu will become invisible and animate out.");
+        //
     }
     // If isTransitioningPieMenu is true, we don't change currentPieMenuData or isPieMenuRendered here.
     // The existing menu plays its exit animation, and onExitAnimationComplete handles the next steps.
@@ -5838,7 +5815,7 @@ function NodeCanvas() {
     const nodeData = nodesInSourceGraph.find(n => n.id === nodeId);
     
     if (!nodeData) {
-        console.error(`[Hurtle Animation] Failed to find node ${nodeId} in source graph ${graphIdToFindNodeIn}.`);
+        
         return;
     }
     
@@ -5897,20 +5874,20 @@ function NodeCanvas() {
     const currentState = useGraphStore.getState();
     const nodeData = currentState.nodePrototypes.get(nodeId);
     if (!nodeData) {
-      console.error(`[Panel Hurtle] Failed to find node ${nodeId}.`);
+      
       return;
     }
 
     const containerElement = containerRef.current;
     if (!containerElement) {
-      console.error(`[Panel Hurtle] containerRef.current is null`);
+      
       return;
     }
 
     // Get the current pan/zoom from the actual SVG element to ensure accuracy
     const svgElement = containerElement.querySelector('.canvas');
     if (!svgElement) {
-      console.error(`[Panel Hurtle] Could not find .canvas element`);
+      
       return;
     }
     
@@ -5953,7 +5930,7 @@ function NodeCanvas() {
         label: 'Merge Duplicates',
         icon: <Merge size={14} />,
         action: () => {
-          console.log('[Canvas Context Menu] Merge Duplicates clicked');
+          
           // Open saved things tab and then merge modal
           storeActions.setRightPanelExpanded(true);
           storeActions.setActiveTab('saved');
@@ -5997,7 +5974,7 @@ function NodeCanvas() {
                 const newGraphId = refreshed.definitionGraphIds[refreshed.definitionGraphIds.length - 1];
                 startHurtleAnimation(instanceId, newGraphId, prototypeId, sourceGraphId);
               } else {
-                console.error(`[Context Menu Open Web] Could not find new definition for node ${prototypeId} after creation.`);
+                
               }
             }, 50);
           }
@@ -6009,11 +5986,11 @@ function NodeCanvas() {
         icon: <PackageOpen size={14} />,
         action: () => {
           if (!abstractionCarouselVisible && carouselAnimationState === 'exiting') {
-            console.log('[Context Menu] Blocking decompose during carousel exit');
+            
             return;
           }
           
-          console.log(`[Context Menu] Decompose clicked - opening pie menu`);
+          
           
           // Open the pie menu for this node
           setSelectedInstanceIds(new Set([instanceId]));
@@ -6023,7 +6000,7 @@ function NodeCanvas() {
           setTimeout(() => {
             const decomposeButton = targetPieMenuButtons.find(btn => btn.id === 'decompose-preview');
             if (decomposeButton && decomposeButton.action) {
-              console.log(`[Context Menu] Auto-triggering decompose button`);
+              
               decomposeButton.action(instanceId);
             }
           }, 100); // Small delay to let pie menu appear first
@@ -6035,11 +6012,11 @@ function NodeCanvas() {
         icon: <Layers size={14} />,
         action: () => {
           if (!abstractionCarouselVisible && carouselAnimationState === 'exiting') {
-            console.log('[Context Menu] Blocking abstraction during carousel exit');
+            
             return;
           }
           // Directly set up abstraction carousel like onExitAnimationComplete does
-          console.log(`[Context Menu] Abstraction clicked for node: ${instanceId}. Opening carousel directly.`);
+          
           const nodeData = nodes.find(n => n.id === instanceId);
           if (nodeData) {
             setAbstractionCarouselNode(nodeData);
@@ -6180,7 +6157,7 @@ function NodeCanvas() {
 
          onNewUniverse={async () => {
            try {
-             console.log('[NodeCanvas] Creating new universe from menu');
+             
              // storeActions.clearUniverse(); // This is redundant
              
              const { createUniverseFile, enableAutoSave } = await import('./store/fileStorage.js');
@@ -6191,13 +6168,13 @@ function NodeCanvas() {
                
                // Enable auto-save for the new universe
                enableAutoSave(() => useGraphStore.getState());
-               console.log('[NodeCanvas] New universe created successfully from menu with auto-save enabled');
+               
                
                // Ensure universe connection is marked as established
                storeActions.setUniverseConnected(true);
              }
            } catch (error) {
-             console.error('[NodeCanvas] Error creating new universe from menu:', error);
+             
              storeActions.setUniverseError(`Failed to create universe: ${error.message}`);
            }
          }}
@@ -6215,21 +6192,21 @@ function NodeCanvas() {
                  'Continue with opening a different universe file?'
                );
                if (!confirmed) {
-                 console.log('[NodeCanvas] User cancelled universe file opening');
+                 
                  return;
                }
              }
              
-             console.log('[NodeCanvas] Opening universe from menu');
+             
              // storeActions.clearUniverse(); // This is redundant
              
              const { openUniverseFile, enableAutoSave, getFileStatus } = await import('./store/fileStorage.js');
              const loadedData = await openUniverseFile();
              
-             console.log('[NodeCanvas] Loaded data:', loadedData ? 'success' : 'null');
+             
              
              if (loadedData !== null) {
-               console.log('[NodeCanvas] Loading universe data with', Object.keys(loadedData).length, 'properties');
+               
                storeActions.loadUniverseFromFile(loadedData);
                
                // Enable auto-save for the opened universe
@@ -6237,55 +6214,55 @@ function NodeCanvas() {
                
                // Debug: check file status after load
                const fileStatus = getFileStatus();
-               console.log('[NodeCanvas] File status after load:', fileStatus);
                
-               console.log('[NodeCanvas] Universe opened successfully from menu with auto-save enabled');
+               
+               
                
                // Ensure universe connection is marked as established
                storeActions.setUniverseConnected(true);
              } else {
-               console.log('[NodeCanvas] User cancelled file selection');
+               
              }
            } catch (error) {
-             console.error('[NodeCanvas] Error opening universe from menu:', error);
+             
              storeActions.setUniverseError(`Failed to open universe: ${error.message}`);
            }
          }}
          onSaveUniverse={async () => {
            try {
-             console.log('[NodeCanvas] Manual save requested');
+             
              const { forceSave, canAutoSave, getFileStatus } = await import('./store/fileStorage.js');
              
              // Debug: check file status
              const fileStatus = getFileStatus();
-             console.log('[NodeCanvas] File status before save:', fileStatus);
+             
              
              if (canAutoSave()) {
                const currentState = useGraphStore.getState();
-               console.log('[NodeCanvas] Saving state with', Object.keys(currentState).length, 'properties');
+               
                
                const saveResult = await forceSave(currentState);
-               console.log('[NodeCanvas] Manual save result:', saveResult);
+               
                
                if (saveResult) {
-                 console.log('[NodeCanvas] Manual save completed successfully');
+                 
                  alert('Universe saved successfully!');
                } else {
-                 console.warn('[NodeCanvas] Manual save returned false');
+                 
                  alert('Save failed for unknown reason.');
                }
              } else {
-               console.warn('[NodeCanvas] No file handle available for manual save');
+               
                alert('No universe file is currently open. Please create or open a universe first.');
              }
            } catch (error) {
-             console.error('[NodeCanvas] Error during manual save:', error);
+             
              alert(`Failed to save universe: ${error.message}`);
            }
          }}
          onExportRdf={async () => {
            try {
-             console.log('[NodeCanvas] RDF export requested');
+             
              const { exportToRdfTurtle } = await import('./formats/rdfExport.js');
              
              const currentState = useGraphStore.getState();
@@ -6302,9 +6279,9 @@ function NodeCanvas() {
              document.body.removeChild(a);
              URL.revokeObjectURL(url);
              
-             console.log('[NodeCanvas] RDF export completed successfully');
+             
            } catch (error) {
-             console.error('[NodeCanvas] Error during RDF export:', error);
+             
              alert(`Failed to export RDF: ${error.message}`);
            }
          }}
@@ -6322,21 +6299,21 @@ function NodeCanvas() {
                  'Continue?'
                );
                if (!confirmed) {
-                 console.log('[NodeCanvas] User cancelled recent file opening');
+                 
                  return;
                }
              }
              
-             console.log('[NodeCanvas] Opening recent file from menu:', recentFileEntry.fileName);
+             
              // storeActions.clearUniverse(); // This is redundant
              
              const { openRecentFile, enableAutoSave, getFileStatus } = await import('./store/fileStorage.js');
              const loadedData = await openRecentFile(recentFileEntry);
              
-             console.log('[NodeCanvas] Recent file data loaded:', loadedData ? 'success' : 'null');
+             
              
              if (loadedData !== null) {
-               console.log('[NodeCanvas] Loading recent file data with', Object.keys(loadedData).length, 'properties');
+               
                storeActions.loadUniverseFromFile(loadedData);
                
                // Enable auto-save for the opened universe
@@ -6344,17 +6321,17 @@ function NodeCanvas() {
                
                // Debug: check file status after load
                const fileStatus = getFileStatus();
-               console.log('[NodeCanvas] File status after recent file load:', fileStatus);
                
-               console.log('[NodeCanvas] Recent file opened successfully with auto-save enabled');
+               
+               
                
                // Ensure universe connection is marked as established
                storeActions.setUniverseConnected(true);
              } else {
-               console.log('[NodeCanvas] Recent file loading returned null');
+               
              }
            } catch (error) {
-             console.error('[NodeCanvas] Error opening recent file:', error);
+             
              storeActions.setUniverseError(`Failed to open recent file: ${error.message}`);
              alert(`Failed to open "${recentFileEntry.fileName}": ${error.message}`);
            }
@@ -6464,7 +6441,7 @@ function NodeCanvas() {
                 <button
                   onClick={async () => {
                     try {
-                      console.log('[NodeCanvas] Creating universe file');
+                      
                       // Clear any existing universe
                       // storeActions.clearUniverse(); // This is redundant
                       
@@ -6480,17 +6457,17 @@ function NodeCanvas() {
                         
                         // Enable auto-save
                         enableAutoSave(() => useGraphStore.getState());
-                        console.log('[NodeCanvas] Universe created and saved successfully with auto-save enabled');
+                        
                         
                         // Ensure universe connection is marked as established
                         storeActions.setUniverseConnected(true);
                       } else {
                         // User cancelled the file creation dialog
-                        console.log('[NodeCanvas] User cancelled universe file creation');
+                        
                         storeActions.setUniverseError('File creation was cancelled. Please try again to set up your universe.');
                       }
                     } catch (error) {
-                      console.error('[NodeCanvas] Error creating universe:', error);
+                      
                       storeActions.setUniverseError(`Failed to create universe: ${error.message}. Please try again.`);
                     }
                   }}
@@ -6513,7 +6490,7 @@ function NodeCanvas() {
                 <button
                   onClick={async () => {
                     try {
-                      console.log('[NodeCanvas] User chose to open existing file');
+                      
                       // Clear any existing universe
                       // storeActions.clearUniverse(); // This is redundant
                       
@@ -6525,13 +6502,13 @@ function NodeCanvas() {
                         
                         // Enable auto-save
                         enableAutoSave(() => useGraphStore.getState());
-                        console.log('[NodeCanvas] Universe opened successfully with auto-save enabled');
+                        
                         
                         // Ensure universe connection is marked as established
                         storeActions.setUniverseConnected(true);
                       }
                     } catch (error) {
-                      console.error('[NodeCanvas] Error loading file:', error);
+                      
                       storeActions.setUniverseError(`Failed to open file: ${error.message}`);
                     }
                   }}
@@ -7833,7 +7810,7 @@ function NodeCanvas() {
                                      const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
                                      startHurtleAnimation(instanceId, newGraphId, prototypeId, sourceGraphId);
                                    } else {
-                                     console.error(`[PieMenu Expand] Could not find new definition for node ${prototypeId} after creation.`);
+                                     
                                    }
                                  }, 50);
                                }
@@ -7865,7 +7842,7 @@ function NodeCanvas() {
                              )
                            )}
                                       onExitAnimationComplete={() => {
-             // console.log("[NodeCanvas] PieMenu onExitAnimationComplete: Resetting transition and render state.");
+             // 
              setIsPieMenuRendered(false); 
              setCurrentPieMenuData(null); 
              const wasTransitioning = isTransitioningPieMenu;
@@ -7897,10 +7874,10 @@ function NodeCanvas() {
                   // Change the stage here after the shrink animation completes
                   if (carouselPieMenuStage === 1) {
                     setCarouselPieMenuStage(2);
-                    console.log(`[PieMenu Action] *** STAGE TRANSITION COMPLETED *** Changed to stage 2`);
+                    
                   } else if (carouselPieMenuStage === 2) {
                     setCarouselPieMenuStage(1);
-                    console.log(`[PieMenu Action] *** STAGE TRANSITION COMPLETED *** Changed to stage 1`);
+                    
                   }
                   
                   // Re-select the node to show the new stage PieMenu
@@ -8005,7 +7982,7 @@ function NodeCanvas() {
                                        const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
                                        startHurtleAnimation(instanceId, newGraphId, prototypeId, sourceGraphId);
                                      } else {
-                                       console.error(`[PieMenu Expand] Could not find new definition for node ${prototypeId} after creation.`);
+                                       
                                      }
                                    }, 50);
                                  }
@@ -8091,7 +8068,7 @@ function NodeCanvas() {
                                        const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
                                        startHurtleAnimation(instanceId, newGraphId, prototypeId, sourceGraphId);
                                      } else {
-                                       console.error(`[Node OnExpand] Could not find new definition for node ${prototypeId} after creation.`);
+                                       
                                      }
                                    }, 50);
                                  }
@@ -8238,18 +8215,18 @@ function NodeCanvas() {
                 leftPanelExpanded={leftPanelExpanded}
                 rightPanelExpanded={rightPanelExpanded}
                 onClose={() => {
-                  console.log(`[Abstraction] Closing UnifiedSelector without creating node`);
-                  console.log(`[Abstraction] Current selectedNodeIdForPieMenu before close: ${selectedNodeIdForPieMenu}`);
+                  
+                  
                   setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null, carouselLevel: null });
                   setCarouselPieMenuStage(1);
                   setIsCarouselStageTransition(true);
                   if (abstractionCarouselNode && !selectedNodeIdForPieMenu) {
-                    console.log(`[Abstraction] Restoring selectedNodeIdForPieMenu after close`);
+                    
                     setSelectedNodeIdForPieMenu(abstractionCarouselNode.id);
                   }
                 }}
                 onSubmit={handleAbstractionSubmit}
-                onNodeSelect={(node) => { console.log(`[Abstraction] Selected existing node:`, node); handleAbstractionSubmit({ name: node.name, color: node.color, existingPrototypeId: node.id }); }}
+                onNodeSelect={(node) => {  }}
                 initialName={abstractionPrompt.name}
                 initialColor={abstractionPrompt.color}
                 title={`Add ${abstractionPrompt.direction === 'above' ? 'Above' : 'Below'}`}
@@ -8293,7 +8270,7 @@ function NodeCanvas() {
           isExpanded={rightPanelExpanded}
           onToggleExpand={handleToggleRightPanel}
           onFocusChange={(isFocused) => {
-            //console.log(`[Right Panel Focus Change] Setting isRightPanelInputFocused to: ${isFocused}`);
+            //
             setIsRightPanelInputFocused(isFocused);
           }}
           activeGraphId={activeGraphId}

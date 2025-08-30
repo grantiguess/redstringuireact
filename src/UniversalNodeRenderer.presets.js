@@ -9,7 +9,7 @@ export const RENDERER_PRESETS = {
   // For connection control panels
   CONNECTION_PANEL: {
     containerWidth: 400,
-    containerHeight: 120,
+    containerHeight: 160,
     scaleMode: 'fit',
     minNodeSize: 50,
     maxNodeSize: 100,

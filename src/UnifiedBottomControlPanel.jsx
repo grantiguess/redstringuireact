@@ -188,12 +188,35 @@ const UnifiedBottomControlPanel = ({
               });
               const nodes = Array.from(nodesMap.values());
               
+              // Transform triples to the format expected by UniversalNodeRenderer
+              const connections = triples.map(t => ({
+                id: t.id,
+                sourceId: t.subject?.id,
+                destinationId: t.object?.id,
+                name: t.predicate?.name || 'Connection',
+                color: t.predicate?.color || '#8B0000',
+                // Add directionality for arrows
+                directionality: {
+                  arrowsToward: new Set([
+                    ...(t.hasLeftArrow ? [t.subject?.id] : []),
+                    ...(t.hasRightArrow ? [t.object?.id] : [])
+                  ])
+                }
+              }));
+              
+              console.log('[UnifiedBottomControlPanel] Connection mode - transformed data:', {
+                triples,
+                connections,
+                nodes
+              });
+              
               return (
                 <UniversalNodeRenderer
                   {...RENDERER_PRESETS.CONNECTION_PANEL}
                   nodes={nodes}
-                  connections={triples}
+                  connections={connections}
                   containerWidth={Math.max(400, triples.length * 200)}
+                  containerHeight={160}
                   onNodeClick={onNodeClick}
                   onConnectionClick={onPredicateClick}
                   onToggleArrow={(connectionId, targetNodeId) => {

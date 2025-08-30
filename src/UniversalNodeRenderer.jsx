@@ -2,6 +2,82 @@ import React, { useMemo, useState, useCallback, useRef } from 'react';
 import useGraphStore from './store/graphStore';
 
 /**
+ * Connection Text Component
+ * 
+ * A dedicated component for rendering connection names with proper styling,
+ * colors, and stroke effects that match NodeCanvas appearance.
+ */
+const ConnectionText = ({ 
+  connection, 
+  sourcePoint, 
+  targetPoint, 
+  transform, 
+  isHovered 
+}) => {
+  if (!connection.connectionName || connection.connectionName === 'Connection') {
+    return null;
+  }
+
+  const dx = targetPoint.x - sourcePoint.x;
+  const dy = targetPoint.y - sourcePoint.y;
+  const midX = (sourcePoint.x + targetPoint.x) / 2;
+  const midY = (sourcePoint.y + targetPoint.y) / 2;
+  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+  const adjustedAngle = (angle > 90 || angle < -90) ? angle + 180 : angle;
+  const fontSize = Math.max(8, 16 * transform.scale);
+  const strokeWidth = Math.max(2, connection.strokeWidth || 6 * transform.scale);
+  
+  return (
+    <g>
+      {/* Background glow for better readability */}
+      {isHovered && (
+        <text
+          x={midX}
+          y={midY}
+          fill="none"
+          fontSize={fontSize}
+          fontWeight="bold"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          transform={`rotate(${adjustedAngle}, ${midX}, ${midY})`}
+          stroke={connection.color || '#000000'}
+          strokeWidth={strokeWidth * 2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity="0.4"
+          filter={`drop-shadow(0 0 4px ${connection.color || '#000000'})`}
+          fontFamily="'EmOne', sans-serif"
+          style={{ pointerEvents: 'none' }}
+        >
+          {connection.connectionName}
+        </text>
+      )}
+      
+      {/* Main text with stroke */}
+      <text
+        x={midX}
+        y={midY}
+        fill="#bdb5b5"
+        fontSize={fontSize}
+        fontWeight="bold"
+        textAnchor="middle"
+        dominantBaseline="middle"
+        transform={`rotate(${adjustedAngle}, ${midX}, ${midY})`}
+        stroke={connection.color || '#000000'}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        paintOrder="stroke fill"
+        fontFamily="'EmOne', sans-serif"
+        style={{ pointerEvents: 'none' }}
+      >
+        {connection.connectionName}
+      </text>
+    </g>
+  );
+};
+
+/**
  * Universal Node/Connection Renderer
  * 
  * A reusable component that can render nodes and connections at any scale
@@ -597,13 +673,13 @@ const UniversalNodeRenderer = ({
             <g key={`connection-${conn.id}`}>
               {/* Glow filter disabled - was causing connections to disappear */}
               
-              {/* Invisible much wider hover area to encompass dots */}
+              {/* Invisible hover area that matches the visual connection line exactly */}
               {interactive && adjustedPath && (
                 <path
                   d={adjustedPath}
                   fill="none"
                   stroke="transparent"
-                  strokeWidth={Math.max(60, conn.strokeWidth * 8)} // Much wider to include dots
+                  strokeWidth={Math.max(8, conn.strokeWidth * 2)} // Just wide enough for easy clicking
                   strokeLinecap="round"
                   style={{ 
                     cursor: 'pointer',
@@ -646,9 +722,9 @@ const UniversalNodeRenderer = ({
                   d={adjustedPath}
                   fill="none"
                   stroke={conn.color || '#000000'}
-                  strokeWidth={isHovered ? conn.strokeWidth * 1.35 : conn.strokeWidth}
+                  strokeWidth={Math.max(4, conn.strokeWidth * 1.5)}
                   strokeLinecap="round"
-                  filter="none"
+                  filter={isHovered ? `drop-shadow(0 0 8px ${conn.color || '#000000'})` : 'none'}
                   style={{ 
                     pointerEvents: 'none', // Don't interfere with hover area above
                     transition: 'none' // Disable animation temporarily
@@ -670,29 +746,47 @@ const UniversalNodeRenderer = ({
                     style={{ cursor: interactive ? 'pointer' : 'default' }}
                     onClick={interactive ? (e) => { e.stopPropagation(); onToggleArrow?.(conn.id, conn.sourceId); } : undefined}
                   >
-                    {/* Background glow for arrow */}
-                    <polygon
-                      points={`${-12 * transform.scale},${15 * transform.scale} ${12 * transform.scale},${15 * transform.scale} 0,${-15 * transform.scale}`}
-                      fill={conn.color || '#000000'}
-                      stroke={conn.color || '#000000'}
-                      strokeWidth={Math.max(4, 8 * transform.scale)}
-                      strokeLinejoin="round"
-                      strokeLinecap="round"
-                      opacity="0.3"
-                      style={{ 
-                        filter: `blur(2px) drop-shadow(0 0 6px ${conn.color || '#000000'})`,
-                        pointerEvents: 'none'
-                      }}
-                    />
+                    {/* Background glow for arrow - only on hover */}
+                    {isHovered && (
+                      <polygon
+                        points={`${-16 * transform.scale},${20 * transform.scale} ${16 * transform.scale},${20 * transform.scale} 0,${-20 * transform.scale}`}
+                        fill={conn.color || '#000000'}
+                        stroke={conn.color || '#000000'}
+                        strokeWidth={Math.max(5, 10 * transform.scale)}
+                        strokeLinejoin="round"
+                        strokeLinecap="round"
+                        opacity="0.3"
+                        style={{ 
+                          filter: `blur(2px) drop-shadow(0 0 6px ${conn.color || '#000000'})`,
+                          pointerEvents: 'none'
+                        }}
+                      />
+                    )}
                     {/* Main arrow */}
                     <polygon
-                      points={`${-12 * transform.scale},${15 * transform.scale} ${12 * transform.scale},${15 * transform.scale} 0,${-15 * transform.scale}`}
+                      points={`${-16 * transform.scale},${20 * transform.scale} ${16 * transform.scale},${20 * transform.scale} 0,${-20 * transform.scale}`}
                       fill={conn.color || '#000000'}
                       stroke={conn.color || '#000000'}
-                      strokeWidth={Math.max(2, 4 * transform.scale)}
+                      strokeWidth={Math.max(3, 6 * transform.scale)}
                       strokeLinejoin="round"
                       strokeLinecap="round"
                       paintOrder="stroke fill"
+                      filter={isHovered ? `drop-shadow(0 0 8px ${conn.color || '#000000'})` : 'none'}
+                    />
+                    
+                    {/* Invisible larger hitbox for easier clicking */}
+                    <polygon
+                      points={`${-22 * transform.scale},${26 * transform.scale} ${22 * transform.scale},${26 * transform.scale} 0,${-26 * transform.scale}`}
+                      fill="transparent"
+                      stroke="transparent"
+                      style={{ 
+                        cursor: 'pointer',
+                        pointerEvents: 'auto'
+                      }}
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        onToggleArrow?.(conn.id, conn.sourceId); 
+                      }}
                     />
                   </g>
                 );
@@ -711,66 +805,60 @@ const UniversalNodeRenderer = ({
                     style={{ cursor: interactive ? 'pointer' : 'default' }}
                     onClick={interactive ? (e) => { e.stopPropagation(); onToggleArrow?.(conn.id, conn.targetId || conn.destinationId); } : undefined}
                   >
-                    {/* Background glow for arrow */}
-                    <polygon
-                      points={`${-12 * transform.scale},${15 * transform.scale} ${12 * transform.scale},${15 * transform.scale} 0,${-15 * transform.scale}`}
-                      fill={conn.color || '#000000'}
-                      stroke={conn.color || '#000000'}
-                      strokeWidth={Math.max(4, 8 * transform.scale)}
-                      strokeLinejoin="round"
-                      strokeLinecap="round"
-                      opacity="0.3"
-                      style={{ 
-                        filter: `blur(2px) drop-shadow(0 0 6px ${conn.color || '#000000'})`,
-                        pointerEvents: 'none'
-                      }}
-                    />
+                    {/* Background glow for arrow - only on hover */}
+                    {isHovered && (
+                      <polygon
+                        points={`${-16 * transform.scale},${20 * transform.scale} ${16 * transform.scale},${20 * transform.scale} 0,${-20 * transform.scale}`}
+                        fill={conn.color || '#000000'}
+                        stroke={conn.color || '#000000'}
+                        strokeWidth={Math.max(5, 10 * transform.scale)}
+                        strokeLinejoin="round"
+                        strokeLinecap="round"
+                        opacity="0.3"
+                        style={{ 
+                          filter: `blur(2px) drop-shadow(0 0 6px ${conn.color || '#000000'})`,
+                          pointerEvents: 'none'
+                        }}
+                      />
+                    )}
                     {/* Main arrow */}
                     <polygon
-                      points={`${-12 * transform.scale},${15 * transform.scale} ${12 * transform.scale},${15 * transform.scale} 0,${-15 * transform.scale}`}
+                      points={`${-16 * transform.scale},${20 * transform.scale} ${16 * transform.scale},${20 * transform.scale} 0,${-20 * transform.scale}`}
                       fill={conn.color || '#000000'}
                       stroke={conn.color || '#000000'}
-                      strokeWidth={Math.max(2, 4 * transform.scale)}
+                      strokeWidth={Math.max(3, 6 * transform.scale)}
                       strokeLinejoin="round"
                       strokeLinecap="round"
                       paintOrder="stroke fill"
+                      filter={isHovered ? `drop-shadow(0 0 8px ${conn.color || '#000000'})` : 'none'}
+                    />
+                    
+                    {/* Invisible larger hitbox for easier clicking */}
+                    <polygon
+                      points={`${-22 * transform.scale},${26 * transform.scale} ${22 * transform.scale},${26 * transform.scale} 0,${-26 * transform.scale}`}
+                      fill="transparent"
+                      stroke="transparent"
+                      style={{ 
+                        cursor: 'pointer',
+                        pointerEvents: 'auto'
+                      }}
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        onToggleArrow?.(conn.id, conn.targetId || conn.destinationId); 
+                      }}
                     />
                   </g>
                 );
               })()}
               
               {/* Connection name text - rendered on top of connection */}
-              {conn.connectionName && conn.connectionName !== 'Connection' && (() => {
-                const dx = adjustedTargetPoint.x - adjustedSourcePoint.x;
-                const dy = adjustedTargetPoint.y - adjustedSourcePoint.y;
-                const midX = (adjustedSourcePoint.x + adjustedTargetPoint.x) / 2;
-                const midY = (adjustedSourcePoint.y + adjustedTargetPoint.y) / 2;
-                const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-                const adjustedAngle = (angle > 90 || angle < -90) ? angle + 180 : angle;
-                const fontSize = Math.max(8, 16 * transform.scale);
-                
-                return (
-                  <text
-                    x={midX}
-                    y={midY}
-                    fill="#bdb5b5"
-                    fontSize={fontSize}
-                    fontWeight="bold"
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    transform={`rotate(${adjustedAngle}, ${midX}, ${midY})`}
-                    stroke={conn.color || '#000000'}
-                    strokeWidth={Math.max(2, conn.strokeWidth)}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    paintOrder="stroke fill"
-                    fontFamily="'EmOne', sans-serif"
-                    style={{ pointerEvents: 'none' }}
-                  >
-                    {conn.connectionName}
-                  </text>
-                );
-              })()}
+              <ConnectionText
+                connection={conn}
+                sourcePoint={adjustedSourcePoint}
+                targetPoint={adjustedTargetPoint}
+                transform={transform}
+                isHovered={isStableHovered}
+              />
               
               {/* Render dots within the connection group to access adjusted points */}
               {interactive && showConnectionDots && isStableHovered && (
@@ -809,6 +897,24 @@ const UniversalNodeRenderer = ({
                             onToggleArrow?.(conn.id, conn.sourceId); 
                           }}
                         />
+                        
+                        {/* Invisible larger hitbox for easier clicking */}
+                        <circle
+                          cx={dotX}
+                          cy={dotY}
+                          r={Math.max(12, 18 * transform.scale)}
+                          fill="transparent"
+                          stroke="transparent"
+                          style={{ 
+                            cursor: 'pointer',
+                            pointerEvents: 'auto'
+                          }}
+                          onClick={(e) => { 
+                            e.preventDefault();
+                            e.stopPropagation(); 
+                            onToggleArrow?.(conn.id, conn.sourceId); 
+                          }}
+                        />
                       </g>
                     );
                   })()}
@@ -837,6 +943,24 @@ const UniversalNodeRenderer = ({
                           fill={conn.color || '#000000'}
                           opacity={1}
                           filter={`url(#dot-glow-${conn.id}-target)`}
+                          style={{ 
+                            cursor: 'pointer',
+                            pointerEvents: 'auto'
+                          }}
+                          onClick={(e) => { 
+                            e.preventDefault();
+                            e.stopPropagation(); 
+                            onToggleArrow?.(conn.id, conn.targetId || conn.destinationId); 
+                          }}
+                        />
+                        
+                        {/* Invisible larger hitbox for easier clicking */}
+                        <circle
+                          cx={dotX}
+                          cy={dotY}
+                          r={Math.max(12, 18 * transform.scale)}
+                          fill="transparent"
+                          stroke="transparent"
                           style={{ 
                             cursor: 'pointer',
                             pointerEvents: 'auto'
