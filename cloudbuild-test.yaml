@@ -56,15 +56,15 @@ steps:
       - '--port'
       - '4000'
       - '--memory'
-      - '512Mi'  # Smaller for test
+      - '1Gi'    # Same as production for better performance
       - '--cpu'
       - '1'      # Must be 1 for concurrency > 1
       - '--concurrency'
-      - '10'     # Smaller for test
+      - '50'     # Half of production for good performance
       - '--max-instances'
-      - '3'      # Smaller for test
+      - '5'      # Half of production for good performance
       - '--set-env-vars'
-      - 'NODE_ENV=test,OAUTH_PORT=3002'
+      - 'NODE_ENV=test,OAUTH_PORT=3002,OAUTH_HOST=redstring-oauth-test-784175375476.us-central1.run.app'
       - '--set-secrets'
       - 'GITHUB_CLIENT_ID=${_TEST_GITHUB_CLIENT_ID_SECRET}:latest,GITHUB_CLIENT_SECRET=${_TEST_GITHUB_CLIENT_SECRET_SECRET}:latest'
     id: 'deploy-test'

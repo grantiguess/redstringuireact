@@ -74,7 +74,7 @@ echo -e "${GREEN}✅ OAuth test Dockerfile created${NC}"
 
 # Build and deploy OAuth server for test
 echo -e "${YELLOW}🏗️  Building OAuth test server image...${NC}"
-docker build -f oauth-test.Dockerfile -t gcr.io/$PROJECT_ID/redstring-oauth:test .
+docker build --platform linux/amd64 -f oauth-test.Dockerfile -t gcr.io/$PROJECT_ID/redstring-oauth:test .
 
 echo -e "${YELLOW}📤 Pushing OAuth test image to registry...${NC}"
 docker push gcr.io/$PROJECT_ID/redstring-oauth:test
@@ -87,10 +87,10 @@ gcloud run deploy $SERVICE_NAME \
     --platform managed \
     --allow-unauthenticated \
     --port 3002 \
-    --memory 128Mi \
-    --cpu 0.25 \
+    --memory 512Mi \
+    --cpu 1 \
     --concurrency 25 \
-    --max-instances 2 \
+    --max-instances 3 \
     --set-env-vars "NODE_ENV=test,OAUTH_PORT=3002" \
     --set-secrets "GITHUB_CLIENT_ID=github-client-id-test:latest,GITHUB_CLIENT_SECRET=github-client-secret-test:latest"
 

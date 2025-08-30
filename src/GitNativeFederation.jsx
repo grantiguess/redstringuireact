@@ -84,6 +84,7 @@ const GitNativeFederation = () => {
   const [githubAppInstallation, setGithubAppInstallation] = useState(null); // { installationId, repositories, userData }
   const [authStatus, setAuthStatus] = useState(persistentAuth.getAuthStatus());
   const [connectionHealth, setConnectionHealth] = useState('unknown'); // 'healthy', 'degraded', 'failed', 'unknown'
+  const [showCompleteInstallation, setShowCompleteInstallation] = useState(false);
   // Get the actual RedString store
   const storeState = useGraphStore();
   const storeActions = useGraphStore.getState();
@@ -438,6 +439,7 @@ const GitNativeFederation = () => {
   useEffect(() => {
     const handleGitHubAppCallback = async () => {
       console.log('[GitNativeFederation] GitHub App callback handler started');
+      console.log('[GitNativeFederation] Full URL:', window.location.href);
       
       const urlParams = new URLSearchParams(window.location.search);
       // Some environments might place params in the hash fragment
@@ -447,12 +449,24 @@ const GitNativeFederation = () => {
       const state = urlParams.get('state') || hashParams.get('state');
       
       console.log('[GitNativeFederation] GitHub App params:', { 
-        installationId: !!installationId,
+        installationId,
         setupAction,
-        hasState: !!state,
+        state,
+        hasInstallationId: !!installationId,
         fullSearchString: window.location.search,
-        hash: window.location.hash
+        hash: window.location.hash,
+        allUrlParams: Object.fromEntries(urlParams.entries()),
+        allHashParams: Object.fromEntries(hashParams.entries())
       });
+      
+      // Check if we're coming back from GitHub (even without params)
+      const isGitHubReturn = document.referrer.includes('github.com') || 
+                           sessionStorage.getItem('github_app_pending') === 'true';
+      
+      if (isGitHubReturn) {
+        console.log('[GitNativeFederation] Detected return from GitHub');
+        sessionStorage.removeItem('github_app_pending');
+      }
       
       // GitHub App can redirect with installation_id for both new installs and existing ones
       if (installationId) {
@@ -544,6 +558,13 @@ const GitNativeFederation = () => {
         } finally {
           setIsConnecting(false);
         }
+              } else if (isGitHubReturn) {
+        console.log('[GitNativeFederation] Returned from GitHub but no installation_id found');
+        console.log('[GitNativeFederation] Showing manual completion option...');
+        
+        // Don't try to fetch installations - just show the manual completion button
+        setError('GitHub App installation detected! Please use the "Complete Installation" button below to continue.');
+        setShowCompleteInstallation(true);
       } else {
         console.log('[GitNativeFederation] No GitHub App installation parameters found in URL');
         // Clean up URL if no installation parameters
@@ -719,6 +740,79 @@ const GitNativeFederation = () => {
     }
   };
 
+  // Handle manual installation completion (for admin/testing cases)
+  const handleCompleteInstallation = async () => {
+    try {
+      setIsConnecting(true);
+      setError(null);
+      setShowCompleteInstallation(false);
+      
+      console.log('[GitNativeFederation] Manual installation completion with known installation ID: 83404431');
+      
+      // Use the known installation ID from your GitHub App
+      const installationId = '83404431';
+      
+      // Get installation access token
+      const installationResponse = await oauthFetch('/api/github/app/installation-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          installation_id: installationId
+        })
+      });
+      
+      if (!installationResponse.ok) {
+        const errorText = await installationResponse.text();
+        throw new Error(`Failed to get installation token: ${installationResponse.status} ${errorText}`);
+      }
+      
+      const installationData = await installationResponse.json();
+      const accessToken = installationData.token;
+
+      // Fetch installation details
+      const instDetailsResp = await oauthFetch(`/api/github/app/installation/${encodeURIComponent(installationId)}`, { method: 'GET' });
+      if (!instDetailsResp.ok) {
+        const errorText = await instDetailsResp.text();
+        throw new Error(`Failed to fetch installation details: ${instDetailsResp.status} ${errorText}`);
+      }
+      const instDetails = await instDetailsResp.json();
+      const repositories = Array.isArray(instDetails.repositories) ? instDetails.repositories.map(repo => ({
+        name: repo.name,
+        full_name: repo.full_name,
+        description: repo.description,
+        private: repo.private,
+        created_at: repo.created_at,
+        updated_at: repo.updated_at
+      })) : [];
+
+      const userData = instDetails.account || {};
+      const username = userData.login || 'unknown-user';
+      
+      console.log('[GitNativeFederation] Manual installation completion successful:', username, repositories.length, 'repositories');
+      
+      // Store the installation data
+      setGithubAppInstallation({ 
+        installationId, 
+        accessToken,
+        repositories, 
+        userData,
+        username
+      });
+      setUserRepositories(repositories);
+      setShowRepositorySelector(true);
+      setIsConnected(false);
+      setError(null);
+      
+    } catch (err) {
+      console.error('[GitNativeFederation] Manual installation completion failed:', err);
+      setError(`Installation completion failed: ${err.message}`);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
   // Handle GitHub App connection - simple and clean like OAuth
   const handleGitHubApp = async () => {
     try {
@@ -742,11 +836,13 @@ const GitNativeFederation = () => {
       // Create installation URL with state for callback
       const state = Math.random().toString(36).substring(7);
       sessionStorage.setItem('github_app_state', state);
+      sessionStorage.setItem('github_app_pending', 'true');
       
       const currentOrigin = window.location.origin;
       const installationUrl = `https://github.com/apps/${appName}/installations/new?state=${state}`;
       
       console.log('[GitNativeFederation] Redirecting to GitHub App:', installationUrl);
+      console.log('[GitNativeFederation] Set session flag for pending installation');
       
       // Redirect directly (like OAuth does)
       window.location.href = installationUrl;
@@ -1378,6 +1474,37 @@ const GitNativeFederation = () => {
                   Secure • Persistent • Repository-specific permissions
                 </div>
               </div>
+
+              {/* Complete Installation Button (for admin/testing cases) */}
+              {showCompleteInstallation && (
+                <div style={{ marginTop: '15px' }}>
+                  <button
+                    onClick={handleCompleteInstallation}
+                    disabled={isConnecting}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      backgroundColor: isConnecting ? '#ccc' : '#28a745',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: isConnecting ? 'not-allowed' : 'pointer',
+                      fontSize: '0.9rem',
+                      fontFamily: "'EmOne', sans-serif",
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <Github size={16} />
+                    {isConnecting ? 'Completing Installation...' : 'Complete Installation (ID: 83404431)'}
+                  </button>
+                  <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '4px', textAlign: 'center' }}>
+                    Use this if GitHub didn't redirect back automatically
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

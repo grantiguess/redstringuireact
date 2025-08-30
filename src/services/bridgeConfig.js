@@ -52,7 +52,6 @@ export function getOAuthBaseUrl() {
     
     // In production (Cloud Run or custom domain), use the same origin as the main app
     if (hostname.includes('run.app') || 
-        port === '4000' || 
         hostname === 'redstring.io' || 
         hostname.includes('.redstring.io') ||
         protocol === 'https:') {
@@ -86,6 +85,15 @@ const __bridgeHealth = {
   cooldownUntil: 0
 };
 
+// Check if we're in test environment (no MCP bridge)
+const isTestEnvironment = () => {
+  if (typeof window !== 'undefined' && window.location) {
+    return window.location.hostname.includes('test') || 
+           window.location.hostname.includes('784175375476');
+  }
+  return false;
+};
+
 export function resetBridgeBackoff() {
   __bridgeHealth.consecutiveFailures = 0;
   __bridgeHealth.cooldownUntil = 0;
@@ -104,6 +112,11 @@ function isLikelyNetworkRefusal(err) {
 }
 
 export function bridgeFetch(path, options) {
+  // In test environment, completely disable MCP bridge
+  if (isTestEnvironment()) {
+    return Promise.reject(new Error('MCP Bridge disabled in test environment'));
+  }
+  
   const now = Date.now();
   if (__bridgeHealth.cooldownUntil && now < __bridgeHealth.cooldownUntil) {
     // Short-circuit without hitting the network to prevent console spam
@@ -134,6 +147,14 @@ export function bridgeFetch(path, options) {
 }
 
 export function bridgeEventSource(path) {
+  // In test environment, completely disable MCP bridge
+  if (isTestEnvironment()) {
+    // Return a dummy EventSource that immediately closes
+    const dummySource = new EventSource('data:text/plain,');
+    setTimeout(() => dummySource.close(), 1);
+    return dummySource;
+  }
+  
   // Consumers should pass a path like '/events/stream'
   return new EventSource(bridgeUrl(path));
 }

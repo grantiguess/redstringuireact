@@ -344,6 +344,68 @@ app.post('/api/github/app/installation-token', async (req, res) => {
   }
 });
 
+// List GitHub App installations (for fallback when callback params are missing)
+app.get('/api/github/app/installations', async (req, res) => {
+  try {
+    const appId = process.env.GITHUB_APP_ID;
+    const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+
+    if (!appId || !privateKey) {
+      return res.status(500).json({
+        error: 'GitHub App not configured',
+        service: 'oauth-server'
+      });
+    }
+
+    console.log('[GitHubApp] Listing installations...');
+
+    // Generate JWT for app authentication
+    const payload = {
+      iat: Math.floor(Date.now() / 1000) - 60,
+      exp: Math.floor(Date.now() / 1000) + (10 * 60),
+      iss: parseInt(appId, 10)
+    };
+
+    const appJWT = jwt.sign(payload, privateKey, { algorithm: 'RS256' });
+
+    // Get all installations for this app
+    const installationsResponse = await fetch('https://api.github.com/app/installations', {
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `Bearer ${appJWT}`,
+        'User-Agent': 'Redstring-GitHubApp-Server/1.0'
+      }
+    });
+
+    if (!installationsResponse.ok) {
+      const errorText = await installationsResponse.text();
+      console.error('[GitHubApp] List installations failed:', {
+        status: installationsResponse.status,
+        statusText: installationsResponse.statusText,
+        errorText
+      });
+      throw new Error(`GitHub API error: ${installationsResponse.status} ${errorText}`);
+    }
+
+    const installations = await installationsResponse.json();
+    console.log('[GitHubApp] Found installations:', installations.length);
+
+    // Return installations sorted by most recent
+    const sortedInstallations = installations.sort((a, b) => 
+      new Date(b.created_at) - new Date(a.created_at)
+    );
+
+    res.json(sortedInstallations);
+
+  } catch (error) {
+    console.error('[GitHubApp] List installations failed:', error);
+    res.status(500).json({
+      error: error.message,
+      service: 'oauth-server'
+    });
+  }
+});
+
 // Get installation data
 app.get('/api/github/app/installation/:installation_id', async (req, res) => {
   try {

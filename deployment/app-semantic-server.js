@@ -20,7 +20,15 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 4000;
 const OAUTH_PORT = process.env.OAUTH_PORT || 3002;
+const OAUTH_HOST = process.env.OAUTH_HOST || 'localhost';
 const DEFAULT_UNIVERSE_SLUG = process.env.UNIVERSE_SLUG || 'default';
+
+// Build OAuth server URL
+const oauthBaseUrl = OAUTH_HOST === 'localhost' 
+  ? `http://localhost:${OAUTH_PORT}`
+  : OAUTH_HOST.startsWith('http') 
+    ? OAUTH_HOST 
+    : `https://${OAUTH_HOST}`;
 
 // In Docker, we're in /app and dist is at /app/dist 
 const distPath = path.join(process.cwd(), 'dist');
@@ -33,7 +41,7 @@ app.use(cors());
 // Proxy OAuth requests to internal OAuth server
 app.get('/api/github/oauth/client-id', async (req, res) => {
   try {
-    const response = await fetch(`http://localhost:${OAUTH_PORT}/api/github/oauth/client-id`);
+    const response = await fetch(`${oauthBaseUrl}/api/github/oauth/client-id`);
     const data = await response.json();
     res.json(data);
   } catch (error) {
@@ -44,7 +52,7 @@ app.get('/api/github/oauth/client-id', async (req, res) => {
 
 app.get('/api/github/oauth/health', async (req, res) => {
   try {
-    const response = await fetch(`http://localhost:${OAUTH_PORT}/health`);
+    const response = await fetch(`${oauthBaseUrl}/health`);
     const data = await response.json();
     res.json(data);
   } catch (error) {
@@ -55,7 +63,7 @@ app.get('/api/github/oauth/health', async (req, res) => {
 
 app.post('/api/github/oauth/token', async (req, res) => {
   try {
-    const response = await fetch(`http://localhost:${OAUTH_PORT}/api/github/oauth/token`, {
+    const response = await fetch(`${oauthBaseUrl}/api/github/oauth/token`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -73,7 +81,7 @@ app.post('/api/github/oauth/token', async (req, res) => {
 // GitHub App proxies to OAuth server
 app.post('/api/github/app/installation-token', async (req, res) => {
   try {
-    const response = await fetch(`http://localhost:${OAUTH_PORT}/api/github/app/installation-token`, {
+    const response = await fetch(`${oauthBaseUrl}/api/github/app/installation-token`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -91,11 +99,23 @@ app.post('/api/github/app/installation-token', async (req, res) => {
 app.get('/api/github/app/installation/:installation_id', async (req, res) => {
   try {
     const { installation_id } = req.params;
-    const response = await fetch(`http://localhost:${OAUTH_PORT}/api/github/app/installation/${encodeURIComponent(installation_id)}`);
+    const response = await fetch(`${oauthBaseUrl}/api/github/app/installation/${encodeURIComponent(installation_id)}`);
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error) {
     console.error('OAuth proxy error (installation details):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
+// List GitHub App installations (fallback endpoint)
+app.get('/api/github/app/installations', async (req, res) => {
+  try {
+    const response = await fetch(`http://localhost:${OAUTH_PORT}/api/github/app/installations`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('OAuth proxy error (installations list):', error);
     res.status(500).json({ error: 'OAuth service unavailable' });
   }
 });
@@ -217,6 +237,33 @@ app.post(['/semantic/universe.jsonld', '/semantic/:slug/universe.jsonld'], async
 // Minimal SPARQL endpoint placeholder (future enhancement)
 app.post(['/sparql', '/semantic/:slug/sparql'], (req, res) => {
   res.status(501).json({ error: 'SPARQL endpoint not implemented yet. Use /semantic/* JSON-LD or N-Quads for now.' });
+});
+
+// GitHub App callback route - log and redirect to frontend with params
+app.get('/github/app/callback', (req, res) => {
+  const { installation_id, setup_action, state } = req.query;
+  
+  console.log('[GitHub App Callback] ===== CALLBACK RECEIVED =====');
+  console.log('[GitHub App Callback] Query params:', req.query);
+  console.log('[GitHub App Callback] Headers:', {
+    'user-agent': req.headers['user-agent'],
+    'referer': req.headers.referer,
+    'x-forwarded-for': req.headers['x-forwarded-for'],
+    'x-real-ip': req.headers['x-real-ip']
+  });
+  console.log('[GitHub App Callback] Full URL:', req.url);
+  console.log('[GitHub App Callback] =====================================');
+  
+  // Redirect to the frontend with the parameters preserved
+  const params = new URLSearchParams();
+  if (installation_id) params.set('installation_id', installation_id);
+  if (setup_action) params.set('setup_action', setup_action);
+  if (state) params.set('state', state);
+  
+  const redirectUrl = `/?${params.toString()}`;
+  console.log('[GitHub App Callback] Redirecting to:', redirectUrl);
+  
+  res.redirect(redirectUrl);
 });
 
 // Handle client-side routing - serve index.html for all non-API routes

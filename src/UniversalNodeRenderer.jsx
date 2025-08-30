@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useRef } from 'react';
 import useGraphStore from './store/graphStore';
 
 /**
@@ -48,6 +48,8 @@ const UniversalNodeRenderer = ({
 }) => {
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [hoveredConnectionId, setHoveredConnectionId] = useState(null);
+  const [stableHoveredConnectionId, setStableHoveredConnectionId] = useState(null);
+  const hoverTimeoutRef = useRef(null);
   
   const graphsMap = useGraphStore((state) => state.graphs);
   const activeGraphId = useGraphStore((state) => state.activeGraphId);
@@ -162,6 +164,21 @@ const UniversalNodeRenderer = ({
       sourcePoint,
       targetPoint
     };
+  }, []);
+
+  // Helper to get connection display name
+  const getConnectionName = useCallback((connection) => {
+    if (connection.name) return connection.name;
+    if (connection.label) return connection.label;
+    if (connection.edgePrototype?.name) return connection.edgePrototype.name;
+    return 'Connection';
+  }, []);
+
+  // Helper to get connection color
+  const getConnectionColor = useCallback((connection) => {
+    if (connection.color) return connection.color;
+    if (connection.edgePrototype?.color) return connection.edgePrototype.color;
+    return '#8B0000'; // Default connection color
   }, []);
 
   // Calculate scaled layout
@@ -379,8 +396,8 @@ const UniversalNodeRenderer = ({
         hasSourceArrow,
         hasTargetArrow,
         strokeWidth: Math.max(2, 6 * scale),
-        // Removed arrowSize - using fixed NodeCanvas points now
-        connectionName: conn.edgePrototype?.name || conn.name || 'Connection'
+        color: getConnectionColor(conn),
+        connectionName: getConnectionName(conn)
       };
     }).filter(Boolean);
 
@@ -403,13 +420,37 @@ const UniversalNodeRenderer = ({
   };
 
   const handleConnectionMouseEnter = (connection) => {
+    console.log(`[Handler] Connection ENTER ${connection.id}`, {
+      hadTimeout: !!hoverTimeoutRef.current,
+      currentHovered: hoveredConnectionId,
+      stableHovered: stableHoveredConnectionId
+    });
+    
+    // Clear any pending leave timeout
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    
     setHoveredConnectionId(connection.id);
+    setStableHoveredConnectionId(connection.id);
     onConnectionHover?.(connection, true);
   };
 
   const handleConnectionMouseLeave = (connection) => {
+    console.log(`[Handler] Connection LEAVE ${connection.id}`, {
+      currentHovered: hoveredConnectionId,
+      stableHovered: stableHoveredConnectionId
+    });
+    
     setHoveredConnectionId(null);
-    onConnectionHover?.(connection, false);
+    
+    // Debounce the stable hover state to prevent flicker
+    hoverTimeoutRef.current = setTimeout(() => {
+      console.log(`[Handler] Connection TIMEOUT FIRED ${connection.id} - hiding dots`);
+      setStableHoveredConnectionId(null);
+      onConnectionHover?.(connection, false);
+    }, 100); // 100ms delay before actually hiding dots
   };
 
   return (
@@ -455,87 +496,156 @@ const UniversalNodeRenderer = ({
         {/* Render connections first (behind nodes) */}
         {scaledConnections.map(conn => {
           const isHovered = hoveredConnectionId === conn.id;
+          const isStableHovered = stableHoveredConnectionId === conn.id;
+          
+          // Debug logging - show connection data
+          if (isHovered) {
+            const originalConn = connections.find(c => c.id === conn.id);
+            console.log(`[UniversalNodeRenderer] Connection ${conn.id} hovered:`, {
+              originalPath: conn.path,
+              sourcePoint: conn.sourcePoint,
+              targetPoint: conn.targetPoint,
+              hasSourceArrow: conn.hasSourceArrow,
+              hasTargetArrow: conn.hasTargetArrow,
+              connectionName: conn.connectionName,
+              color: conn.color,
+              originalConnection: originalConn,
+              showConnectionDots,
+              interactive,
+              transform,
+              // Check all possible name/color sources
+              nameCheck: {
+                'conn.name': conn.name,
+                'conn.label': conn.label,
+                'conn.connectionName': conn.connectionName,
+                'originalConn?.name': originalConn?.name,
+                'originalConn?.label': originalConn?.label,
+                'originalConn?.edgePrototype?.name': originalConn?.edgePrototype?.name
+              },
+              colorCheck: {
+                'conn.color': conn.color,
+                'originalConn?.color': originalConn?.color,
+                'originalConn?.edgePrototype?.color': originalConn?.edgePrototype?.color
+              }
+            });
+          }
           
           // Calculate adjusted connection path for hover dots
           const dotRadius = Math.max(6, 10 * transform.scale);
-          const arrowTipLength = 24 * transform.scale;
           let adjustedPath = conn.path;
           let adjustedSourcePoint = conn.sourcePoint;
           let adjustedTargetPoint = conn.targetPoint;
           
-          if (isHovered && showConnectionDots) {
-            // Shorten the line more aggressively when hovering
+          if (false && isHovered && showConnectionDots && ((!conn.hasSourceArrow) || (!conn.hasTargetArrow))) { // Temporarily disabled
+            // Shorten the line slightly to create gap for dots, but keep it visible
             const dx = conn.targetPoint.x - conn.sourcePoint.x;
             const dy = conn.targetPoint.y - conn.sourcePoint.y;
             const length = Math.sqrt(dx * dx + dy * dy);
-            if (length > 0) {
+            
+            // Only shorten if line is long enough and ensure we don't make it disappear
+            const minLength = dotRadius * 4; // Require longer line
+            const maxShortenDistance = Math.min(dotRadius * 0.4, length * 0.15); // Max 40% of dot radius or 15% of line length
+            
+            if (length > minLength && maxShortenDistance > 0) {
               const unitX = dx / length;
               const unitY = dy / length;
               
+              let sourceShorten = 0;
+              let targetShorten = 0;
+              
               if (!conn.hasSourceArrow) {
-                // Stop well before the dot center for better visual separation
-                const shortenDistance = dotRadius + (8 * transform.scale);
-                adjustedSourcePoint = {
-                  x: conn.sourcePoint.x + unitX * shortenDistance,
-                  y: conn.sourcePoint.y + unitY * shortenDistance
-                };
-              } else {
-                // For arrows, stop before the arrow tip
-                adjustedSourcePoint = {
-                  x: conn.sourcePoint.x + unitX * (arrowTipLength + 4 * transform.scale),
-                  y: conn.sourcePoint.y + unitY * (arrowTipLength + 4 * transform.scale)
-                };
+                sourceShorten = maxShortenDistance;
               }
               
               if (!conn.hasTargetArrow) {
-                // Stop well before the dot center for better visual separation
-                const shortenDistance = dotRadius + (8 * transform.scale);
-                adjustedTargetPoint = {
-                  x: conn.targetPoint.x - unitX * shortenDistance,
-                  y: conn.targetPoint.y - unitY * shortenDistance
-                };
-              } else {
-                // For arrows, stop before the arrow tip
-                adjustedTargetPoint = {
-                  x: conn.targetPoint.x - unitX * (arrowTipLength + 4 * transform.scale),
-                  y: conn.targetPoint.y - unitY * (arrowTipLength + 4 * transform.scale)
-                };
+                targetShorten = maxShortenDistance;
               }
               
-              adjustedPath = `M ${adjustedSourcePoint.x} ${adjustedSourcePoint.y} L ${adjustedTargetPoint.x} ${adjustedTargetPoint.y}`;
+              // Ensure we don't shorten more than half the line length
+              const totalShorten = sourceShorten + targetShorten;
+              if (totalShorten < length * 0.5) {
+                adjustedSourcePoint = {
+                  x: conn.sourcePoint.x + unitX * sourceShorten,
+                  y: conn.sourcePoint.y + unitY * sourceShorten
+                };
+                
+                adjustedTargetPoint = {
+                  x: conn.targetPoint.x - unitX * targetShorten,
+                  y: conn.targetPoint.y - unitY * targetShorten
+                };
+                
+                adjustedPath = `M ${adjustedSourcePoint.x} ${adjustedSourcePoint.y} L ${adjustedTargetPoint.x} ${adjustedTargetPoint.y}`;
+              }
             }
           }
           
+          if (isHovered) {
+            console.log(`[UniversalNodeRenderer] Rendering hovered connection ${conn.id}:`, {
+              originalPath: conn.path,
+              adjustedPath,
+              pathsMatch: conn.path === adjustedPath,
+              strokeWidth: isHovered ? conn.strokeWidth * 1.35 : conn.strokeWidth,
+              filter: 'none', // Currently disabled
+              dotRadius,
+              willShowDots: interactive && showConnectionDots && ((!conn.hasSourceArrow) || (!conn.hasTargetArrow)),
+              pathLength: adjustedPath.length,
+              pathValid: adjustedPath.startsWith('M') && adjustedPath.includes('L')
+            });
+          }
+
           return (
             <g key={`connection-${conn.id}`}>
-              {/* Glow filter for connection line */}
-              {isHovered && (
-                <defs>
-                  <filter id={`line-glow-${conn.id}`}>
-                    <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
-                    <feMerge> 
-                      <feMergeNode in="coloredBlur"/>
-                      <feMergeNode in="SourceGraphic"/>
-                    </feMerge>
-                  </filter>
-                </defs>
+              {/* Glow filter disabled - was causing connections to disappear */}
+              
+              {/* Invisible wider hover area to prevent flicker */}
+              {interactive && (
+                <path
+                  d={adjustedPath}
+                  fill="none"
+                  stroke="transparent"
+                  strokeWidth={Math.max(20, conn.strokeWidth * 4)}
+                  strokeLinecap="round"
+                  style={{ 
+                    cursor: 'pointer',
+                    pointerEvents: 'stroke'
+                  }}
+                  onMouseEnter={(e) => {
+                    console.log(`[UniversalNodeRenderer] Mouse enter connection ${conn.id} (invisible hover area)`, {
+                      target: e.target.tagName,
+                      clientX: e.clientX,
+                      clientY: e.clientY,
+                      currentHovered: hoveredConnectionId,
+                      stableHovered: stableHoveredConnectionId
+                    });
+                    handleConnectionMouseEnter(conn);
+                  }}
+                  onMouseLeave={(e) => {
+                    console.log(`[UniversalNodeRenderer] Mouse leave connection ${conn.id} (invisible hover area)`, {
+                      target: e.target.tagName,
+                      clientX: e.clientX,
+                      clientY: e.clientY,
+                      relatedTarget: e.relatedTarget?.tagName,
+                      currentHovered: hoveredConnectionId,
+                      stableHovered: stableHoveredConnectionId
+                    });
+                    handleConnectionMouseLeave(conn);
+                  }}
+                  onClick={() => onConnectionClick?.(conn)}
+                />
               )}
               
-              {/* Main connection path */}
+              {/* Main connection path - visual only */}
               <path
                 d={adjustedPath}
                 fill="none"
                 stroke={conn.color || '#000000'}
                 strokeWidth={isHovered ? conn.strokeWidth * 1.35 : conn.strokeWidth}
                 strokeLinecap="round"
-                filter={isHovered ? `url(#line-glow-${conn.id})` : 'none'}
+                filter="none"
                 style={{ 
-                  cursor: interactive ? 'pointer' : 'default',
+                  pointerEvents: 'none', // Don't interfere with hover area above
                   transition: showHoverEffects ? 'all 0.2s ease' : 'none'
                 }}
-                onMouseEnter={interactive ? () => handleConnectionMouseEnter(conn) : undefined}
-                onMouseLeave={interactive ? () => handleConnectionMouseLeave(conn) : undefined}
-                onClick={interactive ? () => onConnectionClick?.(conn) : undefined}
               />
               
               {/* Direction arrows - match NodeCanvas style */}
@@ -618,88 +728,91 @@ const UniversalNodeRenderer = ({
                 );
               })()}
               
-              {/* Hover dots for arrow toggling */}
-              {interactive && showConnectionDots && isHovered && (
-                <>
-                  {!conn.hasSourceArrow && (
-                    <g>
-                      <defs>
-                        <filter id={`glow-${conn.id}-source`}>
-                          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-                          <feMerge> 
-                            <feMergeNode in="coloredBlur"/>
-                            <feMergeNode in="SourceGraphic"/>
-                          </feMerge>
-                        </filter>
-                      </defs>
-                      <circle
-                        cx={conn.sourcePoint.x}
-                        cy={conn.sourcePoint.y}
-                        r={Math.max(6, 10 * transform.scale)}
-                        fill={conn.color || '#000000'}
-                        opacity={0.8}
-                        filter={`url(#glow-${conn.id}-source)`}
-                        style={{ 
-                          cursor: 'pointer',
-                          pointerEvents: 'all',
-                          transition: 'opacity 0.2s ease'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.target.style.opacity = '1';
-                          e.stopPropagation();
-                        }}
-                        onMouseLeave={(e) => {
-                          e.target.style.opacity = '0.8';
-                          e.stopPropagation();
-                        }}
-                        onClick={(e) => { 
-                          e.preventDefault();
-                          e.stopPropagation(); 
-                          onToggleArrow?.(conn.id, conn.sourceId); 
-                        }}
-                      />
-                    </g>
-                  )}
-                  {!conn.hasTargetArrow && (
-                    <g>
-                      <defs>
-                        <filter id={`glow-${conn.id}-target`}>
-                          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-                          <feMerge> 
-                            <feMergeNode in="coloredBlur"/>
-                            <feMergeNode in="SourceGraphic"/>
-                          </feMerge>
-                        </filter>
-                      </defs>
-                      <circle
-                        cx={conn.targetPoint.x}
-                        cy={conn.targetPoint.y}
-                        r={Math.max(6, 10 * transform.scale)}
-                        fill={conn.color || '#000000'}
-                        opacity={0.8}
-                        filter={`url(#glow-${conn.id}-target)`}
-                        style={{ 
-                          cursor: 'pointer',
-                          pointerEvents: 'all',
-                          transition: 'opacity 0.2s ease'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.target.style.opacity = '1';
-                          e.stopPropagation();
-                        }}
-                        onMouseLeave={(e) => {
-                          e.target.style.opacity = '0.8';
-                          e.stopPropagation();
-                        }}
-                        onClick={(e) => { 
-                          e.preventDefault();
-                          e.stopPropagation(); 
-                          onToggleArrow?.(conn.id, conn.targetId || conn.destinationId); 
-                        }}
-                      />
-                    </g>
-                  )}
-                </>
+              {/* Dots moved outside connection group to prevent interference */}
+            </g>
+          );
+        })}
+        
+        {/* Render hover dots separately to prevent connection interference */}
+        {interactive && showConnectionDots && scaledConnections.map(conn => {
+          const isStableHovered = stableHoveredConnectionId === conn.id;
+          if (!isStableHovered) return null;
+          
+          return (
+            <g key={`dots-${conn.id}`}>
+              {!conn.hasSourceArrow && (
+                <g>
+                  <defs>
+                    <filter id={`dot-glow-${conn.id}-source`} x="-50%" y="-50%" width="200%" height="200%">
+                      <feGaussianBlur stdDeviation={3 * transform.scale} result="coloredBlur"/>
+                      <feMerge> 
+                        <feMergeNode in="coloredBlur"/>
+                        <feMergeNode in="SourceGraphic"/>
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  <circle
+                    cx={conn.sourcePoint.x}
+                    cy={conn.sourcePoint.y}
+                    r={Math.max(6, 10 * transform.scale)}
+                    fill={conn.color || '#000000'}
+                    opacity={0.8}
+                    filter={`url(#dot-glow-${conn.id}-source)`}
+                    style={{ 
+                      cursor: 'pointer',
+                      pointerEvents: 'auto',
+                      transition: 'opacity 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.opacity = '1';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.opacity = '0.8';
+                    }}
+                    onClick={(e) => { 
+                      e.preventDefault();
+                      e.stopPropagation(); 
+                      onToggleArrow?.(conn.id, conn.sourceId); 
+                    }}
+                  />
+                </g>
+              )}
+              {!conn.hasTargetArrow && (
+                <g>
+                  <defs>
+                    <filter id={`dot-glow-${conn.id}-target`} x="-50%" y="-50%" width="200%" height="200%">
+                      <feGaussianBlur stdDeviation={3 * transform.scale} result="coloredBlur"/>
+                      <feMerge> 
+                        <feMergeNode in="coloredBlur"/>
+                        <feMergeNode in="SourceGraphic"/>
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  <circle
+                    cx={conn.targetPoint.x}
+                    cy={conn.targetPoint.y}
+                    r={Math.max(6, 10 * transform.scale)}
+                    fill={conn.color || '#000000'}
+                    opacity={0.8}
+                    filter={`url(#dot-glow-${conn.id}-target)`}
+                    style={{ 
+                      cursor: 'pointer',
+                      pointerEvents: 'auto',
+                      transition: 'opacity 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.opacity = '1';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.opacity = '0.8';
+                    }}
+                    onClick={(e) => { 
+                      e.preventDefault();
+                      e.stopPropagation(); 
+                      onToggleArrow?.(conn.id, conn.targetId || conn.destinationId); 
+                    }}
+                  />
+                </g>
               )}
             </g>
           );
