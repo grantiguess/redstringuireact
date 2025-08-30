@@ -474,42 +474,46 @@ function NodeCanvas() {
     }
     
     if (e.touches && e.touches.length >= 2 && pinchRef.current.active) {
-      // Pinch-to-zoom update
+      // OPTIMIZED: Apply keyboard zoom lessons - throttle and simplify
+      isPanningOrZooming.current = true; // Prevent Panel jitter by blocking store updates
+      const now = performance.now();
+      const smoothing = pinchSmoothingRef.current;
+      
+      // Throttle to ~60fps like keyboard zoom for smooth updates
+      if (now - smoothing.lastFrameTime < 16) return; // ~60fps throttle
+      smoothing.lastFrameTime = now;
+      
+      // Simple distance calculation
       const t1 = e.touches[0];
       const t2 = e.touches[1];
-      const dx = t2.clientX - t1.clientX;
-      const dy = t2.clientY - t1.clientY;
-      const dist = Math.hypot(dx, dy) || 1;
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1;
       const ratio = dist / (pinchRef.current.startDist || 1);
-      let newZoom = pinchRef.current.startZoom * ratio;
-      newZoom = Math.min(Math.max(newZoom, MIN_ZOOM), MAX_ZOOM);
       
-      // Log raw input data periodically
-      const smoothing = pinchSmoothingRef.current;
-      if (smoothing.inputEventCount % 20 === 1) { // Log every 20th touch
-      }
-      // Recompute center (allow pinch centroid to move)
-      const centerX = (t1.clientX + t2.clientX) / 2;
-      const centerY = (t1.clientY + t2.clientY) / 2;
-      const rect = containerRef.current.getBoundingClientRect();
-      // Keep the original world point under the fingers stable in screen space
-      const newPanX = centerX - rect.left - pinchRef.current.centerWorld.x * newZoom;
-      const newPanY = centerY - rect.top - pinchRef.current.centerWorld.y * newZoom;
-      // Clamp pan within bounds
-      const currentCanvasWidth = canvasSize.width * newZoom;
-      const currentCanvasHeight = canvasSize.height * newZoom;
-      const minX = viewportSize.width - currentCanvasWidth;
-      const minY = viewportSize.height - currentCanvasHeight;
-      const maxX = 0;
-      const maxY = 0;
-      const clampedPan = {
-        x: Math.min(Math.max(newPanX, minX), maxX),
-        y: Math.min(Math.max(newPanY, minY), maxY),
-      };
+      // Convert ratio change to incremental zoom delta (like keyboard)
+      const targetZoom = pinchRef.current.startZoom * ratio;
+      const zoomDelta = (targetZoom - zoomLevel) * 0.1; // Smooth increment like keyboard
       
-      // Use direct updates for now to stop render loop
-      setZoomLevel(newZoom);
-      setPanOffset(clampedPan);
+      if (Math.abs(zoomDelta) < 0.001) return; // Skip tiny changes
+      
+      // Use functional setState like keyboard zoom for predictable updates
+      setZoomLevel(prevZoom => {
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom + zoomDelta));
+        
+        if (newZoom !== prevZoom) {
+          // Simple center-based pan adjustment like keyboard zoom
+          const centerX = (t1.clientX + t2.clientX) / 2;
+          const centerY = (t1.clientY + t2.clientY) / 2;
+          const rect = containerRef.current.getBoundingClientRect();
+          const zoomRatio = newZoom / prevZoom;
+          
+          setPanOffset(prevPan => ({
+            x: centerX - rect.left - (centerX - rect.left - prevPan.x) * zoomRatio,
+            y: centerY - rect.top - (centerY - rect.top - prevPan.y) * zoomRatio
+          }));
+        }
+        
+        return newZoom;
+      });
       return;
     }
     const { clientX, clientY } = normalizeTouchEvent(e);
@@ -531,6 +535,8 @@ function NodeCanvas() {
     // End pinch if active
     if (pinchRef.current.active) {
       pinchRef.current.active = false;
+      // Clear the flag after a delay to allow store updates to resume
+      setTimeout(() => { isPanningOrZooming.current = false; }, 100);
     }
     const { clientX, clientY } = normalizeTouchEvent(e);
     const synthetic = {
@@ -2810,11 +2816,13 @@ function NodeCanvas() {
       }
       
       // Set a timeout to save after operations stop
+      // Use longer timeout during pinch operations to prevent Panel jitter
+      const saveDelay = pinchRef.current.active ? 1000 : 300; // 1sec for pinch, 300ms for other operations
       saveViewStateTimeout.current = setTimeout(() => {
-        if (!isPanningOrZooming.current) {
+        if (!isPanningOrZooming.current && !pinchRef.current.active) {
           updateGraphViewInStore();
         }
-      }, 300); // Save 300ms after last pan/zoom change
+      }, saveDelay);
     }
 
     return () => {
