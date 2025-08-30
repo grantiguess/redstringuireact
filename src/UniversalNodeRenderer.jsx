@@ -597,13 +597,13 @@ const UniversalNodeRenderer = ({
             <g key={`connection-${conn.id}`}>
               {/* Glow filter disabled - was causing connections to disappear */}
               
-              {/* Invisible wider hover area to prevent flicker */}
+              {/* Invisible much wider hover area to encompass dots */}
               {interactive && (
                 <path
-                  d={adjustedPath}
+                  d={conn.path} // Use original full path, not shortened adjustedPath
                   fill="none"
                   stroke="transparent"
-                  strokeWidth={Math.max(20, conn.strokeWidth * 4)}
+                  strokeWidth={Math.max(60, conn.strokeWidth * 8)} // Much wider to include dots
                   strokeLinecap="round"
                   style={{ 
                     cursor: 'pointer',
@@ -620,6 +620,12 @@ const UniversalNodeRenderer = ({
                     handleConnectionMouseEnter(conn);
                   }}
                   onMouseLeave={(e) => {
+                    // Don't leave if moving to a dot (prevents flicker)
+                    if (e.relatedTarget?.tagName === 'circle') {
+                      console.log(`[UniversalNodeRenderer] Mouse moving to dot - ignoring leave event for ${conn.id}`);
+                      return;
+                    }
+                    
                     console.log(`[UniversalNodeRenderer] Mouse leave connection ${conn.id} (invisible hover area)`, {
                       target: e.target.tagName,
                       clientX: e.clientX,
@@ -652,10 +658,17 @@ const UniversalNodeRenderer = ({
               {conn.hasSourceArrow && (() => {
                 const dx = conn.targetPoint.x - conn.sourcePoint.x;
                 const dy = conn.targetPoint.y - conn.sourcePoint.y;
+                const length = Math.sqrt(dx * dx + dy * dy);
+                const unitX = dx / length;
+                const unitY = dy / length;
+                // Position arrow slightly inward (10% from start instead of at start)
+                const arrowOffset = 0.1 * length;
+                const arrowX = conn.sourcePoint.x + unitX * arrowOffset;
+                const arrowY = conn.sourcePoint.y + unitY * arrowOffset;
                 const sourceArrowAngle = Math.atan2(-dy, -dx) * 180 / Math.PI; // Point toward the source node
                 return (
                   <g 
-                    transform={`translate(${conn.sourcePoint.x}, ${conn.sourcePoint.y}) rotate(${sourceArrowAngle + 90})`}
+                    transform={`translate(${arrowX}, ${arrowY}) rotate(${sourceArrowAngle + 90})`}
                     style={{ cursor: interactive ? 'pointer' : 'default' }}
                     onClick={interactive ? (e) => { e.stopPropagation(); onToggleArrow?.(conn.id, conn.sourceId); } : undefined}
                   >
@@ -675,10 +688,17 @@ const UniversalNodeRenderer = ({
               {conn.hasTargetArrow && (() => {
                 const dx = conn.targetPoint.x - conn.sourcePoint.x;
                 const dy = conn.targetPoint.y - conn.sourcePoint.y;
+                const length = Math.sqrt(dx * dx + dy * dy);
+                const unitX = dx / length;
+                const unitY = dy / length;
+                // Position arrow slightly inward (10% from end instead of at end)
+                const arrowOffset = 0.1 * length;
+                const arrowX = conn.targetPoint.x - unitX * arrowOffset;
+                const arrowY = conn.targetPoint.y - unitY * arrowOffset;
                 const destArrowAngle = Math.atan2(dy, dx) * 180 / Math.PI; // Point toward the target node
                 return (
                   <g 
-                    transform={`translate(${conn.targetPoint.x}, ${conn.targetPoint.y}) rotate(${destArrowAngle + 90})`}
+                    transform={`translate(${arrowX}, ${arrowY}) rotate(${destArrowAngle + 90})`}
                     style={{ cursor: interactive ? 'pointer' : 'default' }}
                     onClick={interactive ? (e) => { e.stopPropagation(); onToggleArrow?.(conn.id, conn.targetId || conn.destinationId); } : undefined}
                   >
