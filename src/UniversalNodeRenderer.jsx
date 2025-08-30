@@ -536,46 +536,40 @@ const UniversalNodeRenderer = ({
           let adjustedSourcePoint = conn.sourcePoint;
           let adjustedTargetPoint = conn.targetPoint;
           
-          if (false && isHovered && showConnectionDots && ((!conn.hasSourceArrow) || (!conn.hasTargetArrow))) { // Temporarily disabled
-            // Shorten the line slightly to create gap for dots, but keep it visible
+          if (isStableHovered && showConnectionDots && ((!conn.hasSourceArrow) || (!conn.hasTargetArrow))) { // Use stable hover state for path extension
+            // Extend the line to reach the dots when hovering
             const dx = conn.targetPoint.x - conn.sourcePoint.x;
             const dy = conn.targetPoint.y - conn.sourcePoint.y;
             const length = Math.sqrt(dx * dx + dy * dy);
             
-            // Only shorten if line is long enough and ensure we don't make it disappear
-            const minLength = dotRadius * 4; // Require longer line
-            const maxShortenDistance = Math.min(dotRadius * 0.4, length * 0.15); // Max 40% of dot radius or 15% of line length
-            
-            if (length > minLength && maxShortenDistance > 0) {
+            if (length > 0) {
               const unitX = dx / length;
               const unitY = dy / length;
               
-              let sourceShorten = 0;
-              let targetShorten = 0;
+              // Calculate dot positions (8% from nodes, same as arrows)
+              const dotOffset = 0.08 * length;
               
               if (!conn.hasSourceArrow) {
-                sourceShorten = maxShortenDistance;
+                // Extend line to reach source dot
+                adjustedSourcePoint = {
+                  x: conn.sourcePoint.x + unitX * dotOffset,
+                  y: conn.sourcePoint.y + unitY * dotOffset
+                };
+              } else {
+                adjustedSourcePoint = conn.sourcePoint;
               }
               
               if (!conn.hasTargetArrow) {
-                targetShorten = maxShortenDistance;
+                // Extend line to reach target dot
+                adjustedTargetPoint = {
+                  x: conn.targetPoint.x - unitX * dotOffset,
+                  y: conn.targetPoint.y - unitY * dotOffset
+                };
+              } else {
+                adjustedTargetPoint = conn.targetPoint;
               }
               
-              // Ensure we don't shorten more than half the line length
-              const totalShorten = sourceShorten + targetShorten;
-              if (totalShorten < length * 0.5) {
-                adjustedSourcePoint = {
-                  x: conn.sourcePoint.x + unitX * sourceShorten,
-                  y: conn.sourcePoint.y + unitY * sourceShorten
-                };
-                
-                adjustedTargetPoint = {
-                  x: conn.targetPoint.x - unitX * targetShorten,
-                  y: conn.targetPoint.y - unitY * targetShorten
-                };
-                
-                adjustedPath = `M ${adjustedSourcePoint.x} ${adjustedSourcePoint.y} L ${adjustedTargetPoint.x} ${adjustedTargetPoint.y}`;
-              }
+              adjustedPath = `M ${adjustedSourcePoint.x} ${adjustedSourcePoint.y} L ${adjustedTargetPoint.x} ${adjustedTargetPoint.y}`;
             }
           }
           
@@ -584,12 +578,19 @@ const UniversalNodeRenderer = ({
               originalPath: conn.path,
               adjustedPath,
               pathsMatch: conn.path === adjustedPath,
+              willShorten: conn.path !== adjustedPath,
               strokeWidth: isHovered ? conn.strokeWidth * 1.35 : conn.strokeWidth,
               filter: 'none', // Currently disabled
               dotRadius,
               willShowDots: interactive && showConnectionDots && ((!conn.hasSourceArrow) || (!conn.hasTargetArrow)),
               pathLength: adjustedPath.length,
-              pathValid: adjustedPath.startsWith('M') && adjustedPath.includes('L')
+              pathValid: adjustedPath.startsWith('M') && adjustedPath.includes('L'),
+              // Debug path shortening
+              sourceHasArrow: conn.hasSourceArrow,
+              targetHasArrow: conn.hasTargetArrow,
+              shouldShorten: (!conn.hasSourceArrow) || (!conn.hasTargetArrow),
+              showConnectionDots,
+              interactive
             });
           }
 
@@ -600,7 +601,7 @@ const UniversalNodeRenderer = ({
               {/* Invisible much wider hover area to encompass dots */}
               {interactive && (
                 <path
-                  d={conn.path} // Use original full path, not shortened adjustedPath
+                  d={isStableHovered ? adjustedPath : conn.path} // Use stable hover state to prevent flicker
                   fill="none"
                   stroke="transparent"
                   strokeWidth={Math.max(60, conn.strokeWidth * 8)} // Much wider to include dots
@@ -640,9 +641,9 @@ const UniversalNodeRenderer = ({
                 />
               )}
               
-              {/* Main connection path - visual only */}
+              {/* Main connection path - animated shortening on hover */}
               <path
-                d={adjustedPath}
+                d={isStableHovered ? adjustedPath : conn.path} // Use stable hover state to prevent flicker
                 fill="none"
                 stroke={conn.color || '#000000'}
                 strokeWidth={isHovered ? conn.strokeWidth * 1.35 : conn.strokeWidth}
@@ -650,7 +651,7 @@ const UniversalNodeRenderer = ({
                 filter="none"
                 style={{ 
                   pointerEvents: 'none', // Don't interfere with hover area above
-                  transition: showHoverEffects ? 'all 0.2s ease' : 'none'
+                  transition: 'none' // Disable animation temporarily
                 }}
               />
               
@@ -661,8 +662,8 @@ const UniversalNodeRenderer = ({
                 const length = Math.sqrt(dx * dx + dy * dy);
                 const unitX = dx / length;
                 const unitY = dy / length;
-                // Position arrow slightly inward (10% from start instead of at start)
-                const arrowOffset = 0.1 * length;
+                // Position arrow at same distance as dots (8% from start)
+                const arrowOffset = 0.08 * length;
                 const arrowX = conn.sourcePoint.x + unitX * arrowOffset;
                 const arrowY = conn.sourcePoint.y + unitY * arrowOffset;
                 const sourceArrowAngle = Math.atan2(-dy, -dx) * 180 / Math.PI; // Point toward the source node
@@ -691,8 +692,8 @@ const UniversalNodeRenderer = ({
                 const length = Math.sqrt(dx * dx + dy * dy);
                 const unitX = dx / length;
                 const unitY = dy / length;
-                // Position arrow slightly inward (10% from end instead of at end)
-                const arrowOffset = 0.1 * length;
+                // Position arrow at same distance as dots (8% from end)
+                const arrowOffset = 0.08 * length;
                 const arrowX = conn.targetPoint.x - unitX * arrowOffset;
                 const arrowY = conn.targetPoint.y - unitY * arrowOffset;
                 const destArrowAngle = Math.atan2(dy, dx) * 180 / Math.PI; // Point toward the target node
@@ -760,80 +761,97 @@ const UniversalNodeRenderer = ({
           
           return (
             <g key={`dots-${conn.id}`}>
-              {!conn.hasSourceArrow && (
-                <g>
-                  <defs>
-                    <filter id={`dot-glow-${conn.id}-source`} x="-50%" y="-50%" width="200%" height="200%">
-                      <feGaussianBlur stdDeviation={3 * transform.scale} result="coloredBlur"/>
-                      <feMerge> 
-                        <feMergeNode in="coloredBlur"/>
-                        <feMergeNode in="SourceGraphic"/>
-                      </feMerge>
-                    </filter>
-                  </defs>
-                  <circle
-                    cx={conn.sourcePoint.x}
-                    cy={conn.sourcePoint.y}
-                    r={Math.max(6, 10 * transform.scale)}
-                    fill={conn.color || '#000000'}
-                    opacity={0.8}
-                    filter={`url(#dot-glow-${conn.id}-source)`}
-                    style={{ 
-                      cursor: 'pointer',
-                      pointerEvents: 'auto',
-                      transition: 'opacity 0.2s ease'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.target.style.opacity = '1';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.target.style.opacity = '0.8';
-                    }}
-                    onClick={(e) => { 
-                      e.preventDefault();
-                      e.stopPropagation(); 
-                      onToggleArrow?.(conn.id, conn.sourceId); 
-                    }}
-                  />
-                </g>
-              )}
-              {!conn.hasTargetArrow && (
-                <g>
-                  <defs>
-                    <filter id={`dot-glow-${conn.id}-target`} x="-50%" y="-50%" width="200%" height="200%">
-                      <feGaussianBlur stdDeviation={3 * transform.scale} result="coloredBlur"/>
-                      <feMerge> 
-                        <feMergeNode in="coloredBlur"/>
-                        <feMergeNode in="SourceGraphic"/>
-                      </feMerge>
-                    </filter>
-                  </defs>
-                  <circle
-                    cx={conn.targetPoint.x}
-                    cy={conn.targetPoint.y}
-                    r={Math.max(6, 10 * transform.scale)}
-                    fill={conn.color || '#000000'}
-                    opacity={0.8}
-                    filter={`url(#dot-glow-${conn.id}-target)`}
-                    style={{ 
-                      cursor: 'pointer',
-                      pointerEvents: 'auto',
-                      transition: 'opacity 0.2s ease'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.target.style.opacity = '1';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.target.style.opacity = '0.8';
-                    }}
-                    onClick={(e) => { 
-                      e.preventDefault();
-                      e.stopPropagation(); 
-                      onToggleArrow?.(conn.id, conn.targetId || conn.destinationId); 
-                    }}
-                  />
-                </g>
-              )}
+              {!conn.hasSourceArrow && (() => {
+                const dx = conn.targetPoint.x - conn.sourcePoint.x;
+                const dy = conn.targetPoint.y - conn.sourcePoint.y;
+                const length = Math.sqrt(dx * dx + dy * dy);
+                const unitX = dx / length;
+                const unitY = dy / length;
+                // Position dot at same distance as arrows (8% from start)
+                const dotOffset = 0.08 * length;
+                const dotX = conn.sourcePoint.x + unitX * dotOffset;
+                const dotY = conn.sourcePoint.y + unitY * dotOffset;
+                
+                return (
+                  <g>
+                    <defs>
+                      <filter id={`dot-glow-${conn.id}-source`} x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation={3 * transform.scale} result="coloredBlur"/>
+                        <feMerge> 
+                          <feMergeNode in="coloredBlur"/>
+                          <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                      </filter>
+                    </defs>
+                    <circle
+                      cx={dotX}
+                      cy={dotY}
+                      r={Math.max(6, 10 * transform.scale)}
+                                              fill={conn.color || '#000000'}
+                        opacity={1}
+                        filter={`url(#dot-glow-${conn.id}-source)`}
+                        style={{ 
+                          cursor: 'pointer',
+                          pointerEvents: 'auto'
+                        }}
+                      onClick={(e) => { 
+                        e.preventDefault();
+                        e.stopPropagation(); 
+                        onToggleArrow?.(conn.id, conn.sourceId); 
+                      }}
+                    />
+                  </g>
+                );
+              })()}
+              {!conn.hasTargetArrow && (() => {
+                const dx = conn.targetPoint.x - conn.sourcePoint.x;
+                const dy = conn.targetPoint.y - conn.sourcePoint.y;
+                const length = Math.sqrt(dx * dx + dy * dy);
+                const unitX = dx / length;
+                const unitY = dy / length;
+                // Position dot at same distance as arrows (8% from end)
+                const dotOffset = 0.08 * length;
+                const dotX = conn.targetPoint.x - unitX * dotOffset;
+                const dotY = conn.targetPoint.y - unitY * dotOffset;
+                
+                return (
+                  <g>
+                    <defs>
+                      <filter id={`dot-glow-${conn.id}-target`} x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation={3 * transform.scale} result="coloredBlur"/>
+                        <feMerge> 
+                          <feMergeNode in="coloredBlur"/>
+                          <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                      </filter>
+                    </defs>
+                    <circle
+                      cx={dotX}
+                      cy={dotY}
+                      r={Math.max(6, 10 * transform.scale)}
+                      fill={conn.color || '#000000'}
+                      opacity={0.8}
+                      filter={`url(#dot-glow-${conn.id}-target)`}
+                      style={{ 
+                        cursor: 'pointer',
+                        pointerEvents: 'auto',
+                        transition: 'opacity 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.opacity = '1';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.opacity = '0.8';
+                      }}
+                      onClick={(e) => { 
+                        e.preventDefault();
+                        e.stopPropagation(); 
+                        onToggleArrow?.(conn.id, conn.targetId || conn.destinationId); 
+                      }}
+                    />
+                  </g>
+                );
+              })()}
             </g>
           );
         })}
