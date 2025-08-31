@@ -30,16 +30,33 @@ const ConnectionControlPanel = ({
     const edges = selectedEdge ? [selectedEdge] : selectedEdges;
     if (!edges || edges.length === 0 || !instances) return [];
 
-    console.log('[ConnectionControlPanel] Converting edges to triples:', { edges, instances: instances.size });
 
     return edges.map(edge => {
       const sourceNode = instances.get(edge.sourceId);
       const targetNode = instances.get(edge.destinationId || edge.targetId);
       const sourcePrototype = sourceNode ? nodePrototypesMap.get(sourceNode.prototypeId) : null;
       const targetPrototype = targetNode ? nodePrototypesMap.get(targetNode.prototypeId) : null;
-      // Get edge prototype - check both typeNodeId and prototypeId for compatibility
-      const edgePrototype = edgePrototypesMap.get(edge.typeNodeId || edge.prototypeId) || 
-                           nodePrototypesMap.get(edge.typeNodeId || edge.prototypeId);
+      // Use EXACT same logic as ConnectionBrowser (lines 468-481)
+      let connectionName = 'Connection';
+      let connectionColor = '#8B0000';
+      let predicateId = edge.typeNodeId || edge.prototypeId;
+      
+      // First try to get name and color from edge's definition node (if it has one)
+      if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+        const definitionNode = nodePrototypesMap.get(edge.definitionNodeIds[0]);
+        if (definitionNode) {
+          connectionName = definitionNode.name || 'Connection';
+          connectionColor = definitionNode.color || '#8B0000';
+          predicateId = edge.definitionNodeIds[0];
+        }
+      } else if (edge.typeNodeId) {
+        // Fallback to edge prototype type
+        const edgePrototype = nodePrototypesMap.get(edge.typeNodeId);
+        if (edgePrototype) {
+          connectionName = edgePrototype.name || 'Connection';
+          connectionColor = edgePrototype.color || '#8B0000';
+        }
+      }
 
       // Calculate arrow states from directionality
       const arrowsToward = edge.directionality?.arrowsToward || new Set();
@@ -50,18 +67,17 @@ const ConnectionControlPanel = ({
         id: edge.id,
         sourceId: edge.sourceId,
         destinationId: edge.destinationId || edge.targetId,
-        color: edgePrototype?.color || edge.color || CONNECTION_DEFAULT_COLOR,
+        color: connectionColor,
         directionality: edge.directionality,
-        edgePrototype,
         subject: {
           id: sourceNode?.id,
           name: sourcePrototype?.name || sourceNode?.name || 'Node',
           color: sourcePrototype?.color || sourceNode?.color || '#800000'
         },
         predicate: {
-          id: edge.typeNodeId || edge.prototypeId,
-          name: edgePrototype?.name || 'Connection',
-          color: edgePrototype?.color || edge.color || CONNECTION_DEFAULT_COLOR
+          id: predicateId,
+          name: connectionName,
+          color: connectionColor
         },
         object: {
           id: targetNode?.id,
@@ -72,7 +88,7 @@ const ConnectionControlPanel = ({
         hasRightArrow
       };
 
-      console.log('[ConnectionControlPanel] Created triple:', { edgeId: edge.id, tripleId: triple.id, triple });
+
       return triple;
     });
   }, [selectedEdge, selectedEdges, edgePrototypesMap, nodePrototypesMap, instances]);

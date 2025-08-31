@@ -1696,13 +1696,13 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
   };
 
   // Check if this concept is bookmarked (materialized)
-  const { nodePrototypes } = useGraphStore();
+  // Use the nodePrototypesMap from the main subscriptions to prevent Panel jitter
   const isBookmarked = useMemo(() => {
-    return Array.from(nodePrototypes.values()).some(node => 
+    return Array.from(nodePrototypesMap.values()).some(node => 
       node.semanticMetadata?.isSemanticNode && 
       node.name === concept.name
     );
-  }, [nodePrototypes, concept.name]);
+  }, [nodePrototypesMap, concept.name]);
 
   return (
     <div
@@ -3113,7 +3113,7 @@ const Panel = forwardRef(
             return {
                 activeGraphId: currentActiveGraphId,
                 createNewGraph: state.createNewGraph,
-                setActiveGraph: state.setActiveGraph,
+                setActiveGraph: state.createNewGraph,
                 openRightPanelNodeTab: state.openRightPanelNodeTab,
                 closeRightPanelTab: state.closeRightPanelTab,
                 activateRightPanelTab: state.activateRightPanelTab,
@@ -3127,6 +3127,15 @@ const Panel = forwardRef(
 
     const store = useGraphStore(selector, shallow);
     */
+
+    // 🔧 PROPER PATTERN FOR ADDING NEW STORE DATA:
+    // If you need to add new store properties, add them to the individual subscriptions above
+    // and make sure to add a comment explaining why they're needed.
+    // 
+    // Example:
+    // const newProperty = useGraphStore(state => state.newProperty); // For new feature X
+    //
+    // DO NOT create new consolidated subscriptions - this component is optimized for performance
 
     // Destructure selected state and actions (Use props now)
     const createNewGraph = storeActions?.createNewGraph;
@@ -3168,7 +3177,15 @@ const Panel = forwardRef(
         return Array.from(currentGraphsMap.values()).map(g => ({ id: g.id, name: g.name }));
     }, []); // No reactive dependencies needed?
 
-    // <<< Select openGraphIds reactively >>>
+    // ⚠️  CRITICAL: PANEL PERFORMANCE SAFEGUARD  ⚠️
+    // 
+    // NEVER add multiple individual useGraphStore subscriptions to this component!
+    // This causes Panel jitter during pinch zoom operations.
+    // 
+    // If you need to add new store data, add it to the consolidated subscription below.
+    // See the comment block around line 3170 for the proper pattern.
+    //
+    // Current individual subscriptions (KEEP THESE - they're the optimized pattern):
     const openGraphIds = useGraphStore(state => state.openGraphIds);
 
     // <<< Select expanded state reactively >>>
@@ -3191,6 +3208,9 @@ const Panel = forwardRef(
 
     // Reserve bottom space for TypeList footer bar when visible
     const typeListMode = useGraphStore(state => state.typeListMode);
+
+    // ✅ END OF STORE SUBSCRIPTIONS - DO NOT ADD MORE INDIVIDUAL SUBSCRIPTIONS BELOW
+    // If you need new store data, add it to the consolidated subscription pattern above
 
     const isTypeListVisible = typeListMode !== 'closed';
     const bottomSafeArea = isTypeListVisible ? HEADER_HEIGHT + 10 : 0; // footer height + small gap

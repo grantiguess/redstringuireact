@@ -14,7 +14,7 @@ const ConnectionText = ({
   transform, 
   isHovered 
 }) => {
-  if (!connection.connectionName || connection.connectionName === 'Connection') {
+  if (!connection.connectionName) {
     return null;
   }
 
@@ -129,6 +129,7 @@ const UniversalNodeRenderer = ({
   
   const graphsMap = useGraphStore((state) => state.graphs);
   const activeGraphId = useGraphStore((state) => state.activeGraphId);
+  const nodePrototypesMap = useGraphStore((state) => state.nodePrototypes);
   
   // Get actual node instances if not provided
   const instances = useMemo(() => {
@@ -242,13 +243,26 @@ const UniversalNodeRenderer = ({
     };
   }, []);
 
-  // Helper to get connection display name
-  const getConnectionName = useCallback((connection) => {
-    if (connection.connectionName) return connection.connectionName;
-    if (connection.name) return connection.name;
-    if (connection.label) return connection.label;
-    if (connection.edgePrototype?.name) return connection.edgePrototype.name;
-    return 'Connection';
+  // Helper to get connection display name - using ConnectionBrowser's WORKING logic
+  const getConnectionName = useCallback((connection, nodePrototypesMap) => {
+    // Copy the exact working logic from ConnectionBrowser lines 468-481
+    let connectionName = 'Connection';
+    
+    // First try to get name from edge's definition node (if it has one)
+    if (connection.definitionNodeIds && connection.definitionNodeIds.length > 0) {
+      const definitionNode = nodePrototypesMap.get(connection.definitionNodeIds[0]);
+      if (definitionNode) {
+        connectionName = definitionNode.name || 'Connection';
+      }
+    } else if (connection.typeNodeId) {
+      // Fallback to edge prototype type
+      const edgePrototype = nodePrototypesMap.get(connection.typeNodeId);
+      if (edgePrototype) {
+        connectionName = edgePrototype.name || 'Connection';
+      }
+    }
+    
+    return connectionName;
   }, []);
 
   // Helper to get connection color
@@ -405,7 +419,7 @@ const UniversalNodeRenderer = ({
           hasSourceArrow,
           hasTargetArrow,
           strokeWidth: Math.max(2, 6 * nodeScale),
-          connectionName: conn.edgePrototype?.name || conn.name || 'Connection'
+          connectionName: conn.connectionName || conn.edgePrototype?.name || conn.name || 'Connection'
         };
       }).filter(Boolean);
 
@@ -474,7 +488,7 @@ const UniversalNodeRenderer = ({
         hasTargetArrow,
         strokeWidth: Math.max(2, 6 * scale),
         color: getConnectionColor(conn),
-        connectionName: getConnectionName(conn)
+        connectionName: conn.connectionName || getConnectionName(conn, nodePrototypesMap)
       };
     }).filter(Boolean);
 
@@ -779,7 +793,7 @@ const UniversalNodeRenderer = ({
                 sourcePoint={adjustedSourcePoint}
                 targetPoint={adjustedTargetPoint}
                 transform={transform}
-                isHovered={true}
+                isHovered={isStableHovered}
               />
               
               {/* Render dots within the connection group to access adjusted points */}

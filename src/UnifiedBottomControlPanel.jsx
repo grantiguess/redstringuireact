@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Trash2, Plus, ArrowUpFromDot, ArrowRight, ChevronLeft, ChevronRight, PackageOpen, Layers, Edit3, Bookmark, Palette, MoreHorizontal, Group, Ungroup } from 'lucide-react';
 import UniversalNodeRenderer from './UniversalNodeRenderer';
 import { RENDERER_PRESETS } from './UniversalNodeRenderer.presets';
+import useGraphStore from './store/graphStore.js';
 import './UnifiedBottomControlPanel.css';
 
 // Small helper to render a triangle cap (rounded-ish via strokeJoin/lineJoin aesthetics)
@@ -168,6 +169,9 @@ const UnifiedBottomControlPanel = ({
             customContent
           ) : (
             (() => {
+              // Get edges from store for preserving definitionNodeIds
+              const edges = useGraphStore.getState().edges;
+              
               // Extract unique nodes from triples
               const nodesMap = new Map();
               triples.forEach(t => {
@@ -189,28 +193,45 @@ const UnifiedBottomControlPanel = ({
               const nodes = Array.from(nodesMap.values());
               
                               // Transform triples to the format expected by UniversalNodeRenderer
-                const connections = triples.map(t => ({
-                  id: t.id,
-                  sourceId: t.subject?.id,
-                  destinationId: t.object?.id,
-                  connectionName: t.predicate?.name || 'Connection',
-                  color: t.predicate?.color || '#8B0000',
-                  // Add directionality for arrows
-                  directionality: {
-                    arrowsToward: new Set([
-                      ...(t.hasLeftArrow ? [t.subject?.id] : []),
-                      ...(t.hasRightArrow ? [t.object?.id] : [])
-                    ])
-                  }
-                }));
+                const connections = triples.map(t => {
+                  // Get the original edge to preserve definitionNodeIds
+                  const originalEdge = edges.get(t.id);
+                  return {
+                    id: t.id,
+                    sourceId: t.subject?.id,
+                    destinationId: t.object?.id,
+                    connectionName: t.predicate?.name || 'Connection',
+                    color: t.predicate?.color || '#8B0000',
+                    // Preserve original edge data for proper name resolution
+                    definitionNodeIds: originalEdge?.definitionNodeIds,
+                    typeNodeId: originalEdge?.typeNodeId,
+                    // Add directionality for arrows
+                    directionality: {
+                      arrowsToward: new Set([
+                        ...(t.hasLeftArrow ? [t.subject?.id] : []),
+                        ...(t.hasRightArrow ? [t.object?.id] : [])
+                      ])
+                    }
+                  };
+                });
+                
+                // Calculate appropriate spacing based on connection names
+                const maxConnectionNameLength = connections.reduce((max, conn) => {
+                  return Math.max(max, (conn.connectionName || 'Connection').length);
+                }, 0);
+                
+                // Base spacing calculation: 8-12 pixels per character, with minimum
+                const minSpacingForText = Math.max(160, maxConnectionNameLength * 10);
+                const dynamicWidth = Math.max(500, nodes.length * (120 + minSpacingForText));
                 
                 return (
                 <UniversalNodeRenderer
                   {...RENDERER_PRESETS.CONNECTION_PANEL}
                   nodes={nodes}
                   connections={connections}
-                  containerWidth={Math.max(400, triples.length * 200)}
+                  containerWidth={dynamicWidth}
                   containerHeight={160}
+                  minHorizontalSpacing={minSpacingForText}
                   onNodeClick={onNodeClick}
                   onConnectionClick={onPredicateClick}
                   onToggleArrow={(connectionId, targetNodeId) => {
