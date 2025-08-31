@@ -27,7 +27,7 @@ import GitNativeFederation from './GitNativeFederation'; // Import Git-Native Fe
 import './ai/AICollaborationPanel.css';
 import APIKeySetup from './ai/components/APIKeySetup.jsx';
 import mcpClient from './services/mcpClient.js';
-import { bridgeFetch } from './services/bridgeConfig.js';
+// import { bridgeFetch } from './services/bridgeConfig.js';
 import apiKeyManager from './services/apiKeyManager.js';
 import SemanticEditor from './components/SemanticEditor.jsx';
 import { enhancedSemanticSearch } from './services/semanticWebQuery.js';
@@ -579,6 +579,7 @@ const LeftAllThingsView = ({
                                 storeActions.deleteNodePrototype(nodeId);
                               }
                             }}
+                            duplicateNodePrototype={storeActions?.duplicateNodePrototype}
                           />
                         );
                       })}
@@ -1087,6 +1088,29 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
     return newNodeId;
   };
 
+  // Remove saved semantic concept from the graph
+  const unsaveConcept = (concept) => {
+    // Find the existing prototype for this concept
+    const existingPrototype = Array.from(nodePrototypesMap.values()).find(proto => 
+      proto.semanticMetadata?.isSemanticNode && 
+      proto.name === concept.name &&
+      proto.semanticMetadata?.originMetadata?.source === concept.source &&
+      proto.semanticMetadata?.originMetadata?.originalUri === concept.semanticMetadata?.originalUri
+    );
+    
+    if (existingPrototype) {
+      // Unsave the node from Library
+      if (storeActions?.toggleSavedNode) {
+        storeActions.toggleSavedNode(existingPrototype.id);
+        console.log(`[SemanticDiscovery] Unsaved semantic prototype: ${concept.name} (ID: ${existingPrototype.id})`);
+      } else {
+        console.error('[SemanticDiscovery] storeActions.toggleSavedNode is not available');
+      }
+    } else {
+      console.log(`[SemanticDiscovery] No existing prototype found to unsave: ${concept.name}`);
+    }
+  };
+
   return (
     <>
       {/* Ghost animation CSS */}
@@ -1354,6 +1378,7 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                     concept={concept}
                     index={index}
                     onMaterialize={materializeConcept}
+                    onUnsave={unsaveConcept}
                     onSelect={setSelectedConcept}
                     isSelected={selectedConcept?.id === concept.id}
                   />
@@ -1661,7 +1686,7 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
 };
 
 // Draggable Concept Card - Core component of the new system
-const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isSelected }) => {
+const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onUnsave, onSelect, isSelected }) => {
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: ItemTypes.SPAWNABLE_NODE,
     item: { 
@@ -1690,14 +1715,25 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
     preview(getEmptyImage(), { captureDraggingState: true });
   }, [preview]);
 
-  const handleMaterialize = () => {
-    const nodeId = onMaterialize(concept);
-    onSelect(null); // Deselect after materialization
+  const handleSaveToggle = () => {
+    if (isBookmarked) {
+      // If already bookmarked, unsave it
+      onUnsave(concept);
+    } else {
+      // If not bookmarked, save it
+      const nodeId = onMaterialize(concept);
+    }
+    onSelect(null); // Deselect after action
   };
 
   // Check if this concept is bookmarked (materialized)
-  // Use the nodePrototypesMap from the main subscriptions to prevent Panel jitter
+  // Subscribe to store changes to check if this concept is already materialized
+  const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
   const isBookmarked = useMemo(() => {
+    if (!nodePrototypesMap || typeof nodePrototypesMap.get !== 'function') {
+      return false;
+    }
+    
     return Array.from(nodePrototypesMap.values()).some(node => 
       node.semanticMetadata?.isSemanticNode && 
       node.name === concept.name
@@ -1760,7 +1796,7 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
         />
       </div>
 
-      {/* Bookmark Button - Panel background colored with fill toggle and square hit box */}
+      {/* Save/Unsave Button - Toggles between bookmark and trash icons */}
       <div
         style={{
           position: 'absolute',
@@ -1778,9 +1814,9 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
         }}
         onClick={(e) => {
           e.stopPropagation();
-          handleMaterialize();
+          handleSaveToggle();
         }}
-        title={isBookmarked ? `"${concept.name}" is saved` : `Save "${concept.name}" to your graph`}
+        title={isBookmarked ? `Remove "${concept.name}" from your graph` : `Save "${concept.name}" to your graph`}
         onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
         onMouseLeave={(e) => e.currentTarget.style.opacity = 0.8}
       >
@@ -1788,7 +1824,7 @@ const DraggableConceptCard = ({ concept, index = 0, onMaterialize, onSelect, isS
           size={32} 
           style={{ 
             color: '#BDB5B5', // Panel background color stroke
-            fill: isBookmarked ? '#BDB5B5' : 'transparent', // Fill when bookmarked
+            fill: isBookmarked ? '#BDB5B5' : 'transparent', // Filled when saved, transparent when unsaved
             pointerEvents: 'none' // Allow clicks/hover to pass through to container
           }} 
         />
@@ -2016,9 +2052,8 @@ const GhostSemanticNode = ({ concept, index, onMaterialize, onSelect }) => {
 };
 
 // All Things Node Item Component with semantic web glow and exact SavedNodeItem formatting
-const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemanticData, onDelete }) => {
+const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemanticData, onDelete, duplicateNodePrototype }) => {
   const [isHovered, setIsHovered] = React.useState(false);
-  const { duplicateNodePrototype } = useGraphStore();
   
   const [{ isDragging }, drag, preview] = useDrag(() => ({
     type: ItemTypes.SPAWNABLE_NODE,
@@ -2131,205 +2166,207 @@ const AllThingsNodeItem = ({ node, onClick, onDoubleClick, isActive, hasSemantic
   );
 };
 
-// Bridge Status Display Component
-const BridgeStatusDisplay = () => {
-  const [statusMessages, setStatusMessages] = React.useState([]);
-  const [isVisible, setIsVisible] = React.useState(false);
+// Bridge Status Display Component - Disabled
+// const BridgeStatusDisplay = () => {
+//   const [statusMessages, setStatusMessages] = React.useState([]);
+//   const [isVisible, setIsVisible] = React.useState(false);
 
-  React.useEffect(() => {
-    // Override console methods to catch errors
-    const originalConsoleError = console.error;
-    const originalConsoleLog = console.log;
+//   React.useEffect(() => {
+//     // Override console methods to catch errors
+//     const originalConsoleError = console.error;
+//     const originalConsoleLog = console.log;
 
-    console.error = (...args) => {
-      // Call original console.error
-      originalConsoleError.apply(console, args);
+//     console.error = (...args) => {
+//       // Call original console.error
+//       originalConsoleError.apply(console, args);
       
-      // Check if this is a bridge-related error
-      const message = args.join(' ');
-      if (message.includes('MCP Bridge') || 
-          message.includes('ERR_CONNECTION_REFUSED') ||
-          message.includes('Failed to fetch') ||
-          message.includes('bridge_unavailable_cooldown')) {
+//       // Check if this is a bridge-related error
+//       const message = args.join(' ');
+//       if (message.includes('MCP Bridge') || 
+//           message.includes('ERR_CONNECTION_REFUSED') ||
+//           message.includes('Failed to fetch') ||
+//           message.includes('bridge_unavailable_cooldown')) {
         
-        // Extract meaningful status from error messages
-        let statusText = '';
-        let statusType = 'info';
+//         // Extract meaningful status from error messages
+//         let statusText = '';
+//         let statusType = 'info';
         
-        if (message.includes('ERR_CONNECTION_REFUSED')) {
-          statusText = 'Bridge server not available';
-          statusType = 'info';
-        } else if (message.includes('Failed to fetch')) {
-          statusText = 'Unable to connect to bridge server';
-          statusType = 'info';
-        } else if (message.includes('bridge_unavailable_cooldown')) {
-          const cooldownMatch = message.match(/(\d+)s remaining/);
-          const cooldownSeconds = cooldownMatch ? cooldownMatch[1] : 'unknown';
-          statusText = `Bridge temporarily unavailable (${cooldownSeconds}s)`;
-          statusType = 'info';
-        } else if (message.includes('Max reconnection attempts reached')) {
-          statusText = 'Bridge connection failed';
-          statusType = 'warning';
-        } else if (message.includes('Connection lost')) {
-          statusText = 'Bridge connection lost - reconnecting...';
-          statusType = 'info';
-        } else if (message.includes('Connection fully restored')) {
-          statusText = 'Bridge connection restored';
-          statusType = 'success';
-        } else if (message.includes('Redstring store bridge established')) {
-          statusText = 'Bridge connection established';
-          statusType = 'success';
-        } else {
-          statusText = 'Bridge connection issue detected';
-          statusType = 'info';
-        }
+//         if (message.includes('ERR_CONNECTION_REFUSED')) {
+//           statusText = 'Bridge server not available';
+//           statusType = 'info';
+//         } else if (message.includes('Failed to fetch')) {
+//           statusText = 'Unable to connect to bridge server';
+//           statusType = 'info';
+//         } else if (message.includes('bridge_unavailable_cooldown')) {
+//           const cooldownMatch = message.match(/(\d+)s remaining/);
+//           const cooldownSeconds = cooldownMatch ? cooldownMatch[1] : 'unknown';
+//           statusText = `Bridge temporarily unavailable (${cooldownSeconds}s)`;
+//           statusType = 'info';
+//         } else if (message.includes('Max reconnection attempts reached')) {
+//           statusText = 'Bridge connection failed';
+//           statusType = 'warning';
+//         } else if (message.includes('Connection lost')) {
+//           statusText = 'Bridge connection lost - reconnecting...';
+//           statusType = 'info';
+//         } else if (message.includes('Connection fully restored')) {
+//           statusText = 'Bridge connection restored';
+//           statusType = 'success';
+//         } else if (message.includes('Redstring store bridge established')) {
+//           statusText = 'Bridge connection established';
+//           statusType = 'success';
+//         } else {
+//           statusText = 'Bridge connection issue detected';
+//           statusType = 'info';
+//         }
 
-        // Add to status messages
-        const newStatus = {
-          id: Date.now(),
-          text: statusText,
-          type: statusType,
-          timestamp: new Date(),
-          originalMessage: message
-        };
+//         // Add to status messages
+//         const newStatus = {
+//           id: Date.now(),
+//           text: statusText,
+//           type: statusType,
+//           timestamp: new Date(),
+//           originalMessage: message
+//         };
 
-        setStatusMessages(prev => {
-          const filtered = prev.filter(msg => 
-            msg.text !== statusText || 
-            Date.now() - msg.timestamp.getTime() > 10000
-          );
-          return [...filtered, newStatus];
-        });
+//         setStatusMessages(prev => {
+//           const filtered = prev.filter(msg => 
+//             msg.text !== statusText || 
+//             Date.now() - msg.timestamp.getTime() > 10000
+//           );
+//           return [...filtered, newStatus];
+//         });
 
-        setIsVisible(true);
-      }
-    };
+//         setIsVisible(true);
+//       }
+//     };
 
-    console.log = (...args) => {
-      // Call original console.log
-      originalConsoleLog.apply(console, args);
+//     console.log = (...args) => {
+//       // Call original console.log
+//       originalConsoleLog.apply(console, args);
       
-      // Check if this is a bridge-related success message
-      const message = args.join(' ');
-      if (message.includes('MCP Bridge') && 
-          (message.includes('✅') || message.includes('🎉'))) {
+//       // Check if this is a bridge-related success message
+//       const message = args.join(' ');
+//       if (message.includes('MCP Bridge') && 
+//           (message.includes('✅') || message.includes('🎉'))) {
         
-        let statusText = '';
-        if (message.includes('Connection fully restored')) {
-          statusText = 'Bridge connection restored';
-        } else if (message.includes('Redstring store bridge established')) {
-          statusText = 'Bridge connection established';
-        } else if (message.includes('Store actions registered')) {
-          statusText = 'Bridge store actions registered';
-        }
+//         let statusText = '';
+//         if (message.includes('Connection fully restored')) {
+//           statusText = 'Bridge connection restored';
+//           statusType = 'success';
+//         } else if (message.includes('Redstring store bridge established')) {
+//           statusText = 'Bridge connection established';
+//           statusType = 'success';
+//         } else if (message.includes('Store actions registered')) {
+//           statusText = 'Bridge store actions registered';
+//           statusType = 'success';
+//         }
 
-        if (statusText) {
-          const newStatus = {
-            id: Date.now(),
-            text: statusText,
-            type: 'success',
-            timestamp: new Date(),
-            originalMessage: message
-          };
+//         if (statusText) {
+//           const newStatus = {
+//             id: Date.now(),
+//             text: statusText,
+//             type: 'success',
+//             timestamp: new Date(),
+//             originalMessage: message
+//           };
 
-          setStatusMessages(prev => {
-            const filtered = prev.filter(msg => 
-              msg.text !== statusText || 
-              Date.now() - msg.timestamp.getTime() > 10000
-            );
-            return [...filtered, newStatus];
-          });
+//           setStatusMessages(prev => {
+//             const filtered = prev.filter(msg => 
+//               msg.text !== statusText || 
+//               Date.now() - msg.timestamp.getTime() > 10000
+//             );
+//             return [...filtered, newStatus];
+//           });
 
-          setIsVisible(true);
-        }
-      }
-    };
+//           setIsVisible(true);
+//         }
+//       }
+//     };
 
-    // Cleanup function
-    return () => {
-      console.error = originalConsoleError;
-      console.log = originalConsoleLog;
-    };
-  }, []);
+//     // Cleanup function
+//     return () => {
+//       console.error = originalConsoleError;
+//       console.log = originalConsoleLog;
+//     };
+//   }, []);
 
-  // Auto-hide status messages after 8 seconds
-  React.useEffect(() => {
-    if (statusMessages.length > 0) {
-      const timer = setTimeout(() => {
-        setStatusMessages(prev => prev.filter(msg => 
-          Date.now() - msg.timestamp.getTime() < 8000
-        ));
+//   // Auto-hide status messages after 8 seconds
+//   React.useEffect(() => {
+//     if (statusMessages.length > 0) {
+//       const timer = setTimeout(() => {
+//         setStatusMessages(prev => prev.filter(msg => 
+//           Date.now() - msg.timestamp.getTime() < 8000
+//         ));
         
-        if (statusMessages.length === 0) {
-          setIsVisible(false);
-        }
-      }, 8000);
+//         if (statusMessages.length === 0) {
+//           setIsVisible(false);
+//         }
+//       }, 8000);
 
-      return () => clearTimeout(timer);
-    }
-  }, [statusMessages]);
+//       return () => clearTimeout(timer);
+//     }
+//   }, [statusMessages]);
 
-  // Auto-hide display if no messages
-  React.useEffect(() => {
-    if (statusMessages.length === 0) {
-      setIsVisible(false);
-    }
-  }, [statusMessages]);
+//   // Auto-hide display if no messages
+//   React.useEffect(() => {
+//     if (statusMessages.length === 0) {
+//       setIsVisible(false);
+//         }
+//   }, [statusMessages]);
 
-  if (!isVisible || statusMessages.length === 0) {
-    return null;
-  }
+//   if (!isVisible || statusMessages.length === 0) {
+//     return null;
+//   }
 
-  return (
-    <div style={{
-      marginBottom: '16px',
-      padding: '8px 12px',
-      backgroundColor: 'rgba(38, 0, 0, 0.05)',
-      border: '1px solid rgba(38, 0, 0, 0.1)',
-      borderRadius: '6px',
-      fontFamily: "'EmOne', sans-serif",
-      fontSize: '0.85rem'
-    }}>
-      {statusMessages.map(status => (
-        <div key={status.id} style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: statusMessages.indexOf(status) === statusMessages.length - 1 ? '0' : '6px',
-          color: status.type === 'success' ? '#10b981' : 
-                 status.type === 'warning' ? '#f59e0b' : 
-                 status.type === 'error' ? '#ef4444' : '#260000'
-        }}>
-          <span>{status.text}</span>
-          <button 
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'rgba(38, 0, 0, 0.5)',
-              fontSize: '16px',
-              cursor: 'pointer',
-              padding: '0',
-              width: '16px',
-              height: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: '50%',
-              transition: 'all 0.2s ease'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(38, 0, 0, 0.1)'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-            onClick={() => {
-              setStatusMessages(prev => prev.filter(msg => msg.id !== status.id));
-            }}
-          >
-            ×
-          </button>
-        </div>
-      ))}
-    </div>
-  );
-};
+//   return (
+//     <div style={{
+//       marginBottom: '16px',
+//       padding: '8px 12px',
+//       backgroundColor: 'rgba(38, 0, 0, 0.05)',
+//       border: '1px solid rgba(38, 0, 0, 0.1)',
+//       borderRadius: '6px',
+//       fontFamily: "'EmOne', sans-serif",
+//       fontSize: '0.85rem'
+//     }}>
+//       {statusMessages.map(status => (
+//         <div key={status.id} style={{
+//           display: 'flex',
+//           justifyContent: 'space-between',
+//           marginBottom: statusMessages.indexOf(status) === statusMessages.length - 1 ? '0' : '6px',
+//           color: status.type === 'success' ? '#10b981' : 
+//                  status.type === 'warning' ? '#f59e0b' : 
+//                  status.type === 'error' ? '#ef4444' : '#260000'
+//         }}>
+//           <span>{status.text}</span>
+//           <button 
+//             style={{
+//               background: 'none',
+//               border: 'none',
+//               color: 'rgba(38, 0, 0, 0.5)',
+//               fontSize: '16px',
+//               cursor: 'pointer',
+//               padding: '0',
+//               width: '16px',
+//               height: '16px',
+//               display: 'flex',
+//               alignItems: 'center',
+//               justifyContent: 'center',
+//               borderRadius: '50%',
+//               transition: 'all 0.2s ease'
+//             }}
+//             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(38, 0, 0, 0.1)'}
+//             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+//             onClick={() => {
+//               setStatusMessages(prev => prev.filter(msg => msg.id !== status.id));
+//             }}
+//           >
+//             ×
+//           </button>
+//         </div>
+//       ))}
+//     </div>
+//   );
+// };
 
 // Internal Left Grid View (Open Things)
 const LeftGridView = ({
@@ -2392,8 +2429,7 @@ const LeftGridView = ({
         </button>
       </div>
 
-      {/* Bridge Status Display */}
-      <BridgeStatusDisplay />
+      {/* Bridge Status Display - Disabled */}
 
       <div
         ref={listContainerRef}
@@ -2422,7 +2458,7 @@ const LeftGridView = ({
 };
 
 // Internal AI Collaboration View component (migrated from src/ai/AICollaborationPanel.jsx)
-const LeftAIView = ({ compact = false }) => {
+const LeftAIView = ({ compact = false, activeGraphId, graphsMap }) => {
   const [isConnected, setIsConnected] = React.useState(false);
   const [messages, setMessages] = React.useState([]);
   const [currentInput, setCurrentInput] = React.useState('');
@@ -2439,8 +2475,8 @@ const LeftAIView = ({ compact = false }) => {
   const STORAGE_KEY = 'rs.aiChat.messages.v1';
   const RESET_TS_KEY = 'rs.aiChat.resetTs';
 
-  const activeGraphId = useGraphStore((state) => state.activeGraphId);
-  const graphs = useGraphStore((state) => state.graphs);
+  // Use the existing subscriptions from the main section to prevent Panel jitter
+  // activeGraphId and graphsMap are already available from the main subscriptions
 
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -2463,23 +2499,24 @@ const LeftAIView = ({ compact = false }) => {
     (async () => {
       try {
         if (messages.length > 0) return;
-        const res = await bridgeFetch('/api/bridge/telemetry');
-        if (res.ok) {
-          const data = await res.json();
-          const chat = Array.isArray(data?.chat) ? data.chat : [];
-          if (chat.length > 0) {
-            const hydrated = chat
-              .filter((c) => !resetTs || (typeof c.ts === 'number' && c.ts >= resetTs))
-              .map((c) => ({
-                id: `${c.ts || Date.now()}_${Math.random().toString(36).slice(2,9)}`,
-                sender: c.role === 'user' ? 'user' : (c.role === 'ai' ? 'ai' : 'system'),
-                content: c.text || '',
-                timestamp: new Date(c.ts || Date.now()).toISOString(),
-                metadata: {}
-              }));
-            setMessages((prev) => (prev.length === 0 ? hydrated : prev));
-          }
-        }
+        // Bridge telemetry disabled
+        // const res = await bridgeFetch('/api/bridge/telemetry');
+        // if (res.ok) {
+        //   const data = await res.json();
+        //   const chat = Array.isArray(data?.chat) ? data.chat : [];
+        //   if (chat.length > 0) {
+        //     const hydrated = chat
+        //       .filter((c) => !resetTs || (typeof c.ts === 'number' && c.ts >= resetTs))
+        //       .map((c) => ({
+        //         id: `${c.ts || Date.now()}_${Math.random().toString(36).slice(2,9)}`,
+        //         sender: c.role === 'user' ? 'user' : (c.role === 'ai' : 'ai' : 'system'),
+        //         content: c.text || '',
+        //         timestamp: new Date(c.ts || Date.now()).toISOString(),
+        //         metadata: {}
+        //       }));
+        //     setMessages((prev) => (prev.length === 0 ? hydrated : prev));
+        //   }
+        // }
       } catch {}
     })();
   }, []);
@@ -2596,39 +2633,11 @@ const LeftAIView = ({ compact = false }) => {
     }
   };
 
+    // Bridge connection refresh disabled
   const refreshBridgeConnection = async () => {
     try {
       setIsProcessing(true);
-      const s = useGraphStore.getState();
-      const bridgeData = {
-        graphs: Array.from(s.graphs.entries()).map(([id, graph]) => ({
-          id,
-          name: graph.name,
-          description: graph.description || '',
-          instanceCount: graph.instances?.size || 0,
-          instances: id === s.activeGraphId && graph.instances ?
-            Object.fromEntries(Array.from(graph.instances.entries()).map(([instanceId, instance]) => [
-              instanceId, { id: instance.id, prototypeId: instance.prototypeId, x: instance.x || 0, y: instance.y || 0, scale: instance.scale || 1 }
-            ])) : undefined
-        })),
-        nodePrototypes: Array.from(s.nodePrototypes.entries()).map(([nid, prototype]) => ({ id: nid, name: prototype.name })),
-        activeGraphId: s.activeGraphId,
-        activeGraphName: s.activeGraphId ? (s.graphs.get(s.activeGraphId)?.name || null) : null,
-        openGraphIds: s.openGraphIds,
-        summary: { totalGraphs: s.graphs.size, totalPrototypes: s.nodePrototypes.size, lastUpdate: Date.now() }
-      };
-      try {
-        const resp = await bridgeFetch('/api/bridge/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bridgeData) });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      } catch (e) { console.warn('[AI Panel] Bridge state refresh failed:', e); }
-      try { if (typeof window !== 'undefined' && typeof window.rsBridgeManualReconnect === 'function') { window.rsBridgeManualReconnect(); } } catch {}
-      await initializeConnection();
-      try {
-        const now = Date.now();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
-        localStorage.setItem(RESET_TS_KEY, String(now));
-      } catch {}
-      setMessages([]);
+      addMessage('system', 'Bridge functionality is currently disabled.');
     } catch (e) {
       addMessage('system', `Refresh failed: ${e.message}`);
     } finally { setIsProcessing(false); }
@@ -2667,14 +2676,16 @@ const LeftAIView = ({ compact = false }) => {
       if (!apiConfig) { addMessage('ai', 'API configuration not found. Please set up your API key first.'); return; }
       const abortController = new AbortController();
       setCurrentAgentRequest(abortController);
-      const response = await bridgeFetch('/api/ai/agent', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify({ message: question, systemPrompt: 'You are an AI assistant with access to Redstring knowledge graph tools.', context: { activeGraphId, graphCount: graphs.size, hasAPIKey, apiConfig: apiConfig ? { provider: apiConfig.provider, endpoint: apiConfig.endpoint, model: apiConfig.model, settings: apiConfig.settings } : null } }),
-        signal: abortController.signal
-      });
-      if (!response.ok) throw new Error(`Agent request failed: ${response.status} ${response.statusText}`);
-      const result = await response.json();
-      addMessage('ai', result.response || '', { toolCalls: result.toolCalls || [], iterations: result.iterations, mode: 'autonomous', isComplete: result.isComplete });
+      // Bridge agent API disabled
+      // const response = await bridgeFetch('/api/ai/agent', {
+      //   method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      //   body: JSON.stringify({ message: question, systemPrompt: 'You are an AI assistant with access to Redstring knowledge graph tools.', context: { activeGraphId, graphCount: graphs.size, hasAPIKey, apiConfig: apiConfig ? { provider: apiConfig.provider, endpoint: apiConfig.endpoint, model: apiConfig.model, settings: apiConfig.settings } : null } }),
+      //   signal: abortController.signal
+      // });
+      // if (!response.ok) throw new Error(`Agent request failed: ${response.status} ${response.statusText}`);
+      // const result = await response.json();
+      // addMessage('ai', result.response || '', { toolCalls: result.toolCalls || [], iterations: result.iterations, mode: 'autonomous', isComplete: result.isComplete });
+      addMessage('ai', 'Autonomous agent mode is currently disabled due to bridge server being unavailable.');
     } catch (error) {
       if (error.name !== 'AbortError') { console.error('[AI Collaboration] Autonomous agent failed:', error); addMessage('ai', `Agent error: ${error.message}`); }
     }
@@ -2685,52 +2696,8 @@ const LeftAIView = ({ compact = false }) => {
       const apiConfig = await apiKeyManager.getAPIKeyInfo();
       if (!apiConfig) { addMessage('ai', 'Please set up your API key first by clicking the key icon in the header.'); return; }
       const apiKey = await apiKeyManager.getAPIKey();
-      const response = await bridgeFetch('/api/ai/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }, body: JSON.stringify({ message: question, systemPrompt: `You are Claude, a **knowledge graph architect** with advanced spatial reasoning, helping with Redstring - a visual knowledge graph system for emergent human-AI cognition.
-
-## **🧠 Your Identity**
-You facilitate **emergent knowledge** - complex understanding that emerges from simple connections between ideas. You help humans discover hidden patterns, model complex systems, and visualize abstract concepts through intelligent spatial organization.
-
-## **🌌 Spatial Intelligence**
-You can "see" and reason about canvas layouts:
-- **\`get_spatial_map\`** - View coordinates, clusters, empty regions, and layout analysis
-- **Cluster detection** - Understand semantic groupings and relationships  
-- **Smart positioning** - Place concepts to create visual flow and logical organization
-- **Panel awareness** - Avoid UI constraints (left panel: 0-300px, header: 0-80px)
-
-## **🔧 Core Tools**
-**High-Level (Recommended):**
-- **\`generate_knowledge_graph\`** - Create entire graphs with multiple concepts and intelligent layouts 🚀
-- **\`addNodeToGraph\`** - Add individual concepts with intelligent spatial positioning
-- **\`get_spatial_map\`** - Understand current layout and find optimal placement
-- **\`verify_state\`** - Check system state and debug issues
-- **\`search_nodes\`** - Find existing concepts to connect or reference
-
-**Graph Navigation:**
-- **\`list_available_graphs\`** - Explore knowledge spaces
-- **\`get_active_graph\`** - Understand current context
-- **\`create_edge\`** - Connect related concepts
-
-## **🎯 Spatial-Semantic Workflow**
-1. **Assess** → Use \`get_spatial_map\` to understand current layout
-2. **Plan** → Consider both semantic relationships and visual organization  
-3. **Position** → Place concepts near related clusters or in optimal empty regions
-4. **Connect** → Create meaningful relationships that enhance understanding
-5. **Explain** → Describe your spatial reasoning and layout decisions
-
-## **📍 Context**
-- Active graph: ${activeGraphId ? 'Yes' : 'No'}  
-- Total graphs: ${graphs.size}
-- Mode: Interactive collaboration
-
-**Think systemically. Organize spatially. Build knowledge together.** 🚀`, context: { activeGraphId, graphCount: graphs.size, hasAPIKey, apiConfig: { provider: apiConfig.provider, endpoint: apiConfig.endpoint, model: apiConfig.model, settings: apiConfig.settings } } }) });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`HTTP ${response.status}: ${errorData.error || response.statusText}`);
-      }
-      const result = await response.json();
-      if (result && typeof result === 'object' && 'response' in result) { addMessage('ai', (result.response || '').trim(), { toolCalls: result.toolCalls || [] }); return; }
-      const aiResponse = typeof result === 'string' ? result : 'I had trouble forming a response.';
-      addMessage('ai', aiResponse.trim(), { toolCalls: [] });
+      // Bridge chat API disabled
+      addMessage('ai', 'Chat functionality is currently disabled due to bridge server being unavailable.');
     } catch (error) {
       console.error('[AI Collaboration] Question handling failed:', error);
       addMessage('ai', 'I encountered an error while processing your question. Please try again or check your connection to the MCP server.');
@@ -2742,8 +2709,8 @@ You can "see" and reason about canvas layouts:
   };
 
   const getGraphInfo = () => {
-    if (!activeGraphId || !graphs.has(activeGraphId)) { return { name: 'No active graph', nodeCount: 0, edgeCount: 0 }; }
-    const graph = graphs.get(activeGraphId);
+    if (!activeGraphId || !graphsMap.has(activeGraphId)) { return { name: 'No active graph', nodeCount: 0, edgeCount: 0 }; }
+    const graph = graphsMap.get(activeGraphId);
     return { name: graph.name, nodeCount: graph.instances.size, edgeCount: graph.edgeIds.length };
   };
   const graphInfo = getGraphInfo();
@@ -2784,7 +2751,7 @@ You can "see" and reason about canvas layouts:
       <button 
         className={`ai-flat-button ${isConnected ? 'ai-refresh-button' : 'ai-connect-button'}`} 
         onClick={refreshBridgeConnection} 
-        title={isConnected ? 'Refresh Connection' : 'Connect to MCP Server'} 
+        title="Bridge Disabled" 
         disabled={isProcessing}
       >
         <RotateCcw size={20} />
@@ -3035,7 +3002,7 @@ const DraggableTab = ({ tab, index, displayTitle, dragItemTitle, moveTabAction, 
  * - The circle around X has a fade‑in transition on hover.
  */
 const MIN_PANEL_WIDTH = 100;
-const INITIAL_PANEL_WIDTH = 250;
+const INITIAL_PANEL_WIDTH = 280; // Match NodeCanvas default
 
 // Feature flag: toggle visibility of the "All Things" tab in the left panel header
 const ENABLE_ALL_THINGS_TAB = false;
@@ -3198,19 +3165,47 @@ const Panel = forwardRef(
     const graphsMap = useGraphStore(state => state.graphs);
 
     // <<< ADD: Select nodes and edges maps reactively >>>
-    const nodePrototypesMap = useGraphStore(state => state.nodePrototypes);
-    const edgesMap = useGraphStore(state => state.edges);
-    const savedNodeIds = useGraphStore(state => state.savedNodeIds);
+    // Use a more defensive approach to prevent store access errors
+    const storeState = useGraphStore(state => state);
+    const nodePrototypesMap = storeState?.nodePrototypes;
+    const edgesMap = storeState?.edges;
+    const savedNodeIds = storeState?.savedNodeIds;
     // <<< ADD: Read activeDefinitionNodeId directly from the store >>>
-    const activeDefinitionNodeId = useGraphStore(state => state.activeDefinitionNodeId);
+    const activeDefinitionNodeId = storeState?.activeDefinitionNodeId;
     // <<< ADD: Select rightPanelTabs reactively >>>
-    const rightPanelTabs = useGraphStore(state => state.rightPanelTabs);
+    const rightPanelTabs = storeState?.rightPanelTabs;
 
     // Reserve bottom space for TypeList footer bar when visible
-    const typeListMode = useGraphStore(state => state.typeListMode);
+    const typeListMode = storeState?.typeListMode;
+    
+    // Add loading state check to prevent accessing store before it's ready
+    const isUniverseLoading = storeState?.isUniverseLoading;
+    const isUniverseLoaded = storeState?.isUniverseLoaded;
+    
+    // Debug store subscription
+    console.log('[Panel] Store subscription debug:', {
+        nodePrototypesMap: !!nodePrototypesMap,
+        nodePrototypesMapType: typeof nodePrototypesMap,
+        isUniverseLoading,
+        isUniverseLoaded,
+        hasStoreState: !!storeState
+    });
 
     // ✅ END OF STORE SUBSCRIPTIONS - DO NOT ADD MORE INDIVIDUAL SUBSCRIPTIONS BELOW
     // If you need new store data, add it to the consolidated subscription pattern above
+
+    // Check if store is ready (but don't return early to avoid hooks rule violation)
+    const isStoreReady = !isUniverseLoading && isUniverseLoaded && nodePrototypesMap && typeof nodePrototypesMap.get === 'function';
+    
+    if (!isStoreReady) {
+        console.log('[Panel] Store not ready:', { 
+            isUniverseLoading, 
+            isUniverseLoaded, 
+            hasNodePrototypesMap: !!nodePrototypesMap,
+            nodePrototypesMapType: typeof nodePrototypesMap,
+            hasGetMethod: nodePrototypesMap && typeof nodePrototypesMap.get === 'function'
+        });
+    }
 
     const isTypeListVisible = typeListMode !== 'closed';
     const bottomSafeArea = isTypeListVisible ? HEADER_HEIGHT + 10 : 0; // footer height + small gap
@@ -3557,13 +3552,31 @@ const Panel = forwardRef(
     useEffect(() => {
       // Load initial widths from localStorage ONCE on mount
       if (!initialWidthsSet.current) {
-          const initialWidth = getInitialWidth(side, INITIAL_PANEL_WIDTH);
-          const initialLastCustom = getInitialLastCustomWidth(side, INITIAL_PANEL_WIDTH);
-          setPanelWidth(initialWidth);
-          setLastCustomWidth(initialLastCustom);
-          setIsWidthInitialized(true);
-          initialWidthsSet.current = true; // Mark as set
-          // console.log(`[Panel ${side} Mount Effect] Loaded initial widths:`, { initialWidth, initialLastCustom });
+          // Check if NodeCanvas has already set a width for this panel
+          const checkNodeCanvasWidth = () => {
+              // Try to get the width that NodeCanvas might have already set
+              const nodeCanvasWidth = side === 'left' ? 
+                  JSON.parse(localStorage.getItem('panelWidth_left') || 'null') :
+                  JSON.parse(localStorage.getItem('panelWidth_right') || 'null');
+              
+              if (nodeCanvasWidth && typeof nodeCanvasWidth === 'number' && nodeCanvasWidth >= MIN_PANEL_WIDTH) {
+                  // Use NodeCanvas width if available
+                  setPanelWidth(nodeCanvasWidth);
+                  setLastCustomWidth(nodeCanvasWidth);
+              } else {
+                  // Fall back to our own localStorage or default
+                  const initialWidth = getInitialWidth(side, INITIAL_PANEL_WIDTH);
+                  const initialLastCustom = getInitialLastCustomWidth(side, INITIAL_PANEL_WIDTH);
+                  setPanelWidth(initialWidth);
+                  setLastCustomWidth(initialLastCustom);
+              }
+              setIsWidthInitialized(true);
+              initialWidthsSet.current = true; // Mark as set
+          };
+          
+          // Small delay to ensure NodeCanvas has initialized first
+          const timer = setTimeout(checkNodeCanvasWidth, 50);
+          return () => clearTimeout(timer);
       }
     }, [side]); // Run once on mount (and if side changes, though unlikely)
 
@@ -4199,7 +4212,11 @@ const Panel = forwardRef(
                     height: '100%', 
                     padding: 0
                 }}>
-                    <LeftAIView compact={panelWidth <= 250} />
+                    <LeftAIView 
+                  compact={panelWidth <= 250} 
+                  activeGraphId={activeGraphId}
+                  graphsMap={graphsMap}
+                />
                 </div>
             );
         }
@@ -4353,6 +4370,15 @@ const Panel = forwardRef(
     useEffect(() => {
         setIsNodeHoveringTabBar(isOver);
     }, [isOver]);
+
+    // Show loading state if store is not ready
+    if (!isStoreReady) {
+        return (
+            <div className="panel-loading">
+                <div className="loading-spinner">Loading...</div>
+            </div>
+        );
+    }
 
     return (
         <>

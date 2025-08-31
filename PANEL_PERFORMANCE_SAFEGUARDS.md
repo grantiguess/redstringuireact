@@ -32,9 +32,16 @@ The Panel component now has prominent warning comments:
 A custom ESLint rule (`eslintrc-panel-safeguard.js`) warns about multiple `useGraphStore` calls in Panel.jsx.
 
 ### 3. Clear Boundaries
-- **Allowed**: Individual subscriptions in the designated section (lines ~3170-3194)
+- **Allowed**: Individual subscriptions in the designated section (lines ~3188-3209)
 - **Forbidden**: Additional subscriptions outside this section
 - **Forbidden**: Consolidated subscriptions (they cause infinite loops)
+
+### 4. Hidden Subscriptions Eliminated
+The following hidden subscriptions that were causing jitter have been removed:
+- ✅ `const { nodePrototypes } = useGraphStore();` → Now uses `nodePrototypesMap` prop
+- ✅ `const { duplicateNodePrototype } = useGraphStore();` → Now passed as prop
+- ✅ `const activeGraphId = useGraphStore((state) => state.activeGraphId);` → Now uses prop
+- ✅ `const graphs = useGraphStore((state) => state.graphs);` → Now uses `graphsMap` prop
 
 ## 📋 Rules for Panel Changes
 

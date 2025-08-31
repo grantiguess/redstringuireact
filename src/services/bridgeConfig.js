@@ -136,9 +136,9 @@ export function bridgeFetch(path, options) {
         if (__bridgeHealth.consecutiveFailures >= 3) {
           // Stop trying for a while; panel Refresh/manual reconnect can reset this
           __bridgeHealth.cooldownUntil = Date.now() + 60_000; // 60s cooldown
-          console.log(`🔌 MCP Bridge: Connection failed ${__bridgeHealth.consecutiveFailures} times, entering ${60}s cooldown period`);
+          // console.log(`🔌 MCP Bridge: Connection failed ${__bridgeHealth.consecutiveFailures} times, entering ${60}s cooldown period`);
         } else {
-          console.log(`🔌 MCP Bridge: Connection attempt ${__bridgeHealth.consecutiveFailures}/3 failed`);
+          // console.log(`🔌 MCP Bridge: Connection attempt ${__bridgeHealth.consecutiveFailures}/3 failed`);
         }
       }
       // Re-throw so callers can handle softly; no network call will be attempted during cooldown
