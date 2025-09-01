@@ -59,6 +59,7 @@ import {
 } from './constants';
 
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useViewportBounds } from './hooks/useViewportBounds';
 import Panel from './Panel'; // This is now used for both sides
 import TypeList from './TypeList'; // Re-add TypeList component
 import NodeSelectionGrid from './NodeSelectionGrid'; // Import the new node selection grid
@@ -861,14 +862,24 @@ function NodeCanvas() {
   const [selectionRect, setSelectionRect] = useState(null);
   const [selectionStart, setSelectionStart] = useState(null);
 
-  const [viewportSize, setViewportSize] = useState({
-    width: window.innerWidth,
-    height: window.innerHeight - HEADER_HEIGHT,
-  });
-  const [canvasSize, setCanvasSize] = useState({
-    width: window.innerWidth * 4,
-    height: (window.innerHeight - HEADER_HEIGHT) * 4,
-  });
+  // Panel expansion states - must be defined before viewport bounds hook
+  const [leftPanelExpanded, setLeftPanelExpanded] = useState(true);
+  const [rightPanelExpanded, setRightPanelExpanded] = useState(true);
+
+  // Use proper viewport bounds hook for accurate, live viewport calculations
+  const viewportBounds = useViewportBounds(leftPanelExpanded, rightPanelExpanded, false);
+  
+  // Calculate viewport and canvas sizes from bounds
+  const viewportSize = useMemo(() => ({
+    width: viewportBounds.width,
+    height: viewportBounds.height,
+  }), [viewportBounds.width, viewportBounds.height]);
+  
+  // Make base canvas 8x larger (2x the original 4x) and ensure it updates with viewport
+  const canvasSize = useMemo(() => ({
+    width: viewportBounds.width * 8,
+    height: viewportBounds.height * 8,
+  }), [viewportBounds.width, viewportBounds.height]);
   const [zoomLevel, setZoomLevel] = useState(1);
   // Hover state for grid when mode is 'hover'
 
@@ -941,6 +952,7 @@ function NodeCanvas() {
       const minY = (-panOffset.y) / zoomLevel;
       const maxX = minX + viewportSize.width / zoomLevel;
       const maxY = minY + viewportSize.height / zoomLevel;
+      
       const padding = 400;
       const expanded = {
         minX: minX - padding,
@@ -949,21 +961,27 @@ function NodeCanvas() {
         maxY: maxY + padding,
       };
 
-      // Visible nodes
+      // Visible nodes - Fixed viewport culling
       const nextVisibleNodeIds = new Set();
       for (const n of nodes) {
         const dims = baseDimsById.get(n.id);
         if (!dims) continue;
+        
+        // Node bounds in canvas space
         const nx1 = n.x;
         const ny1 = n.y;
         const nx2 = n.x + dims.currentWidth;
         const ny2 = n.y + dims.currentHeight;
-        if (!(nx2 < expanded.minX || nx1 > expanded.maxX || ny2 < expanded.minY || ny1 > expanded.maxY)) {
+        
+        // Check if node intersects with expanded viewport area
+        const isVisible = !(nx2 < expanded.minX || nx1 > expanded.maxX || ny2 < expanded.minY || ny1 > expanded.maxY);
+        
+        if (isVisible) {
           nextVisibleNodeIds.add(n.id);
         }
       }
 
-      // Visible edges
+      // Visible edges - Fixed viewport culling
       const nextVisibleEdges = [];
       for (const edge of edges) {
         const s = nodeById.get(edge.sourceId);
@@ -972,68 +990,10 @@ function NodeCanvas() {
         const sDims = baseDimsById.get(s.id);
         const dDims = baseDimsById.get(d.id);
         if (!sDims || !dDims) continue;
-        if (enableAutoRouting && routingStyle === 'manhattan') {
-          // Approximate Manhattan path bbox using snapped ports and midpoints
-          const sCenterX = s.x + sDims.currentWidth / 2;
-          const sCenterY = s.y + sDims.currentHeight / 2;
-          const dCenterX = d.x + dDims.currentWidth / 2;
-          const dCenterY = d.y + dDims.currentHeight / 2;
-          const sPorts = {
-            top: { x: sCenterX, y: s.y },
-            bottom: { x: sCenterX, y: s.y + sDims.currentHeight },
-            left: { x: s.x, y: sCenterY },
-            right: { x: s.x + sDims.currentWidth, y: sCenterY },
-          };
-          const dPorts = {
-            top: { x: dCenterX, y: d.y },
-            bottom: { x: dCenterX, y: d.y + dDims.currentHeight },
-            left: { x: d.x, y: dCenterY },
-            right: { x: d.x + dDims.currentWidth, y: dCenterY },
-          };
-          const relDx = dCenterX - sCenterX;
-          const relDy = dCenterY - sCenterY;
-          let sPort, dPort;
-          if (Math.abs(relDx) >= Math.abs(relDy)) {
-            sPort = relDx >= 0 ? sPorts.right : sPorts.left;
-            dPort = relDx >= 0 ? dPorts.left : dPorts.right;
-          } else {
-            sPort = relDy >= 0 ? sPorts.bottom : sPorts.top;
-            dPort = relDy >= 0 ? dPorts.top : dPorts.bottom;
-          }
-          const start = sPort, end = dPort;
-          const sSide = (Math.abs(start.y - s.y) < 0.5) ? 'top' : (Math.abs(start.y - (s.y + sDims.currentHeight)) < 0.5) ? 'bottom' : (Math.abs(start.x - s.x) < 0.5) ? 'left' : 'right';
-          const dSide = (Math.abs(end.y - d.y) < 0.5) ? 'top' : (Math.abs(end.y - (d.y + dDims.currentHeight)) < 0.5) ? 'bottom' : (Math.abs(end.x - d.x) < 0.5) ? 'left' : 'right';
-          const initOrient = (sSide === 'left' || sSide === 'right') ? 'H' : 'V';
-          const finalOrient = (dSide === 'left' || dSide === 'right') ? 'H' : 'V';
-          const eff = (manhattanBends === 'auto') ? (initOrient === finalOrient ? 'two' : 'one') : manhattanBends;
-          let pts;
-          if (eff === 'two' && initOrient === finalOrient) {
-            if (initOrient === 'H') {
-              const midX = (start.x + end.x) / 2;
-              pts = [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end];
-            } else {
-              const midY = (start.y + end.y) / 2;
-              pts = [start, { x: start.x, y: midY }, { x: end.x, y: midY }, end];
-            }
-          } else {
-            pts = initOrient === 'H' ? [start, { x: end.x, y: start.y }, end] : [start, { x: start.x, y: end.y }, end];
-          }
-          const minX = Math.min(...pts.map(p => p.x));
-          const maxX = Math.max(...pts.map(p => p.x));
-          const minY = Math.min(...pts.map(p => p.y));
-          const maxY = Math.max(...pts.map(p => p.y));
-          const intersects = !(maxX < expanded.minX || minX > expanded.maxX || maxY < expanded.minY || minY > expanded.maxY);
-          if (intersects) nextVisibleEdges.push(edge);
-        } else {
-        const sx = s.x + sDims.currentWidth / 2;
-        const sy = s.y + sDims.currentHeight / 2;
-        const dx = d.x + dDims.currentWidth / 2;
-        const dy = d.y + dDims.currentHeight / 2;
-        const sIn = sx >= expanded.minX && sx <= expanded.maxX && sy >= expanded.minY && sy <= expanded.maxY;
-        const dIn = dx >= expanded.minX && dx <= expanded.maxX && dy >= expanded.minY && dy <= expanded.maxY;
-        if (sIn || dIn || lineIntersectsRect(sx, sy, dx, dy, expanded)) {
+        
+        // Simple edge visibility: if either node is visible, edge is visible
+        if (nextVisibleNodeIds.has(edge.sourceId) || nextVisibleNodeIds.has(edge.destinationId)) {
           nextVisibleEdges.push(edge);
-          }
         }
       }
 
@@ -1408,10 +1368,8 @@ function NodeCanvas() {
     
   }, [carouselPieMenuStage]);
 
-  const [rightPanelExpanded, setRightPanelExpanded] = useState(true); // Default to open?
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
   const [isRightPanelInputFocused, setIsRightPanelInputFocused] = useState(false);
-  const [leftPanelExpanded, setLeftPanelExpanded] = useState(true); // Default to open?
   const [isLeftPanelInputFocused, setIsLeftPanelInputFocused] = useState(false);
   const [isPieMenuRendered, setIsPieMenuRendered] = useState(false); // Controls if PieMenu is in DOM for animation
   const [currentPieMenuData, setCurrentPieMenuData] = useState(null); // Holds { node, buttons, nodeDimensions }
