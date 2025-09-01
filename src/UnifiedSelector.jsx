@@ -197,7 +197,7 @@ const UnifiedSelector = ({
               />
               <button
                 onClick={handleSubmit}
-                style={{ padding: '10px', backgroundColor: color, color: '#bdb5b5', border: '2px solid #260000', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '56px', minHeight: '44px' }}
+                style={{ padding: '10px', backgroundColor: color, color: '#bdb5b5', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '56px', minHeight: '44px' }}
                 title={mode === 'connection-creation' ? 'Create connection type' : mode === 'abstraction-node-creation' ? `Create ${abstractionDirection} abstraction` : 'Create node type'}
               >
                 <Plus size={18} color="#bdb5b5" strokeWidth={2.5} />

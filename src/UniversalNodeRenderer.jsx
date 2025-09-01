@@ -501,6 +501,14 @@ const UniversalNodeRenderer = ({
 
   // Event handlers
   const handleNodeMouseEnter = (node) => {
+    // Clear connection hover state when hovering over nodes
+    setHoveredConnectionId(null);
+    setStableHoveredConnectionId(null);
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    
     setHoveredNodeId(node.id);
     onNodeHover?.(node, true);
   };
@@ -950,8 +958,8 @@ const UniversalNodeRenderer = ({
                 rx={cornerRadius}
                 ry={cornerRadius}
                 fill={node.color || '#800000'}
-                stroke={isHovered && showHoverEffects ? '#000000' : 'none'}
-                strokeWidth={isHovered && showHoverEffects ? Math.max(1, 12 * transform.scale) : 0}
+                stroke="none"
+                strokeWidth={0}
                 style={{ 
                   cursor: interactive ? 'pointer' : 'default',
                   transition: 'width 0.3s ease, height 0.3s ease, fill 0.2s ease'

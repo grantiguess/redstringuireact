@@ -38,5 +38,5 @@ export const MODAL_CLOSE_ICON_SIZE = 20; // Standard size for X/close icons in m
 // Define default node color - maroon to match base Thing prototype
 export const NODE_DEFAULT_COLOR = '#8B0000';
 
-// Define default connection color - black for fundamental connections
-export const CONNECTION_DEFAULT_COLOR = '#000000';
+// Define default connection color - same red as nodes
+export const CONNECTION_DEFAULT_COLOR = '#8B0000';

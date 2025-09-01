@@ -201,7 +201,7 @@ const UnifiedBottomControlPanel = ({
                     sourceId: t.subject?.id,
                     destinationId: t.object?.id,
                     connectionName: t.predicate?.name || 'Connection',
-                    color: t.predicate?.color || '#8B0000',
+                    color: t.predicate?.color || '#000000',
                     // Preserve original edge data for proper name resolution
                     definitionNodeIds: originalEdge?.definitionNodeIds,
                     typeNodeId: originalEdge?.typeNodeId,
@@ -235,12 +235,15 @@ const UnifiedBottomControlPanel = ({
                   onNodeClick={onNodeClick}
                   onConnectionClick={onPredicateClick}
                   onToggleArrow={(connectionId, targetNodeId) => {
+                    // Ensure connectionId is a string, not an object
+                    const edgeId = typeof connectionId === 'string' ? connectionId : connectionId?.id || connectionId;
+                    
                     // Determine if this is left or right arrow based on target
-                    const triple = triples.find(t => t.id === connectionId);
+                    const triple = triples.find(t => t.id === edgeId);
                     if (triple && triple.subject?.id === targetNodeId) {
-                      onToggleLeftArrow?.(connectionId);
+                      onToggleLeftArrow?.(edgeId);
                     } else if (triple && triple.object?.id === targetNodeId) {
-                      onToggleRightArrow?.(connectionId);
+                      onToggleRightArrow?.(edgeId);
                     }
                   }}
                 />

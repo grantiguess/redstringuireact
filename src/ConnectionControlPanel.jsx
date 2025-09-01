@@ -38,7 +38,7 @@ const ConnectionControlPanel = ({
       const targetPrototype = targetNode ? nodePrototypesMap.get(targetNode.prototypeId) : null;
       // Use EXACT same logic as ConnectionBrowser (lines 468-481)
       let connectionName = 'Connection';
-      let connectionColor = '#8B0000';
+      let connectionColor = '#000000'; // Default to black for Connection prototype
       let predicateId = edge.typeNodeId || edge.prototypeId;
       
       // First try to get name and color from edge's definition node (if it has one)
@@ -46,7 +46,7 @@ const ConnectionControlPanel = ({
         const definitionNode = nodePrototypesMap.get(edge.definitionNodeIds[0]);
         if (definitionNode) {
           connectionName = definitionNode.name || 'Connection';
-          connectionColor = definitionNode.color || '#8B0000';
+          connectionColor = definitionNode.color || '#000000'; // Default to black
           predicateId = edge.definitionNodeIds[0];
         }
       } else if (edge.typeNodeId) {
@@ -54,7 +54,7 @@ const ConnectionControlPanel = ({
         const edgePrototype = nodePrototypesMap.get(edge.typeNodeId);
         if (edgePrototype) {
           connectionName = edgePrototype.name || 'Connection';
-          connectionColor = edgePrototype.color || '#8B0000';
+          connectionColor = edgePrototype.color || '#000000'; // Default to black
         }
       }
 
@@ -63,8 +63,11 @@ const ConnectionControlPanel = ({
       const hasLeftArrow = arrowsToward.has(edge.sourceId); // Arrow points TO source (left side)
       const hasRightArrow = arrowsToward.has(edge.destinationId || edge.targetId); // Arrow points TO target (right side)
 
+      // Ensure we have a proper string ID
+      const edgeId = typeof edge.id === 'string' ? edge.id : edge.id?.id || String(edge.id);
+      
       const triple = {
-        id: edge.id,
+        id: edgeId,
         sourceId: edge.sourceId,
         destinationId: edge.destinationId || edge.targetId,
         color: connectionColor,
@@ -95,7 +98,11 @@ const ConnectionControlPanel = ({
 
   const handleToggleLeftArrow = (tripleId) => {
     const updateEdge = useGraphStore.getState().updateEdge;
-    updateEdge(tripleId, (draft) => {
+    // Use the actual edge ID, not the definition node ID
+    const edges = selectedEdge ? [selectedEdge] : selectedEdges;
+    const actualEdgeId = edges[0]?.id || tripleId;
+    
+    updateEdge(actualEdgeId, (draft) => {
       if (!draft.directionality) {
         draft.directionality = { arrowsToward: new Set() };
       }
@@ -114,7 +121,11 @@ const ConnectionControlPanel = ({
 
   const handleToggleRightArrow = (tripleId) => {
     const updateEdge = useGraphStore.getState().updateEdge;
-    updateEdge(tripleId, (draft) => {
+    // Use the actual edge ID, not the definition node ID
+    const edges = selectedEdge ? [selectedEdge] : selectedEdges;
+    const actualEdgeId = edges.find(e => e.id === tripleId || String(e.id) === String(tripleId))?.id || tripleId;
+    
+    updateEdge(actualEdgeId, (draft) => {
       if (!draft.directionality) {
         draft.directionality = { arrowsToward: new Set() };
       }
@@ -133,7 +144,10 @@ const ConnectionControlPanel = ({
 
   const handlePredicateClick = (tripleId) => {
     if (onOpenConnectionDialog) {
-      onOpenConnectionDialog(tripleId);
+      // Find the actual edge ID from the selected edges
+      const edges = selectedEdge ? [selectedEdge] : selectedEdges;
+      const actualEdgeId = edges[0]?.id || tripleId;
+      onOpenConnectionDialog(actualEdgeId);
     }
   };
 
