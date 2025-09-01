@@ -92,8 +92,8 @@ const GraphListItem = forwardRef(({
     cursor: 'pointer',
     display: 'flex',
     flexDirection: 'column',
-    // FIX: Apply border always - thicker when active, use darker inactive color
-    border: isActive ? '12px solid black' : '1px solid #260000', // Active: thicker black, Inactive: thin dark
+    // FIX: Apply border always - thicker when active, no border when inactive
+    border: isActive ? '12px solid black' : 'none', // Active: thicker black, Inactive: no border
     // FIX: Update transition (remove background-color, color)
     transition: 'height 0.2s ease, border 0.2s ease',
     // FIX: Add alignment for when expanded
