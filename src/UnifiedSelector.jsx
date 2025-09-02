@@ -33,7 +33,14 @@ const UnifiedSelector = ({
     }
   }, [initialName]);
 
-  const [color, setColor] = useState(initialColor || NODE_DEFAULT_COLOR);
+  const [color, setColor] = useState(() => {
+    if (initialColor) return initialColor;
+    // Use red for connections, normal default for nodes
+    if (mode === 'connection-creation') {
+      return '#8B0000'; // Red for connections
+    }
+    return NODE_DEFAULT_COLOR; // Normal default for nodes
+  });
   const [colorPickerVisible, setColorPickerVisible] = useState(false);
   const [colorPickerPosition, setColorPickerPosition] = useState({ x: 0, y: 0 });
 
