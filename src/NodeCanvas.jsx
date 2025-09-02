@@ -3,7 +3,7 @@ import { Lethargy } from 'lethargy';
 import './NodeCanvas.css';
 import { X } from 'lucide-react';
 import Header from './Header.jsx';
-import DebugOverlay from './DebugOverlay.jsx';
+// DebugOverlay import removed - debug mode disabled
 import { useCanvasWorker } from './useCanvasWorker.js';
 import Node from './Node.jsx';
 import PlusSign from './PlusSign.jsx'; // Import the new PlusSign component
@@ -890,15 +890,15 @@ function NodeCanvas() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Large fixed canvas - independent of viewport changes
+  // Large fixed canvas - stable coordinate system
   const canvasSize = useMemo(() => {
-    // Create a large fixed canvas (20k x 20k pixels)
-    const canvasWidth = 20000;
-    const canvasHeight = 20000;
+    // Use a very large fixed canvas that can accommodate any reasonable usage
+    const canvasWidth = 100000;  // 100k x 100k - huge but finite
+    const canvasHeight = 100000;
     
     // Center the canvas so (0,0) is in the middle
-    const offsetX = -canvasWidth / 2;
-    const offsetY = -canvasHeight / 2;
+    const offsetX = -canvasWidth / 2;   // -50000
+    const offsetY = -canvasHeight / 2;  // -50000
     
     return {
       width: canvasWidth,
@@ -906,8 +906,114 @@ function NodeCanvas() {
       offsetX,
       offsetY
     };
-  }, []); // No dependencies - truly fixed size
+  }, []); // Fixed - never changes
+
   const [zoomLevel, setZoomLevel] = useState(1);
+
+  // Function to move out-of-bounds nodes back into canvas while preserving relative positions
+  const moveOutOfBoundsNodesInBounds = useCallback(() => {
+    if (!nodes || nodes.length === 0) return;
+
+    // Find nodes that are outside canvas bounds
+    const outOfBoundsNodes = [];
+    const canvasMinX = canvasSize.offsetX;
+    const canvasMinY = canvasSize.offsetY;
+    const canvasMaxX = canvasSize.offsetX + canvasSize.width;
+    const canvasMaxY = canvasSize.offsetY + canvasSize.height;
+
+    nodes.forEach(node => {
+      const dims = baseDimsById.get(node.id);
+      if (!dims) return;
+
+      const nodeLeft = node.x;
+      const nodeTop = node.y;
+      const nodeRight = node.x + dims.currentWidth;
+      const nodeBottom = node.y + dims.currentHeight;
+
+      // Check if node is outside bounds
+      if (nodeLeft < canvasMinX || nodeRight > canvasMaxX || 
+          nodeTop < canvasMinY || nodeBottom > canvasMaxY) {
+        outOfBoundsNodes.push({ 
+          ...node, 
+          dims,
+          left: nodeLeft,
+          top: nodeTop,
+          right: nodeRight,
+          bottom: nodeBottom
+        });
+      }
+    });
+
+    if (outOfBoundsNodes.length === 0) {
+              // console.log('No out-of-bounds nodes found');
+      return;
+    }
+
+          // console.log(`Found ${outOfBoundsNodes.length} out-of-bounds nodes, moving them back...`);
+
+    // Calculate bounding box of all out-of-bounds nodes
+    let groupMinX = Infinity, groupMinY = Infinity;
+    let groupMaxX = -Infinity, groupMaxY = -Infinity;
+
+    outOfBoundsNodes.forEach(node => {
+      groupMinX = Math.min(groupMinX, node.left);
+      groupMinY = Math.min(groupMinY, node.top);
+      groupMaxX = Math.max(groupMaxX, node.right);
+      groupMaxY = Math.max(groupMaxY, node.bottom);
+    });
+
+    const groupWidth = groupMaxX - groupMinX;
+    const groupHeight = groupMaxY - groupMinY;
+
+    // Calculate safe area within canvas (with padding)
+    const padding = 1000;
+    const safeMinX = canvasMinX + padding;
+    const safeMinY = canvasMinY + padding;
+    const safeMaxX = canvasMaxX - padding;
+    const safeMaxY = canvasMaxY - padding;
+    const safeWidth = safeMaxX - safeMinX;
+    const safeHeight = safeMaxY - safeMinY;
+
+    // Calculate where to place the group (center it in safe area)
+    const targetCenterX = safeMinX + safeWidth / 2;
+    const targetCenterY = safeMinY + safeHeight / 2;
+    const currentCenterX = groupMinX + groupWidth / 2;
+    const currentCenterY = groupMinY + groupHeight / 2;
+
+    // Calculate offset to move the group
+    const offsetX = targetCenterX - currentCenterX;
+    const offsetY = targetCenterY - currentCenterY;
+
+    // Apply the offset to all out-of-bounds nodes
+    const positionUpdates = outOfBoundsNodes.map(node => ({
+      instanceId: node.id,
+      x: node.x + offsetX,
+      y: node.y + offsetY
+    }));
+
+    storeActions.updateMultipleNodeInstancePositions(activeGraphId, positionUpdates);
+          // console.log(`Moved ${outOfBoundsNodes.length} nodes back into bounds`);
+  }, [nodes, baseDimsById, canvasSize, storeActions, activeGraphId]);
+
+  // Auto-correct out-of-bounds nodes on graph load
+  useEffect(() => {
+    if (nodes && nodes.length > 0 && activeGraphId) {
+      // Small delay to ensure dimensions are calculated
+      const timer = setTimeout(() => {
+        moveOutOfBoundsNodesInBounds();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [activeGraphId, moveOutOfBoundsNodesInBounds]);
+
+  // Expose function to window for manual use (for debugging/testing)
+  useEffect(() => {
+    window.moveOutOfBoundsNodesInBounds = moveOutOfBoundsNodesInBounds;
+    return () => {
+      delete window.moveOutOfBoundsNodesInBounds;
+    };
+  }, [moveOutOfBoundsNodesInBounds]);
+
   // Hover state for grid when mode is 'hover'
 
 
@@ -1351,17 +1457,8 @@ function NodeCanvas() {
     }
   }, [enableAutoRouting, routingStyle, visibleEdges, nodeById, baseDimsById, nodes]);
 
-  const [debugMode, setDebugMode] = useState(false);
-  const [debugData, setDebugData] = useState({
-    inputDevice: 'Unknown',
-    gesture: 'none',
-    deltaX: '0',
-    deltaY: '0',
-    panOffsetX: '0',
-    panOffsetY: '0',
-    zoomLevel: '1.00',
-    localSelectedNodeId_debug: 'N/A', // Add to debug state
-  });
+  const [debugMode, setDebugMode] = useState(false); // Debug mode disabled
+  // Debug data state removed - debug mode disabled
   const [isPaused, setIsPaused] = useState(false);
   const [lastInteractionType, setLastInteractionType] = useState(null);
   const [isViewReady, setIsViewReady] = useState(false);
@@ -2899,25 +2996,25 @@ function NodeCanvas() {
     
     // Log performance metrics every 500ms
     if (now - smoothing.lastLogTime > 500) {
-      console.log('🎯 Pinch Animation Stats:', {
-        fps: Math.round(1000 / smoothing.avgFrameDelta),
-        avgFrameDelta: Math.round(smoothing.avgFrameDelta * 100) / 100,
-        currentFrameDelta: Math.round(frameDelta * 100) / 100,
-        frameTimeRatio: Math.round(frameTimeRatio * 100) / 100,
-        adjustedSmoothing: Math.round(adjustedSmoothing * 1000) / 1000,
-        frameCount: smoothing.frameCount,
-        inputEvents: smoothing.inputEventCount,
-        deltas: {
-          zoom: Math.round(zoomDelta * 10000) / 10000,
-          panX: Math.round(panXDelta * 100) / 100,
-          panY: Math.round(panYDelta * 100) / 100
-        },
-        diffs: {
-          zoom: Math.round(zoomDiff * 10000) / 10000,
-          panX: Math.round(panXDiff * 100) / 100,
-          panY: Math.round(panYDiff * 100) / 100
-        }
-      });
+      // console.log('🎯 Pinch Animation Stats:', {
+      //   fps: Math.round(1000 / smoothing.avgFrameDelta),
+      //   avgFrameDelta: Math.round(smoothing.avgFrameDelta * 100) / 100,
+      //   currentFrameDelta: Math.round(frameDelta * 100) / 100,
+      //   frameTimeRatio: Math.round(frameTimeRatio * 100) / 100,
+      //   adjustedSmoothing: Math.round(adjustedSmoothing * 1000) / 1000,
+      //   frameCount: smoothing.frameCount,
+      //   inputEvents: smoothing.inputEventCount,
+      //   deltas: {
+      //     zoom: Math.round(zoomDelta * 10000) / 10000,
+      //     panX: Math.round(panXDelta * 100) / 100,
+      //     panY: Math.round(panYDelta * 100) / 100
+      //   },
+      //   diffs: {
+      //     zoom: Math.round(zoomDiff * 10000) / 10000,
+      //     panX: Math.round(panXDiff * 100) / 100,
+      //     panY: Math.round(panYDiff * 100) / 100
+      //   }
+      // });
       smoothing.lastLogTime = now;
     }
     
@@ -2934,11 +3031,11 @@ function NodeCanvas() {
       smoothing.animationId = null;
       smoothing.isAnimating = false;
       
-      console.log('🏁 Pinch Animation Complete:', {
-        totalFrames: smoothing.frameCount,
-        totalInputs: smoothing.inputEventCount,
-        avgFPS: Math.round(1000 / smoothing.avgFrameDelta)
-      });
+      // console.log('🏁 Pinch Animation Complete:', {
+      //   totalFrames: smoothing.frameCount,
+      //   totalInputs: smoothing.inputEventCount,
+      //   avgFPS: Math.round(1000 / smoothing.avgFrameDelta)
+      // });
       
       // Reset counters
       smoothing.frameCount = 0;
@@ -2951,12 +3048,12 @@ function NodeCanvas() {
   
   // Start or update pinch zoom smoothing
   const startPinchSmoothing = useCallback((targetZoom, targetPanX, targetPanY) => {
-    console.log('🟢 startPinchSmoothing CALLED:', {
-      targetZoom: Math.round(targetZoom * 1000) / 1000,
-      targetPanX: Math.round(targetPanX * 10) / 10,
-      targetPanY: Math.round(targetPanY * 10) / 10,
-      refExists: !!pinchSmoothingRef.current
-    });
+    // console.log('🟢 startPinchSmoothing CALLED:', {
+    //   targetZoom: Math.round(targetZoom * 1000) / 1000,
+    //   targetPanX: Math.round(targetPanX * 10) / 10,
+    //   targetPanY: Math.round(targetPanY * 10) / 10,
+    //   refExists: !!pinchSmoothingRef.current
+    // });
     
     const smoothing = pinchSmoothingRef.current;
     const now = performance.now();
@@ -2980,20 +3077,20 @@ function NodeCanvas() {
       return;
     }
     
-    // Log input event details
-    if (smoothing.inputEventCount % 10 === 1) { // Log every 10th input
-      console.log('📱 Input Event:', {
-        eventCount: smoothing.inputEventCount,
-        inputDelta: Math.round(inputDelta * 10) / 10,
-        targetZoom: Math.round(targetZoom * 1000) / 1000,
-        targetPan: {
-          x: Math.round(targetPanX * 10) / 10,
-          y: Math.round(targetPanY * 10) / 10
-        },
-        currentZoom: Math.round(smoothing.currentZoom * 1000) / 1000,
-        isAnimating: smoothing.isAnimating
-      });
-    }
+    // Log input event details - disabled
+    // if (smoothing.inputEventCount % 10 === 1) { // Log every 10th input
+    //   console.log('📱 Input Event:', {
+    //     eventCount: smoothing.inputEventCount,
+    //     inputDelta: Math.round(inputDelta * 10) / 10,
+    //     targetZoom: Math.round(targetZoom * 1000) / 1000,
+    //     targetPan: {
+    //       x: Math.round(targetPanX * 10) / 10,
+    //       y: Math.round(targetPanY * 10) / 10
+    //     },
+    //     currentZoom: Math.round(smoothing.currentZoom * 1000) / 1000,
+    //     isAnimating: smoothing.isAnimating
+    //   });
+    // }
     
     // Set new targets
     smoothing.targetZoom = targetZoom;
@@ -3025,8 +3122,9 @@ function NodeCanvas() {
   }, []);
   
   const clampCoordinates = (x, y) => {
-    const boundedX = Math.min(Math.max(x, 0), canvasSize.width);
-    const boundedY = Math.min(Math.max(y, 0), canvasSize.height);
+    // Clamp to the large fixed canvas bounds (in canvas coordinates)
+    const boundedX = Math.min(Math.max(x, canvasSize.offsetX), canvasSize.offsetX + canvasSize.width);
+    const boundedY = Math.min(Math.max(y, canvasSize.offsetY), canvasSize.offsetY + canvasSize.height);
     return { x: boundedX, y: boundedY };
   };
   // Fast line-rectangle intersection for edge culling
@@ -3496,23 +3594,7 @@ function NodeCanvas() {
       }
     }
 
-    setDebugData((prev) => ({
-      ...prev,
-      info: 'Wheel event',
-      rawDeltaX: e.deltaX.toFixed(2),
-      rawDeltaY: e.deltaY.toFixed(2),
-      ctrlKey: e.ctrlKey.toString(),
-      isMac: isMac.toString(),
-      deltaMode: e.deltaMode.toString(),
-      wheelDeltaY: (e.wheelDeltaY || 0).toFixed(2),
-      detectedDevice: deviceType,
-      detectedDeviceCandidate: candidateType,
-      lethargySense: String(lethargySense),
-      deviceLock: wheelStreamRef.current.lockedType || 'none',
-      mouseEvidence: String(wheelStreamRef.current.mouseEvidence || 0),
-      trackpadEvidence: String(wheelStreamRef.current.trackpadEvidence || 0),
-      historyLength: deltaHistoryRef.current.length.toString(),
-    }));
+    // setDebugData call removed - debug mode disabled
 
     // 1. Mac Pinch-to-Zoom (Ctrl key pressed) - always zoom regardless of device
     if (isMac && e.ctrlKey && !trackpadZoomEnabled) {
@@ -3534,17 +3616,7 @@ function NodeCanvas() {
           setPanOffset(result.panOffset);
           setZoomLevel(result.zoomLevel);
           }
-          setDebugData((prev) => ({
-            ...prev,
-            inputDevice: 'Trackpad (Mac)',
-            gesture: 'pinch-zoom',
-            zooming: true,
-            panning: false,
-            sensitivity: TRACKPAD_ZOOM_SENSITIVITY,
-            zoomLevel: result.zoomLevel.toFixed(2),
-            panOffsetX: result.panOffset.x.toFixed(2),
-            panOffsetY: result.panOffset.y.toFixed(2),
-          }));
+          // setDebugData call removed - debug mode disabled
           // Clear the flag after a delay
           setTimeout(() => { 
             if (opId === zoomOpIdRef.current) {
@@ -3553,7 +3625,7 @@ function NodeCanvas() {
           }, 100);
         } catch (error) {
           
-          setDebugData((prev) => ({ ...prev, info: 'Mac pinch zoom error', error: error.message }));
+          // setDebugData call removed - debug mode disabled
           isPanningOrZooming.current = false;
         }
         return; // Processed
@@ -3579,19 +3651,7 @@ function NodeCanvas() {
         setPanOffset((prev) => {
           const newX = Math.min(Math.max(prev.x + dx, minX), maxX);
           const newY = Math.min(Math.max(prev.y + dy, minY), maxY);
-          setDebugData((prevData) => ({
-            ...prevData,
-            inputDevice: 'Trackpad',
-            gesture: 'two-finger pan',
-            zooming: false,
-            panning: true,
-            sensitivity: PAN_DRAG_SENSITIVITY,
-            deltaX: deltaX.toFixed(2),
-            deltaY: deltaY.toFixed(2),
-            panOffsetX: newX.toFixed(2),
-            panOffsetY: newY.toFixed(2),
-            zoomLevel: zoomLevel.toFixed(2),
-          }));
+          // setDebugData call removed - debug mode disabled
           return { x: newX, y: newY };
         });
         // Clear the flag after a delay
@@ -3621,18 +3681,7 @@ function NodeCanvas() {
             setZoomLevel(result.zoomLevel);
               lastZoomTsRef.current = nowTs;
             }
-            setDebugData((prev) => ({
-                ...prev,
-                inputDevice: 'Mouse Wheel',
-                gesture: 'wheel-zoom',
-                zooming: true,
-                panning: false,
-                sensitivity: SMOOTH_MOUSE_WHEEL_ZOOM_SENSITIVITY,
-                deltaY: deltaY.toFixed(2),
-                zoomLevel: result.zoomLevel.toFixed(2),
-                panOffsetX: result.panOffset.x.toFixed(2),
-                panOffsetY: result.panOffset.y.toFixed(2),
-            }));
+            // setDebugData call removed - debug mode disabled
             // Clear the flag after a delay
             setTimeout(() => { 
               if (opId === zoomOpIdRef.current) {
@@ -3641,7 +3690,7 @@ function NodeCanvas() {
             }, 100);
         } catch (error) {
             
-            setDebugData((prev) => ({ ...prev, info: 'Wheel zoom error', error: error.message }));
+            // setDebugData call removed - debug mode disabled
             isPanningOrZooming.current = false;
         }
         return; // Processed
@@ -3649,15 +3698,7 @@ function NodeCanvas() {
 
     // 4. Fallback for truly unhandled events
     if (deltaY !== 0 || deltaX !== 0) {
-      setDebugData((prev) => ({
-        ...prev,
-        inputDevice: 'Unhandled Input',
-        gesture: 'unprocessed',
-        zooming: false,
-        panning: false,
-        deltaX: deltaX.toFixed(2),
-        deltaY: deltaY.toFixed(2),
-      }));
+      // setDebugData call removed - debug mode disabled
       // 
     }
   };
@@ -4773,7 +4814,6 @@ function NodeCanvas() {
     // setHasMouseMovedSinceDown(false); // Reset on next mousedown
   };
   const handleCanvasClick = (e) => {
-      console.log('Canvas click handler called', { target: e.target.tagName, classList: e.target.classList.toString() });
       if (wasDrawingConnection.current) {
           wasDrawingConnection.current = false;
           return;
@@ -4786,20 +4826,13 @@ function NodeCanvas() {
       if (e.target.closest('.pie-menu')) {
           return;
       }
-      if (e.target.tagName !== 'svg' || !e.target.classList.contains('canvas')) {
-          console.log('Canvas click blocked - wrong target:', e.target.tagName, e.target.classList.toString());
-          return;
-      }
+      // Allow clicks on the canvas SVG or the canvas-area container div
+      const isValidCanvasTarget = (
+          (e.target.tagName === 'svg' && e.target.classList.contains('canvas')) ||
+          (e.target.tagName === 'DIV' && e.target.classList.contains('canvas-area'))
+      );
+      if (!isValidCanvasTarget) return;
       if (isPaused || draggingNodeInfo || drawingConnectionFrom || mouseMoved.current || recentlyPanned || nodeNamePrompt.visible || !activeGraphId) {
-          console.log('Plus sign blocked:', {
-              isPaused,
-              draggingNodeInfo: !!draggingNodeInfo,
-              drawingConnectionFrom: !!drawingConnectionFrom,
-              mouseMoved: mouseMoved.current,
-              recentlyPanned,
-              nodeNamePrompt: nodeNamePrompt.visible,
-              activeGraphId: !!activeGraphId
-          });
           setLastInteractionType('blocked_click');
           return;
       }
@@ -5783,7 +5816,7 @@ function NodeCanvas() {
     }
     // If isTransitioningPieMenu is true, we don't change currentPieMenuData or isPieMenuRendered here.
     // The existing menu plays its exit animation, and onExitAnimationComplete handles the next steps.
-  }, [selectedNodeIdForPieMenu, nodes, previewingNodeId, targetPieMenuButtons, isTransitioningPieMenu, abstractionCarouselVisible, abstractionCarouselNode, carouselPieMenuStage, carouselFocusedNodeScale, carouselFocusedNodeDimensions, carouselFocusedNode]);
+  }, [selectedNodeIdForPieMenu, nodes, previewingNodeId, isTransitioningPieMenu, abstractionCarouselVisible, abstractionCarouselNode, carouselPieMenuStage, carouselFocusedNodeScale, carouselFocusedNodeDimensions, carouselFocusedNode]);
 
   // --- Hurtle Animation State & Logic ---
   const [hurtleAnimation, setHurtleAnimation] = useState(null);
@@ -6751,83 +6784,7 @@ function NodeCanvas() {
                 </g>
               )}
 
-              {/* DEBUG: Canvas and viewport boundaries */}
-              <g className="debug-boundaries" opacity="0.8">
-                {/* Canvas bounds - GREEN (full canvas area) */}
-                <rect
-                  x={canvasSize.offsetX}
-                  y={canvasSize.offsetY}
-                  width={canvasSize.width}
-                  height={canvasSize.height}
-                  fill="none"
-                  stroke="green"
-                  strokeWidth={6 / zoomLevel}
-                  strokeDasharray={`${40 / zoomLevel},${10 / zoomLevel}`}
-                  pointerEvents="none"
-                />
-                
-                {/* Viewport bounds - BLUE (what you can see) */}
-                <rect
-                  x={(-panOffset.x) / zoomLevel + canvasSize.offsetX}
-                  y={(-panOffset.y) / zoomLevel + canvasSize.offsetY}
-                  width={viewportSize.width / zoomLevel}
-                  height={viewportSize.height / zoomLevel}
-                  fill="none"
-                  stroke="blue"
-                  strokeWidth={8 / zoomLevel}
-                  strokeDasharray={`${30 / zoomLevel},${15 / zoomLevel}`}
-                  pointerEvents="none"
-                />
-                
-                {/* Origin marker - PURPLE (should be center of canvas) */}
-                <circle
-                  cx={0}
-                  cy={0}
-                  r={30 / zoomLevel}
-                  fill="purple"
-                  opacity="0.7"
-                  pointerEvents="none"
-                />
-                
-                {/* Canvas corner markers - ORANGE */}
-                <circle cx={canvasSize.offsetX} cy={canvasSize.offsetY} r={15 / zoomLevel} fill="orange" opacity="0.7" pointerEvents="none" />
-                <circle cx={canvasSize.offsetX + canvasSize.width} cy={canvasSize.offsetY} r={15 / zoomLevel} fill="orange" opacity="0.7" pointerEvents="none" />
-                <circle cx={canvasSize.offsetX} cy={canvasSize.offsetY + canvasSize.height} r={15 / zoomLevel} fill="orange" opacity="0.7" pointerEvents="none" />
-                <circle cx={canvasSize.offsetX + canvasSize.width} cy={canvasSize.offsetY + canvasSize.height} r={15 / zoomLevel} fill="orange" opacity="0.7" pointerEvents="none" />
-                
-                {/* Debug text */}
-                <text
-                  x={(-panOffset.x) / zoomLevel + canvasSize.offsetX + 10 / zoomLevel}
-                  y={(-panOffset.y) / zoomLevel + canvasSize.offsetY + 30 / zoomLevel}
-                  fontSize={20 / zoomLevel}
-                  fill="black"
-                  fontFamily="monospace"
-                  pointerEvents="none"
-                  fontWeight="bold"
-                >
-                  🟣 PURPLE = Origin (0,0) | 🟠 ORANGE = Canvas corners | 🟢 GREEN = Full canvas | 🔵 BLUE = Viewport
-                </text>
-                <text
-                  x={(-panOffset.x) / zoomLevel + canvasSize.offsetX + 10 / zoomLevel}
-                  y={(-panOffset.y) / zoomLevel + canvasSize.offsetY + 60 / zoomLevel}
-                  fontSize={16 / zoomLevel}
-                  fill="black"
-                  fontFamily="monospace"
-                  pointerEvents="none"
-                >
-                  Zoom: {zoomLevel.toFixed(3)} | Canvas: {canvasSize.width}×{canvasSize.height} | MinZoom: {MIN_ZOOM.toFixed(4)}
-                </text>
-                <text
-                  x={(-panOffset.x) / zoomLevel + canvasSize.offsetX + 10 / zoomLevel}
-                  y={(-panOffset.y) / zoomLevel + canvasSize.offsetY + 90 / zoomLevel}
-                  fontSize={16 / zoomLevel}
-                  fill="black"
-                  fontFamily="monospace"
-                  pointerEvents="none"
-                >
-                  Viewport: {viewportSize.width}×{viewportSize.height} | Pan: [{panOffset.x.toFixed(0)}, {panOffset.y.toFixed(0)}]
-                </text>
-              </g>
+              {/* Debug boundaries - disabled */}
 
               {isViewReady && (
                 <>
@@ -8365,12 +8322,7 @@ function NodeCanvas() {
             );
           })()}
           
-          {debugMode && (
-            <DebugOverlay 
-              debugData={debugData}
-              hideOverlay={() => setDebugMode(false)}
-            />
-          )}
+          {/* Debug overlay disabled */}
         </div>
 
         {/* Dynamic Particle Transfer - starts under node, grows during acceleration, perfect z-layering */}

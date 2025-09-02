@@ -54,17 +54,17 @@ const EdgeGlowIndicator = ({
       const nodeCenterY = node.y + (isNodePreviewing ? NODE_HEIGHT / 2 : dims.currentHeight / 2);
 
       // Calculate where the node center appears in screen coordinates
-      // Account for the canvas offset system (-10000, -10000) used in NodeCanvas
-      // The canvas coordinate system: (0,0) is at center of 20k x 20k canvas
+      // Account for the canvas offset system (-50000, -50000) used in NodeCanvas
+      // The canvas coordinate system: (0,0) is at center of 100k x 100k canvas
       // Node positions are in canvas coordinates, need to transform to screen coordinates
-      const canvasOffsetX = -10000; // From canvasSize.offsetX
-      const canvasOffsetY = -10000; // From canvasSize.offsetY
+      const canvasOffsetX = -50000; // From canvasSize.offsetX
+      const canvasOffsetY = -50000; // From canvasSize.offsetY
       
       // Transform from canvas coordinates to screen coordinates
       // NodeCanvas transform: translate(panOffset.x - canvasOffsetX * zoomLevel, panOffset.y - canvasOffsetY * zoomLevel) scale(zoomLevel)
       // This means: screenPos = (canvasPos * zoomLevel) + (panOffset + (-canvasOffset) * zoomLevel)
       // Simplified: screenPos = (canvasPos + (-canvasOffset)) * zoomLevel + panOffset
-      // Since canvasOffset is -10000, -canvasOffset is +10000
+      // Since canvasOffset is -50000, -canvasOffset is +50000
       // IMPORTANT: Add rect.left and rect.top like the original working version
       const nodeScreenX = (nodeCenterX + (-canvasOffsetX)) * zoomLevel + panOffset.x + rect.left;
       const nodeScreenY = (nodeCenterY + (-canvasOffsetY)) * zoomLevel + panOffset.y + rect.top;
