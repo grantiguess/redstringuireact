@@ -13,13 +13,18 @@ const EdgeGlowIndicator = ({
   previewingNodeId,
   containerRef,
   showViewportDebug = false,
-  showDirectionLines = false
+  showDirectionLines = false,
+  canvasViewportSize // Pass in the fixed canvas viewport size
 }) => {
   // Get TypeList visibility from store
   const typeListMode = useGraphStore(state => state.typeListMode);
   const typeListVisible = typeListMode !== 'closed';
   
+  // Use the panel-based viewport bounds for positioning the overlay
   const viewportBounds = useViewportBounds(leftPanelExpanded, rightPanelExpanded, typeListVisible);
+  
+  // Use the fixed canvas viewport size for coordinate calculations
+  const canvasSize = canvasViewportSize || { width: window.innerWidth, height: window.innerHeight };
 
   const allNodeData = useMemo(() => {
     if (!nodes?.length || !viewportBounds) return [];
@@ -29,11 +34,11 @@ const EdgeGlowIndicator = ({
     if (!rect) return []; // No container, no coordinate calculations possible
 
     // Calculate the actual visible viewport area in canvas coordinates
-    // This is the area within the calculated viewport bounds, not just what's on screen
+    // Use the fixed canvas size for consistent coordinate system
     const canvasViewportMinX = (-panOffset.x) / zoomLevel;
     const canvasViewportMinY = (-panOffset.y) / zoomLevel;
-    const canvasViewportMaxX = canvasViewportMinX + viewportBounds.width / zoomLevel;
-    const canvasViewportMaxY = canvasViewportMinY + viewportBounds.height / zoomLevel;
+    const canvasViewportMaxX = canvasViewportMinX + canvasSize.width / zoomLevel;
+    const canvasViewportMaxY = canvasViewportMinY + canvasSize.height / zoomLevel;
 
     const nodeData = [];
 
@@ -48,21 +53,33 @@ const EdgeGlowIndicator = ({
       const nodeCenterX = node.x + dims.currentWidth / 2;
       const nodeCenterY = node.y + (isNodePreviewing ? NODE_HEIGHT / 2 : dims.currentHeight / 2);
 
-      // Calculate where the node center appears in overlay coordinates
-      // Use the EXACT same pattern as NodeCanvas.jsx line 2443-2445 and line 5524-5525:
-      // const screenX = nodeCenter.x * zoomLevel + panOffset.x + rect.left;
-      // const screenY = nodeCenter.y * zoomLevel + panOffset.y + rect.top;
-      const nodeScreenX = nodeCenterX * zoomLevel + panOffset.x + rect.left;
-      const nodeScreenY = nodeCenterY * zoomLevel + panOffset.y + rect.top;
+      // Calculate where the node center appears in screen coordinates
+      // Account for the canvas offset system (-10000, -10000) used in NodeCanvas
+      // The canvas coordinate system: (0,0) is at center of 20k x 20k canvas
+      // Node positions are in canvas coordinates, need to transform to screen coordinates
+      const canvasOffsetX = -10000; // From canvasSize.offsetX
+      const canvasOffsetY = -10000; // From canvasSize.offsetY
+      
+      // Transform from canvas coordinates to screen coordinates
+      // NodeCanvas transform: translate(panOffset.x - canvasOffsetX * zoomLevel, panOffset.y - canvasOffsetY * zoomLevel) scale(zoomLevel)
+      // This means: screenPos = (canvasPos * zoomLevel) + (panOffset + (-canvasOffset) * zoomLevel)
+      // Simplified: screenPos = (canvasPos + (-canvasOffset)) * zoomLevel + panOffset
+      // Since canvasOffset is -10000, -canvasOffset is +10000
+      // IMPORTANT: Add rect.left and rect.top like the original working version
+      const nodeScreenX = (nodeCenterX + (-canvasOffsetX)) * zoomLevel + panOffset.x + rect.left;
+      const nodeScreenY = (nodeCenterY + (-canvasOffsetY)) * zoomLevel + panOffset.y + rect.top;
+      
+      // Convert to overlay coordinates relative to the viewport bounds
       const nodeOverlayX = nodeScreenX - viewportBounds.x;
       const nodeOverlayY = nodeScreenY - viewportBounds.y;
       
-      // Check if the node center (green dot) is outside the viewport bounds (red dotted box)
+      // Check if the node center is outside the visible viewport area
+      // Use viewportBounds for the actual visible area (accounts for panels)
       const isNodeCenterOutsideViewport = (
-        nodeOverlayX < 0 ||  // to the left of viewport
-        nodeOverlayX > viewportBounds.width ||   // to the right of viewport
-        nodeOverlayY < 0 || // above viewport
-        nodeOverlayY > viewportBounds.height       // below viewport
+        nodeOverlayX < 0 ||  // to the left of visible viewport
+        nodeOverlayX > viewportBounds.width ||   // to the right of visible viewport
+        nodeOverlayY < 0 || // above visible viewport
+        nodeOverlayY > viewportBounds.height       // below visible viewport
       );
 
       // Store all node data (for debug visualization)
@@ -80,7 +97,7 @@ const EdgeGlowIndicator = ({
     });
 
     return nodeData;
-  }, [nodes, panOffset, zoomLevel, viewportBounds, previewingNodeId, containerRef, leftPanelExpanded, rightPanelExpanded]);
+  }, [nodes, panOffset, zoomLevel, viewportBounds, previewingNodeId, containerRef, leftPanelExpanded, rightPanelExpanded, canvasSize]);
 
   const offScreenGlows = useMemo(() => {
     const glows = [];
@@ -212,10 +229,10 @@ const EdgeGlowIndicator = ({
             top: 0,
             width: '100%',
             height: '100%',
-            border: '2px dashed rgba(255, 0, 0, 0.8)',
+            border: '4px solid red',
             boxSizing: 'border-box',
             pointerEvents: 'none',
-            boxShadow: 'inset 0 0 20px rgba(255, 0, 0, 0.3)',
+            backgroundColor: 'rgba(255, 0, 0, 0.1)',
             zIndex: 999999
           }}
         />
@@ -304,8 +321,8 @@ const EdgeGlowIndicator = ({
       {/* Debug corner labels */}
       {showViewportDebug && (
         <>
-          <div style={{ position: 'absolute', top: '5px', left: '5px', color: 'red', fontSize: '12px', fontWeight: 'bold' }}>
-            VIEWPORT: {Math.round(viewportBounds.x)},{Math.round(viewportBounds.y)} {Math.round(viewportBounds.width)}x{Math.round(viewportBounds.height)}
+          <div style={{ position: 'absolute', top: '5px', left: '5px', color: 'red', fontSize: '16px', fontWeight: 'bold', backgroundColor: 'yellow', padding: '4px', zIndex: 999999 }}>
+            🔴 DEBUG MODE ON - VIEWPORT: {Math.round(viewportBounds.x)},{Math.round(viewportBounds.y)} {Math.round(viewportBounds.width)}x{Math.round(viewportBounds.height)}
           </div>
           <div style={{ position: 'absolute', top: '25px', left: '5px', color: 'red', fontSize: '10px' }}>
             TypeList: {typeListVisible ? 'VISIBLE' : 'HIDDEN'} | Left: {leftPanelExpanded ? 'OPEN' : 'CLOSED'} | Right: {rightPanelExpanded ? 'OPEN' : 'CLOSED'}

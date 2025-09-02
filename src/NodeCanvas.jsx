@@ -869,11 +869,26 @@ function NodeCanvas() {
   // Use proper viewport bounds hook for accurate, live viewport calculations
   const viewportBounds = useViewportBounds(leftPanelExpanded, rightPanelExpanded, false);
 
-  // Calculate viewport and canvas sizes from bounds
+  // Calculate viewport size - use fixed window dimensions for canvas coordinate system
+  // This ensures canvas coordinates are independent of panel state
+  const [windowSize, setWindowSize] = useState(() => ({ 
+    width: window.innerWidth, 
+    height: window.innerHeight 
+  }));
+  
   const viewportSize = useMemo(() => ({
-    width: viewportBounds.width,
-    height: viewportBounds.height,
-  }), [viewportBounds.width, viewportBounds.height]);
+    width: windowSize.width,
+    height: windowSize.height,
+  }), [windowSize.width, windowSize.height]);
+
+  // Listen for window resize to update viewport size
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Large fixed canvas - independent of viewport changes
   const canvasSize = useMemo(() => {
@@ -5184,30 +5199,48 @@ function NodeCanvas() {
         });
       }
 
-      // Handle zoom (simple direct approach - no async calculations)
+      // Handle zoom (simple stable approach)
       let zoomDelta = 0;
       if (keysPressed.current[' ']) zoomDelta = -KEYBOARD_ZOOM_SPEED; // Space = zoom out
       if (keysPressed.current['Shift']) zoomDelta = KEYBOARD_ZOOM_SPEED; // Shift = zoom in
         
-        if (zoomDelta !== 0) {
-          setZoomLevel(prevZoom => {
-            const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom + zoomDelta));
+      if (zoomDelta !== 0) {
+        setZoomLevel(prevZoom => {
+          const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom + zoomDelta));
+          
+          // Only adjust pan if zoom actually changed
+          if (newZoom !== prevZoom) {
+            const zoomRatio = newZoom / prevZoom;
+            // Use the actual visible viewport center, not the full window center
+            const centerX = viewportBounds.width / 2;
+            const centerY = viewportBounds.height / 2;
             
-          // Simple pan adjustment to keep view centered
-            if (newZoom !== prevZoom) {
-              const zoomRatio = newZoom / prevZoom;
-              const centerX = viewportSize.width / 2;
-              const centerY = viewportSize.height / 2;
+            // Update pan to keep view centered, with boundary constraints
+            // Account for the viewport offset when calculating zoom center
+            setPanOffset(prevPan => {
+              // The zoom center should be relative to the viewport bounds
+              const zoomCenterX = centerX + viewportBounds.x;
+              const zoomCenterY = centerY + viewportBounds.y;
               
-            setPanOffset(prevPan => ({
-                  x: centerX - (centerX - prevPan.x) * zoomRatio,
-                  y: centerY - (centerY - prevPan.y) * zoomRatio
-            }));
-            }
-            
-            return newZoom;
-          });
-        }
+              const newPanX = zoomCenterX - (zoomCenterX - prevPan.x) * zoomRatio;
+              const newPanY = zoomCenterY - (zoomCenterY - prevPan.y) * zoomRatio;
+              
+              // Apply zoom boundaries
+              const maxPanX = 0;
+              const minPanX = viewportSize.width - canvasSize.width * newZoom;
+              const maxPanY = 0;
+              const minPanY = viewportSize.height - canvasSize.height * newZoom;
+              
+              return {
+                x: Math.max(minPanX, Math.min(maxPanX, newPanX)),
+                y: Math.max(minPanY, Math.min(maxPanY, newPanY))
+              };
+            });
+          }
+          
+          return newZoom;
+        });
+      }
     };
 
     // Use requestAnimationFrame to sync with display refresh rate
@@ -8204,6 +8237,9 @@ function NodeCanvas() {
             rightPanelExpanded={rightPanelExpanded}
             previewingNodeId={previewingNodeId}
             containerRef={containerRef}
+            canvasViewportSize={viewportSize}
+            showViewportDebug={false}
+            showDirectionLines={false}
           />
 
           {/* Overlay panel resizers (outside panels) */}
