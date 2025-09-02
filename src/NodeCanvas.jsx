@@ -4481,8 +4481,17 @@ function NodeCanvas() {
             // Multi-node drag
             if (draggingNodeInfo.relativeOffsets) {
                 const primaryInstanceId = draggingNodeInfo.primaryId;
-                const dx = (e.clientX - draggingNodeInfo.initialMouse.x) / zoomLevel;
-                const dy = (e.clientY - draggingNodeInfo.initialMouse.y) / zoomLevel;
+                // Use the same coordinate system as single node drag for consistency
+                const rect = containerRef.current.getBoundingClientRect();
+                const mouseCanvasX = (e.clientX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
+                const mouseCanvasY = (e.clientY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
+                
+                // Calculate new primary position based on mouse position and initial offset
+                const initialMouseCanvasX = (draggingNodeInfo.initialMouse.x - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
+                const initialMouseCanvasY = (draggingNodeInfo.initialMouse.y - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
+                
+                const dx = mouseCanvasX - initialMouseCanvasX;
+                const dy = mouseCanvasY - initialMouseCanvasY;
                 let newPrimaryX = draggingNodeInfo.initialPrimaryPos.x + dx;
                 let newPrimaryY = draggingNodeInfo.initialPrimaryPos.y + dy;
 
@@ -4491,17 +4500,15 @@ function NodeCanvas() {
                   const primaryNode = nodes.find(n => n.id === primaryInstanceId);
                   if (primaryNode) {
                     const dims = getNodeDimensions(primaryNode, false, null);
-                    // Get mouse position in canvas coordinates
-                    const mouseCanvasX = (e.clientX - panOffset.x) / zoomLevel;
-                    const mouseCanvasY = (e.clientY - panOffset.y) / zoomLevel;
-                    
-                                         const snapped = snapToGridAnimated(mouseCanvasX, mouseCanvasY, dims.currentWidth, dims.currentHeight, { x: primaryNode.x, y: primaryNode.y });
+                    // Use the already calculated mouse coordinates
+                    const snapped = snapToGridAnimated(mouseCanvasX, mouseCanvasY, dims.currentWidth, dims.currentHeight, { x: primaryNode.x, y: primaryNode.y });
                     
                     newPrimaryX = snapped.x;
                     newPrimaryY = snapped.y;
                   }
                 }
 
+                // Update positions and maintain scaling animation for all selected nodes
                 const positionUpdates = [];
                 positionUpdates.push({ instanceId: primaryInstanceId, x: newPrimaryX, y: newPrimaryY });
 
@@ -4515,6 +4522,13 @@ function NodeCanvas() {
                 });
 
                 storeActions.updateMultipleNodeInstancePositions(activeGraphId, positionUpdates);
+                
+                // Maintain scaling animation during drag for all selected nodes
+                selectedInstanceIds.forEach(id => {
+                    storeActions.updateNodeInstance(activeGraphId, id, draft => { 
+                        if (draft.scale !== 1.1) draft.scale = 1.1; 
+                    });
+                });
 
             } else {
                 // Single node drag
@@ -4723,9 +4737,9 @@ function NodeCanvas() {
     setIsPanning(false);
     isPanningOrZooming.current = false; // Clear the flag when panning ends
     isMouseDown.current = false;
-    // It's important to reset mouseMoved.current here AFTER all logic that depends on it for this up-event is done.
-    // setHasMouseMovedSinceDown is reset on the next mousedown.
-    setTimeout(() => { mouseMoved.current = false; }, 0);
+    // Reset mouseMoved.current immediately after mouse up logic is done
+    // This prevents race condition with canvas click handler
+    mouseMoved.current = false;
   };
   const handleMouseUpCanvas = (e) => {
     if (isPaused || !activeGraphId) return;
@@ -4759,6 +4773,7 @@ function NodeCanvas() {
     // setHasMouseMovedSinceDown(false); // Reset on next mousedown
   };
   const handleCanvasClick = (e) => {
+      console.log('Canvas click handler called', { target: e.target.tagName, classList: e.target.classList.toString() });
       if (wasDrawingConnection.current) {
           wasDrawingConnection.current = false;
           return;
@@ -4771,8 +4786,20 @@ function NodeCanvas() {
       if (e.target.closest('.pie-menu')) {
           return;
       }
-      if (e.target.tagName !== 'svg' || !e.target.classList.contains('canvas')) return;
+      if (e.target.tagName !== 'svg' || !e.target.classList.contains('canvas')) {
+          console.log('Canvas click blocked - wrong target:', e.target.tagName, e.target.classList.toString());
+          return;
+      }
       if (isPaused || draggingNodeInfo || drawingConnectionFrom || mouseMoved.current || recentlyPanned || nodeNamePrompt.visible || !activeGraphId) {
+          console.log('Plus sign blocked:', {
+              isPaused,
+              draggingNodeInfo: !!draggingNodeInfo,
+              drawingConnectionFrom: !!drawingConnectionFrom,
+              mouseMoved: mouseMoved.current,
+              recentlyPanned,
+              nodeNamePrompt: nodeNamePrompt.visible,
+              activeGraphId: !!activeGraphId
+          });
           setLastInteractionType('blocked_click');
           return;
       }
