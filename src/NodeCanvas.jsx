@@ -868,18 +868,30 @@ function NodeCanvas() {
 
   // Use proper viewport bounds hook for accurate, live viewport calculations
   const viewportBounds = useViewportBounds(leftPanelExpanded, rightPanelExpanded, false);
-  
+
   // Calculate viewport and canvas sizes from bounds
   const viewportSize = useMemo(() => ({
     width: viewportBounds.width,
     height: viewportBounds.height,
   }), [viewportBounds.width, viewportBounds.height]);
-  
-  // Make base canvas 8x larger (2x the original 4x) and ensure it updates with viewport
-  const canvasSize = useMemo(() => ({
-    width: viewportBounds.width * 8,
-    height: viewportBounds.height * 8,
-  }), [viewportBounds.width, viewportBounds.height]);
+
+  // Large fixed canvas - independent of viewport changes
+  const canvasSize = useMemo(() => {
+    // Create a large fixed canvas (20k x 20k pixels)
+    const canvasWidth = 20000;
+    const canvasHeight = 20000;
+    
+    // Center the canvas so (0,0) is in the middle
+    const offsetX = -canvasWidth / 2;
+    const offsetY = -canvasHeight / 2;
+    
+    return {
+      width: canvasWidth,
+      height: canvasHeight,
+      offsetX,
+      offsetY
+    };
+  }, []); // No dependencies - truly fixed size
   const [zoomLevel, setZoomLevel] = useState(1);
   // Hover state for grid when mode is 'hover'
 
@@ -930,9 +942,11 @@ function NodeCanvas() {
     
     return snapped;
   };
+  // Calculate proper minimum zoom to prevent zooming beyond canvas edges
   const MIN_ZOOM = Math.max(
     viewportSize.width / canvasSize.width,
-    viewportSize.height / canvasSize.height
+    viewportSize.height / canvasSize.height,
+    0.05  // Absolute minimum
   );
 
   // Compute and update culling sets when pan/zoom or graph state changes (batch to next frame)
@@ -948,8 +962,8 @@ function NodeCanvas() {
     let rafId = null;
     const compute = () => {
       // Derive canvas-space viewport
-      const minX = (-panOffset.x) / zoomLevel;
-      const minY = (-panOffset.y) / zoomLevel;
+      const minX = (-panOffset.x) / zoomLevel + canvasSize.offsetX;
+      const minY = (-panOffset.y) / zoomLevel + canvasSize.offsetY;
       const maxX = minX + viewportSize.width / zoomLevel;
       const maxY = minY + viewportSize.height / zoomLevel;
       
@@ -3052,8 +3066,8 @@ function NodeCanvas() {
   const isInsideNode = (nodeData, clientX, clientY) => {
      if (!containerRef.current || !nodeData) return false;
      const rect = containerRef.current.getBoundingClientRect();
-     const scaledX = (clientX - rect.left - panOffset.x) / zoomLevel;
-     const scaledY = (clientY - rect.top - panOffset.y) / zoomLevel;
+     const scaledX = (clientX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
+     const scaledY = (clientY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
 
      // TODO: Adapt getNodeDimensions or get dimensions directly
      // For now, use fixed size as placeholder
@@ -3187,8 +3201,11 @@ function NodeCanvas() {
 
 
                 } else {
-                    // Single node drag setup
-                    const offset = { x: e.clientX - nodeData.x * zoomLevel - panOffset.x, y: e.clientY - nodeData.y * zoomLevel - panOffset.y };
+                    // Single node drag setup - calculate offset in canvas coordinates
+                    const rect = containerRef.current.getBoundingClientRect();
+                    const mouseCanvasX = (e.clientX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
+                    const mouseCanvasY = (e.clientY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
+                    const offset = { x: mouseCanvasX - nodeData.x, y: mouseCanvasY - nodeData.y };
                     setDraggingNodeInfo({ instanceId: instanceId, offset });
                     storeActions.updateNodeInstance(activeGraphId, instanceId, draft => { draft.scale = 1.1; });
                     
@@ -4238,8 +4255,8 @@ function NodeCanvas() {
     clearLabelsOnMouseMove(e);
     
     const rect = containerRef.current.getBoundingClientRect();
-    const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
-    const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
+    const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
+    const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
     const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
 
     // Edge hover detection (only when not dragging/panning)
@@ -4438,8 +4455,9 @@ function NodeCanvas() {
         requestAnimationFrame(() => { // Keep RAF
             // Group drag via label
             if (draggingNodeInfo.groupId && Array.isArray(draggingNodeInfo.memberOffsets)) {
-                const mouseCanvasX = (e.clientX - panOffset.x) / zoomLevel;
-                const mouseCanvasY = (e.clientY - panOffset.y) / zoomLevel;
+                const rect = containerRef.current.getBoundingClientRect();
+                const mouseCanvasX = (e.clientX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
+                const mouseCanvasY = (e.clientY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
                 const positionUpdates = draggingNodeInfo.memberOffsets.map(({ id, dx, dy }) => ({ instanceId: id, x: mouseCanvasX - dx, y: mouseCanvasY - dy }));
                 storeActions.updateMultipleNodeInstancePositions(activeGraphId, positionUpdates);
                 return;
@@ -4491,8 +4509,9 @@ function NodeCanvas() {
                   const dims = getNodeDimensions(node, false, null);
                   
                   // Get mouse position in canvas coordinates
-                  const mouseCanvasX = (e.clientX - panOffset.x) / zoomLevel;
-                  const mouseCanvasY = (e.clientY - panOffset.y) / zoomLevel;
+                  const rect = containerRef.current.getBoundingClientRect();
+                  const mouseCanvasX = (e.clientX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
+                  const mouseCanvasY = (e.clientY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
                   
                   let newX, newY;
                   
@@ -4505,8 +4524,8 @@ function NodeCanvas() {
                     newY = snapped.y;
                   } else {
                     // No grid snapping - use offset-based calculation
-                    newX = mouseCanvasX - (offset.x / zoomLevel);
-                    newY = mouseCanvasY - (offset.y / zoomLevel);
+                    newX = mouseCanvasX - offset.x;
+                    newY = mouseCanvasY - offset.y;
                   }
 
                   storeActions.updateNodeInstance(activeGraphId, instanceId, draft => {
@@ -4577,8 +4596,8 @@ function NodeCanvas() {
       e.preventDefault();
       e.stopPropagation();
       const rect = containerRef.current.getBoundingClientRect();
-      const startX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
-      const startY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
+      const startX = (e.clientX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
+      const startY = (e.clientY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
       setSelectionStart({ x: startX, y: startY });
       setSelectionRect({ x: startX, y: startY, width: 0, height: 0 });
       selectionBaseRef.current = new Set([...selectedInstanceIds]);
@@ -4789,8 +4808,8 @@ function NodeCanvas() {
       }
 
       const rect = containerRef.current.getBoundingClientRect();
-      const mouseX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
-      const mouseY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
+      const mouseX = (e.clientX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
+      const mouseY = (e.clientY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
       // Prevent plus sign if pie menu is active or about to become active
       if (!plusSign && selectedInstanceIds.size === 0) {
           setPlusSign({ x: mouseX, y: mouseY, mode: 'appear', tempName: '' });
@@ -6500,7 +6519,7 @@ function NodeCanvas() {
               width={canvasSize.width}
               height={canvasSize.height}
               style={{
-                  transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
+                  transform: `translate(${panOffset.x - canvasSize.offsetX * zoomLevel}px, ${panOffset.y - canvasSize.offsetY * zoomLevel}px) scale(${zoomLevel})`,
                   transformOrigin: '0 0',
                   backgroundColor: '#bdb5b5',
                   opacity: 1,
@@ -6562,8 +6581,9 @@ function NodeCanvas() {
                                clearTimeout(groupLongPressTimeout.current);
                                const downX = e.clientX; const downY = e.clientY;
                                groupLongPressTimeout.current = setTimeout(() => {
-                                 const mouseCanvasX = (downX - panOffset.x) / zoomLevel;
-                                 const mouseCanvasY = (downY - panOffset.y) / zoomLevel;
+                                 const rect = containerRef.current.getBoundingClientRect();
+                                 const mouseCanvasX = (downX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
+                                 const mouseCanvasY = (downY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
                                  const offsets = members.map(m => ({ id: m.id, dx: mouseCanvasX - m.x, dy: mouseCanvasY - m.y }));
                                  setDraggingNodeInfo({ groupId: group.id, memberOffsets: offsets });
                                }, LONG_PRESS_DURATION);
@@ -6594,8 +6614,11 @@ function NodeCanvas() {
                   {/* Thin line grid for 'always' using individual lines for better zoom handling */}
                   {gridMode === 'always' && (() => {
                     const lines = [];
-                    const startX = Math.floor((-panOffset.x / zoomLevel) / gridSize) * gridSize - gridSize * 5;
-                    const startY = Math.floor((-panOffset.y / zoomLevel) / gridSize) * gridSize - gridSize * 5;
+                    // Account for canvas offset in grid calculations
+                    const viewMinX = (-panOffset.x / zoomLevel) + canvasSize.offsetX;
+                    const viewMinY = (-panOffset.y / zoomLevel) + canvasSize.offsetY;
+                    const startX = Math.floor(viewMinX / gridSize) * gridSize - gridSize * 5;
+                    const startY = Math.floor(viewMinY / gridSize) * gridSize - gridSize * 5;
                     const endX = startX + (viewportSize.width / zoomLevel) + gridSize * 10;
                     const endY = startY + (viewportSize.height / zoomLevel) + gridSize * 10;
                     
@@ -6639,8 +6662,11 @@ function NodeCanvas() {
                     <g>
                       {(() => {
                         const dots = [];
-                        const startX = Math.floor((-panOffset.x / zoomLevel) / gridSize) * gridSize;
-                        const startY = Math.floor((-panOffset.y / zoomLevel) / gridSize) * gridSize;
+                        // Account for canvas offset in grid calculations
+                        const viewMinX = (-panOffset.x / zoomLevel) + canvasSize.offsetX;
+                        const viewMinY = (-panOffset.y / zoomLevel) + canvasSize.offsetY;
+                        const startX = Math.floor(viewMinX / gridSize) * gridSize;
+                        const startY = Math.floor(viewMinY / gridSize) * gridSize;
                         const endX = startX + (viewportSize.width / zoomLevel) + gridSize * 2;
                         const endY = startY + (viewportSize.height / zoomLevel) + gridSize * 2;
                         
@@ -6664,6 +6690,85 @@ function NodeCanvas() {
                   )}
                 </g>
               )}
+
+              {/* DEBUG: Canvas and viewport boundaries */}
+              <g className="debug-boundaries" opacity="0.8">
+                {/* Canvas bounds - GREEN (full canvas area) */}
+                <rect
+                  x={canvasSize.offsetX}
+                  y={canvasSize.offsetY}
+                  width={canvasSize.width}
+                  height={canvasSize.height}
+                  fill="none"
+                  stroke="green"
+                  strokeWidth={6 / zoomLevel}
+                  strokeDasharray={`${40 / zoomLevel},${10 / zoomLevel}`}
+                  pointerEvents="none"
+                />
+                
+                {/* Viewport bounds - BLUE (what you can see) */}
+                <rect
+                  x={(-panOffset.x) / zoomLevel + canvasSize.offsetX}
+                  y={(-panOffset.y) / zoomLevel + canvasSize.offsetY}
+                  width={viewportSize.width / zoomLevel}
+                  height={viewportSize.height / zoomLevel}
+                  fill="none"
+                  stroke="blue"
+                  strokeWidth={8 / zoomLevel}
+                  strokeDasharray={`${30 / zoomLevel},${15 / zoomLevel}`}
+                  pointerEvents="none"
+                />
+                
+                {/* Origin marker - PURPLE (should be center of canvas) */}
+                <circle
+                  cx={0}
+                  cy={0}
+                  r={30 / zoomLevel}
+                  fill="purple"
+                  opacity="0.7"
+                  pointerEvents="none"
+                />
+                
+                {/* Canvas corner markers - ORANGE */}
+                <circle cx={canvasSize.offsetX} cy={canvasSize.offsetY} r={15 / zoomLevel} fill="orange" opacity="0.7" pointerEvents="none" />
+                <circle cx={canvasSize.offsetX + canvasSize.width} cy={canvasSize.offsetY} r={15 / zoomLevel} fill="orange" opacity="0.7" pointerEvents="none" />
+                <circle cx={canvasSize.offsetX} cy={canvasSize.offsetY + canvasSize.height} r={15 / zoomLevel} fill="orange" opacity="0.7" pointerEvents="none" />
+                <circle cx={canvasSize.offsetX + canvasSize.width} cy={canvasSize.offsetY + canvasSize.height} r={15 / zoomLevel} fill="orange" opacity="0.7" pointerEvents="none" />
+                
+                {/* Debug text */}
+                <text
+                  x={(-panOffset.x) / zoomLevel + canvasSize.offsetX + 10 / zoomLevel}
+                  y={(-panOffset.y) / zoomLevel + canvasSize.offsetY + 30 / zoomLevel}
+                  fontSize={20 / zoomLevel}
+                  fill="black"
+                  fontFamily="monospace"
+                  pointerEvents="none"
+                  fontWeight="bold"
+                >
+                  🟣 PURPLE = Origin (0,0) | 🟠 ORANGE = Canvas corners | 🟢 GREEN = Full canvas | 🔵 BLUE = Viewport
+                </text>
+                <text
+                  x={(-panOffset.x) / zoomLevel + canvasSize.offsetX + 10 / zoomLevel}
+                  y={(-panOffset.y) / zoomLevel + canvasSize.offsetY + 60 / zoomLevel}
+                  fontSize={16 / zoomLevel}
+                  fill="black"
+                  fontFamily="monospace"
+                  pointerEvents="none"
+                >
+                  Zoom: {zoomLevel.toFixed(3)} | Canvas: {canvasSize.width}×{canvasSize.height} | MinZoom: {MIN_ZOOM.toFixed(4)}
+                </text>
+                <text
+                  x={(-panOffset.x) / zoomLevel + canvasSize.offsetX + 10 / zoomLevel}
+                  y={(-panOffset.y) / zoomLevel + canvasSize.offsetY + 90 / zoomLevel}
+                  fontSize={16 / zoomLevel}
+                  fill="black"
+                  fontFamily="monospace"
+                  pointerEvents="none"
+                >
+                  Viewport: {viewportSize.width}×{viewportSize.height} | Pan: [{panOffset.x.toFixed(0)}, {panOffset.y.toFixed(0)}]
+                </text>
+              </g>
+
               {isViewReady && (
                 <>
               <g className="base-layer">
