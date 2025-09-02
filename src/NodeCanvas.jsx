@@ -79,6 +79,9 @@ const KEYBOARD_PAN_SPEED = 12;                  // for keyboard panning (much fa
 const KEYBOARD_ZOOM_SPEED = 0.01;               // for keyboard zooming (extra smooth)
 
 function NodeCanvas() {
+  // CULLING DISABLE FLAG - Set to true to enable culling, false to disable
+  const ENABLE_CULLING = false;
+  
   const svgRef = useRef(null);
   const wrapperRef = useRef(null);
 
@@ -1072,6 +1075,13 @@ function NodeCanvas() {
 
   // Compute and update culling sets when pan/zoom or graph state changes (batch to next frame)
   useEffect(() => {
+    if (!ENABLE_CULLING) {
+      // CULLING DISABLED - Show all nodes and edges
+      setVisibleNodeIds(new Set(nodes.map(n => n.id)));
+      setVisibleEdges(edges);
+      return;
+    }
+    
     // Guard until basic view state is present
     if (!viewportSize || !canvasSize) return;
     
