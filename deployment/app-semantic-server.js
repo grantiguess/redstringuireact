@@ -147,6 +147,24 @@ app.get('/api/github/app/installations', async (req, res) => {
   }
 });
 
+// Create repository via GitHub App installation
+app.post('/api/github/app/create-repository', async (req, res) => {
+  try {
+    const response = await fetch(`${oauthBaseUrl}/api/github/app/create-repository`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('OAuth proxy error (create repository):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
 // Serve static files from the dist directory
 app.use(express.static(distPath));
 
