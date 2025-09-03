@@ -8086,6 +8086,8 @@ function NodeCanvas() {
                            const centerX = activeNodeToRender.x + dimensions.currentWidth / 2;
                            const centerY = activeNodeToRender.y + dimensions.currentHeight / 2;
 
+                           console.log('🎯 Rendering orbit overlay with data:', orbitData);
+
                            return (
                              <>
                                <OrbitOverlay

@@ -30,6 +30,34 @@ export async function fetchOrbitCandidatesForPrototype(prototype, options = {}) 
     return cached.candidates;
   }
 
+  try {
+    // Mock data for testing - remove this when real resolvers are implemented
+    const mockCandidates = [
+      { id: 'mock-1', name: 'Test Concept 1', uri: 'http://example.org/1', source: 'mock', score: 0.9, tier: 'A' },
+      { id: 'mock-2', name: 'Test Concept 2', uri: 'http://example.org/2', source: 'mock', score: 0.85, tier: 'A' },
+      { id: 'mock-3', name: 'Test Concept 3', uri: 'http://example.org/3', source: 'mock', score: 0.8, tier: 'A' },
+      { id: 'mock-4', name: 'Test Concept 4', uri: 'http://example.org/4', source: 'mock', score: 0.75, tier: 'B' },
+      { id: 'mock-5', name: 'Test Concept 5', uri: 'http://example.org/5', source: 'mock', score: 0.7, tier: 'B' },
+      { id: 'mock-6', name: 'Test Concept 6', uri: 'http://example.org/6', source: 'mock', score: 0.65, tier: 'B' },
+      { id: 'mock-7', name: 'Test Concept 7', uri: 'http://example.org/7', source: 'mock', score: 0.6, tier: 'C' },
+      { id: 'mock-8', name: 'Test Concept 8', uri: 'http://example.org/8', source: 'mock', score: 0.55, tier: 'C' },
+    ];
+
+    console.log('🎭 Using mock candidates for testing:', mockCandidates);
+
+    // Split into inner (Tier A) and outer (Tier B/C)
+    const inner = mockCandidates.filter(c => c.tier === 'A');
+    const outer = mockCandidates.filter(c => c.tier !== 'A');
+    const aggregated = mockCandidates;
+
+    const result = { inner, outer, all: aggregated };
+    orbitCache.set(key, { timestamp: now, candidates: result });
+    return result;
+
+    // TODO: Uncomment when real resolvers are ready
+    // const graphStore = (await import('../store/graphStore.js')).default.getState();
+  } catch {}
+
   const graphStore = (await import('../store/graphStore.js')).default.getState();
   const federation = new KnowledgeFederation(graphStore);
 

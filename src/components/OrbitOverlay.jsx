@@ -115,6 +115,25 @@ export default function OrbitOverlay({
   innerCandidates,
   outerCandidates
 }) {
+  console.log('🎨 OrbitOverlay render:', { 
+    centerX, 
+    centerY, 
+    focusWidth, 
+    focusHeight, 
+    innerCandidatesCount: innerCandidates?.length || 0,
+    outerCandidatesCount: outerCandidates?.length || 0
+  });
+
+  if (!innerCandidates || innerCandidates.length === 0) {
+    console.log('❌ No inner candidates to show in orbit');
+    return null;
+  }
+
+  if (!outerCandidates || outerCandidates.length === 0) {
+    console.log('❌ No outer candidates to show in orbit');
+    return null;
+  }
+
   const measuredInner = useMemo(() => measureCandidates(innerCandidates), [innerCandidates]);
   const measuredOuter = useMemo(() => measureCandidates(outerCandidates), [outerCandidates]);
 
