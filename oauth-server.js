@@ -504,6 +504,134 @@ app.get('/api/github/app/installation/:installation_id', async (req, res) => {
   }
 });
 
+// Create repository via GitHub App installation
+app.post('/api/github/app/create-repository', async (req, res) => {
+  try {
+    const { installation_id, name, private: isPrivate, description, auto_init } = req.body;
+    
+    if (!installation_id || !name) {
+      return res.status(400).json({
+        error: 'Installation ID and repository name are required',
+        service: 'oauth-server'
+      });
+    }
+
+    const appId = process.env.GITHUB_APP_ID;
+    const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+
+    if (!appId || !privateKey) {
+      return res.status(500).json({
+        error: 'GitHub App not configured',
+        hint: 'Set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY environment variables',
+        service: 'oauth-server'
+      });
+    }
+
+    logger.debug('[GitHubApp] Creating repository via installation:', { installation_id, name, isPrivate });
+
+    // Generate JWT for app authentication
+    const payload = {
+      iat: Math.floor(Date.now() / 1000) - 60,
+      exp: Math.floor(Date.now() / 1000) + (10 * 60),
+      iss: parseInt(appId, 10)
+    };
+
+    const appJWT = jwt.sign(payload, privateKey, { algorithm: 'RS256' });
+
+    // Get installation access token first
+    const tokenResponse = await fetch(`https://api.github.com/app/installations/${installation_id}/access_tokens`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `Bearer ${appJWT}`,
+        'User-Agent': 'Redstring-GitHubApp-Server/1.0'
+      }
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      console.error('[GitHubApp] Installation token failed:', errorText);
+      return res.status(tokenResponse.status).json({
+        error: `Failed to get installation token: ${errorText}`,
+        service: 'oauth-server'
+      });
+    }
+
+    const tokenData = await tokenResponse.json();
+    const installationToken = tokenData.token;
+
+    // Create repository using the installation token
+    const createRepoResponse = await fetch('https://api.github.com/user/repos', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `token ${installationToken}`,
+        'User-Agent': 'Redstring-GitHubApp-Server/1.0',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name,
+        private: !!isPrivate,
+        description: description || 'RedString knowledge graph repository',
+        auto_init: !!auto_init
+      })
+    });
+
+    if (!createRepoResponse.ok) {
+      const errorText = await createRepoResponse.text();
+      console.error('[GitHubApp] Repository creation failed:', {
+        status: createRepoResponse.status,
+        statusText: createRepoResponse.statusText,
+        errorText
+      });
+      
+      // Return detailed error for 403 Forbidden
+      if (createRepoResponse.status === 403) {
+        return res.status(403).json({
+          error: 'Repository creation forbidden',
+          details: 'GitHub App installation does not have permission to create repositories. Please check the app permissions or create the repository manually.',
+          github_error: errorText,
+          service: 'oauth-server'
+        });
+      }
+      
+      return res.status(createRepoResponse.status).json({
+        error: `Repository creation failed: ${createRepoResponse.status}`,
+        details: errorText,
+        service: 'oauth-server'
+      });
+    }
+
+    const newRepo = await createRepoResponse.json();
+    
+    logger.info('[GitHubApp] Repository created successfully:', {
+      name: newRepo.full_name,
+      private: newRepo.private,
+      installation_id
+    });
+
+    res.json({
+      id: newRepo.id,
+      name: newRepo.name,
+      full_name: newRepo.full_name,
+      description: newRepo.description,
+      private: newRepo.private,
+      html_url: newRepo.html_url,
+      clone_url: newRepo.clone_url,
+      default_branch: newRepo.default_branch,
+      created_at: newRepo.created_at,
+      service: 'oauth-server'
+    });
+
+  } catch (error) {
+    console.error('[GitHubApp] Repository creation error:', error);
+    res.status(500).json({
+      error: error.message,
+      service: 'oauth-server'
+    });
+  }
+});
+
 // GitHub App webhook handler
 app.post('/api/github/app/webhook', async (req, res) => {
   const event = req.headers['x-github-event'];

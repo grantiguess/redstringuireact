@@ -20,6 +20,7 @@ import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
 import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal, Bookmark, Plus, CornerUpLeft, CornerDownLeft, Merge, Undo2, Clock } from 'lucide-react'; // Icons for PieMenu
 import ColorPicker from './ColorPicker';
 import { useDrop } from 'react-dnd';
+import { fetchOrbitCandidatesForPrototype } from './services/orbitResolver.js';
 import { showContextMenu } from './components/GlobalContextMenu';
 
 // Import Zustand store and selectors/actions
@@ -64,6 +65,7 @@ import Panel from './Panel'; // This is now used for both sides
 import TypeList from './TypeList'; // Re-add TypeList component
 import NodeSelectionGrid from './NodeSelectionGrid'; // Import the new node selection grid
 import UnifiedSelector from './UnifiedSelector'; // Import the new unified selector
+import OrbitOverlay from './components/OrbitOverlay.jsx';
 
 
 const SPAWNABLE_NODE = 'spawnable_node';
@@ -84,6 +86,7 @@ function NodeCanvas() {
   
   const svgRef = useRef(null);
   const wrapperRef = useRef(null);
+  const [orbitData, setOrbitData] = useState({ inner: [], outer: [], all: [] });
 
   // <<< OPTIMIZED: Use direct getState() calls for stable action methods >>>
   // Zustand actions are stable - we can use direct references instead of subscriptions
@@ -2147,6 +2150,48 @@ function NodeCanvas() {
 
             // Add instance to the canvas
             storeActions.addNodeInstance(activeGraphId, prototypeId, position);
+
+            // If there is exactly one node selected (focus), and the dragged concept carried a predicate,
+            // create an edge from the focused node to this new instance with provenance
+            try {
+                if (selectedInstanceIds.size === 1) {
+                    const focusedInstanceId = [...selectedInstanceIds][0];
+                    const newInstanceId = (() => {
+                      // Find the just-created instance id at that position (closest by distance)
+                      const g = useGraphStore.getState().graphs.get(activeGraphId);
+                      let closestId = null, best = Infinity;
+                      if (g?.instances) {
+                        g.instances.forEach(inst => {
+                          if (inst.prototypeId === prototypeId) {
+                            const dx = inst.x - position.x; const dy = inst.y - position.y;
+                            const d2 = dx*dx + dy*dy;
+                            if (d2 < best) { best = d2; closestId = inst.id; }
+                          }
+                        });
+                      }
+                      return closestId;
+                    })();
+
+                    if (newInstanceId) {
+                      const edgeId = `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                      const predicate = item.conceptData.defaultPredicate || 'relatedTo';
+                      storeActions.addEdge(activeGraphId, {
+                        id: edgeId,
+                        sourceId: focusedInstanceId,
+                        destinationId: newInstanceId,
+                        label: predicate,
+                        color: '#666666',
+                        provenance: {
+                          source: item.conceptData.source,
+                          uri: item.conceptData.semanticMetadata?.originalUri || null,
+                          predicate,
+                          claims: item.conceptData.relationships || [],
+                          retrieved_at: item.conceptData.discoveredAt || new Date().toISOString()
+                        }
+                      });
+                    }
+                }
+            } catch {}
             
             
             return;
@@ -3055,7 +3100,6 @@ function NodeCanvas() {
       // The culling useEffect will run on the next render cycle
     }
   }, []);
-  
   // Start or update pinch zoom smoothing
   const startPinchSmoothing = useCallback((targetZoom, targetPanX, targetPanY) => {
     // console.log('🟢 startPinchSmoothing CALLED:', {
@@ -3840,7 +3884,6 @@ function NodeCanvas() {
     }
     return { x: snappedX, y: snappedY, angle };
   }, [zoomLevel]);
-
   // Clear placed labels when visible edges change (debounced during pan/zoom)
   useEffect(() => {
     if (clearLabelsTimeoutRef.current) {
@@ -4306,9 +4349,6 @@ function NodeCanvas() {
     }
     return Math.abs(h);
   };
-
-
-
   // --- Mouse Drag Panning (unchanged) ---
   // Throttle edge-hover detection to reduce per-frame work
   const lastHoverCheckRef = useRef(0);
@@ -5109,7 +5149,6 @@ function NodeCanvas() {
     setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
     setDialogColorPickerVisible(false); // Close color picker when submitting
   };
-
   const handleNodeSelection = (nodePrototype) => {
     if (!plusSign || !activeGraphId) return;
     
@@ -5828,6 +5867,31 @@ function NodeCanvas() {
     // The existing menu plays its exit animation, and onExitAnimationComplete handles the next steps.
   }, [selectedNodeIdForPieMenu, nodes, previewingNodeId, isTransitioningPieMenu, abstractionCarouselVisible, abstractionCarouselNode, carouselPieMenuStage, carouselFocusedNodeScale, carouselFocusedNodeDimensions, carouselFocusedNode]);
 
+  // Fetch orbit candidates when exactly one node is selected
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (selectedInstanceIds.size !== 1) {
+          setOrbitData({ inner: [], outer: [], all: [] });
+          return;
+        }
+        const instanceId = [...selectedInstanceIds][0];
+        const graph = useGraphStore.getState().graphs.get(activeGraphId);
+        const inst = graph?.instances?.get(instanceId);
+        const proto = inst ? useGraphStore.getState().nodePrototypes.get(inst.prototypeId) : null;
+        if (!proto) {
+          setOrbitData({ inner: [], outer: [], all: [] });
+          return;
+        }
+        const candidates = await fetchOrbitCandidatesForPrototype(proto);
+        if (!cancelled) setOrbitData(candidates);
+      } catch (_) {
+        if (!cancelled) setOrbitData({ inner: [], outer: [], all: [] });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedInstanceIds, activeGraphId]);
   // --- Hurtle Animation State & Logic ---
   const [hurtleAnimation, setHurtleAnimation] = useState(null);
   const hurtleAnimationRef = useRef(null);
@@ -8019,76 +8083,89 @@ function NodeCanvas() {
                              return null;
                            }
 
-                           return (
-                             <Node
-                               key={activeNodeToRender.id}
-                               node={activeNodeToRender}
-                               currentWidth={dimensions.currentWidth}
-                               currentHeight={dimensions.currentHeight}
-                               textAreaHeight={dimensions.textAreaHeight}
-                               imageWidth={dimensions.imageWidth}
-                               imageHeight={dimensions.calculatedImageHeight}
-                               innerNetworkWidth={dimensions.innerNetworkWidth}
-                               innerNetworkHeight={dimensions.innerNetworkHeight}
-                               descriptionAreaHeight={dimensions.descriptionAreaHeight}
-                               isSelected={selectedInstanceIds.has(activeNodeToRender.id)}
-                               isDragging={false} // Explicitly not the dragging node if rendered here
-                               onMouseDown={(e) => handleNodeMouseDown(activeNodeToRender, e)}
-                               onContextMenu={(e) => {
-                                 e.preventDefault();
-                                 e.stopPropagation();
-                                 showContextMenu(e.clientX, e.clientY, getContextMenuOptions(activeNodeToRender.id));
-                               }}
-                               isPreviewing={isPreviewing}
-                               allNodes={nodes}
-                               isEditingOnCanvas={activeNodeToRender.id === editingNodeIdOnCanvas}
-                               onCommitCanvasEdit={(instanceId, newName, isRealTime = false) => { 
-                                 storeActions.updateNodePrototype(activeNodeToRender.prototypeId, draft => { draft.name = newName; }); 
-                                 if (!isRealTime) setEditingNodeIdOnCanvas(null); 
-                               }}
-                               onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
-                               onCreateDefinition={(prototypeId) => {
-                                 if (mouseMoved.current) return;
-                                 storeActions.createAndAssignGraphDefinition(prototypeId);
-                               }}
-                               onAddNodeToDefinition={(prototypeId) => {
-                                 // Create a new alternative definition for the node without activating/opening it
-                                 storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
-                               }}
-                               onDeleteDefinition={(prototypeId, graphId) => {
-                                 // Delete the specific definition graph from the node
-                                 storeActions.removeDefinitionFromNode(prototypeId, graphId);
-                               }}
-                               onExpandDefinition={(instanceId, prototypeId, graphId) => {
-                                 if (graphId) {
-                                   // Node has an existing definition to expand
-                                   startHurtleAnimation(instanceId, graphId, prototypeId);
-                                 } else {
-                                   // Node has no definitions - create one, then animate
-                                   const sourceGraphId = activeGraphId; // Capture current graph before it changes
-                                   storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
-                                   
-                                   setTimeout(() => {
-                                     const currentState = useGraphStore.getState();
-                                     const updatedNodeData = currentState.nodePrototypes.get(prototypeId);
-                                     if (updatedNodeData?.definitionGraphIds?.length > 0) {
-                                       const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
-                                       startHurtleAnimation(instanceId, newGraphId, prototypeId, sourceGraphId);
-                                     } else {
-                                       
-                                     }
-                                   }, 50);
-                                 }
-                               }}
-                               storeActions={storeActions}
-                               connections={edges}
-                               currentDefinitionIndex={nodeDefinitionIndices.get(`${activeNodeToRender.prototypeId}-${activeGraphId}`) || 0}
-                               onNavigateDefinition={(prototypeId, newIndex) => {
-                                 const contextKey = `${prototypeId}-${activeGraphId}`;
-                                 setNodeDefinitionIndices(prev => new Map(prev.set(contextKey, newIndex)));
-                               }}
+                           const centerX = activeNodeToRender.x + dimensions.currentWidth / 2;
+                           const centerY = activeNodeToRender.y + dimensions.currentHeight / 2;
 
-                             />
+                           return (
+                             <>
+                               <OrbitOverlay
+                                 centerX={centerX}
+                                 centerY={centerY}
+                                 focusWidth={dimensions.currentWidth}
+                                 focusHeight={dimensions.currentHeight}
+                                 innerCandidates={orbitData.inner}
+                                 outerCandidates={orbitData.outer}
+                               />
+                               <Node
+                                 key={activeNodeToRender.id}
+                                 node={activeNodeToRender}
+                                 currentWidth={dimensions.currentWidth}
+                                 currentHeight={dimensions.currentHeight}
+                                 textAreaHeight={dimensions.textAreaHeight}
+                                 imageWidth={dimensions.imageWidth}
+                                 imageHeight={dimensions.calculatedImageHeight}
+                                 innerNetworkWidth={dimensions.innerNetworkWidth}
+                                 innerNetworkHeight={dimensions.innerNetworkHeight}
+                                 descriptionAreaHeight={dimensions.descriptionAreaHeight}
+                                 isSelected={selectedInstanceIds.has(activeNodeToRender.id)}
+                                 isDragging={false} // Explicitly not the dragging node if rendered here
+                                 onMouseDown={(e) => handleNodeMouseDown(activeNodeToRender, e)}
+                                 onContextMenu={(e) => {
+                                   e.preventDefault();
+                                   e.stopPropagation();
+                                   showContextMenu(e.clientX, e.clientY, getContextMenuOptions(activeNodeToRender.id));
+                                 }}
+                                 isPreviewing={isPreviewing}
+                                 allNodes={nodes}
+                                 isEditingOnCanvas={activeNodeToRender.id === editingNodeIdOnCanvas}
+                                 onCommitCanvasEdit={(instanceId, newName, isRealTime = false) => { 
+                                   storeActions.updateNodePrototype(activeNodeToRender.prototypeId, draft => { draft.name = newName; }); 
+                                   if (!isRealTime) setEditingNodeIdOnCanvas(null); 
+                                 }}
+                                 onCancelCanvasEdit={() => setEditingNodeIdOnCanvas(null)}
+                                 onCreateDefinition={(prototypeId) => {
+                                   if (mouseMoved.current) return;
+                                   storeActions.createAndAssignGraphDefinition(prototypeId);
+                                 }}
+                                 onAddNodeToDefinition={(prototypeId) => {
+                                   // Create a new alternative definition for the node without activating/opening it
+                                   storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
+                                 }}
+                                 onDeleteDefinition={(prototypeId, graphId) => {
+                                   // Delete the specific definition graph from the node
+                                   storeActions.removeDefinitionFromNode(prototypeId, graphId);
+                                 }}
+                                 onExpandDefinition={(instanceId, prototypeId, graphId) => {
+                                   if (graphId) {
+                                     // Node has an existing definition to expand
+                                     startHurtleAnimation(instanceId, graphId, prototypeId);
+                                   } else {
+                                     // Node has no definitions - create one, then animate
+                                     const sourceGraphId = activeGraphId; // Capture current graph before it changes
+                                     storeActions.createAndAssignGraphDefinitionWithoutActivation(prototypeId);
+                                     
+                                     setTimeout(() => {
+                                       const currentState = useGraphStore.getState();
+                                       const updatedNodeData = currentState.nodePrototypes.get(prototypeId);
+                                       if (updatedNodeData?.definitionGraphIds?.length > 0) {
+                                         const newGraphId = updatedNodeData.definitionGraphIds[updatedNodeData.definitionGraphIds.length - 1];
+                                         startHurtleAnimation(instanceId, newGraphId, prototypeId, sourceGraphId);
+                                       } else {
+                                         
+                                       }
+                                     }, 50);
+                                   }
+                                 }}
+                                 storeActions={storeActions}
+                                 connections={edges}
+                                 currentDefinitionIndex={nodeDefinitionIndices.get(`${activeNodeToRender.prototypeId}-${activeGraphId}`) || 0}
+                                 onNavigateDefinition={(prototypeId, newIndex) => {
+                                   const contextKey = `${prototypeId}-${activeGraphId}`;
+                                   setNodeDefinitionIndices(prev => new Map(prev.set(contextKey, newIndex)));
+                                 }}
+
+                               />
+                             </>
                            );
                          })()
                        )}

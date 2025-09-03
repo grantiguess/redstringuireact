@@ -683,23 +683,80 @@ const GitNativeFederation = () => {
 
       const { username, accessToken, repositories, userData } = authData;
 
-      // If createIfMissing and repoName not in list, create repo directly via GitHub API
+      // If createIfMissing and repoName not in list, create repo
       if (createIfMissing && !repositories.some(r => r.name === repoName)) {
-        const resp = await fetch('https://api.github.com/user/repos', {
-          method: 'POST',
-          headers: {
-            'Authorization': `token ${accessToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            name: repoName,
-            private: !!makePrivate
-          })
-        });
-        if (!resp.ok) {
-          const text = await resp.text();
-          throw new Error(`Failed to create repository: ${resp.status} ${text}`);
+        try {
+          // For GitHub App installations, repository creation requires special handling
+          if (authData.isGitHubApp) {
+            console.log('[GitNativeFederation] Creating repository via GitHub App installation...');
+            
+            // Use the backend API to create repository with proper GitHub App permissions
+            const resp = await oauthFetch('/api/github/app/create-repository', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                installation_id: authData.installationId,
+                name: repoName,
+                private: !!makePrivate,
+                description: 'RedString knowledge graph repository',
+                auto_init: true
+              })
+            });
+            
+            if (!resp.ok) {
+              const errorText = await resp.text();
+              console.error('[GitNativeFederation] Backend repository creation failed:', {
+                status: resp.status,
+                statusText: resp.statusText,
+                errorText
+              });
+              throw new Error(`Repository creation failed: ${resp.status} ${errorText}`);
+            }
+            
+            const newRepo = await resp.json();
+            console.log('[GitNativeFederation] Repository created via GitHub App:', newRepo.full_name);
+          } else {
+            // For OAuth, use direct GitHub API call
+            console.log('[GitNativeFederation] Creating repository via OAuth token...');
+            
+            const resp = await fetch('https://api.github.com/user/repos', {
+              method: 'POST',
+              headers: {
+                'Authorization': `token ${accessToken}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                name: repoName,
+                private: !!makePrivate,
+                description: 'RedString knowledge graph repository',
+                auto_init: true
+              })
+            });
+            
+            if (!resp.ok) {
+              const errorText = await resp.text();
+              console.error('[GitNativeFederation] OAuth repository creation failed:', {
+                status: resp.status,
+                statusText: resp.statusText,
+                errorText
+              });
+              throw new Error(`Repository creation failed: ${resp.status} ${errorText}`);
+            }
+            
+            const newRepo = await resp.json();
+            console.log('[GitNativeFederation] Repository created via OAuth:', newRepo.full_name);
+          }
+        } catch (error) {
+          console.error('[GitNativeFederation] Repository creation error:', error);
+          
+          if (error.message.includes('403') || error.message.includes('Forbidden')) {
+            throw new Error(`Repository creation failed: GitHub App installation lacks permission to create repositories. Please either:\n1. Create the repository '${repoName}' manually in GitHub, or\n2. Reinstall the GitHub App with repository creation permissions.`);
+          } else {
+            throw new Error(`Failed to create repository: ${error.message}`);
+          }
         }
       }
 

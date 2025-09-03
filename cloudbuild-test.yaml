@@ -58,7 +58,7 @@ steps:
       - '--memory'
       - '1Gi'    # Same as production for better performance
       - '--cpu'
-      - '1'      # Must be 1 for concurrency > 1
+      - '1'      # Cloud Run only accepts specific values: 0.08-1, 1, 2, 4, 6, 8
       - '--concurrency'
       - '50'     # Half of production for good performance
       - '--max-instances'

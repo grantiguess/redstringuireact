@@ -10,6 +10,14 @@ services:
       - NODE_ENV=production
       - PORT=4000
       - OAUTH_PORT=3002
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '1.0'
+          memory: 512M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
       interval: 30s

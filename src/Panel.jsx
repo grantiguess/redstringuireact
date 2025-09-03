@@ -3183,13 +3183,6 @@ const Panel = forwardRef(
     const isUniverseLoaded = storeState?.isUniverseLoaded;
     
     // Debug store subscription
-    // console.log('[Panel] Store subscription debug:', {
-    //     nodePrototypesMap: !!nodePrototypesMap,
-    //     nodePrototypesMapType: typeof nodePrototypesMap,
-    //     isUniverseLoading,
-    //     isUniverseLoaded,
-    //     hasStoreState: !!storeState
-    // });
 
     // ✅ END OF STORE SUBSCRIPTIONS - DO NOT ADD MORE INDIVIDUAL SUBSCRIPTIONS BELOW
     // If you need new store data, add it to the consolidated subscription pattern above

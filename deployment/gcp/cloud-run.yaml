@@ -15,7 +15,7 @@ spec:
         run.googleapis.com/execution-environment: gen2
         autoscaling.knative.dev/maxScale: "10"
         autoscaling.knative.dev/minScale: "0"
-        run.googleapis.com/cpu: "1"
+        run.googleapis.com/cpu: "2"
         run.googleapis.com/memory: "1Gi"
     spec:
       containerConcurrency: 100
@@ -50,7 +50,7 @@ spec:
               name: github-client-id
         resources:
           limits:
-            cpu: 1000m
+            cpu: 2000m
             memory: 1Gi
         startupProbe:
           httpGet:
