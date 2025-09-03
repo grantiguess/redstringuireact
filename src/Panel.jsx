@@ -37,6 +37,7 @@ import StandardDivider from './components/StandardDivider.jsx';
 import { knowledgeFederation } from './services/knowledgeFederation.js';
 import DuplicateManager from './components/DuplicateManager.jsx';
 import { showContextMenu } from './components/GlobalContextMenu.jsx';
+import { normalizeToCandidate, candidateToConcept } from './services/candidates.js';
 
 // Generate color for concept based on name hash - unified color system
 // Uses the same saturation and brightness as maroon (#8B0000) but with different hues
@@ -958,13 +959,15 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
       const ranked = filterRankDedup(combined, rawQuery).slice(0, 30); // Cap initial set
       if (latestSearchTokenRef.current !== token) return; // stale
       console.log(`[SemanticDiscovery] Showing ${ranked.length} ranked concepts (from ${combined.length} raw)`);
-      setDiscoveredConcepts(ranked);
+      // Normalize to Candidate then convert to concept shape for drag payload
+      const normalized = ranked.map(r => candidateToConcept(normalizeToCandidate(r)));
+      setDiscoveredConcepts(normalized);
       const historyItem = {
         id: token,
         query: normalizeQuery(rawQuery),
         timestamp: new Date(),
-        resultCount: ranked.length,
-        concepts: ranked.slice(0, 10)
+        resultCount: normalized.length,
+        concepts: normalized.slice(0, 10)
       };
       setSearchHistory(prev => [historyItem, ...prev].slice(0, 20));
     } catch (error) {
@@ -1404,9 +1407,12 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                         const ranked = filterRankDedup(combined, lastSearch.query);
                         // Remove concepts already shown
                         const existingKeys = new Set(discoveredConcepts.map(c => canonicalKey(c.name)));
-                        const additions = ranked.filter(c => !existingKeys.has(canonicalKey(c.name))).slice(0, 40);
-                        console.log(`[SemanticDiscovery] Loaded ${additions.length} additional concepts (from ${combined.length} raw)`);
-                        setDiscoveredConcepts(prev => [...prev, ...additions]);
+                        const normalizedAdditions = ranked
+                          .filter(c => !existingKeys.has(canonicalKey(c.name)))
+                          .slice(0, 40)
+                          .map(r => candidateToConcept(normalizeToCandidate(r)));
+                        console.log(`[SemanticDiscovery] Loaded ${normalizedAdditions.length} additional concepts (from ${combined.length} raw)`);
+                        setDiscoveredConcepts(prev => [...prev, ...normalizedAdditions]);
                       } catch (error) {
                         console.error('[SemanticDiscovery] Load more failed:', error);
                       } finally {

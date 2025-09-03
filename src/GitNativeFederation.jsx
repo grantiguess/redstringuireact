@@ -686,77 +686,61 @@ const GitNativeFederation = () => {
       // If createIfMissing and repoName not in list, create repo
       if (createIfMissing && !repositories.some(r => r.name === repoName)) {
         try {
-          // For GitHub App installations, repository creation requires special handling
-          if (authData.isGitHubApp) {
-            console.log('[GitNativeFederation] Creating repository via GitHub App installation...');
-            
-            // Use the backend API to create repository with proper GitHub App permissions
-            const resp = await oauthFetch('/api/github/app/create-repository', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                installation_id: authData.installationId,
-                name: repoName,
-                private: !!makePrivate,
-                description: 'RedString knowledge graph repository',
-                auto_init: true
-              })
-            });
-            
-            if (!resp.ok) {
-              const errorText = await resp.text();
-              console.error('[GitNativeFederation] Backend repository creation failed:', {
-                status: resp.status,
-                statusText: resp.statusText,
-                errorText
-              });
-              throw new Error(`Repository creation failed: ${resp.status} ${errorText}`);
-            }
-            
-            const newRepo = await resp.json();
-            console.log('[GitNativeFederation] Repository created via GitHub App:', newRepo.full_name);
-          } else {
-            // For OAuth, use direct GitHub API call
-            console.log('[GitNativeFederation] Creating repository via OAuth token...');
-            
-            const resp = await fetch('https://api.github.com/user/repos', {
-              method: 'POST',
-              headers: {
-                'Authorization': `token ${accessToken}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                name: repoName,
-                private: !!makePrivate,
-                description: 'RedString knowledge graph repository',
-                auto_init: true
-              })
-            });
-            
-            if (!resp.ok) {
-              const errorText = await resp.text();
-              console.error('[GitNativeFederation] OAuth repository creation failed:', {
-                status: resp.status,
-                statusText: resp.statusText,
-                errorText
-              });
-              throw new Error(`Repository creation failed: ${resp.status} ${errorText}`);
-            }
-            
-            const newRepo = await resp.json();
-            console.log('[GitNativeFederation] Repository created via OAuth:', newRepo.full_name);
+          // Require OAuth access token before attempting creation
+          if (!authData.accessToken) {
+            throw new Error('Missing OAuth access token. Please sign in with GitHub (OAuth) and try again.');
           }
+
+          // Always use OAuth user authentication for repository creation (recommended approach)
+          console.log('[GitNativeFederation] Creating repository via OAuth user authentication...');
+          
+          // Use OAuth user authentication for repository creation via backend
+          const resp = await oauthFetch('/api/github/oauth/create-repository', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              access_token: authData.accessToken,
+              name: repoName,
+              private: !!makePrivate,
+              description: 'RedString knowledge graph repository',
+              auto_init: true
+            })
+          });
+          
+          if (!resp.ok) {
+            const errorText = await resp.text();
+            console.error('[GitNativeFederation] Backend repository creation failed:', {
+              status: resp.status,
+              statusText: resp.statusText,
+              errorText
+            });
+            throw new Error(`Repository creation failed: ${resp.status} ${errorText}`);
+          }
+          
+          const newRepo = await resp.json();
+          console.log('[GitNativeFederation] Repository created via OAuth:', newRepo.full_name);
         } catch (error) {
           console.error('[GitNativeFederation] Repository creation error:', error);
           
-          if (error.message.includes('403') || error.message.includes('Forbidden')) {
-            throw new Error(`Repository creation failed: GitHub App installation lacks permission to create repositories. Please either:\n1. Create the repository '${repoName}' manually in GitHub, or\n2. Reinstall the GitHub App with repository creation permissions.`);
-          } else {
-            throw new Error(`Failed to create repository: ${error.message}`);
+          const lower = String(error.message || '').toLowerCase();
+          if (lower.includes('403') || lower.includes('forbidden') || lower.includes('resource not accessible by integration')) {
+            throw new Error(
+              `Repository creation requires authenticating as a GitHub user (OAuth) with the correct scopes.\n\n` +
+              `Please do the following:\n` +
+              `1) Click "Sign in with GitHub" and complete OAuth.\n` +
+              `2) Ensure the app requests and you grant the 'repo' scope (or at least 'public_repo' if creating public repos).\n` +
+              `3) Try creating the repository '${repoName}' again.\n\n` +
+              `Alternatively, create it manually at https://github.com/new and link it here.`
+            );
           }
+
+          if (lower.includes('missing oauth access token')) {
+            throw new Error('Please sign in with GitHub (OAuth) first, then try again.');
+          }
+
+          throw new Error(`Failed to create repository: ${error.message}\n\nYou can always create the repository '${repoName}' manually at https://github.com/new and link it here.`);
         }
       }
 
@@ -1286,19 +1270,53 @@ const GitNativeFederation = () => {
             position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000
           }}>
-            <div style={{ width: '520px', maxWidth: '90%', backgroundColor: '#EFE8E5', border: '1px solid #260000', borderRadius: '8px', padding: '16px' }}>
+            <div style={{ width: '520px', maxWidth: '90%', backgroundColor: '#bdb5b5', border: '1px solid #260000', borderRadius: '8px', padding: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                 <div style={{ fontWeight: 'bold', color: '#260000' }}>Select Repository</div>
                 <button onClick={() => { setShowRepositorySelector(false); setPendingOAuth(null); setGithubAppInstallation(null); }} style={{ background: 'transparent', border: 'none', color: '#260000', cursor: 'pointer' }}>✕</button>
               </div>
-              <div style={{ fontSize: '0.85rem', color: '#260000', marginBottom: '10px' }}>
-                Choose an existing repository or create a new one for your universe.
+              <div style={{ 
+                backgroundColor: '#979090', 
+                border: '1px solid #260000', 
+                borderRadius: '4px', 
+                padding: '8px', 
+                marginBottom: '10px',
+                fontSize: '0.85rem',
+                color: '#260000'
+              }}>
+                <div style={{ fontWeight: '600', marginBottom: '2px' }}>
+                  Connected as: @{(pendingOAuth || githubAppInstallation)?.username || 'unknown'}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem' }}>
+                  <span>Choose an existing repository or create a new one for your universe.</span>
+                  <a 
+                    href={`https://github.com/${(pendingOAuth || githubAppInstallation)?.username || 'user'}`} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    style={{ 
+                      color: '#260000', 
+                      textDecoration: 'underline',
+                      fontWeight: '500',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    View Profile →
+                  </a>
+                </div>
               </div>
-              <div style={{ maxHeight: '240px', overflowY: 'auto', marginBottom: '10px', border: '1px solid #979090', borderRadius: '6px', backgroundColor: '#bdb5b5' }}>
+              <div style={{ maxHeight: '240px', overflowY: 'auto', marginBottom: '10px', border: '1px solid #260000', borderRadius: '6px', backgroundColor: '#979090' }}>
                 {userRepositories.map((repo) => (
                   <div key={repo.full_name}
                     onClick={() => handleSelectRepository(repo.name, false, false)}
-                    style={{ padding: '8px 10px', borderBottom: '1px solid #979090', cursor: 'pointer', color: '#260000' }}
+                    style={{ 
+                      padding: '8px 10px', 
+                      borderBottom: '1px solid #260000', 
+                      cursor: 'pointer', 
+                      color: '#260000',
+                      transition: 'background-color 0.2s',
+                    }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = '#bdb5b5'}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
                   >
                     <div style={{ fontWeight: 600 }}>{repo.full_name}</div>
                     <div style={{ fontSize: '0.75rem', color: '#333' }}>{repo.description || 'No description'}</div>
@@ -1306,16 +1324,26 @@ const GitNativeFederation = () => {
                 ))}
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <input id="new-repo-name" type="text" placeholder="new-repo-name" style={{ flex: 1, padding: '8px', border: '1px solid #979090', borderRadius: '4px', backgroundColor: '#bdb5b5', color: '#260000' }} />
+                <input id="new-repo-name" type="text" placeholder="my-redstring-repo (create on GitHub first)" style={{ flex: 1, padding: '8px', border: '1px solid #260000', borderRadius: '4px', backgroundColor: '#979090', color: '#260000' }} />
                 <button onClick={() => {
                   const input = document.getElementById('new-repo-name');
                   const name = input && input.value ? String(input.value).trim() : '';
                   if (!name) return;
                   handleSelectRepository(name, false, true);
                 }}
-                  style={{ padding: '8px 12px', backgroundColor: '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                  style={{ 
+                    padding: '8px 12px', 
+                    backgroundColor: '#260000', 
+                    color: '#bdb5b5', 
+                    border: 'none', 
+                    borderRadius: '4px', 
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = '#333'}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = '#260000'}
                 >
-                  Create & Use
+                  Link Repository
                 </button>
               </div>
             </div>
@@ -1378,6 +1406,17 @@ const GitNativeFederation = () => {
           {/* GitHub Configuration */}
           {selectedProvider === 'github' && (
             <div>
+              <div style={{ 
+                marginBottom: '12px', 
+                padding: '8px', 
+                backgroundColor: '#979090', 
+                borderRadius: '4px', 
+                fontSize: '0.8rem', 
+                color: '#260000',
+                textAlign: 'center'
+              }}>
+                💡 <strong>Two ways to connect:</strong> Paste any GitHub URL directly, or use Browse button
+              </div>
               {/* Manual Configuration (Token Method) */}
               {authMethod === 'token' && (
                 <>
@@ -1408,51 +1447,82 @@ const GitNativeFederation = () => {
                   </div>
                   
                                 <div style={{ marginBottom: '10px' }}>
-                <InfoTooltip tooltip="Enter the repository name or full GitHub URL (e.g., 'MyWeb' or 'https://github.com/grantiguess/MyWeb.git')">
+                                <InfoTooltip tooltip="Enter the repository name or full GitHub URL (e.g., 'MyWeb' or 'https://github.com/grantiguess/MyWeb.git'), or browse your repositories">
                   <label htmlFor="github-repo" style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
                     Repository:
                   </label>
                 </InfoTooltip>
-                <input
-                  id="github-repo"
-                  type="text"
-                  value={providerConfig.repo}
-                  onChange={(e) => {
-                    let repoName = e.target.value;
-                    
-                    // Handle GitHub URLs like IDE cloning
-                    if (repoName.includes('github.com')) {
-                      // Extract repo name from URL
-                      const match = repoName.match(/github\.com\/([^\/]+)\/([^\/]+)/);
-                      if (match) {
-                        repoName = match[2].replace('.git', '');
-                        // Also update the user if it's different
-                        if (match[1] !== providerConfig.user) {
-                          setProviderConfig(prev => ({ 
-                            ...prev, 
-                            user: match[1],
-                            repo: repoName 
-                          }));
-                          return;
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch' }}>
+                  <input
+                    id="github-repo"
+                    type="text"
+                    value={providerConfig.repo}
+                    onChange={(e) => {
+                      let repoName = e.target.value;
+                      
+                      // Handle GitHub URLs like IDE cloning
+                      if (repoName.includes('github.com')) {
+                        // Extract repo name from URL
+                        const match = repoName.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+                        if (match) {
+                          repoName = match[2].replace('.git', '');
+                          // Also update the user if it's different
+                          if (match[1] !== providerConfig.user) {
+                            setProviderConfig(prev => ({ 
+                              ...prev, 
+                              user: match[1],
+                              repo: repoName 
+                            }));
+                            return;
+                          }
                         }
                       }
-                    }
-                    
-                    setProviderConfig(prev => ({ ...prev, repo: repoName }));
-                  }}
-                  placeholder="MyWeb or https://github.com/user/repo.git"
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    border: '1px solid #979090',
-                    borderRadius: '4px',
-                    fontSize: '0.9rem',
-                    fontFamily: "'EmOne', sans-serif",
-                    backgroundColor: '#bdb5b5',
-                    color: '#260000',
-                    boxSizing: 'border-box'
-                                  }}
-              />
+                      
+                      setProviderConfig(prev => ({ ...prev, repo: repoName }));
+                    }}
+                    placeholder="repo-name or https://github.com/user/repo.git"
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      border: '1px solid #979090',
+                      borderRadius: '4px',
+                      fontSize: '0.9rem',
+                      fontFamily: "'EmOne', sans-serif",
+                      backgroundColor: '#bdb5b5',
+                      color: '#260000',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      if (isAuthenticated) {
+                        handleBrowseRepositories();
+                      } else {
+                        handleGitHubAuth();
+                      }
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      backgroundColor: '#979090',
+                      border: '1px solid #260000',
+                      borderRadius: '4px',
+                      color: '#260000',
+                      fontSize: '0.85rem',
+                      fontFamily: "'EmOne', sans-serif",
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.backgroundColor = '#bdb5b5';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.backgroundColor = '#979090';
+                    }}
+                  >
+                    Browse
+                  </button>
+                </div>
             </div>
 
             <div style={{ marginBottom: '10px' }}>
@@ -2192,19 +2262,53 @@ const GitNativeFederation = () => {
           position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000
         }}>
-          <div style={{ width: '520px', maxWidth: '90%', backgroundColor: '#EFE8E5', border: '1px solid #260000', borderRadius: '8px', padding: '16px' }}>
+          <div style={{ width: '520px', maxWidth: '90%', backgroundColor: '#bdb5b5', border: '1px solid #260000', borderRadius: '8px', padding: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <div style={{ fontWeight: 'bold', color: '#260000' }}>Select Repository</div>
               <button onClick={() => { setShowRepositorySelector(false); setPendingOAuth(null); setGithubAppInstallation(null); }} style={{ background: 'transparent', border: 'none', color: '#260000', cursor: 'pointer' }}>✕</button>
             </div>
-            <div style={{ fontSize: '0.85rem', color: '#260000', marginBottom: '10px' }}>
-              Choose an existing repository or create a new one for your universe.
+            <div style={{ 
+              backgroundColor: '#979090', 
+              border: '1px solid #260000', 
+              borderRadius: '4px', 
+              padding: '8px', 
+              marginBottom: '10px',
+              fontSize: '0.85rem',
+              color: '#260000'
+            }}>
+              <div style={{ fontWeight: '600', marginBottom: '2px' }}>
+                Connected as: @{(pendingOAuth || githubAppInstallation)?.username || 'unknown'}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem' }}>
+                <span>Choose an existing repository or create a new one for your universe.</span>
+                <a 
+                  href={`https://github.com/${(pendingOAuth || githubAppInstallation)?.username || 'user'}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style={{ 
+                    color: '#260000', 
+                    textDecoration: 'underline',
+                    fontWeight: '500',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  View Profile →
+                </a>
+              </div>
             </div>
-            <div style={{ maxHeight: '240px', overflowY: 'auto', marginBottom: '10px', border: '1px solid #979090', borderRadius: '6px', backgroundColor: '#bdb5b5' }}>
+            <div style={{ maxHeight: '240px', overflowY: 'auto', marginBottom: '10px', border: '1px solid #260000', borderRadius: '6px', backgroundColor: '#979090' }}>
               {userRepositories.map((repo) => (
                 <div key={repo.full_name}
                   onClick={() => handleSelectRepository(repo.name, false, false)}
-                  style={{ padding: '8px 10px', borderBottom: '1px solid #979090', cursor: 'pointer', color: '#260000' }}
+                  style={{ 
+                    padding: '8px 10px', 
+                    borderBottom: '1px solid #260000', 
+                    cursor: 'pointer', 
+                    color: '#260000',
+                    transition: 'background-color 0.2s',
+                  }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = '#bdb5b5'}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
                 >
                   <div style={{ fontWeight: 600 }}>{repo.full_name}</div>
                   <div style={{ fontSize: '0.75rem', color: '#333' }}>{repo.description || 'No description'}</div>
@@ -2212,16 +2316,26 @@ const GitNativeFederation = () => {
               ))}
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <input id="new-repo-name" type="text" placeholder="new-repo-name" style={{ flex: 1, padding: '8px', border: '1px solid #979090', borderRadius: '4px', backgroundColor: '#bdb5b5', color: '#260000' }} />
+              <input id="new-repo-name" type="text" placeholder="my-redstring-repo (create on GitHub first)" style={{ flex: 1, padding: '8px', border: '1px solid #260000', borderRadius: '4px', backgroundColor: '#979090', color: '#260000' }} />
               <button onClick={() => {
                 const input = document.getElementById('new-repo-name');
                 const name = input && input.value ? String(input.value).trim() : '';
                 if (!name) return;
                 handleSelectRepository(name, false, true);
               }}
-                style={{ padding: '8px 12px', backgroundColor: '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                style={{ 
+                  padding: '8px 12px', 
+                  backgroundColor: '#260000', 
+                  color: '#bdb5b5', 
+                  border: 'none', 
+                  borderRadius: '4px', 
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = '#333'}
+                onMouseLeave={(e) => e.target.style.backgroundColor = '#260000'}
               >
-                Create & Use
+                Link Repository
               </button>
             </div>
           </div>

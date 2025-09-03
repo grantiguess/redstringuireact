@@ -297,6 +297,94 @@ app.post('/api/github/oauth/token', async (req, res) => {
   }
 });
 
+// Create repository via OAuth user authentication (recommended approach)
+app.post('/api/github/oauth/create-repository', async (req, res) => {
+  try {
+    const { access_token, name, private: isPrivate, description, auto_init } = req.body;
+    
+    if (!access_token || !name) {
+      return res.status(400).json({
+        error: 'Access token and repository name are required',
+        service: 'oauth-server'
+      });
+    }
+
+    logger.debug('[OAuth] Creating repository via user authentication:', { name, isPrivate });
+
+    // Create repository using user's access token
+    const createRepoResponse = await fetch('https://api.github.com/user/repos', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `Bearer ${access_token}`,
+        'User-Agent': 'Redstring-OAuth-Server/1.0',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: name.trim(),
+        private: isPrivate !== false, // Default to private
+        description: description || `RedString universe: ${name}`,
+        auto_init: auto_init !== false, // Default to true (create README)
+        has_issues: false,
+        has_projects: false,
+        has_wiki: false
+      })
+    });
+
+    if (!createRepoResponse.ok) {
+      const errorText = await createRepoResponse.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch (e) {
+        errorData = { message: errorText };
+      }
+
+      logger.error('[OAuth] Repository creation failed:', {
+        status: createRepoResponse.status,
+        statusText: createRepoResponse.statusText,
+        error: errorData,
+        service: 'oauth-server'
+      });
+
+      return res.status(createRepoResponse.status).json({
+        error: 'Repository creation failed',
+        details: errorData.message || errorText,
+        github_error: JSON.stringify(errorData),
+        service: 'oauth-server'
+      });
+    }
+
+    const newRepo = await createRepoResponse.json();
+    
+    logger.info('[OAuth] Repository created successfully:', {
+      name: newRepo.full_name,
+      private: newRepo.private,
+      html_url: newRepo.html_url
+    });
+
+    res.json({
+      id: newRepo.id,
+      name: newRepo.name,
+      full_name: newRepo.full_name,
+      description: newRepo.description,
+      private: newRepo.private,
+      html_url: newRepo.html_url,
+      clone_url: newRepo.clone_url,
+      default_branch: newRepo.default_branch,
+      created_at: newRepo.created_at,
+      service: 'oauth-server'
+    });
+
+  } catch (error) {
+    console.error('[OAuth] Repository creation error:', error);
+    res.status(500).json({
+      error: error.message,
+      service: 'oauth-server'
+    });
+  }
+});
+
 // GitHub App endpoints
 // Generate installation access token (server-side only for security)
 app.post('/api/github/app/installation-token', async (req, res) => {

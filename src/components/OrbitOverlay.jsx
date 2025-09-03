@@ -134,13 +134,9 @@ export default function OrbitOverlay({
   innerCandidates,
   outerCandidates
 }) {
-  // Render if at least one ring has candidates
-  if ((!innerCandidates || innerCandidates.length === 0) && (!outerCandidates || outerCandidates.length === 0)) {
-    return null;
-  }
-
-  const measuredInner = useMemo(() => measureCandidates(innerCandidates), [innerCandidates]);
-  const measuredOuter = useMemo(() => measureCandidates(outerCandidates), [outerCandidates]);
+  // Always call hooks first, before any early returns
+  const measuredInner = useMemo(() => measureCandidates(innerCandidates || []), [innerCandidates]);
+  const measuredOuter = useMemo(() => measureCandidates(outerCandidates || []), [outerCandidates]);
 
   const centerRadius = useMemo(() => {
     return Math.max(focusWidth, focusHeight) / 2;
@@ -224,6 +220,11 @@ export default function OrbitOverlay({
     }
     return positions;
   }, [measuredOuter, outerRadius, centerX, centerY, animTimeSec]);
+
+  // Early return check after all hooks are called
+  if ((!innerCandidates || innerCandidates.length === 0) && (!outerCandidates || outerCandidates.length === 0)) {
+    return null;
+  }
 
   return (
     <g>

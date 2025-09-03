@@ -27,6 +27,9 @@ export const PREDICATE_TIERS = {
   instrument: { tier: 'B', weight: 0.6 },
   movement: { tier: 'B', weight: 0.6 },
   language: { tier: 'B', weight: 0.55 },
+  relatedTo: { tier: 'B', weight: 0.6 },
+  related: { tier: 'B', weight: 0.6 },
+  related_via: { tier: 'B', weight: 0.6 },
 
   // Tier C (metadata)
   authorityId: { tier: 'C', weight: 0.3 },

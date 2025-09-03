@@ -5876,17 +5876,38 @@ function NodeCanvas() {
           setOrbitData({ inner: [], outer: [], all: [] });
           return;
         }
+        
         const instanceId = [...selectedInstanceIds][0];
         const graph = useGraphStore.getState().graphs.get(activeGraphId);
         const inst = graph?.instances?.get(instanceId);
         const proto = inst ? useGraphStore.getState().nodePrototypes.get(inst.prototypeId) : null;
+        
         if (!proto) {
           setOrbitData({ inner: [], outer: [], all: [] });
           return;
         }
+
+        console.log(`🌍 Starting orbit search for "${proto.name}"`);
+        const startTime = performance.now();
+        
         const candidates = await fetchOrbitCandidatesForPrototype(proto);
+        
+        const endTime = performance.now();
+        const duration = Math.round(endTime - startTime);
+        
+        console.log(`✨ Orbit search completed for "${proto.name}" in ${duration}ms:`, {
+          innerRing: candidates.inner?.length || 0,
+          outerRing: candidates.outer?.length || 0,
+          total: candidates.all?.length || 0
+        });
+        
+        if (candidates.inner?.length > 0 || candidates.outer?.length > 0) {
+          console.log('🎯 Sample orbit candidates:', candidates.all?.slice(0, 5).map(c => `${c.name} (${c.source})`));
+        }
+        
         if (!cancelled) setOrbitData(candidates);
-      } catch (_) {
+      } catch (error) {
+        console.error('❌ Orbit search failed:', error);
         if (!cancelled) setOrbitData({ inner: [], outer: [], all: [] });
       }
     })();
@@ -8086,7 +8107,7 @@ function NodeCanvas() {
                            const centerX = activeNodeToRender.x + dimensions.currentWidth / 2;
                            const centerY = activeNodeToRender.y + dimensions.currentHeight / 2;
 
-                           console.log('🎯 Rendering orbit overlay with data:', orbitData);
+
 
                            return (
                              <>

@@ -31,83 +31,30 @@ export async function fetchOrbitCandidatesForPrototype(prototype, options = {}) 
   }
 
   try {
-    // Mock data for testing - remove this when real resolvers are implemented
-    const mockCandidates = [
-      { id: 'mock-1', name: 'Test Concept 1', uri: 'http://example.org/1', source: 'mock', score: 0.9, tier: 'A' },
-      { id: 'mock-2', name: 'Test Concept 2', uri: 'http://example.org/2', source: 'mock', score: 0.85, tier: 'A' },
-      { id: 'mock-3', name: 'Test Concept 3', uri: 'http://example.org/3', source: 'mock', score: 0.8, tier: 'A' },
-      { id: 'mock-4', name: 'Test Concept 4', uri: 'http://example.org/4', source: 'mock', score: 0.75, tier: 'B' },
-      { id: 'mock-5', name: 'Test Concept 5', uri: 'http://example.org/5', source: 'mock', score: 0.7, tier: 'B' },
-      { id: 'mock-6', name: 'Test Concept 6', uri: 'http://example.org/6', source: 'mock', score: 0.65, tier: 'B' },
-      { id: 'mock-7', name: 'Test Concept 7', uri: 'http://example.org/7', source: 'mock', score: 0.6, tier: 'C' },
-      { id: 'mock-8', name: 'Test Concept 8', uri: 'http://example.org/8', source: 'mock', score: 0.55, tier: 'C' },
-    ];
+    console.log(`🔍 Fetching real orbit data for "${prototype.name}"`);
+    
+    // Real data fetching - comment out for mock mode
+    const graphStore = (await import('../store/graphStore.js')).default.getState();
+    const federation = new KnowledgeFederation(graphStore);
 
-    console.log('🎭 Using mock candidates for testing:', mockCandidates);
+    const seed = prototype.name;
+    const context = { contextFit: 0.85 };
 
-    // Split into inner (Tier A) and outer (Tier B/C)
-    const inner = mockCandidates.filter(c => c.tier === 'A');
-    const outer = mockCandidates.filter(c => c.tier !== 'A');
-    const aggregated = mockCandidates;
-
-    const result = { inner, outer, all: aggregated };
-    orbitCache.set(key, { timestamp: now, candidates: result });
-    return result;
-
-    // TODO: Uncomment when real resolvers are ready
-    // const graphStore = (await import('../store/graphStore.js')).default.getState();
-  } catch {}
-
-  const graphStore = (await import('../store/graphStore.js')).default.getState();
-  const federation = new KnowledgeFederation(graphStore);
-
-  const seed = prototype.name;
-  const context = { contextFit: 0.85 };
-
-  const providers = [];
-  // 1) KnowledgeFederation: importSingleEntity then findEntitiesRelated if available
-  try {
+    const providers = [];
+    
+    console.log(`🌐 Querying semantic web for "${seed}"`);
+    
+    // 1) Semantic web query utility (most reliable)
     providers.push(
-      federation.importSingleEntity(seed, ['wikidata', 'dbpedia']).then((entity) => {
-        if (!entity) return [];
-        const asCandidate = [];
-        // Convert properties to pairs resembling predicate -> value
-        if (entity.properties instanceof Map) {
-          entity.properties.forEach((arr, predicate) => {
-            arr.forEach((p) => {
-              asCandidate.push(
-                normalizeToCandidate(
-                  {
-                    name: String(p.value?.label || p.value || ''),
-                    uri: p.value?.uri || null,
-                    predicate,
-                    source: p.source,
-                    sourceTrust: getSourceTrust(p.source),
-                    externalLinks: p.value?.uri ? [p.value.uri] : [],
-                    types: entity.types?.map?.(t => t.type) || [],
-                  },
-                  context
-                )
-              );
-            });
-          });
-        }
-        return asCandidate;
-      })
-    );
-  } catch {}
-
-  // 2) Semantic web query utility
-  try {
-    providers.push(
-      findRelatedConcepts(seed, { limit: 32 }).then((results) => {
+      findRelatedConcepts(seed, { limit: 32, timeout: 10000 }).then((results) => {
+        console.log(`📊 findRelatedConcepts returned ${results?.length || 0} results for "${seed}"`);
         if (!Array.isArray(results)) return [];
-        return results.map((r) =>
-          normalizeToCandidate(
+        return results.map((r) => {
+          const candidate = normalizeToCandidate(
             {
-              name: r.name || r.label,
-              uri: r.uri,
-              predicate: r.predicate,
+              name: r.itemLabel?.value || r.label?.value || r.name || 'Unknown',
+              uri: r.item?.value || r.resource?.value || r.uri,
+              predicate: r.connectionType || r.predicate || 'relatedTo',
               source: r.source || 'external',
               sourceTrust: getSourceTrust(r.source || 'external'),
               externalLinks: r.externalLinks || (r.uri ? [r.uri] : []),
@@ -115,61 +62,120 @@ export async function fetchOrbitCandidatesForPrototype(prototype, options = {}) 
               claims: r.claims || [],
             },
             context
-          )
-        );
+          );
+          console.log(`  ↳ Candidate: ${candidate.name} (${candidate.source}, tier: ${candidate.tier}, score: ${candidate.score?.toFixed(2)})`);
+          return candidate;
+        });
+      }).catch(error => {
+        console.warn(`❌ findRelatedConcepts failed for "${seed}":`, error.message);
+        return [];
       })
     );
-  } catch {}
 
-  // 3) Fallback: use simple heuristics from prototype.externalLinks (sameAs)
-  const externalLinks = prototype.externalLinks || [];
-  if (Array.isArray(externalLinks) && externalLinks.length > 0) {
-    const linkCandidates = externalLinks.slice(0, 16).map((uri) =>
-      normalizeToCandidate(
-        {
-          name: uri,
-          uri,
-          predicate: 'externalUrl',
-          source: 'external',
-          sourceTrust: getSourceTrust('external'),
-          externalLinks: [uri],
-        },
-        context
-      )
-    );
-    providers.push(Promise.resolve(linkCandidates));
+    // 2) KnowledgeFederation: importSingleEntity then findEntitiesRelated if available
+    try {
+      providers.push(
+        federation.importSingleEntity(seed, ['wikidata', 'dbpedia']).then((entity) => {
+          console.log(`🏛️ KnowledgeFederation returned entity:`, entity ? 'found' : 'none');
+          if (!entity) return [];
+          const asCandidate = [];
+          // Convert properties to pairs resembling predicate -> value
+          if (entity.properties instanceof Map) {
+            entity.properties.forEach((arr, predicate) => {
+              arr.forEach((p) => {
+                asCandidate.push(
+                  normalizeToCandidate(
+                    {
+                      name: String(p.value?.label || p.value || ''),
+                      uri: p.value?.uri || null,
+                      predicate,
+                      source: p.source,
+                      sourceTrust: getSourceTrust(p.source),
+                      externalLinks: p.value?.uri ? [p.value.uri] : [],
+                      types: entity.types?.map?.(t => t.type) || [],
+                    },
+                    context
+                  )
+                );
+              });
+            });
+          }
+          console.log(`  ↳ Extracted ${asCandidate.length} candidates from federation`);
+          return asCandidate;
+        }).catch(error => {
+          console.warn(`❌ KnowledgeFederation failed for "${seed}":`, error.message);
+          return [];
+        })
+      );
+    } catch (error) {
+      console.warn(`❌ KnowledgeFederation setup failed:`, error.message);
+    }
+
+    // 3) Fallback: use simple heuristics from prototype.externalLinks (sameAs)
+    const externalLinks = prototype.externalLinks || [];
+    if (Array.isArray(externalLinks) && externalLinks.length > 0) {
+      console.log(`🔗 Using ${externalLinks.length} external links as fallback candidates`);
+      const linkCandidates = externalLinks.slice(0, 16).map((uri) =>
+        normalizeToCandidate(
+          {
+            name: uri.split('/').pop() || uri,
+            uri,
+            predicate: 'externalUrl',
+            source: 'external',
+            sourceTrust: getSourceTrust('external'),
+            externalLinks: [uri],
+          },
+          context
+        )
+      );
+      providers.push(Promise.resolve(linkCandidates));
+    }
+
+    let aggregated = [];
+    console.log(`⏳ Waiting for ${providers.length} providers to complete...`);
+    const batches = await Promise.allSettled(providers);
+    
+    batches.forEach((b, idx) => {
+      if (b.status === 'fulfilled' && Array.isArray(b.value)) {
+        console.log(`✅ Provider ${idx + 1} returned ${b.value.length} candidates`);
+        aggregated.push(...b.value);
+      } else {
+        console.warn(`❌ Provider ${idx + 1} failed:`, b.reason?.message || 'unknown error');
+      }
+    });
+
+    console.log(`📈 Total raw candidates before dedup: ${aggregated.length}`);
+
+    // Dedupe by uri+name
+    const seen = new Set();
+    aggregated = aggregated.filter((c) => {
+      const key = `${c.uri || ''}|${c.name}`.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    console.log(`🔄 After deduplication: ${aggregated.length} candidates`);
+
+    // Sort by score desc
+    aggregated.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    // Partition into inner (Tier A top 8) and outer (others up to 32)
+    const tierA = aggregated.filter((c) => c.tier === 'A');
+    const inner = tierA.slice(0, 8);
+    const outer = aggregated.filter((c) => !inner.includes(c)).slice(0, 64);
+
+    console.log(`🎯 Final orbit rings: ${inner.length} inner (Tier A), ${outer.length} outer`);
+
+    const result = { inner, outer, all: aggregated };
+    orbitCache.set(key, { timestamp: now, candidates: result });
+    return result;
+  } catch (error) {
+    console.error(`❌ Orbit resolver error for "${prototype.name}":`, error);
+    return { inner: [], outer: [], all: [] };
   }
-
-  let aggregated = [];
-  const batches = await Promise.allSettled(providers);
-  batches.forEach((b) => {
-    if (b.status === 'fulfilled' && Array.isArray(b.value)) aggregated.push(...b.value);
-  });
-
-  // Dedupe by uri+name
-  const seen = new Set();
-  aggregated = aggregated.filter((c) => {
-    const key = `${c.uri || ''}|${c.name}`.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  // Sort by score desc
-  aggregated.sort((a, b) => (b.score || 0) - (a.score || 0));
-
-  // Partition into inner (Tier A top 8) and outer (others up to 32)
-  const tierA = aggregated.filter((c) => c.tier === 'A');
-  const inner = tierA.slice(0, 8);
-  const outer = aggregated.filter((c) => !inner.includes(c)).slice(0, 64);
-
-  const result = { inner, outer, all: aggregated };
-  orbitCache.set(key, { timestamp: now, candidates: result });
-  return result;
 }
 
 export function invalidateOrbitCacheForPrototype(prototypeId) {
   orbitCache.delete(prototypeId);
 }
-
-
