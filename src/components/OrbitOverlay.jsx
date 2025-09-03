@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { useDrag } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend';
 import { getNodeDimensions } from '../utils.js';
@@ -8,6 +8,25 @@ import { candidateToConcept } from '../services/candidates.js';
 const SPAWNABLE_NODE = 'spawnable_node';
 
 const DRAG_MARGIN = 18;
+const ORBIT_ANGULAR_SPEED_RAD_PER_SEC = 0.08; // slow clockwise
+const RADIAL_PERTURBATION_PX_BASE = 6; // subtle radial wiggle
+const ANGLE_JITTER_RAD_BASE = 0.008; // subtle angle wobble
+const MIN_FREQ_HZ = 0.2;
+const MAX_FREQ_HZ = 1.2;
+
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
+
+// Deterministic pseudo-random in [0,1) from a string and optional salt
+const hashToUnitFloat = (str, salt = '') => {
+  let h = 2166136261;
+  const s = String(str) + '|' + String(salt);
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h * 16777619) >>> 0;
+  }
+  // Convert to [0,1)
+  return (h & 0x7fffffff) / 0x80000000;
+};
 
 const DraggableOrbitItem = ({ candidate, x, y, width, height }) => {
   const concept = useMemo(() => candidateToConcept(candidate), [candidate]);
@@ -115,22 +134,8 @@ export default function OrbitOverlay({
   innerCandidates,
   outerCandidates
 }) {
-  console.log('🎨 OrbitOverlay render:', { 
-    centerX, 
-    centerY, 
-    focusWidth, 
-    focusHeight, 
-    innerCandidatesCount: innerCandidates?.length || 0,
-    outerCandidatesCount: outerCandidates?.length || 0
-  });
-
-  if (!innerCandidates || innerCandidates.length === 0) {
-    console.log('❌ No inner candidates to show in orbit');
-    return null;
-  }
-
-  if (!outerCandidates || outerCandidates.length === 0) {
-    console.log('❌ No outer candidates to show in orbit');
+  // Render if at least one ring has candidates
+  if ((!innerCandidates || innerCandidates.length === 0) && (!outerCandidates || outerCandidates.length === 0)) {
     return null;
   }
 
@@ -144,32 +149,81 @@ export default function OrbitOverlay({
   const innerRadius = useMemo(() => computeRingRadius(measuredInner, centerRadius, DRAG_MARGIN, Math.max(1, measuredInner.length)), [measuredInner, centerRadius]);
   const outerRadius = useMemo(() => computeRingRadius(measuredOuter, innerRadius + DRAG_MARGIN, DRAG_MARGIN, Math.max(1, measuredOuter.length)), [measuredOuter, innerRadius]);
 
+  // Animation time state (seconds). Throttled to ~20 FPS for efficiency.
+  const [animTimeSec, setAnimTimeSec] = useState(0);
+  const rafRef = useRef(null);
+  const lastTsRef = useRef(0);
+  const accumRef = useRef(0);
+
+  useEffect(() => {
+    const loop = (ts) => {
+      if (!lastTsRef.current) lastTsRef.current = ts;
+      const dtSec = (ts - lastTsRef.current) / 1000;
+      lastTsRef.current = ts;
+      accumRef.current += dtSec;
+      // Update every ~50ms
+      if (accumRef.current >= 0.05) {
+        setAnimTimeSec((t) => t + accumRef.current);
+        accumRef.current = 0;
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      lastTsRef.current = 0;
+      accumRef.current = 0;
+    };
+  }, []);
+
   const innerPositions = useMemo(() => {
     const n = Math.max(1, measuredInner.length);
     const positions = [];
     for (let i = 0; i < measuredInner.length; i++) {
       const { candidate, dims } = measuredInner[i];
-      const theta = (2 * Math.PI * i) / n;
-      const cx = centerX + innerRadius * Math.cos(theta);
-      const cy = centerY + innerRadius * Math.sin(theta);
+      const baseAngle = (2 * Math.PI * i) / n; // even spacing
+      // Deterministic per-item variation
+      const seed1 = hashToUnitFloat(candidate.id, 'inner:radial');
+      const seed2 = hashToUnitFloat(candidate.id, 'inner:angle');
+      const seed3 = hashToUnitFloat(candidate.id, 'inner:freqR');
+      const seed4 = hashToUnitFloat(candidate.id, 'inner:freqA');
+      const radialAmp = RADIAL_PERTURBATION_PX_BASE * (0.6 + 0.8 * seed1);
+      const angleJitterAmp = ANGLE_JITTER_RAD_BASE * (0.6 + 0.8 * seed2);
+      const radialFreq = MIN_FREQ_HZ + (MAX_FREQ_HZ - MIN_FREQ_HZ) * seed3;
+      const angleFreq = MIN_FREQ_HZ + (MAX_FREQ_HZ - MIN_FREQ_HZ) * seed4;
+      const angle = baseAngle + ORBIT_ANGULAR_SPEED_RAD_PER_SEC * animTimeSec + angleJitterAmp * Math.sin(2 * Math.PI * angleFreq * animTimeSec + seed2 * 10);
+      const radius = innerRadius + radialAmp * Math.sin(2 * Math.PI * radialFreq * animTimeSec + seed1 * 10);
+      const cx = centerX + radius * Math.cos(angle);
+      const cy = centerY + radius * Math.sin(angle);
       positions.push({ candidate, dims, x: cx - dims.currentWidth / 2, y: cy - dims.currentHeight / 2 });
     }
     return positions;
-  }, [measuredInner, innerRadius, centerX, centerY]);
+  }, [measuredInner, innerRadius, centerX, centerY, animTimeSec]);
 
   const outerPositions = useMemo(() => {
     const n = Math.max(1, measuredOuter.length);
     const positions = [];
-    const offset = Math.PI / Math.max(2, n); // half-step bricklaying
+    const brickOffset = Math.PI / Math.max(2, n); // half-step bricklaying
     for (let i = 0; i < measuredOuter.length; i++) {
       const { candidate, dims } = measuredOuter[i];
-      const theta = (2 * Math.PI * i) / n + offset;
-      const cx = centerX + outerRadius * Math.cos(theta);
-      const cy = centerY + outerRadius * Math.sin(theta);
+      const baseAngle = (2 * Math.PI * i) / n + brickOffset;
+      const seed1 = hashToUnitFloat(candidate.id, 'outer:radial');
+      const seed2 = hashToUnitFloat(candidate.id, 'outer:angle');
+      const seed3 = hashToUnitFloat(candidate.id, 'outer:freqR');
+      const seed4 = hashToUnitFloat(candidate.id, 'outer:freqA');
+      const radialAmp = RADIAL_PERTURBATION_PX_BASE * (0.6 + 0.8 * seed1);
+      const angleJitterAmp = ANGLE_JITTER_RAD_BASE * (0.6 + 0.8 * seed2);
+      const radialFreq = MIN_FREQ_HZ + (MAX_FREQ_HZ - MIN_FREQ_HZ) * seed3;
+      const angleFreq = MIN_FREQ_HZ + (MAX_FREQ_HZ - MIN_FREQ_HZ) * seed4;
+      const angle = baseAngle + ORBIT_ANGULAR_SPEED_RAD_PER_SEC * animTimeSec + angleJitterAmp * Math.sin(2 * Math.PI * angleFreq * animTimeSec + seed2 * 10);
+      const radius = outerRadius + radialAmp * Math.sin(2 * Math.PI * radialFreq * animTimeSec + seed1 * 10);
+      const cx = centerX + radius * Math.cos(angle);
+      const cy = centerY + radius * Math.sin(angle);
       positions.push({ candidate, dims, x: cx - dims.currentWidth / 2, y: cy - dims.currentHeight / 2 });
     }
     return positions;
-  }, [measuredOuter, outerRadius, centerX, centerY]);
+  }, [measuredOuter, outerRadius, centerX, centerY, animTimeSec]);
 
   return (
     <g>
