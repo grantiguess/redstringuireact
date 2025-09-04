@@ -65,11 +65,24 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Get GitHub OAuth client ID with enhanced validation
+// Helper to detect if request comes from localhost UI
+function isLocalRequest(req) {
+  try {
+    const host = (req.headers['x-forwarded-host'] || req.headers.host || '').toString().toLowerCase();
+    return host.includes('localhost') || host.includes('127.0.0.1');
+  } catch { return false; }
+}
+
+// Get GitHub OAuth client ID with enhanced validation and dev/prod selection
 app.get('/api/github/oauth/client-id', (req, res) => {
   try {
-    const clientId = process.env.GITHUB_CLIENT_ID || null;
-    const clientSecret = process.env.GITHUB_CLIENT_SECRET || null;
+    const useDev = isLocalRequest(req);
+    const clientId = useDev
+      ? (process.env.GITHUB_CLIENT_ID_DEV || process.env.GITHUB_CLIENT_ID || null)
+      : (process.env.GITHUB_CLIENT_ID || null);
+    const clientSecret = useDev
+      ? (process.env.GITHUB_CLIENT_SECRET_DEV || process.env.GITHUB_CLIENT_SECRET || null)
+      : (process.env.GITHUB_CLIENT_SECRET || null);
     
     // Enhanced validation
     const isConfigured = !!(clientId && clientSecret);
@@ -81,7 +94,8 @@ app.get('/api/github/oauth/client-id', (req, res) => {
       clientIdValid,
       clientSecretValid,
       clientIdLength: clientId ? clientId.length : 0,
-      clientSecretLength: clientSecret ? clientSecret.length : 0
+      clientSecretLength: clientSecret ? clientSecret.length : 0,
+      selection: useDev ? 'dev' : 'prod'
     });
     
     res.json({ 
@@ -89,6 +103,7 @@ app.get('/api/github/oauth/client-id', (req, res) => {
       configured: isConfigured,
       clientIdValid,
       clientSecretValid,
+      selection: useDev ? 'dev' : 'prod',
       service: 'oauth-server' 
     });
   } catch (error) {
@@ -118,8 +133,17 @@ app.post('/api/github/oauth/refresh', async (req, res) => {
       });
     }
     
-    const clientId = process.env.GITHUB_CLIENT_ID;
-    const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+    // Select dev/prod OAuth credentials based on redirect_uri or request origin
+    const redirectHost = (() => {
+      try { return new URL(redirect_uri).host.toLowerCase(); } catch { return ''; }
+    })();
+    const isLocal = redirectHost.includes('localhost') || isLocalRequest(req);
+    const clientId = isLocal
+      ? (process.env.GITHUB_CLIENT_ID_DEV || process.env.GITHUB_CLIENT_ID)
+      : process.env.GITHUB_CLIENT_ID;
+    const clientSecret = isLocal
+      ? (process.env.GITHUB_CLIENT_SECRET_DEV || process.env.GITHUB_CLIENT_SECRET)
+      : process.env.GITHUB_CLIENT_SECRET;
     
     if (!clientId || !clientSecret) {
       return res.status(500).json({ 
@@ -398,8 +422,13 @@ app.post('/api/github/app/installation-token', async (req, res) => {
       });
     }
 
-    const appId = process.env.GITHUB_APP_ID;
-    const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+    const useDev = isLocalRequest(req);
+    const appId = useDev
+      ? (process.env.GITHUB_APP_ID_DEV || process.env.GITHUB_APP_ID)
+      : process.env.GITHUB_APP_ID;
+    const privateKey = useDev
+      ? (process.env.GITHUB_APP_PRIVATE_KEY_DEV || process.env.GITHUB_APP_PRIVATE_KEY)
+      : process.env.GITHUB_APP_PRIVATE_KEY;
 
     if (!appId || !privateKey) {
       return res.status(500).json({
@@ -462,8 +491,13 @@ app.post('/api/github/app/installation-token', async (req, res) => {
 // List GitHub App installations (for fallback when callback params are missing)
 app.get('/api/github/app/installations', async (req, res) => {
   try {
-    const appId = process.env.GITHUB_APP_ID;
-    const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+    const useDevList = isLocalRequest(req);
+    const appId = useDevList
+      ? (process.env.GITHUB_APP_ID_DEV || process.env.GITHUB_APP_ID)
+      : process.env.GITHUB_APP_ID;
+    const privateKey = useDevList
+      ? (process.env.GITHUB_APP_PRIVATE_KEY_DEV || process.env.GITHUB_APP_PRIVATE_KEY)
+      : process.env.GITHUB_APP_PRIVATE_KEY;
 
     if (!appId || !privateKey) {
       return res.status(500).json({
@@ -526,8 +560,13 @@ app.get('/api/github/app/installation/:installation_id', async (req, res) => {
   try {
     const { installation_id } = req.params;
     
-    const appId = process.env.GITHUB_APP_ID;
-    const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+    const useDevGet = isLocalRequest(req);
+    const appId = useDevGet
+      ? (process.env.GITHUB_APP_ID_DEV || process.env.GITHUB_APP_ID)
+      : process.env.GITHUB_APP_ID;
+    const privateKey = useDevGet
+      ? (process.env.GITHUB_APP_PRIVATE_KEY_DEV || process.env.GITHUB_APP_PRIVATE_KEY)
+      : process.env.GITHUB_APP_PRIVATE_KEY;
 
     if (!appId || !privateKey) {
       return res.status(500).json({
@@ -604,8 +643,13 @@ app.post('/api/github/app/create-repository', async (req, res) => {
       });
     }
 
-    const appId = process.env.GITHUB_APP_ID;
-    const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+    const useDevCreate = isLocalRequest(req);
+    const appId = useDevCreate
+      ? (process.env.GITHUB_APP_ID_DEV || process.env.GITHUB_APP_ID)
+      : process.env.GITHUB_APP_ID;
+    const privateKey = useDevCreate
+      ? (process.env.GITHUB_APP_PRIVATE_KEY_DEV || process.env.GITHUB_APP_PRIVATE_KEY)
+      : process.env.GITHUB_APP_PRIVATE_KEY;
 
     if (!appId || !privateKey) {
       return res.status(500).json({
@@ -717,6 +761,26 @@ app.post('/api/github/app/create-repository', async (req, res) => {
       error: error.message,
       service: 'oauth-server'
     });
+  }
+});
+
+// Provide GitHub App slug/name for installation URL, selecting dev when local
+app.get('/api/github/app/client-id', (req, res) => {
+  try {
+    const useDev = isLocalRequest(req);
+    const prodSlug = process.env.GITHUB_APP_SLUG || 'redstring-semantic-sync';
+    const devSlug = process.env.GITHUB_APP_SLUG_DEV || process.env.GITHUB_APP_SLUG || 'redstring-semantic-sync-dev';
+    const appName = useDev ? devSlug : prodSlug;
+
+    res.json({
+      appName,
+      selection: useDev ? 'dev' : 'prod',
+      prodSlug,
+      devSlug,
+      service: 'oauth-server'
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to determine app name', details: error.message, service: 'oauth-server' });
   }
 });
 

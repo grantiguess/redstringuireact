@@ -45,6 +45,8 @@ import { GitSyncEngine, SOURCE_OF_TRUTH } from './services/gitSyncEngine.js';
 import useGraphStore from './store/graphStore.js';
 import { importFromRedstring } from './formats/redstringFormat.js';
 import { persistentAuth } from './services/persistentAuth.js';
+import RepositoryManager from './components/repositories/RepositoryManager.jsx';
+import RepositoryDropdown from './components/repositories/RepositoryDropdown.jsx';
 
 const GitNativeFederation = () => {
   const [currentProvider, setCurrentProvider] = useState(null);
@@ -85,6 +87,10 @@ const GitNativeFederation = () => {
   const [authStatus, setAuthStatus] = useState(persistentAuth.getAuthStatus());
   const [connectionHealth, setConnectionHealth] = useState('unknown'); // 'healthy', 'degraded', 'failed', 'unknown'
   const [showCompleteInstallation, setShowCompleteInstallation] = useState(false);
+  const [showRepositoryManager, setShowRepositoryManager] = useState(false);
+  
+  // Computed authentication state
+  const isAuthenticated = authStatus.isAuthenticated;
   // Get the actual RedString store
   const storeState = useGraphStore();
   const storeActions = useGraphStore.getState();
@@ -435,18 +441,148 @@ const GitNativeFederation = () => {
   }, [gitSyncEngine, storeState]);
 
 
-  // Handle GitHub App installation callback
+  // Handle GitHub App installation callback and OAuth callback
   useEffect(() => {
-    const handleGitHubAppCallback = async () => {
-      console.log('[GitNativeFederation] GitHub App callback handler started');
+    const handleGitHubCallbacks = async () => {
+      console.log('[GitNativeFederation] GitHub callback handler started');
       console.log('[GitNativeFederation] Full URL:', window.location.href);
       
       const urlParams = new URLSearchParams(window.location.search);
       // Some environments might place params in the hash fragment
       const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
-      const installationId = urlParams.get('installation_id') || hashParams.get('installation_id');
-      const setupAction = urlParams.get('setup_action') || hashParams.get('setup_action');
-      const state = urlParams.get('state') || hashParams.get('state');
+      
+      // Check for OAuth callback first
+      const oauthCode = urlParams.get('code') || hashParams.get('code');
+      const oauthState = urlParams.get('state') || hashParams.get('state');
+      const oauthError = urlParams.get('error') || hashParams.get('error');
+      
+      // Check for GitHub App callback
+      const appInstallationId = urlParams.get('installation_id') || hashParams.get('installation_id');
+      const appSetupAction = urlParams.get('setup_action') || hashParams.get('setup_action');
+      const appState = urlParams.get('state') || hashParams.get('state');
+
+      // Handle OAuth callback
+      if (oauthCode && oauthState) {
+        const expectedState = sessionStorage.getItem('github_oauth_state');
+        const isPendingOAuth = sessionStorage.getItem('github_oauth_pending') === 'true';
+        
+        if (isPendingOAuth && oauthState === expectedState) {
+          console.log('[GitNativeFederation] Processing OAuth callback...');
+          
+          try {
+            setIsConnecting(true);
+            setError(null);
+            
+            // Clean up session storage
+            sessionStorage.removeItem('github_oauth_state');
+            sessionStorage.removeItem('github_oauth_pending');
+            
+            // Exchange code for token
+            const tokenResp = await oauthFetch('/api/github/oauth/token', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                code: oauthCode,
+                state: oauthState,
+                redirect_uri: window.location.origin + '/oauth/callback'
+              })
+            });
+            
+            if (!tokenResp.ok) {
+              const errorText = await tokenResp.text();
+              throw new Error(`Token exchange failed: ${tokenResp.status} ${errorText}`);
+            }
+            
+            const tokenData = await tokenResp.json();
+            
+            console.log('[GitNativeFederation] OAuth token data received:', {
+              hasToken: !!tokenData.access_token,
+              scope: tokenData.scope,
+              tokenType: tokenData.token_type
+            });
+            
+            // Store token in persistent auth
+            await persistentAuth.storeTokens(tokenData.access_token, null, {
+              authMethod: 'oauth',
+              scope: tokenData.scope || 'repo'
+            });
+            
+            // Get user info and repositories
+            const userResponse = await fetch('https://api.github.com/user', {
+              headers: {
+                'Authorization': `Bearer ${tokenData.access_token}`,
+                'Accept': 'application/vnd.github.v3+json'
+              }
+            });
+            
+            if (!userResponse.ok) {
+              throw new Error('Failed to fetch user info');
+            }
+            
+            const userData = await userResponse.json();
+            
+            // Get user repositories
+            const reposResponse = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
+              headers: {
+                'Authorization': `Bearer ${tokenData.access_token}`,
+                'Accept': 'application/vnd.github.v3+json'
+              }
+            });
+            
+            if (!reposResponse.ok) {
+              throw new Error('Failed to fetch repositories');
+            }
+            
+            const repos = await reposResponse.json();
+            
+            // Store OAuth data and show repository selector
+            setPendingOAuth({
+              username: userData.login,
+              accessToken: tokenData.access_token,
+              repositories: repos.map(repo => ({
+                name: repo.name,
+                full_name: repo.full_name,
+                description: repo.description,
+                private: repo.private,
+                created_at: repo.created_at,
+                updated_at: repo.updated_at
+              })),
+              userData
+            });
+            setUserRepositories(repos);
+            setShowRepositorySelector(true);
+            
+            console.log('[GitNativeFederation] OAuth authentication successful:', userData.login, repos.length, 'repositories');
+            
+            // Clean up URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            
+          } catch (err) {
+            console.error('[GitNativeFederation] OAuth callback failed:', err);
+            setError(`GitHub authentication failed: ${err.message}`);
+            // Clean up URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+          } finally {
+            setIsConnecting(false);
+          }
+          
+          return; // Exit early, don't process GitHub App callback
+        }
+      }
+      
+      // Handle OAuth error
+      if (oauthError) {
+        console.error('[GitNativeFederation] OAuth error:', oauthError);
+        setError(`GitHub authentication failed: ${oauthError}`);
+        sessionStorage.removeItem('github_oauth_state');
+        sessionStorage.removeItem('github_oauth_pending');
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return;
+      }
+      
+      const installationId = appInstallationId;
+      const setupAction = appSetupAction;
+      const state = appState;
       
       console.log('[GitNativeFederation] GitHub App params:', { 
         installationId,
@@ -560,11 +696,102 @@ const GitNativeFederation = () => {
         }
               } else if (isGitHubReturn) {
         console.log('[GitNativeFederation] Returned from GitHub but no installation_id found');
-        console.log('[GitNativeFederation] Showing manual completion option...');
         
-        // Don't try to fetch installations - just show the manual completion button
-        setError('GitHub App installation detected! Please use the "Complete Installation" button below to continue.');
-        setShowCompleteInstallation(true);
+        // Check if we've already attempted an automatic retry
+        const autoRetryAttempted = sessionStorage.getItem('github_app_auto_retry_attempted');
+        
+        if (!autoRetryAttempted) {
+          console.log('[GitNativeFederation] Attempting automatic installation completion (first retry)...');
+          sessionStorage.setItem('github_app_auto_retry_attempted', 'true');
+          
+          try {
+            setIsConnecting(true);
+            setError(null);
+            
+            // Try to get the most recent installation for this user
+            const installationsResp = await oauthFetch('/api/github/app/installations', { method: 'GET' });
+            
+            if (installationsResp.ok) {
+              const installations = await installationsResp.json();
+              
+              if (installations && installations.length > 0) {
+                // Use the most recent installation
+                const latestInstallation = installations[0];
+                const installationId = latestInstallation.id.toString();
+                
+                console.log('[GitNativeFederation] Found recent installation:', installationId);
+                
+                // Process this installation as if we got it from the callback
+                const installationResponse = await oauthFetch('/api/github/app/installation-token', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ installation_id: installationId })
+                });
+                
+                if (installationResponse.ok) {
+                  const installationData = await installationResponse.json();
+                  const accessToken = installationData.token;
+
+                  // Fetch installation details
+                  const instDetailsResp = await oauthFetch(`/api/github/app/installation/${encodeURIComponent(installationId)}`, { method: 'GET' });
+                  if (instDetailsResp.ok) {
+                    const instDetails = await instDetailsResp.json();
+                    const repositories = Array.isArray(instDetails.repositories) ? instDetails.repositories.map(repo => ({
+                      name: repo.name,
+                      full_name: repo.full_name,
+                      description: repo.description,
+                      private: repo.private,
+                      created_at: repo.created_at,
+                      updated_at: repo.updated_at
+                    })) : [];
+
+                    const userData = instDetails.account || {};
+                    const username = userData.login || 'unknown-user';
+                    
+                    console.log('[GitNativeFederation] Automatic installation completion successful:', username, repositories.length, 'repositories');
+                    
+                    // Store the installation data
+                    setGithubAppInstallation({ 
+                      installationId, 
+                      accessToken,
+                      repositories, 
+                      userData,
+                      username
+                    });
+                    setUserRepositories(repositories);
+                    setShowRepositorySelector(true);
+                    setIsConnected(false);
+                    setError(null);
+                    
+                    // Clean up session storage
+                    sessionStorage.removeItem('github_app_auto_retry_attempted');
+                    
+                    // Don't show manual completion button since we succeeded
+                    setShowCompleteInstallation(false);
+                    
+                    return; // Success, exit early
+                  }
+                }
+              }
+            }
+            
+            // If we get here, automatic retry failed
+            console.log('[GitNativeFederation] Automatic retry failed, showing manual completion option...');
+            setError('GitHub App installation detected! Please use the "Complete Installation" button below to continue.');
+            setShowCompleteInstallation(true);
+            
+          } catch (retryError) {
+            console.error('[GitNativeFederation] Automatic retry failed:', retryError);
+            setError('GitHub App installation detected! Please use the "Complete Installation" button below to continue.');
+            setShowCompleteInstallation(true);
+          } finally {
+            setIsConnecting(false);
+          }
+        } else {
+          console.log('[GitNativeFederation] Auto-retry already attempted, showing manual completion option...');
+          setError('GitHub App installation detected! Please use the "Complete Installation" button below to continue.');
+          setShowCompleteInstallation(true);
+        }
       } else {
         console.log('[GitNativeFederation] No GitHub App installation parameters found in URL');
         // Clean up URL if no installation parameters
@@ -574,7 +801,7 @@ const GitNativeFederation = () => {
       }
     };
     
-    handleGitHubAppCallback();
+    handleGitHubCallbacks();
   }, []);
 
   // Connect to provider
@@ -693,6 +920,8 @@ const GitNativeFederation = () => {
 
           // Always use OAuth user authentication for repository creation (recommended approach)
           console.log('[GitNativeFederation] Creating repository via OAuth user authentication...');
+          console.log('[GitNativeFederation] Using access token:', authData.accessToken ? 'Present' : 'Missing');
+          console.log('[GitNativeFederation] Repository details:', { name: repoName, private: !!makePrivate });
           
           // Use OAuth user authentication for repository creation via backend
           const resp = await oauthFetch('/api/github/oauth/create-repository', {
@@ -852,6 +1081,62 @@ const GitNativeFederation = () => {
     } finally {
       setIsConnecting(false);
     }
+  };
+
+  // Handle GitHub OAuth authentication for repository creation
+  const handleGitHubAuth = async () => {
+    try {
+      setIsConnecting(true);
+      setError(null);
+      
+      console.log('[GitNativeFederation] Starting GitHub OAuth authentication');
+      
+      // Get OAuth client ID from backend
+      const clientResp = await oauthFetch('/api/github/oauth/client-id');
+      if (!clientResp.ok) {
+        throw new Error('Failed to get OAuth client ID');
+      }
+      const { clientId } = await clientResp.json();
+      
+      if (!clientId) {
+        throw new Error('OAuth not configured on server');
+      }
+      
+      // Create OAuth authorization URL with repo scope for repository creation
+      const state = Math.random().toString(36).substring(7);
+      sessionStorage.setItem('github_oauth_state', state);
+      sessionStorage.setItem('github_oauth_pending', 'true');
+      
+      const redirectUri = encodeURIComponent(window.location.origin + '/oauth/callback');
+      const scopes = 'repo'; // Full repo scope needed for repository creation
+      const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scopes}&state=${state}`;
+      
+      console.log('[GitNativeFederation] Redirecting to GitHub OAuth:', authUrl);
+      
+      // Redirect to GitHub OAuth
+      window.location.href = authUrl;
+      
+    } catch (err) {
+      console.error('[GitNativeFederation] OAuth failed:', err);
+      setError(`GitHub OAuth authentication failed: ${err.message}`);
+      setIsConnecting(false);
+    }
+  };
+
+  // Handle browsing repositories with new repository manager
+  const handleBrowseRepositories = () => {
+    setShowRepositoryManager(true);
+  };
+
+  // Handle repository selection from the repository manager
+  const handleRepositoryManagerSelect = (repo) => {
+    console.log('[GitNativeFederation] Repository selected from manager:', repo.name);
+    
+    // Close the repository manager
+    setShowRepositoryManager(false);
+    
+    // Use the selected repository
+    handleSelectRepository(repo.name, false, false);
   };
 
   // Handle GitHub App connection - simple and clean like OAuth
@@ -1264,6 +1549,56 @@ const GitNativeFederation = () => {
           </p>
         </div>
 
+        {/* Repository Manager Modal */}
+        {showRepositoryManager && (
+          <div style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000
+          }}>
+            <div style={{ 
+              width: '800px', 
+              height: '600px',
+              maxWidth: '90%', 
+              maxHeight: '90%',
+              backgroundColor: '#bdb5b5', 
+              border: '1px solid #260000', 
+              borderRadius: '8px',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }}>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                padding: '16px',
+                borderBottom: '1px solid #260000'
+              }}>
+                <div style={{ fontWeight: 'bold', color: '#260000', fontSize: '1.1rem' }}>Repository Manager</div>
+                <button 
+                  onClick={() => setShowRepositoryManager(false)} 
+                  style={{ 
+                    background: 'transparent', 
+                    border: 'none', 
+                    color: '#260000', 
+                    cursor: 'pointer',
+                    fontSize: '1.2rem',
+                    padding: '4px'
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+              <div style={{ flex: 1, overflow: 'hidden' }}>
+                <RepositoryManager 
+                  onSelectRepository={handleRepositoryManagerSelect}
+                  showCreateOption={true}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Repository selection modal (OAuth/GitHub App) */}
         {showRepositorySelector && (pendingOAuth || githubAppInstallation) && (
           <div style={{
@@ -1493,35 +1828,22 @@ const GitNativeFederation = () => {
                       boxSizing: 'border-box'
                     }}
                   />
-                  <button
-                    onClick={() => {
-                      if (isAuthenticated) {
-                        handleBrowseRepositories();
-                      } else {
-                        handleGitHubAuth();
-                      }
-                    }}
-                    style={{
-                      padding: '8px 12px',
-                      backgroundColor: '#979090',
-                      border: '1px solid #260000',
-                      borderRadius: '4px',
-                      color: '#260000',
-                      fontSize: '0.85rem',
-                      fontFamily: "'EmOne', sans-serif",
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      transition: 'all 0.2s ease'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.target.style.backgroundColor = '#bdb5b5';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.target.style.backgroundColor = '#979090';
-                    }}
-                  >
-                    Browse
-                  </button>
+                  <div style={{ minWidth: '100px' }}>
+                    <RepositoryDropdown
+                      selectedRepository={null}
+                      onSelectRepository={(repo) => {
+                        console.log('[GitNativeFederation] Repository selected from dropdown:', repo.name);
+                        // Update the repo input field
+                        setProviderConfig(prev => ({ 
+                          ...prev, 
+                          repo: repo.name,
+                          user: repo.owner?.login || prev.user 
+                        }));
+                      }}
+                      placeholder="Browse Repos"
+                      disabled={!isAuthenticated}
+                    />
+                  </div>
                 </div>
             </div>
 
@@ -1566,6 +1888,40 @@ const GitNativeFederation = () => {
                     Authentication:
                   </label>
                 </InfoTooltip>
+              </div>
+
+              {/* OAuth Configuration */}
+              <div style={{ marginBottom: '10px' }}>
+                <InfoTooltip tooltip="OAuth authentication allows you to create repositories and browse your existing repositories. Required for repository creation.">
+                  <label style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
+                    OAuth Authentication:
+                  </label>
+                </InfoTooltip>
+                <button
+                  onClick={handleGitHubAuth}
+                  disabled={isConnecting}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    backgroundColor: isConnecting ? '#ccc' : isAuthenticated ? '#28a745' : '#260000',
+                    color: '#bdb5b5',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: isConnecting ? 'not-allowed' : 'pointer',
+                    fontSize: '0.9rem',
+                    fontFamily: "'EmOne', sans-serif",
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <Github size={16} />
+                  {isConnecting ? 'Connecting...' : isAuthenticated ? `✓ Signed in as ${authStatus.userData?.login || 'user'}` : 'Sign in with GitHub'}
+                </button>
+                <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '4px', textAlign: 'center' }}>
+                  {isAuthenticated ? 'Can create repositories • Full repo access' : 'Required for repository creation • Browse repositories'}
+                </div>
               </div>
 
               {/* GitHub App Configuration */}
