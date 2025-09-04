@@ -200,25 +200,47 @@ const GitNativeFederation = () => {
           status: 'Restoring saved connection...'
         });
         
-        // Restore provider config (use persistent auth token if available)
+        // Restore provider config based on auth method
         let restoredConfig = gitConnection;
         try {
-          // Try to get token from persistent auth service first
-          const authStatus = persistentAuth.getAuthStatus();
-          if (authStatus.isAuthenticated && (!gitConnection.token || gitConnection.authMethod === 'oauth')) {
-            const token = await persistentAuth.getAccessToken();
-            if (token) {
-              restoredConfig = { ...gitConnection, token };
-              console.log('[GitNativeFederation] Using persistent auth token for connection restoration');
+          if (gitConnection.authMethod === 'github-app' && gitConnection.installationId) {
+            // For GitHub App connections, get a fresh installation token
+            console.log('[GitNativeFederation] Restoring GitHub App connection, getting fresh installation token');
+            try {
+              const installationResponse = await oauthFetch('/api/github/app/installation-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ installation_id: gitConnection.installationId })
+              });
+              
+              if (installationResponse.ok) {
+                const installationData = await installationResponse.json();
+                restoredConfig = { ...gitConnection, token: installationData.token };
+                console.log('[GitNativeFederation] Using fresh GitHub App installation token for connection restoration');
+              } else {
+                console.warn('[GitNativeFederation] Failed to get GitHub App installation token, connection may fail');
+              }
+            } catch (appTokenError) {
+              console.error('[GitNativeFederation] GitHub App token restoration failed:', appTokenError);
             }
-          }
-          
-          // Fallback to session storage if persistent auth doesn't work
-          if (!restoredConfig.token) {
-            const sessionToken = sessionStorage.getItem('github_access_token');
-            if (sessionToken) {
-              restoredConfig = { ...gitConnection, token: sessionToken };
-              console.log('[GitNativeFederation] Using session token as fallback for connection restoration');
+          } else if (gitConnection.authMethod === 'oauth' || !gitConnection.authMethod) {
+            // For OAuth connections, try to get token from persistent auth service
+            const authStatus = persistentAuth.getAuthStatus();
+            if (authStatus.isAuthenticated && !gitConnection.token) {
+              const token = await persistentAuth.getAccessToken();
+              if (token) {
+                restoredConfig = { ...gitConnection, token };
+                console.log('[GitNativeFederation] Using persistent OAuth token for connection restoration');
+              }
+            }
+            
+            // Fallback to session storage if persistent auth doesn't work
+            if (!restoredConfig.token) {
+              const sessionToken = sessionStorage.getItem('github_access_token');
+              if (sessionToken) {
+                restoredConfig = { ...gitConnection, token: sessionToken };
+                console.log('[GitNativeFederation] Using session OAuth token as fallback for connection restoration');
+              }
             }
           }
         } catch (error) {
@@ -618,16 +640,27 @@ const GitNativeFederation = () => {
       
       // GitHub App can redirect with installation_id for both new installs and existing ones
       if (installationId) {
-        // Simple duplicate prevention
+        // Smart duplicate prevention - only prevent within 30 seconds
         const handledKey = `github_app_handled_${installationId}`;
-        if (sessionStorage.getItem(handledKey)) {
-          console.log('[GitNativeFederation] GitHub App installation already handled, skipping duplicate');
-          window.history.replaceState({}, document.title, window.location.pathname);
-          return;
+        const handledData = sessionStorage.getItem(handledKey);
+        
+        if (handledData) {
+          const handledTime = parseInt(handledData, 10);
+          const now = Date.now();
+          const timeDiff = now - handledTime;
+          
+          // Only skip if handled within last 30 seconds (30000ms)
+          if (timeDiff < 30000) {
+            console.log('[GitNativeFederation] GitHub App installation recently handled, skipping duplicate (within 30s)');
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return;
+          } else {
+            console.log('[GitNativeFederation] Previous installation attempt was over 30s ago, allowing retry');
+          }
         }
         
-        // Mark as handled before processing
-        sessionStorage.setItem(handledKey, '1');
+        // Mark as handled with timestamp
+        sessionStorage.setItem(handledKey, Date.now().toString());
         
         try {
           setIsConnecting(true);
@@ -691,18 +724,32 @@ const GitNativeFederation = () => {
             username
           });
           setUserRepositories(repositories);
-          setShowRepositorySelector(true);
-          setIsConnected(false);
-          setError(null);
           
-          // Clean up URL
+          // Provide helpful feedback based on repository count
+          if (repositories.length === 0) {
+            setError(`GitHub App installed successfully for ${username}, but no repositories are accessible. This may be because: 1) No repositories were selected during installation, 2) All repositories were deselected after installation, or 3) You need to grant repository permissions. You can modify repository access in your GitHub App settings.`);
+            setShowRepositorySelector(false); // Don't show empty selector
+          } else {
+            setShowRepositorySelector(true);
+            setError(null);
+          }
+          setIsConnected(false);
+          
+          // Clean up URL and session storage on success
           window.history.replaceState({}, document.title, window.location.pathname);
+          
+          // Clear the handled flag on successful completion
+          const handledKey = `github_app_handled_${installationId}`;
+          sessionStorage.removeItem(handledKey);
           
         } catch (err) {
           console.error('[GitNativeFederation] GitHub App installation failed:', err);
           setError(`GitHub App installation failed: ${err.message}`);
-          // Clean up URL and redirect
+          
+          // Clean up URL and clear handled flag on error so user can retry
           window.history.replaceState({}, document.title, window.location.pathname);
+          const handledKey = `github_app_handled_${installationId}`;
+          sessionStorage.removeItem(handledKey);
         } finally {
           setIsConnecting(false);
         }
@@ -771,10 +818,17 @@ const GitNativeFederation = () => {
                       username
                     });
                     setUserRepositories(repositories);
-                    // Don't automatically show repository selector - GitHub App is only for repo operations
+                    
+                    // Provide helpful feedback based on repository count
+                    if (repositories.length === 0) {
+                      setError(`GitHub App installed successfully for ${username}, but no repositories are accessible. This may be because: 1) No repositories were selected during installation, 2) All repositories were deselected after installation, or 3) You need to grant repository permissions. You can modify repository access in your GitHub App settings.`);
+                      setShowRepositorySelector(false); // Don't show empty selector
+                    } else {
+                      setShowRepositorySelector(true);
+                      setError(null);
+                    }
                     console.log('[GitNativeFederation] GitHub App installation completed - ready for repository operations');
                     setIsConnected(false);
-                    setError(null);
                     
                     // Clean up session storage
                     sessionStorage.removeItem('github_app_auto_retry_attempted');
@@ -1084,9 +1138,16 @@ const GitNativeFederation = () => {
         username
       });
       setUserRepositories(repositories);
-      setShowRepositorySelector(true);
+      
+      // Provide helpful feedback based on repository count
+      if (repositories.length === 0) {
+        setError(`GitHub App installed successfully for ${username}, but no repositories are accessible. This may be because: 1) No repositories were selected during installation, 2) All repositories were deselected after installation, or 3) You need to grant repository permissions. You can modify repository access in your GitHub App settings.`);
+        setShowRepositorySelector(false); // Don't show empty selector
+      } else {
+        setShowRepositorySelector(true);
+        setError(null);
+      }
       setIsConnected(false);
-      setError(null);
       
     } catch (err) {
       console.error('[GitNativeFederation] Manual installation completion failed:', err);
@@ -1701,6 +1762,92 @@ const GitNativeFederation = () => {
           </div>
         )}
 
+        {/* GitHub App Repository Access Helper */}
+        {githubAppInstallation && userRepositories.length === 0 && !showRepositorySelector && (
+          <div style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000
+          }}>
+            <div style={{ width: '520px', maxWidth: '90%', backgroundColor: '#bdb5b5', border: '1px solid #260000', borderRadius: '8px', padding: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                <div style={{ fontWeight: 'bold', color: '#260000', fontSize: '1.1rem' }}>Repository Access Required</div>
+                <button onClick={() => { setGithubAppInstallation(null); setError(null); }} style={{ background: 'transparent', border: 'none', color: '#260000', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              </div>
+              
+              <div style={{ marginBottom: '15px', color: '#260000', lineHeight: '1.4' }}>
+                <p style={{ margin: '0 0 10px 0' }}>
+                  <strong>GitHub App installed successfully</strong> for @{githubAppInstallation.username}, but no repositories are accessible.
+                </p>
+                <p style={{ margin: '0 0 10px 0', fontSize: '0.9rem' }}>
+                  This happens when:
+                </p>
+                <ul style={{ margin: '0 0 15px 20px', fontSize: '0.9rem' }}>
+                  <li>No repositories were selected during installation</li>
+                  <li>Repository access was revoked after installation</li>
+                  <li>The app needs additional repository permissions</li>
+                </ul>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => {
+                    const appName = 'redstring-semantic-sync-test'; // Use dev app name
+                    window.open(`https://github.com/settings/installations`, '_blank');
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#260000',
+                    color: '#bdb5b5',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    fontFamily: "'EmOne', sans-serif"
+                  }}
+                >
+                  Manage App Settings
+                </button>
+                <button
+                  onClick={() => {
+                    // Try to reinstall/reconfigure
+                    handleGitHubApp();
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: 'transparent',
+                    color: '#260000',
+                    border: '1px solid #260000',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    fontFamily: "'EmOne', sans-serif"
+                  }}
+                >
+                  Reconfigure App
+                </button>
+                <button
+                  onClick={() => {
+                    setGithubAppInstallation(null);
+                    setError(null);
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: 'transparent',
+                    color: '#666',
+                    border: '1px solid #666',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    fontFamily: "'EmOne', sans-serif"
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Provider Selection */}
         <div style={{ marginBottom: '20px', marginTop: '30px', padding: '15px', backgroundColor: '#979090', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
@@ -2222,7 +2369,35 @@ const GitNativeFederation = () => {
             color: '#d32f2f',
             fontSize: '0.8rem'
           }}>
-            {error}
+            <div style={{ marginBottom: '8px' }}>{error}</div>
+            {error.includes('GitHub App') && (
+              <button
+                onClick={() => {
+                  // Clear all GitHub App session storage
+                  Object.keys(sessionStorage).forEach(key => {
+                    if (key.startsWith('github_app_handled_') || key === 'github_app_auto_retry_attempted' || key === 'github_app_pending') {
+                      sessionStorage.removeItem(key);
+                    }
+                  });
+                  setError(null);
+                  setGithubAppInstallation(null);
+                  setShowCompleteInstallation(false);
+                  console.log('[GitNativeFederation] Cleared GitHub App session data for retry');
+                }}
+                style={{
+                  padding: '4px 8px',
+                  backgroundColor: '#f44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '3px',
+                  cursor: 'pointer',
+                  fontSize: '0.75rem',
+                  fontFamily: "'EmOne', sans-serif"
+                }}
+              >
+                Clear & Retry
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -2750,7 +2925,35 @@ const GitNativeFederation = () => {
           color: '#d32f2f',
           fontSize: '0.8rem'
         }}>
-          {error}
+          <div style={{ marginBottom: '8px' }}>{error}</div>
+          {error.includes('GitHub App') && (
+            <button
+              onClick={() => {
+                // Clear all GitHub App session storage
+                Object.keys(sessionStorage).forEach(key => {
+                  if (key.startsWith('github_app_handled_') || key === 'github_app_auto_retry_attempted' || key === 'github_app_pending') {
+                    sessionStorage.removeItem(key);
+                  }
+                });
+                setError(null);
+                setGithubAppInstallation(null);
+                setShowCompleteInstallation(false);
+                console.log('[GitNativeFederation] Cleared GitHub App session data for retry');
+              }}
+              style={{
+                padding: '4px 8px',
+                backgroundColor: '#f44336',
+                color: 'white',
+                border: 'none',
+                borderRadius: '3px',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                fontFamily: "'EmOne', sans-serif"
+              }}
+            >
+              Clear & Retry
+            </button>
+          )}
         </div>
       )}
     </div>

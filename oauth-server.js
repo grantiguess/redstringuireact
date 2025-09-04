@@ -616,8 +616,9 @@ app.get('/api/github/app/installation/:installation_id', async (req, res) => {
 
     const installationData = await installationResponse.json();
 
-    // Get installation repositories
-    const reposResponse = await fetch(`https://api.github.com/app/installations/${installation_id}/repositories`, {
+    // First get installation access token (repositories endpoint requires installation token, not app JWT)
+    const tokenResponse = await fetch(`https://api.github.com/app/installations/${installation_id}/access_tokens`, {
+      method: 'POST',
       headers: {
         'Accept': 'application/vnd.github.v3+json',
         'Authorization': `Bearer ${appJWT}`,
@@ -625,10 +626,63 @@ app.get('/api/github/app/installation/:installation_id', async (req, res) => {
       }
     });
 
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      logger.error('[GitHubApp] Installation token request failed:', {
+        status: tokenResponse.status,
+        error: errorText,
+        installation_id
+      });
+      throw new Error(`Failed to get installation token: ${tokenResponse.status}`);
+    }
+
+    const tokenData = await tokenResponse.json();
+    const installationToken = tokenData.token;
+
+    // Now use installation token to get repositories (this is the correct way)
+    const reposUrl = `https://api.github.com/installation/repositories`;
+    logger.debug('[GitHubApp] Attempting to fetch repositories with installation token:', {
+      url: reposUrl,
+      installation_id,
+      hasInstallationToken: !!installationToken
+    });
+    
+    const reposResponse = await fetch(reposUrl, {
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `token ${installationToken}`,
+        'User-Agent': 'Redstring-GitHubApp-Server/1.0'
+      }
+    });
+
     let repositories = [];
     if (reposResponse.ok) {
       const reposData = await reposResponse.json();
+      
+      // DEBUG: Log the actual response structure to understand the issue
+      logger.debug('[GitHubApp] Repositories API response structure:', {
+        keys: Object.keys(reposData),
+        total_count: reposData.total_count,
+        repositories_length: reposData.repositories?.length,
+        full_response: JSON.stringify(reposData, null, 2)
+      });
+      
+      // GitHub API returns { total_count: N, repositories: [...] }
       repositories = reposData.repositories || [];
+      
+      // Additional logging for debugging
+      if (repositories.length === 0) {
+        logger.warn('[GitHubApp] No repositories found for installation:', installation_id);
+        logger.warn('[GitHubApp] Response total_count:', reposData.total_count);
+        logger.warn('[GitHubApp] This may indicate: 1) No repos selected during installation, 2) App lacks repository permissions, 3) All repos were deselected');
+      }
+    } else {
+      const errorText = await reposResponse.text();
+      logger.error('[GitHubApp] Repositories request failed:', {
+        status: reposResponse.status,
+        error: errorText,
+        installation_id
+      });
     }
 
     res.json({
