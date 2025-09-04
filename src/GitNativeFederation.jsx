@@ -1359,6 +1359,22 @@ const GitNativeFederation = () => {
       ? SOURCE_OF_TRUTH.GIT 
       : SOURCE_OF_TRUTH.LOCAL;
     
+    // Add confirmation for switching to Git mode
+    if (newMode === SOURCE_OF_TRUTH.GIT) {
+      const confirmed = window.confirm(
+        '⚠️ WARNING: Switching to Git mode will make the Git repository the authoritative source.\n\n' +
+        'This means:\n' +
+        '• Git changes can overwrite your local RedString file\n' +
+        '• Your local changes may be lost if not committed\n' +
+        '• This is experimental and may cause data loss\n\n' +
+        'Only enable this if you understand the risks.\n\n' +
+        'Continue?'
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    
     try {
       gitSyncEngine.setSourceOfTruth(newMode);
       setSourceOfTruthMode(newMode);
@@ -1367,14 +1383,14 @@ const GitNativeFederation = () => {
       setGitSourceOfTruth(newMode === SOURCE_OF_TRUTH.GIT ? 'git' : 'local');
       
       setSyncStatus({
-        type: 'success',
-        status: `Source of truth changed to: ${newMode}`
+        type: newMode === SOURCE_OF_TRUTH.GIT ? 'warning' : 'success',
+        status: `Source of truth changed to: ${newMode === SOURCE_OF_TRUTH.LOCAL ? 'RedString File (Safe)' : 'Git Repository (Experimental)'}`
       });
       
-      // Clear the status after 5 seconds
+      // Clear the status after 8 seconds for warnings
       setTimeout(() => {
         setSyncStatus(null);
-      }, 5000);
+      }, newMode === SOURCE_OF_TRUTH.GIT ? 8000 : 5000);
       
     } catch (error) {
       console.error('[GitNativeFederation] Failed to change source of truth:', error);
