@@ -5,9 +5,9 @@
 
 echo "🚀 Starting RedString application..."
 
-# Start OAuth server in background
+# Start OAuth server in background on fixed port 3002
 echo "🔐 Starting OAuth server on port 3002..."
-node oauth-server.js &
+OAUTH_PORT=3002 node oauth-server.js &
 OAUTH_PID=$!
 
 # Wait a moment for OAuth server to start
@@ -21,6 +21,7 @@ fi
 
 echo "✅ OAuth server started successfully (PID: $OAUTH_PID)"
 
-# Start main server
-echo "🌐 Starting app + semantic server on port 4000..."
-node deployment/app-semantic-server.js
+# Start main server on Cloud Run port (or 4000 locally)
+MAIN_PORT=${PORT:-4000}
+echo "🌐 Starting app + semantic server on port $MAIN_PORT..."
+PORT=$MAIN_PORT node deployment/app-semantic-server.js

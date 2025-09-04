@@ -65,11 +65,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Helper to detect if request comes from localhost UI
+// Helper to detect if request comes from dev environment (localhost only)
 function isLocalRequest(req) {
   try {
     const host = (req.headers['x-forwarded-host'] || req.headers.host || '').toString().toLowerCase();
-    return host.includes('localhost') || host.includes('127.0.0.1');
+    return host.includes('localhost') || 
+           host.includes('127.0.0.1');
+    // Removed redstring-test-784175375476 detection - this is actually production deployment
   } catch { return false; }
 }
 
@@ -185,6 +187,8 @@ app.post('/api/github/oauth/token', async (req, res) => {
       hasCode: !!code,
       hasState: !!state,
       hasRedirectUri: !!redirect_uri,
+      redirect_uri: redirect_uri,
+      redirect_uri_exact: JSON.stringify(redirect_uri),
       codeLength: code ? code.length : 0,
       stateLength: state ? state.length : 0
     });
@@ -197,8 +201,17 @@ app.post('/api/github/oauth/token', async (req, res) => {
       });
     }
     
-    const clientId = process.env.GITHUB_CLIENT_ID;
-    const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+    // Select dev/prod OAuth credentials based on redirect_uri or request origin
+    const redirectHost = (() => {
+      try { return new URL(redirect_uri).host.toLowerCase(); } catch { return ''; }
+    })();
+    const isLocal = redirectHost.includes('localhost') || isLocalRequest(req);
+    const clientId = isLocal
+      ? (process.env.GITHUB_CLIENT_ID_DEV || process.env.GITHUB_CLIENT_ID)
+      : process.env.GITHUB_CLIENT_ID;
+    const clientSecret = isLocal
+      ? (process.env.GITHUB_CLIENT_SECRET_DEV || process.env.GITHUB_CLIENT_SECRET)
+      : process.env.GITHUB_CLIENT_SECRET;
     
     // Enhanced validation with detailed error messages
     if (!clientId || !clientSecret) {
@@ -248,6 +261,16 @@ app.post('/api/github/oauth/token', async (req, res) => {
     
     logger.debug('[OAuth] Exchanging code for token...');
     
+    const requestPayload = {
+      client_id: clientId.trim(),
+      client_secret: clientSecret.trim(),
+      code,
+      redirect_uri,
+      state
+    };
+    
+    logger.debug('[OAuth] Sending to GitHub:', JSON.stringify(requestPayload, null, 2));
+    
     // Exchange code for access token with GitHub
     const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
       method: 'POST',
@@ -256,13 +279,7 @@ app.post('/api/github/oauth/token', async (req, res) => {
         'Content-Type': 'application/json',
         'User-Agent': 'Redstring-OAuth-Server/1.0'
       },
-      body: JSON.stringify({
-        client_id: clientId.trim(),
-        client_secret: clientSecret.trim(),
-        code,
-        redirect_uri,
-        state
-      })
+      body: JSON.stringify(requestPayload)
     });
     
     logger.debug('[OAuth] GitHub response status:', tokenResponse.status);

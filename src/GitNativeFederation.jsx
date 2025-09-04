@@ -477,14 +477,23 @@ const GitNativeFederation = () => {
             sessionStorage.removeItem('github_oauth_state');
             sessionStorage.removeItem('github_oauth_pending');
             
-            // Exchange code for token
+            // Exchange code for token - MUST use the same redirect_uri as authorization request
+            const redirectUriForToken = window.location.origin + '/oauth/callback';
+            console.log('[GitNativeFederation] Token exchange - redirect_uri (unencoded):', JSON.stringify(redirectUriForToken));
+            console.log('[GitNativeFederation] Token exchange - redirect_uri (encoded):', JSON.stringify(encodeURIComponent(redirectUriForToken)));
+            console.log('[GitNativeFederation] Token exchange - origin:', JSON.stringify(window.location.origin));
+            console.log('[GitNativeFederation] Token exchange - full URL:', window.location.href);
+            
+            // GitHub OAuth spec requires redirect_uri in token exchange to match authorization request exactly
+            // Since we encoded it in the authorization request, we should send the unencoded version here
+            
             const tokenResp = await oauthFetch('/api/github/oauth/token', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 code: oauthCode,
                 state: oauthState,
-                redirect_uri: window.location.origin + '/oauth/callback'
+                redirect_uri: redirectUriForToken
               })
             });
             
@@ -1107,13 +1116,16 @@ const GitNativeFederation = () => {
       sessionStorage.setItem('github_oauth_state', state);
       sessionStorage.setItem('github_oauth_pending', 'true');
       
-      const redirectUri = encodeURIComponent(window.location.origin + '/oauth/callback');
+      const redirectUri = window.location.origin + '/oauth/callback';
       const scopes = 'repo'; // Full repo scope needed for repository creation
-      const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scopes}&state=${state}`;
+      // Build URL with proper encoding - encodeURIComponent each parameter value
+      const authUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(state)}`;
       
       console.log('[GitNativeFederation] Redirecting to GitHub OAuth:', authUrl);
+      console.log('[GitNativeFederation] Redirect URI (unencoded):', redirectUri);
+      console.log('[GitNativeFederation] Redirect URI (encoded):', encodeURIComponent(redirectUri));
       
-      // Redirect to GitHub OAuth
+      // Redirect to GitHub OAuth in same tab
       window.location.href = authUrl;
       
     } catch (err) {
