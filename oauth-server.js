@@ -65,13 +65,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Helper to detect if request comes from dev environment (localhost only)
+// Helper to detect if request comes from dev environment (localhost only for now)
 function isLocalRequest(req) {
   try {
     const host = (req.headers['x-forwarded-host'] || req.headers.host || '').toString().toLowerCase();
     return host.includes('localhost') || 
            host.includes('127.0.0.1');
-    // Removed redstring-test-784175375476 detection - this is actually production deployment
+           // Temporarily use PROD app for test deployment until dev app is created
   } catch { return false; }
 }
 

@@ -105,6 +105,18 @@ app.post('/api/github/oauth/token', async (req, res) => {
   }
 });
 
+// GitHub App client-id proxy to OAuth server
+app.get('/api/github/app/client-id', async (req, res) => {
+  try {
+    const response = await fetch(`${oauthBaseUrl}/api/github/app/client-id`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    logger.error('OAuth proxy error (app client-id):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
 // GitHub App proxies to OAuth server
 app.post('/api/github/app/installation-token', async (req, res) => {
   try {

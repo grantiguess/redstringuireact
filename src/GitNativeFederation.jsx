@@ -544,7 +544,7 @@ const GitNativeFederation = () => {
             
             const repos = await reposResponse.json();
             
-            // Store OAuth data and show repository selector
+            // Store OAuth data for repository operations only
             setPendingOAuth({
               username: userData.login,
               accessToken: tokenData.access_token,
@@ -559,7 +559,10 @@ const GitNativeFederation = () => {
               userData
             });
             setUserRepositories(repos);
-            setShowRepositorySelector(true);
+            
+            // Don't automatically show repository selector - OAuth is only for repo creation
+            // User will access repo management through the UI when needed
+            console.log('[GitNativeFederation] OAuth completed - ready for repository operations');
             
             console.log('[GitNativeFederation] OAuth authentication successful:', userData.login, repos.length, 'repositories');
             
@@ -768,7 +771,8 @@ const GitNativeFederation = () => {
                       username
                     });
                     setUserRepositories(repositories);
-                    setShowRepositorySelector(true);
+                    // Don't automatically show repository selector - GitHub App is only for repo operations
+                    console.log('[GitNativeFederation] GitHub App installation completed - ready for repository operations');
                     setIsConnected(false);
                     setError(null);
                     
