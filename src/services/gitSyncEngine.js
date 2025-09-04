@@ -19,7 +19,11 @@ class GitSyncEngine {
     this.fileBaseName = (fileBaseName || 'universe').replace(/\.redstring$/i, '');
     this.localState = new Map(); // Instant updates
     this.pendingCommits = []; // Queue of pending changes
-    this.commitInterval = 5000; // 5-second auto-commits
+    // Optimized auto-save settings based on authentication method
+    this.isGitHubApp = provider.authMethod === 'github-app';
+    this.commitInterval = this.isGitHubApp ? 15000 : 5000; // 15s for GitHub App (more reliable), 5s for OAuth
+    this.autoSaveEnabled = this.isGitHubApp; // Enable optimized auto-save for GitHub App
+    
     this.isRunning = false;
     this.lastCommitTime = 0;
     this.commitLoop = null;
@@ -27,8 +31,8 @@ class GitSyncEngine {
     this.hasChanges = false; // Track if there are actual changes
     this.isCommitInProgress = false; // Prevent overlapping commits
     
-    // Rate limiting and debouncing
-    this.minCommitInterval = 2000; // Minimum 2 seconds between commits
+    // Rate limiting and debouncing - optimized for GitHub App
+    this.minCommitInterval = this.isGitHubApp ? 5000 : 2000; // 5s for GitHub App, 2s for OAuth
     this.debounceTimeout = null; // For debouncing rapid updates
     this.debounceDelay = 1000; // 1 second debounce for continuous operations
     this.isDragging = false; // Track if we're in a dragging operation
@@ -38,6 +42,9 @@ class GitSyncEngine {
     this.statusHandler = null;
     
     console.log('[GitSyncEngine] Initialized with provider:', provider.name);
+    console.log('[GitSyncEngine] Authentication method:', this.isGitHubApp ? 'GitHub App' : 'OAuth');
+    console.log('[GitSyncEngine] Auto-save optimized:', this.autoSaveEnabled);
+    console.log('[GitSyncEngine] Commit interval:', this.commitInterval + 'ms');
     console.log('[GitSyncEngine] Source of truth:', this.sourceOfTruth);
     console.log('[GitSyncEngine] Universe slug:', this.universeSlug);
   }

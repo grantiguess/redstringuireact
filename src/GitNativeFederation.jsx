@@ -1848,6 +1848,36 @@ const GitNativeFederation = () => {
           </div>
         )}
 
+        {/* Authentication Status Indicator */}
+        {(currentProvider || githubAppInstallation || pendingOAuth) && (
+          <div style={{ marginBottom: '15px', padding: '12px', backgroundColor: '#e8f5e8', border: '1px solid #4caf50', borderRadius: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', color: '#2e7d32' }}>
+              <span style={{ fontWeight: 'bold' }}>🔗 Connected:</span>
+              {githubAppInstallation && (
+                <span>
+                  <strong>GitHub App</strong> (@{githubAppInstallation.username}) • 
+                  <span style={{ color: '#1976d2', marginLeft: '4px' }}>Optimized Auto-Save</span>
+                </span>
+              )}
+              {pendingOAuth && (
+                <span>
+                  <strong>OAuth</strong> (@{pendingOAuth.username}) • 
+                  <span style={{ color: '#f57c00', marginLeft: '4px' }}>Standard Sync</span>
+                </span>
+              )}
+              {currentProvider && !githubAppInstallation && !pendingOAuth && (
+                <span>
+                  <strong>{currentProvider.authMethod === 'github-app' ? 'GitHub App' : 'OAuth'}</strong> 
+                  ({currentProvider.user}/{currentProvider.repo}) • 
+                  <span style={{ color: currentProvider.authMethod === 'github-app' ? '#1976d2' : '#f57c00', marginLeft: '4px' }}>
+                    {currentProvider.authMethod === 'github-app' ? 'Optimized Auto-Save' : 'Standard Sync'}
+                  </span>
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Provider Selection */}
         <div style={{ marginBottom: '20px', marginTop: '30px', padding: '15px', backgroundColor: '#979090', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
@@ -2298,6 +2328,79 @@ const GitNativeFederation = () => {
           {/* Advanced Settings */}
           {showAdvanced && (
             <div style={{ marginTop: '15px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
+              
+              {/* Source of Truth Configuration */}
+              <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#fff3cd', border: '1px solid #ffeaa7', borderRadius: '4px' }}>
+                <div style={{ fontWeight: 'bold', color: '#856404', marginBottom: '8px', fontSize: '0.9rem' }}>
+                  ⚙️ Data Source Configuration
+                </div>
+                
+                <div style={{ marginBottom: '10px' }}>
+                  <InfoTooltip tooltip="Choose whether your local RedString file or the Git repository is the authoritative source. LOCAL (recommended): Your local file is the master copy, Git is backup. GIT (experimental): Git repository overrides local changes.">
+                    <label style={{ display: 'block', color: '#856404', marginBottom: '5px', fontSize: '0.8rem' }}>
+                      Source of Truth:
+                    </label>
+                  </InfoTooltip>
+                  
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', color: '#856404' }}>
+                      <input
+                        type="radio"
+                        name="sourceOfTruth"
+                        value="local"
+                        checked={sourceOfTruthMode === 'local'}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSourceOfTruthMode('local');
+                            setGitSourceOfTruth('local');
+                            if (gitSyncEngine) {
+                              gitSyncEngine.setSourceOfTruth('local');
+                            }
+                          }
+                        }}
+                      />
+                      <span style={{ fontWeight: sourceOfTruthMode === 'local' ? 'bold' : 'normal' }}>
+                        LOCAL (Safe) - RedString file is master
+                      </span>
+                    </label>
+                    
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', color: '#856404' }}>
+                      <input
+                        type="radio"
+                        name="sourceOfTruth"
+                        value="git"
+                        checked={sourceOfTruthMode === 'git'}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            const confirmed = window.confirm(
+                              'WARNING: Git mode will make the Git repository the authoritative source. ' +
+                              'This means Git changes can overwrite your local RedString file. ' +
+                              'Only enable this if you understand the risks. Continue?'
+                            );
+                            if (confirmed) {
+                              setSourceOfTruthMode('git');
+                              setGitSourceOfTruth('git');
+                              if (gitSyncEngine) {
+                                gitSyncEngine.setSourceOfTruth('git');
+                              }
+                            }
+                          }
+                        }}
+                      />
+                      <span style={{ fontWeight: sourceOfTruthMode === 'git' ? 'bold' : 'normal', color: sourceOfTruthMode === 'git' ? '#dc3545' : '#856404' }}>
+                        GIT (Experimental) - Git overrides local
+                      </span>
+                    </label>
+                  </div>
+                </div>
+                
+                {sourceOfTruthMode === 'git' && (
+                  <div style={{ padding: '8px', backgroundColor: '#f8d7da', border: '1px solid #f5c6cb', borderRadius: '3px', fontSize: '0.75rem', color: '#721c24' }}>
+                    ⚠️ <strong>Warning:</strong> Git mode enabled. Local changes may be overwritten by Git repository content.
+                  </div>
+                )}
+              </div>
+
               <div style={{ marginBottom: '10px' }}>
                 <InfoTooltip tooltip="The folder name where semantic files will be stored in your repository. 'schema' is the recommended default.">
                   <label htmlFor="schema-path" style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.8rem' }}>
