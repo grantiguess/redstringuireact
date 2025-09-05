@@ -83,6 +83,11 @@ export default function GitFederationBootstrap() {
         const engine = new GitSyncEngine(provider, sourceOfTruthMode, universeSlug, fileBaseName);
         if (cancelled) return;
 
+        // Mark store as ready immediately to avoid panel delay
+        try {
+          useGraphStore.setState({ isUniverseLoaded: true, isUniverseLoading: false });
+        } catch (_) {}
+
         // Load from Git and import if needed
         try {
           const redstringData = await engine.loadFromGit();

@@ -3193,8 +3193,10 @@ const Panel = forwardRef(
     // ✅ END OF STORE SUBSCRIPTIONS - DO NOT ADD MORE INDIVIDUAL SUBSCRIPTIONS BELOW
     // If you need new store data, add it to the consolidated subscription pattern above
 
+    // Treat verified Git engine as "ready" to avoid visible preload delay
+    const gitEngine = storeState?.gitSyncEngine;
     // Check if store is ready (but don't return early to avoid hooks rule violation)
-    const isStoreReady = !isUniverseLoading && isUniverseLoaded && nodePrototypesMap && typeof nodePrototypesMap.get === 'function';
+    const isStoreReady = !!gitEngine || (!isUniverseLoading && isUniverseLoaded && nodePrototypesMap && typeof nodePrototypesMap.get === 'function');
     
     if (!isStoreReady) {
         console.log('[Panel] Store not ready:', { 

@@ -103,11 +103,39 @@ const GitNativeFederation = () => {
   const clearGitConnection = useGraphStore(state => state.clearGitConnection);
   const setGitSyncEngineStore = useGraphStore(state => state.setGitSyncEngine);
   const setGitSourceOfTruth = useGraphStore(state => state.setGitSourceOfTruth);
+  const storeGitSyncEngine = useGraphStore(state => state.gitSyncEngine);
   
   const [gitSyncEngine, setGitSyncEngine] = useState(null);
   const [sourceOfTruthMode, setSourceOfTruthMode] = useState(
     gitSourceOfTruth === 'git' ? SOURCE_OF_TRUTH.GIT : SOURCE_OF_TRUTH.LOCAL
   );
+
+  // Adopt preloaded engine from store for instant readiness on mount/tab switch
+  useEffect(() => {
+    try {
+      if (storeGitSyncEngine && !gitSyncEngine) {
+        setGitSyncEngine(storeGitSyncEngine);
+        setGitSyncEngineStore(storeGitSyncEngine);
+        const provider = storeGitSyncEngine.provider;
+        if (provider) {
+          setCurrentProvider(provider);
+          setSelectedProvider('github');
+          setProviderConfig(prev => ({
+            ...prev,
+            type: 'github',
+            user: provider.user || prev.user,
+            repo: provider.repo || prev.repo,
+            semanticPath: provider.semanticPath || prev.semanticPath
+          }));
+          setIsConnected(true);
+          setConnectionHealth('healthy');
+        }
+        try {
+          storeGitSyncEngine.onStatusChange((s) => setSyncStatus(s));
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }, [storeGitSyncEngine, gitSyncEngine, setGitSyncEngineStore]);
 
   // Set up persistent authentication event handlers
   useEffect(() => {
@@ -329,6 +357,10 @@ const GitNativeFederation = () => {
 
   // Initialize sync engine, federation, and Git storage when provider changes
   useEffect(() => {
+    // If an engine is already available in the store, skip re-initialization
+    if (storeGitSyncEngine) {
+      return;
+    }
     if (currentProvider && !syncEngine && providerConfig.repo) {
       console.log('[GitNativeFederation] Initializing sync engine for:', providerConfig.repo);
       
@@ -456,7 +488,7 @@ const GitNativeFederation = () => {
       // Load initial data
       newSyncEngine.loadFromProvider();
     }
-  }, [currentProvider, syncEngine, providerConfig.repo, universeSlug, gitOnlyMode]);
+  }, [currentProvider, syncEngine, providerConfig.repo, universeSlug, gitOnlyMode, storeGitSyncEngine]);
 
   // Update federation stats periodically
   useEffect(() => {
