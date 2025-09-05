@@ -4,7 +4,7 @@
  * Provides real-time responsiveness, true decentralization, and distributed resilience
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   GitBranch, 
   GitCommit, 
@@ -43,7 +43,7 @@ import { SemanticSyncEngine } from './services/semanticSyncEngine.js';
 import { SemanticFederation } from './services/semanticFederation.js';
 import { GitSyncEngine, SOURCE_OF_TRUTH } from './services/gitSyncEngine.js';
 import useGraphStore from './store/graphStore.js';
-import { importFromRedstring } from './formats/redstringFormat.js';
+import { importFromRedstring, downloadRedstringFile } from './formats/redstringFormat.js';
 import { persistentAuth } from './services/persistentAuth.js';
 import RepositoryManager from './components/repositories/RepositoryManager.jsx';
 import RepositoryDropdown from './components/repositories/RepositoryDropdown.jsx';
@@ -89,6 +89,242 @@ const GitNativeFederation = () => {
   const [showCompleteInstallation, setShowCompleteInstallation] = useState(false);
   const [showRepositoryManager, setShowRepositoryManager] = useState(false);
   const [gitOnlyMode, setGitOnlyMode] = useState(false); // Disable local universe usage entirely
+  const containerRef = useRef(null);
+  const [isSlim, setIsSlim] = useState(false);
+  const [localFileHandles, setLocalFileHandles] = useState({}); // { [universeSlug]: FileSystemFileHandle }
+  
+  // Universes state (universe-level storage config)
+  const [universes, setUniverses] = useState(() => {
+    try {
+      const saved = localStorage.getItem('universes_list');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [{ 
+      slug: 'default', 
+      name: 'Default', 
+      storageMode: 'github', 
+      sourceOfTruth: 'local',
+      schemaPath: 'schema',
+      linkedRepo: null,
+      localPath: 'universes/default/universe.redstring',
+      sources: []
+    }];
+  });
+  const [activeUniverseSlug, setActiveUniverseSlug] = useState(universeSlug);
+
+  // Persist universes list
+  useEffect(() => {
+    try {
+      localStorage.setItem('universes_list', JSON.stringify(universes));
+    } catch {}
+  }, [universes]);
+
+  // Helpers for universes & storage
+  const getActiveUniverse = () => universes.find(u => u.slug === activeUniverseSlug) || universes[0];
+  const updateActiveUniverse = (updates) => {
+    setUniverses(prev => prev.map(u => u.slug === activeUniverseSlug ? { ...u, ...updates } : u));
+  };
+  const addUniverse = () => {
+    const base = 'universe';
+    let i = universes.length + 1;
+    let slug = `${base}-${i}`;
+    while (universes.some(u => u.slug === slug)) { i += 1; slug = `${base}-${i}`; }
+    const nu = { slug, name: `Universe ${i}`, storageMode: 'github', sourceOfTruth: 'local', schemaPath: providerConfig.semanticPath || 'schema', linkedRepo: null, localPath: `universes/${slug}/universe.redstring`, sources: [] };
+    setUniverses(prev => [...prev, nu]);
+  };
+  const removeUniverse = (slug) => {
+    if (universes.length <= 1) return;
+    const confirmed = window.confirm('Remove this universe? This does not delete any GitHub data.');
+    if (!confirmed) return;
+    const filtered = universes.filter(u => u.slug !== slug);
+    setUniverses(filtered);
+    if (activeUniverseSlug === slug) {
+      const next = filtered[0]?.slug || 'default';
+      setActiveUniverseSlug(next);
+      setUniverseSlug(next);
+    }
+  };
+  const switchActiveUniverse = (slug) => {
+    if (slug === activeUniverseSlug) return;
+    const confirmed = window.confirm('Save current universe before switching?');
+    if (confirmed) {
+      try { handleSaveToGit(); } catch {}
+    }
+    setActiveUniverseSlug(slug);
+    setUniverseSlug(slug);
+    setTimeout(() => {
+      attemptConnectUniverseRepo();
+    }, 0);
+  };
+  const renameActiveUniverse = (newName) => updateActiveUniverse({ name: newName });
+  const setActiveUniverseSchema = (newSchema) => {
+    updateActiveUniverse({ schemaPath: newSchema });
+    setProviderConfig(prev => ({ ...prev, semanticPath: newSchema || 'schema' }));
+  };
+  const setActiveUniverseStorageMode = (mode) => updateActiveUniverse({ storageMode: mode });
+  const setActiveUniverseSourceOfTruth = (val) => updateActiveUniverse({ sourceOfTruth: val });
+
+  const handleLinkRepositoryToActiveUniverse = (repo) => {
+    const owner = repo?.owner?.login || providerConfig.user || authStatus.userData?.login || 'user';
+    const name = repo?.name || providerConfig.repo || '';
+    updateActiveUniverse({ linkedRepo: { type: 'github', user: owner, repo: name } });
+    // proceed with existing connect flow
+    handleRepositoryManagerSelect(repo);
+  };
+
+  const attemptConnectUniverseRepo = async () => {
+    try {
+      const u = getActiveUniverse();
+      if (!u?.linkedRepo) return;
+      const config = {
+        type: 'github',
+        user: u.linkedRepo.user,
+        repo: u.linkedRepo.repo,
+        token: undefined,
+        authMethod: 'oauth',
+        semanticPath: u.schemaPath || 'schema'
+      };
+      try {
+        const token = await persistentAuth.getAccessToken();
+        if (token) config.token = token;
+      } catch {}
+      const provider = SemanticProviderFactory.createProvider(config);
+      const ok = await provider.isAvailable();
+      if (ok) {
+        setProviderConfig(config);
+        setCurrentProvider(provider);
+        setIsConnected(true);
+        setGitConnection({ ...config, token: undefined });
+      } else {
+        setSyncStatus({ type: 'warning', status: 'Linked repository not accessible yet. Complete GitHub auth.' });
+      }
+    } catch (e) {
+      console.warn('[GitNativeFederation] attemptConnectUniverseRepo failed:', e);
+    }
+  };
+
+  // File System Access helpers (best effort; falls back when unsupported)
+  const pickLocalFileForActiveUniverse = async () => {
+    try {
+      // Prefer showSaveFilePicker to ensure write access
+      if (window.showSaveFilePicker) {
+        const suggestedName = (getActiveUniverse()?.localPath || `${activeUniverseSlug}.redstring`).split('/').pop();
+        const handle = await window.showSaveFilePicker({
+          suggestedName: suggestedName || `${activeUniverseSlug}.redstring`,
+          types: [{ description: 'RedString', accept: { 'application/json': ['.redstring'] } }]
+        });
+        setLocalFileHandles(prev => ({ ...prev, [activeUniverseSlug]: handle }));
+        // Update display path to chosen name
+        updateActiveUniverse({ localPath: handle.name || suggestedName });
+      } else if (window.showOpenFilePicker) {
+        const [handle] = await window.showOpenFilePicker({ multiple: false, types: [{ description: 'RedString', accept: { 'application/json': ['.redstring'] } }] });
+        setLocalFileHandles(prev => ({ ...prev, [activeUniverseSlug]: handle }));
+        updateActiveUniverse({ localPath: handle.name || `${activeUniverseSlug}.redstring` });
+      } else {
+        // Fallback: prompt user to change the filename text; browser cannot select real path
+        const name = prompt('Enter a filename for your .redstring (download will use this):', getActiveUniverse()?.localPath || `${activeUniverseSlug}.redstring`);
+        if (name) updateActiveUniverse({ localPath: name });
+      }
+    } catch (e) {
+      console.warn('[GitNativeFederation] pickLocalFileForActiveUniverse failed:', e);
+    }
+  };
+
+  const saveActiveUniverseToLocalHandle = async () => {
+    const handle = localFileHandles[activeUniverseSlug];
+    if (!handle) return false;
+    try {
+      const current = useGraphStore.getState();
+      const { exportToRedstring } = await import('./formats/redstringFormat.js');
+      const data = exportToRedstring(current);
+      const json = JSON.stringify(data, null, 2);
+      const writable = await handle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      return true;
+    } catch (e) {
+      console.warn('[GitNativeFederation] saveActiveUniverseToLocalHandle failed:', e);
+      return false;
+    }
+  };
+
+  // Sources (per active universe)
+  const generateSourceId = () => `src_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const addSourceToActiveUniverse = (type) => {
+    const u = getActiveUniverse();
+    if (!u) return;
+    const newSource = { id: generateSourceId(), type, enabled: false, name: '', schemaPath: u.schemaPath || 'schema' };
+    if (type === 'github') Object.assign(newSource, { user: '', repo: '' });
+    if (type === 'gitea') Object.assign(newSource, { endpoint: '', user: '', repo: '' });
+    if (type === 'url') Object.assign(newSource, { urls: [''], behavior: 'cache' });
+    if (type === 'local') Object.assign(newSource, { fileName: `${activeUniverseSlug}.redstring` });
+    setUniverses(prev => prev.map(v => v.slug === activeUniverseSlug ? { ...v, sources: [...(v.sources || []), newSource] } : v));
+  };
+
+  const updateSourceInActiveUniverse = (id, updates) => {
+    setUniverses(prev => prev.map(u => u.slug === activeUniverseSlug ? { ...u, sources: (u.sources || []).map(s => s.id === id ? { ...s, ...updates } : s) } : u));
+  };
+  const removeSourceFromActiveUniverse = (id) => {
+    const u = getActiveUniverse();
+    const src = (u?.sources || []).find(s => s.id === id);
+    if (src && src.type === 'url' && src.enabled) {
+      try {
+        const url = (src.urls && src.urls[0]) || '';
+        if (url && federation) federation.unsubscribeFromSpace(url);
+      } catch {}
+    }
+    setUniverses(prev => prev.map(un => un.slug === activeUniverseSlug ? { ...un, sources: (un.sources || []).filter(s => s.id !== id) } : un));
+  };
+  const toggleSourceEnabled = async (src) => {
+    const newEnabled = !src.enabled;
+    updateSourceInActiveUniverse(src.id, { enabled: newEnabled });
+    try {
+      if (src.type === 'url' && federation) {
+        const url = (src.urls && src.urls[0]) || '';
+        if (!url) return;
+        if (newEnabled) {
+          await federation.subscribeToSpace(url, { autoImport: true });
+        } else {
+          federation.unsubscribeFromSpace(url);
+        }
+      }
+    } catch (e) {
+      console.warn('[GitNativeFederation] toggleSourceEnabled failed:', e);
+    }
+  };
+
+  const getSourceHealth = (src) => {
+    if (!src?.enabled) return 'disabled';
+    if (src.type === 'github') return (src.user && src.repo) ? 'healthy' : 'degraded';
+    if (src.type === 'gitea') return (src.endpoint && src.user && src.repo) ? 'healthy' : 'degraded';
+    if (src.type === 'url') return (src.urls && src.urls[0]) ? 'healthy' : 'degraded';
+    if (src.type === 'local') return src.fileName ? 'healthy' : 'degraded';
+    return 'degraded';
+  };
+
+  // Sync federation subscriptions into URL sources for the active universe
+  useEffect(() => {
+    try {
+      if (!Array.isArray(subscriptions) || subscriptions.length === 0) return;
+      const u = getActiveUniverse();
+      if (!u) return;
+      const currentUrls = new Set((u.sources || []).filter(s => s.type === 'url').flatMap(s => s.urls || []));
+      let didAdd = false;
+      subscriptions.forEach(sub => {
+        const url = sub?.url || sub?.href || '';
+        if (!url || currentUrls.has(url)) return;
+        const newSrc = { id: generateSourceId(), type: 'url', enabled: true, name: sub?.name || 'External Source', urls: [url], behavior: 'cache', schemaPath: u.schemaPath || 'schema' };
+        setUniverses(prev => prev.map(un => un.slug === activeUniverseSlug ? { ...un, sources: [...(un.sources || []), newSrc] } : un));
+        didAdd = true;
+      });
+      if (didAdd) {
+        setSyncStatus({ type: 'info', status: 'Discovered external sources have been added to this universe.' });
+        setTimeout(() => setSyncStatus(null), 3000);
+      }
+    } catch (e) {
+      // Non-fatal
+    }
+  }, [subscriptions, activeUniverseSlug]);
   
   // Computed authentication state
   const isAuthenticated = authStatus.isAuthenticated;
@@ -354,6 +590,22 @@ const GitNativeFederation = () => {
       localStorage.setItem('git_only_mode', gitOnlyMode ? 'true' : 'false');
     } catch {}
   }, [gitOnlyMode]);
+
+  // Observe panel width to switch layouts (slim vs wide)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const w = entry.contentRect?.width || el.clientWidth || 0;
+        setIsSlim(w < 520);
+      }
+    });
+    ro.observe(el);
+    // Initial
+    try { setIsSlim((el.clientWidth || 0) < 520); } catch {}
+    return () => ro.disconnect();
+  }, []);
 
   // Initialize sync engine, federation, and Git storage when provider changes
   useEffect(() => {
@@ -1678,6 +1930,347 @@ const GitNativeFederation = () => {
     );
   };
 
+  // New three-section layout (Accounts & Access, Storage, Sources)
+  const useNewLayout = true;
+  if (useNewLayout) {
+    const activeUniverse = getActiveUniverse();
+    const storageMode = activeUniverse?.storageMode || 'github';
+    const schemaPath = activeUniverse?.schemaPath || providerConfig.semanticPath || 'schema';
+    const githubOAuthConnected = !!isAuthenticated;
+    const appInstalled = !!githubAppInstallation;
+    const degraded = connectionHealth && connectionHealth !== 'healthy';
+
+    const [isEditingName, setIsEditingName] = [false, () => {}]; // placeholder no-local state here
+
+    return (
+      <div ref={containerRef} style={{ padding: '15px', fontFamily: "'EmOne', sans-serif", height: '100%', color: '#260000' }}>
+        {/* Accounts & Access */}
+        <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <div style={{ fontWeight: 'bold' }}>Accounts & Access</div>
+            <div style={{ fontSize: '0.8rem', color: '#666' }}>Link services to unlock repositories</div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '8px' }}>
+            <div style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>GitHub</div>
+                <div style={{ fontSize: '0.75rem', color: githubOAuthConnected ? '#2e7d32' : '#666' }}>
+                  {githubOAuthConnected ? `Connected as @${authStatus.userData?.login || 'user'}` : 'Not connected'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'stretch', flexWrap: 'wrap', flexDirection: isSlim ? 'column' : 'row' }}>
+                {githubOAuthConnected ? (
+                  <>
+                    <button disabled style={{ padding: '8px 12px', backgroundColor: '#ccc', color: '#666', border: 'none', borderRadius: '4px', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Signed in @{authStatus.userData?.login || 'user'}</button>
+                    <button onClick={handleGitHubAuth} style={{ padding: '6px 10px', backgroundColor: 'transparent', color: '#260000', border: '1px dashed #260000', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', opacity: degraded ? 1 : 0.6, width: isSlim ? '100%' : 'auto' }} title="Reconnect OAuth">Reconnect</button>
+                  </>
+                ) : (
+                  <button onClick={handleGitHubAuth} disabled={isConnecting} style={{ padding: '8px 12px', backgroundColor: isConnecting ? '#ccc' : '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Unlock GitHub (OAuth)</button>
+                )}
+
+                {appInstalled ? (
+                  <>
+                    <button disabled style={{ padding: '8px 12px', backgroundColor: '#ccc', color: '#666', border: 'none', borderRadius: '4px', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>App Installed</button>
+                    <button onClick={handleGitHubApp} style={{ padding: '6px 10px', backgroundColor: 'transparent', color: '#260000', border: '1px dashed #260000', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }} title="Reconfigure App">Reconfigure</button>
+                  </>
+                ) : (
+                  <button onClick={handleGitHubApp} disabled={isConnecting} style={{ padding: '8px 12px', backgroundColor: isConnecting ? '#ccc' : 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Install App</button>
+                )}
+              </div>
+            </div>
+            <div style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>Gitea</div>
+                <div style={{ fontSize: '0.75rem', color: (giteaConfig?.endpoint ? '#2e7d32' : '#666') }}>
+                  {giteaConfig?.endpoint ? 'Connected' : 'Not connected'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
+                {giteaConfig?.endpoint ? (
+                  <>
+                    <button disabled style={{ padding: '8px 12px', backgroundColor: '#ccc', color: '#666', border: 'none', borderRadius: '4px', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Connected</button>
+                    <button onClick={() => setSelectedProvider('gitea')} style={{ padding: '6px 10px', backgroundColor: 'transparent', color: '#260000', border: '1px dashed #260000', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }}>Reconfigure</button>
+                  </>
+                ) : (
+                  <button onClick={() => setSelectedProvider('gitea')} style={{ padding: '8px 12px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Connect Gitea</button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Storage (Universe-level) */}
+        <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <div style={{ fontWeight: 'bold' }}>Storage</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <label style={{ fontSize: '0.8rem', color: '#666' }}>Active Universe</label>
+              <select value={activeUniverseSlug} onChange={(e) => switchActiveUniverse(e.target.value)} style={{ padding: '6px 8px', backgroundColor: '#bdb5b5', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontFamily: "'EmOne', sans-serif", fontSize: '0.85rem' }}>
+                {universes.map(u => (
+                  <option key={u.slug} value={u.slug}>{u.name || u.slug}</option>
+                ))}
+              </select>
+              <button onClick={addUniverse} style={{ padding: '6px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}>Add Universe</button>
+            </div>
+          </div>
+
+          {/* Active Universe Card */}
+          <div style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '10px' }}>
+              {/* Name and Schema */}
+              <div>
+                <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Name</div>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <input value={activeUniverse?.name || ''} onChange={(e) => renameActiveUniverse(e.target.value)} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <input value={schemaPath} onChange={(e) => setActiveUniverseSchema(e.target.value)} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                </div>
+              </div>
+
+              {/* Storage Mode */}
+              <div>
+                <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Storage Mode</div>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  {['local','github','mixed'].map(mode => (
+                    <button key={mode} onClick={() => setActiveUniverseStorageMode(mode)} style={{ padding: '6px 10px', backgroundColor: storageMode === mode ? '#260000' : 'transparent', color: storageMode === mode ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>{mode.toUpperCase()}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Source of Truth */}
+              <div>
+                <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Source of Truth</div>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <button onClick={() => { if (sourceOfTruthMode !== 'local') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('local'); } }} style={{ padding: '6px 10px', backgroundColor: sourceOfTruthMode === 'local' ? '#260000' : 'transparent', color: sourceOfTruthMode === 'local' ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>FILE</button>
+                  <button onClick={() => { if (sourceOfTruthMode !== 'git') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('git'); } }} style={{ padding: '6px 10px', backgroundColor: sourceOfTruthMode === 'git' ? '#260000' : 'transparent', color: sourceOfTruthMode === 'git' ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>GIT</button>
+                </div>
+              </div>
+
+              {/* Linked Repository */}
+              <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
+                <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Linked Repository</div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div style={{ minWidth: '220px', maxWidth: '360px', flex: 1 }}>
+                    <RepositoryDropdown
+                      selectedRepository={null}
+                      onSelectRepository={(repo) => handleLinkRepositoryToActiveUniverse(repo)}
+                      placeholder={isAuthenticated ? 'Browse Repositories' : 'Unlock GitHub to browse'}
+                      disabled={!isAuthenticated}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#666' }}>
+                      {providerConfig.user && providerConfig.repo ? `@${providerConfig.user}/${providerConfig.repo} • ${schemaPath}` : 'No repository linked'}
+                    </div>
+                    {providerConfig.user && providerConfig.repo && (
+                      <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', border: '1px solid #260000', color: '#260000' }}>
+                        {githubAppInstallation?.repositories?.find?.(r => r.name === providerConfig.repo)?.private ? 'Private' : 'Public'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Local File Path */}
+              <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
+                <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Local .redstring Path</div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
+                    <button onClick={pickLocalFileForActiveUniverse} style={{ padding: '8px 12px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Choose File…</button>
+                    <input value={activeUniverse?.localPath || `universes/${activeUniverseSlug}/universe.redstring`} onChange={(e) => updateActiveUniverse({ localPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', flex: 1 }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={async () => {
+                      const ok = await saveActiveUniverseToLocalHandle();
+                      if (!ok) {
+                        const current = useGraphStore.getState();
+                        const fname = (activeUniverse?.localPath || `${activeUniverseSlug}.redstring`).split('/').pop();
+                        downloadRedstringFile(current, fname || `${activeUniverseSlug}.redstring`);
+                      }
+                    }} style={{ padding: '8px 12px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Download Now</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2', display: 'flex', gap: '8px', alignItems: 'stretch', marginTop: '6px', flexDirection: isSlim ? 'column' : 'row' }}>
+                <button onClick={async () => {
+                  try {
+                    const mode = (getActiveUniverse()?.storageMode) || 'github';
+                    if (mode === 'local' || mode === 'mixed') {
+                      const current = useGraphStore.getState();
+                      downloadRedstringFile(current, `${activeUniverseSlug}.redstring`);
+                    }
+                    if (mode === 'github' || mode === 'mixed') {
+                      await handleSaveToGit();
+                    }
+                    setSyncStatus({ type: 'success', status: 'Manual save completed' });
+                    setTimeout(() => setSyncStatus(null), 4000);
+                  } catch (e) {
+                    setError(`Manual save failed: ${e.message}`);
+                  }
+                }} disabled={isConnecting} style={{ padding: '8px 12px', backgroundColor: isConnecting ? '#ccc' : '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Manual Save</button>
+                <button onClick={() => removeUniverse(activeUniverseSlug)} style={{ padding: '8px 12px', backgroundColor: 'transparent', color: '#d32f2f', border: '1px solid #d32f2f', borderRadius: '4px', cursor: universes.length <= 1 ? 'not-allowed' : 'pointer', opacity: universes.length <= 1 ? 0.5 : 1, fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Remove Universe</button>
+                {syncStatus && (
+                  <div style={{ marginLeft: isSlim ? 0 : 'auto', fontSize: '0.8rem', color: syncStatus.type === 'error' ? '#d32f2f' : '#260000' }}>
+                    {syncStatus.status}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Sources */}
+        <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isSlim ? 'stretch' : 'center', marginBottom: '8px', flexDirection: isSlim ? 'column' : 'row', gap: isSlim ? '8px' : '0' }}>
+            <div style={{ fontWeight: 'bold' }}>Sources</div>
+            <div>
+              <select onChange={(e) => { const v = e.target.value; if (v) { addSourceToActiveUniverse(v); e.target.value=''; } }} defaultValue="" style={{ padding: '6px 8px', backgroundColor: '#bdb5b5', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontFamily: "'EmOne', sans-serif", fontSize: '0.85rem', width: isSlim ? '100%' : 'auto' }}>
+                <option value="" disabled>Add Source</option>
+                <option value="github">My GitHub Repository</option>
+                <option value="gitea">Gitea Repository</option>
+                <option value="url">External URL/SPARQL</option>
+                <option value="local">Local File</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Sources list for active universe */}
+          {Array.isArray(getActiveUniverse()?.sources) && getActiveUniverse().sources.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {getActiveUniverse().sources.map((src) => (
+                <div key={src.id} style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: (getSourceHealth(src) === 'healthy' ? '#2e7d32' : getSourceHealth(src) === 'degraded' ? '#ff9800' : '#9e9e9e'), border: '1px solid #260000' }} />
+                      <div style={{ fontWeight: 600 }}>
+                        {src.type === 'github' ? 'GitHub Repository' : src.type === 'gitea' ? 'Gitea Repository' : src.type === 'url' ? 'External URL/SPARQL' : 'Local File'}
+                        {src.type === 'github' && src.user && src.repo ? ` • @${src.user}/${src.repo}` : ''}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <label style={{ fontSize: '0.75rem', color: '#666' }}>Enabled</label>
+                      <input type="checkbox" checked={!!src.enabled} onChange={() => toggleSourceEnabled(src)} />
+                      <button onClick={() => removeSourceFromActiveUniverse(src.id)} style={{ padding: '6px 8px', background: 'transparent', color: '#d32f2f', border: '1px solid #d32f2f', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer' }}>Remove</button>
+                    </div>
+                  </div>
+
+                  {/* Body */}
+                  <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '10px', marginTop: '8px' }}>
+                    {src.type === 'github' && (
+                      <>
+                        <div>
+                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Repository</div>
+                          <RepositoryDropdown
+                            selectedRepository={src.user && src.repo ? { name: src.repo, owner: { login: src.user } } : null}
+                            onSelectRepository={(repo) => updateSourceInActiveUniverse(src.id, { user: repo?.owner?.login, repo: repo?.name })}
+                            placeholder={isAuthenticated ? 'Browse Repositories' : 'Unlock GitHub to browse'}
+                            disabled={!isAuthenticated}
+                          />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
+                          <input value={src.schemaPath || schemaPath} onChange={(e) => updateSourceInActiveUniverse(src.id, { schemaPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                        </div>
+                      </>
+                    )}
+
+                    {src.type === 'gitea' && (
+                      <>
+                        <div>
+                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Endpoint</div>
+                          <input value={src.endpoint || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { endpoint: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Repository</div>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <input value={src.user || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { user: e.target.value })} placeholder="user" className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', flex: 1 }} />
+                            <input value={src.repo || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { repo: e.target.value })} placeholder="repo" className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', flex: 1 }} />
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {src.type === 'url' && (
+                      <>
+                        <div style={{ gridColumn: '1 / span 2' }}>
+                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>URL</div>
+                          <input value={(src.urls && src.urls[0]) || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { urls: [e.target.value] })} placeholder="https://example.com/semantic/" className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', width: '100%' }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Behavior</div>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            {['cache','read'].map(b => (
+                              <button key={b} onClick={() => updateSourceInActiveUniverse(src.id, { behavior: b })} style={{ padding: '6px 10px', backgroundColor: (src.behavior || 'cache') === b ? '#260000' : 'transparent', color: (src.behavior || 'cache') === b ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>{b === 'cache' ? 'Cache Locally' : 'Read-through'}</button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {src.type === 'local' && (
+                      <>
+                        <div>
+                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>File</div>
+                          <input value={src.fileName || `${activeUniverseSlug}.redstring`} onChange={(e) => updateSourceInActiveUniverse(src.id, { fileName: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
+                          <input value={src.schemaPath || schemaPath} onChange={(e) => updateSourceInActiveUniverse(src.id, { schemaPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                        </div>
+                      </>
+                    )}
+
+                    {/* Per-source Manual Save */}
+                    <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2', display: 'flex', gap: '8px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
+                      <button onClick={async () => {
+                        try {
+                          if (src.type === 'github') {
+                            await handleSaveToGit();
+                          } else if (src.type === 'local') {
+                            const current = useGraphStore.getState();
+                            downloadRedstringFile(current, src.fileName || `${activeUniverseSlug}.redstring`);
+                          } else if (src.type === 'url') {
+                            setSyncStatus({ type: 'info', status: 'External sources are read-mostly; nothing to save.' });
+                            setTimeout(() => setSyncStatus(null), 3000);
+                          } else if (src.type === 'gitea') {
+                            await handleSaveToGit();
+                          }
+                        } catch (e) {
+                          setError(`Source save failed: ${e.message}`);
+                        }
+                      }} style={{ padding: '8px 12px', backgroundColor: '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Manual Save</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: '0.85rem', color: '#666' }}>No sources attached yet.</div>
+          )}
+        </div>
+
+        {error && (
+          <div style={{ 
+            marginTop: '8px', 
+            padding: '10px', 
+            backgroundColor: '#ffebee', 
+            border: '1px solid #f44336',
+            borderRadius: '4px',
+            color: '#d32f2f',
+            fontSize: '0.8rem'
+          }}>
+            {error}
+          </div>
+        )}
+      </div>
+    );
+  }
   if (!isConnected) {
     return (
       <div style={{ padding: '15px', fontFamily: "'EmOne', sans-serif", height: '100%', color: '#260000' }}>
