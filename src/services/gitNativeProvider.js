@@ -126,6 +126,12 @@ export class GitHubSemanticProvider extends SemanticProvider {
     this.repo = config.repo;
     this.token = config.token;
     this.semanticPath = config.semanticPath || 'schema';
+    this.authMethod = config.authMethod || 'oauth';
+  }
+
+  // Prefer correct auth scheme for GitHub App tokens
+  getAuthHeader() {
+    return this.authMethod === 'github-app' ? `Bearer ${this.token}` : `token ${this.token}`;
   }
 
   // UTF-8 safe base64 helpers
@@ -260,7 +266,7 @@ This repository was automatically initialized by RedString UI React. You can now
       const response = await fetch(`${this.rootUrl}/${fullPath}`, {
         method: 'PUT',
         headers: {
-          'Authorization': `token ${this.token}`,
+          'Authorization': this.getAuthHeader(),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody)
@@ -295,7 +301,7 @@ This repository was automatically initialized by RedString UI React. You can now
                 const retryResponse = await fetch(`${this.rootUrl}/${fullPath}`, {
                   method: 'PUT',
                   headers: {
-                    'Authorization': `token ${this.token}`,
+                    'Authorization': this.getAuthHeader(),
                     'Content-Type': 'application/json',
                   },
                   body: JSON.stringify(requestBody)
@@ -404,7 +410,7 @@ This repository was automatically initialized by RedString UI React. You can now
       const repoUrl = `https://api.github.com/repos/${this.user}/${this.repo}`;
       const response = await fetch(repoUrl, {
         headers: {
-          'Authorization': `token ${this.token}`,
+          'Authorization': this.getAuthHeader(),
           'Accept': 'application/vnd.github.v3+json'
         }
       });
@@ -443,7 +449,7 @@ This repository was automatically initialized by RedString UI React. You can now
     try {
       const response = await fetch(`${this.rootUrl}/${path}`, {
         headers: {
-          'Authorization': `token ${this.token}`
+          'Authorization': this.getAuthHeader()
         }
       });
       
@@ -488,7 +494,7 @@ This repository was automatically initialized by RedString UI React. You can now
       const response = await fetch(`${this.rootUrl}/${path}`, {
         method: 'PUT',
         headers: {
-          'Authorization': `token ${this.token}`,
+          'Authorization': this.getAuthHeader(),
           'Accept': 'application/vnd.github.v3+json',
           'Content-Type': 'application/json'
         },
@@ -512,7 +518,7 @@ This repository was automatically initialized by RedString UI React. You can now
               const retryResponse = await fetch(`${this.rootUrl}/${path}`, {
                 method: 'PUT',
                 headers: {
-                  'Authorization': `token ${this.token}`,
+                  'Authorization': this.getAuthHeader(),
                   'Accept': 'application/vnd.github.v3+json',
                   'Content-Type': 'application/json'
                 },
@@ -556,7 +562,7 @@ This repository was automatically initialized by RedString UI React. You can now
     try {
       const response = await fetch(`${this.rootUrl}/${this.semanticPath}`, {
         headers: {
-          'Authorization': `token ${this.token}`,
+          'Authorization': this.getAuthHeader(),
           'Accept': 'application/vnd.github.v3+json'
         }
       });

@@ -88,6 +88,7 @@ const GitNativeFederation = () => {
   const [connectionHealth, setConnectionHealth] = useState('unknown'); // 'healthy', 'degraded', 'failed', 'unknown'
   const [showCompleteInstallation, setShowCompleteInstallation] = useState(false);
   const [showRepositoryManager, setShowRepositoryManager] = useState(false);
+  const [gitOnlyMode, setGitOnlyMode] = useState(false); // Disable local universe usage entirely
   
   // Computed authentication state
   const isAuthenticated = authStatus.isAuthenticated;
@@ -183,6 +184,14 @@ const GitNativeFederation = () => {
 
   // Restore Git connection on mount with automatic recovery
   useEffect(() => {
+    // Initialize Git-only mode from localStorage
+    try {
+      const savedGitOnly = localStorage.getItem('git_only_mode');
+      if (savedGitOnly != null) {
+        setGitOnlyMode(savedGitOnly === 'true');
+      }
+    } catch {}
+
     const restoreConnection = async () => {
       if (gitConnection && !currentProvider) {
         console.log('[GitNativeFederation] Restoring saved Git connection:', gitConnection);
@@ -311,6 +320,13 @@ const GitNativeFederation = () => {
     restoreConnection();
   }, [gitConnection, currentProvider, clearGitConnection]);
 
+  // Persist Git-only mode
+  useEffect(() => {
+    try {
+      localStorage.setItem('git_only_mode', gitOnlyMode ? 'true' : 'false');
+    } catch {}
+  }, [gitOnlyMode]);
+
   // Initialize sync engine, federation, and Git storage when provider changes
   useEffect(() => {
     if (currentProvider && !syncEngine && providerConfig.repo) {
@@ -357,9 +373,10 @@ const GitNativeFederation = () => {
         if (redstringData) {
           console.log('[GitNativeFederation] Loaded existing data from Git');
           
-          // Check if we have existing local content
+          // Check if we have existing local content (ignored in Git-only mode)
           const currentState = useGraphStore.getState();
-          const hasLocalContent = currentState.graphs.size > 0 || currentState.nodePrototypes.size > 0 || currentState.edges.size > 0;
+          const hasLocalContentRaw = currentState.graphs.size > 0 || currentState.nodePrototypes.size > 0 || currentState.edges.size > 0;
+          const hasLocalContent = gitOnlyMode ? false : hasLocalContentRaw;
           
           if (hasLocalContent) {
             console.log('[GitNativeFederation] Found existing local content, merging with Git data');
@@ -387,7 +404,7 @@ const GitNativeFederation = () => {
               });
             }
           } else {
-            console.log('[GitNativeFederation] No local content, loading Git data');
+            console.log('[GitNativeFederation] No local content (or Git-only), loading Git data');
             
             // Import the data and load into the store
             const { storeState: importedState } = importFromRedstring(redstringData, storeActions);
@@ -395,15 +412,15 @@ const GitNativeFederation = () => {
             
             setSyncStatus({
               type: 'success',
-              status: 'Loaded existing data from repository'
+              status: gitOnlyMode ? 'Loaded from Git (Git-only mode)' : 'Loaded existing data from repository'
             });
           }
         } else {
           console.log('[GitNativeFederation] No existing Git data found, preserving local content');
           
-          // Check if we have existing local content to preserve
+          // Check if we have existing local content to preserve (ignored in Git-only mode)
           const currentState = useGraphStore.getState();
-          const hasLocalContent = currentState.graphs.size > 0 || currentState.nodePrototypes.size > 0 || currentState.edges.size > 0;
+          const hasLocalContent = gitOnlyMode ? false : (currentState.graphs.size > 0 || currentState.nodePrototypes.size > 0 || currentState.edges.size > 0);
           
           if (hasLocalContent) {
             console.log('[GitNativeFederation] Preserving existing RedString content, will sync to Git');
@@ -439,7 +456,7 @@ const GitNativeFederation = () => {
       // Load initial data
       newSyncEngine.loadFromProvider();
     }
-  }, [currentProvider, syncEngine, providerConfig.repo, universeSlug]);
+  }, [currentProvider, syncEngine, providerConfig.repo, universeSlug, gitOnlyMode]);
 
   // Update federation stats periodically
   useEffect(() => {
@@ -2660,6 +2677,44 @@ const GitNativeFederation = () => {
             </button>
           </div>
         )}
+
+        {/* Git-only Mode Toggle */}
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          padding: '12px', 
+          backgroundColor: gitOnlyMode ? '#e8f5e8' : '#f5f5f5',
+          borderRadius: '4px',
+          fontSize: '0.8rem',
+          marginTop: '8px',
+          border: `1px solid ${gitOnlyMode ? '#4caf50' : '#ccc'}`
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Globe size={14} color={gitOnlyMode ? '#2e7d32' : '#666'} />
+            <span style={{ color: gitOnlyMode ? '#2e7d32' : '#666' }}>
+              Git-only Mode: <strong>{gitOnlyMode ? 'Enabled (ignore local .redstring)' : 'Disabled (may read local)'}</strong>
+            </span>
+          </div>
+          <button
+            onClick={() => setGitOnlyMode(!gitOnlyMode)}
+            style={{
+              padding: '4px 8px',
+              backgroundColor: gitOnlyMode ? '#4caf50' : '#9e9e9e',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '3px',
+              cursor: 'pointer',
+              fontSize: '0.7rem',
+              fontFamily: "'EmOne', sans-serif"
+            }}
+            title={gitOnlyMode 
+              ? 'Currently ignoring local .redstring content (load only from Git)'
+              : 'Enable to load only from Git and ignore local .redstring content'}
+          >
+            {gitOnlyMode ? 'Disable' : 'Enable'}
+          </button>
+        </div>
       </div>
 
       {/* Federation Stats */}
