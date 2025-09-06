@@ -47,6 +47,7 @@ import { importFromRedstring, downloadRedstringFile } from './formats/redstringF
 import { persistentAuth } from './services/persistentAuth.js';
 import RepositoryManager from './components/repositories/RepositoryManager.jsx';
 import RepositoryDropdown from './components/repositories/RepositoryDropdown.jsx';
+import { getFileStatus } from './store/fileStorage.js';
 
 const GitNativeFederation = () => {
   const [currentProvider, setCurrentProvider] = useState(null);
@@ -72,7 +73,7 @@ const GitNativeFederation = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
-  const [universeSlug, setUniverseSlug] = useState('default');
+  const [universeSlug, setUniverseSlug] = useState('universe');
   const [federationStats, setFederationStats] = useState(null);
   const [subscriptions, setSubscriptions] = useState([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -100,17 +101,17 @@ const GitNativeFederation = () => {
       if (saved) return JSON.parse(saved);
     } catch {}
     return [{ 
-      slug: 'default', 
-      name: 'Default', 
+      slug: 'universe', 
+      name: 'Universe', 
       storageMode: 'github', 
       sourceOfTruth: 'local',
       schemaPath: 'schema',
       linkedRepo: null,
-      localPath: 'universes/default/universe.redstring',
+      localPath: 'Universe.redstring',
       sources: []
     }];
   });
-  const [activeUniverseSlug, setActiveUniverseSlug] = useState(universeSlug);
+  const [activeUniverseSlug, setActiveUniverseSlug] = useState('universe');
 
   // Persist universes list
   useEffect(() => {
@@ -129,7 +130,7 @@ const GitNativeFederation = () => {
     let i = universes.length + 1;
     let slug = `${base}-${i}`;
     while (universes.some(u => u.slug === slug)) { i += 1; slug = `${base}-${i}`; }
-    const nu = { slug, name: `Universe ${i}`, storageMode: 'github', sourceOfTruth: 'local', schemaPath: providerConfig.semanticPath || 'schema', linkedRepo: null, localPath: `universes/${slug}/universe.redstring`, sources: [] };
+    const nu = { slug, name: `Universe ${i}`, storageMode: 'github', sourceOfTruth: 'local', schemaPath: providerConfig.semanticPath || 'schema', linkedRepo: null, localPath: `Universe-${i}.redstring`, sources: [] };
     setUniverses(prev => [...prev, nu]);
   };
   const removeUniverse = (slug) => {
@@ -152,6 +153,12 @@ const GitNativeFederation = () => {
     }
     setActiveUniverseSlug(slug);
     setUniverseSlug(slug);
+    
+    // Update the active universe in the store to ensure GitSyncEngine uses the right slug
+    const newUniverse = universes.find(u => u.slug === slug);
+    if (newUniverse && storeActions?.setActiveUniverse) {
+      storeActions.setActiveUniverse(slug);
+    }
     setTimeout(() => {
       attemptConnectUniverseRepo();
     }, 0);
@@ -233,24 +240,25 @@ const GitNativeFederation = () => {
   // File System Access helpers (best effort; falls back when unsupported)
   const pickLocalFileForActiveUniverse = async () => {
     try {
+      const u = getActiveUniverse();
+      const universeName = sanitizeFilename(u?.name || activeUniverseSlug);
       // Prefer showSaveFilePicker to ensure write access
       if (window.showSaveFilePicker) {
-        const u = getActiveUniverse();
-        const suggestedName = `${sanitizeFilename(u?.name || activeUniverseSlug)}.redstring`;
+        const suggestedName = `${universeName}.redstring`;
         const handle = await window.showSaveFilePicker({
-          suggestedName: suggestedName || `${activeUniverseSlug}.redstring`,
+          suggestedName: suggestedName,
           types: [{ description: 'RedString', accept: { 'application/json': ['.redstring'] } }]
         });
         setLocalFileHandles(prev => ({ ...prev, [activeUniverseSlug]: handle }));
-        // Update display path to chosen name
+        // Update display path to just the chosen filename
         updateActiveUniverse({ localPath: handle.name || suggestedName });
       } else if (window.showOpenFilePicker) {
         const [handle] = await window.showOpenFilePicker({ multiple: false, types: [{ description: 'RedString', accept: { 'application/json': ['.redstring'] } }] });
         setLocalFileHandles(prev => ({ ...prev, [activeUniverseSlug]: handle }));
-        updateActiveUniverse({ localPath: handle.name || `${sanitizeFilename(getActiveUniverse()?.name || activeUniverseSlug)}.redstring` });
+        updateActiveUniverse({ localPath: handle.name || `${universeName}.redstring` });
       } else {
         // Fallback: prompt user to change the filename text; browser cannot select real path
-        const name = prompt('Enter a filename for your .redstring (download will use this):', `${sanitizeFilename(getActiveUniverse()?.name || activeUniverseSlug)}.redstring`);
+        const name = prompt('Enter a filename for your .redstring (download will use this):', `${universeName}.redstring`);
         if (name) updateActiveUniverse({ localPath: name });
       }
     } catch (e) {
@@ -861,12 +869,6 @@ const GitNativeFederation = () => {
               tokenType: tokenData.token_type
             });
             
-            // Store token in persistent auth
-            await persistentAuth.storeTokens(tokenData.access_token, null, {
-              authMethod: 'oauth',
-              scope: tokenData.scope || 'repo'
-            });
-            
             // Get user info and repositories
             const userResponse = await fetch('https://api.github.com/user', {
               headers: {
@@ -880,6 +882,9 @@ const GitNativeFederation = () => {
             }
             
             const userData = await userResponse.json();
+            
+            // Store token in persistent auth with user data
+            await persistentAuth.storeTokens(tokenData, userData);
             
             // Get user repositories
             const reposResponse = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
@@ -1958,15 +1963,132 @@ const GitNativeFederation = () => {
     );
   };
 
-  // New three-section layout (Accounts & Access, Storage, Sources)
+  // New three-section layout (Accounts & Access, Storage, Sources)  
   const useNewLayout = true;
+  
+  // Always run connection restoration even with new layout
+  useEffect(() => {
+    const restoreConnection = async () => {
+      if (gitConnection && !currentProvider) {
+        console.log('[GitNativeFederation] Restoring saved Git connection:', gitConnection);
+        
+        // Check if this is a demo connection - clear it and don't restore
+        if (gitConnection.token === 'demo_token_secure' || gitConnection.user === 'demo-user') {
+          console.log('[GitNativeFederation] Clearing saved demo connection');
+          clearGitConnection();
+          return;
+        }
+        
+        // Restore provider config based on auth method
+        let restoredConfig = gitConnection;
+        try {
+          if (gitConnection.authMethod === 'github-app' && gitConnection.installationId) {
+            // For GitHub App connections, get a fresh installation token
+            console.log('[GitNativeFederation] Restoring GitHub App connection, getting fresh installation token');
+            try {
+              const installationResponse = await oauthFetch('/api/github/app/installation-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ installation_id: gitConnection.installationId })
+              });
+              
+              if (installationResponse.ok) {
+                const installationData = await installationResponse.json();
+                restoredConfig = { ...gitConnection, token: installationData.token };
+                console.log('[GitNativeFederation] Using fresh GitHub App installation token for connection restoration');
+              } else {
+                console.warn('[GitNativeFederation] Failed to get GitHub App installation token, connection may fail');
+              }
+            } catch (appTokenError) {
+              console.error('[GitNativeFederation] GitHub App token restoration failed:', appTokenError);
+            }
+          } else if (gitConnection.authMethod === 'oauth' || !gitConnection.authMethod) {
+            // For OAuth connections, try to get token from persistent auth service
+            const authStatus = persistentAuth.getAuthStatus();
+            if (authStatus.isAuthenticated && !gitConnection.token) {
+              const token = await persistentAuth.getAccessToken();
+              if (token) {
+                restoredConfig = { ...gitConnection, token };
+                console.log('[GitNativeFederation] Using persistent OAuth token for connection restoration');
+              }
+            }
+            
+            // Fallback to session storage if persistent auth doesn't work
+            if (!restoredConfig.token) {
+              const sessionToken = sessionStorage.getItem('github_access_token');
+              if (sessionToken) {
+                restoredConfig = { ...gitConnection, token: sessionToken };
+                console.log('[GitNativeFederation] Using session OAuth token as fallback for connection restoration');
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('[GitNativeFederation] Error during token restoration:', error);
+        }
+        
+        try {
+          // Test the connection before considering it restored
+          const provider = SemanticProviderFactory.createProvider(restoredConfig);
+          const isAvailable = await provider.isAvailable();
+          
+          if (isAvailable) {
+            setProviderConfig(restoredConfig);
+            setSelectedProvider(restoredConfig.type);
+            setCurrentProvider(provider);
+            setIsConnected(true);
+            setConnectionHealth('healthy');
+            
+            console.log('[GitNativeFederation] Git connection restored and verified successfully');
+          } else {
+            console.warn('[GitNativeFederation] Restored connection failed availability test');
+            setConnectionHealth('failed');
+            
+            // Try to handle authentication issues automatically
+            if (gitConnection.authMethod === 'oauth') {
+              console.log('[GitNativeFederation] Attempting automatic token validation for OAuth connection');
+              try {
+                await persistentAuth.refreshAccessToken();
+                // If successful, retry the connection
+                const retryProvider = SemanticProviderFactory.createProvider(restoredConfig);
+                const retryAvailable = await retryProvider.isAvailable();
+                
+                if (retryAvailable) {
+                  setCurrentProvider(retryProvider);
+                  setIsConnected(true);
+                  setConnectionHealth('healthy');
+                  console.log('[GitNativeFederation] Connection recovered after token validation');
+                }
+              } catch (authError) {
+                console.error('[GitNativeFederation] Automatic token validation failed:', authError);
+              }
+            }
+          }
+        } catch (connectionError) {
+          console.error('[GitNativeFederation] Connection restoration failed:', connectionError);
+          setConnectionHealth('failed');
+        }
+      }
+    };
+    
+    restoreConnection();
+  }, [gitConnection, currentProvider, clearGitConnection]);
+  
   if (useNewLayout) {
     const activeUniverse = getActiveUniverse();
     const storageMode = activeUniverse?.storageMode || 'github';
     const schemaPath = activeUniverse?.schemaPath || providerConfig.semanticPath || 'schema';
-    const githubOAuthConnected = !!isAuthenticated;
+    const oauthReady = !!authStatus?.userData?.login;
+    const githubOAuthConnected = oauthReady || isConnected;
     const appInstalled = !!githubAppInstallation;
     const degraded = connectionHealth && connectionHealth !== 'healthy';
+    
+    // Get actual current file info from fileStorage
+    const currentFileStatus = getFileStatus();
+    const actualFileName = currentFileStatus?.fileName || `${sanitizeFilename(activeUniverse?.name || 'Universe')}.redstring`;
+    
+    // Check if we have both OAuth (for repo browsing) and App (for auto-save)
+    const hasOAuthForBrowsing = !!authStatus?.userData?.login;
+    const hasAppForAutoSave = !!githubAppInstallation || (isConnected && providerConfig.authMethod === 'github-app');
 
     const [isEditingName, setIsEditingName] = [false, () => {}]; // placeholder no-local state here
 
@@ -1983,13 +2105,13 @@ const GitNativeFederation = () => {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>GitHub</div>
                 <div style={{ fontSize: '0.75rem', color: githubOAuthConnected ? '#2e7d32' : '#666' }}>
-                  {githubOAuthConnected ? `Connected as @${authStatus.userData?.login || 'user'}` : 'Not connected'}
+                  {hasOAuthForBrowsing ? `OAuth: @${authStatus.userData?.login}` : hasAppForAutoSave ? `App: @${providerConfig.user}` : 'Not connected'}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'stretch', flexWrap: 'wrap', flexDirection: isSlim ? 'column' : 'row' }}>
                 {githubOAuthConnected ? (
                   <>
-                    <button disabled style={{ padding: '8px 12px', backgroundColor: '#ccc', color: '#666', border: 'none', borderRadius: '4px', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Signed in @{authStatus.userData?.login || 'user'}</button>
+                    <button disabled style={{ padding: '8px 12px', backgroundColor: '#ccc', color: '#666', border: 'none', borderRadius: '4px', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Signed in @{authStatus.userData?.login || providerConfig.user}</button>
                     <button onClick={handleGitHubAuth} style={{ padding: '6px 10px', backgroundColor: 'transparent', color: '#260000', border: '1px dashed #260000', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', opacity: degraded ? 1 : 0.6, width: isSlim ? '100%' : 'auto' }} title="Reconnect OAuth">Reconnect</button>
                   </>
                 ) : (
@@ -2017,20 +2139,20 @@ const GitNativeFederation = () => {
                 {giteaConfig?.endpoint ? (
                   <>
                     <button disabled style={{ padding: '8px 12px', backgroundColor: '#ccc', color: '#666', border: 'none', borderRadius: '4px', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Connected</button>
-                    <button onClick={() => setSelectedProvider('gitea')} style={{ padding: '6px 10px', backgroundColor: 'transparent', color: '#260000', border: '1px dashed #260000', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }}>Reconfigure</button>
+                    <button onClick={() => { setSelectedProvider('gitea'); setShowAdvanced(true); }} style={{ padding: '6px 10px', backgroundColor: 'transparent', color: '#260000', border: '1px dashed #260000', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }}>Reconfigure</button>
                   </>
                 ) : (
-                  <button onClick={() => setSelectedProvider('gitea')} style={{ padding: '8px 12px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Connect Gitea</button>
+                  <button onClick={() => setShowAdvanced(true)} style={{ padding: '8px 12px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Connect Gitea</button>
                 )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Storage (Universe-level) */}
+        {/* Universes */}
         <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <div style={{ fontWeight: 'bold' }}>Storage</div>
+            <div style={{ fontWeight: 'bold' }}>Universes</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <label style={{ fontSize: '0.8rem', color: '#666' }}>Active Universe</label>
               <select value={activeUniverseSlug} onChange={(e) => switchActiveUniverse(e.target.value)} style={{ padding: '6px 8px', backgroundColor: '#bdb5b5', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontFamily: "'EmOne', sans-serif", fontSize: '0.85rem' }}>
@@ -2086,8 +2208,8 @@ const GitNativeFederation = () => {
                     <RepositoryDropdown
                       selectedRepository={null}
                       onSelectRepository={(repo) => handleLinkRepositoryToActiveUniverse(repo)}
-                      placeholder={isAuthenticated ? 'Browse Repositories' : 'Unlock GitHub to browse'}
-                      disabled={!isAuthenticated}
+                      placeholder={hasOAuthForBrowsing ? 'Browse Repositories' : 'OAuth required for browsing'}
+                      disabled={!hasOAuthForBrowsing}
                     />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2109,7 +2231,14 @@ const GitNativeFederation = () => {
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
                     <button onClick={pickLocalFileForActiveUniverse} style={{ padding: '8px 12px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Choose File…</button>
-                    <input value={activeUniverse?.localPath || `universes/${activeUniverseSlug}/universe.redstring`} onChange={(e) => updateActiveUniverse({ localPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', flex: 1 }} />
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <input value={actualFileName} onChange={(e) => updateActiveUniverse({ localPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                      {currentFileStatus?.hasFileHandle && (
+                        <div style={{ fontSize: '0.7rem', color: '#666', fontStyle: 'italic' }}>
+                          File handle saved • auto-save enabled
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button onClick={async () => {
@@ -2197,8 +2326,8 @@ const GitNativeFederation = () => {
                           <RepositoryDropdown
                             selectedRepository={src.user && src.repo ? { name: src.repo, owner: { login: src.user } } : null}
                             onSelectRepository={(repo) => updateSourceInActiveUniverse(src.id, { user: repo?.owner?.login, repo: repo?.name })}
-                            placeholder={isAuthenticated ? 'Browse Repositories' : 'Unlock GitHub to browse'}
-                            disabled={!isAuthenticated}
+                            placeholder={hasOAuthForBrowsing ? 'Browse Repositories' : 'OAuth required for browsing'}
+                            disabled={!hasOAuthForBrowsing}
                           />
                         </div>
                         <div>
@@ -2282,6 +2411,123 @@ const GitNativeFederation = () => {
             <div style={{ fontSize: '0.85rem', color: '#666' }}>No sources attached yet.</div>
           )}
         </div>
+
+        {/* Gitea Configuration Modal */}
+        {showAdvanced && selectedProvider === 'gitea' && (
+          <div style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000
+          }}>
+            <div style={{ 
+              width: '520px', 
+              maxWidth: '90%', 
+              backgroundColor: '#bdb5b5', 
+              border: '1px solid #260000', 
+              borderRadius: '8px',
+              padding: '20px',
+              margin: '0 20px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <div style={{ fontWeight: 'bold', color: '#260000', fontSize: '1.1rem' }}>Connect Gitea</div>
+                <button onClick={() => { setShowAdvanced(false); setSelectedProvider('github'); }} style={{ background: 'transparent', border: 'none', color: '#260000', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              </div>
+              
+              <div style={{ marginBottom: '15px' }}>
+                <label htmlFor="gitea-endpoint" style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
+                  Gitea Endpoint:
+                </label>
+                <input
+                  id="gitea-endpoint"
+                  type="url"
+                  value={giteaConfig.endpoint}
+                  onChange={(e) => setGiteaConfig(prev => ({ ...prev, endpoint: e.target.value }))}
+                  placeholder="https://git.example.com"
+                  className="editable-title-input"
+                  style={{ width: '100%', fontSize: '0.9rem', padding: '8px' }}
+                />
+              </div>
+              
+              <div style={{ marginBottom: '15px' }}>
+                <label htmlFor="gitea-username" style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
+                  Username:
+                </label>
+                <input
+                  id="gitea-username"
+                  type="text"
+                  value={giteaConfig.user}
+                  onChange={(e) => setGiteaConfig(prev => ({ ...prev, user: e.target.value }))}
+                  placeholder="your-username"
+                  className="editable-title-input"
+                  style={{ width: '100%', fontSize: '0.9rem', padding: '8px' }}
+                />
+              </div>
+              
+              <div style={{ marginBottom: '15px' }}>
+                <label htmlFor="gitea-repo" style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
+                  Repository Name:
+                </label>
+                <input
+                  id="gitea-repo"
+                  type="text"
+                  value={giteaConfig.repo}
+                  onChange={(e) => setGiteaConfig(prev => ({ ...prev, repo: e.target.value }))}
+                  placeholder="knowledge-base"
+                  className="editable-title-input"
+                  style={{ width: '100%', fontSize: '0.9rem', padding: '8px' }}
+                />
+              </div>
+              
+              <div style={{ marginBottom: '20px' }}>
+                <label htmlFor="gitea-token" style={{ display: 'block', color: '#260000', marginBottom: '5px', fontSize: '0.9rem' }}>
+                  Access Token:
+                </label>
+                <input
+                  id="gitea-token"
+                  type="password"
+                  value={giteaConfig.token}
+                  onChange={(e) => setGiteaConfig(prev => ({ ...prev, token: e.target.value }))}
+                  placeholder="your-token"
+                  className="editable-title-input"
+                  style={{ width: '100%', fontSize: '0.9rem', padding: '8px' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => { setShowAdvanced(false); setSelectedProvider('github'); }}
+                  style={{
+                    padding: '10px 16px',
+                    backgroundColor: 'transparent',
+                    color: '#666',
+                    border: '1px solid #666',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    fontFamily: "'EmOne', sans-serif"
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConnect}
+                  disabled={isConnecting || !giteaConfig.endpoint || !giteaConfig.user || !giteaConfig.repo || !giteaConfig.token}
+                  style={{
+                    padding: '10px 16px',
+                    backgroundColor: isConnecting ? '#ccc' : '#260000',
+                    color: '#bdb5b5',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: isConnecting ? 'not-allowed' : 'pointer',
+                    fontSize: '0.9rem',
+                    fontFamily: "'EmOne', sans-serif"
+                  }}
+                >
+                  {isConnecting ? 'Connecting...' : 'Connect to Gitea'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div style={{ 

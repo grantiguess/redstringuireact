@@ -11,7 +11,9 @@ const RepositoryDropdown = ({
   selectedRepository,
   onSelectRepository,
   placeholder = "Select Repository",
-  disabled = false
+  disabled = false,
+  repositories = null,
+  onRequireAuth = null
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -122,11 +124,56 @@ const RepositoryDropdown = ({
             overflow: 'hidden'
           }}
         >
-          <RepositoryManager
-            onSelectRepository={handleSelect}
-            showCreateOption={true}
-            dropdownMode={true}
-          />
+          {Array.isArray(repositories) && repositories.length > 0 ? (
+            <div style={{ 
+              fontFamily: "'EmOne', sans-serif",
+              minWidth: '300px'
+            }}>
+              <div style={{ 
+                padding: '12px',
+                borderBottom: '1px solid #260000',
+                backgroundColor: '#979090'
+              }}>
+                <span style={{ 
+                  fontSize: '0.9rem',
+                  fontWeight: '600',
+                  color: '#260000'
+                }}>
+                  Select Repository
+                </span>
+              </div>
+              <div style={{ maxHeight: '200px', overflowY: 'auto', backgroundColor: '#bdb5b5' }}>
+                {repositories.map((repo) => (
+                  <div
+                    key={repo.id || repo.full_name || repo.name}
+                    onClick={() => handleSelect(repo)}
+                    style={{
+                      padding: '8px 12px',
+                      borderBottom: '1px solid #979090',
+                      cursor: 'pointer',
+                      color: '#260000',
+                      transition: 'background-color 0.2s',
+                    }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = '#979090'}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                  >
+                    <div style={{ fontWeight: 500, fontSize: '0.85rem', marginBottom: '2px' }}>
+                      {repo.full_name || repo.name}
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {repo.description || 'No description'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <RepositoryManager
+              onSelectRepository={handleSelect}
+              showCreateOption={true}
+              dropdownMode={true}
+            />
+          )}
         </div>
       )}
     </div>

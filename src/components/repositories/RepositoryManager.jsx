@@ -196,6 +196,13 @@ const RepositoryManager = ({
     loadRepositories();
   };
 
+  // Debug auth status
+  console.log('[RepositoryManager] Auth status check:', { 
+    isAuthenticated: authStatus.isAuthenticated, 
+    hasUserData: !!authStatus.userData?.login,
+    authStatus 
+  });
+  
   if (!authStatus.isAuthenticated) {
     if (dropdownMode) {
       return (

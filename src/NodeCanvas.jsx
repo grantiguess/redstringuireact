@@ -3876,28 +3876,41 @@ function NodeCanvas() {
     if (prev) {
       const dx = Math.abs(snappedX - prev.x) * zoomLevel;
       const dy = Math.abs(snappedY - prev.y) * zoomLevel;
-      // Ignore sub-pixel to small-pixel jitter (deadband of 1px on screen)
-      // Reduced from 2px to 1px to allow labels to move more responsively
-      if (dx <= 1 && dy <= 1) {
+      
+      // Disable deadband during node dragging for smooth updates
+      // Use smaller deadband for grid mode to handle quantized movements
+      let deadbandThreshold = 1; // Default 1px
+      if (draggingNodeInfo) {
+        deadbandThreshold = 0; // No deadband during dragging
+      } else if (gridMode !== 'off') {
+        deadbandThreshold = 0.5; // Smaller deadband for grid mode
+      }
+      
+      if (dx <= deadbandThreshold && dy <= deadbandThreshold) {
         return { x: prev.x, y: prev.y, angle: prev.angle ?? angle };
       }
     }
     return { x: snappedX, y: snappedY, angle };
-  }, [zoomLevel]);
+  }, [zoomLevel, draggingNodeInfo, gridMode]);
   // Clear placed labels when visible edges change (debounced during pan/zoom)
   useEffect(() => {
     if (clearLabelsTimeoutRef.current) {
       clearTimeout(clearLabelsTimeoutRef.current);
     }
-    if (isPanningOrZooming.current) {
-      // Much longer debounce during pan/zoom to prevent flicker
+    
+    // Distinguish between canvas panning/zooming and node dragging
+    const isCanvasPanningOrZooming = isPanningOrZooming.current && !draggingNodeInfo;
+    
+    if (isCanvasPanningOrZooming) {
+      // Much longer debounce during canvas pan/zoom to prevent flicker
       clearLabelsTimeoutRef.current = setTimeout(() => {
         if (!isPanningOrZooming.current) {
           placedLabelsRef.current = new Map();
         }
       }, 750); // Increased to 750ms for even more stability
     } else {
-      // Only clear immediately if we're not in a pan/zoom operation
+      // Clear immediately if we're not in a canvas pan/zoom operation
+      // This includes node dragging, where we want immediate label updates
       placedLabelsRef.current = new Map();
     }
     return () => {
@@ -3905,15 +3918,29 @@ function NodeCanvas() {
         clearTimeout(clearLabelsTimeoutRef.current);
       }
     };
-  }, [visibleEdges]);
+  }, [visibleEdges, draggingNodeInfo]);
 
-  // Also clear labels when nodes are being dragged to ensure labels move with connections
+  // Clear labels immediately when nodes are being dragged to ensure labels move with connections
   useEffect(() => {
     if (draggingNodeInfo) {
       // Clear label cache when dragging starts to allow labels to recalculate
       placedLabelsRef.current = new Map();
     }
   }, [draggingNodeInfo]);
+
+  // Additional effect to clear labels on every frame during dragging for grid mode
+  useEffect(() => {
+    if (draggingNodeInfo && gridMode !== 'off') {
+      // For grid mode, clear labels more frequently to handle quantized movements
+      const clearLabelsForGrid = () => {
+        if (draggingNodeInfo) {
+          placedLabelsRef.current = new Map();
+          requestAnimationFrame(clearLabelsForGrid);
+        }
+      };
+      requestAnimationFrame(clearLabelsForGrid);
+    }
+  }, [draggingNodeInfo, gridMode]);
 
   // Clear labels when mouse moves significantly to ensure labels follow connections
   const lastMousePosRef = useRef({ x: 0, y: 0 });
@@ -3922,12 +3949,15 @@ function NodeCanvas() {
     const lastPos = lastMousePosRef.current;
     const distance = Math.hypot(currentPos.x - lastPos.x, currentPos.y - lastPos.y);
     
-    // If mouse moved more than 10px, clear label cache to allow recalculation
-    if (distance > 10) {
+    // Reduce threshold for grid mode to ensure smooth updates with quantized movements
+    const threshold = gridMode !== 'off' ? 3 : 10;
+    
+    // If mouse moved more than threshold, clear label cache to allow recalculation
+    if (distance > threshold) {
       placedLabelsRef.current = new Map();
       lastMousePosRef.current = currentPos;
     }
-  }, []);
+  }, [gridMode]);
 
   // Advanced label placement system with stacking and side placement
   const chooseLabelPlacement = (pathPoints, connectionName, fontSize = 24, edgeId = null) => {
@@ -4558,6 +4588,7 @@ function NodeCanvas() {
 
     // Dragging Node or Group Logic (only after long-press has set draggingNodeInfo)
     if (draggingNodeInfo) {
+        // Use requestAnimationFrame for smooth dragging performance, but ensure labels update immediately
         requestAnimationFrame(() => { // Keep RAF
             // Group drag via label
             if (draggingNodeInfo.groupId && Array.isArray(draggingNodeInfo.memberOffsets)) {
