@@ -156,7 +156,34 @@ const GitNativeFederation = () => {
       attemptConnectUniverseRepo();
     }, 0);
   };
-  const renameActiveUniverse = (newName) => updateActiveUniverse({ name: newName });
+  const sanitizeFilename = (name) => {
+    const base = String(name || '').trim().replace(/[^a-zA-Z0-9-_\.\s]/g, '').replace(/\s+/g, '-');
+    return base || 'universe';
+  };
+  const renameActiveUniverse = (newName) => {
+    const prev = getActiveUniverse();
+    updateActiveUniverse({ name: newName });
+    try {
+      // If the local path looks like a simple filename or matches previous name, update it to follow the universe name
+      const dirPlusFile = (prev?.localPath || `${activeUniverseSlug}.redstring`);
+      const parts = dirPlusFile.split('/');
+      const oldFile = parts[parts.length - 1] || '';
+      const newFile = `${sanitizeFilename(newName)}.redstring`;
+      // If old file looked like the previous universe naming or is default 'universe.redstring', replace it
+      if (/\.redstring$/i.test(oldFile)) {
+        const oldBase = oldFile.replace(/\.redstring$/i, '');
+        if (oldBase === sanitizeFilename(prev?.name) || /^(universe|default)$/i.test(oldBase)) {
+          parts[parts.length - 1] = newFile;
+          const updatedPath = parts.join('/');
+          updateActiveUniverse({ localPath: updatedPath });
+          // Clear saved handle to avoid writing to the old file name silently
+          setLocalFileHandles((h) => ({ ...h, [activeUniverseSlug]: undefined }));
+          setSyncStatus({ type: 'info', status: 'Universe renamed • choose a new local file to keep names aligned' });
+          setTimeout(() => setSyncStatus(null), 3500);
+        }
+      }
+    } catch {}
+  };
   const setActiveUniverseSchema = (newSchema) => {
     updateActiveUniverse({ schemaPath: newSchema });
     setProviderConfig(prev => ({ ...prev, semanticPath: newSchema || 'schema' }));
@@ -208,7 +235,8 @@ const GitNativeFederation = () => {
     try {
       // Prefer showSaveFilePicker to ensure write access
       if (window.showSaveFilePicker) {
-        const suggestedName = (getActiveUniverse()?.localPath || `${activeUniverseSlug}.redstring`).split('/').pop();
+        const u = getActiveUniverse();
+        const suggestedName = `${sanitizeFilename(u?.name || activeUniverseSlug)}.redstring`;
         const handle = await window.showSaveFilePicker({
           suggestedName: suggestedName || `${activeUniverseSlug}.redstring`,
           types: [{ description: 'RedString', accept: { 'application/json': ['.redstring'] } }]
@@ -219,10 +247,10 @@ const GitNativeFederation = () => {
       } else if (window.showOpenFilePicker) {
         const [handle] = await window.showOpenFilePicker({ multiple: false, types: [{ description: 'RedString', accept: { 'application/json': ['.redstring'] } }] });
         setLocalFileHandles(prev => ({ ...prev, [activeUniverseSlug]: handle }));
-        updateActiveUniverse({ localPath: handle.name || `${activeUniverseSlug}.redstring` });
+        updateActiveUniverse({ localPath: handle.name || `${sanitizeFilename(getActiveUniverse()?.name || activeUniverseSlug)}.redstring` });
       } else {
         // Fallback: prompt user to change the filename text; browser cannot select real path
-        const name = prompt('Enter a filename for your .redstring (download will use this):', getActiveUniverse()?.localPath || `${activeUniverseSlug}.redstring`);
+        const name = prompt('Enter a filename for your .redstring (download will use this):', `${sanitizeFilename(getActiveUniverse()?.name || activeUniverseSlug)}.redstring`);
         if (name) updateActiveUniverse({ localPath: name });
       }
     } catch (e) {

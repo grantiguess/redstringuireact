@@ -50,13 +50,13 @@ const RepositoryManager = ({
       setLoading(true);
       setError(null);
 
-      const token = await persistentAuth.getAccessToken();
+      let token = await persistentAuth.getAccessToken();
       if (!token) {
         throw new Error('No access token available');
       }
 
       // Fetch user repositories from GitHub API
-      const response = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
+      let response = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Accept': 'application/vnd.github.v3+json'
@@ -65,9 +65,24 @@ const RepositoryManager = ({
 
       if (!response.ok) {
         if (response.status === 401) {
-          throw new Error('Authentication expired. Please sign in again.');
+          // Try to refresh token and retry once
+          try {
+            await persistentAuth.refreshAccessToken?.();
+            token = await persistentAuth.getAccessToken();
+            if (!token) throw new Error('Authentication expired. Please sign in again.');
+            response = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/vnd.github.v3+json'
+              }
+            });
+          } catch (e) {
+            throw new Error('Authentication expired. Please sign in again.');
+          }
         }
-        throw new Error(`Failed to load repositories: ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`Failed to load repositories: ${response.status}`);
+        }
       }
 
       const repos = await response.json();
