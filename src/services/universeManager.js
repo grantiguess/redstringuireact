@@ -36,37 +36,62 @@ class UniverseManager {
     this.gitSyncEngines = new Map(); // slug -> GitSyncEngine
     this.statusHandlers = new Set();
     
-    // Device-aware configuration
-    this.deviceConfig = getCurrentDeviceConfig();
-    this.isGitOnlyMode = shouldUseGitOnlyMode();
+    // Device-aware configuration (lazy initialization to avoid circular dependencies)
+    this.deviceConfig = null;
+    this.isGitOnlyMode = false;
     
     // Process watchdog to ensure Git sync engines stay alive
     this.watchdogInterval = null;
-    this.watchdogDelay = this.deviceConfig.autoSaveFrequency * 60; // Scale with device capability
-    
-    console.log('[UniverseManager] Initialized with device config:', {
-      deviceType: this.deviceConfig.deviceInfo.type,
-      gitOnlyMode: this.isGitOnlyMode,
-      sourceOfTruth: this.deviceConfig.sourceOfTruth,
-      touchOptimized: this.deviceConfig.touchOptimizedUI
-    });
+    this.watchdogDelay = 60000; // Default delay, will be updated when device config loads
     
     this.loadFromStorage();
     
-    // Delay watchdog start to prevent startup interference
-    // Longer delay on mobile to prevent battery drain
-    const watchdogDelay = this.deviceConfig.deviceInfo.isMobile ? 60000 : 30000;
+    // Initialize device config after a brief delay to avoid circular dependencies
     setTimeout(() => {
-      this.startWatchdog();
-    }, watchdogDelay);
-    
-    // Listen for device configuration changes (orientation, etc.)
-    if (typeof window !== 'undefined') {
-      window.addEventListener('redstring:device-config-ready', (event) => {
-        this.deviceConfig = event.detail;
-        this.isGitOnlyMode = shouldUseGitOnlyMode();
-        console.log('[UniverseManager] Device config updated:', this.deviceConfig);
+      this.initializeDeviceConfig();
+    }, 100);
+  }
+
+  // Initialize device configuration (delayed to avoid circular dependencies)
+  initializeDeviceConfig() {
+    try {
+      this.deviceConfig = getCurrentDeviceConfig();
+      this.isGitOnlyMode = shouldUseGitOnlyMode();
+      
+      // Update watchdog delay based on device
+      this.watchdogDelay = this.deviceConfig.autoSaveFrequency * 60;
+      
+      console.log('[UniverseManager] Device config initialized:', {
+        deviceType: this.deviceConfig.deviceInfo.type,
+        gitOnlyMode: this.isGitOnlyMode,
+        sourceOfTruth: this.deviceConfig.sourceOfTruth,
+        touchOptimized: this.deviceConfig.touchOptimizedUI
       });
+      
+      // Start watchdog with device-appropriate delay
+      const watchdogStartDelay = this.deviceConfig.deviceInfo.isMobile ? 60000 : 30000;
+      setTimeout(() => {
+        this.startWatchdog();
+      }, watchdogStartDelay);
+      
+      // Listen for device configuration changes (orientation, etc.)
+      if (typeof window !== 'undefined') {
+        window.addEventListener('redstring:device-config-ready', (event) => {
+          this.deviceConfig = event.detail;
+          this.isGitOnlyMode = shouldUseGitOnlyMode();
+          console.log('[UniverseManager] Device config updated:', this.deviceConfig);
+        });
+      }
+    } catch (error) {
+      console.warn('[UniverseManager] Device config initialization failed, using defaults:', error);
+      this.deviceConfig = { 
+        gitOnlyMode: false, 
+        sourceOfTruth: 'local', 
+        touchOptimizedUI: false,
+        autoSaveFrequency: 1000,
+        deviceInfo: { isMobile: false, type: 'desktop' }
+      };
+      this.isGitOnlyMode = false;
     }
   }
 
@@ -351,6 +376,11 @@ class UniverseManager {
 
   // Create Git-Only universe (for mobile users)
   createGitOnlyUniverse(name, gitConfig) {
+    // Ensure device config is loaded
+    if (!this.deviceConfig) {
+      this.initializeDeviceConfig();
+    }
+    
     const slug = this.generateUniqueSlug(name);
     const universe = this.normalizeUniverse({
       slug,
@@ -449,11 +479,16 @@ class UniverseManager {
 
   // Create new universe
   createUniverse(name, options = {}) {
+    // Ensure device config is loaded
+    if (!this.deviceConfig) {
+      this.initializeDeviceConfig();
+    }
+    
     const slug = this.generateUniqueSlug(name);
     const universe = this.normalizeUniverse({
       slug,
       name,
-      sourceOfTruth: options.sourceOfTruth || SOURCE_OF_TRUTH.GIT,
+      sourceOfTruth: options.sourceOfTruth || (this.isGitOnlyMode ? SOURCE_OF_TRUTH.GIT : SOURCE_OF_TRUTH.LOCAL),
       localFile: { 
         enabled: options.enableLocal ?? true, 
         path: `${name}.redstring` 

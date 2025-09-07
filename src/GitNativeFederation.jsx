@@ -46,11 +46,12 @@ import { SemanticSyncEngine } from './services/semanticSyncEngine.js';
 import { SemanticFederation } from './services/semanticFederation.js';
 import { GitSyncEngine, SOURCE_OF_TRUTH } from './services/gitSyncEngine.js';
 import useGraphStore from './store/graphStore.jsx';
-import { importFromRedstring, downloadRedstringFile } from './formats/redstringFormat.js';
+import { importFromRedstring, downloadRedstringFile, exportToRedstring } from './formats/redstringFormat.js';
 import { persistentAuth } from './services/persistentAuth.js';
 import RepositoryManager from './components/repositories/RepositoryManager.jsx';
 import RepositoryDropdown from './components/repositories/RepositoryDropdown.jsx';
 import { getFileStatus } from './store/fileStorage.js';
+import * as fileStorageModule from './store/fileStorage.js';
 import universeManager from './services/universeManager.js';
 import githubRateLimiter from './services/githubRateLimiter.js';
 import startupCoordinator from './services/startupCoordinator.js';
@@ -63,10 +64,31 @@ import {
 } from './utils/deviceDetection.js';
 
 const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
-  // Initialize device configuration
-  const [deviceConfig] = useState(() => getOptimalDeviceConfig());
-  const [deviceInfo] = useState(() => getDeviceInfo());
-  const [deviceCapabilityMessage] = useState(() => getDeviceCapabilityMessage());
+  // Initialize device configuration with lazy loading to avoid circular dependencies
+  const [deviceConfig] = useState(() => {
+    try {
+      return getOptimalDeviceConfig();
+    } catch (error) {
+      console.warn('[GitNativeFederation] Device config initialization failed, using defaults:', error);
+      return { gitOnlyMode: false, sourceOfTruth: 'local', touchOptimizedUI: false };
+    }
+  });
+  const [deviceInfo] = useState(() => {
+    try {
+      return getDeviceInfo();
+    } catch (error) {
+      console.warn('[GitNativeFederation] Device info initialization failed, using defaults:', error);
+      return { isMobile: false, isTablet: false, isTouchDevice: false, type: 'desktop' };
+    }
+  });
+  const [deviceCapabilityMessage] = useState(() => {
+    try {
+      return getDeviceCapabilityMessage();
+    } catch (error) {
+      console.warn('[GitNativeFederation] Device capability message initialization failed, using defaults:', error);
+      return { type: 'success', title: 'Desktop Experience', message: 'All features available', icon: '💻' };
+    }
+  });
   
   const [currentProvider, setCurrentProvider] = useState(null);
   const [syncEngine, setSyncEngine] = useState(null);
@@ -1091,9 +1113,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       try {
         const SaveCoordinatorModule = await import('./services/SaveCoordinator.js');
         saveCoordinator = SaveCoordinatorModule.default;
-        
-        // Initialize with available dependencies
-        const fileStorageModule = await import('./store/fileStorage.js');
         
         if (saveCoordinator && fileStorageModule && gitSyncEngine && universeManager) {
           saveCoordinator.initialize(fileStorageModule, gitSyncEngine, universeManager);
@@ -2228,16 +2247,14 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         showConnectionNames: !!current.showConnectionNames
       };
 
-      // Test 1: Export to RedString format from the active universe snapshot
-      const { exportToRedstring } = await import('./formats/redstringFormat.js');
+      // Test 1: Export to RedString format from the active universe snapshot (use static import)
       const exportedData = exportToRedstring(testState);
       
       if (!exportedData || !exportedData.prototypeSpace || !exportedData.spatialGraphs) {
         throw new Error('Export test failed: Invalid export data structure');
       }
 
-      // Test 2: Import from RedString format
-      const { importFromRedstring } = await import('./formats/redstringFormat.js');
+      // Test 2: Import from RedString format (use static import)
       const { storeState: importedState, errors } = importFromRedstring(exportedData);
       
       if (errors && errors.length > 0) {

@@ -7,6 +7,7 @@ import { GitSyncEngine, SOURCE_OF_TRUTH } from '../services/gitSyncEngine.js';
 import { importFromRedstring } from '../formats/redstringFormat.js';
 import universeManager from '../services/universeManager.js';
 import startupCoordinator from '../services/startupCoordinator.js';
+import * as fileStorageModule from '../store/fileStorage.js';
 
 // Headless bootstrapper to restore Git federation early (before UI panels mount)
 export default function GitFederationBootstrap() {
@@ -170,8 +171,6 @@ export default function GitFederationBootstrap() {
             try {
               const SaveCoordinatorModule = await import('../services/SaveCoordinator.js');
               const saveCoordinator = SaveCoordinatorModule.default;
-              
-              const fileStorageModule = await import('../store/fileStorage.js');
               
               if (saveCoordinator && fileStorageModule && engine) {
                 // Only initialize if not already enabled or if Git engine changed

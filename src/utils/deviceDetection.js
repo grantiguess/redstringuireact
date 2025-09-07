@@ -9,6 +9,7 @@
  * Handles edge cases like iPad Safari reporting as desktop and Android tablets
  */
 export const getDeviceInfo = () => {
+  ensureInitialized();
   const userAgent = navigator.userAgent;
   const userAgentLower = userAgent.toLowerCase();
   
@@ -69,6 +70,7 @@ export const getDeviceInfo = () => {
  * Considers both device capabilities and File System API availability
  */
 export const shouldUseGitOnlyMode = () => {
+  ensureInitialized();
   const deviceInfo = getDeviceInfo();
   
   // Force Git-Only mode if:
@@ -84,6 +86,7 @@ export const shouldUseGitOnlyMode = () => {
  * Get optimal configuration settings based on device
  */
 export const getOptimalDeviceConfig = () => {
+  ensureInitialized();
   const deviceInfo = getDeviceInfo();
   
   return {
@@ -118,6 +121,7 @@ export const getOptimalDeviceConfig = () => {
  * Show user-friendly device capability explanation
  */
 export const getDeviceCapabilityMessage = () => {
+  ensureInitialized();
   const deviceInfo = getDeviceInfo();
   const config = getOptimalDeviceConfig();
   
@@ -178,6 +182,7 @@ export const initializeDeviceOptimizedConfig = () => {
  * Get current device configuration (memoized)
  */
 export const getCurrentDeviceConfig = () => {
+  ensureInitialized();
   if (typeof window !== 'undefined' && window.RedStringDeviceConfig) {
     return window.RedStringDeviceConfig;
   }
@@ -188,6 +193,7 @@ export const getCurrentDeviceConfig = () => {
  * Check if a specific capability is available on current device
  */
 export const hasCapability = (capability) => {
+  ensureInitialized();
   const config = getCurrentDeviceConfig();
   
   const capabilities = {
@@ -204,17 +210,22 @@ export const hasCapability = (capability) => {
   return capabilities[capability] ?? false;
 };
 
-// Initialize on module load
-if (typeof window !== 'undefined') {
-  // Initialize device config when module loads
-  initializeDeviceOptimizedConfig();
-  
-  // Re-initialize on window resize (device orientation changes)
-  let resizeTimeout;
-  window.addEventListener('resize', () => {
-    clearTimeout(resizeTimeout);
-    resizeTimeout = setTimeout(() => {
-      initializeDeviceOptimizedConfig();
-    }, 250);
-  });
-}
+// Lazy initialization - only initialize when first accessed
+let isInitialized = false;
+
+const ensureInitialized = () => {
+  if (!isInitialized && typeof window !== 'undefined') {
+    initializeDeviceOptimizedConfig();
+    
+    // Set up resize handler for device orientation changes
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        initializeDeviceOptimizedConfig();
+      }, 250);
+    });
+    
+    isInitialized = true;
+  }
+};
