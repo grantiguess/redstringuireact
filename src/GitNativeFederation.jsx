@@ -434,7 +434,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     if (!handle) return false;
     try {
       const current = useGraphStore.getState();
-      const { exportToRedstring } = await import('./formats/redstringFormat.js');
       const data = exportToRedstring(current);
       const json = JSON.stringify(data, null, 2);
       const writable = await handle.createWritable();

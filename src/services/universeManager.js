@@ -71,6 +71,9 @@ class UniverseManager {
         touchOptimized: this.deviceConfig.touchOptimizedUI
       });
       
+      // Re-normalize all universes now that device config is available
+      this.applyDeviceConfigToUniverses();
+      
       // Start watchdog with device-appropriate delay
       const watchdogStartDelay = this.deviceConfig.deviceInfo.isMobile ? 60000 : 30000;
       setTimeout(() => {
@@ -162,13 +165,14 @@ class UniverseManager {
       if (saved) {
         const universesList = JSON.parse(saved);
         universesList.forEach(universe => {
-          this.universes.set(universe.slug, this.normalizeUniverse(universe));
+          // Use safe normalization during initial load to prevent recursion
+          this.universes.set(universe.slug, this.safeNormalizeUniverse(universe));
         });
       }
       
       // Create default universe if none exist
       if (this.universes.size === 0) {
-        this.createDefaultUniverse();
+        this.createSafeDefaultUniverse();
       }
       
       // Set active universe
@@ -184,7 +188,106 @@ class UniverseManager {
       console.log('[UniverseManager] Loaded', this.universes.size, 'universes, active:', this.activeUniverseSlug);
     } catch (error) {
       console.error('[UniverseManager] Failed to load from storage:', error);
-      this.createDefaultUniverse();
+      this.createSafeDefaultUniverse();
+    }
+  }
+
+  // Safe universe normalization that doesn't call device detection (prevents startup recursion)
+  safeNormalizeUniverse(universe) {
+    return {
+      slug: universe.slug || 'universe',
+      name: universe.name || 'Universe',
+      
+      // Use conservative defaults during startup
+      sourceOfTruth: universe.sourceOfTruth || 'local',
+      
+      // Local storage slot - enabled by default during startup
+      localFile: {
+        enabled: universe.localFile?.enabled ?? true,
+        path: this.sanitizeFileName(universe.localFile?.path || `${universe.name || 'Universe'}.redstring`),
+        handle: null, // Will be restored separately
+        unavailableReason: universe.localFile?.unavailableReason || null
+      },
+      
+      // Git storage slot - preserve existing settings
+      gitRepo: {
+        enabled: universe.gitRepo?.enabled ?? false,
+        linkedRepo: universe.gitRepo?.linkedRepo || universe.linkedRepo || null,
+        schemaPath: universe.gitRepo?.schemaPath || universe.schemaPath || 'schema',
+        universeFolder: `universes/${universe.slug}`,
+        priority: universe.gitRepo?.priority || 'secondary'
+      },
+      
+      // Browser storage - enabled as fallback
+      browserStorage: {
+        enabled: universe.browserStorage?.enabled ?? true,
+        role: universe.browserStorage?.role || 'fallback',
+        lastSync: universe.browserStorage?.lastSync || null
+      },
+      
+      // Metadata
+      sources: Array.isArray(universe.sources) ? universe.sources : [],
+      created: universe.created || new Date().toISOString(),
+      lastModified: universe.lastModified || new Date().toISOString()
+    };
+  }
+
+  // Safe default universe creation that doesn't call device detection (prevents startup recursion)
+  createSafeDefaultUniverse() {
+    const defaultUniverse = {
+      slug: 'universe',
+      name: 'Universe',
+      sourceOfTruth: 'local', // Conservative default
+      
+      // Enable local storage by default during startup
+      localFile: { 
+        enabled: true, 
+        path: 'Universe.redstring' 
+      },
+      gitRepo: { 
+        enabled: false, 
+        linkedRepo: null, 
+        schemaPath: 'schema'
+      },
+      browserStorage: {
+        enabled: true,
+        role: 'fallback'
+      },
+      
+      sources: []
+    };
+    
+    this.universes.set('universe', this.safeNormalizeUniverse(defaultUniverse));
+    this.activeUniverseSlug = 'universe';
+    this.saveToStorage();
+    
+    console.log('[UniverseManager] Created safe default universe during startup');
+  }
+
+  // Apply device configuration to all existing universes (called after device config loads)
+  applyDeviceConfigToUniverses() {
+    try {
+      let hasChanges = false;
+      
+      this.universes.forEach((universe, slug) => {
+        // Re-normalize with proper device config now available
+        const updatedUniverse = this.normalizeUniverse(universe);
+        
+        // Check if anything actually changed
+        const hasActualChanges = JSON.stringify(universe) !== JSON.stringify(updatedUniverse);
+        
+        if (hasActualChanges) {
+          this.universes.set(slug, updatedUniverse);
+          hasChanges = true;
+        }
+      });
+      
+      if (hasChanges) {
+        this.saveToStorage();
+        console.log('[UniverseManager] Applied device configuration to existing universes');
+      }
+    } catch (error) {
+      console.warn('[UniverseManager] Failed to apply device config to universes:', error);
     }
   }
 
@@ -220,8 +323,26 @@ class UniverseManager {
   // Normalize universe object with all required fields
   // Device-aware configuration that respects mobile/tablet limitations
   normalizeUniverse(universe) {
-    const deviceConfig = this.deviceConfig || getCurrentDeviceConfig();
-    const isGitOnlyMode = this.isGitOnlyMode || shouldUseGitOnlyMode();
+    // Use safe defaults if device config isn't ready yet (prevents infinite recursion)
+    let deviceConfig = this.deviceConfig;
+    let isGitOnlyMode = this.isGitOnlyMode;
+    
+    if (!deviceConfig) {
+      try {
+        deviceConfig = getCurrentDeviceConfig();
+        isGitOnlyMode = shouldUseGitOnlyMode();
+      } catch (error) {
+        // Fallback to safe defaults if device detection fails
+        console.warn('[UniverseManager] Device config not ready, using safe defaults:', error);
+        deviceConfig = {
+          sourceOfTruth: 'local',
+          enableLocalFileStorage: true,
+          gitOnlyMode: false,
+          deviceInfo: { type: 'desktop', isMobile: false }
+        };
+        isGitOnlyMode = false;
+      }
+    }
     
     return {
       slug: universe.slug || 'universe',
@@ -286,8 +407,26 @@ class UniverseManager {
 
   // Create the default universe with device-aware configuration
   createDefaultUniverse() {
-    const deviceConfig = this.deviceConfig || getCurrentDeviceConfig();
-    const isGitOnlyMode = this.isGitOnlyMode || shouldUseGitOnlyMode();
+    // Use safe defaults if device config isn't ready yet (prevents infinite recursion during startup)
+    let deviceConfig = this.deviceConfig;
+    let isGitOnlyMode = this.isGitOnlyMode;
+    
+    if (!deviceConfig) {
+      try {
+        deviceConfig = getCurrentDeviceConfig();
+        isGitOnlyMode = shouldUseGitOnlyMode();
+      } catch (error) {
+        // Fallback to safe defaults to prevent recursion
+        console.warn('[UniverseManager] Device config not ready during default universe creation, using safe defaults');
+        deviceConfig = {
+          sourceOfTruth: 'local',
+          enableLocalFileStorage: true,
+          compactInterface: false,
+          deviceInfo: { type: 'desktop', isMobile: false }
+        };
+        isGitOnlyMode = false;
+      }
+    }
     
     const defaultUniverse = {
       slug: 'universe',
