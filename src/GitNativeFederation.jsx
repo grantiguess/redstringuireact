@@ -394,13 +394,13 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     if (type === 'gitea') Object.assign(newSource, { endpoint: '', user: '', repo: '' });
     if (type === 'url') Object.assign(newSource, { urls: [''], behavior: 'cache' });
     if (type === 'local') Object.assign(newSource, { fileName: `${activeUniverseSlug}.redstring` });
-    const activeUniverse = getActiveUniverse();
-    updateActiveUniverse({ sources: [...(activeUniverse?.sources || []), newSource] });
+    const currentUniverse = getActiveUniverse();
+    updateActiveUniverse({ sources: [...(currentUniverse?.sources || []), newSource] });
   };
 
   const updateSourceInActiveUniverse = (id, updates) => {
-    const activeUniverse = getActiveUniverse();
-    const updatedSources = (activeUniverse?.sources || []).map(s => 
+    const currentUniverse = getActiveUniverse();
+    const updatedSources = (currentUniverse?.sources || []).map(s => 
       s.id === id ? { ...s, ...updates } : s
     );
     updateActiveUniverse({ sources: updatedSources });
@@ -3285,8 +3285,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                       repo: '',
                       schemaPath: activeUniverse?.schemaPath || 'schema'
                     };
-                    const activeUniverse = getActiveUniverse();
-                    updateActiveUniverse({ sources: [...(activeUniverse?.sources || []), newSource] });
+                    const currentUniverse = getActiveUniverse();
+                    updateActiveUniverse({ sources: [...(currentUniverse?.sources || []), newSource] });
                     
                     // Show feedback
                     setSyncStatus({
@@ -3376,8 +3376,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                       behavior: 'cache',
                       schemaPath: activeUniverse?.schemaPath || 'schema'
                     };
-                    const activeUniverse = getActiveUniverse();
-                    updateActiveUniverse({ sources: [...(activeUniverse?.sources || []), newSource] });
+                    const currentUniverse = getActiveUniverse();
+                    updateActiveUniverse({ sources: [...(currentUniverse?.sources || []), newSource] });
                     
                     // Show feedback
                     setSyncStatus({
@@ -3431,8 +3431,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                       fileName: `${activeUniverseSlug}.redstring`,
                       schemaPath: activeUniverse?.schemaPath || 'schema'
                     };
-                    const activeUniverse = getActiveUniverse();
-                    updateActiveUniverse({ sources: [...(activeUniverse?.sources || []), newSource] });
+                    const currentUniverse = getActiveUniverse();
+                    updateActiveUniverse({ sources: [...(currentUniverse?.sources || []), newSource] });
                     
                     // Show feedback
                     setSyncStatus({
