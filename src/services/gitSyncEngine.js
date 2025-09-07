@@ -499,10 +499,11 @@ class GitSyncEngine {
   
   /**
    * Force an immediate commit with enhanced conflict resolution
+   * This is an overwriter - it ALWAYS commits regardless of detected changes
    */
   async forceCommit(storeState) {
     try {
-      console.log('[GitSyncEngine] Force committing...');
+      console.log('[GitSyncEngine] Force committing (overwriter mode - always commits)...');
       this.notifyStatus('info', 'Force committing changes...');
       
       // Clear any pending debounce
@@ -524,6 +525,9 @@ class GitSyncEngine {
       const redstringData = exportToRedstring(storeState);
       const jsonString = JSON.stringify(redstringData, null, 2);
       
+      // OVERWRITER MODE: Always commit, regardless of changes detection
+      console.log('[GitSyncEngine] Overwriter mode: forcing commit regardless of change detection');
+      
       // Try up to 3 times with fresh SHA fetches
       let lastError = null;
       for (let attempt = 1; attempt <= 3; attempt++) {
@@ -541,7 +545,7 @@ class GitSyncEngine {
           this.consecutiveErrors = 0;
           this.isInErrorBackoff = false;
           
-          console.log('[GitSyncEngine] Force commit successful');
+          console.log('[GitSyncEngine] Force commit successful (overwriter mode)');
           this.notifyStatus('success', 'Force commit successful');
           return true;
           
