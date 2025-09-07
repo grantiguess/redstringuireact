@@ -5,6 +5,7 @@ import './RedstringMenu.css';
 import DebugOverlay from './DebugOverlay';
 import UniverseOperationsDialog from './components/UniverseOperationsDialog.jsx';
 import './components/UniverseOperationsDialog.css';
+import * as fileStorage from './store/fileStorage.js';
 
 const RedstringMenu = ({ 
   isOpen, 
@@ -107,7 +108,7 @@ const RedstringMenu = ({
 
   const loadRecentFiles = async () => {
     try {
-      const { getRecentFiles } = await import('./store/fileStorage.js');
+      const { getRecentFiles } = fileStorage;
       const files = await getRecentFiles();
       // console.log('[RedstringMenu Frontend] Recent files loaded, count:', files.length);
       setRecentFiles(files);

@@ -27,6 +27,7 @@ import GitNativeFederation from './GitNativeFederation'; // Import Git-Native Fe
 import './ai/AICollaborationPanel.css';
 import APIKeySetup from './ai/components/APIKeySetup.jsx';
 import mcpClient from './services/mcpClient.js';
+import * as fileStorage from './store/fileStorage.js';
 // import { bridgeFetch } from './services/bridgeConfig.js';
 import apiKeyManager from './services/apiKeyManager.js';
 import SemanticEditor from './components/SemanticEditor.jsx';
@@ -2726,7 +2727,7 @@ const LeftAIView = ({ compact = false, activeGraphId, graphsMap }) => {
     let mounted = true;
     const fetchFileStatus = async () => {
       try {
-        const mod = await import('./store/fileStorage.js');
+        const mod = fileStorage;
         if (typeof mod.getFileStatus === 'function') {
           const status = mod.getFileStatus();
           if (mounted) setFileStatus(status);

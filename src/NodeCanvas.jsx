@@ -24,6 +24,7 @@ import ColorPicker from './ColorPicker';
 import { useDrop } from 'react-dnd';
 import { fetchOrbitCandidatesForPrototype } from './services/orbitResolver.js';
 import { showContextMenu } from './components/GlobalContextMenu';
+import * as fileStorage from './store/fileStorage.js';
 
 // Import Zustand store and selectors/actions
 import useGraphStore, {
@@ -92,60 +93,68 @@ function NodeCanvas() {
 
   // <<< OPTIMIZED: Use direct getState() calls for stable action methods >>>
   // Zustand actions are stable - we can use direct references instead of subscriptions
-  const {
-    updateNodePrototype,
-    updateNodeInstance,
-    updateEdge,
-    addEdge,
-    addNodePrototype,
-    addNodeInstance,
-    removeNodeInstance,
-    forceDeleteNodeInstance,
-    removeEdge,
-    updateGraph,
-    createNewGraph,
-    setActiveGraph,
-    setActiveDefinitionNode,
-    setSelectedEdgeId,
-    setSelectedEdgeIds,
-    addSelectedEdgeId,
-    removeSelectedEdgeId,
-    clearSelectedEdgeIds,
-    setNodeType,
-    openRightPanelNodeTab,
-    createAndAssignGraphDefinition,
-    createAndAssignGraphDefinitionWithoutActivation,
-    closeRightPanelTab,
-    activateRightPanelTab,
-    openGraphTab,
-    moveRightPanelTab,
-    closeGraph,
-    toggleGraphExpanded,
-    toggleSavedNode,
-    toggleSavedGraph,
-    toggleShowConnectionNames,
-    updateMultipleNodeInstancePositions,
-    createGroup,
-    updateGroup,
-    deleteGroup,
-    removeDefinitionFromNode,
-    openGraphTabAndBringToTop,
-    cleanupOrphanedData,
-    cleanupOrphanedGraphs,
-    restoreFromSession,
-    loadUniverseFromFile,
-    setUniverseError,
-    clearUniverse,
-    setUniverseConnected,
-    addToAbstractionChain,
-    removeFromAbstractionChain,
-    updateGraphView,
-    setTypeListMode,
-    toggleEnableAutoRouting,
-    setRoutingStyle,
-    deleteNodePrototype,
-    deleteGraph
-  } = useGraphStore.getState();
+  // Use a defensive approach to avoid initialization errors
+  const storeActions = useMemo(() => {
+    try {
+      return useGraphStore.getState();
+    } catch (error) {
+      console.warn('[NodeCanvas] Store not ready, using fallback actions:', error);
+      return {
+        updateNodePrototype: () => {},
+        updateNodeInstance: () => {},
+        updateEdge: () => {},
+        addEdge: () => {},
+        addNodePrototype: () => {},
+        addNodeInstance: () => {},
+        removeNodeInstance: () => {},
+        forceDeleteNodeInstance: () => {},
+        removeEdge: () => {},
+        updateGraph: () => {},
+        createNewGraph: () => {},
+        setActiveGraph: () => {},
+        setActiveDefinitionNode: () => {},
+        setSelectedEdgeId: () => {},
+        setSelectedEdgeIds: () => {},
+        addSelectedEdgeId: () => {},
+        removeSelectedEdgeId: () => {},
+        clearSelectedEdgeIds: () => {},
+        setNodeType: () => {},
+        openRightPanelNodeTab: () => {},
+        createAndAssignGraphDefinition: () => {},
+        createAndAssignGraphDefinitionWithoutActivation: () => {},
+        closeRightPanelTab: () => {},
+        activateRightPanelTab: () => {},
+        openGraphTab: () => {},
+        moveRightPanelTab: () => {},
+        closeGraph: () => {},
+        toggleGraphExpanded: () => {},
+        toggleSavedNode: () => {},
+        toggleSavedGraph: () => {},
+        toggleShowConnectionNames: () => {},
+        updateMultipleNodeInstancePositions: () => {},
+        createGroup: () => {},
+        updateGroup: () => {},
+        deleteGroup: () => {},
+        removeDefinitionFromNode: () => {},
+        openGraphTabAndBringToTop: () => {},
+        cleanupOrphanedData: () => {},
+        cleanupOrphanedGraphs: () => {},
+        restoreFromSession: () => {},
+        loadUniverseFromFile: () => {},
+        setUniverseError: () => {},
+        clearUniverse: () => {},
+        setUniverseConnected: () => {},
+        addToAbstractionChain: () => {},
+        removeFromAbstractionChain: () => {},
+        updateGraphView: () => {},
+        setTypeListMode: () => {},
+        toggleEnableAutoRouting: () => {},
+        setRoutingStyle: () => {},
+        deleteNodePrototype: () => {},
+        deleteGraph: () => {}
+      };
+    }
+  }, []);
 
   // Panel overlay resizers rendered in canvas (do not overlap panel DOM)
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
@@ -566,18 +575,7 @@ function NodeCanvas() {
     touchMultiPanRef.current = false;
   };
 
-  // Create stable actions object - since actions are extracted from getState(), they're stable
-  const storeActions = {
-    updateNodePrototype, updateNodeInstance, addEdge, addNodePrototype, addNodeInstance, removeNodeInstance,
-    forceDeleteNodeInstance, removeEdge, updateGraph, createNewGraph, setActiveGraph, setActiveDefinitionNode,
-    setNodeType, openRightPanelNodeTab, createAndAssignGraphDefinition, createAndAssignGraphDefinitionWithoutActivation,
-    closeRightPanelTab, activateRightPanelTab, openGraphTab, moveRightPanelTab, closeGraph, toggleGraphExpanded,
-    toggleSavedNode, toggleSavedGraph, updateMultipleNodeInstancePositions, removeDefinitionFromNode,
-    openGraphTabAndBringToTop, cleanupOrphanedData, cleanupOrphanedGraphs, restoreFromSession, loadUniverseFromFile,
-    setUniverseError, clearUniverse, setUniverseConnected, setSelectedEdgeIds, addSelectedEdgeId, removeSelectedEdgeId,
-    clearSelectedEdgeIds, toggleShowConnectionNames, toggleEnableAutoRouting, setRoutingStyle, updateGraphView,
-    setTypeListMode, deleteNodePrototype, deleteGraph, updateGroup
-  };
+  // storeActions is now defined above with defensive initialization
 
   // <<< OPTIMIZED: Individual stable subscriptions - Zustand will optimize these automatically >>>
   const activeGraphId = useGraphStore(state => state.activeGraphId);
@@ -698,8 +696,8 @@ function NodeCanvas() {
           // Load the restored state using new universe actions
           storeActions.loadUniverseFromFile(result.storeState);
           
-          // Import auto-save functions
-          const { enableAutoSave } = await import('./store/fileStorage.js');
+          // Use auto-save functions
+          const { enableAutoSave } = fileStorage;
           
           console.log('[NodeCanvas] Universe restore result:', { 
             autoConnected: result.autoConnected, 
@@ -6676,7 +6674,7 @@ function NodeCanvas() {
              
              // storeActions.clearUniverse(); // This is redundant
              
-             const { createUniverseFile, enableAutoSave } = await import('./store/fileStorage.js');
+             const { createUniverseFile, enableAutoSave } = fileStorage;
              const initialData = await createUniverseFile();
              
              if (initialData !== null) {
@@ -6716,7 +6714,7 @@ function NodeCanvas() {
              
              // storeActions.clearUniverse(); // This is redundant
              
-             const { openUniverseFile, enableAutoSave, getFileStatus } = await import('./store/fileStorage.js');
+             const { openUniverseFile, enableAutoSave, getFileStatus } = fileStorage;
              const loadedData = await openUniverseFile();
              
              
@@ -6747,7 +6745,7 @@ function NodeCanvas() {
          onSaveUniverse={async () => {
            try {
              
-             const { forceSave, canAutoSave, getFileStatus } = await import('./store/fileStorage.js');
+             const { forceSave, canAutoSave, getFileStatus } = fileStorage;
              
              // Debug: check file status
              const fileStatus = getFileStatus();
@@ -6823,7 +6821,7 @@ function NodeCanvas() {
              
              // storeActions.clearUniverse(); // This is redundant
              
-             const { openRecentFile, enableAutoSave, getFileStatus } = await import('./store/fileStorage.js');
+             const { openRecentFile, enableAutoSave, getFileStatus } = fileStorage;
              const loadedData = await openRecentFile(recentFileEntry);
              
              
@@ -6962,7 +6960,7 @@ function NodeCanvas() {
                       // storeActions.clearUniverse(); // This is redundant
                       
                       // Import the createUniverseFile function
-                      const { createUniverseFile, enableAutoSave } = await import('./store/fileStorage.js');
+                      const { createUniverseFile, enableAutoSave } = fileStorage;
                       
                       // This will prompt for save location and create the universe file
                       const initialData = await createUniverseFile();
@@ -7010,7 +7008,7 @@ function NodeCanvas() {
                       // Clear any existing universe
                       // storeActions.clearUniverse(); // This is redundant
                       
-                      const { openUniverseFile, enableAutoSave } = await import('./store/fileStorage.js');
+                      const { openUniverseFile, enableAutoSave } = fileStorage;
                       const loadedData = await openUniverseFile();
                       
                       if (loadedData !== null) {
