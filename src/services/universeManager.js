@@ -572,14 +572,9 @@ class UniverseManager {
       throw new Error('Git sync engine not configured for this universe');
     }
     
-    // Check if sync engine is healthy before attempting save
-    if (!gitSyncEngine.isHealthy()) {
-      console.warn('[UniverseManager] Git sync engine unhealthy, attempting restart before save');
-      gitSyncEngine.restart();
-      
-      // Wait a moment for restart
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
+    // DISABLED: Don't restart engines as it causes 409 conflicts
+    // Let the force commit handle any issues with retries instead
+    console.log('[UniverseManager] Saving to Git via existing sync engine (no restart)');
     
     try {
       // Use the GitSyncEngine's existing export logic instead of bypassing it
@@ -842,14 +837,11 @@ class UniverseManager {
   checkGitSyncHealth() {
     this.gitSyncEngines.forEach((engine, slug) => {
       if (!engine.isHealthy()) {
-        console.warn(`[UniverseManager] Git sync engine for ${slug} is unhealthy, attempting restart`);
-        try {
-          engine.restart();
-          this.notifyStatus('info', `Restarted sync for universe: ${slug}`);
-        } catch (error) {
-          console.error(`[UniverseManager] Failed to restart sync engine for ${slug}:`, error);
-          this.notifyStatus('warning', `Sync engine restart failed for ${slug}`);
-        }
+        console.warn(`[UniverseManager] Git sync engine for ${slug} is unhealthy - but NOT restarting to prevent conflicts`);
+        // DISABLED: Don't restart engines automatically as it causes 409 conflicts
+        // Multiple engines competing for the same file causes endless 409 loops
+        // Manual restart available through UI if needed
+        this.notifyStatus('warning', `Sync engine for ${slug} is unhealthy - manual restart may be needed`);
       }
     });
   }

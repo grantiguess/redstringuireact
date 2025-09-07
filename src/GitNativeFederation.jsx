@@ -845,13 +845,37 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   }, [isVisible, isInteractive, gitSyncEngine, storeGitSyncEngine]);
 
   // Initialize sync engine, federation, and Git storage when provider changes
+  // CRITICAL: Only create NEW engines, never recreate existing ones to prevent conflicts
   useEffect(() => {
-    // If an engine is already available in the store, skip re-initialization
+    // FIRST: Check if we have an existing engine in the store - use it
     if (storeGitSyncEngine) {
+      console.log('[GitNativeFederation] Using existing store engine, skipping initialization');
       return;
     }
-    if (currentProvider && !syncEngine && providerConfig.repo) {
-      console.log('[GitNativeFederation] Initializing sync engine for:', providerConfig.repo);
+    
+    // SECOND: Check if UniverseManager already has an engine for this universe
+    const existingEngine = universeManager.getGitSyncEngine(universeSlug);
+    if (existingEngine && currentProvider) {
+      console.log('[GitNativeFederation] Using existing UniverseManager engine, adopting it');
+      setGitSyncEngine(existingEngine);
+      setGitSyncEngineStore(existingEngine);
+      
+      // Set up status handler
+      try {
+        existingEngine.onStatusChange((s) => {
+          setSyncStatus(s);
+          if (s?.type === 'info') {
+            setTimeout(() => setSyncStatus(null), 3000);
+          }
+        });
+      } catch (_) {}
+      
+      return;
+    }
+    
+    // THIRD: Only create new engine if we have provider and no existing engines
+    if (currentProvider && !syncEngine && providerConfig.repo && !existingEngine) {
+      console.log('[GitNativeFederation] Creating NEW sync engine for:', providerConfig.repo, 'universe:', universeSlug);
       
       const newSyncEngine = new SemanticSyncEngine(providerConfig);
       const newFederation = new SemanticFederation(newSyncEngine);
@@ -896,7 +920,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       // Start the engine immediately to ensure it's running
       newGitSyncEngine.start();
       
-      // Try to load existing data from Git
+      // Try to load existing data from Git (only for new engines)
       newGitSyncEngine.loadFromGit().then((redstringData) => {
         if (redstringData) {
           console.log('[GitNativeFederation] Loaded existing data from Git');
@@ -967,22 +991,18 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           }
         }
         
-        // The sync engine was already started above
-        
       }).catch((error) => {
         console.error('[GitNativeFederation] Failed to load from Git:', error);
         setSyncStatus({
           type: 'error',
           status: 'Failed to load existing data'
         });
-        
-        // The sync engine was already started above
       });
       
       // Load initial data
       newSyncEngine.loadFromProvider();
     }
-  }, [currentProvider, syncEngine, providerConfig.repo, universeSlug, gitOnlyMode, storeGitSyncEngine]);
+  }, [currentProvider, providerConfig.repo]); // REMOVED universeSlug and other changing deps to prevent recreation
 
   // Update federation stats periodically
   useEffect(() => {

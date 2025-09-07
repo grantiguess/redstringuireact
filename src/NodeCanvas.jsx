@@ -6485,53 +6485,79 @@ function NodeCanvas() {
   const handleBackToCivilizationClick = useCallback(() => {
     if (!nodes || nodes.length === 0 || !containerRef.current) return;
 
+    console.log('[BackToCivilization] Starting navigation back to nodes...', {
+      nodeCount: nodes.length,
+      currentPanOffset: panOffset,
+      currentZoomLevel: zoomLevel
+    });
+
     // Calculate bounding box of all nodes
     let minX = Infinity, minY = Infinity;
     let maxX = -Infinity, maxY = -Infinity;
 
     nodes.forEach(node => {
       const dims = baseDimsById.get(node.id) || getNodeDimensions(node, false, null);
-      const nodeLeft = node.x;
-      const nodeTop = node.y;
-      const nodeRight = node.x + dims.currentWidth;
-      const nodeBottom = node.y + dims.currentHeight;
-
-      minX = Math.min(minX, nodeLeft);
-      minY = Math.min(minY, nodeTop);
-      maxX = Math.max(maxX, nodeRight);
-      maxY = Math.max(maxY, nodeBottom);
+      minX = Math.min(minX, node.x);
+      minY = Math.min(minY, node.y);
+      maxX = Math.max(maxX, node.x + dims.currentWidth);
+      maxY = Math.max(maxY, node.y + dims.currentHeight);
     });
 
-    // Add padding around the nodes
-    const padding = 200;
-    const boundingWidth = (maxX - minX) + padding * 2;
-    const boundingHeight = (maxY - minY) + padding * 2;
-    const boundingCenterX = (minX + maxX) / 2;
-    const boundingCenterY = (minY + maxY) / 2;
+    // Calculate the center of all nodes
+    const nodesCenterX = (minX + maxX) / 2;
+    const nodesCenterY = (minY + maxY) / 2;
 
-    // Calculate zoom level to fit all nodes with padding
-    const zoomToFitWidth = viewportSize.width / boundingWidth;
-    const zoomToFitHeight = viewportSize.height / boundingHeight;
-    const newZoom = Math.min(zoomToFitWidth, zoomToFitHeight, MAX_ZOOM);
+    // Calculate bounding dimensions
+    const nodesWidth = maxX - minX;
+    const nodesHeight = maxY - minY;
 
-    // Calculate pan to center the bounding box
-    const newPanX = viewportSize.width / 2 - boundingCenterX * newZoom;
-    const newPanY = viewportSize.height / 2 - boundingCenterY * newZoom;
+    console.log('[BackToCivilization] Nodes bounding info:', {
+      center: { x: nodesCenterX, y: nodesCenterY },
+      bounds: { minX, minY, maxX, maxY },
+      size: { width: nodesWidth, height: nodesHeight }
+    });
 
-    // Apply zoom and pan bounds
-    const finalZoom = Math.max(MIN_ZOOM, newZoom);
+    // Calculate appropriate zoom level to fit all nodes with some padding
+    const padding = 150;
+    const targetZoomX = viewportSize.width / (nodesWidth + padding * 2);
+    const targetZoomY = viewportSize.height / (nodesHeight + padding * 2);
+    let targetZoom = Math.min(targetZoomX, targetZoomY);
+    
+    // Clamp zoom to reasonable bounds
+    targetZoom = Math.max(Math.min(targetZoom, MAX_ZOOM), 0.2);
+
+    // Use the same pan calculation method as the working view centering code
+    // Account for canvas offset like the existing centering logic
+    // Formula: panOffset = viewportCenter - (canvasCoord - canvasOffset) * zoom
+    const targetPanX = (viewportSize.width / 2) - (nodesCenterX - canvasSize.offsetX) * targetZoom;
+    const targetPanY = (viewportSize.height / 2) - (nodesCenterY - canvasSize.offsetY) * targetZoom;
+
+    console.log('[BackToCivilization] Calculated target view:', {
+      targetZoom,
+      targetPan: { x: targetPanX, y: targetPanY }
+    });
+
+    // Apply bounds constraints like the existing code
     const maxPanX = 0;
-    const minPanX = viewportSize.width - canvasSize.width * finalZoom;
+    const minPanX = viewportSize.width - canvasSize.width * targetZoom;
     const maxPanY = 0;
-    const minPanY = viewportSize.height - canvasSize.height * finalZoom;
+    const minPanY = viewportSize.height - canvasSize.height * targetZoom;
 
-    const finalPanX = Math.min(Math.max(newPanX, minPanX), maxPanX);
-    const finalPanY = Math.min(Math.max(newPanY, minPanY), maxPanY);
+    const finalPanX = Math.min(Math.max(targetPanX, minPanX), maxPanX);
+    const finalPanY = Math.min(Math.max(targetPanY, minPanY), maxPanY);
 
-    // Animate to the new position
-    setZoomLevel(finalZoom);
+    console.log('[BackToCivilization] Final bounded values:', {
+      finalZoom: targetZoom,
+      finalPan: { x: finalPanX, y: finalPanY },
+      bounds: { minPanX, maxPanX, minPanY, maxPanY }
+    });
+
+    // Apply the new view state
+    setZoomLevel(targetZoom);
     setPanOffset({ x: finalPanX, y: finalPanY });
-  }, [nodes, baseDimsById, viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM]);
+
+    console.log('[BackToCivilization] Navigation applied!');
+  }, [nodes, baseDimsById, viewportSize, canvasSize, panOffset, zoomLevel, MAX_ZOOM]);
   return (
     <div
       className="node-canvas-container"

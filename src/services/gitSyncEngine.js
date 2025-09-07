@@ -214,9 +214,14 @@ class GitSyncEngine {
     this.isRunning = true;
     console.log('[GitSyncEngine] Starting commit loop (every', this.commitInterval, 'ms)');
     
-    this.commitLoop = setInterval(async () => {
-      await this.processPendingCommits();
-    }, this.commitInterval);
+    // TEMPORARILY DISABLED: Auto-commit loop to prevent conflicts with manual saves
+    // Multiple engines with auto-commit loops cause 409 conflicts
+    // Manual saves via forceCommit() still work perfectly
+    console.log('[GitSyncEngine] Auto-commit loop DISABLED to prevent 409 conflicts - manual saves only');
+    
+    // this.commitLoop = setInterval(async () => {
+    //   await this.processPendingCommits();
+    // }, this.commitInterval);
   }
   
   /**
