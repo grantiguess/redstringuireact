@@ -221,7 +221,19 @@ const GitNativeFederation = () => {
   const attemptConnectUniverseRepo = async () => {
     try {
       const u = getActiveUniverse();
-      if (!u?.linkedRepo) return;
+      if (!u?.linkedRepo) {
+        // If no linked repo but we have a current provider, auto-link it
+        if (currentProvider && providerConfig.user && providerConfig.repo) {
+          updateActiveUniverse({ 
+            linkedRepo: { 
+              type: 'github', 
+              user: providerConfig.user, 
+              repo: providerConfig.repo 
+            } 
+          });
+        }
+        return;
+      }
       const config = {
         type: 'github',
         user: u.linkedRepo.user,
@@ -654,6 +666,23 @@ const GitNativeFederation = () => {
     try { setIsSlim((el.clientWidth || 0) < 520); } catch {}
     return () => ro.disconnect();
   }, []);
+
+  // Auto-link current provider to active universe when provider connects
+  useEffect(() => {
+    if (currentProvider && providerConfig.user && providerConfig.repo) {
+      const activeUniverse = getActiveUniverse();
+      if (!activeUniverse?.linkedRepo) {
+        console.log('[GitNativeFederation] Auto-linking current provider to active universe');
+        updateActiveUniverse({ 
+          linkedRepo: { 
+            type: 'github', 
+            user: providerConfig.user, 
+            repo: providerConfig.repo 
+          } 
+        });
+      }
+    }
+  }, [currentProvider, providerConfig.user, providerConfig.repo, activeUniverseSlug]);
 
   // Initialize sync engine, federation, and Git storage when provider changes
   useEffect(() => {
@@ -2108,53 +2137,84 @@ const GitNativeFederation = () => {
       <div ref={containerRef} style={{ padding: '15px', fontFamily: "'EmOne', sans-serif", height: '100%', color: '#260000' }}>
         {/* Accounts & Access */}
         <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <div style={{ fontWeight: 'bold' }}>Accounts & Access</div>
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>Accounts & Access</div>
             <div style={{ fontSize: '0.8rem', color: '#666' }}>Link services to unlock repositories</div>
           </div>
+          
+          {/* Status Summary Bar */}
+          <div style={{ 
+            padding: '8px 12px', 
+            backgroundColor: '#bdb5b5', 
+            borderRadius: '6px', 
+            marginBottom: '12px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            border: `1px solid ${(hasOAuthForBrowsing || hasAppForAutoSave) ? '#7A0000' : '#ff9800'}`
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ 
+                width: '8px', 
+                height: '8px', 
+                borderRadius: '50%', 
+                backgroundColor: (hasOAuthForBrowsing || hasAppForAutoSave) ? '#7A0000' : '#ff9800'
+              }} />
+              <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                {(hasOAuthForBrowsing && hasAppForAutoSave) ? 'Fully Connected' : 
+                 (hasOAuthForBrowsing || hasAppForAutoSave) ? 'Partially Connected' : 
+                 'Not Connected'}
+              </span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#666' }}>
+              {hasOAuthForBrowsing ? 'Can browse repos' : ''} 
+              {hasOAuthForBrowsing && hasAppForAutoSave ? ' • ' : ''}
+              {hasAppForAutoSave ? 'Auto-sync enabled' : ''}
+              {!hasOAuthForBrowsing && !hasAppForAutoSave ? 'Authentication required' : ''}
+            </div>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '8px' }}>
             <div style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: '10px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>GitHub</div>
-                <div style={{ fontSize: '0.75rem', color: githubOAuthConnected ? '#2e7d32' : '#666' }}>
-                  {hasOAuthForBrowsing ? `OAuth: @${authStatus.userData?.login}` : hasAppForAutoSave ? `App: @${providerConfig.user}` : 'Not connected'}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>GitHub OAuth</div>
+                <div style={{ fontSize: '0.75rem', color: hasOAuthForBrowsing ? '#7A0000' : '#666', fontWeight: 600 }}>
+                  {hasOAuthForBrowsing ? '✓ Connected' : 'Not connected'}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'stretch', flexWrap: 'wrap', flexDirection: isSlim ? 'column' : 'row' }}>
-                {githubOAuthConnected ? (
+              <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '8px', lineHeight: '1.3' }}>
+                Browse and create repositories
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexWrap: 'wrap', flexDirection: isSlim ? 'column' : 'row' }}>
+                {hasOAuthForBrowsing ? (
                   <>
-                    <button disabled style={{ padding: '8px 12px', backgroundColor: '#ccc', color: '#666', border: 'none', borderRadius: '4px', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Signed in @{authStatus.userData?.login || providerConfig.user}</button>
-                    <button onClick={handleGitHubAuth} style={{ padding: '6px 10px', backgroundColor: 'transparent', color: '#260000', border: '1px dashed #260000', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', opacity: degraded ? 1 : 0.6, width: isSlim ? '100%' : 'auto' }} title="Reconnect OAuth">Reconnect</button>
+                    <button disabled style={{ padding: '8px 12px', backgroundColor: '#7A0000', color: '#bdb5b5', border: 'none', borderRadius: '4px', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>@{authStatus.userData?.login}</button>
+                    <button onClick={handleGitHubAuth} style={{ padding: '6px 10px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }} title="Reconnect OAuth">Refresh</button>
                   </>
                 ) : (
-                  <button onClick={handleGitHubAuth} disabled={isConnecting} style={{ padding: '8px 12px', backgroundColor: isConnecting ? '#ccc' : '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Unlock GitHub (OAuth)</button>
-                )}
-
-                {appInstalled ? (
-                  <>
-                    <button disabled style={{ padding: '8px 12px', backgroundColor: '#ccc', color: '#666', border: 'none', borderRadius: '4px', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>App Installed</button>
-                    <button onClick={handleGitHubApp} style={{ padding: '6px 10px', backgroundColor: 'transparent', color: '#260000', border: '1px dashed #260000', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }} title="Reconfigure App">Reconfigure</button>
-                  </>
-                ) : (
-                  <button onClick={handleGitHubApp} disabled={isConnecting} style={{ padding: '8px 12px', backgroundColor: isConnecting ? '#ccc' : 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Install App</button>
+                  <button onClick={handleGitHubAuth} disabled={isConnecting} style={{ padding: '8px 12px', backgroundColor: isConnecting ? '#ccc' : '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>Connect OAuth</button>
                 )}
               </div>
             </div>
+            
             <div style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: '10px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>Gitea</div>
-                <div style={{ fontSize: '0.75rem', color: (giteaConfig?.endpoint ? '#2e7d32' : '#666') }}>
-                  {giteaConfig?.endpoint ? 'Connected' : 'Not connected'}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>GitHub App</div>
+                <div style={{ fontSize: '0.75rem', color: hasAppForAutoSave ? '#7A0000' : '#666', fontWeight: 600 }}>
+                  {hasAppForAutoSave ? '✓ Installed' : 'Not installed'}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
-                {giteaConfig?.endpoint ? (
+              <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '8px', lineHeight: '1.3' }}>
+                Secure auto-sync with permissions
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
+                {hasAppForAutoSave ? (
                   <>
-                    <button disabled style={{ padding: '8px 12px', backgroundColor: '#ccc', color: '#666', border: 'none', borderRadius: '4px', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Connected</button>
-                    <button onClick={() => { setSelectedProvider('gitea'); setShowAdvanced(true); }} style={{ padding: '6px 10px', backgroundColor: 'transparent', color: '#260000', border: '1px dashed #260000', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }}>Reconfigure</button>
+                    <button disabled style={{ padding: '8px 12px', backgroundColor: '#7A0000', color: '#bdb5b5', border: 'none', borderRadius: '4px', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>Installed</button>
+                    <button onClick={handleGitHubApp} style={{ padding: '6px 10px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }} title="Reconfigure App">Settings</button>
                   </>
                 ) : (
-                  <button onClick={() => setShowAdvanced(true)} style={{ padding: '8px 12px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Connect Gitea</button>
+                  <button onClick={handleGitHubApp} disabled={isConnecting} style={{ padding: '8px 12px', backgroundColor: isConnecting ? '#ccc' : '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>Install App</button>
                 )}
               </div>
             </div>
@@ -2163,534 +2223,676 @@ const GitNativeFederation = () => {
 
         {/* Universes */}
         <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <div style={{ fontWeight: 'bold' }}>Universes</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <label style={{ fontSize: '0.8rem', color: '#666' }}>Active Universe</label>
-              <select value={activeUniverseSlug} onChange={(e) => switchActiveUniverse(e.target.value)} style={{ padding: '6px 8px', backgroundColor: '#bdb5b5', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontFamily: "'EmOne', sans-serif", fontSize: '0.85rem' }}>
-                {universes.map(u => (
-                  <option key={u.slug} value={u.slug}>{u.name || u.slug}</option>
-                ))}
-              </select>
-              <button onClick={addUniverse} style={{ padding: '6px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}>Add Universe</button>
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>Universes</div>
+            <div style={{ fontSize: '0.8rem', color: '#666' }}>Manage your knowledge spaces</div>
+          </div>
+
+          {/* Add Universe Card */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '12px',
+            padding: '12px',
+            backgroundColor: '#bdb5b5',
+            border: '2px dashed #979090',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            marginBottom: '8px'
+          }}
+          onClick={addUniverse}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#979090';
+            e.currentTarget.style.borderColor = '#260000';
+            e.currentTarget.style.borderStyle = 'solid';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = '#bdb5b5';
+            e.currentTarget.style.borderColor = '#979090';
+            e.currentTarget.style.borderStyle = 'dashed';
+          }}
+          >
+            <Plus size={20} color="#260000" />
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#260000' }}>
+              Add Universe
             </div>
           </div>
 
-          {/* Active Universe Card */}
-          <div style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: '10px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '10px' }}>
-              {/* Name and Schema */}
-              <div>
-                <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Name</div>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <input value={activeUniverse?.name || ''} onChange={(e) => renameActiveUniverse(e.target.value)} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <input value={schemaPath} onChange={(e) => setActiveUniverseSchema(e.target.value)} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
-                </div>
-              </div>
-
-              {/* Storage Mode */}
-              <div>
-                <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Storage Mode</div>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  {['local','github','mixed'].map(mode => (
-                    <button key={mode} onClick={() => setActiveUniverseStorageMode(mode)} style={{ padding: '6px 10px', backgroundColor: storageMode === mode ? '#260000' : 'transparent', color: storageMode === mode ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>{mode.toUpperCase()}</button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Source of Truth */}
-              <div>
-                <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Source of Truth</div>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <button onClick={() => { if (sourceOfTruthMode !== 'local') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('local'); } }} style={{ padding: '6px 10px', backgroundColor: sourceOfTruthMode === 'local' ? '#260000' : 'transparent', color: sourceOfTruthMode === 'local' ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>FILE</button>
-                  <button onClick={() => { if (sourceOfTruthMode !== 'git') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('git'); } }} style={{ padding: '6px 10px', backgroundColor: sourceOfTruthMode === 'git' ? '#260000' : 'transparent', color: sourceOfTruthMode === 'git' ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>GIT</button>
-                </div>
-              </div>
-
-              {/* Linked Repository */}
-              <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
-                <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Linked Repository</div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <div style={{ minWidth: '220px', maxWidth: '360px', flex: 1 }}>
-                    <RepositoryDropdown
-                      selectedRepository={providerConfig.user && providerConfig.repo ? { 
-                        name: providerConfig.repo, 
-                        owner: { login: providerConfig.user } 
-                      } : null}
-                      onSelectRepository={(repo) => handleLinkRepositoryToActiveUniverse(repo)}
-                      placeholder={hasOAuthForBrowsing ? 'Browse Repositories' : 'OAuth required for browsing'}
-                      disabled={!hasOAuthForBrowsing}
-                    />
-                  </div>
+          {/* Universe Cards */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {universes.map((universe) => (
+              <div key={universe.slug} style={{ 
+                background: '#bdb5b5', 
+                border: universe.slug === activeUniverseSlug ? '2px solid #7A0000' : '1px solid #260000', 
+                borderRadius: '6px', 
+                padding: '10px' 
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ fontSize: '0.8rem', color: '#666' }}>
-                      {providerConfig.user && providerConfig.repo ? `@${providerConfig.user}/${providerConfig.repo} • ${schemaPath}` : 'No repository linked'}
+                    <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
+                      {universe.name || universe.slug}
                     </div>
-                    {providerConfig.user && providerConfig.repo && (
-                      <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', border: '1px solid #260000', color: '#260000' }}>
-                        {githubAppInstallation?.repositories?.find?.(r => r.name === providerConfig.repo)?.private ? 'Private' : 'Public'}
-                      </span>
+                    {universe.slug === activeUniverseSlug && (
+                      <div style={{ fontSize: '0.75rem', color: '#7A0000', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '10px' }}>ACTIVE</div>
                     )}
                   </div>
-                </div>
-              </div>
-
-              {/* Local File Path */}
-              <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
-                <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Local .redstring Path</div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <input 
-                      value={actualFileName} 
-                      onChange={(e) => updateActiveUniverse({ localPath: e.target.value })} 
-                      className="editable-title-input" 
-                      style={{ 
-                        fontSize: '0.9rem', 
-                        padding: '6px 8px', 
-                        borderRadius: '4px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        minWidth: '20px',
-                        width: '100%'
-                      }} 
-                    />
-                    {currentFileStatus?.hasFileHandle && (
-                      <div style={{ fontSize: '0.7rem', color: '#666', fontStyle: 'italic' }}>
-                        File handle saved • auto-save enabled
-                      </div>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    {universe.slug !== activeUniverseSlug && (
+                      <button 
+                        onClick={() => switchActiveUniverse(universe.slug)} 
+                        style={{ 
+                          padding: '4px 8px', 
+                          backgroundColor: 'transparent', 
+                          color: '#260000', 
+                          border: '1px solid #260000', 
+                          borderRadius: '4px', 
+                          fontSize: '0.75rem', 
+                          cursor: 'pointer',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        Switch To
+                      </button>
                     )}
-                  </div>
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: isSlim ? 'wrap' : 'nowrap' }}>
                     <button 
-                      onClick={pickLocalFileForActiveUniverse} 
-                      title="Edit file location"
-                      style={{ 
-                        padding: '6px', 
-                        backgroundColor: '#EFE8E5', 
-                        color: '#260000', 
-                        border: '2px solid #260000', 
-                        borderRadius: '6px', 
-                        cursor: 'pointer', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center',
-                        height: '36px',
-                        width: '36px'
-                      }}
-                    >
-                      <Edit3 size={16} />
-                    </button>
-                    <button 
-                      onClick={addUniverse} 
-                      title="Create new universe"
-                      style={{ 
-                        padding: '6px', 
-                        backgroundColor: '#EFE8E5', 
-                        color: '#260000', 
-                        border: '2px solid #260000', 
-                        borderRadius: '6px', 
-                        cursor: 'pointer', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center',
-                        height: '36px',
-                        width: '36px'
-                      }}
-                    >
-                      <Plus size={16} />
-                    </button>
-                    <button 
-                      onClick={async () => {
-                        const ok = await saveActiveUniverseToLocalHandle();
-                        if (!ok) {
-                          const current = useGraphStore.getState();
-                          const fname = actualFileName;
-                          downloadRedstringFile(current, fname);
-                        }
-                      }} 
-                      title="Download file"
-                      style={{ 
-                        padding: '6px', 
-                        backgroundColor: '#EFE8E5', 
-                        color: '#260000', 
-                        border: '2px solid #260000', 
-                        borderRadius: '6px', 
-                        cursor: 'pointer', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center',
-                        height: '36px',
-                        width: '36px'
-                      }}
-                    >
-                      <Download size={16} />
-                    </button>
-                    <button 
-                      onClick={async () => {
-                        try {
-                          const mode = (getActiveUniverse()?.storageMode) || 'github';
-                          if (mode === 'local' || mode === 'mixed') {
-                            const current = useGraphStore.getState();
-                            const ok = await saveActiveUniverseToLocalHandle();
-                            if (!ok) {
-                              downloadRedstringFile(current, actualFileName);
-                            }
-                          }
-                          if (mode === 'github' || mode === 'mixed') {
-                            await handleSaveToGit();
-                          }
-                          setSyncStatus({ type: 'success', status: 'Manual save completed' });
-                          setTimeout(() => setSyncStatus(null), 4000);
-                        } catch (e) {
-                          setError(`Manual save failed: ${e.message}`);
-                        }
-                      }} 
-                      title="Manual save"
-                      disabled={isConnecting}
-                      style={{ 
-                        padding: '6px', 
-                        backgroundColor: isConnecting ? '#ccc' : '#EFE8E5', 
-                        color: '#260000', 
-                        border: '2px solid #260000', 
-                        borderRadius: '6px', 
-                        cursor: isConnecting ? 'not-allowed' : 'pointer', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center',
-                        height: '36px',
-                        width: '36px'
-                      }}
-                    >
-                      <Save size={16} />
-                    </button>
-                    <button 
-                      onClick={() => removeUniverse(activeUniverseSlug)} 
-                      title="Delete universe"
+                      onClick={() => removeUniverse(universe.slug)} 
                       disabled={universes.length <= 1}
                       style={{ 
-                        padding: '6px', 
-                        backgroundColor: '#EFE8E5', 
+                        padding: '4px', 
+                        backgroundColor: 'transparent', 
                         color: universes.length <= 1 ? '#999' : '#d32f2f', 
-                        border: `2px solid ${universes.length <= 1 ? '#999' : '#d32f2f'}`, 
-                        borderRadius: '6px', 
+                        border: `1px solid ${universes.length <= 1 ? '#999' : '#d32f2f'}`, 
+                        borderRadius: '4px', 
                         cursor: universes.length <= 1 ? 'not-allowed' : 'pointer', 
                         display: 'flex', 
                         alignItems: 'center', 
                         justifyContent: 'center',
-                        height: '36px',
-                        width: '36px',
                         opacity: universes.length <= 1 ? 0.5 : 1
                       }}
+                      title="Delete universe"
                     >
-                      <Trash2 size={16} />
+                      <Trash2 size={12} />
                     </button>
                   </div>
                 </div>
-              </div>
 
-              {/* Status */}
-              {syncStatus && (
-                <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2', fontSize: '0.8rem', color: syncStatus.type === 'error' ? '#d32f2f' : '#260000', marginTop: '8px', textAlign: 'center' }}>
-                  {syncStatus.status}
-                </div>
-              )}
-            </div>
+                {/* Universe Details (only show for active universe) */}
+                {universe.slug === activeUniverseSlug && (
+                  <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '10px', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #979090' }}>
+                    {/* Name and Schema */}
+                    <div>
+                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Name</div>
+                      <input value={universe.name || ''} onChange={(e) => renameActiveUniverse(e.target.value)} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
+                      <input value={universe.schemaPath || 'schema'} onChange={(e) => setActiveUniverseSchema(e.target.value)} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                    </div>
+
+                    {/* Storage Mode */}
+                    <div>
+                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Storage Mode</div>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        {['local','github','mixed'].map(mode => (
+                          <button key={mode} onClick={() => setActiveUniverseStorageMode(mode)} style={{ padding: '4px 8px', backgroundColor: universe.storageMode === mode ? '#260000' : 'transparent', color: universe.storageMode === mode ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>{mode.toUpperCase()}</button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Source of Truth */}
+                    <div>
+                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Source of Truth</div>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <button onClick={() => { if (sourceOfTruthMode !== 'local') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('local'); } }} style={{ padding: '4px 8px', backgroundColor: sourceOfTruthMode === 'local' ? '#260000' : 'transparent', color: sourceOfTruthMode === 'local' ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>FILE</button>
+                        <button onClick={() => { if (sourceOfTruthMode !== 'git') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('git'); } }} style={{ padding: '4px 8px', backgroundColor: sourceOfTruthMode === 'git' ? '#260000' : 'transparent', color: sourceOfTruthMode === 'git' ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>GIT</button>
+                      </div>
+                    </div>
+
+                    {/* Linked Repository */}
+                    <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
+                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Linked Repository</div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <div style={{ minWidth: '220px', maxWidth: '360px', flex: 1 }}>
+                          <RepositoryDropdown
+                            selectedRepository={providerConfig.user && providerConfig.repo ? { 
+                              name: providerConfig.repo, 
+                              owner: { login: providerConfig.user } 
+                            } : null}
+                            onSelectRepository={(repo) => handleLinkRepositoryToActiveUniverse(repo)}
+                            placeholder={hasOAuthForBrowsing ? 'Browse Repositories' : 'OAuth required for browsing'}
+                            disabled={!hasOAuthForBrowsing}
+                          />
+                        </div>
+                        {providerConfig.user && providerConfig.repo && (
+                          <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', border: '1px solid #260000', color: '#260000' }}>
+                            {githubAppInstallation?.repositories?.find?.(r => r.name === providerConfig.repo)?.private ? 'Private' : 'Public'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Local File Path */}
+                    <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
+                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Local .redstring Path</div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <input 
+                          value={actualFileName} 
+                          onChange={(e) => updateActiveUniverse({ localPath: e.target.value })} 
+                          className="editable-title-input" 
+                          style={{ 
+                            fontSize: '0.9rem', 
+                            padding: '6px 8px', 
+                            borderRadius: '4px',
+                            flex: 1
+                          }} 
+                        />
+                        <button 
+                          onClick={pickLocalFileForActiveUniverse} 
+                          title="Edit file location"
+                          style={{ 
+                            padding: '4px', 
+                            backgroundColor: '#EFE8E5', 
+                            color: '#260000', 
+                            border: '1px solid #260000', 
+                            borderRadius: '4px', 
+                            cursor: 'pointer', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <Edit3 size={12} />
+                        </button>
+                        <button 
+                          onClick={async () => {
+                            const ok = await saveActiveUniverseToLocalHandle();
+                            if (!ok) {
+                              const current = useGraphStore.getState();
+                              downloadRedstringFile(current, actualFileName);
+                            }
+                          }} 
+                          title="Download file"
+                          style={{ 
+                            padding: '4px', 
+                            backgroundColor: '#EFE8E5', 
+                            color: '#260000', 
+                            border: '1px solid #260000', 
+                            borderRadius: '4px', 
+                            cursor: 'pointer', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <Download size={12} />
+                        </button>
+                        <button 
+                          onClick={async () => {
+                            try {
+                              const mode = universe.storageMode || 'github';
+                              if (mode === 'local' || mode === 'mixed') {
+                                const current = useGraphStore.getState();
+                                const ok = await saveActiveUniverseToLocalHandle();
+                                if (!ok) {
+                                  downloadRedstringFile(current, actualFileName);
+                                }
+                              }
+                              if (mode === 'github' || mode === 'mixed') {
+                                await handleSaveToGit();
+                              }
+                              setSyncStatus({ type: 'success', status: 'Manual save completed' });
+                              setTimeout(() => setSyncStatus(null), 4000);
+                            } catch (e) {
+                              setError(`Manual save failed: ${e.message}`);
+                            }
+                          }} 
+                          title="Manual save"
+                          disabled={isConnecting}
+                          style={{ 
+                            padding: '4px', 
+                            backgroundColor: isConnecting ? '#ccc' : '#EFE8E5', 
+                            color: '#260000', 
+                            border: '1px solid #260000', 
+                            borderRadius: '4px', 
+                            cursor: isConnecting ? 'not-allowed' : 'pointer', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <Save size={12} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Status */}
+                    {syncStatus && universe.slug === activeUniverseSlug && (
+                      <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2', fontSize: '0.8rem', color: syncStatus.type === 'error' ? '#d32f2f' : '#260000', marginTop: '8px', textAlign: 'center' }}>
+                        {syncStatus.status}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
         {/* Sources */}
         <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isSlim ? 'stretch' : 'center', marginBottom: '8px', flexDirection: isSlim ? 'column' : 'row', gap: isSlim ? '8px' : '0' }}>
-            <div style={{ fontWeight: 'bold' }}>Sources</div>
-            <div>
-              <select onChange={(e) => { const v = e.target.value; if (v) { addSourceToActiveUniverse(v); e.target.value=''; } }} defaultValue="" style={{ padding: '6px 8px', backgroundColor: '#bdb5b5', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontFamily: "'EmOne', sans-serif", fontSize: '0.85rem', width: isSlim ? '100%' : 'auto' }}>
-                <option value="" disabled>Add Source</option>
-                <option value="github">My GitHub Repository</option>
-                <option value="gitea">Gitea Repository</option>
-                <option value="url">External URL/SPARQL</option>
-                <option value="local">Local File</option>
-              </select>
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>Sources</div>
+            <div style={{ fontSize: '0.8rem', color: '#666' }}>Connect data repositories</div>
+          </div>
+
+          {/* Add Source Card */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '12px',
+            padding: '12px',
+            backgroundColor: '#bdb5b5',
+            border: '2px dashed #979090',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            marginBottom: '8px'
+          }}
+          onClick={() => setShowAddSourceModal(true)}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#979090';
+            e.currentTarget.style.borderColor = '#260000';
+            e.currentTarget.style.borderStyle = 'solid';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = '#bdb5b5';
+            e.currentTarget.style.borderColor = '#979090';
+            e.currentTarget.style.borderStyle = 'dashed';
+          }}
+          >
+            <Plus size={20} color="#260000" />
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#260000' }}>
+              Add Source
             </div>
           </div>
 
-          {/* Current connected repo as first source */}
-          {currentProvider && (
-            <div style={{ background: '#bdb5b5', border: '2px solid #8B0000', borderRadius: '6px', padding: '10px', marginBottom: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#2e7d32', border: '1px solid #260000' }} />
-                  <div style={{ fontWeight: 600 }}>
-                    My GitHub Repository • @{currentProvider.user}/{currentProvider.repo}
+          {/* Sources Cards */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* Sources for active universe */}
+            {Array.isArray(getActiveUniverse()?.sources) && getActiveUniverse().sources.map((src) => {
+              // Check if this source matches the current connected provider
+              const isConnectedSource = currentProvider && 
+                src.type === 'github' && 
+                src.user === providerConfig.user && 
+                src.repo === providerConfig.repo;
+              
+              return (
+              <div key={src.id} style={{ 
+                background: '#bdb5b5', 
+                border: isConnectedSource ? '2px solid #7A0000' : '1px solid #260000', 
+                borderRadius: '6px', 
+                padding: '10px' 
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ fontWeight: 600 }}>
+                      {src.type === 'github' ? 'GitHub Repository' : src.type === 'gitea' ? 'Gitea Repository' : src.type === 'url' ? 'External URL/SPARQL' : 'Local File'}
+                      {src.type === 'github' && src.user && src.repo ? ` • @${src.user}/${src.repo}` : ''}
+                    </div>
+                    {isConnectedSource && (
+                      <div style={{ fontSize: '0.75rem', color: '#7A0000', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '10px' }}>CONNECTED</div>
+                    )}
                   </div>
-                  <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#8B0000', color: '#EFE8E5' }}>
-                    PRIMARY
-                  </span>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <label style={{ fontSize: '0.75rem', color: '#666' }}>Enabled</label>
+                    <input 
+                      type="checkbox" 
+                      checked={!!src.enabled} 
+                      onChange={() => toggleSourceEnabled(src)}
+                      style={{ 
+                        accentColor: '#7A0000',
+                        transform: 'scale(1.1)'
+                      }}
+                    />
+                    <button onClick={() => removeSourceFromActiveUniverse(src.id)} style={{ padding: '4px', background: 'transparent', color: '#d32f2f', border: '1px solid #d32f2f', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Remove source">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
                 </div>
-                <div style={{ fontSize: '0.75rem', color: '#2e7d32' }}>Connected</div>
-              </div>
-            </div>
-          )}
 
-          {/* Sources list for active universe */}
-          {Array.isArray(getActiveUniverse()?.sources) && getActiveUniverse().sources.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {getActiveUniverse().sources.map((src) => (
-                <div key={src.id} style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: (getSourceHealth(src) === 'healthy' ? '#2e7d32' : getSourceHealth(src) === 'degraded' ? '#ff9800' : '#9e9e9e'), border: '1px solid #260000' }} />
-                      <div style={{ fontWeight: 600 }}>
-                        {src.type === 'github' ? 'GitHub Repository' : src.type === 'gitea' ? 'Gitea Repository' : src.type === 'url' ? 'External URL/SPARQL' : 'Local File'}
-                        {src.type === 'github' && src.user && src.repo ? ` • @${src.user}/${src.repo}` : ''}
+                {/* Body */}
+                <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '10px', marginTop: '8px' }}>
+                  {src.type === 'github' && (
+                    <>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Repository</div>
+                        <RepositoryDropdown
+                          selectedRepository={src.user && src.repo ? { name: src.repo, owner: { login: src.user } } : null}
+                          onSelectRepository={(repo) => updateSourceInActiveUniverse(src.id, { user: repo?.owner?.login, repo: repo?.name })}
+                          placeholder={hasOAuthForBrowsing ? 'Browse Repositories' : 'OAuth required for browsing'}
+                          disabled={!hasOAuthForBrowsing}
+                        />
                       </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <label style={{ fontSize: '0.75rem', color: '#666' }}>Enabled</label>
-                      <input type="checkbox" checked={!!src.enabled} onChange={() => toggleSourceEnabled(src)} />
-                      <button onClick={() => removeSourceFromActiveUniverse(src.id)} style={{ padding: '6px 8px', background: 'transparent', color: '#d32f2f', border: '1px solid #d32f2f', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer' }}>Remove</button>
-                    </div>
-                  </div>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
+                        <input value={src.schemaPath || schemaPath} onChange={(e) => updateSourceInActiveUniverse(src.id, { schemaPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                      </div>
+                    </>
+                  )}
 
-                  {/* Body */}
-                  <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '10px', marginTop: '8px' }}>
-                    {src.type === 'github' && (
-                      <>
-                        <div>
-                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Repository</div>
-                          <RepositoryDropdown
-                            selectedRepository={src.user && src.repo ? { name: src.repo, owner: { login: src.user } } : null}
-                            onSelectRepository={(repo) => updateSourceInActiveUniverse(src.id, { user: repo?.owner?.login, repo: repo?.name })}
-                            placeholder={hasOAuthForBrowsing ? 'Browse Repositories' : 'OAuth required for browsing'}
-                            disabled={!hasOAuthForBrowsing}
-                          />
+                  {src.type === 'gitea' && (
+                    <>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Endpoint</div>
+                        <input value={src.endpoint || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { endpoint: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Repository</div>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <input value={src.user || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { user: e.target.value })} placeholder="user" className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', flex: 1 }} />
+                          <input value={src.repo || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { repo: e.target.value })} placeholder="repo" className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', flex: 1 }} />
                         </div>
-                        <div>
-                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
-                          <input value={src.schemaPath || schemaPath} onChange={(e) => updateSourceInActiveUniverse(src.id, { schemaPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
-                        </div>
-                      </>
-                    )}
+                      </div>
+                    </>
+                  )}
 
-                    {src.type === 'gitea' && (
-                      <>
-                        <div>
-                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Endpoint</div>
-                          <input value={src.endpoint || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { endpoint: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                  {src.type === 'url' && (
+                    <>
+                      <div style={{ gridColumn: '1 / span 2' }}>
+                        <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>URL</div>
+                        <input value={(src.urls && src.urls[0]) || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { urls: [e.target.value] })} placeholder="https://example.com/semantic/" className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', width: '100%' }} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Behavior</div>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          {['cache','read'].map(b => (
+                            <button key={b} onClick={() => updateSourceInActiveUniverse(src.id, { behavior: b })} style={{ padding: '4px 8px', backgroundColor: (src.behavior || 'cache') === b ? '#260000' : 'transparent', color: (src.behavior || 'cache') === b ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>{b === 'cache' ? 'Cache Locally' : 'Read-through'}</button>
+                          ))}
                         </div>
-                        <div>
-                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Repository</div>
-                          <div style={{ display: 'flex', gap: '6px' }}>
-                            <input value={src.user || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { user: e.target.value })} placeholder="user" className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', flex: 1 }} />
-                            <input value={src.repo || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { repo: e.target.value })} placeholder="repo" className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', flex: 1 }} />
-                          </div>
-                        </div>
-                      </>
-                    )}
+                      </div>
+                    </>
+                  )}
 
-                    {src.type === 'url' && (
-                      <>
-                        <div style={{ gridColumn: '1 / span 2' }}>
-                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>URL</div>
-                          <input value={(src.urls && src.urls[0]) || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { urls: [e.target.value] })} placeholder="https://example.com/semantic/" className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', width: '100%' }} />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Behavior</div>
-                          <div style={{ display: 'flex', gap: '6px' }}>
-                            {['cache','read'].map(b => (
-                              <button key={b} onClick={() => updateSourceInActiveUniverse(src.id, { behavior: b })} style={{ padding: '6px 10px', backgroundColor: (src.behavior || 'cache') === b ? '#260000' : 'transparent', color: (src.behavior || 'cache') === b ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>{b === 'cache' ? 'Cache Locally' : 'Read-through'}</button>
-                            ))}
-                          </div>
-                        </div>
-                      </>
-                    )}
+                  {src.type === 'local' && (
+                    <>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>File</div>
+                        <input value={src.fileName || `${activeUniverseSlug}.redstring`} onChange={(e) => updateSourceInActiveUniverse(src.id, { fileName: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
+                        <input value={src.schemaPath || schemaPath} onChange={(e) => updateSourceInActiveUniverse(src.id, { schemaPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                      </div>
+                    </>
+                  )}
 
-                    {src.type === 'local' && (
-                      <>
-                        <div>
-                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>File</div>
-                          <input value={src.fileName || `${activeUniverseSlug}.redstring`} onChange={(e) => updateSourceInActiveUniverse(src.id, { fileName: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
-                          <input value={src.schemaPath || schemaPath} onChange={(e) => updateSourceInActiveUniverse(src.id, { schemaPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
-                        </div>
-                      </>
-                    )}
-
-                    {/* Per-source Manual Save */}
-                    <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2', display: 'flex', gap: '8px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
-                      <button onClick={async () => {
-                        try {
-                          if (src.type === 'github') {
-                            await handleSaveToGit();
-                          } else if (src.type === 'local') {
-                            const current = useGraphStore.getState();
-                            downloadRedstringFile(current, src.fileName || `${activeUniverseSlug}.redstring`);
-                          } else if (src.type === 'url') {
-                            setSyncStatus({ type: 'info', status: 'External sources are read-mostly; nothing to save.' });
-                            setTimeout(() => setSyncStatus(null), 3000);
-                          } else if (src.type === 'gitea') {
-                            await handleSaveToGit();
-                          }
-                        } catch (e) {
-                          setError(`Source save failed: ${e.message}`);
+                  {/* Per-source Manual Save */}
+                  <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2', display: 'flex', gap: '8px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
+                    <button onClick={async () => {
+                      try {
+                        if (src.type === 'github') {
+                          await handleSaveToGit();
+                        } else if (src.type === 'local') {
+                          const current = useGraphStore.getState();
+                          downloadRedstringFile(current, src.fileName || `${activeUniverseSlug}.redstring`);
+                        } else if (src.type === 'url') {
+                          setSyncStatus({ type: 'info', status: 'External sources are read-mostly; nothing to save.' });
+                          setTimeout(() => setSyncStatus(null), 3000);
+                        } else if (src.type === 'gitea') {
+                          await handleSaveToGit();
                         }
-                      }} style={{ padding: '8px 12px', backgroundColor: '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Manual Save</button>
-                    </div>
+                      } catch (e) {
+                        setError(`Source save failed: ${e.message}`);
+                      }
+                    }} style={{ padding: '8px 12px', backgroundColor: '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Manual Save</button>
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : !currentProvider ? (
-            <div style={{ 
-              display: 'flex', 
-              flexDirection: 'column', 
-              alignItems: 'center', 
-              justifyContent: 'center',
-              padding: '40px 20px',
-              backgroundColor: '#bdb5b5',
-              border: '2px dashed #979090',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
-            }}
-            onClick={() => setShowAddSourceModal(true)}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#979090';
-              e.currentTarget.style.borderColor = '#260000';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#bdb5b5';
-              e.currentTarget.style.borderColor = '#979090';
-            }}
-            >
-              <Plus size={48} color="#260000" style={{ marginBottom: '12px' }} />
-              <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#260000', marginBottom: '4px' }}>
-                Add a source
               </div>
-              <div style={{ fontSize: '0.8rem', color: '#666', textAlign: 'center' }}>
-                Connect to repositories, external APIs, or local files
+              );
+            })}
+
+            {/* Show connected provider as a source option if not already in sources */}
+            {currentProvider && providerConfig.user && providerConfig.repo && 
+             !getActiveUniverse()?.sources?.some(src => 
+               src.type === 'github' && 
+               src.user === providerConfig.user && 
+               src.repo === providerConfig.repo
+             ) && (
+              <div style={{ background: '#bdb5b5', border: '2px dashed #7A0000', borderRadius: '6px', padding: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
+                      GitHub Repository • @{providerConfig.user}/{providerConfig.repo}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#7A0000', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '10px' }}>AVAILABLE</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <button 
+                      onClick={() => {
+                        // Add this connected repo as a proper source
+                        const newSource = {
+                          id: generateSourceId(),
+                          type: 'github',
+                          enabled: true,
+                          name: `@${providerConfig.user}/${providerConfig.repo}`,
+                          user: providerConfig.user,
+                          repo: providerConfig.repo,
+                          schemaPath: providerConfig.semanticPath || 'schema'
+                        };
+                        setUniverses(prev => prev.map(u => u.slug === activeUniverseSlug ? { 
+                          ...u, 
+                          sources: [...(u.sources || []), newSource] 
+                        } : u));
+                      }}
+                      style={{ 
+                        padding: '6px 12px', 
+                        backgroundColor: '#7A0000', 
+                        color: '#bdb5b5', 
+                        border: 'none', 
+                        borderRadius: '4px', 
+                        fontSize: '0.8rem', 
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      Add as Source
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div style={{ fontSize: '0.85rem', color: '#666' }}>Additional sources can be added above.</div>
-          )}
+            )}
+          </div>
         </div>
 
-        {/* Add Source Modal */}
+        {/* Enhanced Add Source Modal */}
         {showAddSourceModal && (
           <div style={{
-            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000
           }}>
             <div style={{ 
-              width: '520px', 
-              maxWidth: '90%', 
+              width: '600px', 
+              maxWidth: '95%', 
               backgroundColor: '#bdb5b5', 
-              border: '1px solid #260000', 
-              borderRadius: '8px',
-              padding: '20px',
-              margin: '0 20px'
+              border: '2px solid #260000', 
+              borderRadius: '12px',
+              padding: '24px',
+              margin: '0 20px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <div style={{ fontWeight: 'bold', color: '#260000', fontSize: '1.1rem' }}>Add Source</div>
-                <button onClick={() => setShowAddSourceModal(false)} style={{ background: 'transparent', border: 'none', color: '#260000', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <div>
+                  <div style={{ fontWeight: 'bold', color: '#260000', fontSize: '1.3rem', marginBottom: '4px' }}>Add Data Source</div>
+                  <div style={{ fontSize: '0.9rem', color: '#666' }}>Choose how to sync your universe data</div>
+                </div>
+                <button 
+                  onClick={() => setShowAddSourceModal(false)} 
+                  style={{ 
+                    background: 'transparent', 
+                    border: '2px solid #260000', 
+                    color: '#260000', 
+                    cursor: 'pointer', 
+                    fontSize: '1.2rem',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  ✕
+                </button>
               </div>
               
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <button
                   onClick={() => { addSourceToActiveUniverse('github'); setShowAddSourceModal(false); }}
                   style={{
-                    padding: '20px',
+                    padding: '24px 16px',
                     backgroundColor: '#979090',
-                    border: '1px solid #260000',
-                    borderRadius: '8px',
+                    border: '2px solid #260000',
+                    borderRadius: '12px',
                     cursor: 'pointer',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    gap: '8px',
-                    transition: 'background-color 0.2s'
+                    gap: '12px',
+                    transition: 'all 0.2s ease',
+                    position: 'relative',
+                    overflow: 'hidden'
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#bdb5b5'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#979090'}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#bdb5b5';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#979090';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
                 >
-                  <Github size={24} color="#260000" />
-                  <div style={{ fontWeight: 600, color: '#260000' }}>GitHub Repository</div>
-                  <div style={{ fontSize: '0.8rem', color: '#666', textAlign: 'center' }}>Connect to any GitHub repo</div>
+                  <Github size={32} color="#260000" />
+                  <div style={{ fontWeight: 700, color: '#260000', fontSize: '1.1rem' }}>GitHub Repository</div>
+                  <div style={{ fontSize: '0.85rem', color: '#666', textAlign: 'center', lineHeight: '1.4' }}>
+                    Connect to any GitHub repository<br/>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#7A0000' }}>✓ Recommended</span>
+                  </div>
                 </button>
 
                 <button
                   onClick={() => { setSelectedProvider('gitea'); setShowAdvanced(true); setShowAddSourceModal(false); }}
                   style={{
-                    padding: '20px',
+                    padding: '24px 16px',
                     backgroundColor: '#979090',
-                    border: '1px solid #260000',
-                    borderRadius: '8px',
+                    border: '2px solid #260000',
+                    borderRadius: '12px',
                     cursor: 'pointer',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    gap: '8px',
-                    transition: 'background-color 0.2s'
+                    gap: '12px',
+                    transition: 'all 0.2s ease'
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#bdb5b5'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#979090'}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#bdb5b5';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#979090';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
                 >
-                  <Server size={24} color="#260000" />
-                  <div style={{ fontWeight: 600, color: '#260000' }}>Gitea Repository</div>
-                  <div style={{ fontSize: '0.8rem', color: '#666', textAlign: 'center' }}>Self-hosted Git instance</div>
+                  <Server size={32} color="#260000" />
+                  <div style={{ fontWeight: 700, color: '#260000', fontSize: '1.1rem' }}>Gitea Repository</div>
+                  <div style={{ fontSize: '0.85rem', color: '#666', textAlign: 'center', lineHeight: '1.4' }}>
+                    Self-hosted Git instance<br/>
+                    <span style={{ fontSize: '0.8rem', color: '#666' }}>Full control & privacy</span>
+                  </div>
                 </button>
 
                 <button
                   onClick={() => { addSourceToActiveUniverse('url'); setShowAddSourceModal(false); }}
                   style={{
-                    padding: '20px',
+                    padding: '24px 16px',
                     backgroundColor: '#979090',
-                    border: '1px solid #260000',
-                    borderRadius: '8px',
+                    border: '2px solid #260000',
+                    borderRadius: '12px',
                     cursor: 'pointer',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    gap: '8px',
-                    transition: 'background-color 0.2s'
+                    gap: '12px',
+                    transition: 'all 0.2s ease'
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#bdb5b5'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#979090'}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#bdb5b5';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#979090';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
                 >
-                  <Globe size={24} color="#260000" />
-                  <div style={{ fontWeight: 600, color: '#260000' }}>External URL/SPARQL</div>
-                  <div style={{ fontSize: '0.8rem', color: '#666', textAlign: 'center' }}>Semantic web endpoints</div>
+                  <Globe size={32} color="#260000" />
+                  <div style={{ fontWeight: 700, color: '#260000', fontSize: '1.1rem' }}>External URL/SPARQL</div>
+                  <div style={{ fontSize: '0.85rem', color: '#666', textAlign: 'center', lineHeight: '1.4' }}>
+                    Semantic web endpoints<br/>
+                    <span style={{ fontSize: '0.8rem', color: '#666' }}>Read-only federation</span>
+                  </div>
                 </button>
 
                 <button
                   onClick={() => { addSourceToActiveUniverse('local'); setShowAddSourceModal(false); }}
                   style={{
-                    padding: '20px',
+                    padding: '24px 16px',
                     backgroundColor: '#979090',
-                    border: '1px solid #260000',
-                    borderRadius: '8px',
+                    border: '2px solid #260000',
+                    borderRadius: '12px',
                     cursor: 'pointer',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    gap: '8px',
-                    transition: 'background-color 0.2s'
+                    gap: '12px',
+                    transition: 'all 0.2s ease'
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#bdb5b5'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#979090'}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#bdb5b5';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#979090';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
                 >
-                  <Copy size={24} color="#260000" />
-                  <div style={{ fontWeight: 600, color: '#260000' }}>Local File</div>
-                  <div style={{ fontSize: '0.8rem', color: '#666', textAlign: 'center' }}>Import from local .redstring</div>
+                  <Copy size={32} color="#260000" />
+                  <div style={{ fontWeight: 700, color: '#260000', fontSize: '1.1rem' }}>Local File</div>
+                  <div style={{ fontSize: '0.85rem', color: '#666', textAlign: 'center', lineHeight: '1.4' }}>
+                    Import .redstring files<br/>
+                    <span style={{ fontSize: '0.8rem', color: '#666' }}>One-time import</span>
+                  </div>
                 </button>
+              </div>
+
+              <div style={{ 
+                marginTop: '20px', 
+                padding: '12px', 
+                backgroundColor: '#979090', 
+                borderRadius: '6px',
+                fontSize: '0.8rem',
+                color: '#666',
+                textAlign: 'center'
+              }}>
+                Connect multiple sources to sync data from different places into your Universe.
               </div>
             </div>
           </div>

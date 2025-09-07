@@ -4595,7 +4595,23 @@ function NodeCanvas() {
                 const rect = containerRef.current.getBoundingClientRect();
                 const mouseCanvasX = (e.clientX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
                 const mouseCanvasY = (e.clientY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
-                const positionUpdates = draggingNodeInfo.memberOffsets.map(({ id, dx, dy }) => ({ instanceId: id, x: mouseCanvasX - dx, y: mouseCanvasY - dy }));
+                const positionUpdates = draggingNodeInfo.memberOffsets.map(({ id, dx, dy }) => {
+                    const node = nodes.find(n => n.id === id);
+                    const xRaw = mouseCanvasX - dx;
+                    const yRaw = mouseCanvasY - dy;
+                    if (!node) return { instanceId: id, x: xRaw, y: yRaw };
+                    if (gridMode === 'off') {
+                        return { instanceId: id, x: xRaw, y: yRaw };
+                    }
+                    const dims = getNodeDimensions(node, false, null);
+                    const centerX = xRaw + dims.currentWidth / 2;
+                    const centerY = yRaw + dims.currentHeight / 2;
+                    const snappedCenterX = Math.floor(centerX / gridSize) * gridSize;
+                    const snappedCenterY = Math.floor(centerY / gridSize) * gridSize;
+                    const snappedX = snappedCenterX - (dims.currentWidth / 2);
+                    const snappedY = snappedCenterY - (dims.currentHeight / 2);
+                    return { instanceId: id, x: snappedX, y: snappedY };
+                });
                 storeActions.updateMultipleNodeInstancePositions(activeGraphId, positionUpdates);
                 return;
             }
@@ -4813,16 +4829,26 @@ function NodeCanvas() {
         const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
         canvasWorker.calculateSelection({ selectionStart, currentX, currentY })
           .then(selectionRes => {
-            const finalSelectedIds = nodes
-              .filter(nd => !(selectionRes.x > nd.x + getNodeDimensions(nd, previewingNodeId === nd.id, null).currentWidth ||
-                                selectionRes.x + selectionRes.width < nd.x ||
-                                selectionRes.y > nd.y + getNodeDimensions(nd, previewingNodeId === nd.id, null).currentHeight ||
-                                selectionRes.y + selectionRes.height < nd.y))
-              .map(nd => nd.id);
-            setSelectedInstanceIds(prev => new Set([...prev, ...finalSelectedIds]));
+            // Build final selection relative to the selection base (for proper toggle behavior)
+            const base = selectionBaseRef.current || new Set();
+            const final = new Set([...base]);
+            nodes.forEach(nd => {
+              const ndDims = getNodeDimensions(nd, previewingNodeId === nd.id, null);
+              const intersects = !(selectionRes.x > nd.x + ndDims.currentWidth ||
+                                   selectionRes.x + selectionRes.width < nd.x ||
+                                   selectionRes.y > nd.y + ndDims.currentHeight ||
+                                   selectionRes.y + selectionRes.height < nd.y);
+              if (!base.has(nd.id)) {
+                if (intersects) final.add(nd.id);
+                else final.delete(nd.id);
+              }
+            });
+            setSelectedInstanceIds(final);
           })
           .catch(error => {
             ignoreCanvasClick.current = true;
+          })
+          .finally(() => {
             setSelectionStart(null);
             setSelectionRect(null);
           });
@@ -4918,6 +4944,13 @@ function NodeCanvas() {
           return;
       }
       if (ignoreCanvasClick.current) { ignoreCanvasClick.current = false; return; }
+
+      // Close Group panel on click-off like other panels
+      if (groupControlPanelShouldShow || selectedGroup) {
+        setGroupControlPanelShouldShow(false);
+        setSelectedGroup(null);
+        return;
+      }
 
       // DEFENSIVE: If carousel is visible but pie menu isn't, force close carousel
       if (abstractionCarouselVisible && !selectedNodeIdForPieMenu) {
@@ -6768,7 +6801,8 @@ function NodeCanvas() {
                       const minY = Math.min(...ys);
                       const maxX = Math.max(...rights);
                       const maxY = Math.max(...bottoms);
-                      const margin = 48; // much more space from nodes
+                      // Extend margin a bit more, scale with grid for safety during snapping
+                      const margin = Math.max(64, Math.round(gridSize * 0.5));
                       const rectX = minX - margin;
                       const rectY = minY - margin;
                       const rectW = (maxX - minX) + margin * 2;
@@ -6782,9 +6816,11 @@ function NodeCanvas() {
                       // Estimate label width based on average char width - make it fit the text better
                       const labelWidth = Math.max(140, labelText.length * 16 + labelPadding * 2); // wider for larger text
                       const labelX = rectX; // left aligned with group left edge
+                      const isGroupSelected = !!(selectedGroup && selectedGroup.id === group.id);
+                      const isGroupDragging = draggingNodeInfo?.groupId === group.id;
                       return (
                         <g key={group.id} className="group" data-group-id={group.id}>
-                          <rect x={rectX} y={rectY} width={rectW} height={rectH} rx={cornerR} ry={cornerR} fill="none" stroke={strokeColor} strokeWidth={5} />
+                          <rect x={rectX} y={rectY} width={rectW} height={rectH} rx={cornerR} ry={cornerR} fill="none" stroke={strokeColor} strokeWidth={8} vectorEffect="non-scaling-stroke" strokeDasharray={'8,6'} />
                           {/* Draggable label behaving like a node handle (selection/drag wired later) */}
                           <g className="group-label" style={{ cursor: 'pointer' }}
                              onClick={(e) => {
@@ -6811,7 +6847,7 @@ function NodeCanvas() {
                              onMouseLeave={() => { clearTimeout(groupLongPressTimeout.current); }}
                           >
                             <rect x={labelX} y={labelY} width={labelWidth} height={labelHeight} rx={20} ry={20}
-                                  fill="#bdb5b5" stroke={strokeColor} strokeWidth={5}
+                                  fill="#bdb5b5" stroke={strokeColor} strokeWidth={6} vectorEffect="non-scaling-stroke"
                                   style={{
                                     transform: draggingNodeInfo?.groupId === group.id ? `scale(1.08)` : 'scale(1)',
                                     transformOrigin: `${labelX + labelWidth/2}px ${labelY + labelHeight/2}px`,
