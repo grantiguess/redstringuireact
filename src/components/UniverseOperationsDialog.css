@@ -15,7 +15,7 @@
 }
 
 .universe-operations-dialog {
-  background-color: #EFE8E5;
+  background-color: #D4CCC7;
   border: 2px solid #260000;
   border-radius: 12px;
   width: 100%;
@@ -70,22 +70,7 @@
   padding: 20px;
 }
 
-.universe-operations-header {
-  margin-bottom: 24px;
-}
-
-.universe-operations-header h3 {
-  color: #260000;
-  font-size: 1.3rem;
-  margin: 0 0 8px 0;
-  font-family: 'EmOne', sans-serif;
-}
-
-.universe-operations-header p {
-  color: #666;
-  margin: 0;
-  font-size: 0.9rem;
-}
+/* Universe Operations Header styles removed - content now in header bar */
 
 /* Status Messages */
 .status-message {

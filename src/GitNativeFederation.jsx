@@ -53,8 +53,21 @@ import RepositoryDropdown from './components/repositories/RepositoryDropdown.jsx
 import { getFileStatus } from './store/fileStorage.js';
 import universeManager from './services/universeManager.js';
 import githubRateLimiter from './services/githubRateLimiter.js';
+import startupCoordinator from './services/startupCoordinator.js';
+import { 
+  getDeviceInfo, 
+  shouldUseGitOnlyMode, 
+  getOptimalDeviceConfig, 
+  getDeviceCapabilityMessage, 
+  hasCapability 
+} from './utils/deviceDetection.js';
 
 const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
+  // Initialize device configuration
+  const [deviceConfig] = useState(() => getOptimalDeviceConfig());
+  const [deviceInfo] = useState(() => getDeviceInfo());
+  const [deviceCapabilityMessage] = useState(() => getDeviceCapabilityMessage());
+  
   const [currentProvider, setCurrentProvider] = useState(null);
   const [syncEngine, setSyncEngine] = useState(null);
   const [federation, setFederation] = useState(null);
@@ -94,7 +107,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   const [connectionHealth, setConnectionHealth] = useState('unknown'); // 'healthy', 'degraded', 'failed', 'unknown'
   const [showCompleteInstallation, setShowCompleteInstallation] = useState(false);
   const [showRepositoryManager, setShowRepositoryManager] = useState(false);
-  const [gitOnlyMode, setGitOnlyMode] = useState(false); // Disable local universe usage entirely
+  const [gitOnlyMode, setGitOnlyMode] = useState(deviceConfig.gitOnlyMode); // Auto-enable for mobile devices
   const containerRef = useRef(null);
   const [isSlim, setIsSlim] = useState(false);
   const [localFileHandles, setLocalFileHandles] = useState({}); // { [universeSlug]: FileSystemFileHandle }
@@ -337,8 +350,20 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     }
   };
 
-  // File System Access helpers (best effort; falls back when unsupported)
+  // File System Access helpers (mobile-aware with graceful fallbacks)
   const pickLocalFileForActiveUniverse = async () => {
+    // Skip File System API operations on mobile/tablet devices
+    if (!hasCapability('local-files')) {
+      setSyncStatus({
+        type: 'info',
+        status: deviceInfo.isMobile ? 
+          'File management optimized for mobile - use Git repositories for storage' :
+          'Local file access not available on this device - using Git-only mode'
+      });
+      setTimeout(() => setSyncStatus(null), 4000);
+      return;
+    }
+    
     try {
       const u = getActiveUniverse();
       const universeName = sanitizeFilename(u?.name || activeUniverseSlug);
@@ -367,6 +392,22 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   };
 
   const saveActiveUniverseToLocalHandle = async () => {
+    // Skip File System API operations on mobile/tablet devices
+    if (!hasCapability('local-files')) {
+      // On mobile, trigger download instead of file system save
+      const current = useGraphStore.getState();
+      const u = getActiveUniverse();
+      const fileName = `${sanitizeFilename(u?.name || activeUniverseSlug)}.redstring`;
+      downloadRedstringFile(current, fileName);
+      
+      setSyncStatus({
+        type: 'success',
+        status: `Downloaded ${fileName} to your device`
+      });
+      setTimeout(() => setSyncStatus(null), 3000);
+      return true;
+    }
+    
     const handle = localFileHandles[activeUniverseSlug];
     if (!handle) return false;
     try {
@@ -900,31 +941,47 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           fileBaseName = fileStatus.fileName.replace(/\.redstring$/i, '');
         }
       } catch {}
-      const newGitSyncEngine = new GitSyncEngine(currentProvider, sourceOfTruthMode, universeSlug, fileBaseName, universeManager);
       
-      // Ensure the engine is properly registered and persistent
-      setGitSyncEngine(newGitSyncEngine);
-      setGitSyncEngineStore(newGitSyncEngine);
-      universeManager.setGitSyncEngine(universeSlug, newGitSyncEngine);
-      
-      // Surface Git sync engine status in the panel
-      try {
+      // Check with startup coordinator if we're allowed to initialize
+      const initializeEngine = async () => {
+        const canInitialize = await startupCoordinator.requestEngineInitialization(universeSlug, 'GitNativeFederation');
+        if (!canInitialize) {
+          console.log('[GitNativeFederation] Startup coordinator blocked initialization - another component is handling it');
+          return;
+        }
+
+        console.log(`[GitNativeFederation] Creating new GitSyncEngine for ${universeSlug}...`);
+        const newGitSyncEngine = new GitSyncEngine(currentProvider, sourceOfTruthMode, universeSlug, fileBaseName, universeManager);
+        
+        // Check if the engine was successfully registered (not rejected as duplicate)
+        if (!newGitSyncEngine.isRunning && universeManager.getGitSyncEngine(universeSlug) !== newGitSyncEngine) {
+          console.log(`[GitNativeFederation] Engine creation was rejected as duplicate, using existing engine`);
+          const existingEngine = universeManager.getGitSyncEngine(universeSlug);
+          if (existingEngine) {
+            setGitSyncEngine(existingEngine);
+            setGitSyncEngineStore(existingEngine);
+          }
+          return;
+        }
+
+        // Store the new engine
+        setGitSyncEngine(newGitSyncEngine);
+        setGitSyncEngineStore(newGitSyncEngine);
+
+        // Set up status handler
         newGitSyncEngine.onStatusChange((s) => {
           setSyncStatus(s);
-          // Auto-clear transient info messages after a short delay
           if (s?.type === 'info') {
-            setTimeout(() => {
-              setSyncStatus(null);
-            }, 3000);
+            setTimeout(() => setSyncStatus(null), 3000);
           }
         });
-      } catch (_) {}
+
+        // Start the engine immediately to ensure it's running
+        newGitSyncEngine.start();
       
-      // Start the engine immediately to ensure it's running
-      newGitSyncEngine.start();
-      
-      // Try to load existing data from Git (only for new engines)
-      newGitSyncEngine.loadFromGit().then((redstringData) => {
+        // Try to load existing data from Git (only for new engines)
+        try {
+          const redstringData = await newGitSyncEngine.loadFromGit();
         if (redstringData) {
           console.log('[GitNativeFederation] Loaded existing data from Git');
           
@@ -993,16 +1050,21 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             });
           }
         }
-        
-      }).catch((error) => {
-        console.error('[GitNativeFederation] Failed to load from Git:', error);
-        setSyncStatus({
-          type: 'error',
-          status: 'Failed to load existing data'
-        });
+        } catch (error) {
+          console.error('[GitNativeFederation] Failed to load from Git:', error);
+          setSyncStatus({
+            type: 'error',
+            status: 'Failed to load existing data'
+          });
+        }
+      };
+      
+      // Execute the async initialization
+      initializeEngine().catch(error => {
+        console.error('[GitNativeFederation] Failed to initialize engine:', error);
       });
       
-      // Load initial data
+      // Load initial data for the semantic sync engine
       newSyncEngine.loadFromProvider();
     }
   }, [currentProvider, providerConfig.repo]); // REMOVED universeSlug and other changing deps to prevent recreation
@@ -2268,9 +2330,43 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     }
   };
 
-  // Tooltip component
+  // Tooltip component - Mobile-friendly with touch support
   const InfoTooltip = ({ children, tooltip }) => {
     const [showTooltip, setShowTooltip] = useState(false);
+    const [touchTimeout, setTouchTimeout] = useState(null);
+    
+    const handleTouchStart = () => {
+      // Clear any existing timeout
+      if (touchTimeout) {
+        clearTimeout(touchTimeout);
+      }
+      
+      // Show tooltip immediately on touch
+      setShowTooltip(true);
+      
+      // Auto-hide after 4 seconds on mobile
+      const timeout = setTimeout(() => {
+        setShowTooltip(false);
+      }, 4000);
+      setTouchTimeout(timeout);
+    };
+    
+    const handleTouchEnd = (e) => {
+      // Prevent the tooltip from hiding immediately
+      e.preventDefault();
+    };
+    
+    const handleMouseEnter = () => {
+      if (!deviceInfo.isTouchDevice) {
+        setShowTooltip(true);
+      }
+    };
+    
+    const handleMouseLeave = () => {
+      if (!deviceInfo.isTouchDevice) {
+        setShowTooltip(false);
+      }
+    };
     
     return (
       <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
@@ -2279,12 +2375,27 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           style={{
             position: 'relative',
             marginLeft: '4px',
-            cursor: 'default'
+            cursor: deviceInfo.isTouchDevice ? 'pointer' : 'default',
+            padding: deviceInfo.isTouchDevice ? '2px' : '0', // Larger touch target
+            minWidth: deviceInfo.isTouchDevice ? '20px' : 'auto',
+            minHeight: deviceInfo.isTouchDevice ? '20px' : 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
           }}
-          onMouseEnter={() => setShowTooltip(true)}
-          onMouseLeave={() => setShowTooltip(false)}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onClick={(e) => {
+            // On touch devices, clicking toggles tooltip
+            if (deviceInfo.isTouchDevice) {
+              e.preventDefault();
+              setShowTooltip(!showTooltip);
+            }
+          }}
         >
-          <Info size={14} color="#666" />
+          <Info size={deviceInfo.isTouchDevice ? 16 : 14} color="#666" />
           {showTooltip && (
             <div
               style={{
@@ -2294,18 +2405,30 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 transform: 'translateX(-50%)',
                 backgroundColor: '#260000',
                 color: '#bdb5b5',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                fontSize: '0.8rem',
+                padding: deviceInfo.isTouchDevice ? '12px 16px' : '8px 12px',
+                borderRadius: '8px',
+                fontSize: deviceInfo.isTouchDevice ? '0.9rem' : '0.8rem',
                 zIndex: 1000,
                 marginBottom: '8px',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                maxWidth: '400px',
+                maxWidth: deviceInfo.isTouchDevice ? '280px' : '400px',
                 whiteSpace: 'normal',
-                textAlign: 'center'
+                textAlign: 'center',
+                lineHeight: '1.4'
               }}
             >
               {tooltip}
+              {deviceInfo.isTouchDevice && (
+                <div style={{ 
+                  fontSize: '0.7rem', 
+                  marginTop: '8px', 
+                  opacity: 0.8,
+                  borderTop: '1px solid rgba(189,181,181,0.3)',
+                  paddingTop: '6px'
+                }}>
+                  Tap anywhere to close
+                </div>
+              )}
               <div
                 style={{
                   position: 'absolute',
@@ -2460,7 +2583,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       <div 
         ref={containerRef} 
         style={{ 
-          padding: '15px', 
+          padding: deviceInfo.isMobile ? '12px' : '15px', 
           fontFamily: "'EmOne', sans-serif", 
           height: '100%', 
           color: '#260000',
@@ -2468,6 +2591,29 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           opacity: isVisible ? 1 : 0.5
         }}
       >
+        {/* Device Capability Banner - Show device-optimized experience info */}
+        {(deviceInfo.isMobile || deviceInfo.isTablet || deviceConfig.gitOnlyMode) && (
+          <div style={{
+            marginBottom: '16px',
+            padding: '12px',
+            backgroundColor: deviceCapabilityMessage.type === 'info' ? '#e3f2fd' : '#e8f5e8',
+            border: `1px solid ${deviceCapabilityMessage.type === 'info' ? '#2196f3' : '#4caf50'}`,
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          }}>
+            <span style={{ fontSize: '1.2rem' }}>{deviceCapabilityMessage.icon}</span>
+            <div>
+              <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '2px' }}>
+                {deviceCapabilityMessage.title}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#666', lineHeight: '1.3' }}>
+                {deviceCapabilityMessage.message}
+              </div>
+            </div>
+          </div>
+        )}
         {/* Accounts & Access */}
         <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
           <div style={{ marginBottom: '12px' }}>
@@ -2707,13 +2853,61 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                       </div>
                     </div>
 
-                    {/* Source of Truth */}
+                    {/* Source of Truth - Mobile-aware */}
                     <div>
                       <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Source of Truth</div>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        <button onClick={() => { if (activeUniverse?.sourceOfTruth !== 'local') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('local'); } }} style={{ padding: '4px 8px', backgroundColor: activeUniverse?.sourceOfTruth === 'local' ? '#260000' : 'transparent', color: activeUniverse?.sourceOfTruth === 'local' ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>FILE</button>
-                        <button onClick={() => { if (activeUniverse?.sourceOfTruth !== 'git') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('git'); } }} style={{ padding: '4px 8px', backgroundColor: activeUniverse?.sourceOfTruth === 'git' ? '#260000' : 'transparent', color: activeUniverse?.sourceOfTruth === 'git' ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>GIT</button>
+                        {hasCapability('local-files') ? (
+                          <button 
+                            onClick={() => { if (activeUniverse?.sourceOfTruth !== 'local') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('local'); } }} 
+                            style={{ 
+                              padding: '4px 8px', 
+                              backgroundColor: activeUniverse?.sourceOfTruth === 'local' ? '#260000' : 'transparent', 
+                              color: activeUniverse?.sourceOfTruth === 'local' ? '#bdb5b5' : '#260000', 
+                              border: '1px solid #260000', 
+                              borderRadius: '4px', 
+                              cursor: 'pointer', 
+                              fontSize: '0.75rem', 
+                              fontWeight: 'bold' 
+                            }}
+                          >
+                            FILE
+                          </button>
+                        ) : (
+                          <div style={{ 
+                            padding: '4px 8px', 
+                            backgroundColor: '#f5f5f5', 
+                            color: '#999', 
+                            border: '1px solid #ccc', 
+                            borderRadius: '4px', 
+                            fontSize: '0.75rem', 
+                            fontWeight: 'bold',
+                            opacity: 0.6
+                          }}>
+                            FILE (N/A)
+                          </div>
+                        )}
+                        <button 
+                          onClick={() => { if (activeUniverse?.sourceOfTruth !== 'git') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('git'); } }} 
+                          style={{ 
+                            padding: '4px 8px', 
+                            backgroundColor: activeUniverse?.sourceOfTruth === 'git' ? '#260000' : 'transparent', 
+                            color: activeUniverse?.sourceOfTruth === 'git' ? '#bdb5b5' : '#260000', 
+                            border: '1px solid #260000', 
+                            borderRadius: '4px', 
+                            cursor: 'pointer', 
+                            fontSize: '0.75rem', 
+                            fontWeight: 'bold' 
+                          }}
+                        >
+                          GIT
+                        </button>
                       </div>
+                      {!hasCapability('local-files') && (
+                        <div style={{ fontSize: '0.7rem', color: '#666', marginTop: '4px' }}>
+                          Git mode recommended for {deviceInfo.isMobile ? 'mobile' : 'this device'}
+                        </div>
+                      )}
                     </div>
 
                     {/* Linked Repository */}
@@ -2745,66 +2939,67 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                       )}
                     </div>
 
-                    {/* Local File Path */}
-                    <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
-                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Local .redstring Path</div>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <input 
-                          value={activeUniverse?.localFile?.path || actualFileName} 
-                          onChange={(e) => updateActiveUniverse({ 
-                            localFile: { 
-                              ...activeUniverse?.localFile, 
-                              path: e.target.value 
-                            } 
-                          })} 
-                          className="editable-title-input" 
-                          style={{ 
-                            fontSize: '0.9rem', 
-                            padding: '6px 8px', 
-                            borderRadius: '4px',
-                            flex: 1
-                          }} 
-                        />
-                        <button 
-                          onClick={pickLocalFileForActiveUniverse} 
-                          title="Edit file location"
-                          style={{ 
-                            padding: '4px', 
-                            backgroundColor: '#EFE8E5', 
-                            color: '#260000', 
-                            border: '1px solid #260000', 
-                            borderRadius: '4px', 
-                            cursor: 'pointer', 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center'
-                          }}
-                        >
-                          <Edit3 size={12} />
-                        </button>
-                        <button 
-                          onClick={async () => {
-                            const ok = await saveActiveUniverseToLocalHandle();
-                            if (!ok) {
-                              const current = useGraphStore.getState();
-                              downloadRedstringFile(current, actualFileName);
-                            }
-                          }} 
-                          title="Download file"
-                          style={{ 
-                            padding: '4px', 
-                            backgroundColor: '#EFE8E5', 
-                            color: '#260000', 
-                            border: '1px solid #260000', 
-                            borderRadius: '4px', 
-                            cursor: 'pointer', 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center'
-                          }}
-                        >
-                          <Download size={12} />
-                        </button>
+                    {/* Local File Path - Mobile-aware with conditional display */}
+                    {hasCapability('local-files') ? (
+                      <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
+                        <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Local .redstring Path</div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input 
+                            value={activeUniverse?.localFile?.path || actualFileName} 
+                            onChange={(e) => updateActiveUniverse({ 
+                              localFile: { 
+                                ...activeUniverse?.localFile, 
+                                path: e.target.value 
+                              } 
+                            })} 
+                            className="editable-title-input" 
+                            style={{ 
+                              fontSize: '0.9rem', 
+                              padding: '6px 8px', 
+                              borderRadius: '4px',
+                              flex: 1
+                            }} 
+                          />
+                          <button 
+                            onClick={pickLocalFileForActiveUniverse} 
+                            title="Edit file location"
+                            style={{ 
+                              padding: '4px', 
+                              backgroundColor: '#EFE8E5', 
+                              color: '#260000', 
+                              border: '1px solid #260000', 
+                              borderRadius: '4px', 
+                              cursor: 'pointer', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <Edit3 size={12} />
+                          </button>
+                          <button 
+                            onClick={async () => {
+                              const ok = await saveActiveUniverseToLocalHandle();
+                              if (!ok) {
+                                const current = useGraphStore.getState();
+                                downloadRedstringFile(current, actualFileName);
+                              }
+                            }} 
+                            title="Download file"
+                            style={{ 
+                              padding: '4px', 
+                              backgroundColor: '#EFE8E5', 
+                              color: '#260000', 
+                              border: '1px solid #260000', 
+                              borderRadius: '4px', 
+                              cursor: 'pointer', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <Download size={12} />
+                          </button>
                         <button 
                           onClick={async () => {
                             try {
@@ -2866,6 +3061,26 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                         </button>
                       </div>
                     </div>
+                    ) : (
+                      // Mobile-friendly message when local files aren't supported
+                      <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
+                        <div style={{ 
+                          padding: '12px', 
+                          backgroundColor: '#e3f2fd', 
+                          border: '1px solid #2196f3', 
+                          borderRadius: '6px',
+                          textAlign: 'center'
+                        }}>
+                          <div style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '4px', color: '#1976d2' }}>
+                            📱 Mobile-Optimized Storage
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: '#666', lineHeight: '1.3' }}>
+                            Your device uses Git repositories for storage instead of local files. 
+                            All your work is automatically synced to the cloud.
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Status */}
                     {syncStatus && universe.slug === activeUniverseSlug && (
@@ -3266,7 +3481,11 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 </button>
               </div>
               
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: hasCapability('local-files') ? '1fr 1fr' : (deviceInfo.isMobile ? '1fr' : '1fr 1fr 1fr'), 
+                gap: '16px' 
+              }}>
                 <button
                   onClick={() => {
                     // Close modal and add a GitHub source with repository selector
@@ -3414,60 +3633,63 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                   </div>
                 </button>
 
-                <button
-                  onClick={() => {
-                    // Close modal and add a local file source
-                    setShowAddSourceModal(false);
-                    
-                    // Create a new local file source
-                    const newSource = {
-                      id: generateSourceId(),
-                      type: 'local',
-                      enabled: false,
-                      name: 'Local .redstring File',
-                      fileName: `${activeUniverseSlug}.redstring`,
-                      schemaPath: activeUniverse?.schemaPath || 'schema'
-                    };
-                    const currentUniverse = getActiveUniverse();
-                    updateActiveUniverse({ sources: [...(currentUniverse?.sources || []), newSource] });
-                    
-                    // Show feedback
-                    setSyncStatus({
-                      type: 'info',
-                      status: 'Local file source added - configure file path below'
-                    });
-                    setTimeout(() => setSyncStatus(null), 4000);
-                  }}
-                  style={{
-                    padding: '24px 16px',
-                    backgroundColor: '#979090',
-                    border: '2px solid #260000',
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '12px',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#bdb5b5';
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = '#979090';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                >
-                  <Copy size={32} color="#260000" />
-                  <div style={{ fontWeight: 700, color: '#260000', fontSize: '1.1rem' }}>Local File</div>
-                  <div style={{ fontSize: '0.85rem', color: '#666', textAlign: 'center', lineHeight: '1.4' }}>
-                    Import .redstring files<br/>
-                    <span style={{ fontSize: '0.8rem', color: '#666' }}>One-time import</span>
-                  </div>
-                </button>
+                {/* Only show Local File option on devices that support it */}
+                {hasCapability('local-files') && (
+                  <button
+                    onClick={() => {
+                      // Close modal and add a local file source
+                      setShowAddSourceModal(false);
+                      
+                      // Create a new local file source
+                      const newSource = {
+                        id: generateSourceId(),
+                        type: 'local',
+                        enabled: false,
+                        name: 'Local .redstring File',
+                        fileName: `${activeUniverseSlug}.redstring`,
+                        schemaPath: activeUniverse?.schemaPath || 'schema'
+                      };
+                      const currentUniverse = getActiveUniverse();
+                      updateActiveUniverse({ sources: [...(currentUniverse?.sources || []), newSource] });
+                      
+                      // Show feedback
+                      setSyncStatus({
+                        type: 'info',
+                        status: 'Local file source added - configure file path below'
+                      });
+                      setTimeout(() => setSyncStatus(null), 4000);
+                    }}
+                    style={{
+                      padding: '24px 16px',
+                      backgroundColor: '#979090',
+                      border: '2px solid #260000',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '12px',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = '#bdb5b5';
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = '#979090';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    <Copy size={32} color="#260000" />
+                    <div style={{ fontWeight: 700, color: '#260000', fontSize: '1.1rem' }}>Local File</div>
+                    <div style={{ fontSize: '0.85rem', color: '#666', textAlign: 'center', lineHeight: '1.4' }}>
+                      Import .redstring files<br/>
+                      <span style={{ fontSize: '0.8rem', color: '#666' }}>One-time import</span>
+                    </div>
+                  </button>
+                )}
               </div>
 
               <div style={{ 

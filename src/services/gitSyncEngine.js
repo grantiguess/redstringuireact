@@ -53,6 +53,12 @@ class GitSyncEngine {
     this.isInErrorBackoff = false; // Track if we're in error backoff mode
     this.persistentFailures = new Map(); // Track specific failure types
     
+    // Circuit breaker for API spam protection
+    this.circuitBreakerOpen = false; // Track if circuit breaker is open
+    this.circuitBreakerOpenTime = 0; // When the circuit breaker was opened
+    this.circuitBreakerTimeout = 60000; // Keep circuit breaker open for 60 seconds
+    this.recentApiCalls = []; // Track recent API calls for rate limiting
+    
     // Optional UI status handler
     this.statusHandler = null;
     
@@ -66,13 +72,12 @@ class GitSyncEngine {
     
     // Register with universe manager if provided
     if (this.universeManager) {
-      // Check if there's already an engine for this universe
-      const existingEngine = this.universeManager.getGitSyncEngine(this.universeSlug);
-      if (existingEngine && existingEngine !== this) {
-        console.warn('[GitSyncEngine] Stopping existing engine for universe:', this.universeSlug);
-        existingEngine.stop();
+      const registered = this.universeManager.setGitSyncEngine(this.universeSlug, this);
+      if (!registered) {
+        console.log('[GitSyncEngine] Registration rejected - duplicate engine, stopping this instance');
+        this.isRunning = false; // Prevent this engine from starting
+        return; // Early exit, don't initialize this engine
       }
-      this.universeManager.setGitSyncEngine(this.universeSlug, this);
     }
   }
 
@@ -401,12 +406,50 @@ class GitSyncEngine {
   }
   
   /**
+   * Check circuit breaker status and manage API call rate
+   */
+  checkCircuitBreaker() {
+    const now = Date.now();
+    
+    // Check if circuit breaker should be closed
+    if (this.circuitBreakerOpen) {
+      if (now - this.circuitBreakerOpenTime > this.circuitBreakerTimeout) {
+        console.log('[GitSyncEngine] Circuit breaker closing - resuming operations');
+        this.circuitBreakerOpen = false;
+        this.consecutiveErrors = 0; // Reset error count
+      } else {
+        return false; // Circuit breaker is still open
+      }
+    }
+    
+    // Clean up old API call records (older than 5 minutes)
+    this.recentApiCalls = this.recentApiCalls.filter(time => (now - time) < 300000);
+    
+    // If more than 10 API calls in the last 5 minutes, open circuit breaker
+    if (this.recentApiCalls.length > 10) {
+      console.error('[GitSyncEngine] CIRCUIT BREAKER OPENED - Too many API calls, preventing spam');
+      this.circuitBreakerOpen = true;
+      this.circuitBreakerOpenTime = now;
+      this.notifyStatus('error', 'API rate limit protection activated - pausing for 60s');
+      return false;
+    }
+    
+    return true; // Circuit breaker is closed, OK to proceed
+  }
+
+  /**
    * Process pending commits in batches
    * Now with rate limiting and intelligent batching
    */
    async processPendingCommits() {
     if (this.pendingCommits.length === 0) {
       return; // Nothing to commit
+    }
+    
+    // Check circuit breaker first
+    if (!this.checkCircuitBreaker()) {
+      console.log('[GitSyncEngine] Circuit breaker open, skipping commit to prevent API spam');
+      return;
     }
     
     // Check if operations are paused
@@ -470,6 +513,9 @@ class GitSyncEngine {
       // Export to RedString format (raw JSON write, not TTL)
       const redstringData = exportToRedstring(latestState);
       const jsonString = JSON.stringify(redstringData, null, 2);
+      
+      // Track API call for circuit breaker
+      this.recentApiCalls.push(Date.now());
       
       // Save latest snapshot to a fixed path
       await this.provider.writeFileRaw(this.getLatestPath(), jsonString);
@@ -581,6 +627,9 @@ class GitSyncEngine {
       let lastError = null;
       for (let attempt = 1; attempt <= 5; attempt++) {
         try {
+          // Track API call for circuit breaker
+          this.recentApiCalls.push(Date.now());
+          
           await this.provider.writeFileRaw(this.getLatestPath(), jsonString);
           
           // Success! Update tracking

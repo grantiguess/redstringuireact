@@ -8,7 +8,9 @@ const BackToCivilization = ({
   zoomLevel,
   containerRef,
   canvasSize,
-  viewportSize
+  viewportSize,
+  clusteringEnabled = false,
+  clusterInfo = {}
 }) => {
   const [animationState, setAnimationState] = useState(null);
   const componentRef = useRef(null);
@@ -68,6 +70,11 @@ const BackToCivilization = ({
     className += ' is-shrinking';
   }
 
+  // Determine display text based on clustering mode
+  const displayText = clusteringEnabled && clusterInfo.mainClusterSize > 0
+    ? `Back to Civilization (${clusterInfo.mainClusterSize} nodes)`
+    : 'Back to Civilization';
+
   return (
     <div
       ref={componentRef}
@@ -81,9 +88,13 @@ const BackToCivilization = ({
         pointerEvents: 'auto',
       }}
       onClick={onClick}
+      title={clusteringEnabled 
+        ? `Navigate to main cluster (${clusterInfo.mainClusterSize || 0} nodes, ${clusterInfo.outlierCount || 0} outliers)`
+        : 'Navigate to all nodes'
+      }
     >
       <div className="back-to-civilization-pill">
-        <span className="back-to-civilization-text">Back to Civilization</span>
+        <span className="back-to-civilization-text">{displayText}</span>
       </div>
     </div>
   );

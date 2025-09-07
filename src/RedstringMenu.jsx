@@ -82,7 +82,11 @@ const RedstringMenu = ({
         const isSubmenuClick = event.target.closest('.submenu-container') || 
                               event.target.closest('.recent-files-submenu');
         
-        if (!isSubmenuClick) {
+        // Check if the click is on the Universe Operations Dialog
+        const isUniverseDialogClick = event.target.closest('.universe-operations-overlay') ||
+                                     event.target.closest('.universe-operations-dialog');
+        
+        if (!isSubmenuClick && !isUniverseDialogClick) {
           onHoverView?.(false); // Close the menu
         }
       }
@@ -113,7 +117,7 @@ const RedstringMenu = ({
     }
   };
 
-  if (!shouldRender) return null;
+  // shouldRender is now handled in JSX to keep Universe Dialog independent
 
   const handleMenuItemHover = (itemName) => {
     // Clear any pending close timeout
@@ -165,7 +169,8 @@ const RedstringMenu = ({
 
   return (
     <>
-      <div ref={menuRef} className={`menu-container ${isExiting ? 'exiting' : 'entering'}`}>
+      {shouldRender && (
+        <div ref={menuRef} className={`menu-container ${isExiting ? 'exiting' : 'entering'}`}>
           <div className="menu-items">
           {menuItems.map((item, index) => {
               if (item === 'File') {
@@ -503,9 +508,10 @@ const RedstringMenu = ({
               }
           })}
           </div>
-      </div>
+        </div>
+      )}
       
-      {/* Universe Operations Dialog */}
+      {/* Universe Operations Dialog - rendered independently of menu state */}
       <UniverseOperationsDialog
         isOpen={showUniverseDialog}
         onClose={() => setShowUniverseDialog(false)}

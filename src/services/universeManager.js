@@ -2,10 +2,17 @@
  * Universe Manager - Unified system for managing multiple universes
  * Bridges FileStorage, GitNativeFederation, and GitSyncEngine
  * Each universe has dual storage slots: local file + git repository
+ * Supports Git-Only mode for mobile/tablet devices
  */
 
 import { exportToRedstring, importFromRedstring } from '../formats/redstringFormat.js';
 import { v4 as uuidv4 } from 'uuid';
+import { 
+  getCurrentDeviceConfig, 
+  shouldUseGitOnlyMode, 
+  getOptimalDeviceConfig,
+  hasCapability 
+} from '../utils/deviceDetection.js';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -29,12 +36,38 @@ class UniverseManager {
     this.gitSyncEngines = new Map(); // slug -> GitSyncEngine
     this.statusHandlers = new Set();
     
+    // Device-aware configuration
+    this.deviceConfig = getCurrentDeviceConfig();
+    this.isGitOnlyMode = shouldUseGitOnlyMode();
+    
     // Process watchdog to ensure Git sync engines stay alive
     this.watchdogInterval = null;
-    this.watchdogDelay = 30000; // Check every 30 seconds
+    this.watchdogDelay = this.deviceConfig.autoSaveFrequency * 60; // Scale with device capability
+    
+    console.log('[UniverseManager] Initialized with device config:', {
+      deviceType: this.deviceConfig.deviceInfo.type,
+      gitOnlyMode: this.isGitOnlyMode,
+      sourceOfTruth: this.deviceConfig.sourceOfTruth,
+      touchOptimized: this.deviceConfig.touchOptimizedUI
+    });
     
     this.loadFromStorage();
-    this.startWatchdog();
+    
+    // Delay watchdog start to prevent startup interference
+    // Longer delay on mobile to prevent battery drain
+    const watchdogDelay = this.deviceConfig.deviceInfo.isMobile ? 60000 : 30000;
+    setTimeout(() => {
+      this.startWatchdog();
+    }, watchdogDelay);
+    
+    // Listen for device configuration changes (orientation, etc.)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('redstring:device-config-ready', (event) => {
+        this.deviceConfig = event.detail;
+        this.isGitOnlyMode = shouldUseGitOnlyMode();
+        console.log('[UniverseManager] Device config updated:', this.deviceConfig);
+      });
+    }
   }
 
   // Initialize background sync services (called at app startup)
@@ -159,80 +192,222 @@ class UniverseManager {
   }
 
   // Normalize universe object with all required fields
+  // Device-aware configuration that respects mobile/tablet limitations
   normalizeUniverse(universe) {
+    const deviceConfig = this.deviceConfig || getCurrentDeviceConfig();
+    const isGitOnlyMode = this.isGitOnlyMode || shouldUseGitOnlyMode();
+    
     return {
       slug: universe.slug || 'universe',
       name: universe.name || 'Universe',
       
-      // Storage configuration
-      sourceOfTruth: universe.sourceOfTruth || SOURCE_OF_TRUTH.GIT, // Git is default
+      // Storage configuration - device-aware defaults
+      sourceOfTruth: universe.sourceOfTruth || deviceConfig.sourceOfTruth,
       
-      // Local storage slot
+      // Local storage slot - disabled in Git-Only mode
       localFile: {
-        enabled: universe.localFile?.enabled ?? true,
+        enabled: isGitOnlyMode 
+          ? false 
+          : (universe.localFile?.enabled ?? deviceConfig.enableLocalFileStorage),
         path: this.sanitizeFileName(universe.localFile?.path || `${universe.name || 'Universe'}.redstring`),
-        handle: null // Will be restored separately
+        handle: null, // Will be restored separately
+        unavailableReason: isGitOnlyMode ? 'Git-Only mode active' : null
       },
       
-      // Git storage slot
+      // Git storage slot - enabled by default in Git-Only mode
       gitRepo: {
-        enabled: universe.gitRepo?.enabled ?? false,
+        enabled: isGitOnlyMode 
+          ? true 
+          : (universe.gitRepo?.enabled ?? false),
         linkedRepo: universe.gitRepo?.linkedRepo || universe.linkedRepo || null, // Migration from old format
         schemaPath: universe.gitRepo?.schemaPath || universe.schemaPath || 'schema',
-        universeFolder: `universes/${universe.slug}` // Standard path structure
+        universeFolder: `universes/${universe.slug}`, // Standard path structure
+        priority: isGitOnlyMode ? 'primary' : 'secondary'
       },
       
-      // Browser storage fallback
+      // Browser storage fallback - always enabled on mobile/tablet
       browserStorage: {
-        enabled: universe.browserStorage?.enabled ?? this.isMobileDevice(),
-        key: `universe_${universe.slug}`
+        enabled: universe.browserStorage?.enabled ?? deviceConfig.preferBrowserStorage,
+        key: `universe_${universe.slug}`,
+        role: isGitOnlyMode ? 'cache' : 'fallback' // Different roles based on mode
       },
       
-      // Metadata
-      created: universe.created || new Date().toISOString(),
-      lastModified: universe.lastModified || new Date().toISOString(),
+      // Device-specific metadata
+      deviceConfig: {
+        gitOnlyMode: isGitOnlyMode,
+        touchOptimized: deviceConfig.touchOptimizedUI,
+        compactInterface: deviceConfig.compactInterface,
+        lastDeviceType: deviceConfig.deviceInfo.type
+      },
+      
+      // Enhanced metadata with timestamps
+      metadata: {
+        created: universe.metadata?.created || universe.created || new Date().toISOString(),
+        lastModified: universe.metadata?.lastModified || universe.lastModified || new Date().toISOString(),
+        lastOpened: universe.metadata?.lastOpened || null,
+        lastSync: universe.metadata?.lastSync || null,
+        syncStatus: universe.metadata?.syncStatus || 'unknown',
+        fileSize: universe.metadata?.fileSize || 0,
+        nodeCount: universe.metadata?.nodeCount || 0
+      },
       
       // Legacy compatibility
-      sources: universe.sources || [] // For GitNativeFederation compatibility
+      sources: universe.sources || [], // For GitNativeFederation compatibility
+      created: universe.created || new Date().toISOString(), // Backward compatibility
+      lastModified: universe.lastModified || new Date().toISOString() // Backward compatibility
     };
   }
 
-  // Create the default universe
+  // Create the default universe with device-aware configuration
   createDefaultUniverse() {
+    const deviceConfig = this.deviceConfig || getCurrentDeviceConfig();
+    const isGitOnlyMode = this.isGitOnlyMode || shouldUseGitOnlyMode();
+    
     const defaultUniverse = {
       slug: 'universe',
-      name: 'Universe',
-      sourceOfTruth: SOURCE_OF_TRUTH.GIT,
-      localFile: { enabled: true, path: 'Universe.redstring' }, // Enable by default, will auto-prompt for file
-      gitRepo: { enabled: false, linkedRepo: null, schemaPath: 'schema' },
-      browserStorage: { enabled: true } // Always enable as fallback
+      name: deviceConfig.compactInterface ? 'My Universe' : 'Universe',
+      sourceOfTruth: deviceConfig.sourceOfTruth,
+      
+      // Configure storage slots based on device capabilities
+      localFile: { 
+        enabled: !isGitOnlyMode, 
+        path: 'Universe.redstring' 
+      },
+      gitRepo: { 
+        enabled: isGitOnlyMode, // Auto-enable Git for mobile/tablet
+        linkedRepo: null, 
+        schemaPath: 'schema',
+        autoSetupRequired: isGitOnlyMode // Flag for UI to show Git setup
+      },
+      browserStorage: { 
+        enabled: deviceConfig.preferBrowserStorage 
+      },
+      
+      // Device-specific metadata
+      metadata: {
+        created: new Date().toISOString(),
+        lastModified: new Date().toISOString(),
+        createdOnDevice: deviceConfig.deviceInfo.type
+      }
     };
     
     this.universes.set('universe', this.normalizeUniverse(defaultUniverse));
     this.activeUniverseSlug = 'universe';
     this.saveToStorage();
+    
+    // Show helpful message for Git-Only mode users
+    if (isGitOnlyMode) {
+      this.notifyStatus('info', 'Git-Only mode active - connect to a repository to sync your universe across devices');
+    }
   }
 
   // Ensure universe has at least one storage slot enabled
+  // Device-aware fallback logic
   ensureStorageAvailable(universe) {
     const hasAnyStorage = universe.localFile.enabled || 
                          universe.gitRepo.enabled || 
                          universe.browserStorage.enabled;
     
     if (!hasAnyStorage) {
-      console.warn('[UniverseManager] Universe has no storage slots enabled, enabling browser storage as fallback');
-      return {
-        ...universe,
-        browserStorage: { ...universe.browserStorage, enabled: true }
-      };
+      const isGitOnlyMode = this.isGitOnlyMode || shouldUseGitOnlyMode();
+      
+      if (isGitOnlyMode) {
+        console.warn('[UniverseManager] Git-Only mode universe has no storage - enabling browser storage as cache');
+        return {
+          ...universe,
+          browserStorage: { ...universe.browserStorage, enabled: true, role: 'cache' },
+          gitRepo: { ...universe.gitRepo, enabled: true, autoSetupRequired: true }
+        };
+      } else {
+        console.warn('[UniverseManager] Universe has no storage slots enabled, enabling browser storage as fallback');
+        return {
+          ...universe,
+          browserStorage: { ...universe.browserStorage, enabled: true, role: 'fallback' }
+        };
+      }
     }
     
     return universe;
   }
 
   // Check if we're on a mobile device (for browser storage fallback)
+  // Updated to use the new device detection utility
   isMobileDevice() {
-    return !('showSaveFilePicker' in window && 'showOpenFilePicker' in window);
+    const deviceConfig = this.deviceConfig || getCurrentDeviceConfig();
+    return deviceConfig.deviceInfo.isMobile || deviceConfig.deviceInfo.isTablet;
+  }
+
+  // Get device capability information
+  getDeviceCapabilities() {
+    const deviceConfig = this.deviceConfig || getCurrentDeviceConfig();
+    return {
+      supportsLocalFiles: hasCapability('local-files'),
+      requiresGitOnly: deviceConfig.gitOnlyMode,
+      touchOptimized: deviceConfig.touchOptimizedUI,
+      compactInterface: deviceConfig.compactInterface,
+      deviceType: deviceConfig.deviceInfo.type
+    };
+  }
+
+  // Create Git-Only universe (for mobile users)
+  createGitOnlyUniverse(name, gitConfig) {
+    const slug = this.generateUniqueSlug(name);
+    const universe = this.normalizeUniverse({
+      slug,
+      name,
+      sourceOfTruth: SOURCE_OF_TRUTH.GIT,
+      localFile: { enabled: false, unavailableReason: 'Git-Only mode' },
+      gitRepo: { 
+        enabled: true, 
+        linkedRepo: gitConfig.linkedRepo,
+        schemaPath: gitConfig.schemaPath || 'schema',
+        priority: 'primary'
+      },
+      browserStorage: { enabled: true, role: 'cache' }
+    });
+    
+    this.universes.set(slug, universe);
+    this.saveToStorage();
+    
+    this.notifyStatus('success', `Created Git-Only universe: ${name}`);
+    return universe;
+  }
+
+  // Import universe from Git repository URL (mobile-friendly)
+  async createUniverseFromGitUrl(gitUrl, options = {}) {
+    try {
+      // Parse Git URL to extract user/repo
+      const gitMatch = gitUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+      if (!gitMatch) {
+        throw new Error('Invalid GitHub URL format');
+      }
+      
+      const [, user, repo] = gitMatch;
+      const repoName = repo.replace('.git', '');
+      
+      const universe = this.createGitOnlyUniverse(options.name || repoName, {
+        linkedRepo: `${user}/${repoName}`,
+        schemaPath: options.schemaPath || 'schema'
+      });
+      
+      // If we have auth, try to connect immediately
+      const authModule = await import('../services/persistentAuth.js');
+      const authStatus = authModule.persistentAuth.getAuthStatus();
+      
+      if (authStatus.hasValidToken) {
+        await this.connectUniverseToGit(universe.slug, {
+          type: 'github',
+          user,
+          repo: repoName,
+          authMethod: authStatus.authMethod
+        });
+      }
+      
+      return universe;
+    } catch (error) {
+      this.notifyStatus('error', `Failed to create universe from Git URL: ${error.message}`);
+      throw error;
+    }
   }
 
   // Save universes to localStorage
@@ -854,10 +1029,20 @@ class UniverseManager {
     }
   }
 
-  // Set Git sync engine for universe
+  // Set Git sync engine for universe with STRICT singleton protection
   setGitSyncEngine(slug, gitSyncEngine) {
+    // Check if we already have an engine for this universe
+    const existingEngine = this.gitSyncEngines.get(slug);
+    if (existingEngine && existingEngine !== gitSyncEngine) {
+      // STRICT: Never allow replacement during startup to prevent loops
+      console.warn(`[UniverseManager] STRICTLY REJECTING duplicate engine for ${slug} - one already exists`);
+      gitSyncEngine.stop(); // Stop the duplicate engine immediately
+      return false;
+    }
+    
     this.gitSyncEngines.set(slug, gitSyncEngine);
     console.log(`[UniverseManager] Git sync engine registered for universe: ${slug}`);
+    return true;
   }
 
   // Watchdog to ensure Git sync engines stay healthy

@@ -2,9 +2,11 @@
  * Universe Operations Dialog - Centralized file operations interface
  * Bridges RedstringMenu and GitNativeFederation universe management
  * Styled like the existing panel modals
+ * Mobile/tablet aware with Git-Only mode support
  */
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   FileText, 
   FolderOpen, 
@@ -19,10 +21,19 @@ import {
   Smartphone,
   X,
   Check,
-  AlertCircle
+  AlertCircle,
+  GitBranch,
+  Link,
+  QrCode
 } from 'lucide-react';
 import universeManager, { SOURCE_OF_TRUTH } from '../services/universeManager.js';
 import useGraphStore from "../store/graphStore.jsx";
+import { 
+  getCurrentDeviceConfig, 
+  shouldUseGitOnlyMode, 
+  hasCapability,
+  getDeviceCapabilityMessage
+} from '../utils/deviceDetection.js';
 
 const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) => {
   const [operation, setOperation] = useState(initialOperation || 'overview');
@@ -32,8 +43,16 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
   const [status, setStatus] = useState(null);
   const [newUniverseName, setNewUniverseName] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [gitUrl, setGitUrl] = useState('');
+  const [deviceConfig, setDeviceConfig] = useState(getCurrentDeviceConfig());
 
   const loadUniverseFromFile = useGraphStore(state => state.loadUniverseFromFile);
+  
+  // Device capability checks
+  const isGitOnlyMode = shouldUseGitOnlyMode();
+  const supportsLocalFiles = hasCapability('local-files');
+  const requiresGitOnly = deviceConfig.gitOnlyMode;
+  const isTouchDevice = deviceConfig.touchOptimizedUI;
 
   useEffect(() => {
     if (isOpen) {
@@ -45,7 +64,17 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
         setTimeout(() => setStatus(null), 3000);
       });
 
-      return unsubscribe;
+      // Listen for device configuration changes
+      const handleDeviceConfigChange = (event) => {
+        setDeviceConfig(event.detail);
+      };
+      
+      window.addEventListener('redstring:device-config-ready', handleDeviceConfigChange);
+
+      return () => {
+        unsubscribe();
+        window.removeEventListener('redstring:device-config-ready', handleDeviceConfigChange);
+      };
     }
   }, [isOpen]);
 
@@ -108,6 +137,15 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
   };
 
   const handleLocalFileOperation = async (universeSlug, operationType) => {
+    // Skip local file operations in Git-Only mode
+    if (requiresGitOnly) {
+      setStatus({ 
+        type: 'info', 
+        status: 'Local file operations disabled in Git-Only mode. Use Git repository instead.' 
+      });
+      return;
+    }
+
     const universe = universeManager.getUniverse(universeSlug);
     if (!universe) return;
 
@@ -141,6 +179,48 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
     }
   };
 
+  // Git-Only universe creation handler
+  const handleCreateGitUniverse = async () => {
+    if (!gitUrl.trim()) {
+      setStatus({ type: 'error', status: 'Please enter a Git repository URL' });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await universeManager.createUniverseFromGitUrl(gitUrl.trim(), {
+        name: newUniverseName.trim() || undefined
+      });
+      setGitUrl('');
+      setNewUniverseName('');
+      refreshUniverses();
+      setStatus({ type: 'success', status: 'Git universe created successfully' });
+    } catch (error) {
+      setStatus({ type: 'error', status: error.message });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Generate QR code for universe sharing (mobile-friendly)
+  const handleGenerateQR = (universe) => {
+    if (universe.gitRepo?.linkedRepo) {
+      const gitUrl = `https://github.com/${universe.gitRepo.linkedRepo}`;
+      const shareUrl = `${window.location.origin}?import=${encodeURIComponent(gitUrl)}`;
+      
+      // Simple QR code generation (would need proper QR library in production)
+      setStatus({ 
+        type: 'info', 
+        status: `Share URL: ${shareUrl}` 
+      });
+    } else {
+      setStatus({ 
+        type: 'error', 
+        status: 'Universe must be connected to Git repository to generate sharing link' 
+      });
+    }
+  };
+
   const handleUpdateSourceOfTruth = (universeSlug, newSourceOfTruth) => {
     universeManager.updateUniverse(universeSlug, { sourceOfTruth: newSourceOfTruth });
     refreshUniverses();
@@ -150,9 +230,34 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
     const universe = universeManager.getUniverse(universeSlug);
     if (!universe) return;
 
+    // Prevent enabling local storage in Git-Only mode
+    if (slotType === 'local' && enabled && requiresGitOnly) {
+      setStatus({ 
+        type: 'info', 
+        status: 'Local file storage is not available in Git-Only mode. Use Git repository instead.' 
+      });
+      return;
+    }
+
+    // Prevent disabling browser storage if it's the only fallback
+    if (slotType === 'browser' && !enabled) {
+      const hasOtherStorage = universe.localFile.enabled || universe.gitRepo.enabled;
+      if (!hasOtherStorage) {
+        setStatus({ 
+          type: 'warning', 
+          status: 'Cannot disable browser storage - no other storage methods available.' 
+        });
+        return;
+      }
+    }
+
     const updates = {};
     if (slotType === 'local') {
-      updates.localFile = { ...universe.localFile, enabled };
+      updates.localFile = { 
+        ...universe.localFile, 
+        enabled,
+        unavailableReason: requiresGitOnly ? 'Git-Only mode active' : null
+      };
     } else if (slotType === 'git') {
       updates.gitRepo = { ...universe.gitRepo, enabled };
     } else if (slotType === 'browser') {
@@ -165,12 +270,15 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
 
   if (!isOpen) return null;
 
+  const handleOverlayClick = (e) => {
+    // Only close if clicking directly on the overlay, not on the dialog content
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   const renderOverview = () => (
     <div className="universe-operations-content">
-      <div className="universe-operations-header">
-        <h3>Universe Manager</h3>
-        <p>Manage your knowledge universes and storage locations</p>
-      </div>
 
       {/* Active Universe Section */}
       {activeUniverse && (
@@ -278,10 +386,6 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
 
   const renderCreateUniverse = () => (
     <div className="universe-operations-content">
-      <div className="universe-operations-header">
-        <h3>Create New Universe</h3>
-        <p>Set up a new knowledge universe with dual storage</p>
-      </div>
 
       <div className="create-universe-form">
         <div className="form-group">
@@ -322,10 +426,6 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
 
     return (
       <div className="universe-operations-content">
-        <div className="universe-operations-header">
-          <h3>Edit Universe: {universe.name}</h3>
-          <p>Configure storage slots and source of truth</p>
-        </div>
 
         <div className="edit-universe-form">
           {/* Source of Truth Selection */}
@@ -453,11 +553,15 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
     );
   };
 
-  return (
-    <div className="universe-operations-overlay">
-      <div className="universe-operations-dialog">
+  const dialogContent = (
+    <div className="universe-operations-overlay" onClick={handleOverlayClick}>
+      <div className="universe-operations-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="universe-operations-header-bar">
-          <div className="dialog-title">Universe Operations</div>
+          <div className="dialog-title">
+            {operation === 'overview' && 'Universe Manager'}
+            {operation === 'create' && 'Create New Universe'}
+            {operation.startsWith('edit-') && `Edit Universe: ${universeManager.getUniverse(operation.replace('edit-', ''))?.name || 'Unknown'}`}
+          </div>
           <button 
             onClick={onClose}
             className="close-button"
@@ -517,6 +621,9 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
       </div>
     </div>
   );
+
+  // Render in a portal to prevent parent component interference
+  return createPortal(dialogContent, document.body);
 };
 
 export default UniverseOperationsDialog;

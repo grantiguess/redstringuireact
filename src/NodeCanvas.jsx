@@ -17,6 +17,7 @@ import EdgeGlowIndicator from './components/EdgeGlowIndicator.jsx'; // Import th
 import BackToCivilization from './BackToCivilization.jsx'; // Import the BackToCivilization component
 import { getNodeDimensions } from './utils.js';
 import { getPrototypeIdFromItem } from './utils/abstraction.js';
+import { analyzeNodeDistribution, getClusterBoundingBox } from './utils/clusterAnalysis.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
 import { Edit3, Trash2, Link, Package, PackageOpen, Expand, ArrowUpFromDot, Triangle, Layers, ArrowLeft, SendToBack, ArrowBigRightDash, Palette, MoreHorizontal, Bookmark, Plus, CornerUpLeft, CornerDownLeft, Merge, Undo2, Clock } from 'lucide-react'; // Icons for PieMenu
 import ColorPicker from './ColorPicker';
@@ -1014,13 +1015,24 @@ function NodeCanvas() {
     }
   }, [activeGraphId, moveOutOfBoundsNodesInBounds]);
 
-  // Expose function to window for manual use (for debugging/testing)
+  // Expose functions to window for manual use (for debugging/testing)
   useEffect(() => {
     window.moveOutOfBoundsNodesInBounds = moveOutOfBoundsNodesInBounds;
+    
+    // Expose clustering functions for other parts of the codebase
+    window.enableNodeClustering = () => setEnableClustering(true);
+    window.disableNodeClustering = () => setEnableClustering(false);
+    window.getClusterAnalysis = () => clusterAnalysis;
+    window.isClusteringEnabled = () => enableClustering;
+    
     return () => {
       delete window.moveOutOfBoundsNodesInBounds;
+      delete window.enableNodeClustering;
+      delete window.disableNodeClustering;
+      delete window.getClusterAnalysis;
+      delete window.isClusteringEnabled;
     };
-  }, [moveOutOfBoundsNodesInBounds]);
+  }, [moveOutOfBoundsNodesInBounds, clusterAnalysis, enableClustering]);
 
   // Hover state for grid when mode is 'hover'
 
@@ -6455,17 +6467,74 @@ function NodeCanvas() {
     }
     
     // Check if there are nodes in the graph but none are visible in strict viewport
+    // Use cluster-aware visibility if clustering is enabled
     const hasNodesInGraph = nodes && nodes.length > 0;
-    const hasNoVisibleNodesInViewport = !nodesVisibleInStrictViewport;
+    const hasNoVisibleNodesInViewport = !relevantNodesVisibleInStrictViewport;
     
     return hasNodesInGraph && hasNoVisibleNodesInViewport;
   }, [
     isInitialLoadComplete, isUniverseLoaded, hasUniverseFile, activeGraphId, isViewReady,
-    nodes, nodesVisibleInStrictViewport,
+    nodes, relevantNodesVisibleInStrictViewport,
     nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible,
     abstractionCarouselVisible, selectedNodeIdForPieMenu, plusSign,
     draggingNodeInfo, drawingConnectionFrom, isPanning, selectionRect
   ]);
+
+  // Optional clustering feature - disabled by default to avoid computational overhead
+  const [enableClustering, setEnableClustering] = useState(false);
+
+  // Cluster analysis for the current graph (only when enabled)
+  const clusterAnalysis = useMemo(() => {
+    if (!enableClustering || !nodes || nodes.length === 0) {
+      return { clusters: [], outliers: [], mainCluster: null, statistics: {}, civilizationCenter: null };
+    }
+
+    return analyzeNodeDistribution(
+      nodes, 
+      (node) => baseDimsById.get(node.id) || getNodeDimensions(node, false, null),
+      {
+        adaptiveEpsilon: true,
+        minPoints: 2
+      }
+    );
+  }, [enableClustering, nodes, baseDimsById]);
+
+  // Calculate if relevant nodes are visible in strict viewport
+  // Uses main cluster if clustering is enabled, otherwise all nodes
+  const relevantNodesVisibleInStrictViewport = useMemo(() => {
+    const nodesToCheck = enableClustering && clusterAnalysis.mainCluster && clusterAnalysis.mainCluster.length > 0
+      ? clusterAnalysis.mainCluster
+      : nodes;
+
+    if (!nodesToCheck || nodesToCheck.length === 0 || !panOffset || !zoomLevel || !viewportSize || !canvasSize) {
+      return false;
+    }
+
+    // Calculate strict viewport bounds in canvas coordinates
+    const viewportMinX = (-panOffset.x) / zoomLevel + canvasSize.offsetX;
+    const viewportMinY = (-panOffset.y) / zoomLevel + canvasSize.offsetY;
+    const viewportMaxX = viewportMinX + viewportSize.width / zoomLevel;
+    const viewportMaxY = viewportMinY + viewportSize.height / zoomLevel;
+
+    // Check if any relevant node intersects with the strict viewport
+    for (const node of nodesToCheck) {
+      const dims = baseDimsById.get(node.id) || getNodeDimensions(node, false, null);
+      const nodeLeft = node.x;
+      const nodeTop = node.y;
+      const nodeRight = node.x + dims.currentWidth;
+      const nodeBottom = node.y + dims.currentHeight;
+
+      // Check if node intersects with strict viewport
+      const intersects = !(nodeRight < viewportMinX || nodeLeft > viewportMaxX || 
+                          nodeBottom < viewportMinY || nodeTop > viewportMaxY);
+      
+      if (intersects) {
+        return true; // At least one relevant node is visible
+      }
+    }
+
+    return false; // No relevant nodes are visible
+  }, [enableClustering, clusterAnalysis.mainCluster, nodes, panOffset, zoomLevel, viewportSize, canvasSize, baseDimsById]);
 
   // Add appearance delay when conditions are met
   useEffect(() => {
@@ -6481,21 +6550,32 @@ function NodeCanvas() {
     }
   }, [shouldShowBackToCivilization]);
 
-  // Handler for BackToCivilization click - center view on all nodes
+  // Handler for BackToCivilization click - center view on relevant nodes
   const handleBackToCivilizationClick = useCallback(() => {
     if (!nodes || nodes.length === 0 || !containerRef.current) return;
 
-    console.log('[BackToCivilization] Starting navigation back to nodes...', {
-      nodeCount: nodes.length,
-      currentPanOffset: panOffset,
-      currentZoomLevel: zoomLevel
+    // Determine which nodes to navigate to based on clustering settings
+    const nodesToNavigateTo = enableClustering && clusterAnalysis.mainCluster && clusterAnalysis.mainCluster.length > 0
+      ? clusterAnalysis.mainCluster
+      : nodes;
+
+    const navigationMode = enableClustering && clusterAnalysis.mainCluster 
+      ? 'main-cluster'
+      : 'all-nodes';
+
+    console.log('[BackToCivilization] Starting navigation...', {
+      navigationMode,
+      totalNodes: nodes.length,
+      nodesToNavigate: nodesToNavigateTo.length,
+      clusteringEnabled: enableClustering,
+      outlierCount: clusterAnalysis.statistics?.outlierCount || 0
     });
 
-    // Calculate bounding box of all nodes
+    // Calculate bounding box of relevant nodes
     let minX = Infinity, minY = Infinity;
     let maxX = -Infinity, maxY = -Infinity;
 
-    nodes.forEach(node => {
+    nodesToNavigateTo.forEach(node => {
       const dims = baseDimsById.get(node.id) || getNodeDimensions(node, false, null);
       minX = Math.min(minX, node.x);
       minY = Math.min(minY, node.y);
@@ -6503,21 +6583,19 @@ function NodeCanvas() {
       maxY = Math.max(maxY, node.y + dims.currentHeight);
     });
 
-    // Calculate the center of all nodes
+    // Calculate the center of relevant nodes
     const nodesCenterX = (minX + maxX) / 2;
     const nodesCenterY = (minY + maxY) / 2;
-
-    // Calculate bounding dimensions
     const nodesWidth = maxX - minX;
     const nodesHeight = maxY - minY;
 
-    console.log('[BackToCivilization] Nodes bounding info:', {
-      center: { x: nodesCenterX, y: nodesCenterY },
-      bounds: { minX, minY, maxX, maxY },
-      size: { width: nodesWidth, height: nodesHeight }
+    console.log('[BackToCivilization] Target area:', {
+      center: { x: Math.round(nodesCenterX), y: Math.round(nodesCenterY) },
+      size: { width: Math.round(nodesWidth), height: Math.round(nodesHeight) },
+      bounds: { minX: Math.round(minX), minY: Math.round(minY), maxX: Math.round(maxX), maxY: Math.round(maxY) }
     });
 
-    // Calculate appropriate zoom level to fit all nodes with some padding
+    // Calculate appropriate zoom level with padding
     const padding = 150;
     const targetZoomX = viewportSize.width / (nodesWidth + padding * 2);
     const targetZoomY = viewportSize.height / (nodesHeight + padding * 2);
@@ -6526,18 +6604,11 @@ function NodeCanvas() {
     // Clamp zoom to reasonable bounds
     targetZoom = Math.max(Math.min(targetZoom, MAX_ZOOM), 0.2);
 
-    // Use the same pan calculation method as the working view centering code
-    // Account for canvas offset like the existing centering logic
-    // Formula: panOffset = viewportCenter - (canvasCoord - canvasOffset) * zoom
+    // Calculate pan to center the target area (accounting for canvas offset)
     const targetPanX = (viewportSize.width / 2) - (nodesCenterX - canvasSize.offsetX) * targetZoom;
     const targetPanY = (viewportSize.height / 2) - (nodesCenterY - canvasSize.offsetY) * targetZoom;
 
-    console.log('[BackToCivilization] Calculated target view:', {
-      targetZoom,
-      targetPan: { x: targetPanX, y: targetPanY }
-    });
-
-    // Apply bounds constraints like the existing code
+    // Apply bounds constraints
     const maxPanX = 0;
     const minPanX = viewportSize.width - canvasSize.width * targetZoom;
     const maxPanY = 0;
@@ -6546,18 +6617,15 @@ function NodeCanvas() {
     const finalPanX = Math.min(Math.max(targetPanX, minPanX), maxPanX);
     const finalPanY = Math.min(Math.max(targetPanY, minPanY), maxPanY);
 
-    console.log('[BackToCivilization] Final bounded values:', {
-      finalZoom: targetZoom,
-      finalPan: { x: finalPanX, y: finalPanY },
-      bounds: { minPanX, maxPanX, minPanY, maxPanY }
+    console.log('[BackToCivilization] Applying navigation:', {
+      targetZoom: Math.round(targetZoom * 1000) / 1000,
+      finalPan: { x: Math.round(finalPanX), y: Math.round(finalPanY) }
     });
 
     // Apply the new view state
     setZoomLevel(targetZoom);
     setPanOffset({ x: finalPanX, y: finalPanY });
-
-    console.log('[BackToCivilization] Navigation applied!');
-  }, [nodes, baseDimsById, viewportSize, canvasSize, panOffset, zoomLevel, MAX_ZOOM]);
+  }, [enableClustering, clusterAnalysis, nodes, baseDimsById, viewportSize, canvasSize, MAX_ZOOM]);
   return (
     <div
       className="node-canvas-container"
@@ -8720,6 +8788,8 @@ function NodeCanvas() {
             containerRef={containerRef}
             canvasSize={canvasSize}
             viewportSize={viewportSize}
+            clusteringEnabled={enableClustering}
+            clusterInfo={clusterAnalysis.statistics}
           />
 
           {/* Overlay panel resizers (outside panels) */}

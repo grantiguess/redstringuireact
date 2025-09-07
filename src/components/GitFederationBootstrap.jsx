@@ -6,6 +6,7 @@ import { persistentAuth } from '../services/persistentAuth.js';
 import { GitSyncEngine, SOURCE_OF_TRUTH } from '../services/gitSyncEngine.js';
 import { importFromRedstring } from '../formats/redstringFormat.js';
 import universeManager from '../services/universeManager.js';
+import startupCoordinator from '../services/startupCoordinator.js';
 
 // Headless bootstrapper to restore Git federation early (before UI panels mount)
 export default function GitFederationBootstrap() {
@@ -103,8 +104,27 @@ export default function GitFederationBootstrap() {
         const sourceOfTruthMode = activeUniverse?.sourceOfTruth === 'local' ? SOURCE_OF_TRUTH.LOCAL : SOURCE_OF_TRUTH.GIT;
         const universeSlug = universeManager.activeUniverseSlug || 'universe';
 
+        // Check with startup coordinator if we're allowed to initialize
+        const canInitialize = await startupCoordinator.requestEngineInitialization(universeSlug, 'GitFederationBootstrap');
+        if (!canInitialize) {
+          console.log('[GitFederationBootstrap] Startup coordinator blocked initialization - another component is handling it');
+          return;
+        }
+
+        // Double check if there's already an engine for this universe
+        if (universeManager.getGitSyncEngine(universeSlug)) {
+          console.log('[GitFederationBootstrap] Engine already exists for universe, skipping creation');
+          return;
+        }
+        
         const engine = new GitSyncEngine(provider, sourceOfTruthMode, universeSlug, fileBaseName, universeManager);
         if (cancelled) return;
+        
+        // If engine creation was rejected, don't proceed
+        if (!engine.isRunning) {
+          console.log('[GitFederationBootstrap] Engine creation was rejected, stopping');
+          return;
+        }
 
         // Mark store as ready immediately to avoid panel delay
         try {
