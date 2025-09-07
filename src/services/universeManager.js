@@ -57,14 +57,51 @@ class UniverseManager {
 
   // Initialize device configuration (delayed to avoid circular dependencies)
   initializeDeviceConfig() {
+    // Use a flag to prevent recursive initialization attempts
+    if (this._initializingDeviceConfig) {
+      console.warn('[UniverseManager] Device config initialization already in progress, skipping');
+      return;
+    }
+    
+    this._initializingDeviceConfig = true;
+    
     try {
-      this.deviceConfig = getCurrentDeviceConfig();
-      this.isGitOnlyMode = shouldUseGitOnlyMode();
+      // Simple device detection without calling complex utilities
+      const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const screenWidth = window.screen?.width || 1920;
+      const isMobile = /android|webos|iphone|ipod|blackberry|iemobile|opera mini/i.test(navigator.userAgent.toLowerCase());
+      const isTablet = /ipad|android(?!.*mobile)|kindle|silk|playbook|bb10/i.test(navigator.userAgent.toLowerCase()) || 
+                       (/macintosh/i.test(navigator.userAgent.toLowerCase()) && isTouch);
+      const isSmallScreen = screenWidth <= 768;
+      const isMediumScreen = screenWidth <= 1024;
+      
+      // Determine if Git-Only mode should be enabled
+      const shouldUseGitOnly = isMobile || isTablet || !('showSaveFilePicker' in window) || (isTouch && isMediumScreen);
+      
+      // Set device config directly without external function calls
+      this.deviceConfig = {
+        gitOnlyMode: shouldUseGitOnly,
+        sourceOfTruth: shouldUseGitOnly ? 'git' : 'local',
+        enableLocalFileStorage: !shouldUseGitOnly && 'showSaveFilePicker' in window,
+        touchOptimizedUI: isTouch,
+        compactInterface: isMobile,
+        autoSaveFrequency: isMobile ? 2000 : 1000,
+        deviceInfo: {
+          type: isMobile ? 'mobile' : isTablet ? 'tablet' : 'desktop',
+          isMobile,
+          isTablet,
+          isTouchDevice: isTouch,
+          screenWidth,
+          supportsFileSystemAPI: 'showSaveFilePicker' in window
+        }
+      };
+      
+      this.isGitOnlyMode = shouldUseGitOnly;
       
       // Update watchdog delay based on device
       this.watchdogDelay = this.deviceConfig.autoSaveFrequency * 60;
       
-      console.log('[UniverseManager] Device config initialized:', {
+      console.log('[UniverseManager] Device config initialized directly:', {
         deviceType: this.deviceConfig.deviceInfo.type,
         gitOnlyMode: this.isGitOnlyMode,
         sourceOfTruth: this.deviceConfig.sourceOfTruth,
@@ -84,20 +121,25 @@ class UniverseManager {
       if (typeof window !== 'undefined') {
         window.addEventListener('redstring:device-config-ready', (event) => {
           this.deviceConfig = event.detail;
-          this.isGitOnlyMode = shouldUseGitOnlyMode();
-          console.log('[UniverseManager] Device config updated:', this.deviceConfig);
+          this.isGitOnlyMode = this.deviceConfig.gitOnlyMode;
+          console.log('[UniverseManager] Device config updated from event:', this.deviceConfig);
         });
       }
     } catch (error) {
-      console.warn('[UniverseManager] Device config initialization failed, using defaults:', error);
+      console.error('[UniverseManager] Device config initialization failed completely:', error);
+      // Ultra-safe fallback
       this.deviceConfig = { 
         gitOnlyMode: false, 
         sourceOfTruth: 'local', 
         touchOptimizedUI: false,
         autoSaveFrequency: 1000,
-        deviceInfo: { isMobile: false, type: 'desktop' }
+        enableLocalFileStorage: true,
+        compactInterface: false,
+        deviceInfo: { isMobile: false, isTablet: false, type: 'desktop', isTouchDevice: false, screenWidth: 1920, supportsFileSystemAPI: true }
       };
       this.isGitOnlyMode = false;
+    } finally {
+      this._initializingDeviceConfig = false;
     }
   }
 

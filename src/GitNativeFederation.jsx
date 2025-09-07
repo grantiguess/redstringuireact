@@ -55,39 +55,53 @@ import * as fileStorageModule from './store/fileStorage.js';
 import universeManager from './services/universeManager.js';
 import githubRateLimiter from './services/githubRateLimiter.js';
 import startupCoordinator from './services/startupCoordinator.js';
-import { 
-  getDeviceInfo, 
-  shouldUseGitOnlyMode, 
-  getOptimalDeviceConfig, 
-  getDeviceCapabilityMessage, 
-  hasCapability 
-} from './utils/deviceDetection.js';
+// Note: Using inline device detection to avoid circular dependencies during React initialization
+// The external device detection utilities are available but not used during component init
 
 const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
-  // Initialize device configuration with lazy loading to avoid circular dependencies
+  // Use simple device detection to avoid circular dependencies during React initialization
   const [deviceConfig] = useState(() => {
     try {
-      return getOptimalDeviceConfig();
+      // Simple, safe device detection without external dependencies
+      const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const screenWidth = window.screen?.width || 1920;
+      const isMobile = /android|webos|iphone|ipod|blackberry|iemobile|opera mini/i.test(navigator.userAgent.toLowerCase());
+      const isTablet = /ipad|android(?!.*mobile)|kindle|silk|playbook|bb10/i.test(navigator.userAgent.toLowerCase()) || 
+                       (/macintosh/i.test(navigator.userAgent.toLowerCase()) && isTouch);
+      const shouldUseGitOnly = isMobile || isTablet || !('showSaveFilePicker' in window);
+      
+      return { 
+        gitOnlyMode: shouldUseGitOnly, 
+        sourceOfTruth: shouldUseGitOnly ? 'git' : 'local', 
+        touchOptimizedUI: isTouch,
+        enableLocalFileStorage: !shouldUseGitOnly,
+        deviceInfo: { isMobile, isTablet, isTouchDevice: isTouch, type: isMobile ? 'mobile' : isTablet ? 'tablet' : 'desktop', screenWidth }
+      };
     } catch (error) {
-      console.warn('[GitNativeFederation] Device config initialization failed, using defaults:', error);
-      return { gitOnlyMode: false, sourceOfTruth: 'local', touchOptimizedUI: false };
+      console.warn('[GitNativeFederation] Device config initialization failed, using safe defaults:', error);
+      return { 
+        gitOnlyMode: false, 
+        sourceOfTruth: 'local', 
+        touchOptimizedUI: false, 
+        enableLocalFileStorage: true,
+        deviceInfo: { isMobile: false, isTablet: false, isTouchDevice: false, type: 'desktop', screenWidth: 1920 }
+      };
     }
   });
-  const [deviceInfo] = useState(() => {
-    try {
-      return getDeviceInfo();
-    } catch (error) {
-      console.warn('[GitNativeFederation] Device info initialization failed, using defaults:', error);
-      return { isMobile: false, isTablet: false, isTouchDevice: false, type: 'desktop' };
-    }
-  });
+  
+  const [deviceInfo] = useState(() => deviceConfig.deviceInfo);
+  
   const [deviceCapabilityMessage] = useState(() => {
-    try {
-      return getDeviceCapabilityMessage();
-    } catch (error) {
-      console.warn('[GitNativeFederation] Device capability message initialization failed, using defaults:', error);
-      return { type: 'success', title: 'Desktop Experience', message: 'All features available', icon: '💻' };
+    if (deviceConfig.gitOnlyMode) {
+      if (deviceInfo.isMobile) {
+        return { type: 'info', title: 'Mobile-Optimized Experience', message: 'RedString is running in Git-Only mode for the best mobile experience. Your universes will sync directly with Git repositories.', icon: '📱' };
+      } else if (deviceInfo.isTablet) {
+        return { type: 'info', title: 'Tablet-Optimized Experience', message: 'RedString is optimized for tablet use with Git-based universe management and touch-friendly interface.', icon: '📲' };
+      } else {
+        return { type: 'info', title: 'Git-Only Mode Active', message: 'File system access is limited on this device. RedString will work directly with Git repositories.', icon: '🔄' };
+      }
     }
+    return { type: 'success', title: 'Full Desktop Experience', message: 'All RedString features are available including local file management and Git synchronization.', icon: '💻' };
   });
   
   const [currentProvider, setCurrentProvider] = useState(null);
@@ -375,7 +389,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   // File System Access helpers (mobile-aware with graceful fallbacks)
   const pickLocalFileForActiveUniverse = async () => {
     // Skip File System API operations on mobile/tablet devices
-    if (!hasCapability('local-files')) {
+    if (!deviceConfig.enableLocalFileStorage) {
       setSyncStatus({
         type: 'info',
         status: deviceInfo.isMobile ? 
@@ -415,7 +429,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
 
   const saveActiveUniverseToLocalHandle = async () => {
     // Skip File System API operations on mobile/tablet devices
-    if (!hasCapability('local-files')) {
+    if (!deviceConfig.enableLocalFileStorage) {
       // On mobile, trigger download instead of file system save
       const current = useGraphStore.getState();
       const u = getActiveUniverse();
@@ -2873,7 +2887,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                     <div>
                       <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Source of Truth</div>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        {hasCapability('local-files') ? (
+                        {deviceConfig.enableLocalFileStorage ? (
                           <button 
                             onClick={() => { if (activeUniverse?.sourceOfTruth !== 'local') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('local'); } }} 
                             style={{ 
@@ -2919,7 +2933,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                           GIT
                         </button>
                       </div>
-                      {!hasCapability('local-files') && (
+                      {!deviceConfig.enableLocalFileStorage && (
                         <div style={{ fontSize: '0.7rem', color: '#666', marginTop: '4px' }}>
                           Git mode recommended for {deviceInfo.isMobile ? 'mobile' : 'this device'}
                         </div>
@@ -2956,7 +2970,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                     </div>
 
                     {/* Local File Path - Mobile-aware with conditional display */}
-                    {hasCapability('local-files') ? (
+                    {deviceConfig.enableLocalFileStorage ? (
                       <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
                         <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Local .redstring Path</div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -3499,7 +3513,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
               
               <div style={{ 
                 display: 'grid', 
-                gridTemplateColumns: hasCapability('local-files') ? '1fr 1fr' : (deviceInfo.isMobile ? '1fr' : '1fr 1fr 1fr'), 
+                gridTemplateColumns: deviceConfig.enableLocalFileStorage ? '1fr 1fr' : (deviceInfo.isMobile ? '1fr' : '1fr 1fr 1fr'), 
                 gap: '16px' 
               }}>
                 <button
@@ -3650,7 +3664,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 </button>
 
                 {/* Only show Local File option on devices that support it */}
-                {hasCapability('local-files') && (
+                {deviceConfig.enableLocalFileStorage && (
                   <button
                     onClick={() => {
                       // Close modal and add a local file source
