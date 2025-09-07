@@ -99,6 +99,9 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   const [isSlim, setIsSlim] = useState(false);
   const [localFileHandles, setLocalFileHandles] = useState({}); // { [universeSlug]: FileSystemFileHandle }
   const [showAddSourceModal, setShowAddSourceModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [lastSaveTime, setLastSaveTime] = useState(Date.now());
   
   // Use UniverseManager for universe state
   const [universes, setUniverses] = useState(universeManager.getAllUniverses());
@@ -1018,12 +1021,76 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     }
   }, [federation]);
 
-  // Update Git sync engine when store state changes
+  // Update Git sync engine when store state changes and track unsaved changes
   useEffect(() => {
     if (gitSyncEngine && storeState) {
       gitSyncEngine.updateState(storeState);
+      
+      // Track that we have unsaved changes
+      setHasUnsavedChanges(true);
+      
+      // Reset unsaved changes flag when auto-save completes
+      const checkAutoSave = () => {
+        const status = gitSyncEngine.getStatus();
+        if (status && !status.hasChanges && !status.isCommitInProgress) {
+          setHasUnsavedChanges(false);
+          setLastSaveTime(Date.now());
+        }
+      };
+      
+      // Check auto-save status periodically
+      const interval = setInterval(checkAutoSave, 1000);
+      return () => clearInterval(interval);
     }
   }, [gitSyncEngine, storeState]);
+
+  // Prevent page unload when there are unsaved changes and add Ctrl+S shortcut
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      // Only prevent if we have a connected Git sync engine and unsaved changes
+      if (gitSyncEngine && hasUnsavedChanges && !isSaving) {
+        const message = 'You have unsaved changes that will be lost. Are you sure you want to leave?';
+        e.preventDefault();
+        e.returnValue = message;
+        return message;
+      }
+    };
+
+    const handleUnload = async (e) => {
+      // Try to save before unloading if possible
+      if (gitSyncEngine && hasUnsavedChanges && !isSaving) {
+        try {
+          console.log('[GitNativeFederation] Attempting final save before page unload...');
+          setIsSaving(true);
+          await gitSyncEngine.forceCommit(storeState);
+          console.log('[GitNativeFederation] Final save completed');
+        } catch (error) {
+          console.error('[GitNativeFederation] Final save failed:', error);
+        }
+      }
+    };
+
+    const handleKeyDown = (e) => {
+      // Global Ctrl+S (or Cmd+S on Mac) to save
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (gitSyncEngine && !isSaving) {
+          console.log('[GitNativeFederation] Ctrl+S pressed, triggering save...');
+          handleSaveToGit();
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('unload', handleUnload);
+    window.addEventListener('keydown', handleKeyDown);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('unload', handleUnload);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [gitSyncEngine, hasUnsavedChanges, isSaving, storeState]);
 
 
   // Handle GitHub App installation callback and OAuth callback
@@ -1900,6 +1967,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     try {
       console.log('[GitNativeFederation] Saving to Git (always overwrites)...');
       setIsConnecting(true);
+      setIsSaving(true);
       setError(null);
       
       // Always force commit - this is an overwriter
@@ -1907,6 +1975,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       
       if (result) {
         console.log('[GitNativeFederation] Save to Git successful!');
+        setHasUnsavedChanges(false);
+        setLastSaveTime(Date.now());
         setSyncStatus({
           type: 'success',
           status: 'Data saved to repository'
@@ -1929,6 +1999,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       setError(`Save to Git failed: ${error.message}`);
     } finally {
       setIsConnecting(false);
+      setIsSaving(false);
     }
   };
 
@@ -2386,11 +2457,32 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                  'Not Connected'}
               </span>
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#666' }}>
-              {hasOAuthForBrowsing ? 'Can browse repos' : ''} 
-              {hasOAuthForBrowsing && hasAppForAutoSave ? ' • ' : ''}
-              {hasAppForAutoSave ? 'Auto-sync enabled' : ''}
-              {!hasOAuthForBrowsing && !hasAppForAutoSave ? 'Authentication required' : ''}
+            <div style={{ fontSize: '0.75rem', color: '#666', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>
+                {hasOAuthForBrowsing ? 'Can browse repos' : ''} 
+                {hasOAuthForBrowsing && hasAppForAutoSave ? ' • ' : ''}
+                {hasAppForAutoSave ? 'Auto-sync enabled' : ''}
+                {!hasOAuthForBrowsing && !hasAppForAutoSave ? 'Authentication required' : ''}
+              </span>
+              {/* Saving indicator */}
+              {isSaving && (
+                <span style={{ fontSize: '0.7rem', color: '#ff9800', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <RefreshCw size={10} style={{ animation: 'spin 1s linear infinite' }} />
+                  Saving...
+                </span>
+              )}
+              {/* Unsaved changes indicator */}
+              {!isSaving && hasUnsavedChanges && gitSyncEngine && (
+                <span style={{ fontSize: '0.7rem', color: '#d32f2f', fontWeight: 600 }}>
+                  • Unsaved changes
+                </span>
+              )}
+              {/* Last saved indicator */}
+              {!hasUnsavedChanges && gitSyncEngine && (
+                <span style={{ fontSize: '0.7rem', color: '#2e7d32', fontWeight: 600 }}>
+                  ✓ Saved {Math.floor((Date.now() - lastSaveTime) / 1000)}s ago
+                </span>
+              )}
             </div>
           </div>
 
@@ -2674,6 +2766,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                         <button 
                           onClick={async () => {
                             try {
+                              setIsSaving(true);
                               const localEnabled = activeUniverse?.localFile?.enabled ?? false;
                               const gitEnabled = activeUniverse?.gitRepo?.enabled ?? false;
                               const sourceOfTruth = activeUniverse?.sourceOfTruth || 'local';
@@ -2700,6 +2793,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                               if (shouldSaveLocal) savedTo.push('local');
                               if (shouldSaveGit) savedTo.push('git');
                               
+                              setHasUnsavedChanges(false);
+                              setLastSaveTime(Date.now());
                               setSyncStatus({ 
                                 type: 'success', 
                                 status: `Manual save completed${savedTo.length ? ' to: ' + savedTo.join(' + ') : ''}` 
@@ -2707,23 +2802,25 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                               setTimeout(() => setSyncStatus(null), 4000);
                             } catch (e) {
                               setError(`Manual save failed: ${e.message}`);
+                            } finally {
+                              setIsSaving(false);
                             }
                           }} 
                           title="Manual save"
-                          disabled={isConnecting}
+                          disabled={isConnecting || isSaving}
                           style={{ 
                             padding: '4px', 
-                            backgroundColor: isConnecting ? '#ccc' : '#EFE8E5', 
+                            backgroundColor: (isConnecting || isSaving) ? '#ccc' : '#EFE8E5', 
                             color: '#260000', 
                             border: '1px solid #260000', 
                             borderRadius: '4px', 
-                            cursor: isConnecting ? 'not-allowed' : 'pointer', 
+                            cursor: (isConnecting || isSaving) ? 'not-allowed' : 'pointer', 
                             display: 'flex', 
                             alignItems: 'center', 
                             justifyContent: 'center'
                           }}
                         >
-                          <Save size={12} />
+                          {isSaving ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={12} />}
                         </button>
                       </div>
                     </div>
@@ -3460,6 +3557,52 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Global Save Status Overlay */}
+        {isSaving && (
+          <div style={{
+            position: 'fixed',
+            top: '20px',
+            right: '20px',
+            zIndex: 10000,
+            padding: '12px 16px',
+            backgroundColor: '#260000',
+            color: '#bdb5b5',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '0.9rem',
+            fontWeight: 600
+          }}>
+            <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} />
+            Saving to Git...
+          </div>
+        )}
+
+        {/* Unsaved Changes Warning */}
+        {!isSaving && hasUnsavedChanges && gitSyncEngine && (
+          <div style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            zIndex: 9999,
+            padding: '8px 12px',
+            backgroundColor: '#ff9800',
+            color: '#fff',
+            borderRadius: '6px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+          onClick={handleSaveToGit}
+          title="Click to save now or press Ctrl+S"
+          >
+            • Unsaved changes - Click to save
           </div>
         )}
 

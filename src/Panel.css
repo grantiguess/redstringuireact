@@ -6,6 +6,16 @@
   max-width: 100%;
 }
 
+/* Spinning animation for saving indicators */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Style for the editable title input */
 
 /* New style for editable title inputs */
@@ -332,7 +342,7 @@ header .editable-title-input::selection {
 }
 
 .tab-content {
-  /* ... existing code ... */
+  padding: 8px;
 }
 
 /* --- Typography scale for panel headers --- */
