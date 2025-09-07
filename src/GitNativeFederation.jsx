@@ -1021,28 +1021,55 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     }
   }, [federation]);
 
-  // Update Git sync engine when store state changes and track unsaved changes
+  // Initialize SaveCoordinator when federation components are available
   useEffect(() => {
-    if (gitSyncEngine && storeState) {
-      gitSyncEngine.updateState(storeState);
-      
-      // Track that we have unsaved changes
-      setHasUnsavedChanges(true);
-      
-      // Reset unsaved changes flag when auto-save completes
-      const checkAutoSave = () => {
-        const status = gitSyncEngine.getStatus();
-        if (status && !status.hasChanges && !status.isCommitInProgress) {
-          setHasUnsavedChanges(false);
-          setLastSaveTime(Date.now());
+    let saveCoordinator = null;
+    
+    const initializeSaveCoordinator = async () => {
+      try {
+        const SaveCoordinatorModule = await import('./services/SaveCoordinator.js');
+        saveCoordinator = SaveCoordinatorModule.default;
+        
+        // Initialize with available dependencies
+        const fileStorageModule = await import('./store/fileStorage.js');
+        
+        if (saveCoordinator && fileStorageModule && gitSyncEngine && universeManager) {
+          saveCoordinator.initialize(fileStorageModule, gitSyncEngine, universeManager);
+          
+          // Listen for save status updates
+          const unsubscribe = saveCoordinator.onStatusChange((status) => {
+            if (status.type === 'success') {
+              setHasUnsavedChanges(false);
+              setLastSaveTime(Date.now());
+            } else if (status.type === 'error') {
+              console.error('[GitNativeFederation] Save error:', status.message);
+            }
+            setSyncStatus(status);
+          });
+          
+          console.log('[GitNativeFederation] SaveCoordinator initialized');
+          
+          return unsubscribe;
         }
-      };
-      
-      // Check auto-save status periodically
-      const interval = setInterval(checkAutoSave, 1000);
-      return () => clearInterval(interval);
+      } catch (error) {
+        console.warn('[GitNativeFederation] SaveCoordinator initialization failed:', error);
+      }
+    };
+
+    if (gitSyncEngine) {
+      initializeSaveCoordinator();
     }
-  }, [gitSyncEngine, storeState]);
+
+    return () => {
+      if (saveCoordinator) {
+        try {
+          saveCoordinator.setEnabled(false);
+        } catch (error) {
+          console.warn('[GitNativeFederation] SaveCoordinator cleanup failed:', error);
+        }
+      }
+    };
+  }, [gitSyncEngine, universeManager]);
 
   // Prevent page unload when there are unsaved changes and add Ctrl+S shortcut
   useEffect(() => {
@@ -1957,24 +1984,43 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     }
   };
 
-  // Save to Git
+  // Save to Git using SaveCoordinator
   const handleSaveToGit = async () => {
-    if (!gitSyncEngine) {
-      setError('No sync engine connected');
-      return;
-    }
-
     try {
-      console.log('[GitNativeFederation] Saving to Git (always overwrites)...');
+      console.log('[GitNativeFederation] Initiating force save via SaveCoordinator...');
       setIsConnecting(true);
       setIsSaving(true);
       setError(null);
       
-      // Always force commit - this is an overwriter
-      const result = await gitSyncEngine.forceCommit(storeState);
+      // Try to use SaveCoordinator for consistent save handling
+      let saveResult = false;
       
-      if (result) {
-        console.log('[GitNativeFederation] Save to Git successful!');
+      try {
+        const SaveCoordinatorModule = await import('./services/SaveCoordinator.js');
+        const saveCoordinator = SaveCoordinatorModule.default;
+        
+        if (saveCoordinator && saveCoordinator.isEnabled) {
+          await saveCoordinator.forceSave(storeState);
+          saveResult = true;
+          console.log('[GitNativeFederation] Save via SaveCoordinator successful');
+        }
+      } catch (coordinatorError) {
+        console.warn('[GitNativeFederation] SaveCoordinator failed, falling back to direct GitSyncEngine:', coordinatorError);
+      }
+      
+      // Fallback to direct GitSyncEngine if SaveCoordinator failed
+      if (!saveResult && gitSyncEngine) {
+        const result = await gitSyncEngine.forceCommit(storeState);
+        saveResult = result;
+        console.log('[GitNativeFederation] Direct GitSyncEngine save result:', result);
+      }
+      
+      if (!gitSyncEngine && !saveResult) {
+        setError('No sync engine or save coordinator available');
+        return;
+      }
+      
+      if (saveResult) {
         setHasUnsavedChanges(false);
         setLastSaveTime(Date.now());
         setSyncStatus({
@@ -1982,7 +2028,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           status: 'Data saved to repository'
         });
       } else {
-        console.log('[GitNativeFederation] Save skipped due to rate limiting or no changes');
         setSyncStatus({
           type: 'info',
           status: 'Save skipped (rate limited or no changes)'

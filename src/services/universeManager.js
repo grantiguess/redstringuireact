@@ -37,6 +37,46 @@ class UniverseManager {
     this.startWatchdog();
   }
 
+  // Initialize background sync services (called at app startup)
+  async initializeBackgroundSync() {
+    try {
+      console.log('[UniverseManager] Initializing background sync services...');
+      
+      // Initialize auth first
+      const persistentAuth = await import('../services/persistentAuth.js');
+      await persistentAuth.persistentAuth.initialize();
+      
+      const authStatus = persistentAuth.persistentAuth.getAuthStatus();
+      if (!authStatus.hasValidToken) {
+        console.log('[UniverseManager] No valid auth token, skipping Git sync setup');
+        return;
+      }
+
+      // Try to set up Git sync for the active universe
+      const activeUniverse = this.getActiveUniverse();
+      if (activeUniverse && activeUniverse.gitRepo?.linkedRepo && activeUniverse.gitRepo?.enabled) {
+        console.log('[UniverseManager] Setting up background Git sync for active universe');
+        
+        try {
+          await this.connectUniverseToGit(activeUniverse.slug, {
+            type: 'github',
+            user: activeUniverse.gitRepo.linkedRepo.split('/')[0],
+            repo: activeUniverse.gitRepo.linkedRepo.split('/')[1],
+            authMethod: authStatus.authMethod
+          });
+          
+          console.log('[UniverseManager] Background Git sync initialized');
+        } catch (error) {
+          console.warn('[UniverseManager] Background Git sync setup failed:', error);
+        }
+      }
+      
+    } catch (error) {
+      console.error('[UniverseManager] Background sync initialization failed:', error);
+      throw error;
+    }
+  }
+
   // Event system for status updates
   onStatusChange(handler) {
     this.statusHandlers.add(handler);

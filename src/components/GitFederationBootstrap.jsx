@@ -145,6 +145,21 @@ export default function GitFederationBootstrap() {
                 }
               });
             }
+            
+            // Initialize SaveCoordinator with the Git engine
+            try {
+              const SaveCoordinatorModule = await import('../services/SaveCoordinator.js');
+              const saveCoordinator = SaveCoordinatorModule.default;
+              
+              const fileStorageModule = await import('../store/fileStorage.js');
+              
+              if (saveCoordinator && fileStorageModule && engine) {
+                saveCoordinator.initialize(fileStorageModule, engine, universeManager);
+                console.log('[GitFederationBootstrap] SaveCoordinator initialized with Git sync engine');
+              }
+            } catch (error) {
+              console.warn('[GitFederationBootstrap] SaveCoordinator initialization failed:', error);
+            }
           }
           
           // Add a safety check to restart engine if it stops unexpectedly

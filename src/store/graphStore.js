@@ -101,39 +101,67 @@ const normalizeEdgeDirectionality = (directionality) => {
   return { arrowsToward: new Set() };
 };
 
-// Middleware to notify auto-save of changes
-const autoSaveMiddleware = (config) => {
-  let notifyTimeout = null;
+// Middleware to integrate with SaveCoordinator
+const saveCoordinatorMiddleware = (config) => {
+  let saveCoordinator = null;
+  let changeContext = { type: 'unknown' };
   
-  return (set, get, api) =>
-    config(
-      (...args) => {
-        set(...args);
-        
-        // Debounce auto-save notifications to prevent spam during rapid updates (like dragging)
-        if (notifyTimeout) {
-          clearTimeout(notifyTimeout);
-        }
-        
-        notifyTimeout = setTimeout(() => {
-          // Notify auto-save system that changes have been made
-          try {
-            import('./fileStorage.js').then(({ notifyChanges }) => {
-              notifyChanges();
-            });
-          } catch (error) {
-            console.warn('[GraphStore] Failed to notify auto-save of changes:', error);
+  // Lazy load SaveCoordinator to avoid circular dependencies
+  const getSaveCoordinator = async () => {
+    if (!saveCoordinator) {
+      try {
+        const module = await import('../services/SaveCoordinator.js');
+        saveCoordinator = module.default;
+      } catch (error) {
+        console.warn('[GraphStore] SaveCoordinator not available:', error);
+      }
+    }
+    return saveCoordinator;
+  };
+  
+  return (set, get, api) => {
+    // Enhance the set function to track change context
+    const enhancedSet = (...args) => {
+      set(...args);
+      
+      // Notify SaveCoordinator of state changes
+      setTimeout(async () => {
+        try {
+          const coordinator = await getSaveCoordinator();
+          if (coordinator && coordinator.isEnabled) {
+            const currentState = get();
+            coordinator.onStateChange(currentState, changeContext);
           }
-          notifyTimeout = null;
-        }, 100); // 100ms debounce - prevents spam during rapid updates like dragging
-      },
-      get,
-      api
-    );
+          
+          // Reset change context for next update
+          changeContext = { type: 'unknown' };
+        } catch (error) {
+          console.warn('[GraphStore] SaveCoordinator notification failed:', error);
+        }
+      }, 0);
+    };
+
+    // Add change context setter to the store
+    const configWithContext = config(enhancedSet, get, {
+      ...api,
+      // Helper to set context for the next state change
+      setChangeContext: (context) => {
+        changeContext = { ...changeContext, ...context };
+      }
+    });
+
+    // Return config with context helper exposed
+    return {
+      ...configWithContext,
+      setChangeContext: (context) => {
+        changeContext = { ...changeContext, ...context };
+      }
+    };
+  };
 };
 
 // Create store with async initialization
-const useGraphStore = create(autoSaveMiddleware((set, get) => {
+const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
   // Grace period cleanup timer
   let cleanupTimer = null;
   
@@ -377,13 +405,16 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   loadGraph: (graphInstance) => {},
 
   // Adds a NEW plain prototype data to the global pool.
-  addNodePrototype: (prototypeData) => set(produce((draft) => {
-    const prototypeId = prototypeData.id || uuidv4();
-    if (!draft.nodePrototypes.has(prototypeId)) {
-        const createdAt = prototypeData.createdAt || new Date().toISOString();
-        draft.nodePrototypes.set(prototypeId, { ...prototypeData, id: prototypeId, createdAt });
-    }
-  })),
+  addNodePrototype: (prototypeData) => {
+    api.setChangeContext({ type: 'prototype_create', target: 'prototype' });
+    return set(produce((draft) => {
+      const prototypeId = prototypeData.id || uuidv4();
+      if (!draft.nodePrototypes.has(prototypeId)) {
+          const createdAt = prototypeData.createdAt || new Date().toISOString();
+          draft.nodePrototypes.set(prototypeId, { ...prototypeData, id: prototypeId, createdAt });
+      }
+    }));
+  },
 
   // Adds a node prototype with duplicate detection by name
   addNodePrototypeWithDeduplication: (prototypeData) => {
@@ -747,7 +778,9 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   })),
   
   // Adds a new instance of a prototype to a specific graph.
-  addNodeInstance: (graphId, prototypeId, position, instanceId = uuidv4()) => set(produce((draft) => {
+  addNodeInstance: (graphId, prototypeId, position, instanceId = uuidv4()) => {
+    api.setChangeContext({ type: 'node_place', target: 'instance' });
+    return set(produce((draft) => {
     const graph = draft.graphs.get(graphId);
     const prototype = draft.nodePrototypes.get(prototypeId);
 
@@ -912,7 +945,9 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   })),
 
   // Update a prototype's data using Immer's recipe. This affects all its instances.
-  updateNodePrototype: (prototypeId, recipe) => set(produce((draft) => {
+  updateNodePrototype: (prototypeId, recipe) => {
+    api.setChangeContext({ type: 'prototype_change', target: 'prototype' });
+    return set(produce((draft) => {
     const prototype = draft.nodePrototypes.get(prototypeId);
     if (prototype) {
       const originalName = prototype.name;
@@ -942,7 +977,9 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   })),
 
   // Update an instance's unique data (e.g., position)
-  updateNodeInstance: (graphId, instanceId, recipe) => set(produce((draft) => {
+  updateNodeInstance: (graphId, instanceId, recipe) => {
+    api.setChangeContext({ type: 'node_position', target: 'instance' });
+    return set(produce((draft) => {
       const graph = draft.graphs.get(graphId);
       if (graph && graph.instances) {
           const instance = graph.instances.get(instanceId);
@@ -2276,6 +2313,7 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
   })),
 
   updateGraphView: (graphId, panOffset, zoomLevel) => {
+    api.setChangeContext({ type: 'viewport', target: 'graph' });
     set(produce((draft) => {
       const graph = draft.graphs.get(graphId);
       if (graph) {
@@ -2283,7 +2321,6 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
         graph.zoomLevel = zoomLevel;
       }
     }));
-    notifyChanges(); // for auto-save
   },
 
   // Git Federation Actions
