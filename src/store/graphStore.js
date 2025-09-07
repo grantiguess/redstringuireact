@@ -302,7 +302,27 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       }
       if (!graph.groups) graph.groups = new Map();
       const id = uuidv4();
-      graph.groups.set(id, { id, name, color, memberInstanceIds: Array.from(new Set(memberInstanceIds)) });
+      
+      // Create group with semantic metadata for RDF/OWL integration
+      const groupData = {
+        id,
+        name,
+        color,
+        memberInstanceIds: Array.from(new Set(memberInstanceIds)),
+        semanticMetadata: {
+          type: 'Group',
+          relationships: memberInstanceIds.map(memberId => ({
+            predicate: 'memberOf',
+            subject: memberId,
+            object: id,
+            source: 'redstring-grouping'
+          })),
+          createdAt: new Date().toISOString(),
+          lastModified: new Date().toISOString()
+        }
+      };
+      
+      graph.groups.set(id, groupData);
     })),
 
     updateGroup: (graphId, groupId, recipe) => set(produce((draft) => {
@@ -310,7 +330,40 @@ const useGraphStore = create(autoSaveMiddleware((set, get) => {
       if (!graph?.groups) return;
       const group = graph.groups.get(groupId);
       if (!group) return;
+      
+      // Store original values for change tracking
+      const originalName = group.name;
+      const originalMemberIds = [...group.memberInstanceIds];
+      
       recipe(group);
+      
+      // Update semantic metadata on changes
+      if (!group.semanticMetadata) {
+        group.semanticMetadata = {
+          type: 'Group',
+          relationships: [],
+          createdAt: new Date().toISOString(),
+          lastModified: new Date().toISOString()
+        };
+      }
+      
+      // Update relationships if membership changed
+      if (JSON.stringify(originalMemberIds) !== JSON.stringify(group.memberInstanceIds)) {
+        group.semanticMetadata.relationships = group.memberInstanceIds.map(memberId => ({
+          predicate: 'memberOf',
+          subject: memberId,
+          object: groupId,
+          source: 'redstring-grouping'
+        }));
+      }
+      
+      // Update lastModified timestamp
+      group.semanticMetadata.lastModified = new Date().toISOString();
+      
+      // Log changes for semantic integration
+      if (originalName !== group.name) {
+        console.log(`[updateGroup] Group ${groupId} renamed from "${originalName}" to "${group.name}"`);
+      }
     })),
 
     deleteGroup: (graphId, groupId) => set(produce((draft) => {

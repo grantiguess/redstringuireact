@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback, useRef } from 'react';
 import useGraphStore from './store/graphStore';
+import { getNodeDimensions } from './utils.js';
 
 /**
  * Connection Text Component
@@ -289,20 +290,10 @@ const UniversalNodeRenderer = ({
           width = node.width;
           height = node.height;
         } else {
-          // Compute width/height from text to match Node.jsx proportions
-          const nameString = typeof node.name === 'string' ? node.name : '';
-          const averageCharWidth = 12; // Node.jsx uses ~20px font
-          const sidePaddingSingle = 22; // match Node.jsx
-          const topBottomPadding = 20;
-          const minWidth = 140;
-          const maxWidth = 360;
-          const textWidth = Math.max(0, nameString.length * averageCharWidth);
-          const desiredContentWidth = Math.min(Math.max(textWidth, minWidth - 2 * sidePaddingSingle), maxWidth - 2 * sidePaddingSingle);
-          width = Math.min(Math.max(desiredContentWidth + 2 * sidePaddingSingle, minWidth), maxWidth);
-          const availableLineWidth = Math.max(1, width - 2 * sidePaddingSingle);
-          const lineCount = Math.max(1, Math.ceil(textWidth / availableLineWidth));
-          const lineHeight = 32; // Node.jsx line-height
-          height = Math.max(80, (lineCount * lineHeight) + (2 * topBottomPadding));
+          // Use the exact same getNodeDimensions function as Node.jsx
+          const dims = getNodeDimensions(node, false, null);
+          width = dims.currentWidth;
+          height = dims.currentHeight;
         }
       } else {
         const instance = instances.get(node.id);
@@ -315,20 +306,10 @@ const UniversalNodeRenderer = ({
           width = node.width;
           height = node.height;
         } else {
-          // Compute width/height from text to match Node.jsx proportions
-          const nameString = typeof node.name === 'string' ? node.name : '';
-          const averageCharWidth = 12;
-          const sidePaddingSingle = 22;
-          const topBottomPadding = 20;
-          const minWidth = 140;
-          const maxWidth = 360;
-          const textWidth = Math.max(0, nameString.length * averageCharWidth);
-          const desiredContentWidth = Math.min(Math.max(textWidth, minWidth - 2 * sidePaddingSingle), maxWidth - 2 * sidePaddingSingle);
-          width = Math.min(Math.max(desiredContentWidth + 2 * sidePaddingSingle, minWidth), maxWidth);
-          const availableLineWidth = Math.max(1, width - 2 * sidePaddingSingle);
-          const lineCount = Math.max(1, Math.ceil(textWidth / availableLineWidth));
-          const lineHeight = 32;
-          height = Math.max(80, (lineCount * lineHeight) + (2 * topBottomPadding));
+          // Use the exact same getNodeDimensions function as Node.jsx
+          const dims = getNodeDimensions(node, false, null);
+          width = dims.currentWidth;
+          height = dims.currentHeight;
         }
       }
       
@@ -368,13 +349,26 @@ const UniversalNodeRenderer = ({
       const sumWidths = baseWidths.reduce((a, b) => a + b, 0);
       const maxHeight = Math.max(...baseHeights, 1);
       const gaps = Math.max(0, nodesWithPositions.length - 1);
-      const spacing = Math.max(0, minHorizontalSpacing);
+      
+      // Calculate proportional spacing based on node count and container size
+      // Smaller spacing for more nodes to fit better, but maintain readability
+      let spacing;
+      if (nodesWithPositions.length === 1) {
+        spacing = 0;
+      } else if (nodesWithPositions.length <= 3) {
+        spacing = Math.max(16, minHorizontalSpacing * 0.8); // Reduce spacing slightly for 2-3 nodes
+      } else if (nodesWithPositions.length <= 6) {
+        spacing = Math.max(12, minHorizontalSpacing * 0.6); // More compact for 4-6 nodes
+      } else {
+        spacing = Math.max(8, minHorizontalSpacing * 0.4); // Very compact for 7+ nodes
+      }
+      
       const widthForNodes = Math.max(1, availableWidth - gaps * spacing);
       const scaleByWidth = Math.min(1, widthForNodes / Math.max(1, sumWidths));
       const scaleByHeight = Math.min(1, availableHeight / Math.max(1, maxHeight));
       const nodeScale = Math.min(scaleByWidth, scaleByHeight);
 
-      // Lay out nodes centered horizontally with minimum spacing, scaling proportionally
+      // Lay out nodes centered horizontally with proportional spacing, scaling proportionally
       const scaledWidths = baseWidths.map(w => w * nodeScale);
       const scaledHeights = baseHeights.map(h => h * nodeScale);
       const totalScaledWidth = scaledWidths.reduce((a, b) => a + b, 0) + gaps * spacing;
@@ -927,15 +921,28 @@ const UniversalNodeRenderer = ({
         {/* Render nodes on top */}
         {scaledNodes.map(node => {
           const isHovered = hoveredNodeId === node.id;
-          // Match Node.jsx title ratios: font 20, line-height 32, padding top/bottom 20, sides 22/30
-          const computedFontSize = Math.max(8, 20 * transform.scale);
-          const cornerRadius = Math.max(1, 28 * transform.scale);
-          const singleLineSidePadding = 22 * transform.scale;
-          const multiLineSidePadding = 30 * transform.scale;
-          const verticalPadding = 20 * transform.scale;
+          
+          // Calculate text sizing and padding to exactly match Node.jsx proportions
           const nameString = typeof node.name === 'string' ? node.name : '';
-          // Determine multiline like Node.jsx (chars-per-line heuristic)
-          const averageCharWidth = 12 * transform.scale;
+          
+          // Use Node.jsx's exact font size, line height, and padding calculations
+          const baseFontSize = 20;
+          const baseLineHeight = 32;
+          const baseVerticalPadding = 20;
+          const baseSingleLineSidePadding = 22;
+          const baseMultiLineSidePadding = 30;
+          const baseAverageCharWidth = 12; // From constants.js AVERAGE_CHAR_WIDTH
+          
+          // Apply transform scale to all measurements
+          const computedFontSize = Math.max(6, baseFontSize * transform.scale);
+          const computedLineHeight = Math.max(12, baseLineHeight * transform.scale);
+          const verticalPadding = baseVerticalPadding * transform.scale;
+          const singleLineSidePadding = baseSingleLineSidePadding * transform.scale;
+          const multiLineSidePadding = baseMultiLineSidePadding * transform.scale;
+          const averageCharWidth = baseAverageCharWidth * transform.scale;
+          const cornerRadius = Math.max(1, 28 * transform.scale); // NODE_CORNER_RADIUS - 12 = 28
+          
+          // Determine multiline exactly like Node.jsx does
           const availableTextWidth = Math.max(0, node.width - (2 * singleLineSidePadding));
           const charsPerLine = Math.max(1, Math.floor(availableTextWidth / averageCharWidth));
           const isMultiline = nameString.length > charsPerLine;
@@ -999,7 +1006,7 @@ const UniversalNodeRenderer = ({
                       fontSize: `${computedFontSize}px`,
                       fontWeight: 'bold',
                       color: '#bdb5b5',
-                      lineHeight: `${Math.max(16, 32 * transform.scale)}px`,
+                      lineHeight: `${computedLineHeight}px`,
                       letterSpacing: '-0.2px',
                       whiteSpace: 'normal',
                       overflowWrap: 'break-word',

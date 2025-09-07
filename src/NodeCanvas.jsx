@@ -14,6 +14,7 @@ import NodeControlPanel from './NodeControlPanel.jsx';
 import ConnectionControlPanel from './ConnectionControlPanel.jsx';
 import UnifiedBottomControlPanel from './UnifiedBottomControlPanel.jsx';
 import EdgeGlowIndicator from './components/EdgeGlowIndicator.jsx'; // Import the EdgeGlowIndicator component
+import BackToCivilization from './BackToCivilization.jsx'; // Import the BackToCivilization component
 import { getNodeDimensions } from './utils.js';
 import { getPrototypeIdFromItem } from './utils/abstraction.js';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
@@ -1514,6 +1515,8 @@ function NodeCanvas() {
   const [isPieMenuRendered, setIsPieMenuRendered] = useState(false); // Controls if PieMenu is in DOM for animation
   const [currentPieMenuData, setCurrentPieMenuData] = useState(null); // Holds { node, buttons, nodeDimensions }
   const [editingNodeIdOnCanvas, setEditingNodeIdOnCanvas] = useState(null); // For panel-less editing
+  const [editingGroupId, setEditingGroupId] = useState(null); // For group inline editing
+  const [tempGroupName, setTempGroupName] = useState(''); // Temporary name during editing
   const [hasMouseMovedSinceDown, setHasMouseMovedSinceDown] = useState(false);
   const [hoveredEdgeInfo, setHoveredEdgeInfo] = useState(null); // Track hovered edge and which end
 
@@ -1734,6 +1737,8 @@ function NodeCanvas() {
     setSelectedInstanceIds(new Set());
     setPreviewingNodeId(null);
     setEditingNodeIdOnCanvas(null);
+    setEditingGroupId(null); // Clear group editing state
+    setTempGroupName('');
     setPlusSign(null);
     setNodeNamePrompt({ visible: false, name: '' });
     setNodeSelectionGrid({ visible: false, position: { x: 0, y: 0 } });
@@ -2009,15 +2014,10 @@ function NodeCanvas() {
 
   const handleGroupPanelEdit = useCallback(() => {
     if (!selectedGroup) return;
-    const newName = prompt('Enter new group name:', selectedGroup.name || 'Group');
-    if (newName && newName.trim() && activeGraphId) {
-      updateGroup(activeGraphId, selectedGroup.id, (draft) => {
-        draft.name = newName.trim();
-      });
-      // Update the selected group state to reflect the change
-      setSelectedGroup(prev => prev ? { ...prev, name: newName.trim() } : null);
-    }
-  }, [selectedGroup, activeGraphId, updateGroup]);
+    // Start inline editing mode
+    setEditingGroupId(selectedGroup.id);
+    setTempGroupName(selectedGroup.name || 'Group');
+  }, [selectedGroup]);
 
   const handleGroupPanelColor = useCallback(() => {
     if (!activeGraphId || !selectedGroup) return;
@@ -6382,6 +6382,156 @@ function NodeCanvas() {
       }
     };
   }, []);
+
+  // Track if the component has been mounted long enough to show BackToCivilization
+  const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
+  const [backToCivilizationDelayComplete, setBackToCivilizationDelayComplete] = useState(false);
+
+  // Add startup delay to prevent showing during initial load
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInitialLoadComplete(true);
+    }, 2000); // 2 second delay after mount
+    
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Calculate if nodes are actually visible in the strict viewport (no padding)
+  const nodesVisibleInStrictViewport = useMemo(() => {
+    if (!nodes || nodes.length === 0 || !panOffset || !zoomLevel || !viewportSize || !canvasSize) {
+      return false;
+    }
+
+    // Calculate strict viewport bounds in canvas coordinates (no padding like the culling system)
+    const viewportMinX = (-panOffset.x) / zoomLevel + canvasSize.offsetX;
+    const viewportMinY = (-panOffset.y) / zoomLevel + canvasSize.offsetY;
+    const viewportMaxX = viewportMinX + viewportSize.width / zoomLevel;
+    const viewportMaxY = viewportMinY + viewportSize.height / zoomLevel;
+
+    // Check if any node intersects with the strict viewport
+    for (const node of nodes) {
+      const dims = baseDimsById.get(node.id) || getNodeDimensions(node, false, null);
+      const nodeLeft = node.x;
+      const nodeTop = node.y;
+      const nodeRight = node.x + dims.currentWidth;
+      const nodeBottom = node.y + dims.currentHeight;
+
+      // Check if node intersects with strict viewport (no padding)
+      const intersects = !(nodeRight < viewportMinX || nodeLeft > viewportMaxX || 
+                          nodeBottom < viewportMinY || nodeTop > viewportMaxY);
+      
+      if (intersects) {
+        return true; // At least one node is visible
+      }
+    }
+
+    return false; // No nodes are visible in strict viewport
+  }, [nodes, panOffset, zoomLevel, viewportSize, canvasSize, baseDimsById]);
+
+  // Determine if BackToCivilization should be shown
+  const shouldShowBackToCivilization = useMemo(() => {
+    // Only show if:
+    // 1. Initial load is complete (startup delay)
+    // 2. Universe is loaded and has a file
+    // 3. There's an active graph
+    // 4. View is ready (pan/zoom initialized)
+    // 5. No nodes are visible in strict viewport
+    // 6. There are actually nodes in the graph (just not visible)
+    // 7. No UI overlays are active (pie menu, carousels, prompts, etc.)
+    
+    if (!isInitialLoadComplete || !isUniverseLoaded || !hasUniverseFile || !activeGraphId || !isViewReady) {
+      return false;
+    }
+    
+    // Don't show if any prompts or overlays are visible
+    if (nodeNamePrompt.visible || connectionNamePrompt.visible || abstractionPrompt.visible ||
+        abstractionCarouselVisible || selectedNodeIdForPieMenu || plusSign) {
+      return false;
+    }
+    
+    // Don't show if dragging or other interactions are active
+    if (draggingNodeInfo || drawingConnectionFrom || isPanning || selectionRect) {
+      return false;
+    }
+    
+    // Check if there are nodes in the graph but none are visible in strict viewport
+    const hasNodesInGraph = nodes && nodes.length > 0;
+    const hasNoVisibleNodesInViewport = !nodesVisibleInStrictViewport;
+    
+    return hasNodesInGraph && hasNoVisibleNodesInViewport;
+  }, [
+    isInitialLoadComplete, isUniverseLoaded, hasUniverseFile, activeGraphId, isViewReady,
+    nodes, nodesVisibleInStrictViewport,
+    nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible,
+    abstractionCarouselVisible, selectedNodeIdForPieMenu, plusSign,
+    draggingNodeInfo, drawingConnectionFrom, isPanning, selectionRect
+  ]);
+
+  // Add appearance delay when conditions are met
+  useEffect(() => {
+    if (shouldShowBackToCivilization) {
+      setBackToCivilizationDelayComplete(false);
+      const timer = setTimeout(() => {
+        setBackToCivilizationDelayComplete(true);
+      }, 800); // 800ms delay before appearing
+      
+      return () => clearTimeout(timer);
+    } else {
+      setBackToCivilizationDelayComplete(false);
+    }
+  }, [shouldShowBackToCivilization]);
+
+  // Handler for BackToCivilization click - center view on all nodes
+  const handleBackToCivilizationClick = useCallback(() => {
+    if (!nodes || nodes.length === 0 || !containerRef.current) return;
+
+    // Calculate bounding box of all nodes
+    let minX = Infinity, minY = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+
+    nodes.forEach(node => {
+      const dims = baseDimsById.get(node.id) || getNodeDimensions(node, false, null);
+      const nodeLeft = node.x;
+      const nodeTop = node.y;
+      const nodeRight = node.x + dims.currentWidth;
+      const nodeBottom = node.y + dims.currentHeight;
+
+      minX = Math.min(minX, nodeLeft);
+      minY = Math.min(minY, nodeTop);
+      maxX = Math.max(maxX, nodeRight);
+      maxY = Math.max(maxY, nodeBottom);
+    });
+
+    // Add padding around the nodes
+    const padding = 200;
+    const boundingWidth = (maxX - minX) + padding * 2;
+    const boundingHeight = (maxY - minY) + padding * 2;
+    const boundingCenterX = (minX + maxX) / 2;
+    const boundingCenterY = (minY + maxY) / 2;
+
+    // Calculate zoom level to fit all nodes with padding
+    const zoomToFitWidth = viewportSize.width / boundingWidth;
+    const zoomToFitHeight = viewportSize.height / boundingHeight;
+    const newZoom = Math.min(zoomToFitWidth, zoomToFitHeight, MAX_ZOOM);
+
+    // Calculate pan to center the bounding box
+    const newPanX = viewportSize.width / 2 - boundingCenterX * newZoom;
+    const newPanY = viewportSize.height / 2 - boundingCenterY * newZoom;
+
+    // Apply zoom and pan bounds
+    const finalZoom = Math.max(MIN_ZOOM, newZoom);
+    const maxPanX = 0;
+    const minPanX = viewportSize.width - canvasSize.width * finalZoom;
+    const maxPanY = 0;
+    const minPanY = viewportSize.height - canvasSize.height * finalZoom;
+
+    const finalPanX = Math.min(Math.max(newPanX, minPanX), maxPanX);
+    const finalPanY = Math.min(Math.max(newPanY, minPanY), maxPanY);
+
+    // Animate to the new position
+    setZoomLevel(finalZoom);
+    setPanOffset({ x: finalPanX, y: finalPanY });
+  }, [nodes, baseDimsById, viewportSize, canvasSize, MIN_ZOOM, MAX_ZOOM]);
   return (
     <div
       className="node-canvas-container"
@@ -6849,34 +6999,48 @@ function NodeCanvas() {
                       const rectH = (maxY - minY) + margin * 2;
                       const cornerR = 12;
                       const strokeColor = group.color || '#8B0000';
-                      const labelHeight = 80; // Better proportioned height
-                      const labelPadding = 16; // consistent padding on all sides
-                      const labelY = rectY - labelHeight - 20; // more space above group
+                      const fontSize = 36;
+                      const labelPadding = 24; // More generous padding
+                      const strokeWidth = 2;
+                      
+                      // Calculate dynamic label size - use editing text if editing, otherwise group name
+                      const currentText = editingGroupId === group.id ? tempGroupName : (group.name || 'Group');
+                      const estimatedTextWidth = currentText.length * (fontSize * 0.6); // More accurate char width estimate
+                      const labelWidth = Math.max(180, estimatedTextWidth + (labelPadding * 2) + (strokeWidth * 2));
+                      const labelHeight = Math.max(90, fontSize * 1.8 + (labelPadding * 1.5)); // Scale with font size
+                      const labelX = rectX + (rectW - labelWidth) / 2; // Center horizontally on group
+                      const labelY = rectY - labelHeight - 25; // More space above group
                       const labelText = group.name || 'Group';
-                      // Estimate label width based on average char width - make it fit the text better
-                      const labelWidth = Math.max(140, labelText.length * 16 + labelPadding * 2); // wider for larger text
-                      const labelX = rectX; // left aligned with group left edge
                       const isGroupSelected = !!(selectedGroup && selectedGroup.id === group.id);
                       const isGroupDragging = draggingNodeInfo?.groupId === group.id;
                       return (
                         <g key={group.id} className="group" data-group-id={group.id}>
                           <rect x={rectX} y={rectY} width={rectW} height={rectH} rx={cornerR} ry={cornerR} fill="none" stroke={strokeColor} strokeWidth={8} vectorEffect="non-scaling-stroke" strokeDasharray={'8,6'} />
-                          {/* Draggable label behaving like a node handle (selection/drag wired later) */}
+                          {/* Draggable label behaving like a node handle with inline editing */}
                           <g className="group-label" style={{ cursor: 'pointer' }}
                              onClick={(e) => {
                                e.stopPropagation();
-                               // Select group and show control panel
-                               setSelectedGroup(group);
-                               setGroupControlPanelShouldShow(true);
-                               // Hide ALL other control panels
-                               setNodeControlPanelShouldShow(false);
-                               setAbstractionControlPanelVisible(false);
-                               setAbstractionControlPanelShouldShow(false);
-                               setConnectionControlPanelVisible(false);
-                               setConnectionControlPanelShouldShow(false);
+                               // Double-click to edit, single click to select
+                               if (e.detail === 2) {
+                                 setEditingGroupId(group.id);
+                                 setTempGroupName(group.name || 'Group');
+                               } else {
+                                 // Select group and show control panel
+                                 setSelectedGroup(group);
+                                 setGroupControlPanelShouldShow(true);
+                                 // Hide ALL other control panels
+                                 setNodeControlPanelShouldShow(false);
+                                 setAbstractionControlPanelVisible(false);
+                                 setAbstractionControlPanelShouldShow(false);
+                                 setConnectionControlPanelVisible(false);
+                                 setConnectionControlPanelShouldShow(false);
+                               }
                              }}
                              onMouseDown={(e) => {
                                e.stopPropagation();
+                               // Skip drag setup if editing
+                               if (editingGroupId === group.id) return;
+                               
                                // Long-press to start drag, just like nodes
                                clearTimeout(groupLongPressTimeout.current);
                                const downX = e.clientX; const downY = e.clientY;
@@ -6899,8 +7063,80 @@ function NodeCanvas() {
                                     filter: draggingNodeInfo?.groupId === group.id ? 'drop-shadow(0px 5px 10px rgba(0,0,0,0.3))' : 'none'
                                   }}
                             />
-                             <text x={labelX + labelWidth / 2} y={labelY + labelHeight * 0.65} fontFamily="EmOne, sans-serif" fontSize={36}
-                                   fill={strokeColor} fontWeight="bold" stroke="#bdb5b5" strokeWidth="2" paintOrder="stroke fill" textAnchor="middle">{labelText}</text>
+                            
+                            {editingGroupId === group.id ? (
+                              <foreignObject x={labelX} y={labelY} width={labelWidth} height={labelHeight}
+                                style={{ pointerEvents: 'auto' }}>
+                                <div style={{
+                                  width: '100%',
+                                  height: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  boxSizing: 'border-box'
+                                }}>
+                                  <input
+                                    type="text"
+                                    value={tempGroupName}
+                                    onChange={(e) => {
+                                      setTempGroupName(e.target.value);
+                                      // Force re-render to update label dimensions
+                                      // The component will re-calculate labelWidth based on tempGroupName
+                                    }}
+                                    onKeyDown={(e) => {
+                                      e.stopPropagation();
+                                      if (e.key === 'Enter') {
+                                        const newName = tempGroupName.trim();
+                                        if (newName && activeGraphId) {
+                                          updateGroup(activeGraphId, group.id, (draft) => {
+                                            draft.name = newName;
+                                          });
+                                          // Update selected group state if this group is selected
+                                          if (selectedGroup?.id === group.id) {
+                                            setSelectedGroup(prev => prev ? { ...prev, name: newName } : null);
+                                          }
+                                        }
+                                        setEditingGroupId(null);
+                                      } else if (e.key === 'Escape') {
+                                        setEditingGroupId(null);
+                                        setTempGroupName('');
+                                      }
+                                    }}
+                                    onBlur={() => {
+                                      const newName = tempGroupName.trim();
+                                      if (newName && activeGraphId && newName !== group.name) {
+                                        updateGroup(activeGraphId, group.id, (draft) => {
+                                          draft.name = newName;
+                                        });
+                                        // Update selected group state if this group is selected
+                                        if (selectedGroup?.id === group.id) {
+                                          setSelectedGroup(prev => prev ? { ...prev, name: newName } : null);
+                                        }
+                                      }
+                                      setEditingGroupId(null);
+                                    }}
+                                    autoFocus
+                                    style={{
+                                      width: `calc(100% - ${labelPadding * 2}px)`,
+                                      height: `calc(100% - ${labelPadding}px)`,
+                                      margin: `${labelPadding / 2}px ${labelPadding}px`,
+                                      fontSize: `${fontSize}px`,
+                                      fontFamily: 'EmOne, sans-serif',
+                                      fontWeight: 'bold',
+                                      color: strokeColor,
+                                      backgroundColor: 'transparent',
+                                      border: 'none',
+                                      outline: 'none',
+                                      textAlign: 'center',
+                                      boxSizing: 'border-box'
+                                    }}
+                                  />
+                                </div>
+                              </foreignObject>
+                            ) : (
+                              <text x={labelX + labelWidth / 2} y={labelY + labelHeight * 0.65} fontFamily="EmOne, sans-serif" fontSize={fontSize}
+                                    fill={strokeColor} fontWeight="bold" stroke="#bdb5b5" strokeWidth={strokeWidth} paintOrder="stroke fill" textAnchor="middle">{labelText}</text>
+                            )}
                           </g>
                         </g>
                       );
@@ -8446,6 +8682,17 @@ function NodeCanvas() {
             canvasViewportSize={viewportSize}
             showViewportDebug={false}
             showDirectionLines={false}
+          />
+
+          {/* Back to Civilization component - shown when no nodes are visible */}
+          <BackToCivilization
+            isVisible={shouldShowBackToCivilization && backToCivilizationDelayComplete}
+            onClick={handleBackToCivilizationClick}
+            panOffset={panOffset}
+            zoomLevel={zoomLevel}
+            containerRef={containerRef}
+            canvasSize={canvasSize}
+            viewportSize={viewportSize}
           />
 
           {/* Overlay panel resizers (outside panels) */}

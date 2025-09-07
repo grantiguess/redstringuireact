@@ -258,6 +258,29 @@ export const exportToRedstring = (storeState, userDomain = null) => {
       // Spatial instances collection
       "redstring:instances": spatialInstances,
       
+      // Groups collection with semantic metadata
+      "redstring:groups": (() => {
+        const groupsObj = {};
+        if (graph.groups) {
+          graph.groups.forEach((group, groupId) => {
+            groupsObj[groupId] = {
+              "@type": "redstring:Group",
+              "@id": `group:${groupId}`,
+              "rdfs:label": group.name,
+              "rdfs:comment": group.description || "",
+              "redstring:color": group.color,
+              "redstring:memberInstanceIds": group.memberInstanceIds || [],
+              "redstring:semanticMetadata": group.semanticMetadata || {},
+              // RDF-style membership relationships
+              "rdfs:member": (group.memberInstanceIds || []).map(memberId => ({
+                "@id": `instance:${memberId}`
+              }))
+            };
+          });
+        }
+        return groupsObj;
+      })(),
+      
       // UI state for this graph
       "redstring:visualProperties": {
         "redstring:expanded": expandedGraphIds.has(graphId),
@@ -604,6 +627,60 @@ export const importFromRedstring = (redstringData, storeActions) => {
           edgeIds = graph.edgeIds || [];
         }
         
+        // Convert groups back to Map with proper format conversion
+        const groupsMap = new Map();
+        let groupsObj = {};
+        
+        if (graph['@type'] === 'redstring:SpatialGraph') {
+          // New semantic format
+          groupsObj = graph['redstring:groups'] || {};
+        } else {
+          // Legacy format
+          groupsObj = graph.groups || {};
+        }
+        
+        Object.entries(groupsObj).forEach(([groupId, group]) => {
+          try {
+            let convertedGroup = {};
+            
+            if (group['@type'] === 'redstring:Group') {
+              // Convert from new semantic format
+              convertedGroup = {
+                id: groupId,
+                name: group['rdfs:label'] || 'Group',
+                description: group['rdfs:comment'] || '',
+                color: group['redstring:color'] || '#8B0000',
+                memberInstanceIds: group['redstring:memberInstanceIds'] || [],
+                semanticMetadata: group['redstring:semanticMetadata'] || {
+                  type: 'Group',
+                  relationships: [],
+                  createdAt: new Date().toISOString(),
+                  lastModified: new Date().toISOString()
+                }
+              };
+            } else {
+              // Legacy format
+              convertedGroup = {
+                id: groupId,
+                name: group.name || 'Group',
+                description: group.description || '',
+                color: group.color || '#8B0000',
+                memberInstanceIds: group.memberInstanceIds || [],
+                semanticMetadata: group.semanticMetadata || {
+                  type: 'Group',
+                  relationships: [],
+                  createdAt: new Date().toISOString(),
+                  lastModified: new Date().toISOString()
+                }
+              };
+            }
+            
+            groupsMap.set(groupId, convertedGroup);
+          } catch (error) {
+            console.warn(`[importFromRedstring] Error processing group ${groupId}:`, error);
+          }
+        });
+
         // Convert instances back to Map with proper format conversion
         const instancesMap = new Map();
         Object.entries(instancesObj).forEach(([instanceId, instance]) => {
@@ -646,6 +723,7 @@ export const importFromRedstring = (redstringData, storeActions) => {
           name: graphName,
           description: graphDescription,
           instances: instancesMap,
+          groups: groupsMap, // Include groups in the graph
           definingNodeIds: definingNodeIds || [],
           edgeIds: edgeIds || []
         });
@@ -657,6 +735,7 @@ export const importFromRedstring = (redstringData, storeActions) => {
           name: graph?.name || graph?.['rdfs:label'] || 'Unknown Graph',
           description: graph?.description || graph?.['rdfs:comment'] || 'Graph with import error',
           instances: new Map(),
+          groups: new Map(), // Include groups in fallback
           edgeIds: [],
           definingNodeIds: []
         };

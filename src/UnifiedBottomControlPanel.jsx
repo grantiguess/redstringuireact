@@ -3,6 +3,7 @@ import { Trash2, Plus, ArrowUpFromDot, ArrowRight, ChevronLeft, ChevronRight, Pa
 import UniversalNodeRenderer from './UniversalNodeRenderer';
 import { RENDERER_PRESETS } from './UniversalNodeRenderer.presets';
 import useGraphStore from './store/graphStore.js';
+import { getNodeDimensions } from './utils.js';
 import './UnifiedBottomControlPanel.css';
 
 // Small helper to render a triangle cap (rounded-ish via strokeJoin/lineJoin aesthetics)
@@ -161,22 +162,46 @@ const UnifiedBottomControlPanel = ({
             selectedNodes && selectedNodes.length > 0 ? (
               <UniversalNodeRenderer
                 nodes={selectedNodes.map((node, index) => {
-                  // Scale node size based on count - fewer nodes = larger, more nodes = smaller
-                  const baseWidth = selectedNodes.length === 1 ? 160 : selectedNodes.length <= 3 ? 140 : 120;
-                  const baseHeight = selectedNodes.length === 1 ? 60 : selectedNodes.length <= 3 ? 50 : 40;
+                  // Use the exact same getNodeDimensions function as Node.jsx
+                  const dims = getNodeDimensions(node, false, null);
+                  
+                  // Scale down for multiple selections but keep proportions
+                  // More granular scaling: single=1.0, 2-3=0.75, 4-6=0.55, 7+=0.4
+                  const scaleFactor = selectedNodes.length === 1 ? 1.0 : 
+                                    selectedNodes.length <= 3 ? 0.75 : 
+                                    selectedNodes.length <= 6 ? 0.55 : 0.4;
+                  
                   return {
                     ...node,
-                    x: index * (baseWidth + 20), // Dynamic spacing based on width
+                    x: index * (dims.currentWidth * scaleFactor + 20), // Use actual calculated spacing
                     y: 0,
-                    width: baseWidth,
-                    height: baseHeight
+                    width: dims.currentWidth * scaleFactor,
+                    height: dims.currentHeight * scaleFactor
                   };
                 })}
                 connections={[]}
-                containerWidth={Math.max(400, selectedNodes.length * (selectedNodes.length === 1 ? 180 : selectedNodes.length <= 3 ? 160 : 140))}
-                containerHeight={selectedNodes.length === 1 ? 80 : selectedNodes.length <= 3 ? 70 : 60}
+                containerWidth={Math.max(400, selectedNodes.reduce((total, node, index) => {
+                  const dims = getNodeDimensions(node, false, null);
+                  const scaleFactor = selectedNodes.length === 1 ? 1.0 : 
+                                    selectedNodes.length <= 3 ? 0.75 : 
+                                    selectedNodes.length <= 6 ? 0.55 : 0.4;
+                  return total + (dims.currentWidth * scaleFactor) + (index < selectedNodes.length - 1 ? 20 : 0);
+                }, 40))}
+                containerHeight={Math.max(80, selectedNodes.reduce((maxHeight, node) => {
+                  const dims = getNodeDimensions(node, false, null);
+                  const scaleFactor = selectedNodes.length === 1 ? 1.0 : 
+                                    selectedNodes.length <= 3 ? 0.75 : 
+                                    selectedNodes.length <= 6 ? 0.55 : 0.4;
+                  return Math.max(maxHeight, dims.currentHeight * scaleFactor);
+                }, 40) + 20)}
                 alignNodesHorizontally={true}
-                minHorizontalSpacing={20}
+                minHorizontalSpacing={(() => {
+                  // Dynamic spacing based on node count - more compact for more nodes
+                  if (selectedNodes.length === 1) return 0;
+                  if (selectedNodes.length <= 3) return 16;
+                  if (selectedNodes.length <= 6) return 12;
+                  return 8;
+                })()}
                 padding={10}
                 onNodeClick={onNodeClick}
                 interactive={true}
@@ -188,13 +213,12 @@ const UnifiedBottomControlPanel = ({
                 nodes={[{
                   ...selectedGroup,
                   x: 0,
-                  y: 0,
-                  width: 140,
-                  height: 40
+                  y: 0
+                  // Let getNodeDimensions calculate proper width/height
                 }]}
                 connections={[]}
-                containerWidth={160}
-                containerHeight={50}
+                containerWidth={200}
+                containerHeight={70}
                 padding={10}
                 interactive={false}
               />
@@ -249,14 +273,21 @@ const UnifiedBottomControlPanel = ({
                   };
                 });
                 
-                // Calculate appropriate spacing based on connection names
+                // Calculate appropriate spacing based on connection names and node count
                 const maxConnectionNameLength = connections.reduce((max, conn) => {
                   return Math.max(max, (conn.connectionName || 'Connection').length);
                 }, 0);
                 
-                // Base spacing calculation: 8-12 pixels per character, with minimum
-                const minSpacingForText = Math.max(160, maxConnectionNameLength * 10);
-                const dynamicWidth = Math.max(500, nodes.length * (120 + minSpacingForText));
+                // Proportional spacing calculation that accounts for text and gives more breathing room
+                // Base spacing: 12-15 pixels per character, with larger minimum for better proportions
+                const textSpacing = Math.max(200, maxConnectionNameLength * 12);
+                
+                // Additional spacing based on node count to prevent overcrowding
+                const nodeCountMultiplier = Math.max(1, nodes.length * 0.8);
+                const proportionalSpacing = textSpacing * nodeCountMultiplier;
+                
+                // Calculate container width with better proportions - more generous for readability
+                const dynamicWidth = Math.max(600, nodes.length * (150 + proportionalSpacing));
                 
                 return (
                 <UniversalNodeRenderer
@@ -265,7 +296,7 @@ const UnifiedBottomControlPanel = ({
                   connections={connections}
                   containerWidth={dynamicWidth}
                   containerHeight={160}
-                  minHorizontalSpacing={minSpacingForText}
+                  minHorizontalSpacing={proportionalSpacing}
                   onNodeClick={onNodeClick}
                   onConnectionClick={onPredicateClick}
                   onToggleArrow={(connectionId, targetNodeId) => {
