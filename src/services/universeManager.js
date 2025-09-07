@@ -877,11 +877,20 @@ class UniverseManager {
   checkGitSyncHealth() {
     this.gitSyncEngines.forEach((engine, slug) => {
       if (!engine.isHealthy()) {
-        console.warn(`[UniverseManager] Git sync engine for ${slug} is unhealthy - but NOT restarting to prevent conflicts`);
-        // DISABLED: Don't restart engines automatically as it causes 409 conflicts
-        // Multiple engines competing for the same file causes endless 409 loops
-        // Manual restart available through UI if needed
-        this.notifyStatus('warning', `Sync engine for ${slug} is unhealthy - manual restart may be needed`);
+        const status = engine.getStatus();
+        const errorDetails = status.consecutiveErrors > 0 
+          ? `${status.consecutiveErrors} consecutive errors` 
+          : 'unknown issue';
+          
+        // Only log warning if engine has been unhealthy for a while
+        if (status.consecutiveErrors >= 2) {
+          console.log(`[UniverseManager] Git sync engine for ${slug} having issues (${errorDetails}), but allowing self-recovery`);
+          
+          // Only notify user if it's been failing for more than 3 errors
+          if (status.consecutiveErrors >= 3) {
+            this.notifyStatus('warning', `Sync issues detected for ${slug} - attempting automatic recovery`);
+          }
+        }
       }
     });
   }

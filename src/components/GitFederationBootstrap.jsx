@@ -146,7 +146,7 @@ export default function GitFederationBootstrap() {
               });
             }
             
-            // Initialize SaveCoordinator with the Git engine
+            // Initialize SaveCoordinator with the Git engine (if not already initialized)
             try {
               const SaveCoordinatorModule = await import('../services/SaveCoordinator.js');
               const saveCoordinator = SaveCoordinatorModule.default;
@@ -154,8 +154,19 @@ export default function GitFederationBootstrap() {
               const fileStorageModule = await import('../store/fileStorage.js');
               
               if (saveCoordinator && fileStorageModule && engine) {
-                saveCoordinator.initialize(fileStorageModule, engine, universeManager);
-                console.log('[GitFederationBootstrap] SaveCoordinator initialized with Git sync engine');
+                // Only initialize if not already enabled or if Git engine changed
+                if (!saveCoordinator.isEnabled || saveCoordinator.gitSyncEngine !== engine) {
+                  saveCoordinator.initialize(fileStorageModule, engine, universeManager);
+                  console.log('[GitFederationBootstrap] SaveCoordinator initialized/updated with Git sync engine');
+                } else {
+                  console.log('[GitFederationBootstrap] SaveCoordinator already initialized, skipping');
+                }
+                
+                // Ensure it's enabled (in case it was disabled elsewhere)
+                if (!saveCoordinator.isEnabled) {
+                  saveCoordinator.setEnabled(true);
+                  console.log('[GitFederationBootstrap] Re-enabled SaveCoordinator');
+                }
               }
             } catch (error) {
               console.warn('[GitFederationBootstrap] SaveCoordinator initialization failed:', error);

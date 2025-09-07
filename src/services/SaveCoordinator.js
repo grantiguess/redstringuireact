@@ -275,6 +275,14 @@ class SaveCoordinator {
       const pendingChange = this.pendingChanges.get(priorityName);
       if (!pendingChange) return;
 
+      // Check if Git sync engine is healthy before attempting save
+      if (!this.gitSyncEngine.isHealthy()) {
+        console.log(`[SaveCoordinator] Git sync engine unhealthy, skipping git save for ${priorityName}`);
+        // Keep the change pending and retry later
+        setTimeout(() => this.executeGitSave(priorityName), 10000); // Retry in 10 seconds
+        return;
+      }
+
       // Rate limiting for GitHub
       const now = Date.now();
       const timeSinceLastCommit = now - this.lastGitCommitTime;
@@ -303,7 +311,14 @@ class SaveCoordinator {
 
     } catch (error) {
       console.error('[SaveCoordinator] Git save failed:', error);
-      this.notifyStatus('error', `Git save failed: ${error.message}`);
+      
+      // For Git errors, keep the change and retry later instead of dropping it
+      if (error.message && (error.message.includes('409') || error.message.includes('network'))) {
+        console.log(`[SaveCoordinator] Git error (${error.message}), will retry in 15 seconds`);
+        setTimeout(() => this.executeGitSave(priorityName), 15000);
+      } else {
+        this.notifyStatus('error', `Git save failed: ${error.message}`);
+      }
     } finally {
       this.isSaving = false;
     }

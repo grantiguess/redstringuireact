@@ -1061,13 +1061,10 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     }
 
     return () => {
-      if (saveCoordinator) {
-        try {
-          saveCoordinator.setEnabled(false);
-        } catch (error) {
-          console.warn('[GitNativeFederation] SaveCoordinator cleanup failed:', error);
-        }
-      }
+      // DO NOT disable SaveCoordinator when GitNativeFederation unmounts
+      // The SaveCoordinator should remain active for background saving
+      // even when the federation UI tab is not visible
+      console.log('[GitNativeFederation] Component unmounting, but keeping SaveCoordinator active for background saves');
     };
   }, [gitSyncEngine, universeManager]);
 

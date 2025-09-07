@@ -288,7 +288,30 @@ class GitSyncEngine {
    * Check if sync engine is healthy
    */
   isHealthy() {
-    return this.isRunning && !this.isInErrorBackoff && this.consecutiveErrors < this.maxConsecutiveErrors;
+    const healthy = this.isRunning && !this.isInErrorBackoff && this.consecutiveErrors < this.maxConsecutiveErrors;
+    
+    // If unhealthy due to errors but enough time has passed, attempt self-recovery
+    if (!healthy && this.consecutiveErrors >= this.maxConsecutiveErrors) {
+      const timeSinceLastError = Date.now() - this.lastErrorTime;
+      
+      // After 30 seconds of being in error state, attempt recovery
+      if (timeSinceLastError > 30000) {
+        console.log('[GitSyncEngine] Attempting self-recovery after 30s error backoff');
+        this.consecutiveErrors = 0;
+        this.isInErrorBackoff = false;
+        this.lastErrorTime = 0;
+        this.notifyStatus('info', 'Attempting automatic recovery from error state');
+        
+        // Restart if needed
+        if (!this.isRunning) {
+          this.restart();
+        }
+        
+        return true; // Report as healthy after recovery attempt
+      }
+    }
+    
+    return healthy;
   }
   
   /**
