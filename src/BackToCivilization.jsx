@@ -56,9 +56,9 @@ const BackToCivilization = ({
     return null;
   }
 
-  // Calculate position - center of viewport
+  // Calculate position - center horizontally, slightly below header
   const centerX = viewportSize.width / 2;
-  const centerY = viewportSize.height / 2;
+  const centerY = 120; // Fixed position below header (header is ~80px)
 
   // Dynamic class name based on animation state
   let className = 'back-to-civilization';
