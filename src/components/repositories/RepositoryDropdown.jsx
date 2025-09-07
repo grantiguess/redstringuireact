@@ -38,7 +38,7 @@ const RepositoryDropdown = ({
   };
 
   const displayText = selectedRepository 
-    ? selectedRepository.name 
+    ? `${selectedRepository.owner?.login || 'user'}/${selectedRepository.name}` 
     : placeholder;
 
   return (
@@ -71,14 +71,14 @@ const RepositoryDropdown = ({
         }}
         onMouseEnter={(e) => {
           if (!disabled) {
-            e.target.style.backgroundColor = '#979090';
-            e.target.style.borderColor = '#260000';
+            e.currentTarget.style.backgroundColor = '#979090';
+            e.currentTarget.style.borderColor = '#260000';
           }
         }}
         onMouseLeave={(e) => {
           if (!disabled) {
-            e.target.style.backgroundColor = '#bdb5b5';
-            e.target.style.borderColor = '#979090';
+            e.currentTarget.style.backgroundColor = '#bdb5b5';
+            e.currentTarget.style.borderColor = '#979090';
           }
         }}
       >
@@ -154,8 +154,8 @@ const RepositoryDropdown = ({
                       color: '#260000',
                       transition: 'background-color 0.2s',
                     }}
-                    onMouseEnter={(e) => e.target.style.backgroundColor = '#979090'}
-                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#979090'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                   >
                     <div style={{ fontWeight: 500, fontSize: '0.85rem', marginBottom: '2px' }}>
                       {repo.full_name || repo.name}

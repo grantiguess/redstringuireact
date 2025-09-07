@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { 
+import {
   GitBranch, 
   GitCommit, 
   GitPullRequest,
@@ -35,7 +35,10 @@ import {
   GitGraph,
   Info,
   Github,
-  Key
+  Key,
+  Edit3,
+  Save,
+  Trash2
 } from 'lucide-react';
 import { SemanticProviderFactory } from './services/gitNativeProvider.js';
 import { bridgeFetch, oauthFetch } from './services/bridgeConfig.js';
@@ -93,6 +96,7 @@ const GitNativeFederation = () => {
   const containerRef = useRef(null);
   const [isSlim, setIsSlim] = useState(false);
   const [localFileHandles, setLocalFileHandles] = useState({}); // { [universeSlug]: FileSystemFileHandle }
+  const [showAddSourceModal, setShowAddSourceModal] = useState(false);
   
   // Universes state (universe-level storage config)
   const [universes, setUniverses] = useState(() => {
@@ -202,6 +206,14 @@ const GitNativeFederation = () => {
     const owner = repo?.owner?.login || providerConfig.user || authStatus.userData?.login || 'user';
     const name = repo?.name || providerConfig.repo || '';
     updateActiveUniverse({ linkedRepo: { type: 'github', user: owner, repo: name } });
+    
+    // Show feedback
+    setSyncStatus({
+      type: 'success',
+      status: `Linked repository: @${owner}/${name}`
+    });
+    setTimeout(() => setSyncStatus(null), 3000);
+    
     // proceed with existing connect flow
     handleRepositoryManagerSelect(repo);
   };
@@ -2206,7 +2218,10 @@ const GitNativeFederation = () => {
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <div style={{ minWidth: '220px', maxWidth: '360px', flex: 1 }}>
                     <RepositoryDropdown
-                      selectedRepository={null}
+                      selectedRepository={providerConfig.user && providerConfig.repo ? { 
+                        name: providerConfig.repo, 
+                        owner: { login: providerConfig.user } 
+                      } : null}
                       onSelectRepository={(repo) => handleLinkRepositoryToActiveUniverse(repo)}
                       placeholder={hasOAuthForBrowsing ? 'Browse Repositories' : 'OAuth required for browsing'}
                       disabled={!hasOAuthForBrowsing}
@@ -2229,55 +2244,162 @@ const GitNativeFederation = () => {
               <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
                 <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Local .redstring Path</div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
-                    <button onClick={pickLocalFileForActiveUniverse} style={{ padding: '8px 12px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Choose File…</button>
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <input value={actualFileName} onChange={(e) => updateActiveUniverse({ localPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
-                      {currentFileStatus?.hasFileHandle && (
-                        <div style={{ fontSize: '0.7rem', color: '#666', fontStyle: 'italic' }}>
-                          File handle saved • auto-save enabled
-                        </div>
-                      )}
-                    </div>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <input 
+                      value={actualFileName} 
+                      onChange={(e) => updateActiveUniverse({ localPath: e.target.value })} 
+                      className="editable-title-input" 
+                      style={{ 
+                        fontSize: '0.9rem', 
+                        padding: '6px 8px', 
+                        borderRadius: '4px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        minWidth: '20px',
+                        width: '100%'
+                      }} 
+                    />
+                    {currentFileStatus?.hasFileHandle && (
+                      <div style={{ fontSize: '0.7rem', color: '#666', fontStyle: 'italic' }}>
+                        File handle saved • auto-save enabled
+                      </div>
+                    )}
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={async () => {
-                      const ok = await saveActiveUniverseToLocalHandle();
-                      if (!ok) {
-                        const current = useGraphStore.getState();
-                        const fname = (activeUniverse?.localPath || `${activeUniverseSlug}.redstring`).split('/').pop();
-                        downloadRedstringFile(current, fname || `${activeUniverseSlug}.redstring`);
-                      }
-                    }} style={{ padding: '8px 12px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Download Now</button>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: isSlim ? 'wrap' : 'nowrap' }}>
+                    <button 
+                      onClick={pickLocalFileForActiveUniverse} 
+                      title="Edit file location"
+                      style={{ 
+                        padding: '6px', 
+                        backgroundColor: '#EFE8E5', 
+                        color: '#260000', 
+                        border: '2px solid #260000', 
+                        borderRadius: '6px', 
+                        cursor: 'pointer', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        height: '36px',
+                        width: '36px'
+                      }}
+                    >
+                      <Edit3 size={16} />
+                    </button>
+                    <button 
+                      onClick={addUniverse} 
+                      title="Create new universe"
+                      style={{ 
+                        padding: '6px', 
+                        backgroundColor: '#EFE8E5', 
+                        color: '#260000', 
+                        border: '2px solid #260000', 
+                        borderRadius: '6px', 
+                        cursor: 'pointer', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        height: '36px',
+                        width: '36px'
+                      }}
+                    >
+                      <Plus size={16} />
+                    </button>
+                    <button 
+                      onClick={async () => {
+                        const ok = await saveActiveUniverseToLocalHandle();
+                        if (!ok) {
+                          const current = useGraphStore.getState();
+                          const fname = actualFileName;
+                          downloadRedstringFile(current, fname);
+                        }
+                      }} 
+                      title="Download file"
+                      style={{ 
+                        padding: '6px', 
+                        backgroundColor: '#EFE8E5', 
+                        color: '#260000', 
+                        border: '2px solid #260000', 
+                        borderRadius: '6px', 
+                        cursor: 'pointer', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        height: '36px',
+                        width: '36px'
+                      }}
+                    >
+                      <Download size={16} />
+                    </button>
+                    <button 
+                      onClick={async () => {
+                        try {
+                          const mode = (getActiveUniverse()?.storageMode) || 'github';
+                          if (mode === 'local' || mode === 'mixed') {
+                            const current = useGraphStore.getState();
+                            const ok = await saveActiveUniverseToLocalHandle();
+                            if (!ok) {
+                              downloadRedstringFile(current, actualFileName);
+                            }
+                          }
+                          if (mode === 'github' || mode === 'mixed') {
+                            await handleSaveToGit();
+                          }
+                          setSyncStatus({ type: 'success', status: 'Manual save completed' });
+                          setTimeout(() => setSyncStatus(null), 4000);
+                        } catch (e) {
+                          setError(`Manual save failed: ${e.message}`);
+                        }
+                      }} 
+                      title="Manual save"
+                      disabled={isConnecting}
+                      style={{ 
+                        padding: '6px', 
+                        backgroundColor: isConnecting ? '#ccc' : '#EFE8E5', 
+                        color: '#260000', 
+                        border: '2px solid #260000', 
+                        borderRadius: '6px', 
+                        cursor: isConnecting ? 'not-allowed' : 'pointer', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        height: '36px',
+                        width: '36px'
+                      }}
+                    >
+                      <Save size={16} />
+                    </button>
+                    <button 
+                      onClick={() => removeUniverse(activeUniverseSlug)} 
+                      title="Delete universe"
+                      disabled={universes.length <= 1}
+                      style={{ 
+                        padding: '6px', 
+                        backgroundColor: '#EFE8E5', 
+                        color: universes.length <= 1 ? '#999' : '#d32f2f', 
+                        border: `2px solid ${universes.length <= 1 ? '#999' : '#d32f2f'}`, 
+                        borderRadius: '6px', 
+                        cursor: universes.length <= 1 ? 'not-allowed' : 'pointer', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        height: '36px',
+                        width: '36px',
+                        opacity: universes.length <= 1 ? 0.5 : 1
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   </div>
                 </div>
               </div>
 
-              {/* Actions */}
-              <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2', display: 'flex', gap: '8px', alignItems: 'stretch', marginTop: '6px', flexDirection: isSlim ? 'column' : 'row' }}>
-                <button onClick={async () => {
-                  try {
-                    const mode = (getActiveUniverse()?.storageMode) || 'github';
-                    if (mode === 'local' || mode === 'mixed') {
-                      const current = useGraphStore.getState();
-                      downloadRedstringFile(current, `${activeUniverseSlug}.redstring`);
-                    }
-                    if (mode === 'github' || mode === 'mixed') {
-                      await handleSaveToGit();
-                    }
-                    setSyncStatus({ type: 'success', status: 'Manual save completed' });
-                    setTimeout(() => setSyncStatus(null), 4000);
-                  } catch (e) {
-                    setError(`Manual save failed: ${e.message}`);
-                  }
-                }} disabled={isConnecting} style={{ padding: '8px 12px', backgroundColor: isConnecting ? '#ccc' : '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Manual Save</button>
-                <button onClick={() => removeUniverse(activeUniverseSlug)} style={{ padding: '8px 12px', backgroundColor: 'transparent', color: '#d32f2f', border: '1px solid #d32f2f', borderRadius: '4px', cursor: universes.length <= 1 ? 'not-allowed' : 'pointer', opacity: universes.length <= 1 ? 0.5 : 1, fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Remove Universe</button>
-                {syncStatus && (
-                  <div style={{ marginLeft: isSlim ? 0 : 'auto', fontSize: '0.8rem', color: syncStatus.type === 'error' ? '#d32f2f' : '#260000' }}>
-                    {syncStatus.status}
-                  </div>
-                )}
-              </div>
+              {/* Status */}
+              {syncStatus && (
+                <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2', fontSize: '0.8rem', color: syncStatus.type === 'error' ? '#d32f2f' : '#260000', marginTop: '8px', textAlign: 'center' }}>
+                  {syncStatus.status}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2296,6 +2418,24 @@ const GitNativeFederation = () => {
               </select>
             </div>
           </div>
+
+          {/* Current connected repo as first source */}
+          {currentProvider && (
+            <div style={{ background: '#bdb5b5', border: '2px solid #8B0000', borderRadius: '6px', padding: '10px', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#2e7d32', border: '1px solid #260000' }} />
+                  <div style={{ fontWeight: 600 }}>
+                    My GitHub Repository • @{currentProvider.user}/{currentProvider.repo}
+                  </div>
+                  <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#8B0000', color: '#EFE8E5' }}>
+                    PRIMARY
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#2e7d32' }}>Connected</div>
+              </div>
+            </div>
+          )}
 
           {/* Sources list for active universe */}
           {Array.isArray(getActiveUniverse()?.sources) && getActiveUniverse().sources.length > 0 ? (
@@ -2407,10 +2547,154 @@ const GitNativeFederation = () => {
                 </div>
               ))}
             </div>
+          ) : !currentProvider ? (
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              padding: '40px 20px',
+              backgroundColor: '#bdb5b5',
+              border: '2px dashed #979090',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+            onClick={() => setShowAddSourceModal(true)}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#979090';
+              e.currentTarget.style.borderColor = '#260000';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '#bdb5b5';
+              e.currentTarget.style.borderColor = '#979090';
+            }}
+            >
+              <Plus size={48} color="#260000" style={{ marginBottom: '12px' }} />
+              <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#260000', marginBottom: '4px' }}>
+                Add a source
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#666', textAlign: 'center' }}>
+                Connect to repositories, external APIs, or local files
+              </div>
+            </div>
           ) : (
-            <div style={{ fontSize: '0.85rem', color: '#666' }}>No sources attached yet.</div>
+            <div style={{ fontSize: '0.85rem', color: '#666' }}>Additional sources can be added above.</div>
           )}
         </div>
+
+        {/* Add Source Modal */}
+        {showAddSourceModal && (
+          <div style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000
+          }}>
+            <div style={{ 
+              width: '520px', 
+              maxWidth: '90%', 
+              backgroundColor: '#bdb5b5', 
+              border: '1px solid #260000', 
+              borderRadius: '8px',
+              padding: '20px',
+              margin: '0 20px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <div style={{ fontWeight: 'bold', color: '#260000', fontSize: '1.1rem' }}>Add Source</div>
+                <button onClick={() => setShowAddSourceModal(false)} style={{ background: 'transparent', border: 'none', color: '#260000', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              </div>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <button
+                  onClick={() => { addSourceToActiveUniverse('github'); setShowAddSourceModal(false); }}
+                  style={{
+                    padding: '20px',
+                    backgroundColor: '#979090',
+                    border: '1px solid #260000',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    transition: 'background-color 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#bdb5b5'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#979090'}
+                >
+                  <Github size={24} color="#260000" />
+                  <div style={{ fontWeight: 600, color: '#260000' }}>GitHub Repository</div>
+                  <div style={{ fontSize: '0.8rem', color: '#666', textAlign: 'center' }}>Connect to any GitHub repo</div>
+                </button>
+
+                <button
+                  onClick={() => { setSelectedProvider('gitea'); setShowAdvanced(true); setShowAddSourceModal(false); }}
+                  style={{
+                    padding: '20px',
+                    backgroundColor: '#979090',
+                    border: '1px solid #260000',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    transition: 'background-color 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#bdb5b5'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#979090'}
+                >
+                  <Server size={24} color="#260000" />
+                  <div style={{ fontWeight: 600, color: '#260000' }}>Gitea Repository</div>
+                  <div style={{ fontSize: '0.8rem', color: '#666', textAlign: 'center' }}>Self-hosted Git instance</div>
+                </button>
+
+                <button
+                  onClick={() => { addSourceToActiveUniverse('url'); setShowAddSourceModal(false); }}
+                  style={{
+                    padding: '20px',
+                    backgroundColor: '#979090',
+                    border: '1px solid #260000',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    transition: 'background-color 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#bdb5b5'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#979090'}
+                >
+                  <Globe size={24} color="#260000" />
+                  <div style={{ fontWeight: 600, color: '#260000' }}>External URL/SPARQL</div>
+                  <div style={{ fontSize: '0.8rem', color: '#666', textAlign: 'center' }}>Semantic web endpoints</div>
+                </button>
+
+                <button
+                  onClick={() => { addSourceToActiveUniverse('local'); setShowAddSourceModal(false); }}
+                  style={{
+                    padding: '20px',
+                    backgroundColor: '#979090',
+                    border: '1px solid #260000',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    transition: 'background-color 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#bdb5b5'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#979090'}
+                >
+                  <Copy size={24} color="#260000" />
+                  <div style={{ fontWeight: 600, color: '#260000' }}>Local File</div>
+                  <div style={{ fontSize: '0.8rem', color: '#666', textAlign: 'center' }}>Import from local .redstring</div>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Gitea Configuration Modal */}
         {showAdvanced && selectedProvider === 'gitea' && (
