@@ -236,6 +236,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     const owner = repo?.owner?.login || providerConfig.user || authStatus.userData?.login || 'user';
     const name = repo?.name || providerConfig.repo || '';
     
+    // Update universe with linked repository
+    const activeUniverse = getActiveUniverse();
     updateActiveUniverse({ 
       gitRepo: { 
         enabled: true,
@@ -245,11 +247,39 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       }
     });
     
-    // Show feedback
-    setSyncStatus({
-      type: 'success',
-      status: `Linked repository: @${owner}/${name}`
-    });
+    // Auto-add as a source if not already present
+    const existingSources = activeUniverse?.sources || [];
+    const alreadyExists = existingSources.some(src => 
+      src.type === 'github' && src.user === owner && src.repo === name
+    );
+    
+    if (!alreadyExists) {
+      const newSource = {
+        id: generateSourceId(),
+        type: 'github',
+        enabled: true,
+        name: `@${owner}/${name}`,
+        user: owner,
+        repo: name,
+        schemaPath: providerConfig.semanticPath || 'schema'
+      };
+      
+      // Add the source to the universe
+      updateActiveUniverse({
+        sources: [...existingSources, newSource]
+      });
+      
+      setSyncStatus({
+        type: 'success',
+        status: `Linked repository and added as source: @${owner}/${name}`
+      });
+    } else {
+      setSyncStatus({
+        type: 'success',
+        status: `Linked repository: @${owner}/${name}`
+      });
+    }
+    
     setTimeout(() => setSyncStatus(null), 3000);
     
     // proceed with existing connect flow
@@ -361,11 +391,16 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     if (type === 'gitea') Object.assign(newSource, { endpoint: '', user: '', repo: '' });
     if (type === 'url') Object.assign(newSource, { urls: [''], behavior: 'cache' });
     if (type === 'local') Object.assign(newSource, { fileName: `${activeUniverseSlug}.redstring` });
-    setUniverses(prev => prev.map(v => v.slug === activeUniverseSlug ? { ...v, sources: [...(v.sources || []), newSource] } : v));
+    const activeUniverse = getActiveUniverse();
+    updateActiveUniverse({ sources: [...(activeUniverse?.sources || []), newSource] });
   };
 
   const updateSourceInActiveUniverse = (id, updates) => {
-    setUniverses(prev => prev.map(u => u.slug === activeUniverseSlug ? { ...u, sources: (u.sources || []).map(s => s.id === id ? { ...s, ...updates } : s) } : u));
+    const activeUniverse = getActiveUniverse();
+    const updatedSources = (activeUniverse?.sources || []).map(s => 
+      s.id === id ? { ...s, ...updates } : s
+    );
+    updateActiveUniverse({ sources: updatedSources });
   };
   const removeSourceFromActiveUniverse = (id) => {
     const u = getActiveUniverse();
@@ -376,7 +411,9 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         if (url && federation) federation.unsubscribeFromSpace(url);
       } catch {}
     }
-    setUniverses(prev => prev.map(un => un.slug === activeUniverseSlug ? { ...un, sources: (un.sources || []).filter(s => s.id !== id) } : un));
+    
+    const filteredSources = (u?.sources || []).filter(s => s.id !== id);
+    updateActiveUniverse({ sources: filteredSources });
   };
   const toggleSourceEnabled = async (src) => {
     const newEnabled = !src.enabled;
@@ -417,7 +454,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         const url = sub?.url || sub?.href || '';
         if (!url || currentUrls.has(url)) return;
         const newSrc = { id: generateSourceId(), type: 'url', enabled: true, name: sub?.name || 'External Source', urls: [url], behavior: 'cache', schemaPath: u.schemaPath || 'schema' };
-        setUniverses(prev => prev.map(un => un.slug === activeUniverseSlug ? { ...un, sources: [...(un.sources || []), newSrc] } : un));
+        const activeUniverse = getActiveUniverse();
+        updateActiveUniverse({ sources: [...(activeUniverse?.sources || []), newSrc] });
         didAdd = true;
       });
       if (didAdd) {
@@ -749,7 +787,44 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     }
   }, [currentProvider, providerConfig.user, providerConfig.repo, activeUniverseSlug]);
 
+  // Auto-connect source when universe has linked repository
+  useEffect(() => {
+    const activeUniverse = getActiveUniverse();
+    if (activeUniverse?.gitRepo?.linkedRepo && !currentProvider) {
+      const linkedRepo = activeUniverse.gitRepo.linkedRepo;
+      console.log('[GitNativeFederation] Auto-connecting to linked repository:', linkedRepo);
+      
+      // Auto-add as a source if not already present
+      const existingSources = activeUniverse?.sources || [];
+      const alreadyExists = existingSources.some(src => 
+        src.type === 'github' && src.user === linkedRepo.user && src.repo === linkedRepo.repo
+      );
+      
+      if (!alreadyExists) {
+        const newSource = {
+          id: generateSourceId(),
+          type: 'github',
+          enabled: true,
+          name: `@${linkedRepo.user}/${linkedRepo.repo}`,
+          user: linkedRepo.user,
+          repo: linkedRepo.repo,
+          schemaPath: activeUniverse.gitRepo.schemaPath || 'schema'
+        };
+        
+        updateActiveUniverse({
+          sources: [...existingSources, newSource]
+        });
+        
+        console.log('[GitNativeFederation] Auto-added linked repository as source');
+      }
+      
+      // Attempt to connect to the repository
+      attemptConnectUniverseRepo();
+    }
+  }, [activeUniverseSlug, currentProvider]);
+
   // Control Git sync engine pause state based on panel visibility
+  // Only pause/resume, don't change any other state to ensure consistency
   useEffect(() => {
     if (gitSyncEngine) {
       if (isVisible && isInteractive) {
@@ -2114,6 +2189,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   const useNewLayout = true;
   
   // Always run connection restoration even with new layout
+  // This only runs once on mount to ensure no state changes when switching tabs
   useEffect(() => {
     const restoreConnection = async () => {
       if (gitConnection && !currentProvider) {
@@ -2217,8 +2293,9 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       }
     };
     
+    // Only restore connection when needed, but avoid unnecessary re-runs
     restoreConnection();
-  }, [gitConnection, currentProvider, clearGitConnection]);
+  }, [gitConnection, currentProvider, clearGitConnection]); // Keep necessary dependencies but minimize re-runs
   
   if (useNewLayout) {
     const activeUniverse = getActiveUniverse();
@@ -2492,12 +2569,18 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                             disabled={!hasOAuthForBrowsing}
                           />
                         </div>
-                        {providerConfig.user && providerConfig.repo && (
+                        {activeUniverse?.gitRepo?.linkedRepo && (
                           <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', border: '1px solid #260000', color: '#260000' }}>
-                            {githubAppInstallation?.repositories?.find?.(r => r.name === providerConfig.repo)?.private ? 'Private' : 'Public'}
+                            {activeUniverse.gitRepo.linkedRepo.private ? 'Private' : 'Public'}
                           </span>
                         )}
                       </div>
+                      {/* Show universe location in repo */}
+                      {activeUniverse?.gitRepo?.linkedRepo && (
+                        <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px', fontFamily: 'monospace' }}>
+                          📁 {activeUniverse.gitRepo.universeFolder || `universes/${activeUniverseSlug}`}/{activeUniverseSlug}.redstring
+                        </div>
+                      )}
                     </div>
 
                     {/* Local File Path */}
@@ -2563,18 +2646,36 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                         <button 
                           onClick={async () => {
                             try {
-                              const mode = universe.storageMode || 'github';
-                              if (mode === 'local' || mode === 'mixed') {
+                              const localEnabled = activeUniverse?.localFile?.enabled ?? false;
+                              const gitEnabled = activeUniverse?.gitRepo?.enabled ?? false;
+                              const sourceOfTruth = activeUniverse?.sourceOfTruth || 'local';
+                              
+                              // Only save to local if local is enabled AND (source of truth is local OR mixed mode)
+                              const shouldSaveLocal = localEnabled && (sourceOfTruth === 'local' || (localEnabled && gitEnabled));
+                              
+                              // Only save to git if git is enabled
+                              const shouldSaveGit = gitEnabled;
+                              
+                              if (shouldSaveLocal) {
                                 const current = useGraphStore.getState();
                                 const ok = await saveActiveUniverseToLocalHandle();
                                 if (!ok) {
                                   downloadRedstringFile(current, actualFileName);
                                 }
                               }
-                              if (universe.gitRepo?.enabled) {
+                              
+                              if (shouldSaveGit) {
                                 await handleSaveToGit();
                               }
-                              setSyncStatus({ type: 'success', status: 'Manual save completed' });
+                              
+                              const savedTo = [];
+                              if (shouldSaveLocal) savedTo.push('local');
+                              if (shouldSaveGit) savedTo.push('git');
+                              
+                              setSyncStatus({ 
+                                type: 'success', 
+                                status: `Manual save completed${savedTo.length ? ' to: ' + savedTo.join(' + ') : ''}` 
+                              });
                               setTimeout(() => setSyncStatus(null), 4000);
                             } catch (e) {
                               setError(`Manual save failed: ${e.message}`);
@@ -2837,18 +2938,24 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                     {isConfigured ? (
                       <button onClick={async () => {
                         try {
-                          if (src.type === 'github') {
-                            await handleSaveToGit();
-                            setSyncStatus({ type: 'success', status: `Saved to @${src.user}/${src.repo}` });
+                          const sourceOfTruth = activeUniverse?.sourceOfTruth || 'local';
+                          const gitEnabled = activeUniverse?.gitRepo?.enabled ?? false;
+                          
+                          if (src.type === 'github' || src.type === 'gitea') {
+                            // Only save to git sources if git is enabled
+                            if (gitEnabled) {
+                              await handleSaveToGit();
+                              setSyncStatus({ type: 'success', status: `Saved to @${src.user}/${src.repo}` });
+                            } else {
+                              setSyncStatus({ type: 'warning', status: 'Git storage not enabled for this universe' });
+                            }
                           } else if (src.type === 'local') {
+                            // Local sources can always be downloaded regardless of storage mode
                             const current = useGraphStore.getState();
                             downloadRedstringFile(current, src.fileName || `${activeUniverseSlug}.redstring`);
                             setSyncStatus({ type: 'success', status: `Downloaded ${src.fileName}` });
                           } else if (src.type === 'url') {
                             setSyncStatus({ type: 'info', status: 'External sources are read-only' });
-                          } else if (src.type === 'gitea') {
-                            await handleSaveToGit();
-                            setSyncStatus({ type: 'success', status: `Saved to ${src.user}/${src.repo}` });
                           }
                           setTimeout(() => setSyncStatus(null), 3000);
                         } catch (e) {
@@ -2916,10 +3023,12 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                           repo: providerConfig.repo,
                           schemaPath: providerConfig.semanticPath || 'schema'
                         };
-                        setUniverses(prev => prev.map(u => u.slug === activeUniverseSlug ? { 
-                          ...u, 
-                          sources: [...(u.sources || []), newSource] 
-                        } : u));
+                        
+                        // Add source through UniverseManager
+                        const activeUniverse = getActiveUniverse();
+                        updateActiveUniverse({
+                          sources: [...(activeUniverse?.sources || []), newSource]
+                        });
                         
                         // Show feedback
                         setSyncStatus({
@@ -3006,10 +3115,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                       repo: '',
                       schemaPath: activeUniverse?.schemaPath || 'schema'
                     };
-                    setUniverses(prev => prev.map(u => u.slug === activeUniverseSlug ? { 
-                      ...u, 
-                      sources: [...(u.sources || []), newSource] 
-                    } : u));
+                    const activeUniverse = getActiveUniverse();
+                    updateActiveUniverse({ sources: [...(activeUniverse?.sources || []), newSource] });
                     
                     // Show feedback
                     setSyncStatus({
@@ -3099,10 +3206,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                       behavior: 'cache',
                       schemaPath: activeUniverse?.schemaPath || 'schema'
                     };
-                    setUniverses(prev => prev.map(u => u.slug === activeUniverseSlug ? { 
-                      ...u, 
-                      sources: [...(u.sources || []), newSource] 
-                    } : u));
+                    const activeUniverse = getActiveUniverse();
+                    updateActiveUniverse({ sources: [...(activeUniverse?.sources || []), newSource] });
                     
                     // Show feedback
                     setSyncStatus({
@@ -3156,10 +3261,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                       fileName: `${activeUniverseSlug}.redstring`,
                       schemaPath: activeUniverse?.schemaPath || 'schema'
                     };
-                    setUniverses(prev => prev.map(u => u.slug === activeUniverseSlug ? { 
-                      ...u, 
-                      sources: [...(u.sources || []), newSource] 
-                    } : u));
+                    const activeUniverse = getActiveUniverse();
+                    updateActiveUniverse({ sources: [...(activeUniverse?.sources || []), newSource] });
                     
                     // Show feedback
                     setSyncStatus({

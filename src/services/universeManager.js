@@ -496,7 +496,19 @@ class UniverseManager {
       storeState = useGraphStore.default.getState();
     }
     
-    const redstringData = exportToRedstring(storeState);
+    // Export data asynchronously to prevent UI blocking
+    const redstringData = await new Promise((resolve) => {
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(() => {
+          resolve(exportToRedstring(storeState));
+        });
+      } else {
+        setTimeout(() => {
+          resolve(exportToRedstring(storeState));
+        }, 0);
+      }
+    });
+    
     const results = [];
     const errors = [];
     
@@ -655,24 +667,86 @@ class UniverseManager {
     await writable.close();
   }
 
-  // Save to browser storage
+  // Save to browser storage with size limits
   async saveToBrowserStorage(universe, redstringData) {
-    const db = await this.openBrowserDB();
-    const tx = db.transaction(['universes'], 'readwrite');
-    const store = tx.objectStore('universes');
-    
-    store.put({
-      id: universe.browserStorage.key,
-      data: redstringData,
-      savedAt: Date.now()
-    });
-    
-    await new Promise((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    
-    db.close();
+    try {
+      const db = await this.openBrowserDB();
+      
+      // Check storage quota before saving
+      if ('storage' in navigator && 'estimate' in navigator.storage) {
+        const estimate = await navigator.storage.estimate();
+        const dataSize = JSON.stringify(redstringData).length;
+        const availableSpace = estimate.quota - estimate.usage;
+        
+        if (dataSize > availableSpace) {
+          // Try to clean up old data first
+          await this.cleanupBrowserStorage(db);
+          
+          // Check again
+          const newEstimate = await navigator.storage.estimate();
+          const newAvailableSpace = newEstimate.quota - newEstimate.usage;
+          
+          if (dataSize > newAvailableSpace) {
+            throw new Error(`Data too large for browser storage: ${Math.round(dataSize/1024)}KB needed, ${Math.round(newAvailableSpace/1024)}KB available`);
+          }
+        }
+      }
+      
+      const tx = db.transaction(['universes'], 'readwrite');
+      const store = tx.objectStore('universes');
+      
+      store.put({
+        id: universe.browserStorage.key,
+        data: redstringData,
+        savedAt: Date.now()
+      });
+      
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      
+      db.close();
+    } catch (error) {
+      console.error('[UniverseManager] Browser storage save failed:', error);
+      throw error;
+    }
+  }
+
+  // Clean up old browser storage data
+  async cleanupBrowserStorage(db) {
+    try {
+      const tx = db.transaction(['universes'], 'readwrite');
+      const store = tx.objectStore('universes');
+      const request = store.getAll();
+      
+      const allData = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      
+      // Sort by savedAt and keep only the 3 most recent
+      allData.sort((a, b) => b.savedAt - a.savedAt);
+      const toDelete = allData.slice(3);
+      
+      if (toDelete.length > 0) {
+        const deleteTx = db.transaction(['universes'], 'readwrite');
+        const deleteStore = deleteTx.objectStore('universes');
+        
+        toDelete.forEach(item => {
+          deleteStore.delete(item.id);
+        });
+        
+        await new Promise((resolve, reject) => {
+          deleteTx.oncomplete = () => resolve();
+          deleteTx.onerror = () => reject(deleteTx.error);
+        });
+        
+        console.log(`[UniverseManager] Cleaned up ${toDelete.length} old browser storage entries`);
+      }
+    } catch (error) {
+      console.warn('[UniverseManager] Browser storage cleanup failed:', error);
+    }
   }
 
   // Open browser storage database
