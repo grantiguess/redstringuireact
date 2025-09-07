@@ -13,6 +13,9 @@ import {
   getOptimalDeviceConfig,
   hasCapability 
 } from '../utils/deviceDetection.js';
+import { persistentAuth } from '../services/persistentAuth.js';
+import useGraphStore from '../store/graphStore.jsx';
+import * as fileStorage from '../store/fileStorage.js';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -101,10 +104,9 @@ class UniverseManager {
       console.log('[UniverseManager] Initializing background sync services...');
       
       // Initialize auth first
-      const persistentAuth = await import('../services/persistentAuth.js');
-      await persistentAuth.persistentAuth.initialize();
+      await persistentAuth.initialize();
       
-      const authStatus = persistentAuth.persistentAuth.getAuthStatus();
+      const authStatus = persistentAuth.getAuthStatus();
       if (!authStatus.hasValidToken) {
         console.log('[UniverseManager] No valid auth token, skipping Git sync setup');
         return;
@@ -190,7 +192,6 @@ class UniverseManager {
   async migrateExistingFileHandle() {
     try {
       // Import FileStorage to get existing file handle
-      const fileStorage = await import('../store/fileStorage.js');
       const existingFileHandle = fileStorage.getCurrentFileHandle();
       
       if (existingFileHandle && this.activeUniverseSlug) {
@@ -421,8 +422,7 @@ class UniverseManager {
       });
       
       // If we have auth, try to connect immediately
-      const authModule = await import('../services/persistentAuth.js');
-      const authStatus = authModule.persistentAuth.getAuthStatus();
+      const authStatus = persistentAuth.getAuthStatus();
       
       if (authStatus.hasValidToken) {
         await this.connectUniverseToGit(universe.slug, {
@@ -742,8 +742,7 @@ class UniverseManager {
     
     // Get store state if not provided
     if (!storeState) {
-      const useGraphStore = await import('../store/graphStore.jsx');
-      storeState = useGraphStore.default.getState();
+      storeState = useGraphStore.getState();
     }
     
     // Export data asynchronously to prevent UI blocking
@@ -828,8 +827,7 @@ class UniverseManager {
     
     try {
       // Use the GitSyncEngine's existing export logic instead of bypassing it
-      const useGraphStore = await import('../store/graphStore.jsx');
-      const storeState = useGraphStore.default.getState();
+      const storeState = useGraphStore.getState();
       
       // Force commit through the existing GitSyncEngine which handles SHA conflicts properly
       await gitSyncEngine.forceCommit(storeState);
@@ -843,9 +841,8 @@ class UniverseManager {
           try {
             const gitData = await gitSyncEngine.loadFromGit();
             if (gitData) {
-              const { storeState: newState } = await import('../formats/redstringFormat.js').then(m => m.importFromRedstring(gitData));
-              const useGraphStore = await import('../store/graphStore.jsx');
-              useGraphStore.default.getState().loadUniverseFromFile(newState);
+              const { storeState: newState } = importFromRedstring(gitData);
+              useGraphStore.getState().loadUniverseFromFile(newState);
               
               this.notifyStatus('info', 'Loaded latest changes from Git repository');
               return; // Successfully resolved by loading Git data
@@ -860,8 +857,7 @@ class UniverseManager {
         await new Promise(resolve => setTimeout(resolve, 2000));
         
         try {
-          const useGraphStore = await import('../store/graphStore.jsx');
-          const storeState = useGraphStore.default.getState();
+          const storeState = useGraphStore.getState();
           await gitSyncEngine.forceCommit(storeState);
           this.notifyStatus('success', 'Conflict resolved with retry');
         } catch (retryError) {
@@ -1145,8 +1141,7 @@ class UniverseManager {
         // Git is source of truth, load from Git and overwrite local
         const gitData = await this.loadFromGit(universe);
         if (gitData) {
-          const useGraphStore = await import('../store/graphStore.jsx');
-          useGraphStore.default.getState().loadUniverseFromFile(gitData);
+          useGraphStore.getState().loadUniverseFromFile(gitData);
           this.notifyStatus('info', 'Conflict resolved: loaded from Git repository');
           return true;
         }
@@ -1154,8 +1149,7 @@ class UniverseManager {
         // Local is source of truth, force push to Git
         const gitSyncEngine = this.gitSyncEngines.get(universe.slug);
         if (gitSyncEngine) {
-          const useGraphStore = await import('../store/graphStore.jsx');
-          const storeState = useGraphStore.default.getState();
+          const storeState = useGraphStore.getState();
           await gitSyncEngine.forceCommit(storeState);
           this.notifyStatus('info', 'Conflict resolved: pushed local changes to Git');
           return true;
