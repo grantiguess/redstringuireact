@@ -484,8 +484,24 @@ This repository was automatically initialized by RedString UI React. You can now
 
   async writeFileRaw(path, content) {
     try {
-      // Check rate limit before making any requests
+      // AGGRESSIVE RATE LIMITING: Check and enforce stricter limits
       await githubRateLimiter.waitForAvailability(this.authMethod);
+      
+      // Additional rate limiting: Prevent identical content writes
+      const contentHash = this.generateContentHash(content);
+      const cacheKey = `${path}_${contentHash}`;
+      const lastWrite = this.lastWrites?.get?.(cacheKey);
+      const now = Date.now();
+      
+      if (lastWrite && (now - lastWrite) < 1500) {
+        console.log(`[GitHubSemanticProvider] Redundant write prevented for ${path} (identical content within 1.5s)`);
+        return { message: 'Redundant write prevented' };
+      }
+      
+      // Initialize lastWrites cache if needed
+      if (!this.lastWrites) {
+        this.lastWrites = new Map();
+      }
       
       // First try to get the current file info to get the latest SHA
       let existingFile = null;
@@ -505,9 +521,9 @@ This repository was automatically initialized by RedString UI React. You can now
       // Only include SHA if we have a valid existing file
       if (existingFile?.sha) {
         body.sha = existingFile.sha;
-        console.log(`[GitHubSemanticProvider] Updating existing file ${path} with SHA: ${existingFile.sha}`);
+        console.log(`[GitHubSemanticProvider] OVERWRITER: Updating ${path} with SHA: ${existingFile.sha.substring(0, 8)}`);
       } else {
-        console.log(`[GitHubSemanticProvider] Creating new file ${path}`);
+        console.log(`[GitHubSemanticProvider] OVERWRITER: Creating new file ${path}`);
       }
 
       // Record the main request
@@ -526,16 +542,16 @@ This repository was automatically initialized by RedString UI React. You can now
       if (!response.ok) {
         const text = await response.text();
         
-        // Handle 409 conflict by retrying with fresh SHA and exponential backoff
+        // Handle 409 conflict with MUCH more aggressive backoff
         if (response.status === 409) {
-          console.log(`[GitHubSemanticProvider] 409 conflict for ${path}, retrying with exponential backoff...`);
+          console.log(`[GitHubSemanticProvider] 409 conflict for ${path}, using AGGRESSIVE backoff...`);
           
-          // Retry up to 5 times with exponential backoff
-          for (let attempt = 1; attempt <= 5; attempt++) {
+          // Retry up to 3 times with reasonable exponential backoff
+          for (let attempt = 1; attempt <= 3; attempt++) {
             try {
-              // Exponential backoff: 200ms, 400ms, 800ms, 1600ms, 3200ms
-              const backoffDelay = Math.min(200 * Math.pow(2, attempt - 1), 3200);
-              console.log(`[GitHubSemanticProvider] Retry attempt ${attempt} for ${path}, waiting ${backoffDelay}ms...`);
+              // Reasonable backoff: 1s, 3s, 9s - responsive but prevents conflicts
+              const backoffDelay = Math.min(1000 * Math.pow(3, attempt - 1), 9000);
+              console.log(`[GitHubSemanticProvider] Retry ${attempt} for ${path}, waiting ${backoffDelay}ms...`);
               await new Promise(resolve => setTimeout(resolve, backoffDelay));
               
               // Check rate limit before retry
@@ -546,7 +562,7 @@ This repository was automatically initialized by RedString UI React. You can now
               const freshFile = await this.getFileInfo(path);
               if (freshFile?.sha) {
                 body.sha = freshFile.sha;
-                console.log(`[GitHubSemanticProvider] Retry attempt ${attempt} with fresh SHA: ${freshFile.sha.substring(0, 8)}`);
+                console.log(`[GitHubSemanticProvider] Retry ${attempt} with fresh SHA: ${freshFile.sha.substring(0, 8)}`);
                 
                 githubRateLimiter.recordRequest(this.authMethod);
                 const retryResponse = await fetch(`${this.rootUrl}/${path}`, {
@@ -560,40 +576,56 @@ This repository was automatically initialized by RedString UI React. You can now
                 });
                 
                 if (retryResponse.ok) {
-                  console.log(`[GitHubSemanticProvider] Successfully resolved conflict on attempt ${attempt}`);
+                  console.log(`[GitHubSemanticProvider] OVERWRITER conflict resolved on attempt ${attempt}`);
+                  // Cache successful write
+                  this.lastWrites.set(cacheKey, now);
                   return await retryResponse.json();
                 } else if (retryResponse.status !== 409) {
                   // Different error, don't retry further
                   const retryText = await retryResponse.text();
-                  throw new Error(`GitHub writeFileRaw retry failed: ${retryResponse.status} ${retryText}`);
+                  throw new Error(`GitHub OVERWRITER retry failed: ${retryResponse.status} ${retryText}`);
                 }
                 
                 // Still 409, continue to next attempt
-                console.log(`[GitHubSemanticProvider] Attempt ${attempt} still got 409, continuing...`);
+                console.log(`[GitHubSemanticProvider] Attempt ${attempt} still got 409, continuing with longer backoff...`);
               } else {
-                throw new Error('Could not get fresh SHA for retry');
+                throw new Error('Could not get fresh SHA for OVERWRITER retry');
               }
             } catch (retryError) {
-              if (attempt === 5) {
+              if (attempt === 3) {
                 // Last attempt failed
-                throw new Error(`GitHub writeFileRaw failed after ${attempt} attempts: ${retryError.message}`);
+                throw new Error(`GitHub OVERWRITER failed after ${attempt} aggressive attempts: ${retryError.message}`);
               }
-              console.warn(`[GitHubSemanticProvider] Retry attempt ${attempt} failed:`, retryError.message);
+              console.warn(`[GitHubSemanticProvider] AGGRESSIVE retry ${attempt} failed:`, retryError.message);
             }
           }
           
           // All retries exhausted
-          throw new Error(`GitHub writeFileRaw failed after 5 retry attempts with exponential backoff`);
+          throw new Error(`GitHub OVERWRITER failed after 3 aggressive retry attempts`);
         }
         
-        throw new Error(`GitHub writeFileRaw failed: ${response.status} ${text}`);
+        throw new Error(`GitHub OVERWRITER failed: ${response.status} ${text}`);
       }
 
+      // Cache successful write
+      this.lastWrites.set(cacheKey, now);
+      console.log(`[GitHubSemanticProvider] OVERWRITER write successful for ${path}`);
       return await response.json();
     } catch (e) {
-      console.error('[GitHubSemanticProvider] writeFileRaw failed:', e);
+      console.error('[GitHubSemanticProvider] OVERWRITER writeFileRaw failed:', e);
       throw e;
     }
+  }
+
+  // Helper to generate content hash for redundancy prevention
+  generateContentHash(content) {
+    let hash = 0;
+    for (let i = 0; i < content.length; i++) {
+      const char = content.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return hash.toString(36);
   }
 
   async readFileRaw(path) {
@@ -910,6 +942,22 @@ export class GiteaSemanticProvider extends SemanticProvider {
 
   async writeFileRaw(path, content) {
     try {
+      // Rate limiting: Prevent identical content writes
+      const contentHash = this.generateContentHash(content);
+      const cacheKey = `${path}_${contentHash}`;
+      const lastWrite = this.lastWrites?.get?.(cacheKey);
+      const now = Date.now();
+      
+      if (lastWrite && (now - lastWrite) < 1500) {
+        console.log(`[GiteaSemanticProvider] Redundant write prevented for ${path} (identical content within 1.5s)`);
+        return { message: 'Redundant write prevented' };
+      }
+      
+      // Initialize lastWrites cache if needed
+      if (!this.lastWrites) {
+        this.lastWrites = new Map();
+      }
+      
       // First try to get the current file info to get the latest SHA
       let fileInfo = null;
       try {
@@ -929,9 +977,9 @@ export class GiteaSemanticProvider extends SemanticProvider {
       // Only include SHA if we have a valid existing file
       if (fileInfo?.sha) {
         body.sha = fileInfo.sha;
-        console.log(`[GiteaSemanticProvider] Updating existing file ${path} with SHA: ${fileInfo.sha}`);
+        console.log(`[GiteaSemanticProvider] OVERWRITER: Updating ${path} with SHA: ${fileInfo.sha.substring(0, 8)}`);
       } else {
-        console.log(`[GiteaSemanticProvider] Creating new file ${path}`);
+        console.log(`[GiteaSemanticProvider] OVERWRITER: Creating new file ${path}`);
       }
 
       const response = await fetch(`${this.rootUrl}/${path}`, {
@@ -946,46 +994,84 @@ export class GiteaSemanticProvider extends SemanticProvider {
       if (!response.ok) {
         const text = await response.text();
         
-        // Handle 409 conflict by retrying with fresh SHA
+        // Handle 409 conflict with aggressive backoff
         if (response.status === 409) {
-          console.log(`[GiteaSemanticProvider] 409 conflict for ${path}, retrying with fresh SHA...`);
+          console.log(`[GiteaSemanticProvider] 409 conflict for ${path}, using AGGRESSIVE backoff...`);
           
-          try {
-            // Get the latest SHA and retry once
-            const freshFile = await this.getFileInfo(path);
-            if (freshFile?.sha) {
-              body.sha = freshFile.sha;
-              console.log(`[GiteaSemanticProvider] Retrying with fresh SHA: ${freshFile.sha}`);
+          // Retry up to 3 times with reasonable backoff
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              // Reasonable backoff: 1s, 3s, 9s - responsive but prevents conflicts
+              const backoffDelay = Math.min(1000 * Math.pow(3, attempt - 1), 9000);
+              console.log(`[GiteaSemanticProvider] Retry ${attempt} for ${path}, waiting ${backoffDelay}ms...`);
+              await new Promise(resolve => setTimeout(resolve, backoffDelay));
               
-              const retryResponse = await fetch(`${this.rootUrl}/${path}`, {
-                method: 'PUT',
-                headers: {
-                  'Authorization': `token ${this.token}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(body)
-              });
-              
-              if (!retryResponse.ok) {
-                const retryText = await retryResponse.text();
-                throw new Error(`Gitea writeFileRaw retry failed: ${retryResponse.status} ${retryText}`);
+              // Get the latest SHA and retry
+              const freshFile = await this.getFileInfo(path);
+              if (freshFile?.sha) {
+                body.sha = freshFile.sha;
+                console.log(`[GiteaSemanticProvider] Retry ${attempt} with fresh SHA: ${freshFile.sha.substring(0, 8)}`);
+                
+                const retryResponse = await fetch(`${this.rootUrl}/${path}`, {
+                  method: 'PUT',
+                  headers: {
+                    'Authorization': `token ${this.token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify(body)
+                });
+                
+                if (retryResponse.ok) {
+                  console.log(`[GiteaSemanticProvider] OVERWRITER conflict resolved on attempt ${attempt}`);
+                  // Cache successful write
+                  this.lastWrites.set(cacheKey, now);
+                  return await retryResponse.json();
+                } else if (retryResponse.status !== 409) {
+                  // Different error, don't retry further
+                  const retryText = await retryResponse.text();
+                  throw new Error(`Gitea OVERWRITER retry failed: ${retryResponse.status} ${retryText}`);
+                }
+                
+                // Still 409, continue to next attempt
+                console.log(`[GiteaSemanticProvider] Attempt ${attempt} still got 409, continuing with longer backoff...`);
+              } else {
+                throw new Error('Could not get fresh SHA for OVERWRITER retry');
               }
-              
-              return await retryResponse.json();
+            } catch (retryError) {
+              if (attempt === 3) {
+                // Last attempt failed
+                throw new Error(`Gitea OVERWRITER failed after ${attempt} aggressive attempts: ${retryError.message}`);
+              }
+              console.warn(`[GiteaSemanticProvider] AGGRESSIVE retry ${attempt} failed:`, retryError.message);
             }
-          } catch (retryError) {
-            console.error(`[GiteaSemanticProvider] Retry failed for ${path}:`, retryError);
           }
+          
+          // All retries exhausted
+          throw new Error(`Gitea OVERWRITER failed after 3 aggressive retry attempts`);
         }
         
-        throw new Error(`Gitea writeFileRaw failed: ${response.status} ${text}`);
+        throw new Error(`Gitea OVERWRITER failed: ${response.status} ${text}`);
       }
 
+      // Cache successful write
+      this.lastWrites.set(cacheKey, now);
+      console.log(`[GiteaSemanticProvider] OVERWRITER write successful for ${path}`);
       return await response.json();
     } catch (e) {
-      console.error('[GiteaSemanticProvider] writeFileRaw failed:', e);
+      console.error('[GiteaSemanticProvider] OVERWRITER writeFileRaw failed:', e);
       throw e;
     }
+  }
+
+  // Helper to generate content hash for redundancy prevention
+  generateContentHash(content) {
+    let hash = 0;
+    for (let i = 0; i < content.length; i++) {
+      const char = content.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return hash.toString(36);
   }
 
   async readFileRaw(path) {

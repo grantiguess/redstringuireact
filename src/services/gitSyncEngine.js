@@ -214,14 +214,17 @@ class GitSyncEngine {
     this.isRunning = true;
     console.log('[GitSyncEngine] Starting commit loop (every', this.commitInterval, 'ms)');
     
-    // TEMPORARILY DISABLED: Auto-commit loop to prevent conflicts with manual saves
-    // Multiple engines with auto-commit loops cause 409 conflicts
-    // Manual saves via forceCommit() still work perfectly
-    console.log('[GitSyncEngine] Auto-commit loop DISABLED to prevent 409 conflicts - manual saves only');
+    // Auto-commit loop with aggressive conflict prevention
+    console.log('[GitSyncEngine] Auto-commit enabled with conflict prevention - every', this.commitInterval, 'ms');
     
-    // this.commitLoop = setInterval(async () => {
-    //   await this.processPendingCommits();
-    // }, this.commitInterval);
+    this.commitLoop = setInterval(async () => {
+      // Only auto-commit if no manual commit is in progress
+      if (!this.isCommitInProgress) {
+        await this.processPendingCommits();
+      } else {
+        console.log('[GitSyncEngine] Skipping auto-commit - manual commit in progress');
+      }
+    }, this.commitInterval);
   }
   
   /**
@@ -503,12 +506,34 @@ class GitSyncEngine {
   }
   
   /**
-   * Force an immediate commit with enhanced conflict resolution
-   * This is an overwriter - it ALWAYS commits regardless of detected changes
+   * ALWAYS force commits - this is an overwriter, no "mode" needed
+   * Aggressive rate limiting and redundancy prevention
    */
   async forceCommit(storeState) {
     try {
-      console.log('[GitSyncEngine] Force committing (overwriter mode - always commits)...');
+      // REASONABLE RATE LIMITING: Prevent too frequent commits but allow responsive saves
+      const now = Date.now();
+      const timeSinceLastCommit = now - this.lastCommitTime;
+      const minInterval = 2000; // Minimum 2 seconds between commits - responsive but prevents spam
+      
+      if (timeSinceLastCommit < minInterval) {
+        console.log(`[GitSyncEngine] Rate limited: ${timeSinceLastCommit}ms since last commit, minimum ${minInterval}ms required`);
+        this.notifyStatus('info', `Rate limited: waiting ${Math.ceil((minInterval - timeSinceLastCommit) / 1000)}s`);
+        return false;
+      }
+      
+      // Check for redundant commits - don't commit identical content
+      const redstringData = exportToRedstring(storeState);
+      const jsonString = JSON.stringify(redstringData, null, 2);
+      const currentHash = this.generateStateHash(storeState);
+      
+      if (this.lastCommittedHash === currentHash) {
+        console.log('[GitSyncEngine] Redundant commit prevented - content unchanged');
+        this.notifyStatus('info', 'No changes to commit');
+        return false;
+      }
+      
+      console.log('[GitSyncEngine] ALWAYS force committing - overwriter behavior...');
       this.notifyStatus('info', 'Force committing changes...');
       
       // Clear any pending debounce
@@ -523,42 +548,39 @@ class GitSyncEngine {
       
       // Wait if background commit is in progress
       while (this.isCommitInProgress) {
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise(r => setTimeout(r, 100));
       }
       this.isCommitInProgress = true;
       
-      const redstringData = exportToRedstring(storeState);
-      const jsonString = JSON.stringify(redstringData, null, 2);
+      console.log('[GitSyncEngine] Always overwrites - forcing commit regardless of any detection');
       
-      // OVERWRITER MODE: Always commit, regardless of changes detection
-      console.log('[GitSyncEngine] Overwriter mode: forcing commit regardless of change detection');
-      
-      // Try up to 3 times with fresh SHA fetches
+      // Try up to 5 times with exponential backoff for 409 conflicts
       let lastError = null;
-      for (let attempt = 1; attempt <= 3; attempt++) {
+      for (let attempt = 1; attempt <= 5; attempt++) {
         try {
           await this.provider.writeFileRaw(this.getLatestPath(), jsonString);
           
           // Success! Update tracking
-          const currentHash = this.generateStateHash(storeState);
           this.lastCommittedHash = currentHash;
           this.hasChanges = false;
           this.pendingCommits = []; // Clear pending commits
-          this.lastCommitTime = Date.now();
+          this.lastCommitTime = now; // Use original timestamp for rate limiting
           
-          // Reset error tracking on successful force commit
+          // Reset error tracking on successful commit
           this.consecutiveErrors = 0;
           this.isInErrorBackoff = false;
           
-          console.log('[GitSyncEngine] Force commit successful (overwriter mode)');
-          this.notifyStatus('success', 'Force commit successful');
+          console.log('[GitSyncEngine] OVERWRITER commit successful');
+          this.notifyStatus('success', 'Commit successful');
           return true;
           
         } catch (error) {
           lastError = error;
-          if (error.message && error.message.includes('409') && attempt < 3) {
-            console.log(`[GitSyncEngine] Force commit attempt ${attempt} got 409, retrying...`);
-            await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Increasing delay
+          if (error.message && error.message.includes('409') && attempt < 5) {
+            // Reasonable backoff for 409 conflicts: 1s, 2s, 4s, 6s
+            const backoffDelay = Math.min(1000 * attempt, 6000);
+            console.log(`[GitSyncEngine] Attempt ${attempt} got 409, backing off ${backoffDelay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, backoffDelay));
             continue;
           } else {
             break; // Non-409 error or final attempt
@@ -567,8 +589,8 @@ class GitSyncEngine {
       }
       
       // All attempts failed
-      console.error('[GitSyncEngine] Force commit failed after retries:', lastError);
-      this.notifyStatus('error', `Force commit failed: ${lastError.message || 'Unknown error'}`);
+      console.error('[GitSyncEngine] OVERWRITER commit failed after 5 attempts:', lastError);
+      this.notifyStatus('error', `Commit failed: ${lastError.message || 'Unknown error'}`);
       throw lastError;
       
     } finally {

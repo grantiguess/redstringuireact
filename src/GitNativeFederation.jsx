@@ -1898,18 +1898,26 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     }
 
     try {
-      console.log('[GitNativeFederation] Manually saving to Git...');
+      console.log('[GitNativeFederation] Saving to Git (always overwrites)...');
       setIsConnecting(true);
       setError(null);
       
-      // Force commit using the sync engine
-      await gitSyncEngine.forceCommit(storeState);
+      // Always force commit - this is an overwriter
+      const result = await gitSyncEngine.forceCommit(storeState);
       
-      console.log('[GitNativeFederation] Save to Git successful!');
-      setSyncStatus({
-        type: 'success',
-        status: 'Data saved to repository'
-      });
+      if (result) {
+        console.log('[GitNativeFederation] Save to Git successful!');
+        setSyncStatus({
+          type: 'success',
+          status: 'Data saved to repository'
+        });
+      } else {
+        console.log('[GitNativeFederation] Save skipped due to rate limiting or no changes');
+        setSyncStatus({
+          type: 'info',
+          status: 'Save skipped (rate limited or no changes)'
+        });
+      }
       
       // Clear the status after 5 seconds
       setTimeout(() => {
