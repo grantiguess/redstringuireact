@@ -1776,16 +1776,7 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
      set({ typeListMode: mode });
   },
 
-  // Set the type of a node prototype
-  setNodeType: (nodeId, typeNodeId) => set(produce((draft) => {
-    const nodePrototype = draft.nodePrototypes.get(nodeId);
-    if (nodePrototype) {
-      nodePrototype.typeNodeId = typeNodeId;
-      console.log(`[Store] Set type of node ${nodeId} to ${typeNodeId}`);
-    } else {
-      console.error(`[Store] Could not find node prototype ${nodeId} to set type`);
-    }
-  })),
+  // Set the type of a node prototype (duplicate removed; use earlier guarded version)
 
   // Remove a definition graph from a node and delete the graph if it's no longer referenced
   removeDefinitionFromNode: (nodeId, graphId) => set(produce((draft) => {
