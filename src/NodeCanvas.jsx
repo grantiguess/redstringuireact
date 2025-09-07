@@ -124,6 +124,7 @@ function NodeCanvas() {
     toggleShowConnectionNames,
     updateMultipleNodeInstancePositions,
     createGroup,
+    updateGroup,
     deleteGroup,
     removeDefinitionFromNode,
     openGraphTabAndBringToTop,
@@ -573,7 +574,7 @@ function NodeCanvas() {
     openGraphTabAndBringToTop, cleanupOrphanedData, cleanupOrphanedGraphs, restoreFromSession, loadUniverseFromFile,
     setUniverseError, clearUniverse, setUniverseConnected, setSelectedEdgeIds, addSelectedEdgeId, removeSelectedEdgeId,
     clearSelectedEdgeIds, toggleShowConnectionNames, toggleEnableAutoRouting, setRoutingStyle, updateGraphView,
-    setTypeListMode, deleteNodePrototype, deleteGraph
+    setTypeListMode, deleteNodePrototype, deleteGraph, updateGroup
   };
 
   // <<< OPTIMIZED: Individual stable subscriptions - Zustand will optimize these automatically >>>
@@ -1804,9 +1805,13 @@ function NodeCanvas() {
     if (shouldShow) {
       setNodeControlPanelShouldShow(true);
       setNodeControlPanelVisible(true);
-      // Hide other control panels
+      // Hide ALL other control panels
       setAbstractionControlPanelVisible(false);
       setAbstractionControlPanelShouldShow(false);
+      setConnectionControlPanelVisible(false);
+      setConnectionControlPanelShouldShow(false);
+      setGroupControlPanelShouldShow(false);
+      setSelectedGroup(null);
     } else if (!shouldShow && nodeControlPanelVisible) {
       setNodeControlPanelVisible(false);
     }
@@ -1820,7 +1825,7 @@ function NodeCanvas() {
     if (shouldShow) {
       setConnectionControlPanelShouldShow(true);
       setConnectionControlPanelVisible(true);
-      // Hide other control panels
+      // Hide ALL other control panels
       setNodeControlPanelVisible(false);
       setNodeControlPanelShouldShow(false);
       setAbstractionControlPanelVisible(false);
@@ -1831,6 +1836,24 @@ function NodeCanvas() {
       setConnectionControlPanelVisible(false);
     }
   }, [selectedInstanceIds, selectedEdgeId, selectedEdgeIds, abstractionCarouselVisible, connectionNamePrompt.visible, connectionControlPanelVisible]);
+
+  // --- Group Control Panel Management ---
+  useEffect(() => {
+    const shouldShow = Boolean(selectedGroup && !abstractionCarouselVisible && !connectionNamePrompt.visible);
+    if (shouldShow) {
+      setGroupControlPanelShouldShow(true);
+      // Hide ALL other control panels
+      setNodeControlPanelVisible(false);
+      setNodeControlPanelShouldShow(false);
+      setAbstractionControlPanelVisible(false);
+      setAbstractionControlPanelShouldShow(false);
+      setConnectionControlPanelVisible(false);
+      setConnectionControlPanelShouldShow(false);
+    } else if (!shouldShow && groupControlPanelShouldShow) {
+      setGroupControlPanelShouldShow(false);
+      setSelectedGroup(null);
+    }
+  }, [selectedGroup, abstractionCarouselVisible, connectionNamePrompt.visible, groupControlPanelShouldShow]);
 
   const handleNodeControlPanelAnimationComplete = useCallback(() => {
     setNodeControlPanelShouldShow(false);
@@ -1986,15 +2009,29 @@ function NodeCanvas() {
 
   const handleGroupPanelEdit = useCallback(() => {
     if (!selectedGroup) return;
-    // TODO: Implement group name editing
-    
-  }, [selectedGroup]);
+    const newName = prompt('Enter new group name:', selectedGroup.name || 'Group');
+    if (newName && newName.trim() && activeGraphId) {
+      updateGroup(activeGraphId, selectedGroup.id, (draft) => {
+        draft.name = newName.trim();
+      });
+      // Update the selected group state to reflect the change
+      setSelectedGroup(prev => prev ? { ...prev, name: newName.trim() } : null);
+    }
+  }, [selectedGroup, activeGraphId, updateGroup]);
 
   const handleGroupPanelColor = useCallback(() => {
     if (!activeGraphId || !selectedGroup) return;
-    // TODO: Implement group color picker
-    
-  }, [activeGraphId, selectedGroup]);
+    // Open a simple color picker dialog
+    const newColor = prompt('Enter new group color (hex):', selectedGroup.color || '#8B0000');
+    if (newColor && newColor.trim()) {
+      const colorToUse = newColor.startsWith('#') ? newColor : `#${newColor}`;
+      updateGroup(activeGraphId, selectedGroup.id, (draft) => {
+        draft.color = colorToUse;
+      });
+      // Update the selected group state to reflect the change
+      setSelectedGroup(prev => prev ? { ...prev, color: colorToUse } : null);
+    }
+  }, [activeGraphId, selectedGroup, updateGroup]);
 
 
 
@@ -4911,6 +4948,9 @@ function NodeCanvas() {
     if (selectionStart) {
       setSelectionStart(null);
       setSelectionRect(null);
+    } else if (selectionRect) {
+      // Defensive: ensure selection box is cleared even if selectionStart was unset
+      setSelectionRect(null);
     }
     setIsPanning(false);
     isPanningOrZooming.current = false; // Clear the flag when canvas mouse up
@@ -6828,7 +6868,12 @@ function NodeCanvas() {
                                // Select group and show control panel
                                setSelectedGroup(group);
                                setGroupControlPanelShouldShow(true);
-                               setNodeControlPanelShouldShow(false); // Hide node panel
+                               // Hide ALL other control panels
+                               setNodeControlPanelShouldShow(false);
+                               setAbstractionControlPanelVisible(false);
+                               setAbstractionControlPanelShouldShow(false);
+                               setConnectionControlPanelVisible(false);
+                               setConnectionControlPanelShouldShow(false);
                              }}
                              onMouseDown={(e) => {
                                e.stopPropagation();
@@ -6854,8 +6899,8 @@ function NodeCanvas() {
                                     filter: draggingNodeInfo?.groupId === group.id ? 'drop-shadow(0px 5px 10px rgba(0,0,0,0.3))' : 'none'
                                   }}
                             />
-                            <text x={labelX + labelPadding} y={labelY + labelHeight * 0.65} fontFamily="EmOne, sans-serif" fontSize={32}
-                                  fill={strokeColor} fontWeight="bold">{labelText}</text>
+                             <text x={labelX + labelWidth / 2} y={labelY + labelHeight * 0.65} fontFamily="EmOne, sans-serif" fontSize={36}
+                                   fill={strokeColor} fontWeight="bold" stroke="#bdb5b5" strokeWidth="2" paintOrder="stroke fill" textAnchor="middle">{labelText}</text>
                           </g>
                         </g>
                       );
@@ -8601,6 +8646,7 @@ function NodeCanvas() {
           onOpenConnectionDialog={(edgeId) => {
             setConnectionNamePrompt({ visible: true, name: '', color: CONNECTION_DEFAULT_COLOR, edgeId });
           }}
+          onStartHurtleAnimationFromPanel={startHurtleAnimationFromPanel}
         />
       )}
 

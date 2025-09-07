@@ -1075,6 +1075,14 @@ const GitNativeFederation = () => {
             throw new Error(`Failed to fetch installation details: ${instDetailsResp.status} ${errorText}`);
           }
           const instDetails = await instDetailsResp.json();
+          console.log('[GitNativeFederation] Installation details received:', {
+            hasRepositories: !!instDetails.repositories,
+            repositoriesType: typeof instDetails.repositories,
+            repositoriesLength: instDetails.repositories?.length,
+            account: instDetails.account?.login,
+            fullResponse: instDetails
+          });
+          
           const repositories = Array.isArray(instDetails.repositories) ? instDetails.repositories.map(repo => ({
             name: repo.name,
             full_name: repo.full_name,
@@ -1102,7 +1110,7 @@ const GitNativeFederation = () => {
           
           // Provide helpful feedback based on repository count
           if (repositories.length === 0) {
-            setError(`GitHub App installed successfully for ${username}, but no repositories are accessible. This may be because: 1) No repositories were selected during installation, 2) All repositories were deselected after installation, or 3) You need to grant repository permissions. You can modify repository access in your GitHub App settings.`);
+            setError(`GitHub App installed successfully for @${username}, but no repositories are accessible.\n\nThis usually means:\n• No repositories were selected during installation\n• Repository access was revoked after installation\n• The app needs additional permissions\n\nTo fix this:\n1. Go to GitHub Settings → Applications → Installed GitHub Apps\n2. Find "RedString" and click "Configure"\n3. Grant access to repositories you want to sync\n4. Come back and try connecting again\n\nAlternatively, you can use OAuth authentication to browse all your repositories.`);
             setShowRepositorySelector(false); // Don't show empty selector
           } else {
             setShowRepositorySelector(true);
@@ -1196,7 +1204,7 @@ const GitNativeFederation = () => {
                     
                     // Provide helpful feedback based on repository count
                     if (repositories.length === 0) {
-                      setError(`GitHub App installed successfully for ${username}, but no repositories are accessible. This may be because: 1) No repositories were selected during installation, 2) All repositories were deselected after installation, or 3) You need to grant repository permissions. You can modify repository access in your GitHub App settings.`);
+                      setError(`GitHub App installed successfully for @${username}, but no repositories are accessible.\n\nThis usually means:\n• No repositories were selected during installation\n• Repository access was revoked after installation\n• The app needs additional permissions\n\nTo fix this:\n1. Go to GitHub Settings → Applications → Installed GitHub Apps\n2. Find "RedString" and click "Configure"\n3. Grant access to repositories you want to sync\n4. Come back and try connecting again`);
                       setShowRepositorySelector(false); // Don't show empty selector
                     } else {
                       setShowRepositorySelector(true);
@@ -1516,7 +1524,7 @@ const GitNativeFederation = () => {
       
       // Provide helpful feedback based on repository count
       if (repositories.length === 0) {
-        setError(`GitHub App installed successfully for ${username}, but no repositories are accessible. This may be because: 1) No repositories were selected during installation, 2) All repositories were deselected after installation, or 3) You need to grant repository permissions. You can modify repository access in your GitHub App settings.`);
+        setError(`GitHub App installed successfully for @${username}, but no repositories are accessible.\n\nThis usually means:\n• No repositories were selected during installation\n• Repository access was revoked after installation\n• The app needs additional permissions\n\nTo fix this:\n1. Go to GitHub Settings → Applications → Installed GitHub Apps\n2. Find "RedString" and click "Configure"\n3. Grant access to repositories you want to sync\n4. Come back and try connecting again`);
         setShowRepositorySelector(false); // Don't show empty selector
       } else {
         setShowRepositorySelector(true);
@@ -2527,21 +2535,38 @@ const GitNativeFederation = () => {
                 src.user === providerConfig.user && 
                 src.repo === providerConfig.repo;
               
+              // Check if source is configured
+              const isConfigured = (() => {
+                if (src.type === 'github') return !!(src.user && src.repo);
+                if (src.type === 'gitea') return !!(src.endpoint && src.user && src.repo);
+                if (src.type === 'url') return !!(src.urls && src.urls[0]);
+                if (src.type === 'local') return !!src.fileName;
+                return false;
+              })();
+              
               return (
               <div key={src.id} style={{ 
                 background: '#bdb5b5', 
-                border: isConnectedSource ? '2px solid #7A0000' : '1px solid #260000', 
+                border: isConnectedSource ? '2px solid #7A0000' : 
+                        !isConfigured ? '2px dashed #ff9800' : 
+                        '1px solid #260000', 
                 borderRadius: '6px', 
                 padding: '10px' 
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ fontWeight: 600 }}>
-                      {src.type === 'github' ? 'GitHub Repository' : src.type === 'gitea' ? 'Gitea Repository' : src.type === 'url' ? 'External URL/SPARQL' : 'Local File'}
-                      {src.type === 'github' && src.user && src.repo ? ` • @${src.user}/${src.repo}` : ''}
+                      {src.name || 
+                       (src.type === 'github' ? 'GitHub Repository' : 
+                        src.type === 'gitea' ? 'Gitea Repository' : 
+                        src.type === 'url' ? 'External URL/SPARQL' : 
+                        'Local File')}
                     </div>
                     {isConnectedSource && (
                       <div style={{ fontSize: '0.75rem', color: '#7A0000', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '10px' }}>CONNECTED</div>
+                    )}
+                    {!isConfigured && (
+                      <div style={{ fontSize: '0.75rem', color: '#ff9800', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(255,152,0,0.1)', borderRadius: '10px' }}>NEEDS CONFIG</div>
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -2550,9 +2575,11 @@ const GitNativeFederation = () => {
                       type="checkbox" 
                       checked={!!src.enabled} 
                       onChange={() => toggleSourceEnabled(src)}
+                      disabled={!isConfigured}
                       style={{ 
                         accentColor: '#7A0000',
-                        transform: 'scale(1.1)'
+                        transform: 'scale(1.1)',
+                        opacity: isConfigured ? 1 : 0.5
                       }}
                     />
                     <button onClick={() => removeSourceFromActiveUniverse(src.id)} style={{ padding: '4px', background: 'transparent', color: '#d32f2f', border: '1px solid #d32f2f', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Remove source">
@@ -2569,10 +2596,27 @@ const GitNativeFederation = () => {
                         <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Repository</div>
                         <RepositoryDropdown
                           selectedRepository={src.user && src.repo ? { name: src.repo, owner: { login: src.user } } : null}
-                          onSelectRepository={(repo) => updateSourceInActiveUniverse(src.id, { user: repo?.owner?.login, repo: repo?.name })}
+                          onSelectRepository={(repo) => {
+                            updateSourceInActiveUniverse(src.id, { 
+                              user: repo?.owner?.login, 
+                              repo: repo?.name,
+                              name: `@${repo?.owner?.login}/${repo?.name}` // Update display name
+                            });
+                            // Show feedback
+                            setSyncStatus({
+                              type: 'success',
+                              status: `Repository linked: @${repo?.owner?.login}/${repo?.name}`
+                            });
+                            setTimeout(() => setSyncStatus(null), 3000);
+                          }}
                           placeholder={hasOAuthForBrowsing ? 'Browse Repositories' : 'OAuth required for browsing'}
                           disabled={!hasOAuthForBrowsing}
                         />
+                        {!hasOAuthForBrowsing && (
+                          <div style={{ fontSize: '0.75rem', color: '#ff9800', marginTop: '4px' }}>
+                            Connect GitHub OAuth above to browse repositories
+                          </div>
+                        )}
                       </div>
                       <div>
                         <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
@@ -2601,7 +2645,22 @@ const GitNativeFederation = () => {
                     <>
                       <div style={{ gridColumn: '1 / span 2' }}>
                         <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>URL</div>
-                        <input value={(src.urls && src.urls[0]) || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { urls: [e.target.value] })} placeholder="https://example.com/semantic/" className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', width: '100%' }} />
+                        <input 
+                          value={(src.urls && src.urls[0]) || ''} 
+                          onChange={(e) => {
+                            const url = e.target.value;
+                            updateSourceInActiveUniverse(src.id, { 
+                              urls: [url],
+                              name: url ? `External: ${url.replace(/^https?:\/\//, '').split('/')[0]}` : 'External Endpoint' // Auto-generate name from domain
+                            });
+                          }} 
+                          placeholder="https://example.com/semantic/" 
+                          className="editable-title-input" 
+                          style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', width: '100%' }} 
+                        />
+                        <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
+                          Enter a SPARQL endpoint or semantic web API URL
+                        </div>
                       </div>
                       <div>
                         <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Behavior</div>
@@ -2610,6 +2669,9 @@ const GitNativeFederation = () => {
                             <button key={b} onClick={() => updateSourceInActiveUniverse(src.id, { behavior: b })} style={{ padding: '4px 8px', backgroundColor: (src.behavior || 'cache') === b ? '#260000' : 'transparent', color: (src.behavior || 'cache') === b ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>{b === 'cache' ? 'Cache Locally' : 'Read-through'}</button>
                           ))}
                         </div>
+                        <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
+                          Cache: Store data locally • Read: Query on demand
+                        </div>
                       </div>
                     </>
                   )}
@@ -2617,35 +2679,84 @@ const GitNativeFederation = () => {
                   {src.type === 'local' && (
                     <>
                       <div>
-                        <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>File</div>
-                        <input value={src.fileName || `${activeUniverseSlug}.redstring`} onChange={(e) => updateSourceInActiveUniverse(src.id, { fileName: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                        <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>File Name</div>
+                        <input 
+                          value={src.fileName || `${activeUniverseSlug}.redstring`} 
+                          onChange={(e) => {
+                            const fileName = e.target.value;
+                            updateSourceInActiveUniverse(src.id, { 
+                              fileName,
+                              name: fileName ? `Local: ${fileName}` : 'Local .redstring File' // Auto-generate name
+                            });
+                          }} 
+                          className="editable-title-input" 
+                          style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} 
+                          placeholder="universe.redstring"
+                        />
+                        <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
+                          Local .redstring file to import from
+                        </div>
                       </div>
                       <div>
                         <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
                         <input value={src.schemaPath || schemaPath} onChange={(e) => updateSourceInActiveUniverse(src.id, { schemaPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                        <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
+                          Folder path within the file structure
+                        </div>
                       </div>
                     </>
                   )}
 
                   {/* Per-source Manual Save */}
                   <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2', display: 'flex', gap: '8px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
-                    <button onClick={async () => {
-                      try {
-                        if (src.type === 'github') {
-                          await handleSaveToGit();
-                        } else if (src.type === 'local') {
-                          const current = useGraphStore.getState();
-                          downloadRedstringFile(current, src.fileName || `${activeUniverseSlug}.redstring`);
-                        } else if (src.type === 'url') {
-                          setSyncStatus({ type: 'info', status: 'External sources are read-mostly; nothing to save.' });
+                    {isConfigured ? (
+                      <button onClick={async () => {
+                        try {
+                          if (src.type === 'github') {
+                            await handleSaveToGit();
+                            setSyncStatus({ type: 'success', status: `Saved to @${src.user}/${src.repo}` });
+                          } else if (src.type === 'local') {
+                            const current = useGraphStore.getState();
+                            downloadRedstringFile(current, src.fileName || `${activeUniverseSlug}.redstring`);
+                            setSyncStatus({ type: 'success', status: `Downloaded ${src.fileName}` });
+                          } else if (src.type === 'url') {
+                            setSyncStatus({ type: 'info', status: 'External sources are read-only' });
+                          } else if (src.type === 'gitea') {
+                            await handleSaveToGit();
+                            setSyncStatus({ type: 'success', status: `Saved to ${src.user}/${src.repo}` });
+                          }
                           setTimeout(() => setSyncStatus(null), 3000);
-                        } else if (src.type === 'gitea') {
-                          await handleSaveToGit();
+                        } catch (e) {
+                          setError(`Source save failed: ${e.message}`);
                         }
-                      } catch (e) {
-                        setError(`Source save failed: ${e.message}`);
-                      }
-                    }} style={{ padding: '8px 12px', backgroundColor: '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto' }}>Manual Save</button>
+                      }} style={{ 
+                        padding: '8px 12px', 
+                        backgroundColor: src.type === 'url' ? '#666' : '#260000', 
+                        color: '#bdb5b5', 
+                        border: 'none', 
+                        borderRadius: '4px', 
+                        cursor: src.type === 'url' ? 'not-allowed' : 'pointer', 
+                        fontSize: '0.8rem', 
+                        width: isSlim ? '100%' : 'auto',
+                        fontWeight: 'bold'
+                      }}>
+                        {src.type === 'github' || src.type === 'gitea' ? 'Save to Git' :
+                         src.type === 'local' ? 'Download File' :
+                         'Read-only'}
+                      </button>
+                    ) : (
+                      <div style={{ 
+                        padding: '8px 12px', 
+                        backgroundColor: '#ccc', 
+                        color: '#666', 
+                        borderRadius: '4px', 
+                        fontSize: '0.8rem', 
+                        textAlign: 'center',
+                        fontStyle: 'italic'
+                      }}>
+                        Configure source to enable actions
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2684,6 +2795,13 @@ const GitNativeFederation = () => {
                           ...u, 
                           sources: [...(u.sources || []), newSource] 
                         } : u));
+                        
+                        // Show feedback
+                        setSyncStatus({
+                          type: 'success',
+                          status: `Added @${providerConfig.user}/${providerConfig.repo} as source`
+                        });
+                        setTimeout(() => setSyncStatus(null), 3000);
                       }}
                       style={{ 
                         padding: '6px 12px', 
@@ -2749,7 +2867,32 @@ const GitNativeFederation = () => {
               
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <button
-                  onClick={() => { addSourceToActiveUniverse('github'); setShowAddSourceModal(false); }}
+                  onClick={() => {
+                    // Close modal and add a GitHub source with repository selector
+                    setShowAddSourceModal(false);
+                    
+                    // Create a new GitHub source
+                    const newSource = {
+                      id: generateSourceId(),
+                      type: 'github',
+                      enabled: false,
+                      name: 'New GitHub Repository',
+                      user: '',
+                      repo: '',
+                      schemaPath: activeUniverse?.schemaPath || 'schema'
+                    };
+                    setUniverses(prev => prev.map(u => u.slug === activeUniverseSlug ? { 
+                      ...u, 
+                      sources: [...(u.sources || []), newSource] 
+                    } : u));
+                    
+                    // Show feedback
+                    setSyncStatus({
+                      type: 'info',
+                      status: 'GitHub source added - configure repository details below'
+                    });
+                    setTimeout(() => setSyncStatus(null), 4000);
+                  }}
                   style={{
                     padding: '24px 16px',
                     backgroundColor: '#979090',
@@ -2817,7 +2960,32 @@ const GitNativeFederation = () => {
                 </button>
 
                 <button
-                  onClick={() => { addSourceToActiveUniverse('url'); setShowAddSourceModal(false); }}
+                  onClick={() => {
+                    // Close modal and add a URL source
+                    setShowAddSourceModal(false);
+                    
+                    // Create a new URL source
+                    const newSource = {
+                      id: generateSourceId(),
+                      type: 'url',
+                      enabled: false,
+                      name: 'External Endpoint',
+                      urls: [''],
+                      behavior: 'cache',
+                      schemaPath: activeUniverse?.schemaPath || 'schema'
+                    };
+                    setUniverses(prev => prev.map(u => u.slug === activeUniverseSlug ? { 
+                      ...u, 
+                      sources: [...(u.sources || []), newSource] 
+                    } : u));
+                    
+                    // Show feedback
+                    setSyncStatus({
+                      type: 'info',
+                      status: 'External URL source added - enter endpoint URL below'
+                    });
+                    setTimeout(() => setSyncStatus(null), 4000);
+                  }}
                   style={{
                     padding: '24px 16px',
                     backgroundColor: '#979090',
@@ -2850,7 +3018,31 @@ const GitNativeFederation = () => {
                 </button>
 
                 <button
-                  onClick={() => { addSourceToActiveUniverse('local'); setShowAddSourceModal(false); }}
+                  onClick={() => {
+                    // Close modal and add a local file source
+                    setShowAddSourceModal(false);
+                    
+                    // Create a new local file source
+                    const newSource = {
+                      id: generateSourceId(),
+                      type: 'local',
+                      enabled: false,
+                      name: 'Local .redstring File',
+                      fileName: `${activeUniverseSlug}.redstring`,
+                      schemaPath: activeUniverse?.schemaPath || 'schema'
+                    };
+                    setUniverses(prev => prev.map(u => u.slug === activeUniverseSlug ? { 
+                      ...u, 
+                      sources: [...(u.sources || []), newSource] 
+                    } : u));
+                    
+                    // Show feedback
+                    setSyncStatus({
+                      type: 'info',
+                      status: 'Local file source added - configure file path below'
+                    });
+                    setTimeout(() => setSyncStatus(null), 4000);
+                  }}
                   style={{
                     padding: '24px 16px',
                     backgroundColor: '#979090',

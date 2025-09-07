@@ -95,7 +95,7 @@ gcloud run deploy $SERVICE_NAME \
     --allow-unauthenticated \
     --port 3002 \
     --memory 512Mi \
-    --cpu 1 \
+    --cpu 0.5 \
     --concurrency 50 \
     --max-instances 10 \
     --set-env-vars "NODE_ENV=production,OAUTH_PORT=3002" \

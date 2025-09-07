@@ -158,12 +158,46 @@ const UnifiedBottomControlPanel = ({
           ) : null}
 
           {isNodes ? (
-            selectedNodes && selectedNodes.length > 0 ? selectedNodes.map(n => (
-              <NodePill key={n.id} name={n.name} color={n.color} onClick={() => onNodeClick?.(n)} />
-            )) : null
+            selectedNodes && selectedNodes.length > 0 ? (
+              <UniversalNodeRenderer
+                nodes={selectedNodes.map((node, index) => {
+                  // Scale node size based on count - fewer nodes = larger, more nodes = smaller
+                  const baseWidth = selectedNodes.length === 1 ? 160 : selectedNodes.length <= 3 ? 140 : 120;
+                  const baseHeight = selectedNodes.length === 1 ? 60 : selectedNodes.length <= 3 ? 50 : 40;
+                  return {
+                    ...node,
+                    x: index * (baseWidth + 20), // Dynamic spacing based on width
+                    y: 0,
+                    width: baseWidth,
+                    height: baseHeight
+                  };
+                })}
+                connections={[]}
+                containerWidth={Math.max(400, selectedNodes.length * (selectedNodes.length === 1 ? 180 : selectedNodes.length <= 3 ? 160 : 140))}
+                containerHeight={selectedNodes.length === 1 ? 80 : selectedNodes.length <= 3 ? 70 : 60}
+                alignNodesHorizontally={true}
+                minHorizontalSpacing={20}
+                padding={10}
+                onNodeClick={onNodeClick}
+                interactive={true}
+              />
+            ) : null
           ) : isGroup ? (
             selectedGroup ? (
-              <NodePill name={selectedGroup.name} color={selectedGroup.color} />
+              <UniversalNodeRenderer
+                nodes={[{
+                  ...selectedGroup,
+                  x: 0,
+                  y: 0,
+                  width: 140,
+                  height: 40
+                }]}
+                connections={[]}
+                containerWidth={160}
+                containerHeight={50}
+                padding={10}
+                interactive={false}
+              />
             ) : null
           ) : isAbstraction ? (
             customContent

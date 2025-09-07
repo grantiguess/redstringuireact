@@ -152,26 +152,96 @@ const ConnectionControlPanel = ({
   };
 
   const handleDelete = () => {
-    // TODO: Implement delete logic
-    console.log('Delete connection(s)');
+    const removeEdge = useGraphStore.getState().removeEdge;
+    
+    // Delete selected edge(s)
+    if (selectedEdge) {
+      removeEdge(selectedEdge.id);
+    }
+    
+    if (selectedEdges && selectedEdges.length > 0) {
+      selectedEdges.forEach(edge => {
+        if (edge && edge.id) {
+          removeEdge(edge.id);
+        }
+      });
+    }
+    
+    // Close the panel
     if (onClose) {
       onClose();
     }
   };
 
   const handleAdd = () => {
-    // TODO: Implement add logic
-    console.log('Add connection');
+    // Open connection dialog to create a new connection type
+    if (onOpenConnectionDialog && selectedEdge) {
+      onOpenConnectionDialog(selectedEdge.id);
+    }
   };
 
   const handleUp = () => {
-    // TODO: Implement open definition logic
-    console.log('Open connection definition');
+    // Open definition of the connection type
+    const edges = selectedEdge ? [selectedEdge] : selectedEdges;
+    if (edges.length === 0) return;
+    
+    const edge = edges[0];
+    let definitionNodeId = null;
+    
+    // Check definitionNodeIds first (for custom connection types)
+    if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+      definitionNodeId = edge.definitionNodeIds[0];
+    } else if (edge.typeNodeId) {
+      // Fallback to typeNodeId (for base connection type)
+      definitionNodeId = edge.typeNodeId;
+    }
+    
+    if (definitionNodeId && onStartHurtleAnimationFromPanel) {
+      // Get the prototype to find its definition graphs
+      const prototype = nodePrototypesMap.get(definitionNodeId);
+      if (prototype && prototype.definitionGraphIds && prototype.definitionGraphIds.length > 0) {
+        const graphIdToOpen = prototype.definitionGraphIds[0];
+        // Use a mock rect for the animation start point
+        const mockRect = { left: window.innerWidth / 2, top: window.innerHeight / 2, width: 40, height: 40 };
+        onStartHurtleAnimationFromPanel(definitionNodeId, graphIdToOpen, definitionNodeId, mockRect);
+      } else {
+        // Create a new definition graph for this connection type
+        const createAndAssignGraphDefinitionWithoutActivation = useGraphStore.getState().createAndAssignGraphDefinitionWithoutActivation;
+        createAndAssignGraphDefinitionWithoutActivation(definitionNodeId);
+        
+        setTimeout(() => {
+          const updatedPrototype = useGraphStore.getState().nodePrototypes.get(definitionNodeId);
+          if (updatedPrototype?.definitionGraphIds?.length > 0) {
+            const newGraphId = updatedPrototype.definitionGraphIds[updatedPrototype.definitionGraphIds.length - 1];
+            const mockRect = { left: window.innerWidth / 2, top: window.innerHeight / 2, width: 40, height: 40 };
+            onStartHurtleAnimationFromPanel(definitionNodeId, newGraphId, definitionNodeId, mockRect);
+          }
+        }, 50);
+      }
+    }
   };
 
   const handleOpenInPanel = () => {
-    // TODO: Implement open in panel logic
-    console.log('Open connection in panel');
+    // Open the connection type in the right panel
+    const edges = selectedEdge ? [selectedEdge] : selectedEdges;
+    if (edges.length === 0) return;
+    
+    const edge = edges[0];
+    let definitionNodeId = null;
+    
+    // Check definitionNodeIds first (for custom connection types)
+    if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+      definitionNodeId = edge.definitionNodeIds[0];
+    } else if (edge.typeNodeId) {
+      // Fallback to typeNodeId (for base connection type)
+      definitionNodeId = edge.typeNodeId;
+    }
+    
+    if (definitionNodeId) {
+      const openRightPanelNodeTab = useGraphStore.getState().openRightPanelNodeTab;
+      const prototype = nodePrototypesMap.get(definitionNodeId);
+      openRightPanelNodeTab(definitionNodeId, prototype?.name || 'Connection');
+    }
   };
 
   return (
