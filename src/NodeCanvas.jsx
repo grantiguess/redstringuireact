@@ -138,7 +138,6 @@ function NodeCanvas() {
         removeDefinitionFromNode: () => {},
         openGraphTabAndBringToTop: () => {},
         cleanupOrphanedData: () => {},
-        cleanupOrphanedGraphs: () => {},
         restoreFromSession: () => {},
         loadUniverseFromFile: () => {},
         setUniverseError: () => {},
@@ -602,6 +601,9 @@ function NodeCanvas() {
   const universeLoadingError = useGraphStore(state => state.universeLoadingError);
   const hasUniverseFile = useGraphStore(state => state.hasUniverseFile);
   
+  // Store actions
+  const cleanupOrphanedGraphs = useGraphStore(state => state.cleanupOrphanedGraphs);
+  
   // Get hydrated nodes for the active graph
   const hydratedNodes = useMemo(() => {
     if (!activeGraphId || !graphsMap || !nodePrototypesMap) return [];
@@ -1017,20 +1019,10 @@ function NodeCanvas() {
   useEffect(() => {
     window.moveOutOfBoundsNodesInBounds = moveOutOfBoundsNodesInBounds;
     
-    // Expose clustering functions for other parts of the codebase
-    window.enableNodeClustering = () => setEnableClustering(true);
-    window.disableNodeClustering = () => setEnableClustering(false);
-    window.getClusterAnalysis = () => clusterAnalysis;
-    window.isClusteringEnabled = () => enableClustering;
-    
     return () => {
       delete window.moveOutOfBoundsNodesInBounds;
-      delete window.enableNodeClustering;
-      delete window.disableNodeClustering;
-      delete window.getClusterAnalysis;
-      delete window.isClusteringEnabled;
     };
-  }, [moveOutOfBoundsNodesInBounds, clusterAnalysis, enableClustering]);
+  }, [moveOutOfBoundsNodesInBounds]);
 
   // Hover state for grid when mode is 'hover'
 
@@ -2004,23 +1996,23 @@ function NodeCanvas() {
     const defaultName = 'Group';
     const defaultColor = (firstInstance && firstInstance.color) || NODE_DEFAULT_COLOR;
     try {
-      createGroup(activeGraphId, { name: defaultName, color: defaultColor, memberInstanceIds });
+      storeActions.createGroup(activeGraphId, { name: defaultName, color: defaultColor, memberInstanceIds });
     } catch (e) {
       
     }
-  }, [activeGraphId, selectedInstanceIds, nodes, createGroup]);
+  }, [activeGraphId, selectedInstanceIds, nodes, storeActions.createGroup]);
 
   // Group control panel action handlers
   const handleGroupPanelUngroup = useCallback(() => {
     if (!activeGraphId || !selectedGroup) return;
     try {
-      deleteGroup(activeGraphId, selectedGroup.id);
+      storeActions.deleteGroup(activeGraphId, selectedGroup.id);
       setSelectedGroup(null);
       setGroupControlPanelShouldShow(false);
     } catch (e) {
       
     }
-  }, [activeGraphId, selectedGroup, deleteGroup]);
+  }, [activeGraphId, selectedGroup, storeActions.deleteGroup]);
 
   const handleGroupPanelEdit = useCallback(() => {
     if (!selectedGroup) return;
@@ -2035,13 +2027,13 @@ function NodeCanvas() {
     const newColor = prompt('Enter new group color (hex):', selectedGroup.color || '#8B0000');
     if (newColor && newColor.trim()) {
       const colorToUse = newColor.startsWith('#') ? newColor : `#${newColor}`;
-      updateGroup(activeGraphId, selectedGroup.id, (draft) => {
+      storeActions.updateGroup(activeGraphId, selectedGroup.id, (draft) => {
         draft.color = colorToUse;
       });
       // Update the selected group state to reflect the change
       setSelectedGroup(prev => prev ? { ...prev, color: colorToUse } : null);
     }
-  }, [activeGraphId, selectedGroup, updateGroup]);
+  }, [activeGraphId, selectedGroup, storeActions.updateGroup]);
 
 
 
@@ -2995,9 +2987,9 @@ function NodeCanvas() {
   // Function to save view state when operations complete
   const updateGraphViewInStore = useCallback(() => {
     if (activeGraphId && panOffset && zoomLevel) {
-      updateGraphView(activeGraphId, panOffset, zoomLevel);
+      storeActions.updateGraphView(activeGraphId, panOffset, zoomLevel);
     }
-  }, [activeGraphId, panOffset, zoomLevel, updateGraphView]);
+  }, [activeGraphId, panOffset, zoomLevel, storeActions.updateGraphView]);
 
   // Effect to save view state after panning/zooming stops
   useEffect(() => {
@@ -5041,8 +5033,8 @@ function NodeCanvas() {
 
       // Clear selected edge when clicking on empty canvas
       if (selectedEdgeId || selectedEdgeIds.size > 0) {
-          setSelectedEdgeId(null);
-          clearSelectedEdgeIds();
+          storeActions.setSelectedEdgeId(null);
+          storeActions.clearSelectedEdgeIds();
           return;
       }
 
@@ -5789,7 +5781,7 @@ function NodeCanvas() {
             selectedEdgeIds.forEach(edgeId => {
               storeActions.removeEdge(edgeId);
             });
-            clearSelectedEdgeIds();
+            storeActions.clearSelectedEdgeIds();
           }
         } else {
           
@@ -5798,7 +5790,7 @@ function NodeCanvas() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedInstanceIds, selectedEdgeId, selectedEdgeIds, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible, connectionNamePrompt.visible, activeGraphId, storeActions.removeNodeInstance, storeActions.removeEdge, clearSelectedEdgeIds]);
+  }, [selectedInstanceIds, selectedEdgeId, selectedEdgeIds, isHeaderEditing, isRightPanelInputFocused, isLeftPanelInputFocused, nodeNamePrompt.visible, connectionNamePrompt.visible, activeGraphId, storeActions.removeNodeInstance, storeActions.removeEdge, storeActions.clearSelectedEdgeIds]);
 
   const handleProjectTitleChange = (newTitle) => {
     // Get CURRENT activeGraphId directly from store
@@ -6438,46 +6430,6 @@ function NodeCanvas() {
     return false; // No nodes are visible in strict viewport
   }, [nodes, panOffset, zoomLevel, viewportSize, canvasSize, baseDimsById]);
 
-  // Determine if BackToCivilization should be shown
-  const shouldShowBackToCivilization = useMemo(() => {
-    // Only show if:
-    // 1. Initial load is complete (startup delay)
-    // 2. Universe is loaded and has a file
-    // 3. There's an active graph
-    // 4. View is ready (pan/zoom initialized)
-    // 5. No nodes are visible in strict viewport
-    // 6. There are actually nodes in the graph (just not visible)
-    // 7. No UI overlays are active (pie menu, carousels, prompts, etc.)
-    
-    if (!isInitialLoadComplete || !isUniverseLoaded || !hasUniverseFile || !activeGraphId || !isViewReady) {
-      return false;
-    }
-    
-    // Don't show if any prompts or overlays are visible
-    if (nodeNamePrompt.visible || connectionNamePrompt.visible || abstractionPrompt.visible ||
-        abstractionCarouselVisible || selectedNodeIdForPieMenu || plusSign) {
-      return false;
-    }
-    
-    // Don't show if dragging or other interactions are active
-    if (draggingNodeInfo || drawingConnectionFrom || isPanning || selectionRect) {
-      return false;
-    }
-    
-    // Check if there are nodes in the graph but none are visible in strict viewport
-    // Use cluster-aware visibility if clustering is enabled
-    const hasNodesInGraph = nodes && nodes.length > 0;
-    const hasNoVisibleNodesInViewport = !relevantNodesVisibleInStrictViewport;
-    
-    return hasNodesInGraph && hasNoVisibleNodesInViewport;
-  }, [
-    isInitialLoadComplete, isUniverseLoaded, hasUniverseFile, activeGraphId, isViewReady,
-    nodes, relevantNodesVisibleInStrictViewport,
-    nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible,
-    abstractionCarouselVisible, selectedNodeIdForPieMenu, plusSign,
-    draggingNodeInfo, drawingConnectionFrom, isPanning, selectionRect
-  ]);
-
   // Optional clustering feature - disabled by default to avoid computational overhead
   const [enableClustering, setEnableClustering] = useState(false);
 
@@ -6533,6 +6485,65 @@ function NodeCanvas() {
 
     return false; // No relevant nodes are visible
   }, [enableClustering, clusterAnalysis.mainCluster, nodes, panOffset, zoomLevel, viewportSize, canvasSize, baseDimsById]);
+
+  // Determine if BackToCivilization should be shown
+  const shouldShowBackToCivilization = useMemo(() => {
+    // Only show if:
+    // 1. Initial load is complete (startup delay)
+    // 2. Universe is loaded and has a file
+    // 3. There's an active graph
+    // 4. View is ready (pan/zoom initialized)
+    // 5. No nodes are visible in strict viewport
+    // 6. There are actually nodes in the graph (just not visible)
+    // 7. No UI overlays are active (pie menu, carousels, prompts, etc.)
+    
+    if (!isInitialLoadComplete || !isUniverseLoaded || !hasUniverseFile || !activeGraphId || !isViewReady) {
+      return false;
+    }
+    
+    // Don't show if any prompts or overlays are visible
+    if (nodeNamePrompt.visible || connectionNamePrompt.visible || abstractionPrompt.visible ||
+        abstractionCarouselVisible || selectedNodeIdForPieMenu || plusSign) {
+      return false;
+    }
+    
+    // Don't show if dragging or other interactions are active
+    if (draggingNodeInfo || drawingConnectionFrom || isPanning || selectionRect) {
+      return false;
+    }
+    
+    // Check if there are nodes in the graph but none are visible in strict viewport
+    // Use cluster-aware visibility if clustering is enabled
+    const hasNodesInGraph = nodes && nodes.length > 0;
+    const hasNoVisibleNodesInViewport = !relevantNodesVisibleInStrictViewport;
+    
+    return hasNodesInGraph && hasNoVisibleNodesInViewport;
+  }, [
+    isInitialLoadComplete, isUniverseLoaded, hasUniverseFile, activeGraphId, isViewReady,
+    nodes, relevantNodesVisibleInStrictViewport,
+    nodeNamePrompt.visible, connectionNamePrompt.visible, abstractionPrompt.visible,
+    abstractionCarouselVisible, selectedNodeIdForPieMenu, plusSign,
+    draggingNodeInfo, drawingConnectionFrom, isPanning, selectionRect
+  ]);
+
+
+
+  // Expose clustering functions to window for manual use (for debugging/testing)
+  useEffect(() => {
+    // Expose clustering functions for other parts of the codebase
+    window.enableNodeClustering = () => setEnableClustering(true);
+    window.disableNodeClustering = () => setEnableClustering(false);
+    window.getClusterAnalysis = () => clusterAnalysis;
+    window.isClusteringEnabled = () => enableClustering;
+    
+    return () => {
+      delete window.enableNodeClustering;
+      delete window.disableNodeClustering;
+      delete window.getClusterAnalysis;
+      delete window.isClusteringEnabled;
+    };
+  }, [clusterAnalysis, enableClustering]);
+
 
   // Add appearance delay when conditions are met
   useEffect(() => {
@@ -7181,7 +7192,7 @@ function NodeCanvas() {
                                       if (e.key === 'Enter') {
                                         const newName = tempGroupName.trim();
                                         if (newName && activeGraphId) {
-                                          updateGroup(activeGraphId, group.id, (draft) => {
+                                          storeActions.updateGroup(activeGraphId, group.id, (draft) => {
                                             draft.name = newName;
                                           });
                                           // Update selected group state if this group is selected
@@ -7198,7 +7209,7 @@ function NodeCanvas() {
                                     onBlur={() => {
                                       const newName = tempGroupName.trim();
                                       if (newName && activeGraphId && newName !== group.name) {
-                                        updateGroup(activeGraphId, group.id, (draft) => {
+                                        storeActions.updateGroup(activeGraphId, group.id, (draft) => {
                                           draft.name = newName;
                                         });
                                         // Update selected group state if this group is selected
@@ -7861,14 +7872,14 @@ function NodeCanvas() {
                                  if (e.ctrlKey || e.metaKey) {
                                    // Toggle this edge in the multiple selection
                                    if (selectedEdgeIds.has(edge.id)) {
-                                     removeSelectedEdgeId(edge.id);
+                                     storeActions.removeSelectedEdgeId(edge.id);
                                    } else {
-                                     addSelectedEdgeId(edge.id);
+                                     storeActions.addSelectedEdgeId(edge.id);
                                    }
                                  } else {
                                    // Single selection - clear multiple selection and set single edge
-                                   clearSelectedEdgeIds();
-                                   setSelectedEdgeId(edge.id);
+                                   storeActions.clearSelectedEdgeIds();
+                                   storeActions.setSelectedEdgeId(edge.id);
                                  }
                                }}
                                onDoubleClick={(e) => {
@@ -7887,7 +7898,7 @@ function NodeCanvas() {
                                  
                                  // Open the panel tab for the defining node
                                  if (definingNodeId) {
-                                   openRightPanelNodeTab(definingNodeId);
+                                   storeActions.openRightPanelNodeTab(definingNodeId);
                                  }
                                }}
                              />
@@ -7907,14 +7918,14 @@ function NodeCanvas() {
                                if (e.ctrlKey || e.metaKey) {
                                  // Toggle this edge in the multiple selection
                                  if (selectedEdgeIds.has(edge.id)) {
-                                   removeSelectedEdgeId(edge.id);
+                                   storeActions.removeSelectedEdgeId(edge.id);
                                  } else {
-                                   addSelectedEdgeId(edge.id);
+                                   storeActions.addSelectedEdgeId(edge.id);
                                  }
                                } else {
                                  // Single selection - clear multiple selection and set single edge
-                                 clearSelectedEdgeIds();
-                                 setSelectedEdgeId(edge.id);
+                                 storeActions.clearSelectedEdgeIds();
+                                 storeActions.setSelectedEdgeId(edge.id);
                                }
                              }}
                              onDoubleClick={(e) => {
@@ -7933,7 +7944,7 @@ function NodeCanvas() {
                                
                                // Open the panel tab for the defining node
                                if (definingNodeId) {
-                                 openRightPanelNodeTab(definingNodeId);
+                                 storeActions.openRightPanelNodeTab(definingNodeId);
                                }
                              }}
                            />
@@ -8982,8 +8993,8 @@ function NodeCanvas() {
           typeListOpen={typeListMode !== 'closed'}
           onAnimationComplete={handleConnectionControlPanelAnimationComplete}
           onClose={() => {
-            setSelectedEdgeId(null);
-            setSelectedEdgeIds(new Set());
+            storeActions.setSelectedEdgeId(null);
+            storeActions.setSelectedEdgeIds(new Set());
           }}
           onOpenConnectionDialog={(edgeId) => {
             setConnectionNamePrompt({ visible: true, name: '', color: CONNECTION_DEFAULT_COLOR, edgeId });

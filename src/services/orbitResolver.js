@@ -1,7 +1,15 @@
 import { normalizeToCandidate } from './candidates.js';
 import { KnowledgeFederation } from './knowledgeFederation.js';
 import { findRelatedConcepts } from './semanticWebQuery.js';
-import useGraphStore from '../store/graphStore.jsx';
+
+// Lazy import helper to avoid circular dependency
+let _useGraphStore = null;
+const getGraphStore = () => {
+  if (!_useGraphStore) {
+    _useGraphStore = require('../store/graphStore.jsx').default;
+  }
+  return _useGraphStore;
+};
 
 // Simple in-memory cache keyed by prototypeId
 const orbitCache = new Map(); // prototypeId -> { timestamp, candidates }
@@ -35,7 +43,7 @@ export async function fetchOrbitCandidatesForPrototype(prototype, options = {}) 
     console.log(`🔍 Fetching real orbit data for "${prototype.name}"`);
     
     // Real data fetching - comment out for mock mode
-    const graphStore = useGraphStore.getState();
+    const graphStore = getGraphStore().getState();
     const federation = new KnowledgeFederation(graphStore);
 
     const seed = prototype.name;

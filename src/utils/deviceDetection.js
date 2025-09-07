@@ -215,6 +215,7 @@ let isInitialized = false;
 
 const ensureInitialized = () => {
   if (!isInitialized && typeof window !== 'undefined') {
+    isInitialized = true; // Set this BEFORE calling initializeDeviceOptimizedConfig to prevent recursion
     initializeDeviceOptimizedConfig();
     
     // Set up resize handler for device orientation changes
@@ -225,7 +226,5 @@ const ensureInitialized = () => {
         initializeDeviceOptimizedConfig();
       }, 250);
     });
-    
-    isInitialized = true;
   }
 };

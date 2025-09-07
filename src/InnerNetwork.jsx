@@ -1,5 +1,4 @@
 import React from 'react';
-import Node from './Node'; // Import Node component
 import { 
     NODE_WIDTH, 
     NODE_HEIGHT, 

@@ -7,6 +7,7 @@
 import { exportToRedstring, importFromRedstring } from '../formats/redstringFormat.js';
 import { v4 as uuidv4 } from 'uuid';
 import { CONNECTION_DEFAULT_COLOR } from '../constants.js';
+
 import universeManager from '../services/universeManager.js';
 
 // Global state - now primarily for backward compatibility

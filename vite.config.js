@@ -5,6 +5,17 @@ import react from '@vitejs/plugin-react'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Separate the store and services into different chunks to avoid circular dependencies
+          store: ['./src/store/graphStore.jsx', './src/store/fileStorage.js'],
+          services: ['./src/services/universeManager.js', './src/services/orbitResolver.js']
+        }
+      }
+    }
+  },
   server: {
     host: true, // listen on all interfaces for LAN testing
     port: 4000,
@@ -29,7 +40,7 @@ export default defineConfig({
   },
   worker: {
     format: 'es',
-    plugins: []
+    plugins: () => []
   },
   test: {
     globals: true,
