@@ -129,19 +129,6 @@ const RepositoryDropdown = ({
               fontFamily: "'EmOne', sans-serif",
               minWidth: '300px'
             }}>
-              <div style={{ 
-                padding: '12px',
-                borderBottom: '1px solid #260000',
-                backgroundColor: '#979090'
-              }}>
-                <span style={{ 
-                  fontSize: '0.9rem',
-                  fontWeight: '600',
-                  color: '#260000'
-                }}>
-                  Select Repository
-                </span>
-              </div>
               <div style={{ maxHeight: '200px', overflowY: 'auto', backgroundColor: '#bdb5b5' }}>
                 {repositories.map((repo) => (
                   <div
