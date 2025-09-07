@@ -5,6 +5,7 @@ import { oauthFetch } from '../services/bridgeConfig.js';
 import { persistentAuth } from '../services/persistentAuth.js';
 import { GitSyncEngine, SOURCE_OF_TRUTH } from '../services/gitSyncEngine.js';
 import { importFromRedstring } from '../formats/redstringFormat.js';
+import universeManager from '../services/universeManager.js';
 
 // Headless bootstrapper to restore Git federation early (before UI panels mount)
 export default function GitFederationBootstrap() {
@@ -68,6 +69,28 @@ export default function GitFederationBootstrap() {
         // Persist sanitized connection (avoid storing volatile token)
         setGitConnection({ ...restoredConfig, token: undefined });
 
+        // Link this Git connection to the active universe
+        const activeUniverse = universeManager.getActiveUniverse();
+        if (activeUniverse && restoredConfig.user && restoredConfig.repo) {
+          try {
+            universeManager.updateUniverse(activeUniverse.slug, {
+              gitRepo: {
+                ...activeUniverse.gitRepo,
+                enabled: true,
+                linkedRepo: { 
+                  type: 'github', 
+                  user: restoredConfig.user, 
+                  repo: restoredConfig.repo 
+                },
+                schemaPath: restoredConfig.semanticPath || 'schema',
+                universeFolder: `universes/${activeUniverse.slug}`
+              }
+            });
+          } catch (error) {
+            console.warn('[GitFederationBootstrap] Failed to link repository to active universe:', error);
+          }
+        }
+
         // Determine universe file base name from current file status if possible
         let fileBaseName = 'universe';
         try {
@@ -77,10 +100,10 @@ export default function GitFederationBootstrap() {
           }
         } catch {}
 
-        const sourceOfTruthMode = gitSourceOfTruth === 'git' ? SOURCE_OF_TRUTH.GIT : SOURCE_OF_TRUTH.LOCAL;
-        const universeSlug = 'default';
+        const sourceOfTruthMode = activeUniverse?.sourceOfTruth === 'local' ? SOURCE_OF_TRUTH.LOCAL : SOURCE_OF_TRUTH.GIT;
+        const universeSlug = universeManager.activeUniverseSlug || 'universe';
 
-        const engine = new GitSyncEngine(provider, sourceOfTruthMode, universeSlug, fileBaseName);
+        const engine = new GitSyncEngine(provider, sourceOfTruthMode, universeSlug, fileBaseName, universeManager);
         if (cancelled) return;
 
         // Mark store as ready immediately to avoid panel delay
@@ -98,9 +121,56 @@ export default function GitFederationBootstrap() {
           }
         } catch (_) {}
 
-        // Start engine and expose in store
+        // Start engine and expose in store with retry mechanism
         engine.start();
-        if (!cancelled) setGitSyncEngine(engine);
+        if (!cancelled) {
+          setGitSyncEngine(engine);
+          
+          // Ensure the engine stays registered with UniverseManager
+          if (universeManager && universeSlug) {
+            universeManager.setGitSyncEngine(universeSlug, engine);
+            
+            // Update the universe to enable Git repo if it's linked
+            const activeUniverse = universeManager.getActiveUniverse();
+            if (activeUniverse && !activeUniverse.gitRepo.enabled && restoredConfig.user && restoredConfig.repo) {
+              universeManager.updateUniverse(activeUniverse.slug, {
+                gitRepo: {
+                  ...activeUniverse.gitRepo,
+                  enabled: true,
+                  linkedRepo: { 
+                    type: 'github', 
+                    user: restoredConfig.user, 
+                    repo: restoredConfig.repo 
+                  }
+                }
+              });
+            }
+          }
+          
+          // Add a safety check to restart engine if it stops unexpectedly
+          const checkEngineHealth = () => {
+            if (!engine.isRunning && !cancelled) {
+              console.warn('[GitFederationBootstrap] Git sync engine stopped unexpectedly, restarting...');
+              try {
+                engine.restart();
+              } catch (error) {
+                console.error('[GitFederationBootstrap] Failed to restart engine:', error);
+              }
+            }
+          };
+          
+          // Check engine health every minute
+          const healthCheckInterval = setInterval(checkEngineHealth, 60000);
+          
+          // Cleanup function
+          return () => {
+            cancelled = true;
+            clearInterval(healthCheckInterval);
+            if (engine && engine.isRunning) {
+              engine.stop();
+            }
+          };
+        }
       } catch (_) {}
     };
 

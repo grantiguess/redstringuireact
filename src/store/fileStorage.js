@@ -1,20 +1,31 @@
 /**
  * File Storage Module for Redstring
- * Handles automatic persistence to universe.redstring file using File System Access API
- * Single universe workflow with auto-save functionality
+ * Bridge to UniverseManager for backward compatibility
+ * Delegates to UniverseManager while maintaining existing API
  */
 
 import { exportToRedstring, importFromRedstring } from '../formats/redstringFormat.js';
 import { v4 as uuidv4 } from 'uuid';
 import { CONNECTION_DEFAULT_COLOR } from '../constants.js';
+import universeManager from '../services/universeManager.js';
 
-// Global state
+// Global state - now primarily for backward compatibility
 let fileHandle = null;
 let autoSaveInterval = null;
 let isAutoSaveEnabled = true;
 let lastSaveTime = 0;
 let lastChangeTime = 0;
 let preferredDirectory = null;
+
+// Bridge to UniverseManager for new file operations
+const bridgeToUniverseManager = async (operation, ...args) => {
+  try {
+    return await universeManager[operation](...args);
+  } catch (error) {
+    console.error(`[FileStorage] UniverseManager bridge failed for ${operation}:`, error);
+    throw error;
+  }
+};
 
 // Constants
 const AUTO_SAVE_INTERVAL = 500; // Auto-save every 500ms (2x per second)
@@ -527,6 +538,7 @@ const createEmptyState = () => {
 
 /**
  * Create the universe.redstring file (or let user choose location)
+ * Now delegates to UniverseManager
  */
 export const createUniverseFile = async () => {
   if (isBrowserStorageMode()) {
@@ -841,59 +853,15 @@ export const restoreLastSession = async () => {
  * Save current state to the universe file
  */
 export const saveToFile = async (storeState, showSuccess = true) => {
-  if (isBrowserStorageMode() || !fileHandle) {
-    try {
-      const redstringData = exportToRedstring(storeState);
-      await storeBrowserUniverse(redstringData);
-      lastSaveTime = Date.now();
-      if (showSuccess) console.log('[FileStorage] Saved to browser storage');
-      return true;
-    } catch (e) {
-      console.error('[FileStorage] Failed to save to browser storage:', e);
-      return false;
-    }
-  }
-  
   try {
-    // Check/request permissions
-    let permission = await fileHandle.queryPermission({ mode: 'readwrite' });
-    if (permission !== 'granted') {
-      permission = await fileHandle.requestPermission({ mode: 'readwrite' });
-      if (permission !== 'granted') {
-        throw new Error('File permission denied');
-      }
-    }
-    
-    // Export to redstring format
-    const redstringData = exportToRedstring(storeState);
-    const dataString = JSON.stringify(redstringData, null, 2);
-    
-    // Write to file
-    const writable = await fileHandle.createWritable({
-      keepExistingData: false
-    });
-    
-    await writable.write(dataString);
-    await writable.close();
-    
-    // Update localStorage
-    
+    await universeManager.saveActiveUniverse(storeState);
     lastSaveTime = Date.now();
-    
     if (showSuccess) {
-      console.log(`[FileStorage] File saved successfully to: ${fileHandle.name}`);
+      console.log('[FileStorage] Universe saved via UniverseManager');
     }
-    
     return true;
   } catch (error) {
-    console.error('[FileStorage] Failed to save file:', error);
-    
-    // If permission was denied, clear the file handle and disable auto-save
-    if (error.message.includes('permission') || error.name === 'NotAllowedError') {
-      fileHandle = null;
-      disableAutoSave();
-    }
-    
+    console.error('[FileStorage] Failed to save universe via UniverseManager:', error);
     throw error;
   }
 };
@@ -937,15 +905,22 @@ export const canAutoSave = () => {
  * Get current file status
  */
 export const getFileStatus = () => {
+  const activeUniverse = universeManager.getActiveUniverse();
   return {
-    hasFileHandle: fileHandle !== null,
-    fileName: fileHandle ? (fileHandle.name || FILE_NAME) : null,
+    hasFileHandle: fileHandle !== null || !!universeManager.getFileHandle(universeManager.activeUniverseSlug),
+    fileName: activeUniverse?.localFile?.path || (fileHandle ? (fileHandle.name || FILE_NAME) : null),
     autoSaveEnabled: isAutoSaveEnabled,
     autoSaveActive: autoSaveInterval !== null,
     lastSaveTime: lastSaveTime,
-    lastChangeTime: lastChangeTime
+    lastChangeTime: lastChangeTime,
+    // New UniverseManager integration
+    activeUniverseSlug: universeManager.activeUniverseSlug,
+    sourceOfTruth: activeUniverse?.sourceOfTruth
   };
 };
+
+// Export the current file handle for migration
+export const getCurrentFileHandle = () => fileHandle;
 
 // Recent files management
 const RECENT_FILES_DB_NAME = 'RedstringRecentFiles';

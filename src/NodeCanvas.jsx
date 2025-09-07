@@ -7000,14 +7000,15 @@ function NodeCanvas() {
                       const cornerR = 12;
                       const strokeColor = group.color || '#8B0000';
                       const fontSize = 36;
-                      const labelPadding = 24; // More generous padding
+                      const labelPaddingVertical = 16; // Less top/bottom padding
+                      const labelPaddingHorizontal = 32; // More left/right padding
                       const strokeWidth = 2;
                       
                       // Calculate dynamic label size - use editing text if editing, otherwise group name
                       const currentText = editingGroupId === group.id ? tempGroupName : (group.name || 'Group');
                       const estimatedTextWidth = currentText.length * (fontSize * 0.6); // More accurate char width estimate
-                      const labelWidth = Math.max(180, estimatedTextWidth + (labelPadding * 2) + (strokeWidth * 2));
-                      const labelHeight = Math.max(90, fontSize * 1.8 + (labelPadding * 1.5)); // Scale with font size
+                      const labelWidth = Math.max(180, estimatedTextWidth + (labelPaddingHorizontal * 2) + (strokeWidth * 2));
+                      const labelHeight = Math.max(80, fontSize * 1.4 + (labelPaddingVertical * 2)); // Less height with reduced vertical padding
                       const labelX = rectX + (rectW - labelWidth) / 2; // Center horizontally on group
                       const labelY = rectY - labelHeight - 25; // More space above group
                       const labelText = group.name || 'Group';
@@ -7117,9 +7118,9 @@ function NodeCanvas() {
                                     }}
                                     autoFocus
                                     style={{
-                                      width: `calc(100% - ${labelPadding * 2}px)`,
-                                      height: `calc(100% - ${labelPadding}px)`,
-                                      margin: `${labelPadding / 2}px ${labelPadding}px`,
+                                      width: `calc(100% - ${labelPaddingHorizontal * 2}px)`,
+                                      height: `calc(100% - ${labelPaddingVertical * 2}px)`,
+                                      margin: `${labelPaddingVertical}px ${labelPaddingHorizontal}px`,
                                       fontSize: `${fontSize}px`,
                                       fontFamily: 'EmOne, sans-serif',
                                       fontWeight: 'bold',

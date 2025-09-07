@@ -51,8 +51,10 @@ import { persistentAuth } from './services/persistentAuth.js';
 import RepositoryManager from './components/repositories/RepositoryManager.jsx';
 import RepositoryDropdown from './components/repositories/RepositoryDropdown.jsx';
 import { getFileStatus } from './store/fileStorage.js';
+import universeManager from './services/universeManager.js';
+import githubRateLimiter from './services/githubRateLimiter.js';
 
-const GitNativeFederation = () => {
+const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   const [currentProvider, setCurrentProvider] = useState(null);
   const [syncEngine, setSyncEngine] = useState(null);
   const [federation, setFederation] = useState(null);
@@ -98,74 +100,83 @@ const GitNativeFederation = () => {
   const [localFileHandles, setLocalFileHandles] = useState({}); // { [universeSlug]: FileSystemFileHandle }
   const [showAddSourceModal, setShowAddSourceModal] = useState(false);
   
-  // Universes state (universe-level storage config)
-  const [universes, setUniverses] = useState(() => {
-    try {
-      const saved = localStorage.getItem('universes_list');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return [{ 
-      slug: 'universe', 
-      name: 'Universe', 
-      storageMode: 'github', 
-      sourceOfTruth: 'local',
-      schemaPath: 'schema',
-      linkedRepo: null,
-      localPath: 'Universe.redstring',
-      sources: []
-    }];
-  });
-  const [activeUniverseSlug, setActiveUniverseSlug] = useState('universe');
+  // Use UniverseManager for universe state
+  const [universes, setUniverses] = useState(universeManager.getAllUniverses());
+  const [activeUniverseSlug, setActiveUniverseSlug] = useState(universeManager.activeUniverseSlug);
 
-  // Persist universes list
+  // Subscribe to UniverseManager changes
   useEffect(() => {
-    try {
-      localStorage.setItem('universes_list', JSON.stringify(universes));
-    } catch {}
-  }, [universes]);
+    const unsubscribe = universeManager.onStatusChange((status) => {
+      setSyncStatus(status);
+      // Refresh local state when universes change
+      setUniverses(universeManager.getAllUniverses());
+      setActiveUniverseSlug(universeManager.activeUniverseSlug);
+    });
+    
+    return unsubscribe;
+  }, []);
 
-  // Helpers for universes & storage
-  const getActiveUniverse = () => universes.find(u => u.slug === activeUniverseSlug) || universes[0];
+  // Helpers for universes & storage (now using UniverseManager)
+  const getActiveUniverse = () => universeManager.getActiveUniverse();
   const updateActiveUniverse = (updates) => {
-    setUniverses(prev => prev.map(u => u.slug === activeUniverseSlug ? { ...u, ...updates } : u));
+    try {
+      universeManager.updateUniverse(activeUniverseSlug, updates);
+      setUniverses(universeManager.getAllUniverses()); // Refresh local state
+    } catch (error) {
+      console.error('[GitNativeFederation] Failed to update active universe:', error);
+    }
   };
   const addUniverse = () => {
-    const base = 'universe';
-    let i = universes.length + 1;
-    let slug = `${base}-${i}`;
-    while (universes.some(u => u.slug === slug)) { i += 1; slug = `${base}-${i}`; }
-    const nu = { slug, name: `Universe ${i}`, storageMode: 'github', sourceOfTruth: 'local', schemaPath: providerConfig.semanticPath || 'schema', linkedRepo: null, localPath: `Universe-${i}.redstring`, sources: [] };
-    setUniverses(prev => [...prev, nu]);
+    try {
+      universeManager.createUniverse(`Universe ${universes.length + 1}`, {
+        sourceOfTruth: 'git', // Default to git
+        schemaPath: providerConfig.semanticPath || 'schema',
+        enableGit: false, // Will be enabled when linked
+        enableLocal: true
+      });
+      setUniverses(universeManager.getAllUniverses());
+    } catch (error) {
+      console.error('[GitNativeFederation] Failed to create universe:', error);
+    }
   };
   const removeUniverse = (slug) => {
     if (universes.length <= 1) return;
     const confirmed = window.confirm('Remove this universe? This does not delete any GitHub data.');
     if (!confirmed) return;
-    const filtered = universes.filter(u => u.slug !== slug);
-    setUniverses(filtered);
-    if (activeUniverseSlug === slug) {
-      const next = filtered[0]?.slug || 'default';
-      setActiveUniverseSlug(next);
-      setUniverseSlug(next);
+    
+    try {
+      universeManager.deleteUniverse(slug);
+      setUniverses(universeManager.getAllUniverses());
+      setActiveUniverseSlug(universeManager.activeUniverseSlug);
+      setUniverseSlug(universeManager.activeUniverseSlug);
+    } catch (error) {
+      console.error('[GitNativeFederation] Failed to remove universe:', error);
     }
   };
-  const switchActiveUniverse = (slug) => {
+  const switchActiveUniverse = async (slug) => {
     if (slug === activeUniverseSlug) return;
     const confirmed = window.confirm('Save current universe before switching?');
-    if (confirmed) {
-      try { handleSaveToGit(); } catch {}
-    }
-    setActiveUniverseSlug(slug);
-    setUniverseSlug(slug);
     
-    // Update the active universe in the store to ensure GitSyncEngine uses the right slug
-    const newUniverse = universes.find(u => u.slug === slug);
-    if (newUniverse && storeActions?.setActiveUniverse) {
-      storeActions.setActiveUniverse(slug);
+    try {
+      const result = await universeManager.switchActiveUniverse(slug, { saveCurrent: confirmed });
+      if (result.storeState) {
+        // Load the new universe data into the store
+        const loadUniverseFromFile = useGraphStore.getState().loadUniverseFromFile;
+        loadUniverseFromFile(result.storeState);
+      }
+      
+      // Update local state
+      setActiveUniverseSlug(universeManager.activeUniverseSlug);
+      setUniverseSlug(universeManager.activeUniverseSlug);
+      setUniverses(universeManager.getAllUniverses());
+      
+      setTimeout(() => {
+        attemptConnectUniverseRepo();
+      }, 0);
+    } catch (error) {
+      console.error('[GitNativeFederation] Failed to switch universe:', error);
+      setSyncStatus({ type: 'error', status: `Failed to switch universe: ${error.message}` });
     }
-    setTimeout(() => {
-      attemptConnectUniverseRepo();
-    }, 0);
   };
   const sanitizeFilename = (name) => {
     const base = String(name || '').trim().replace(/[^a-zA-Z0-9-_\.\s]/g, '').replace(/\s+/g, '-');
@@ -196,16 +207,43 @@ const GitNativeFederation = () => {
     } catch {}
   };
   const setActiveUniverseSchema = (newSchema) => {
-    updateActiveUniverse({ schemaPath: newSchema });
+    updateActiveUniverse({ 
+      gitRepo: { 
+        ...getActiveUniverse()?.gitRepo, 
+        schemaPath: newSchema || 'schema' 
+      } 
+    });
     setProviderConfig(prev => ({ ...prev, semanticPath: newSchema || 'schema' }));
   };
-  const setActiveUniverseStorageMode = (mode) => updateActiveUniverse({ storageMode: mode });
+  const setActiveUniverseStorageMode = (mode) => {
+    // Convert storage mode to new dual-slot system
+    const updates = {};
+    if (mode === 'local') {
+      updates.localFile = { ...getActiveUniverse()?.localFile, enabled: true };
+      updates.gitRepo = { ...getActiveUniverse()?.gitRepo, enabled: false };
+    } else if (mode === 'github') {
+      updates.localFile = { ...getActiveUniverse()?.localFile, enabled: false };
+      updates.gitRepo = { ...getActiveUniverse()?.gitRepo, enabled: true };
+    } else if (mode === 'mixed') {
+      updates.localFile = { ...getActiveUniverse()?.localFile, enabled: true };
+      updates.gitRepo = { ...getActiveUniverse()?.gitRepo, enabled: true };
+    }
+    updateActiveUniverse(updates);
+  };
   const setActiveUniverseSourceOfTruth = (val) => updateActiveUniverse({ sourceOfTruth: val });
 
   const handleLinkRepositoryToActiveUniverse = (repo) => {
     const owner = repo?.owner?.login || providerConfig.user || authStatus.userData?.login || 'user';
     const name = repo?.name || providerConfig.repo || '';
-    updateActiveUniverse({ linkedRepo: { type: 'github', user: owner, repo: name } });
+    
+    updateActiveUniverse({ 
+      gitRepo: { 
+        enabled: true,
+        linkedRepo: { type: 'github', user: owner, repo: name },
+        schemaPath: providerConfig.semanticPath || 'schema',
+        universeFolder: `universes/${activeUniverseSlug}`
+      }
+    });
     
     // Show feedback
     setSyncStatus({
@@ -221,26 +259,31 @@ const GitNativeFederation = () => {
   const attemptConnectUniverseRepo = async () => {
     try {
       const u = getActiveUniverse();
-      if (!u?.linkedRepo) {
+      if (!u?.gitRepo?.linkedRepo) {
         // If no linked repo but we have a current provider, auto-link it
         if (currentProvider && providerConfig.user && providerConfig.repo) {
           updateActiveUniverse({ 
-            linkedRepo: { 
-              type: 'github', 
-              user: providerConfig.user, 
-              repo: providerConfig.repo 
-            } 
+            gitRepo: {
+              enabled: true,
+              linkedRepo: { 
+                type: 'github', 
+                user: providerConfig.user, 
+                repo: providerConfig.repo 
+              },
+              schemaPath: u.gitRepo?.schemaPath || 'schema',
+              universeFolder: `universes/${activeUniverseSlug}`
+            }
           });
         }
         return;
       }
       const config = {
         type: 'github',
-        user: u.linkedRepo.user,
-        repo: u.linkedRepo.repo,
+        user: u.gitRepo.linkedRepo.user,
+        repo: u.gitRepo.linkedRepo.repo,
         token: undefined,
         authMethod: 'oauth',
-        semanticPath: u.schemaPath || 'schema'
+        semanticPath: u.gitRepo.schemaPath || 'schema'
       };
       try {
         const token = await persistentAuth.getAccessToken();
@@ -410,8 +453,16 @@ const GitNativeFederation = () => {
   useEffect(() => {
     try {
       if (storeGitSyncEngine && !gitSyncEngine) {
+        console.log('[GitNativeFederation] Adopting preloaded Git sync engine');
         setGitSyncEngine(storeGitSyncEngine);
         setGitSyncEngineStore(storeGitSyncEngine);
+        
+        // Ensure engine is registered with UniverseManager
+        const activeUniverse = universeManager.getActiveUniverse();
+        if (activeUniverse) {
+          universeManager.setGitSyncEngine(activeUniverse.slug, storeGitSyncEngine);
+        }
+        
         const provider = storeGitSyncEngine.provider;
         if (provider) {
           setCurrentProvider(provider);
@@ -426,11 +477,20 @@ const GitNativeFederation = () => {
           setIsConnected(true);
           setConnectionHealth('healthy');
         }
+        
+        // Ensure engine is running
+        if (!storeGitSyncEngine.isRunning) {
+          console.log('[GitNativeFederation] Preloaded engine not running, starting...');
+          storeGitSyncEngine.start();
+        }
+        
         try {
           storeGitSyncEngine.onStatusChange((s) => setSyncStatus(s));
         } catch (_) {}
       }
-    } catch (_) {}
+    } catch (error) {
+      console.error('[GitNativeFederation] Error adopting preloaded engine:', error);
+    }
   }, [storeGitSyncEngine, gitSyncEngine, setGitSyncEngineStore]);
 
   // Set up persistent authentication event handlers
@@ -671,18 +731,43 @@ const GitNativeFederation = () => {
   useEffect(() => {
     if (currentProvider && providerConfig.user && providerConfig.repo) {
       const activeUniverse = getActiveUniverse();
-      if (!activeUniverse?.linkedRepo) {
+      if (!activeUniverse?.gitRepo?.linkedRepo) {
         console.log('[GitNativeFederation] Auto-linking current provider to active universe');
         updateActiveUniverse({ 
-          linkedRepo: { 
-            type: 'github', 
-            user: providerConfig.user, 
-            repo: providerConfig.repo 
-          } 
+          gitRepo: {
+            enabled: true,
+            linkedRepo: { 
+              type: 'github', 
+              user: providerConfig.user, 
+              repo: providerConfig.repo 
+            },
+            schemaPath: activeUniverse?.gitRepo?.schemaPath || 'schema',
+            universeFolder: `universes/${activeUniverseSlug}`
+          }
         });
       }
     }
   }, [currentProvider, providerConfig.user, providerConfig.repo, activeUniverseSlug]);
+
+  // Control Git sync engine pause state based on panel visibility
+  useEffect(() => {
+    if (gitSyncEngine) {
+      if (isVisible && isInteractive) {
+        gitSyncEngine.resume();
+      } else {
+        gitSyncEngine.pause();
+      }
+    }
+    
+    // Also control the store-level engine
+    if (storeGitSyncEngine) {
+      if (isVisible && isInteractive) {
+        storeGitSyncEngine.resume();
+      } else {
+        storeGitSyncEngine.pause();
+      }
+    }
+  }, [isVisible, isInteractive, gitSyncEngine, storeGitSyncEngine]);
 
   // Initialize sync engine, federation, and Git storage when provider changes
   useEffect(() => {
@@ -713,9 +798,13 @@ const GitNativeFederation = () => {
           fileBaseName = fileStatus.fileName.replace(/\.redstring$/i, '');
         }
       } catch {}
-      const newGitSyncEngine = new GitSyncEngine(currentProvider, sourceOfTruthMode, universeSlug, fileBaseName);
+      const newGitSyncEngine = new GitSyncEngine(currentProvider, sourceOfTruthMode, universeSlug, fileBaseName, universeManager);
+      
+      // Ensure the engine is properly registered and persistent
       setGitSyncEngine(newGitSyncEngine);
       setGitSyncEngineStore(newGitSyncEngine);
+      universeManager.setGitSyncEngine(universeSlug, newGitSyncEngine);
+      
       // Surface Git sync engine status in the panel
       try {
         newGitSyncEngine.onStatusChange((s) => {
@@ -728,6 +817,9 @@ const GitNativeFederation = () => {
           }
         });
       } catch (_) {}
+      
+      // Start the engine immediately to ensure it's running
+      newGitSyncEngine.start();
       
       // Try to load existing data from Git
       newGitSyncEngine.loadFromGit().then((redstringData) => {
@@ -800,8 +892,7 @@ const GitNativeFederation = () => {
           }
         }
         
-        // Start the sync engine
-        newGitSyncEngine.start();
+        // The sync engine was already started above
         
       }).catch((error) => {
         console.error('[GitNativeFederation] Failed to load from Git:', error);
@@ -810,8 +901,7 @@ const GitNativeFederation = () => {
           status: 'Failed to load existing data'
         });
         
-        // Start the sync engine even if loading failed
-        newGitSyncEngine.start();
+        // The sync engine was already started above
       });
       
       // Load initial data
@@ -1648,6 +1738,14 @@ const GitNativeFederation = () => {
       gitSyncEngine.stop();
     }
     
+    // Remove from UniverseManager
+    const activeUniverse = universeManager.getActiveUniverse();
+    if (activeUniverse) {
+      universeManager.updateUniverse(activeUniverse.slug, {
+        gitRepo: { ...activeUniverse.gitRepo, enabled: false }
+      });
+    }
+    
     setCurrentProvider(null);
     setSyncEngine(null);
     setFederation(null);
@@ -2124,8 +2222,7 @@ const GitNativeFederation = () => {
   
   if (useNewLayout) {
     const activeUniverse = getActiveUniverse();
-    const storageMode = activeUniverse?.storageMode || 'github';
-    const schemaPath = activeUniverse?.schemaPath || providerConfig.semanticPath || 'schema';
+    const schemaPath = activeUniverse?.gitRepo?.schemaPath || providerConfig.semanticPath || 'schema';
     const oauthReady = !!authStatus?.userData?.login;
     const githubOAuthConnected = oauthReady || isConnected;
     const appInstalled = !!githubAppInstallation;
@@ -2142,7 +2239,17 @@ const GitNativeFederation = () => {
     const [isEditingName, setIsEditingName] = [false, () => {}]; // placeholder no-local state here
 
     return (
-      <div ref={containerRef} style={{ padding: '15px', fontFamily: "'EmOne', sans-serif", height: '100%', color: '#260000' }}>
+      <div 
+        ref={containerRef} 
+        style={{ 
+          padding: '15px', 
+          fontFamily: "'EmOne', sans-serif", 
+          height: '100%', 
+          color: '#260000',
+          pointerEvents: isInteractive ? 'auto' : 'none',
+          opacity: isVisible ? 1 : 0.5
+        }}
+      >
         {/* Accounts & Access */}
         <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
           <div style={{ marginBottom: '12px' }}>
@@ -2335,16 +2442,29 @@ const GitNativeFederation = () => {
                     </div>
                     <div>
                       <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
-                      <input value={universe.schemaPath || 'schema'} onChange={(e) => setActiveUniverseSchema(e.target.value)} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                      <input value={activeUniverse?.gitRepo?.schemaPath || 'schema'} onChange={(e) => setActiveUniverseSchema(e.target.value)} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
                     </div>
 
                     {/* Storage Mode */}
                     <div>
                       <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Storage Mode</div>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        {['local','github','mixed'].map(mode => (
-                          <button key={mode} onClick={() => setActiveUniverseStorageMode(mode)} style={{ padding: '4px 8px', backgroundColor: universe.storageMode === mode ? '#260000' : 'transparent', color: universe.storageMode === mode ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>{mode.toUpperCase()}</button>
-                        ))}
+                        {['local','github','mixed'].map(mode => {
+                          // Determine if this mode is currently active based on enabled slots
+                          const isActive = (() => {
+                            const localEnabled = activeUniverse?.localFile?.enabled ?? false;
+                            const gitEnabled = activeUniverse?.gitRepo?.enabled ?? false;
+                            
+                            if (mode === 'local') return localEnabled && !gitEnabled;
+                            if (mode === 'github') return !localEnabled && gitEnabled;
+                            if (mode === 'mixed') return localEnabled && gitEnabled;
+                            return false;
+                          })();
+                          
+                          return (
+                            <button key={mode} onClick={() => setActiveUniverseStorageMode(mode)} style={{ padding: '4px 8px', backgroundColor: isActive ? '#260000' : 'transparent', color: isActive ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>{mode.toUpperCase()}</button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -2352,8 +2472,8 @@ const GitNativeFederation = () => {
                     <div>
                       <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Source of Truth</div>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        <button onClick={() => { if (sourceOfTruthMode !== 'local') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('local'); } }} style={{ padding: '4px 8px', backgroundColor: sourceOfTruthMode === 'local' ? '#260000' : 'transparent', color: sourceOfTruthMode === 'local' ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>FILE</button>
-                        <button onClick={() => { if (sourceOfTruthMode !== 'git') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('git'); } }} style={{ padding: '4px 8px', backgroundColor: sourceOfTruthMode === 'git' ? '#260000' : 'transparent', color: sourceOfTruthMode === 'git' ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>GIT</button>
+                        <button onClick={() => { if (activeUniverse?.sourceOfTruth !== 'local') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('local'); } }} style={{ padding: '4px 8px', backgroundColor: activeUniverse?.sourceOfTruth === 'local' ? '#260000' : 'transparent', color: activeUniverse?.sourceOfTruth === 'local' ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>FILE</button>
+                        <button onClick={() => { if (activeUniverse?.sourceOfTruth !== 'git') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('git'); } }} style={{ padding: '4px 8px', backgroundColor: activeUniverse?.sourceOfTruth === 'git' ? '#260000' : 'transparent', color: activeUniverse?.sourceOfTruth === 'git' ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>GIT</button>
                       </div>
                     </div>
 
@@ -2363,9 +2483,9 @@ const GitNativeFederation = () => {
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <div style={{ minWidth: '220px', maxWidth: '360px', flex: 1 }}>
                           <RepositoryDropdown
-                            selectedRepository={providerConfig.user && providerConfig.repo ? { 
-                              name: providerConfig.repo, 
-                              owner: { login: providerConfig.user } 
+                            selectedRepository={activeUniverse?.gitRepo?.linkedRepo ? { 
+                              name: activeUniverse.gitRepo.linkedRepo.repo, 
+                              owner: { login: activeUniverse.gitRepo.linkedRepo.user } 
                             } : null}
                             onSelectRepository={(repo) => handleLinkRepositoryToActiveUniverse(repo)}
                             placeholder={hasOAuthForBrowsing ? 'Browse Repositories' : 'OAuth required for browsing'}
@@ -2385,8 +2505,13 @@ const GitNativeFederation = () => {
                       <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Local .redstring Path</div>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <input 
-                          value={actualFileName} 
-                          onChange={(e) => updateActiveUniverse({ localPath: e.target.value })} 
+                          value={activeUniverse?.localFile?.path || actualFileName} 
+                          onChange={(e) => updateActiveUniverse({ 
+                            localFile: { 
+                              ...activeUniverse?.localFile, 
+                              path: e.target.value 
+                            } 
+                          })} 
                           className="editable-title-input" 
                           style={{ 
                             fontSize: '0.9rem', 
@@ -2446,7 +2571,7 @@ const GitNativeFederation = () => {
                                   downloadRedstringFile(current, actualFileName);
                                 }
                               }
-                              if (mode === 'github' || mode === 'mixed') {
+                              if (universe.gitRepo?.enabled) {
                                 await handleSaveToGit();
                               }
                               setSyncStatus({ type: 'success', status: 'Manual save completed' });
@@ -3225,7 +3350,16 @@ const GitNativeFederation = () => {
   }
   if (!isConnected) {
     return (
-      <div style={{ padding: '15px', fontFamily: "'EmOne', sans-serif", height: '100%', color: '#260000' }}>
+      <div 
+        style={{ 
+          padding: '15px', 
+          fontFamily: "'EmOne', sans-serif", 
+          height: '100%', 
+          color: '#260000',
+          pointerEvents: isInteractive ? 'auto' : 'none',
+          opacity: isVisible ? 1 : 0.5
+        }}
+      >
         <div style={{ marginBottom: '20px' }}>
           <h3 style={{ color: '#260000', marginBottom: '10px', fontSize: '1.1rem' }}>
             <GitBranch size={20} style={{ marginRight: '8px', verticalAlign: 'middle' }} />
@@ -4118,7 +4252,16 @@ const GitNativeFederation = () => {
   }
 
   return (
-    <div style={{ padding: '15px', fontFamily: "'EmOne', sans-serif", height: '100%', color: '#260000' }}>
+    <div 
+      style={{ 
+        padding: '15px', 
+        fontFamily: "'EmOne', sans-serif", 
+        height: '100%', 
+        color: '#260000',
+        pointerEvents: isInteractive ? 'auto' : 'none',
+        opacity: isVisible ? 1 : 0.5
+      }}
+    >
       {/* Connection Status */}
       <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#979090', borderRadius: '8px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -4188,13 +4331,17 @@ const GitNativeFederation = () => {
             alignItems: 'center', 
             gap: '8px', 
             padding: '8px', 
-            backgroundColor: gitSyncEngine.getStatus().isDragging ? '#EFE8E5' : 
+            backgroundColor: gitSyncEngine.getStatus().isInErrorBackoff ? '#ffebee' :
+                           gitSyncEngine.getStatus().isDragging ? '#EFE8E5' : 
                            gitSyncEngine.getStatus().hasChanges ? '#e8f5e8' : '#f5f5f5',
             borderRadius: '4px',
             fontSize: '0.8rem',
-            marginTop: '8px'
+            marginTop: '8px',
+            border: gitSyncEngine.getStatus().isInErrorBackoff ? '1px solid #f44336' : 'none'
           }}>
-            {gitSyncEngine.getStatus().isDragging ? (
+            {gitSyncEngine.getStatus().isInErrorBackoff ? (
+              <AlertCircle size={14} color="#d32f2f" />
+            ) : gitSyncEngine.getStatus().isDragging ? (
               <RefreshCw size={14} color="#ff9800" />
             ) : gitSyncEngine.getStatus().hasChanges ? (
               <CheckCircle size={14} color="#2e7d32" />
@@ -4202,15 +4349,99 @@ const GitNativeFederation = () => {
               <RefreshCw size={14} color="#666" />
             )}
             <span style={{ 
-              color: gitSyncEngine.getStatus().isDragging ? '#e65100' : 
-                     gitSyncEngine.getStatus().hasChanges ? '#2e7d32' : '#666' 
+              color: gitSyncEngine.getStatus().isInErrorBackoff ? '#d32f2f' :
+                     gitSyncEngine.getStatus().isPaused ? '#ff9800' :
+                     gitSyncEngine.getStatus().isDragging ? '#e65100' : 
+                     gitSyncEngine.getStatus().hasChanges ? '#2e7d32' : '#666',
+              flex: 1
             }}>
-              {gitSyncEngine.getStatus().isDragging 
-                ? 'Auto-save enabled • Dragging in progress...' 
-                : gitSyncEngine.getStatus().hasChanges 
-                  ? 'Auto-save enabled • Changes pending' 
-                  : 'Auto-save enabled • No changes to commit'
+              {gitSyncEngine.getStatus().isInErrorBackoff 
+                ? `Sync paused due to errors • ${gitSyncEngine.getStatus().consecutiveErrors} failures`
+                : gitSyncEngine.getStatus().isPaused
+                  ? 'Sync paused (panel not active)'
+                  : gitSyncEngine.getStatus().isDragging 
+                    ? 'Auto-save enabled • Dragging in progress...' 
+                    : gitSyncEngine.getStatus().hasChanges 
+                      ? 'Auto-save enabled • Changes pending' 
+                      : 'Auto-save enabled • No changes to commit'
               }
+            </span>
+            {gitSyncEngine.getStatus().isInErrorBackoff && (
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button
+                  onClick={() => {
+                    try {
+                      gitSyncEngine.restart();
+                      setSyncStatus({ type: 'info', status: 'Sync engine restarted' });
+                    } catch (error) {
+                      setSyncStatus({ type: 'error', status: `Restart failed: ${error.message}` });
+                    }
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#f44336',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '0.7rem',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  Restart Sync
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const activeUniverse = getActiveUniverse();
+                      if (activeUniverse) {
+                        await universeManager.resolveSyncConflict(activeUniverse);
+                      }
+                    } catch (error) {
+                      setSyncStatus({ type: 'error', status: `Conflict resolution failed: ${error.message}` });
+                    }
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#ff9800',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '0.7rem',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  Resolve Conflict
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Rate Limit Status */}
+        {isConnected && (
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px', 
+            padding: '8px', 
+            backgroundColor: '#f5f5f5',
+            borderRadius: '4px',
+            fontSize: '0.8rem',
+            marginTop: '8px'
+          }}>
+            <span style={{ color: '#666' }}>
+              API Usage: {(() => {
+                const stats = githubRateLimiter.getUsageStats(providerConfig.authMethod);
+                const percentUsed = Math.round(stats.percentUsed);
+                const color = percentUsed > 80 ? '#d32f2f' : percentUsed > 60 ? '#ff9800' : '#2e7d32';
+                return (
+                  <span style={{ color, fontWeight: 'bold' }}>
+                    {stats.used}/{stats.limit} ({percentUsed}%)
+                  </span>
+                );
+              })()}
             </span>
           </div>
         )}

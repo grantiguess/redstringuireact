@@ -926,12 +926,13 @@ const UniversalNodeRenderer = ({
           const nameString = typeof node.name === 'string' ? node.name : '';
           
           // Use Node.jsx's exact font size, line height, and padding calculations
-          const baseFontSize = 20;
-          const baseLineHeight = 32;
-          const baseVerticalPadding = 20;
-          const baseSingleLineSidePadding = 22;
-          const baseMultiLineSidePadding = 30;
-          const baseAverageCharWidth = 12; // From constants.js AVERAGE_CHAR_WIDTH
+          // Special handling for groups - larger text and different padding
+          const baseFontSize = node.isGroup ? 28 : 20; // Larger font for groups
+          const baseLineHeight = node.isGroup ? 36 : 32; // Proportional line height for groups
+          const baseVerticalPadding = node.isGroup ? 12 : 20; // Less top/bottom padding for groups
+          const baseSingleLineSidePadding = node.isGroup ? 32 : 22; // More left/right padding for groups
+          const baseMultiLineSidePadding = node.isGroup ? 40 : 30; // Proportionally more for multiline groups
+          const baseAverageCharWidth = node.isGroup ? 16 : 12; // Wider chars for larger font
           
           // Apply transform scale to all measurements
           const computedFontSize = Math.max(6, baseFontSize * transform.scale);
@@ -955,7 +956,7 @@ const UniversalNodeRenderer = ({
               onMouseLeave={interactive ? () => handleNodeMouseLeave(node) : undefined}
               onClick={interactive ? () => onNodeClick?.(node) : undefined}
             >
-              {/* Node background */}
+              {/* Node background - special styling for groups */}
               <rect
                 className="node-background"
                 x={node.x}
@@ -964,9 +965,9 @@ const UniversalNodeRenderer = ({
                 height={node.height}
                 rx={cornerRadius}
                 ry={cornerRadius}
-                fill={node.color || '#800000'}
-                stroke="none"
-                strokeWidth={0}
+                fill={node.isGroup ? '#bdb5b5' : (node.color || '#800000')}
+                stroke={node.isGroup ? (node.color || '#8B0000') : 'none'}
+                strokeWidth={node.isGroup ? Math.max(3, 6 * transform.scale) : 0}
                 style={{ 
                   cursor: interactive ? 'pointer' : 'default',
                   transition: 'width 0.3s ease, height 0.3s ease, fill 0.2s ease'
@@ -1005,7 +1006,7 @@ const UniversalNodeRenderer = ({
                     style={{
                       fontSize: `${computedFontSize}px`,
                       fontWeight: 'bold',
-                      color: '#bdb5b5',
+                      color: node.isGroup ? (node.color || '#8B0000') : '#bdb5b5',
                       lineHeight: `${computedLineHeight}px`,
                       letterSpacing: '-0.2px',
                       whiteSpace: 'normal',

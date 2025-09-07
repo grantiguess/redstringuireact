@@ -213,13 +213,14 @@ const UnifiedBottomControlPanel = ({
                 nodes={[{
                   ...selectedGroup,
                   x: 0,
-                  y: 0
+                  y: 0,
+                  isGroup: true // Flag to enable group-specific styling
                   // Let getNodeDimensions calculate proper width/height
                 }]}
                 connections={[]}
-                containerWidth={200}
-                containerHeight={70}
-                padding={10}
+                containerWidth={280} // Larger container for bigger group text
+                containerHeight={90} // Taller for larger text
+                padding={12}
                 interactive={false}
               />
             ) : null

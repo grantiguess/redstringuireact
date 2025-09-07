@@ -4188,7 +4188,10 @@ const Panel = forwardRef(
             // Git-Native Federation view
             panelContent = (
                 <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                    <GitNativeFederation />
+                    <GitNativeFederation 
+                        isVisible={leftViewActive === 'federation'}
+                        isInteractive={leftViewActive === 'federation'}
+                    />
                 </div>
             );
         } else if (leftViewActive === 'semantic') {

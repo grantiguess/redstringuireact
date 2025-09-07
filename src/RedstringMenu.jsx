@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MaroonSlider from './components/MaroonSlider.jsx';
-import { ChevronRight, FileText, FolderOpen, Save, Clock } from 'lucide-react';
+import { ChevronRight, FileText, FolderOpen, Save, Clock, Globe } from 'lucide-react';
 import './RedstringMenu.css';
 import DebugOverlay from './DebugOverlay';
+import UniverseOperationsDialog from './components/UniverseOperationsDialog.jsx';
+import './components/UniverseOperationsDialog.css';
 
 const RedstringMenu = ({ 
   isOpen, 
@@ -42,6 +44,8 @@ const RedstringMenu = ({
   const [recentFiles, setRecentFiles] = useState([]);
   // Track timeouts to cancel them when needed
   const [closeTimeout, setCloseTimeout] = useState(null);
+  const [showUniverseDialog, setShowUniverseDialog] = useState(false);
+  const [universeDialogOperation, setUniverseDialogOperation] = useState(null);
   const menuItems = ['File', 'Edit', 'View', 'Connections', 'Help'];
   const menuRef = useRef(null);
 
@@ -185,8 +189,8 @@ const RedstringMenu = ({
                                 <div
                                   className="submenu-item"
                                   onClick={() => {
-                                    // console.log('[RedstringMenu] New Universe clicked');
-                                    onNewUniverse?.();
+                                    setUniverseDialogOperation('create');
+                                    setShowUniverseDialog(true);
                                   }}
                                   style={{ cursor: 'pointer' }}
                                 >
@@ -196,8 +200,19 @@ const RedstringMenu = ({
                                 <div
                                   className="submenu-item"
                                   onClick={() => {
-                                    // console.log('[RedstringMenu] Save Universe clicked');
-                                    onSaveUniverse?.();
+                                    setUniverseDialogOperation('overview');
+                                    setShowUniverseDialog(true);
+                                  }}
+                                  style={{ cursor: 'pointer' }}
+                                >
+                                  <Globe size={16} style={{ marginRight: '8px', minWidth: '16px', flexShrink: 0 }} />
+                                  Universe Manager
+                                </div>
+                                <div
+                                  className="submenu-item"
+                                  onClick={() => {
+                                    setUniverseDialogOperation('overview');
+                                    setShowUniverseDialog(true);
                                   }}
                                   style={{ cursor: 'pointer' }}
                                 >
@@ -490,6 +505,12 @@ const RedstringMenu = ({
           </div>
       </div>
       
+      {/* Universe Operations Dialog */}
+      <UniverseOperationsDialog
+        isOpen={showUniverseDialog}
+        onClose={() => setShowUniverseDialog(false)}
+        initialOperation={universeDialogOperation}
+      />
     </>
   );
 };

@@ -4,6 +4,8 @@
  * Enables real-time responsiveness, true decentralization, and distributed resilience
  */
 
+import githubRateLimiter from './githubRateLimiter.js';
+
 /**
  * Universal Semantic Provider Interface
  * All Git providers must implement this interface
@@ -406,8 +408,13 @@ This repository was automatically initialized by RedString UI React. You can now
 
   async isAvailable() {
     try {
+      // Check rate limit before making request
+      await githubRateLimiter.waitForAvailability(this.authMethod);
+      
       // Check if the repository exists by accessing the repo info, not contents
       const repoUrl = `https://api.github.com/repos/${this.user}/${this.repo}`;
+      
+      githubRateLimiter.recordRequest(this.authMethod);
       const response = await fetch(repoUrl, {
         headers: {
           'Authorization': this.getAuthHeader(),
@@ -421,10 +428,18 @@ This repository was automatically initialized by RedString UI React. You can now
       
       // If 404, repository doesn't exist
       if (response.status === 404) {
+        console.warn(`[GitHubSemanticProvider] Repository not found: ${this.user}/${this.repo}`);
         return false;
       }
       
-      // For other errors (401, 403, etc.), check if it's an auth issue
+      // If 401, authentication failed
+      if (response.status === 401) {
+        console.warn(`[GitHubSemanticProvider] Authentication failed for ${this.user}/${this.repo}`);
+        return false;
+      }
+      
+      // For other errors (403, etc.), log but return false
+      console.warn(`[GitHubSemanticProvider] Repository access failed: ${response.status} ${response.statusText}`);
       return false;
     } catch (error) {
       console.error('[GitHubSemanticProvider] isAvailable error:', error);
@@ -469,9 +484,13 @@ This repository was automatically initialized by RedString UI React. You can now
 
   async writeFileRaw(path, content) {
     try {
+      // Check rate limit before making any requests
+      await githubRateLimiter.waitForAvailability(this.authMethod);
+      
       // First try to get the current file info to get the latest SHA
       let existingFile = null;
       try {
+        githubRateLimiter.recordRequest(this.authMethod);
         existingFile = await this.getFileInfo(path);
       } catch (error) {
         // File doesn't exist, that's fine for new files
@@ -491,6 +510,9 @@ This repository was automatically initialized by RedString UI React. You can now
         console.log(`[GitHubSemanticProvider] Creating new file ${path}`);
       }
 
+      // Record the main request
+      githubRateLimiter.recordRequest(this.authMethod);
+      
       const response = await fetch(`${this.rootUrl}/${path}`, {
         method: 'PUT',
         headers: {
@@ -504,37 +526,64 @@ This repository was automatically initialized by RedString UI React. You can now
       if (!response.ok) {
         const text = await response.text();
         
-        // Handle 409 conflict by retrying with fresh SHA
+        // Handle 409 conflict by retrying with fresh SHA and exponential backoff
         if (response.status === 409) {
-          console.log(`[GitHubSemanticProvider] 409 conflict for ${path}, retrying with fresh SHA...`);
+          console.log(`[GitHubSemanticProvider] 409 conflict for ${path}, retrying with exponential backoff...`);
           
-          try {
-            // Get the latest SHA and retry once
-            const freshFile = await this.getFileInfo(path);
-            if (freshFile?.sha) {
-              body.sha = freshFile.sha;
-              console.log(`[GitHubSemanticProvider] Retrying with fresh SHA: ${freshFile.sha}`);
+          // Retry up to 5 times with exponential backoff
+          for (let attempt = 1; attempt <= 5; attempt++) {
+            try {
+              // Exponential backoff: 200ms, 400ms, 800ms, 1600ms, 3200ms
+              const backoffDelay = Math.min(200 * Math.pow(2, attempt - 1), 3200);
+              console.log(`[GitHubSemanticProvider] Retry attempt ${attempt} for ${path}, waiting ${backoffDelay}ms...`);
+              await new Promise(resolve => setTimeout(resolve, backoffDelay));
               
-              const retryResponse = await fetch(`${this.rootUrl}/${path}`, {
-                method: 'PUT',
-                headers: {
-                  'Authorization': this.getAuthHeader(),
-                  'Accept': 'application/vnd.github.v3+json',
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(body)
-              });
+              // Check rate limit before retry
+              await githubRateLimiter.waitForAvailability(this.authMethod);
               
-              if (!retryResponse.ok) {
-                const retryText = await retryResponse.text();
-                throw new Error(`GitHub writeFileRaw retry failed: ${retryResponse.status} ${retryText}`);
+              // Get fresh file info
+              githubRateLimiter.recordRequest(this.authMethod);
+              const freshFile = await this.getFileInfo(path);
+              if (freshFile?.sha) {
+                body.sha = freshFile.sha;
+                console.log(`[GitHubSemanticProvider] Retry attempt ${attempt} with fresh SHA: ${freshFile.sha.substring(0, 8)}`);
+                
+                githubRateLimiter.recordRequest(this.authMethod);
+                const retryResponse = await fetch(`${this.rootUrl}/${path}`, {
+                  method: 'PUT',
+                  headers: {
+                    'Authorization': this.getAuthHeader(),
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify(body)
+                });
+                
+                if (retryResponse.ok) {
+                  console.log(`[GitHubSemanticProvider] Successfully resolved conflict on attempt ${attempt}`);
+                  return await retryResponse.json();
+                } else if (retryResponse.status !== 409) {
+                  // Different error, don't retry further
+                  const retryText = await retryResponse.text();
+                  throw new Error(`GitHub writeFileRaw retry failed: ${retryResponse.status} ${retryText}`);
+                }
+                
+                // Still 409, continue to next attempt
+                console.log(`[GitHubSemanticProvider] Attempt ${attempt} still got 409, continuing...`);
+              } else {
+                throw new Error('Could not get fresh SHA for retry');
               }
-              
-              return await retryResponse.json();
+            } catch (retryError) {
+              if (attempt === 5) {
+                // Last attempt failed
+                throw new Error(`GitHub writeFileRaw failed after ${attempt} attempts: ${retryError.message}`);
+              }
+              console.warn(`[GitHubSemanticProvider] Retry attempt ${attempt} failed:`, retryError.message);
             }
-          } catch (retryError) {
-            console.error(`[GitHubSemanticProvider] Retry failed for ${path}:`, retryError);
           }
+          
+          // All retries exhausted
+          throw new Error(`GitHub writeFileRaw failed after 5 retry attempts with exponential backoff`);
         }
         
         throw new Error(`GitHub writeFileRaw failed: ${response.status} ${text}`);
