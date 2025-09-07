@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import useGraphStore from '../store/graphStore.js';
+import useGraphStore from '../store/graphStore.jsx';
 import { SemanticProviderFactory } from '../services/gitNativeProvider.js';
 import { oauthFetch } from '../services/bridgeConfig.js';
 import { persistentAuth } from '../services/persistentAuth.js';

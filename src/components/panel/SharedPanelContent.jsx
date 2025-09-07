@@ -9,7 +9,7 @@ import SemanticEditor from '../SemanticEditor.jsx';
 import ConnectionBrowser from '../ConnectionBrowser.jsx';
 import StandardDivider from '../StandardDivider.jsx';
 import { fastEnrichFromSemanticWeb } from '../../services/semanticWebQuery.js';
-import useGraphStore from '../../store/graphStore.js';
+import useGraphStore from "../../store/graphStore.jsx";
 
 // Helper function to determine the correct article ("a" or "an")
 const getArticleFor = (word) => {

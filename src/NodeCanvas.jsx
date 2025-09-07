@@ -30,7 +30,7 @@ import useGraphStore, {
     getHydratedNodesForGraph, // New selector
     getEdgesForGraph,
     getNodePrototypeById, // New selector for prototypes
-} from './store/graphStore.js';
+} from "./store/graphStore.jsx";
 import { shallow } from 'zustand/shallow';
 
 import {

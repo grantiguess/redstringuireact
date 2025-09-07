@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Trash2, Plus, ArrowUpFromDot, ArrowRight, ChevronLeft, ChevronRight, PackageOpen, Layers, Edit3, Bookmark, Palette, MoreHorizontal, Group, Ungroup } from 'lucide-react';
 import UniversalNodeRenderer from './UniversalNodeRenderer';
 import { RENDERER_PRESETS } from './UniversalNodeRenderer.presets';
-import useGraphStore from './store/graphStore.js';
+import useGraphStore from "./store/graphStore.jsx";
 import { getNodeDimensions } from './utils.js';
 import './UnifiedBottomControlPanel.css';
 

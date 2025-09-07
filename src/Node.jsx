@@ -6,7 +6,7 @@ import InnerNetwork from './InnerNetwork.jsx'; // Import InnerNetwork
 import { getNodeDimensions } from './utils.js'; // Import needed for node dims
 import { v4 as uuidv4 } from 'uuid';
 import { ChevronLeft, ChevronRight, Trash2, Expand, ArrowUpFromDot } from 'lucide-react'; // Import navigation icons, trash, and expand
-import useGraphStore, { getHydratedNodesForGraph, getEdgesForGraph } from './store/graphStore.js'; // Import store selectors
+import useGraphStore, { getHydratedNodesForGraph, getEdgesForGraph } from "./store/graphStore.jsx"; // Import store selectors
 
 const PREVIEW_SCALE_FACTOR = 0.3; // How much to shrink the network layout
 

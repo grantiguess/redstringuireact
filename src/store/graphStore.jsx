@@ -64,7 +64,7 @@ const _createAndAssignGraphDefinition = (draft, prototypeId) => {
         color: prototype.color || NODE_DEFAULT_COLOR,
         directed: true,
         instances: new Map(), // Initialize with empty instances map
-        groups: new Map(), // Map<groupId, { id, name, color, memberInstanceIds: string[] }>
+        groups: new Map(), // Map of groupId to group data
         edgeIds: [],
         definingNodeIds: [prototypeId], // This is the ID of the prototype
     };
@@ -801,7 +801,8 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
         graph.instances = new Map();
     }
     graph.instances.set(instanceId, newInstance);
-  })),
+  }));
+  },
 
   // Remove instance immediately (hard delete) and clean up connected edges
   removeNodeInstance: (graphId, instanceId) => set(produce((draft) => {
@@ -974,7 +975,8 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
     } else {
       console.warn(`updateNodePrototype: Prototype with id ${prototypeId} not found.`);
     }
-  })),
+    }));
+  },
 
   // Update an instance's unique data (e.g., position)
   updateNodeInstance: (graphId, instanceId, recipe) => {
@@ -989,7 +991,8 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
               console.warn(`updateNodeInstance: Instance ${instanceId} not found in graph ${graphId}.`);
           }
       }
-  })),
+    }));
+  },
   
   // Update positions of multiple instances efficiently
   updateMultipleNodeInstancePositions: (graphId, updates) => set(produce((draft) => {
@@ -1257,7 +1260,7 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
         color: initialData.color || NODE_DEFAULT_COLOR,
         directed: initialData.directed !== undefined ? initialData.directed : false,
         instances: new Map(), // Initialize with empty instances map
-        groups: new Map(), // Map<groupId, { id, name, color, memberInstanceIds: string[] }>
+        groups: new Map(), // Map of groupId to group data
         edgeIds: [],
         definingNodeIds: [definingPrototypeId], // This graph is defined by the new prototype
         panOffset: null,

@@ -22,7 +22,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import universeManager, { SOURCE_OF_TRUTH } from '../services/universeManager.js';
-import useGraphStore from '../store/graphStore.js';
+import useGraphStore from "../store/graphStore.jsx";
 
 const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) => {
   const [operation, setOperation] = useState(initialOperation || 'overview');

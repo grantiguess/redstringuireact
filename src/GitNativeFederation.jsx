@@ -45,7 +45,7 @@ import { bridgeFetch, oauthFetch } from './services/bridgeConfig.js';
 import { SemanticSyncEngine } from './services/semanticSyncEngine.js';
 import { SemanticFederation } from './services/semanticFederation.js';
 import { GitSyncEngine, SOURCE_OF_TRUTH } from './services/gitSyncEngine.js';
-import useGraphStore from './store/graphStore.js';
+import useGraphStore from './store/graphStore.jsx';
 import { importFromRedstring, downloadRedstringFile } from './formats/redstringFormat.js';
 import { persistentAuth } from './services/persistentAuth.js';
 import RepositoryManager from './components/repositories/RepositoryManager.jsx';

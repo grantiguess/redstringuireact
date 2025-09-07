@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { getNodeDimensions } from './utils.js';
 import { NODE_HEIGHT, NODE_WIDTH, NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR } from './constants';
-import useGraphStore from './store/graphStore.js';
+import useGraphStore from "./store/graphStore.jsx";
 
 const GraphPreview = ({ nodes = [], edges = [], width, height }) => {
   // Access store for prototype data to determine edge colors

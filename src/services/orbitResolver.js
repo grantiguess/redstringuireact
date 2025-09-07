@@ -34,7 +34,7 @@ export async function fetchOrbitCandidatesForPrototype(prototype, options = {}) 
     console.log(`🔍 Fetching real orbit data for "${prototype.name}"`);
     
     // Real data fetching - comment out for mock mode
-    const graphStore = (await import('../store/graphStore.js')).default.getState();
+    const graphStore = (await import('../store/graphStore.jsx')).default.getState();
     const federation = new KnowledgeFederation(graphStore);
 
     const seed = prototype.name;

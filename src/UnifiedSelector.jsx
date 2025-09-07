@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Palette, Plus } from 'lucide-react';
 import { NODE_DEFAULT_COLOR, MODAL_CLOSE_ICON_SIZE } from './constants';
-import useGraphStore from './store/graphStore.js';
+import useGraphStore from "./store/graphStore.jsx";
 import ColorPicker from './ColorPicker';
 import useViewportBounds from './hooks/useViewportBounds';
 import './UnifiedSelector.css';

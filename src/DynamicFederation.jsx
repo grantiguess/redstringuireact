@@ -28,7 +28,7 @@ import domainVerification from './services/domainVerification.js';
 import podDiscovery from './services/podDiscovery.js';
 import uriGenerator from './services/uriGenerator.js';
 import { importFromRedstring } from './formats/redstringFormat.js';
-import useGraphStore from './store/graphStore.js';
+import useGraphStore from "./store/graphStore.jsx";
 
 const DynamicFederation = () => {
   const [sessionInfo, setSessionInfo] = useState(solidAuth.getSessionInfo());

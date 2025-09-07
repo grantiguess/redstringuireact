@@ -4,7 +4,7 @@
  */
 
 import toolValidator from './toolValidator.js';
-import useGraphStore from '../store/graphStore.js';
+import useGraphStore from "../store/graphStore.jsx";
 
 class CognitiveAgent {
   constructor() {

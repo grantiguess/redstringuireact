@@ -12,7 +12,7 @@ import {
     NODE_DEFAULT_COLOR
 } from './constants'; // Import necessary constants
 import { getNodeDimensions } from './utils.js'; // Import from utils.js
-import useGraphStore from './store/graphStore.js';
+import useGraphStore from "./store/graphStore.jsx";
 
 // --- InnerNetwork Component --- 
 // Rename connections to edges, expect plain data objects

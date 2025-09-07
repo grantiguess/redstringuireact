@@ -3,7 +3,7 @@ import { X, Palette, ArrowBigRightDash } from 'lucide-react';
 import { NODE_DEFAULT_COLOR, HEADER_HEIGHT, MODAL_CLOSE_ICON_SIZE } from './constants';
 import NodeGridItem from './NodeGridItem';
 import ColorPicker from './ColorPicker';
-import useGraphStore from './store/graphStore.js';
+import useGraphStore from "./store/graphStore.jsx";
 
 const OldUnifiedSelector = ({ 
   mode, // 'node-creation', 'connection-creation', 'node-typing', or 'abstraction-node-creation'
