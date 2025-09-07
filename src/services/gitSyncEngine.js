@@ -214,17 +214,20 @@ class GitSyncEngine {
     this.isRunning = true;
     console.log('[GitSyncEngine] Starting commit loop (every', this.commitInterval, 'ms)');
     
-    // Auto-commit loop with aggressive conflict prevention
-    console.log('[GitSyncEngine] Auto-commit enabled with conflict prevention - every', this.commitInterval, 'ms');
+    // Intelligent auto-commit with change type awareness
+    console.log('[GitSyncEngine] Intelligent auto-commit enabled - responds to change types');
     
+    // Store reference to change type for intelligent timing
+    this.lastChangeType = null;
+    this.changeTypeTimeout = null;
+    
+    // Main auto-commit loop - checks for changes every 5 seconds but respects change type timing
     this.commitLoop = setInterval(async () => {
       // Only auto-commit if no manual commit is in progress
-      if (!this.isCommitInProgress) {
+      if (!this.isCommitInProgress && this.hasChanges) {
         await this.processPendingCommits();
-      } else {
-        console.log('[GitSyncEngine] Skipping auto-commit - manual commit in progress');
       }
-    }, this.commitInterval);
+    }, 5000); // Check every 5 seconds
   }
   
   /**
@@ -321,10 +324,9 @@ class GitSyncEngine {
   }
 
   /**
-   * Update local state instantly (user operations)
-   * Now with intelligent rate limiting and debouncing
+   * Update local state instantly with intelligent auto-save timing
    */
-  updateState(storeState) {
+  updateState(storeState, changeType = 'unknown') {
     // Store the current state for background persistence
     this.localState.set('current', storeState);
     
@@ -345,11 +347,28 @@ class GitSyncEngine {
       this.isDragging = true;
       this.dragStartTime = this.dragStartTime || now;
       console.log('[GitSyncEngine] Detected rapid updates (likely dragging), debouncing...');
+      changeType = 'position'; // Override to position type during dragging
     }
     
     // Clear any existing debounce timeout
     if (this.debounceTimeout) {
       clearTimeout(this.debounceTimeout);
+    }
+    
+    // Set intelligent delay based on change type
+    let delay;
+    switch (changeType) {
+      case 'prototype':
+        delay = 1000; // 1 second for prototype changes (rare, important)
+        break;
+      case 'structure':
+        delay = 2000; // 2 seconds for node operations (placing, connecting, etc.)
+        break;
+      case 'position':
+        delay = 10000; // 10 seconds for position changes
+        break;
+      default:
+        delay = this.debounceDelay; // 5 seconds for unknown changes
     }
     
     // Add to pending commits
@@ -358,22 +377,31 @@ class GitSyncEngine {
       timestamp: now,
       data: storeState,
       hash: currentHash,
-      isDragging: this.isDragging
+      isDragging: this.isDragging,
+      changeType: changeType
     });
     
     this.hasChanges = true;
     
-    // If we're dragging, use debounced commit
+    // If we're dragging, use longer debounce for position changes
     if (this.isDragging) {
       this.debounceTimeout = setTimeout(() => {
-        console.log('[GitSyncEngine] Dragging finished, committing final state');
+        console.log('[GitSyncEngine] Dragging finished, committing final position state');
         this.isDragging = false;
         this.dragStartTime = 0;
         this.processPendingCommits();
-      }, this.debounceDelay);
+      }, delay); // Use the intelligent delay
     } else {
-      // Normal update, log but don't spam
-      console.log('[GitSyncEngine] Content updated, pending commits:', this.pendingCommits.length);
+      // For non-dragging changes, set up intelligent auto-commit
+      this.debounceTimeout = setTimeout(async () => {
+        if (!this.isCommitInProgress && this.hasChanges) {
+          console.log(`[GitSyncEngine] Auto-committing ${changeType} changes after ${delay}ms`);
+          await this.processPendingCommits();
+        }
+        this.debounceTimeout = null;
+      }, delay);
+      
+      console.log(`[GitSyncEngine] ${changeType} change queued, will auto-commit in ${delay}ms (${this.pendingCommits.length} pending)`);
     }
   }
   

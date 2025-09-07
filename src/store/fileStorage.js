@@ -867,10 +867,29 @@ export const saveToFile = async (storeState, showSuccess = true) => {
 };
 
 /**
- * Notify that changes have been made to trigger auto-save
+ * Notify that changes have been made to trigger auto-save with intelligent timing
  */
-export const notifyChanges = () => {
+export const notifyChanges = (changeType = 'unknown') => {
   lastChangeTime = Date.now();
+  
+  // Notify any connected Git sync engines about the change type
+  try {
+    import('../services/universeManager.js').then(({ universeManager }) => {
+      const activeUniverse = universeManager.getActiveUniverse();
+      if (activeUniverse) {
+        const gitSyncEngine = universeManager.getGitSyncEngine(activeUniverse.slug);
+        if (gitSyncEngine) {
+          // Get current store state
+          import('./graphStore.js').then((graphStore) => {
+            const storeState = graphStore.default.getState();
+            gitSyncEngine.updateState(storeState, changeType);
+          });
+        }
+      }
+    });
+  } catch (error) {
+    console.warn('[FileStorage] Failed to notify Git sync engine:', error);
+  }
 };
 
 /**

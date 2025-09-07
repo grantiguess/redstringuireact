@@ -1024,7 +1024,24 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   // Update Git sync engine when store state changes and track unsaved changes
   useEffect(() => {
     if (gitSyncEngine && storeState) {
-      gitSyncEngine.updateState(storeState);
+      // Detect change type from recent actions (simple heuristic)
+      const detectChangeType = () => {
+        // This is a basic heuristic - in practice, the store middleware handles this better
+        const now = Date.now();
+        const timeSinceLastChange = now - (gitSyncEngine.lastUpdateTime || 0);
+        
+        // If very recent rapid updates, likely position changes
+        if (timeSinceLastChange < 200) {
+          return 'position';
+        }
+        
+        // Default to structure changes for safety (2s delay)
+        return 'structure';
+      };
+      
+      const changeType = detectChangeType();
+      gitSyncEngine.lastUpdateTime = Date.now();
+      gitSyncEngine.updateState(storeState, changeType);
       
       // Track that we have unsaved changes
       setHasUnsavedChanges(true);

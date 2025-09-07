@@ -101,31 +101,72 @@ const normalizeEdgeDirectionality = (directionality) => {
   return { arrowsToward: new Set() };
 };
 
-// Middleware to notify auto-save of changes
+// Intelligent auto-save middleware with different timings for different change types
 const autoSaveMiddleware = (config) => {
   let notifyTimeout = null;
+  let lastChangeType = 'unknown';
   
   return (set, get, api) =>
     config(
       (...args) => {
-        set(...args);
+        const [updater] = args;
         
-        // Debounce auto-save notifications to prevent spam during rapid updates (like dragging)
+        // Detect change type based on the call stack or action name
+        const stack = new Error().stack;
+        let changeType = 'position'; // Default to position changes (10s delay)
+        
+        if (stack.includes('updateNodePrototype') || stack.includes('addNodePrototype') || stack.includes('removeNodePrototype')) {
+          changeType = 'prototype'; // Prototype changes (immediate)
+        } else if (stack.includes('addEdge') || stack.includes('removeEdge') || stack.includes('addNodeInstance') || stack.includes('removeNodeInstance')) {
+          changeType = 'structure'; // Structure changes (quick)
+        } else if (stack.includes('updateMultipleNodeInstancePositions') || stack.includes('updateNodeInstance')) {
+          // Check if it's just position updates
+          const state = get();
+          if (typeof updater === 'function') {
+            // This is likely a position-only update during dragging
+            changeType = 'position';
+          } else {
+            changeType = 'structure'; // Other instance updates
+          }
+        }
+        
+        set(...args);
+        lastChangeType = changeType;
+        
+        // Clear existing timeout
         if (notifyTimeout) {
           clearTimeout(notifyTimeout);
         }
         
+        // Set appropriate delay based on change type
+        let delay;
+        switch (changeType) {
+          case 'prototype':
+            delay = 1000; // 1 second for prototype changes
+            break;
+          case 'structure':
+            delay = 2000; // 2 seconds for structure changes (adding/removing nodes/edges)
+            break;
+          case 'position':
+            delay = 10000; // 10 seconds for position changes
+            break;
+          default:
+            delay = 5000; // 5 seconds for unknown changes
+        }
+        
         notifyTimeout = setTimeout(() => {
-          // Notify auto-save system that changes have been made
+          // Notify auto-save system with change type
           try {
             import('./fileStorage.js').then(({ notifyChanges }) => {
-              notifyChanges();
+              notifyChanges(changeType);
             });
           } catch (error) {
             console.warn('[GraphStore] Failed to notify auto-save of changes:', error);
           }
           notifyTimeout = null;
-        }, 100); // 100ms debounce - prevents spam during rapid updates like dragging
+        }, delay);
+        
+        console.log(`[GraphStore] Change detected: ${changeType}, auto-save in ${delay}ms`);
       },
       get,
       api
