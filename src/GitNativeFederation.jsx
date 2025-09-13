@@ -205,9 +205,13 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     const hasApp = !!storedAppInstallation;
     
     if (hasOAuth && hasApp) {
-      console.log('[GitNativeFederation] ✅ Fully configured - OAuth + GitHub App available');
-    } else if (hasOAuth || hasApp) {
-      console.log('[GitNativeFederation] ⚠️  Partially configured - only', hasOAuth ? 'OAuth' : 'GitHub App', 'available');
+      console.log('[GitNativeFederation] ✅ OPTIMAL MODE: OAuth + GitHub App available - Auto-save optimized');
+    } else if (hasOAuth && !hasApp) {
+      console.log('[GitNativeFederation] ⚠️  OAUTH FALLBACK MODE: GitHub App not found, using OAuth only');
+      console.log('[GitNativeFederation] 🔧 OAuth Fallback is FUNCTIONAL - Git sync will work normally');
+      console.log('[GitNativeFederation] 💡 Recommendation: Install GitHub App for optimized auto-save');
+    } else if (!hasOAuth && hasApp) {
+      console.log('[GitNativeFederation] ⚠️  GitHub App available but OAuth disconnected');
     } else {
       console.log('[GitNativeFederation] ❌ Not configured - manual setup required');
     }
@@ -986,7 +990,13 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             setIsConnected(true);
             setConnectionHealth('healthy');
             
-            console.log('[GitNativeFederation] Git connection restored and verified successfully');
+            console.log('[GitNativeFederation] 🎉 Git connection restored and verified successfully');
+            
+            // Check if we're in OAuth fallback mode and make it clear
+            if (!githubAppInstallation && authStatus?.isAuthenticated) {
+              console.log('[GitNativeFederation] 🔧 RUNNING IN OAUTH FALLBACK MODE - Fully functional!');
+              console.log('[GitNativeFederation] ✅ Git sync, file operations, and auto-save are working normally');
+            }
             
             // Clear the status after 3 seconds
             setTimeout(() => {
@@ -2118,7 +2128,12 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       // Persist connection without token
       setGitConnection({ ...config, token: undefined });
 
-      console.log(`[GitNativeFederation] Connected via ${authData.isGitHubApp ? 'GitHub App' : 'OAuth'} to`, `${username}/${repoName}`);
+      if (authData.isGitHubApp) {
+        console.log(`[GitNativeFederation] ✨ Connected via GitHub App to ${username}/${repoName} - Optimized mode active`);
+      } else {
+        console.log(`[GitNativeFederation] 🔧 Connected via OAuth Fallback to ${username}/${repoName} - Fully functional!`);
+        console.log(`[GitNativeFederation] 💡 Consider installing GitHub App for optimized auto-save`);
+      }
     } catch (err) {
       console.error('[GitNativeFederation] Repository selection failed:', err);
       setError(`Repository selection failed: ${err.message}`);
@@ -2854,7 +2869,13 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             setIsConnected(true);
             setConnectionHealth('healthy');
             
-            console.log('[GitNativeFederation] Git connection restored and verified successfully');
+            console.log('[GitNativeFederation] 🎉 Git connection restored and verified successfully');
+            
+            // Check if we're in OAuth fallback mode and make it clear
+            if (!githubAppInstallation && authStatus?.isAuthenticated) {
+              console.log('[GitNativeFederation] 🔧 RUNNING IN OAUTH FALLBACK MODE - Fully functional!');
+              console.log('[GitNativeFederation] ✅ Git sync, file operations, and auto-save are working normally');
+            }
           } else {
             console.warn('[GitNativeFederation] Restored connection failed availability test');
             setConnectionHealth('failed');
@@ -4460,34 +4481,76 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         )}
 
         {/* Authentication Status Indicator */}
-        {(currentProvider || githubAppInstallation || pendingOAuth) && (
-          <div style={{ marginBottom: '15px', padding: '12px', backgroundColor: '#e8f5e8', border: '1px solid #4caf50', borderRadius: '6px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', color: '#2e7d32' }}>
-              <span style={{ fontWeight: 'bold' }}>🔗 Connected:</span>
-              {githubAppInstallation && (
-                <span>
-                  <strong>GitHub App</strong> (@{githubAppInstallation.username}) • 
-                  <span style={{ color: '#1976d2', marginLeft: '4px' }}>Optimized Auto-Save</span>
-                </span>
-              )}
-              {pendingOAuth && (
-                <span>
-                  <strong>OAuth</strong> (@{pendingOAuth.username}) • 
-                  <span style={{ color: '#f57c00', marginLeft: '4px' }}>Standard Sync</span>
-                </span>
-              )}
-              {currentProvider && !githubAppInstallation && !pendingOAuth && (
-                <span>
-                  <strong>{currentProvider.authMethod === 'github-app' ? 'GitHub App' : 'OAuth'}</strong> 
-                  ({currentProvider.user}/{currentProvider.repo}) • 
-                  <span style={{ color: currentProvider.authMethod === 'github-app' ? '#1976d2' : '#f57c00', marginLeft: '4px' }}>
-                    {currentProvider.authMethod === 'github-app' ? 'Optimized Auto-Save' : 'Standard Sync'}
+        {(() => {
+          const hasOAuth = authStatus?.isAuthenticated;
+          const hasApp = !!githubAppInstallation;
+          const hasProvider = !!currentProvider;
+          const showStatus = hasOAuth || hasApp || hasProvider || pendingOAuth;
+          
+          if (!showStatus) return null;
+          
+          // Determine the active mode
+          let statusContent;
+          let statusColor = '#e8f5e8';
+          let borderColor = '#4caf50';
+          let textColor = '#2e7d32';
+          
+          if (githubAppInstallation) {
+            // GitHub App mode (optimal)
+            statusContent = (
+              <span>
+                <strong>GitHub App</strong> (@{githubAppInstallation.username}) • 
+                <span style={{ color: '#1976d2', marginLeft: '4px' }}>✨ Optimized Auto-Save</span>
+              </span>
+            );
+          } else if (hasOAuth && (hasProvider || pendingOAuth)) {
+            // OAuth fallback mode (functional)
+            const username = pendingOAuth?.username || authStatus?.userData?.login || currentProvider?.user;
+            const repo = currentProvider?.repo || 'repository';
+            statusContent = (
+              <span>
+                <strong>OAuth Fallback Mode</strong> (@{username}) • 
+                <span style={{ color: '#ff9800', marginLeft: '4px' }}>⚠️ Functional, GitHub App recommended</span>
+                {currentProvider && (
+                  <span style={{ color: '#666', marginLeft: '8px' }}>
+                    ({currentProvider.user}/{currentProvider.repo})
                   </span>
-                </span>
-              )}
+                )}
+              </span>
+            );
+            statusColor = '#fff3e0';
+            borderColor = '#ff9800';
+            textColor = '#e65100';
+          } else if (hasOAuth) {
+            // OAuth only, no active connection
+            statusContent = (
+              <span>
+                <strong>OAuth Connected</strong> (@{authStatus.userData?.login}) • 
+                <span style={{ color: '#ff5722', marginLeft: '4px' }}>⚠️ No repository selected</span>
+              </span>
+            );
+            statusColor = '#ffebee';
+            borderColor = '#ff5722';
+            textColor = '#c62828';
+          } else {
+            return null;
+          }
+          
+          return (
+            <div style={{ 
+              marginBottom: '15px', 
+              padding: '12px', 
+              backgroundColor: statusColor, 
+              border: `1px solid ${borderColor}`, 
+              borderRadius: '6px' 
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', color: textColor }}>
+                <span style={{ fontWeight: 'bold' }}>🔗 Connected:</span>
+                {statusContent}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Provider Selection */}
         <div style={{ marginBottom: '20px', marginTop: '30px', padding: '15px', backgroundColor: '#979090', borderRadius: '8px' }}>
