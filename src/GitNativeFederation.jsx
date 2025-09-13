@@ -170,9 +170,41 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       // Refresh local state when universes change
       setUniverses(universeManager.getAllUniverses());
       setActiveUniverseSlug(universeManager.activeUniverseSlug);
+
+      // Ensure Git engine is configured for the active universe as soon as state changes
+      try {
+        const active = universeManager.getActiveUniverse();
+        if (active?.gitRepo?.linkedRepo) {
+          // Attempt to connect if provider not ready
+          if (!currentProvider) {
+            attemptConnectUniverseRepo();
+          }
+          // Register any existing engine to this universe to satisfy immediate Git loads
+          const existingEngine = storeGitSyncEngine || gitSyncEngine;
+          if (existingEngine) {
+            universeManager.setGitSyncEngine(active.slug, existingEngine);
+          }
+        }
+      } catch (_) {}
     });
     
     return unsubscribe;
+  }, []);
+
+  // Ensure Git engine is registered early for the active universe (helps reads on session restore)
+  useEffect(() => {
+    try {
+      const active = universeManager.getActiveUniverse();
+      if (active?.gitRepo?.linkedRepo) {
+        const existing = universeManager.getGitSyncEngine(active.slug) || storeGitSyncEngine || gitSyncEngine;
+        if (existing) {
+          universeManager.setGitSyncEngine(active.slug, existing);
+        } else {
+          // Try to connect so the engine can be created and registered
+          attemptConnectUniverseRepo();
+        }
+      }
+    } catch (_) {}
   }, []);
   
   // Startup logging and status check
