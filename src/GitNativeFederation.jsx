@@ -94,7 +94,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   const [deviceCapabilityMessage] = useState(() => {
     if (deviceConfig.gitOnlyMode) {
       if (deviceInfo.isMobile) {
-        return { type: 'info', title: 'Mobile-Optimized Experience', message: 'RedString is running in Git-Only mode for the best mobile experience. Your universes will sync directly with Git repositories.', icon: '📱' };
+        return { type: 'info', title: 'Mobile-Optimized Experience', message: 'RedString is running in Git-Only mode for the best mobile experience. Your universes will sync directly with Git repositories.' };
       } else if (deviceInfo.isTablet) {
         return { type: 'info', title: 'Tablet-Optimized Experience', message: 'RedString is optimized for tablet use with Git-based universe management and touch-friendly interface.', icon: '📲' };
       } else {
@@ -205,15 +205,15 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     const hasApp = !!storedAppInstallation;
     
     if (hasOAuth && hasApp) {
-      console.log('[GitNativeFederation] ✅ OPTIMAL MODE: OAuth + GitHub App available - Auto-save optimized');
+      console.log('[GitNativeFederation] OPTIMAL MODE: OAuth + GitHub App available - Auto-save optimized');
     } else if (hasOAuth && !hasApp) {
-      console.log('[GitNativeFederation] ⚠️  OAUTH FALLBACK MODE: GitHub App not found, using OAuth only');
+      console.log('[GitNativeFederation] OAUTH FALLBACK MODE: GitHub App not found, using OAuth only');
       console.log('[GitNativeFederation] 🔧 OAuth Fallback is FUNCTIONAL - Git sync will work normally');
-      console.log('[GitNativeFederation] 💡 Recommendation: Install GitHub App for optimized auto-save');
+      console.log('[GitNativeFederation] Recommendation: Install GitHub App for optimized auto-save');
     } else if (!hasOAuth && hasApp) {
-      console.log('[GitNativeFederation] ⚠️  GitHub App available but OAuth disconnected');
+      console.log('[GitNativeFederation] GitHub App available but OAuth disconnected');
     } else {
-      console.log('[GitNativeFederation] ❌ Not configured - manual setup required');
+      console.log('[GitNativeFederation] Not configured - manual setup required');
     }
   }, []); // Run once on mount
   
@@ -304,7 +304,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       setIsConnected(true);
       setConnectionHealth('healthy');
       
-      console.log(`[GitNativeFederation] ✅ Auto-connection successful! Connected as @${username} with ${repositories.length} repositories`);
+      console.log(`[GitNativeFederation] Auto-connection successful. Connected as @${username} with ${repositories.length} repositories`);
       
       // Optional: Test the connection by making a simple API call
       try {
@@ -328,7 +328,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       }
       
     } catch (error) {
-      console.error('[GitNativeFederation] ❌ Auto-connection failed:', error);
+      console.error('[GitNativeFederation] Auto-connection failed:', error);
       setConnectionHealth('failed');
       
       // Provide more specific error messages
@@ -536,27 +536,19 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         repo: name,
         schemaPath: providerConfig.semanticPath || 'schema'
       };
-      
-      // Add the source to the universe
-      updateActiveUniverse({
-        sources: [...existingSources, newSource]
-      });
-      
-      setSyncStatus({
-        type: 'success',
-        status: `Linked repository and added as source: @${owner}/${name}`
-      });
+      updateActiveUniverse({ sources: [...existingSources, newSource] });
     } else {
-      setSyncStatus({
-        type: 'success',
-        status: `Linked repository: @${owner}/${name}`
-      });
+      // Ensure the existing primary source reflects current selection
+      const updated = existingSources.map(s => (s.type === 'github' && s.user === owner && s.repo === name)
+        ? { ...s, name: `@${owner}/${name}`, schemaPath: providerConfig.semanticPath || s.schemaPath }
+        : s);
+      updateActiveUniverse({ sources: updated });
     }
     
     setTimeout(() => setSyncStatus(null), 3000);
     
-    // proceed with existing connect flow
-    handleRepositoryManagerSelect(repo);
+    // proceed with existing connect flow (explicit owner)
+    handleRepositoryManagerSelect({ ...repo, owner: { login: owner } });
   };
 
   const attemptConnectUniverseRepo = async () => {
@@ -714,6 +706,20 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     
     const filteredSources = (u?.sources || []).filter(s => s.id !== id);
     updateActiveUniverse({ sources: filteredSources });
+  };
+
+  // Unlink the currently linked Git repository from the active universe
+  const unlinkLinkedRepository = () => {
+    const u = getActiveUniverse();
+    if (!u?.gitRepo?.linkedRepo) return;
+    const { user, repo } = u.gitRepo.linkedRepo;
+    const remainingSources = (u.sources || []).filter(s => !(s.type === 'github' && s.user === user && s.repo === repo));
+    updateActiveUniverse({
+      gitRepo: { ...u.gitRepo, linkedRepo: undefined, enabled: false },
+      sources: remainingSources
+    });
+    setSyncStatus({ type: 'info', status: `Unlinked repository @${user}/${repo}` });
+    setTimeout(() => setSyncStatus(null), 3000);
   };
   const toggleSourceEnabled = async (src) => {
     const newEnabled = !src.enabled;
@@ -995,7 +1001,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             // Check if we're in OAuth fallback mode and make it clear
             if (!githubAppInstallation && authStatus?.isAuthenticated) {
               console.log('[GitNativeFederation] 🔧 RUNNING IN OAUTH FALLBACK MODE - Fully functional!');
-              console.log('[GitNativeFederation] ✅ Git sync, file operations, and auto-save are working normally');
+              console.log('[GitNativeFederation] Git sync, file operations, and auto-save are working normally');
             }
             
             // Clear the status after 3 seconds
@@ -2007,7 +2013,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   };
 
   // Handle repository selection in OAuth flow or GitHub App flow
-  const handleSelectRepository = async (repoName, makePrivate = false, createIfMissing = false) => {
+  // ownerOverride is optional to explicitly set owner/login
+  const handleSelectRepository = async (repoName, makePrivate = false, createIfMissing = false, ownerOverride = undefined) => {
     try {
       // Check for GitHub App installation first, then fallback to OAuth
       let authData;
@@ -2098,9 +2105,10 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         }
       }
 
+      const repoOwner = ownerOverride || username;
       const config = {
         type: 'github',
-        user: username,
+        user: repoOwner,
         repo: repoName,
         token: accessToken,
         authMethod: authData.isGitHubApp ? 'github-app' : 'oauth',
@@ -2114,6 +2122,10 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
 
       const isAvailable = await provider.isAvailable();
       if (!isAvailable) {
+        setSyncStatus({
+          type: 'warning',
+          status: `Repository not accessible: @${config.user}/${config.repo}. Check permissions or name.`
+        });
         throw new Error('Repository is not accessible. Check permissions or name.');
       }
 
@@ -2129,10 +2141,10 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       setGitConnection({ ...config, token: undefined });
 
       if (authData.isGitHubApp) {
-        console.log(`[GitNativeFederation] ✨ Connected via GitHub App to ${username}/${repoName} - Optimized mode active`);
+        console.log(`[GitNativeFederation] Connected via GitHub App to ${repoOwner}/${repoName} - Optimized mode active`);
       } else {
-        console.log(`[GitNativeFederation] 🔧 Connected via OAuth Fallback to ${username}/${repoName} - Fully functional!`);
-        console.log(`[GitNativeFederation] 💡 Consider installing GitHub App for optimized auto-save`);
+        console.log(`[GitNativeFederation] Connected via OAuth Fallback to ${repoOwner}/${repoName} - Fully functional!`);
+        console.log(`[GitNativeFederation] Consider installing GitHub App for optimized auto-save`);
       }
     } catch (err) {
       console.error('[GitNativeFederation] Repository selection failed:', err);
@@ -2280,7 +2292,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     setShowRepositoryManager(false);
     
     // Use the selected repository
-    handleSelectRepository(repo.name, false, false);
+    const owner = repo?.owner?.login || repo?.owner?.name || repo?.owner || providerConfig.user || authStatus?.userData?.login;
+    handleSelectRepository(repo.name, false, false, owner);
   };
 
   // Handle GitHub App connection - simple and clean like OAuth
@@ -2467,11 +2480,11 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     // Add confirmation for switching to Git mode
     if (newMode === SOURCE_OF_TRUTH.GIT) {
       const confirmed = window.confirm(
-        '⚠️ WARNING: Switching to Git mode will make the Git repository the authoritative source.\n\n' +
+        'WARNING: Switching to Git mode will make the Git repository the authoritative source.\n\n' +
         'This means:\n' +
-        '• Git changes can overwrite your local RedString file\n' +
-        '• Your local changes may be lost if not committed\n' +
-        '• This is experimental and may cause data loss\n\n' +
+        ' - Git changes can overwrite your local RedString file\n' +
+        ' - Your local changes may be lost if not committed\n' +
+        ' - This is experimental and may cause data loss\n\n' +
         'Only enable this if you understand the risks.\n\n' +
         'Continue?'
       );
@@ -2650,18 +2663,18 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           
           setSyncStatus({ 
             type: 'success', 
-            status: `✅ All tests passed! Export/Import roundtrip: ${originalPrototypes.length} prototypes, ${originalGraphs.length} graphs, ${originalEdges.length} edges. Multi-edge directionality preserved. Git sync ready.` 
+            status: `All tests passed. Export/Import roundtrip: ${originalPrototypes.length} prototypes, ${originalGraphs.length} graphs, ${originalEdges.length} edges. Multi-edge directionality preserved. Git sync ready.` 
           });
         } catch (syncError) {
           setSyncStatus({ 
             type: 'warning', 
-            status: `⚠️ Core tests passed but Git sync test failed: ${syncError.message}` 
+            status: `Core tests passed but Git sync test failed: ${syncError.message}` 
           });
         }
       } else {
         setSyncStatus({ 
           type: 'success', 
-          status: `✅ Core tests passed! Export/Import roundtrip: ${originalPrototypes.length} prototypes, ${originalGraphs.length} graphs, ${originalEdges.length} edges. Multi-edge directionality preserved. Connect to Git for full testing.` 
+          status: `Core tests passed. Export/Import roundtrip: ${originalPrototypes.length} prototypes, ${originalGraphs.length} graphs, ${originalEdges.length} edges. Multi-edge directionality preserved. Connect to Git for full testing.` 
         });
       }
 
@@ -2669,7 +2682,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       console.error('[GitNativeFederation] Test failed:', error);
       setSyncStatus({ 
         type: 'error', 
-        status: `❌ Test failed: ${error.message}` 
+        status: `Test failed: ${error.message}` 
       });
     }
   };
@@ -2873,8 +2886,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             
             // Check if we're in OAuth fallback mode and make it clear
             if (!githubAppInstallation && authStatus?.isAuthenticated) {
-              console.log('[GitNativeFederation] 🔧 RUNNING IN OAUTH FALLBACK MODE - Fully functional!');
-              console.log('[GitNativeFederation] ✅ Git sync, file operations, and auto-save are working normally');
+              console.log('[GitNativeFederation] RUNNING IN OAUTH FALLBACK MODE - Fully functional!');
+              console.log('[GitNativeFederation] Git sync, file operations, and auto-save are working normally');
             }
           } else {
             console.warn('[GitNativeFederation] Restored connection failed availability test');
@@ -2953,7 +2966,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             alignItems: 'center',
             gap: '10px'
           }}>
-            <span style={{ fontSize: '1.2rem' }}>{deviceCapabilityMessage.icon}</span>
             <div>
               <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '2px' }}>
                 {deviceCapabilityMessage.title}
@@ -3260,20 +3272,22 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                       )}
                     </div>
 
-                    {/* Primary Repository (Storage + Source) */}
+                    {/* Repository (combined: linked repo + local file) */}
                     <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
-                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Primary Repository</div>
+                      <div style={{ fontSize: '0.8rem', color: '#260000', marginBottom: '4px' }}>Repository</div>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <div style={{ minWidth: '220px', maxWidth: '360px', flex: 1 }}>
-                          <RepositoryDropdown
-                            selectedRepository={activeUniverse?.gitRepo?.linkedRepo ? { 
-                              name: activeUniverse.gitRepo.linkedRepo.repo, 
-                              owner: { login: activeUniverse.gitRepo.linkedRepo.user } 
+                          {(activeUniverse?.gitRepo?.enabled ?? false) ? (
+                            <RepositoryDropdown
+                            selectedRepository={activeUniverse?.gitRepo?.linkedRepo ? {
+                              name: activeUniverse.gitRepo.linkedRepo.repo,
+                              owner: { login: activeUniverse.gitRepo.linkedRepo.user }
                             } : null}
                             onSelectRepository={(repo) => handleLinkRepositoryToActiveUniverse(repo)}
                             placeholder={hasOAuthForBrowsing ? 'Browse Repositories' : 'OAuth required for browsing'}
                             disabled={!hasOAuthForBrowsing}
                           />
+                          ) : null}
                         </div>
                         {activeUniverse?.gitRepo?.linkedRepo && (
                           <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', border: '1px solid #260000', color: '#260000' }}>
@@ -3282,169 +3296,453 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                         )}
                         {activeUniverse?.gitRepo?.linkedRepo && (
                           <div style={{ display: 'flex', gap: '4px' }}>
-                            <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#4caf50', color: 'white' }}>
+                            <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#bdb5b5', color: '#260000' }}>
                               Read
                             </span>
-                            <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#2196f3', color: 'white' }}>
+                            <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#bdb5b5', color: '#260000' }}>
                               Write
                             </span>
                           </div>
                         )}
                       </div>
-                      {/* Show universe location in repo with activity */}
                       {activeUniverse?.gitRepo?.linkedRepo && (
-                        <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px', fontFamily: 'monospace' }}>
-                          📁 {activeUniverse.gitRepo.universeFolder || `universes/${activeUniverseSlug}`}/{activeUniverseSlug}.redstring
-                          <div style={{ marginTop: '2px', fontSize: '0.7rem' }}>
-                            <span style={{ color: '#4caf50' }}>↓ Read:</span> Connected • 
-                            <span style={{ color: '#2196f3', marginLeft: '6px' }}>↑ Write:</span> {hasAppForAutoSave ? 'Auto-save' : 'Manual'}
+                        <div style={{ fontSize: '0.75rem', color: '#260000', marginTop: '4px', fontFamily: 'monospace' }}>
+                          {activeUniverse.gitRepo.universeFolder || `universes/${activeUniverseSlug}`}/{activeUniverseSlug}.redstring
+                          <div style={{ marginTop: '2px', fontSize: '0.7rem', color: '#260000' }}>
+                            Read: Connected • Write: {hasAppForAutoSave ? 'Auto-save' : 'Manual'}
                           </div>
                         </div>
                       )}
-                    </div>
 
-                    {/* Local File Path - Mobile-aware with conditional display */}
-                    {deviceConfig.enableLocalFileStorage ? (
-                      <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
-                        <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Local .redstring Path</div>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <input 
-                            value={activeUniverse?.localFile?.path || actualFileName} 
-                            onChange={(e) => updateActiveUniverse({ 
-                              localFile: { 
-                                ...activeUniverse?.localFile, 
-                                path: e.target.value 
-                              } 
-                            })} 
-                            className="editable-title-input" 
-                            style={{ 
-                              fontSize: '0.9rem', 
-                              padding: '6px 8px', 
+                      {/* Local file (if supported) */}
+                      {deviceConfig.enableLocalFileStorage && (activeUniverse?.localFile?.enabled || (activeUniverse?.localFile?.enabled ?? false) || (activeUniverse?.gitRepo?.enabled && activeUniverse?.localFile?.enabled)) ? (
+                        <div style={{ marginTop: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <div style={{ fontSize: '0.8rem', color: '#260000' }}>Local file</div>
+                          <input
+                            value={activeUniverse?.localFile?.path || actualFileName}
+                            onChange={(e) => updateActiveUniverse({
+                              localFile: {
+                                ...activeUniverse?.localFile,
+                                path: e.target.value
+                              }
+                            })}
+                            className="editable-title-input"
+                            style={{
+                              fontSize: '0.9rem',
+                              padding: '6px 8px',
                               borderRadius: '4px',
                               flex: 1
-                            }} 
+                            }}
                           />
-                          <button 
-                            onClick={pickLocalFileForActiveUniverse} 
+                          <button
+                            onClick={pickLocalFileForActiveUniverse}
                             title="Edit file location"
-                            style={{ 
-                              padding: '4px', 
-                              backgroundColor: '#EFE8E5', 
-                              color: '#260000', 
-                              border: '1px solid #260000', 
-                              borderRadius: '4px', 
-                              cursor: 'pointer', 
-                              display: 'flex', 
-                              alignItems: 'center', 
+                            style={{
+                              padding: '4px',
+                              backgroundColor: '#EFE8E5',
+                              color: '#260000',
+                              border: '1px solid #260000',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
                               justifyContent: 'center'
                             }}
                           >
                             <Edit3 size={12} />
                           </button>
-                          <button 
+                          <button
                             onClick={async () => {
                               const ok = await saveActiveUniverseToLocalHandle();
                               if (!ok) {
                                 const current = useGraphStore.getState();
                                 downloadRedstringFile(current, actualFileName);
                               }
-                            }} 
+                            }}
                             title="Download file"
-                            style={{ 
-                              padding: '4px', 
-                              backgroundColor: '#EFE8E5', 
-                              color: '#260000', 
-                              border: '1px solid #260000', 
-                              borderRadius: '4px', 
-                              cursor: 'pointer', 
-                              display: 'flex', 
-                              alignItems: 'center', 
+                            style={{
+                              padding: '4px',
+                              backgroundColor: '#EFE8E5',
+                              color: '#260000',
+                              border: '1px solid #260000',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
                               justifyContent: 'center'
                             }}
                           >
                             <Download size={12} />
                           </button>
-                        <button 
-                          onClick={async () => {
-                            try {
-                              setIsSaving(true);
-                              const localEnabled = activeUniverse?.localFile?.enabled ?? false;
-                              const gitEnabled = activeUniverse?.gitRepo?.enabled ?? false;
-                              const sourceOfTruth = activeUniverse?.sourceOfTruth || 'local';
-                              
-                              // Only save to local if local is enabled AND (source of truth is local OR mixed mode)
-                              const shouldSaveLocal = localEnabled && (sourceOfTruth === 'local' || (localEnabled && gitEnabled));
-                              
-                              // Only save to git if git is enabled
-                              const shouldSaveGit = gitEnabled;
-                              
-                              if (shouldSaveLocal) {
-                                const current = useGraphStore.getState();
-                                const ok = await saveActiveUniverseToLocalHandle();
-                                if (!ok) {
-                                  downloadRedstringFile(current, actualFileName);
+                          <button
+                            onClick={async () => {
+                              try {
+                                setIsSaving(true);
+                                const localEnabled = activeUniverse?.localFile?.enabled ?? false;
+                                const gitEnabled = activeUniverse?.gitRepo?.enabled ?? false;
+                                const sourceOfTruth = activeUniverse?.sourceOfTruth || 'local';
+
+                                const shouldSaveLocal = localEnabled && (sourceOfTruth === 'local' || (localEnabled && gitEnabled));
+                                const shouldSaveGit = gitEnabled;
+
+                                if (shouldSaveLocal) {
+                                  const current = useGraphStore.getState();
+                                  const ok = await saveActiveUniverseToLocalHandle();
+                                  if (!ok) {
+                                    downloadRedstringFile(current, actualFileName);
+                                  }
                                 }
+
+                                if (shouldSaveGit) {
+                                  await handleSaveToGit();
+                                }
+
+                                const savedTo = [];
+                                if (shouldSaveLocal) savedTo.push('local');
+                                if (shouldSaveGit) savedTo.push('git');
+
+                                setHasUnsavedChanges(false);
+                                setLastSaveTime(Date.now());
+                                setSyncStatus({
+                                  type: 'success',
+                                  status: `Manual save completed${savedTo.length ? ' to: ' + savedTo.join(' + ') : ''}`
+                                });
+                                setTimeout(() => setSyncStatus(null), 4000);
+                              } catch (e) {
+                                setError(`Manual save failed: ${e.message}`);
+                              } finally {
+                                setIsSaving(false);
                               }
-                              
-                              if (shouldSaveGit) {
-                                await handleSaveToGit();
-                              }
-                              
-                              const savedTo = [];
-                              if (shouldSaveLocal) savedTo.push('local');
-                              if (shouldSaveGit) savedTo.push('git');
-                              
-                              setHasUnsavedChanges(false);
-                              setLastSaveTime(Date.now());
-                              setSyncStatus({ 
-                                type: 'success', 
-                                status: `Manual save completed${savedTo.length ? ' to: ' + savedTo.join(' + ') : ''}` 
-                              });
-                              setTimeout(() => setSyncStatus(null), 4000);
-                            } catch (e) {
-                              setError(`Manual save failed: ${e.message}`);
-                            } finally {
-                              setIsSaving(false);
-                            }
-                          }} 
-                          title="Manual save"
-                          disabled={isConnecting || isSaving}
-                          style={{ 
-                            padding: '4px', 
-                            backgroundColor: (isConnecting || isSaving) ? '#ccc' : '#EFE8E5', 
-                            color: '#260000', 
-                            border: '1px solid #260000', 
-                            borderRadius: '4px', 
-                            cursor: (isConnecting || isSaving) ? 'not-allowed' : 'pointer', 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center'
-                          }}
-                        >
-                          {isSaving ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={12} />}
-                        </button>
-                      </div>
-                    </div>
-                    ) : (
-                      // Mobile-friendly message when local files aren't supported
-                      <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
-                        <div style={{ 
-                          padding: '12px', 
-                          backgroundColor: '#e3f2fd', 
-                          border: '1px solid #2196f3', 
-                          borderRadius: '6px',
-                          textAlign: 'center'
-                        }}>
-                          <div style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '4px', color: '#1976d2' }}>
-                            📱 Mobile-Optimized Storage
-                          </div>
-                          <div style={{ fontSize: '0.8rem', color: '#666', lineHeight: '1.3' }}>
-                            Your device uses Git repositories for storage instead of local files. 
-                            All your work is automatically synced to the cloud.
+                            }}
+                            title="Manual save"
+                            disabled={isConnecting || isSaving}
+                            style={{
+                              padding: '4px',
+                              backgroundColor: (isConnecting || isSaving) ? '#ccc' : '#EFE8E5',
+                              color: '#260000',
+                              border: '1px solid #260000',
+                              borderRadius: '4px',
+                              cursor: (isConnecting || isSaving) ? 'not-allowed' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            {isSaving ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={12} />}
+                          </button>
+                        </div>
+                      ) : deviceConfig.enableLocalFileStorage ? (
+                        <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
+                          <div style={{
+                            padding: '12px',
+                            backgroundColor: '#EFE8E5',
+                            border: '1px solid #260000',
+                            borderRadius: '6px',
+                            textAlign: 'center'
+                          }}>
+                            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '4px', color: '#260000' }}>
+                              Mobile-Optimized Storage
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: '#666', lineHeight: '1.3' }}>
+                              Your device uses Git repositories for storage instead of local files.
+                              All your work is automatically synced to the cloud.
+                            </div>
                           </div>
                         </div>
+                      ) : null}
+                    </div>
+
+                    {/* Data Sources (embedded per-universe) */}
+                    <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2', marginTop: '10px' }}>
+                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Data Sources</div>
+                      {/* Add Source Card */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px',
+                        backgroundColor: '#bdb5b5',
+                        border: '2px dashed #979090',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        marginBottom: '8px'
+                      }}
+                      onClick={() => setShowAddSourceModal(true)}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#979090';
+                        e.currentTarget.style.borderColor = '#260000';
+                        e.currentTarget.style.borderStyle = 'solid';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = '#bdb5b5';
+                        e.currentTarget.style.borderColor = '#979090';
+                        e.currentTarget.style.borderStyle = 'dashed';
+                      }}
+                      >
+                        <Plus size={20} color="#260000" />
+                        <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#260000' }}>
+                          Add Data Source
+                        </div>
                       </div>
-                    )}
+
+                      {/* Sources Cards for active universe */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {Array.isArray(getActiveUniverse()?.sources) && getActiveUniverse().sources.map((src) => {
+                          const isConnectedSource = currentProvider &&
+                            src.type === 'github' &&
+                            src.user === providerConfig.user &&
+                            src.repo === providerConfig.repo;
+
+                          const isConfigured = (() => {
+                            if (src.type === 'github') return !!(src.user && src.repo);
+                            if (src.type === 'gitea') return !!(src.endpoint && src.user && src.repo);
+                            if (src.type === 'url') return !!(src.urls && src.urls[0]);
+                            if (src.type === 'local') return !!src.fileName;
+                            return false;
+                          })();
+
+                          const isPrimaryGitSource = (() => {
+                            const u = getActiveUniverse();
+                            return !!(u?.gitRepo?.linkedRepo && src.type === 'github' && src.user === u.gitRepo.linkedRepo.user && src.repo === u.gitRepo.linkedRepo.repo);
+                          })();
+
+                          return (
+                            <div key={src.id} style={{
+                              background: '#bdb5b5',
+                              border: isPrimaryGitSource ? '2px solid #260000' : isConnectedSource ? '2px solid #7A0000' :
+                                      !isConfigured ? '2px dashed #7A0000' :
+                                      '1px solid #260000',
+                              borderRadius: '6px',
+                              padding: '10px'
+                            }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <div style={{ fontWeight: 600 }}>
+                                    {src.name ||
+                                     (src.type === 'github' ? 'GitHub Repository' :
+                                      src.type === 'gitea' ? 'Gitea Repository' :
+                                      src.type === 'url' ? 'External URL/SPARQL' :
+                                      'Local File')}
+                                  </div>
+                                  {isPrimaryGitSource && (
+                                    <div style={{ fontSize: '0.75rem', color: '#260000', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(38,0,0,0.1)', borderRadius: '10px' }}>PRIMARY</div>
+                                  )}
+                                  {!isPrimaryGitSource && isConnectedSource && (
+                                    <div style={{ fontSize: '0.75rem', color: '#7A0000', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '10px' }}>CONNECTED</div>
+                                  )}
+                                  {!isConfigured && (
+                                    <div style={{ fontSize: '0.75rem', color: '#7A0000', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '10px' }}>NEEDS CONFIG</div>
+                                  )}
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                  <label style={{ fontSize: '0.75rem', color: '#666' }}>Enabled</label>
+                                  <input
+                                    type="checkbox"
+                                    checked={!!src.enabled}
+                                    onChange={() => toggleSourceEnabled(src)}
+                                    disabled={!isConfigured || isPrimaryGitSource}
+                                    style={{
+                                      accentColor: '#7A0000',
+                                      transform: 'scale(1.1)',
+                                      opacity: isConfigured ? 1 : 0.5
+                                    }}
+                                  />
+                                  <button onClick={() => {
+                                    if (isPrimaryGitSource) {
+                                      unlinkLinkedRepository();
+                                    } else {
+                                      removeSourceFromActiveUniverse(src.id);
+                                    }
+                                  }} style={{ padding: '4px', background: 'transparent', color: '#d32f2f', border: '1px solid #d32f2f', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title={isPrimaryGitSource ? 'Unlink repository' : 'Remove source'}>
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '10px', marginTop: '8px' }}>
+                                {src.type === 'github' && (
+                                  <>
+                                    <div>
+                                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Repository</div>
+                                      {isPrimaryGitSource ? (
+                                        <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#260000' }}>
+                                          @{src.user}/{src.repo}
+                                        </div>
+                                      ) : (
+                                        <RepositoryDropdown
+                                          selectedRepository={src.user && src.repo ? { name: src.repo, owner: { login: src.user } } : null}
+                                          onSelectRepository={(repo) => {
+                                            updateSourceInActiveUniverse(src.id, {
+                                              user: repo?.owner?.login,
+                                              repo: repo?.name,
+                                              name: `@${repo?.owner?.login}/${repo?.name}`
+                                            });
+                                            setSyncStatus({
+                                              type: 'success',
+                                              status: `Repository linked: @${repo?.owner?.login}/${repo?.name}`
+                                            });
+                                            setTimeout(() => setSyncStatus(null), 3000);
+                                          }}
+                                          placeholder={hasOAuthForBrowsing ? 'Browse Repositories' : 'OAuth required for browsing'}
+                                          disabled={!hasOAuthForBrowsing}
+                                        />
+                                      )}
+                                      {!hasOAuthForBrowsing && (
+                                        <div style={{ fontSize: '0.75rem', color: '#7A0000', marginTop: '4px' }}>
+                                          Connect GitHub OAuth above to browse repositories
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
+                                      <input value={src.schemaPath || schemaPath} onChange={(e) => updateSourceInActiveUniverse(src.id, { schemaPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                                    </div>
+                                  </>
+                                )}
+
+                                {src.type === 'gitea' && (
+                                  <>
+                                    <div>
+                                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Endpoint</div>
+                                      <input value={src.endpoint || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { endpoint: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Repository</div>
+                                      <div style={{ display: 'flex', gap: '6px' }}>
+                                        <input value={src.user || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { user: e.target.value })} placeholder="user" className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', flex: 1 }} />
+                                        <input value={src.repo || ''} onChange={(e) => updateSourceInActiveUniverse(src.id, { repo: e.target.value })} placeholder="repo" className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', flex: 1 }} />
+                                      </div>
+                                    </div>
+                                  </>
+                                )}
+
+                                {src.type === 'url' && (
+                                  <>
+                                    <div style={{ gridColumn: '1 / span 2' }}>
+                                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>URL</div>
+                                      <input
+                                        value={(src.urls && src.urls[0]) || ''}
+                                        onChange={(e) => {
+                                          const url = e.target.value;
+                                          updateSourceInActiveUniverse(src.id, {
+                                            urls: [url],
+                                            name: url ? `External: ${url.replace(/^https?:\/\//, '').split('/')[0]}` : 'External Endpoint'
+                                          });
+                                        }}
+                                        placeholder="https://example.com/semantic/"
+                                        className="editable-title-input"
+                                        style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px', width: '100%' }}
+                                      />
+                                      <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
+                                        Enter a SPARQL endpoint or semantic web API URL
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Behavior</div>
+                                      <div style={{ display: 'flex', gap: '6px' }}>
+                                        {['cache','read'].map(b => (
+                                          <button key={b} onClick={() => updateSourceInActiveUniverse(src.id, { behavior: b })} style={{ padding: '4px 8px', backgroundColor: (src.behavior || 'cache') === b ? '#260000' : 'transparent', color: (src.behavior || 'cache') === b ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>{b === 'cache' ? 'Cache Locally' : 'Read-through'}</button>
+                                        ))}
+                                      </div>
+                                      <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
+                                        Cache: Store data locally • Read: Query on demand
+                                      </div>
+                                    </div>
+                                  </>
+                                )}
+
+                                {src.type === 'local' && (
+                                  <>
+                                    <div>
+                                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>File Name</div>
+                                      <input
+                                        value={src.fileName || `${activeUniverseSlug}.redstring`}
+                                        onChange={(e) => {
+                                          const fileName = e.target.value;
+                                          updateSourceInActiveUniverse(src.id, {
+                                            fileName,
+                                            name: fileName ? `Local: ${fileName}` : 'Local .redstring File'
+                                          });
+                                        }}
+                                        className="editable-title-input"
+                                        style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }}
+                                        placeholder="universe.redstring"
+                                      />
+                                      <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
+                                        Local .redstring file to import from
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
+                                      <input value={src.schemaPath || schemaPath} onChange={(e) => updateSourceInActiveUniverse(src.id, { schemaPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                                      <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
+                                        Folder path within the file structure
+                                      </div>
+                                    </div>
+                                  </>
+                                )}
+
+                                {/* Per-source Manual Save */}
+                                <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2', display: 'flex', gap: '8px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
+                                  {isConfigured ? (
+                                    <button onClick={async () => {
+                                      try {
+                                        const gitEnabled = activeUniverse?.gitRepo?.enabled ?? false;
+
+                                        if (src.type === 'github' || src.type === 'gitea') {
+                                          if (gitEnabled) {
+                                            await handleSaveToGit();
+                                            setSyncStatus({ type: 'success', status: `Saved to @${src.user}/${src.repo}` });
+                                          } else {
+                                            setSyncStatus({ type: 'warning', status: 'Git storage not enabled for this universe' });
+                                          }
+                                        } else if (src.type === 'local') {
+                                          const current = useGraphStore.getState();
+                                          downloadRedstringFile(current, src.fileName || `${activeUniverseSlug}.redstring`);
+                                          setSyncStatus({ type: 'success', status: `Downloaded ${src.fileName}` });
+                                        } else if (src.type === 'url') {
+                                          setSyncStatus({ type: 'info', status: 'External sources are read-only' });
+                                        }
+                                        setTimeout(() => setSyncStatus(null), 3000);
+                                      } catch (e) {
+                                        setError(`Source save failed: ${e.message}`);
+                                      }
+                                    }} style={{
+                                      padding: '8px 12px',
+                                      backgroundColor: src.type === 'url' ? '#979090' : '#260000',
+                                      color: src.type === 'url' ? '#260000' : '#bdb5b5',
+                                      border: 'none',
+                                      borderRadius: '4px',
+                                      cursor: src.type === 'url' ? 'not-allowed' : 'pointer',
+                                      fontSize: '0.8rem',
+                                      width: isSlim ? '100%' : 'auto',
+                                      fontWeight: 'bold'
+                                    }}>
+                                      {src.type === 'github' || src.type === 'gitea' ? 'Save to Git' :
+                                       src.type === 'local' ? 'Download File' :
+                                       'Read-only'}
+                                    </button>
+                                  ) : (
+                                    <div style={{
+                                      padding: '8px 12px',
+                                      backgroundColor: '#ccc',
+                                      color: '#666',
+                                      borderRadius: '4px',
+                                      fontSize: '0.8rem',
+                                      textAlign: 'center',
+                                      fontStyle: 'italic'
+                                    }}>
+                                      Configure source to enable actions
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
 
                     {/* Status */}
                     {syncStatus && universe.slug === activeUniverseSlug && (
@@ -3459,10 +3757,11 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           </div>
         </div>
 
-        {/* Repositories (Read + Write) */}
+        {/* Repositories section removed: handled inside each Universe card */}
+        {false && (
         <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
           <div style={{ marginBottom: '12px' }}>
-            <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>📚 Repositories</div>
+            <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>Repositories</div>
             <div style={{ fontSize: '0.8rem', color: '#666' }}>Storage locations that can read and write (GitHub, local files)</div>
           </div>
 
@@ -3476,7 +3775,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
               marginBottom: '8px'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                <div style={{ fontSize: '1.1rem' }}>🐙</div>
+                <div style={{ width: '12px' }} />
                 <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>
                   {activeUniverse.gitRepo.linkedRepo.user}/{activeUniverse.gitRepo.linkedRepo.repo}
                 </div>
@@ -3493,7 +3792,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 </div>
               </div>
               <div style={{ fontSize: '0.75rem', color: '#666', fontFamily: 'monospace', marginBottom: '4px' }}>
-                📁 {activeUniverse.gitRepo.universeFolder || `universes/${activeUniverseSlug}`}/{activeUniverseSlug}.redstring
+                {activeUniverse.gitRepo.universeFolder || `universes/${activeUniverseSlug}`}/{activeUniverseSlug}.redstring
               </div>
               <div style={{ fontSize: '0.7rem', color: '#666' }}>
                 <span style={{ color: '#4caf50' }}>↓ Read:</span> Connected • 
@@ -3511,7 +3810,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
               textAlign: 'center'
             }}>
               <div style={{ fontSize: '0.9rem', color: '#e65100', marginBottom: '4px' }}>
-                ⚠️ No repository connected
+                No repository connected
               </div>
               <div style={{ fontSize: '0.8rem', color: '#666' }}>
                 Connect a repository above to save your universe
@@ -3528,7 +3827,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
               borderRadius: '6px'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                <div style={{ fontSize: '1.1rem' }}>📁</div>
+                <div style={{ width: '12px' }} />
                 <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>
                   {currentFileStatus.fileName}
                 </div>
@@ -3549,11 +3848,13 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             </div>
           )}
         </div>
+        )}
 
-        {/* Data Sources (Read-only feeds) */}
+        {/* Data Sources section removed: handled inside each Universe card */}
+        {false && (
         <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
           <div style={{ marginBottom: '12px' }}>
-            <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>📥 Data Sources</div>
+            <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>Data Sources</div>
             <div style={{ fontSize: '0.8rem', color: '#666' }}>Read-only feeds and imports (URLs, APIs, other repos)</div>
           </div>
 
@@ -3893,6 +4194,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             )}
           </div>
         </div>
+        )}
 
         {/* Enhanced Add Source Modal */}
         {showAddSourceModal && (
@@ -4449,7 +4751,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                       whiteSpace: 'nowrap'
                     }}
                   >
-                    View Profile →
+                    View Profile
                   </a>
                 </div>
               </div>
@@ -4596,16 +4898,16 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           
           // Determine the active mode
           let statusContent;
-          let statusColor = '#e8f5e8';
-          let borderColor = '#4caf50';
-          let textColor = '#2e7d32';
+          let statusColor = '#bdb5b5';
+          let borderColor = '#260000';
+          let textColor = '#260000';
           
           if (githubAppInstallation) {
             // GitHub App mode (optimal)
             statusContent = (
               <span>
                 <strong>GitHub App</strong> (@{githubAppInstallation.username}) • 
-                <span style={{ color: '#1976d2', marginLeft: '4px' }}>✨ Optimized Auto-Save</span>
+                <span style={{ color: '#260000', marginLeft: '4px' }}>Optimized auto-save</span>
               </span>
             );
           } else if (hasOAuth && (hasProvider || pendingOAuth)) {
@@ -4615,7 +4917,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             statusContent = (
               <span>
                 <strong>OAuth Fallback Mode</strong> (@{username}) • 
-                <span style={{ color: '#ff9800', marginLeft: '4px' }}>⚠️ Functional, GitHub App recommended</span>
+                <span style={{ color: '#7A0000', marginLeft: '4px' }}>Functional, GitHub App recommended</span>
                 {currentProvider && (
                   <span style={{ color: '#666', marginLeft: '8px' }}>
                     ({currentProvider.user}/{currentProvider.repo})
@@ -4623,20 +4925,20 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 )}
               </span>
             );
-            statusColor = '#fff3e0';
-            borderColor = '#ff9800';
-            textColor = '#e65100';
+            statusColor = '#bdb5b5';
+            borderColor = '#260000';
+            textColor = '#260000';
           } else if (hasOAuth) {
             // OAuth only, no active connection
             statusContent = (
               <span>
                 <strong>OAuth Connected</strong> (@{authStatus.userData?.login}) • 
-                <span style={{ color: '#ff5722', marginLeft: '4px' }}>⚠️ No repository selected</span>
+                <span style={{ color: '#7A0000', marginLeft: '4px' }}>No repository selected</span>
               </span>
             );
-            statusColor = '#ffebee';
-            borderColor = '#ff5722';
-            textColor = '#c62828';
+            statusColor = '#bdb5b5';
+            borderColor = '#260000';
+            textColor = '#260000';
           } else {
             return null;
           }
@@ -4650,7 +4952,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
               borderRadius: '6px' 
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', color: textColor }}>
-                <span style={{ fontWeight: 'bold' }}>🔗 Connected:</span>
+                <span style={{ fontWeight: 'bold', color: '#260000' }}>Connected:</span>
                 {statusContent}
               </div>
             </div>
@@ -4722,7 +5024,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 color: '#260000',
                 textAlign: 'center'
               }}>
-                💡 <strong>Two ways to connect:</strong> Paste any GitHub URL directly, or use Browse button
+                <strong>Tip:</strong> Paste any GitHub URL directly, or use Browse
               </div>
               {/* Manual Configuration (Token Method) */}
               {authMethod === 'token' && (
@@ -5175,7 +5477,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 
                 {sourceOfTruthMode === 'git' && (
                   <div style={{ padding: '8px', backgroundColor: '#f8d7da', border: '1px solid #f5c6cb', borderRadius: '3px', fontSize: '0.75rem', color: '#721c24' }}>
-                    ⚠️ <strong>Warning:</strong> Git mode enabled. Local changes may be overwritten by Git repository content.
+                    <strong>Warning:</strong> Git mode enabled. Local changes may be overwritten by Git repository content.
                   </div>
                 )}
               </div>
@@ -5856,7 +6158,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                     whiteSpace: 'nowrap'
                   }}
                 >
-                  View Profile →
+                  View Profile
                 </a>
               </div>
             </div>
