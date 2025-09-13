@@ -14,6 +14,7 @@ import {
   hasCapability 
 } from '../utils/deviceDetection.js';
 import { persistentAuth } from '../services/persistentAuth.js';
+import { storageWrapper } from '../utils/storageWrapper.js';
 
 // Lazy import to avoid circular dependency
 let _fileStorage = null;
@@ -206,11 +207,11 @@ class UniverseManager {
     });
   }
 
-  // Load universes from localStorage
+  // Load universes from storage (localStorage or memory fallback)
   loadFromStorage() {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.UNIVERSES_LIST);
-      const activeSlug = localStorage.getItem(STORAGE_KEYS.ACTIVE_UNIVERSE);
+      const saved = storageWrapper.getItem(STORAGE_KEYS.UNIVERSES_LIST);
+      const activeSlug = storageWrapper.getItem(STORAGE_KEYS.ACTIVE_UNIVERSE);
       
       if (saved) {
         const universesList = JSON.parse(saved);
@@ -630,11 +631,11 @@ class UniverseManager {
     }
   }
 
-  // Save universes to localStorage
+  // Save universes to storage (localStorage or memory fallback)
   saveToStorage() {
     try {
       const universesList = Array.from(this.universes.values()).map(universe => {
-        // Don't save file handles in localStorage
+        // Don't save file handles in storage
         const { localFile, ...rest } = universe;
         return {
           ...rest,
@@ -645,8 +646,13 @@ class UniverseManager {
         };
       });
       
-      localStorage.setItem(STORAGE_KEYS.UNIVERSES_LIST, JSON.stringify(universesList));
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_UNIVERSE, this.activeUniverseSlug);
+      storageWrapper.setItem(STORAGE_KEYS.UNIVERSES_LIST, JSON.stringify(universesList));
+      storageWrapper.setItem(STORAGE_KEYS.ACTIVE_UNIVERSE, this.activeUniverseSlug);
+      
+      // Warn about data loss if using memory storage
+      if (storageWrapper.shouldUseMemoryStorage()) {
+        storageWrapper.warnAboutDataLoss();
+      }
     } catch (error) {
       console.error('[UniverseManager] Failed to save to storage:', error);
     }

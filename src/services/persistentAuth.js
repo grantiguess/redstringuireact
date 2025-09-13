@@ -6,6 +6,7 @@
  */
 
 import { oauthFetch } from './bridgeConfig.js';
+import { storageWrapper } from '../utils/storageWrapper.js';
 
 // Token storage keys
 const STORAGE_KEYS = {

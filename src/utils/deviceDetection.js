@@ -4,6 +4,8 @@
  * for Git-Only workflows and cross-platform compatibility
  */
 
+import { debugConfig, isLocalStorageDisabled, isGitOnlyForced } from './debugConfig.js';
+
 /**
  * Comprehensive device detection that identifies mobile/tablet browsers
  * Handles edge cases like iPad Safari reporting as desktop and Android tablets
@@ -71,6 +73,19 @@ export const getDeviceInfo = () => {
  */
 export const shouldUseGitOnlyMode = () => {
   ensureInitialized();
+  
+  // Check debug override first
+  if (isGitOnlyForced()) {
+    console.log('[DeviceDetection] Git-Only mode FORCED by debug setting');
+    return true;
+  }
+  
+  // Check if local storage is disabled for debugging
+  if (isLocalStorageDisabled()) {
+    console.log('[DeviceDetection] Git-Only mode enabled due to local storage disabled for debugging');
+    return true;
+  }
+  
   const deviceInfo = getDeviceInfo();
   
   // Force Git-Only mode if:
@@ -88,15 +103,17 @@ export const shouldUseGitOnlyMode = () => {
 export const getOptimalDeviceConfig = () => {
   ensureInitialized();
   const deviceInfo = getDeviceInfo();
+  const gitOnlyMode = shouldUseGitOnlyMode();
+  const localStorageDisabled = isLocalStorageDisabled();
   
   return {
     // Core mode settings
-    gitOnlyMode: shouldUseGitOnlyMode(),
-    sourceOfTruth: shouldUseGitOnlyMode() ? 'git' : 'local',
+    gitOnlyMode,
+    sourceOfTruth: gitOnlyMode ? 'git' : 'local',
     
-    // Storage preferences  
-    preferBrowserStorage: !deviceInfo.supportsFileSystemAPI,
-    enableLocalFileStorage: deviceInfo.supportsFileSystemAPI && !shouldUseGitOnlyMode(),
+    // Storage preferences (respect debug settings)
+    preferBrowserStorage: !deviceInfo.supportsFileSystemAPI || localStorageDisabled,
+    enableLocalFileStorage: deviceInfo.supportsFileSystemAPI && !gitOnlyMode && !localStorageDisabled,
     
     // UI optimizations
     touchOptimizedUI: deviceInfo.isTouchDevice,
@@ -113,6 +130,13 @@ export const getOptimalDeviceConfig = () => {
     syncBatchSize: deviceInfo.isMobile ? 5 : 10, // Smaller batches on mobile
     enableServiceWorker: deviceInfo.isMobile || deviceInfo.isTablet,
     
+    // Debug information
+    debugInfo: {
+      localStorageDisabled,
+      gitOnlyForced: isGitOnlyForced(),
+      debugMode: debugConfig.isDebugMode()
+    },
+    
     deviceInfo
   };
 };
@@ -124,6 +148,25 @@ export const getDeviceCapabilityMessage = () => {
   ensureInitialized();
   const deviceInfo = getDeviceInfo();
   const config = getOptimalDeviceConfig();
+  
+  // Check for debug mode overrides
+  if (config.debugInfo.localStorageDisabled) {
+    return {
+      type: 'warning',
+      title: '🐛 Debug Mode: Local Storage Disabled',
+      message: 'Local storage has been disabled for debugging purposes. All data will be lost on browser reload unless saved to Git.',
+      icon: '⚠️'
+    };
+  }
+  
+  if (config.debugInfo.gitOnlyForced) {
+    return {
+      type: 'warning', 
+      title: '🐛 Debug Mode: Git-Only Forced',
+      message: 'Git-Only mode has been forced via debug settings, overriding device detection.',
+      icon: '🔧'
+    };
+  }
   
   if (config.gitOnlyMode) {
     if (deviceInfo.isMobile) {
