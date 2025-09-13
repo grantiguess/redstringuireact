@@ -11,11 +11,13 @@ const AlphaOnboardingModal = ({
   onClose,
   onDontShowAgain = null,
   onCreateLocal = null,
+  onOpenLocal = null,
   onConnectGitHub = null,
   ...canvasModalProps
 }) => {
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [selectedOption, setSelectedOption] = useState('github'); // Default to GitHub as recommended
+  const [currentStep, setCurrentStep] = useState('selection'); // 'selection', 'github-onboarding', 'github-connecting'
 
   // Check if user has already seen this modal
   useEffect(() => {
@@ -36,15 +38,18 @@ const AlphaOnboardingModal = ({
     onClose();
   };
 
-  const modalContent = (
-    <div style={{
-      padding: '24px', // More generous padding with taller modal
-      boxSizing: 'border-box',
-      height: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-      position: 'relative'
-    }}>
+  // Render different content based on current step
+  const renderStepContent = () => {
+    if (currentStep === 'github-onboarding') {
+      return renderGitHubOnboarding();
+    } else if (currentStep === 'github-connecting') {
+      return renderGitHubConnecting();
+    }
+    return renderSelection();
+  };
+
+  const renderSelection = () => (
+    <>
       {/* Close button in top right */}
       <button
         onClick={handleClose}
@@ -160,7 +165,7 @@ const AlphaOnboardingModal = ({
               • <strong>GitHub App</strong>: Secure, persistent connections<br />
               • <strong>OAuth</strong>: Repository browsing and creation<br />
               • Automatic cloud backup and version history<br />
-              • Access your universes from anywhere
+              • Click the <strong>Globe icon</strong> in the left panel to start
             </div>
           </div>
 
@@ -202,43 +207,327 @@ const AlphaOnboardingModal = ({
               • Works without internet connection<br />
               • Manual backup and file management
             </div>
+            
+            {/* Local File Buttons */}
+            {selectedOption === 'local' && (
+              <div style={{ 
+                marginLeft: '32px', 
+                marginTop: '12px', 
+                display: 'flex', 
+                gap: '8px',
+                flexWrap: 'wrap'
+              }}>
+                <button
+                  onClick={() => {
+                    if (onCreateLocal) onCreateLocal();
+                    handleClose();
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '0.8rem',
+                    backgroundColor: '#8B0000',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontFamily: "'EmOne', sans-serif"
+                  }}
+                >
+                  Create New
+                </button>
+                <button
+                  onClick={() => {
+                    if (onOpenLocal) onOpenLocal();
+                    handleClose();
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '0.8rem',
+                    backgroundColor: '#666',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontFamily: "'EmOne', sans-serif"
+                  }}
+                >
+                  Load Existing
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Action Button */}
-      <div style={{
-        flexShrink: 0,
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginTop: '0px',
-        marginBottom: '12px'
-      }}>
-        <button
-          onClick={() => {
-            if (selectedOption === 'github' && onConnectGitHub) {
-              onConnectGitHub();
-            } else if (selectedOption === 'local' && onCreateLocal) {
-              onCreateLocal();
-            }
-            handleClose();
-          }}
-          style={{
-            padding: '12px 32px',
-            border: 'none',
-            borderRadius: '8px',
-            backgroundColor: '#8B0000',
-            color: '#bdb5b5',
-            cursor: 'pointer',
-            fontSize: '1rem',
-            fontWeight: 'bold',
-            fontFamily: "'EmOne', sans-serif"
-          }}
-        >
-          {selectedOption === 'github' ? 'Connect to GitHub' : 'Create Local Universe'}
-        </button>
+      {/* Action Button - Only show for GitHub option (Local has inline buttons) */}
+      {selectedOption === 'github' && (
+        <div style={{
+          flexShrink: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          marginTop: '0px',
+          marginBottom: '12px'
+        }}>
+          <button
+            onClick={() => {
+              // Start GitHub onboarding flow
+              setCurrentStep('github-onboarding');
+            }}
+            style={{
+              padding: '12px 32px',
+              border: 'none',
+              borderRadius: '8px',
+              backgroundColor: '#8B0000',
+              color: '#bdb5b5',
+              cursor: 'pointer',
+              fontSize: '1rem',
+              fontWeight: 'bold',
+              fontFamily: "'EmOne', sans-serif"
+            }}
+          >
+            Set Up GitHub Sync
+          </button>
+        </div>
+      )}
+    </>
+  );
+
+  const renderGitHubOnboarding = () => (
+    <>
+      {/* Back button in top left */}
+      <button
+        onClick={() => setCurrentStep('selection')}
+        style={{
+          position: 'absolute',
+          top: '16px',
+          left: '16px',
+          background: 'none',
+          border: 'none',
+          color: '#666',
+          cursor: 'pointer',
+          padding: '6px',
+          borderRadius: '4px',
+          fontSize: '16px',
+          fontWeight: 'bold',
+          fontFamily: "'EmOne', sans-serif",
+          zIndex: 10
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.color = '#260000'}
+        onMouseLeave={(e) => e.currentTarget.style.color = '#666'}
+      >
+        ← Back
+      </button>
+
+      {/* GitHub Onboarding Header */}
+      <div style={{ textAlign: 'center', marginBottom: '24px', flexShrink: 0, marginTop: '40px' }}>
+        <h2 style={{
+          margin: '0 0 8px 0',
+          color: '#260000',
+          fontSize: '1.5rem',
+          fontWeight: 'bold',
+          fontFamily: "'EmOne', sans-serif"
+        }}>
+          Connect to GitHub
+        </h2>
+        <div style={{
+          margin: '0 0 16px 0',
+          fontSize: '0.9rem',
+          color: '#666',
+          fontFamily: "'EmOne', sans-serif"
+        }}>
+          Set up automatic cloud sync for your universes
+        </div>
       </div>
+
+      {/* GitHub Setup Steps */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        
+        {/* Step 1: OAuth */}
+        <div style={{
+          border: '2px solid #ddd',
+          borderRadius: '8px',
+          padding: '20px',
+          backgroundColor: '#f9f9f9'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{
+              width: '24px',
+              height: '24px',
+              borderRadius: '50%',
+              backgroundColor: '#8B0000',
+              color: 'white',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: '12px',
+              fontSize: '0.8rem',
+              fontWeight: 'bold'
+            }}>1</div>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#260000' }}>Repository Access (OAuth)</h3>
+          </div>
+          <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: '#666' }}>
+            Connect your GitHub account to browse and create repositories
+          </p>
+          <button
+            onClick={() => {
+              setCurrentStep('github-connecting');
+              if (onConnectGitHub) onConnectGitHub('oauth');
+            }}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#24292f',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '0.9rem',
+              fontWeight: 'bold',
+              fontFamily: "'EmOne', sans-serif"
+            }}
+          >
+            Connect OAuth
+          </button>
+        </div>
+
+        {/* Step 2: GitHub App */}
+        <div style={{
+          border: '2px solid #ddd',
+          borderRadius: '8px',
+          padding: '20px',
+          backgroundColor: '#f9f9f9'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{
+              width: '24px',
+              height: '24px',
+              borderRadius: '50%',
+              backgroundColor: '#8B0000',
+              color: 'white',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: '12px',
+              fontSize: '0.8rem',
+              fontWeight: 'bold'
+            }}>2</div>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#260000' }}>Auto-Sync (GitHub App)</h3>
+          </div>
+          <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: '#666' }}>
+            Install the RedString app for automatic universe synchronization
+          </p>
+          <button
+            onClick={() => {
+              setCurrentStep('github-connecting');
+              if (onConnectGitHub) onConnectGitHub('app');
+            }}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#8B0000',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '0.9rem',
+              fontWeight: 'bold',
+              fontFamily: "'EmOne', sans-serif"
+            }}
+          >
+            Install App
+          </button>
+        </div>
+
+        {/* Complete Setup */}
+        <div style={{
+          textAlign: 'center',
+          padding: '20px',
+          backgroundColor: 'rgba(139, 0, 0, 0.05)',
+          borderRadius: '8px',
+          border: '1px solid rgba(139, 0, 0, 0.2)'
+        }}>
+          <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: '#666' }}>
+            Complete both steps for full GitHub integration
+          </p>
+          <button
+            onClick={() => {
+              setCurrentStep('github-connecting');
+              if (onConnectGitHub) onConnectGitHub('complete');
+            }}
+            style={{
+              padding: '12px 24px',
+              backgroundColor: '#8B0000',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '1rem',
+              fontWeight: 'bold',
+              fontFamily: "'EmOne', sans-serif"
+            }}
+          >
+            Complete GitHub Setup
+          </button>
+        </div>
+      </div>
+    </>
+  );
+
+  const renderGitHubConnecting = () => (
+    <>
+      {/* Connecting Header */}
+      <div style={{ textAlign: 'center', marginBottom: '40px', flexShrink: 0, marginTop: '60px' }}>
+        <h2 style={{
+          margin: '0 0 16px 0',
+          color: '#260000',
+          fontSize: '1.5rem',
+          fontWeight: 'bold',
+          fontFamily: "'EmOne', sans-serif"
+        }}>
+          Connecting to GitHub...
+        </h2>
+        
+        {/* Loading Spinner */}
+        <div style={{
+          width: '40px',
+          height: '40px',
+          margin: '0 auto 20px auto',
+          border: '4px solid #ddd',
+          borderTop: '4px solid #8B0000',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }} />
+        
+        <p style={{
+          margin: '0',
+          fontSize: '0.9rem',
+          color: '#666',
+          fontFamily: "'EmOne', sans-serif"
+        }}>
+          You'll be redirected to GitHub to complete the setup...
+        </p>
+      </div>
+      
+      <style>
+        {`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}
+      </style>
+    </>
+  );
+
+  const modalContent = (
+    <div style={{
+      padding: '24px',
+      boxSizing: 'border-box',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      position: 'relative'
+    }}>
+      {renderStepContent()}
     </div>
   );
 
@@ -247,10 +536,12 @@ const AlphaOnboardingModal = ({
       isVisible={isVisible}
       onClose={handleClose}
       title=""
-      width={560}
-      height={600}
+      width={600}
+      height={700}
       position="center"
       margin={20}
+      disableBackdrop={currentStep !== 'selection'} // Disable backdrop close during onboarding
+      fullScreenOverlay={currentStep !== 'selection'} // Use full screen overlay for GitHub onboarding
       {...canvasModalProps}
     >
       {modalContent}

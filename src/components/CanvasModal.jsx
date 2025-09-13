@@ -16,7 +16,9 @@ const CanvasModal = ({
   height = 'auto',
   position = 'center', // 'center', 'top-left', 'top-right', 'bottom-left', 'bottom-right'
   margin = 20,
-  className = ''
+  className = '',
+  disableBackdrop = false, // Disable backdrop click to close
+  fullScreenOverlay = false // Cover entire viewport including panels
 }) => {
   const modalRef = useRef(null);
   const { leftPanelExpanded, rightPanelExpanded, typeListMode } = useGraphStore();
@@ -44,7 +46,7 @@ const CanvasModal = ({
 
   // Handle backdrop click
   const handleBackdropClick = (e) => {
-    if (e.target === e.currentTarget) {
+    if (!disableBackdrop && e.target === e.currentTarget) {
       onClose();
     }
   };
@@ -111,9 +113,14 @@ const CanvasModal = ({
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          zIndex: 9998,
-          backdropFilter: 'blur(2px)'
+          backgroundColor: fullScreenOverlay ? 'rgba(0, 0, 0, 0.8)' : 'rgba(0, 0, 0, 0.5)',
+          zIndex: fullScreenOverlay ? 10000 : 9998, // Higher z-index for full screen
+          backdropFilter: fullScreenOverlay ? 'blur(4px)' : 'blur(2px)',
+          ...(fullScreenOverlay && {
+            // Ensure it covers absolutely everything
+            width: '100vw',
+            height: '100vh'
+          })
         }}
         onClick={handleBackdropClick}
       />
@@ -133,7 +140,7 @@ const CanvasModal = ({
           backgroundColor: '#bdb5b5', // Canvas color
           borderRadius: '12px',
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-          zIndex: 9999,
+          zIndex: fullScreenOverlay ? 10001 : 9999, // Higher z-index for full screen
           fontFamily: "'EmOne', sans-serif",
           overflow: 'hidden',
           display: 'flex',

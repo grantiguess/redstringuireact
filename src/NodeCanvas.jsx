@@ -9026,6 +9026,10 @@ function NodeCanvas() {
         onClose={() => setShowOnboardingModal(false)}
         onCreateLocal={async () => {
           try {
+            // Set storage mode to local
+            console.log('[NodeCanvas] Setting storage mode to local for file-based storage');
+            storeActions.setStorageMode('local');
+            
             // Import file storage functions
             const { createUniverseFile, enableAutoSave } = fileStorage;
             
@@ -9049,16 +9053,60 @@ function NodeCanvas() {
             storeActions.setUniverseError(`Failed to create universe: ${error.message}. Please try again.`);
           }
         }}
-        onConnectGitHub={() => {
-          // Open Git Native Federation for GitHub connection
-          // First, we need to expand the right panel to access Git features
-          setRightPanelExpanded(true);
+        onOpenLocal={async () => {
+          try {
+            // Set storage mode to local
+            console.log('[NodeCanvas] Setting storage mode to local for file-based storage');
+            storeActions.setStorageMode('local');
+            
+            // Import file storage functions
+            const { openUniverseFile, enableAutoSave } = fileStorage;
+            
+            // Open universe file with file picker
+            const loadedData = await openUniverseFile();
+            
+            if (loadedData !== null) {
+              // Successfully loaded universe file
+              storeActions.loadUniverseFromFile(loadedData);
+              
+              // Enable auto-save
+              enableAutoSave(() => useGraphStore.getState());
+              
+              // Ensure universe connection is marked as established
+              storeActions.setUniverseConnected(true);
+            }
+          } catch (error) {
+            storeActions.setUniverseError(`Failed to open file: ${error.message}`);
+          }
+        }}
+        onConnectGitHub={(step) => {
+          // Handle different GitHub setup steps
+          console.log('[NodeCanvas] GitHub setup step:', step);
           
-          // Set active tab to Git Federation (tab index 2)
-          storeActions.setActiveRightTab(2);
+          // Set storage mode to git when GitHub is selected
+          console.log('[NodeCanvas] Setting storage mode to git for GitHub sync');
+          storeActions.setStorageMode('git');
+          storeActions.updateGitSettings({
+            autoSync: true,
+            syncOnSave: true
+          });
           
-          // The user will then use the GitHub connection in the Git Federation panel
-          console.log('Redirecting to Git Federation for GitHub setup');
+          // Expand left panel and guide to Git Federation
+          setLeftPanelExpanded(true);
+          
+          if (step === 'oauth') {
+            console.log('[NodeCanvas] Starting OAuth flow...');
+            // TODO: Directly trigger OAuth flow
+          } else if (step === 'app') {
+            console.log('[NodeCanvas] Starting GitHub App installation...');
+            // TODO: Directly trigger GitHub App installation
+          } else if (step === 'complete') {
+            console.log('[NodeCanvas] Starting complete GitHub setup...');
+            // TODO: Trigger both OAuth and GitHub App flows
+          }
+          
+          // Guide user to Git Federation
+          console.log('Expanded left panel for Git Federation access. User should click the Globe icon to access Git Federation.');
         }}
       />
       

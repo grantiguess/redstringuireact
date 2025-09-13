@@ -175,6 +175,44 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     return unsubscribe;
   }, []);
   
+  // Startup logging and status check
+  useEffect(() => {
+    console.log('[GitNativeFederation] 🚀 Component mounted, checking authentication status...');
+    
+    // Check OAuth status
+    const oauthStatus = persistentAuth.getAuthStatus();
+    if (oauthStatus.isAuthenticated) {
+      console.log('[GitNativeFederation] 🟢 OAuth is authenticated:', oauthStatus.userData?.login || 'unknown user');
+    } else {
+      console.log('[GitNativeFederation] 🔴 OAuth is not authenticated');
+    }
+    
+    // Check GitHub App status
+    const storedAppInstallation = persistentAuth.getAppInstallation();
+    if (storedAppInstallation) {
+      console.log('[GitNativeFederation] 🟢 GitHub App installation found:', {
+        username: storedAppInstallation.username,
+        installationId: storedAppInstallation.installationId,
+        repositoryCount: storedAppInstallation.repositories?.length || 0,
+        lastUpdated: new Date(storedAppInstallation.lastUpdated).toLocaleString()
+      });
+    } else {
+      console.log('[GitNativeFederation] 🔴 No GitHub App installation found');
+    }
+    
+    // Overall status
+    const hasOAuth = oauthStatus.isAuthenticated;
+    const hasApp = !!storedAppInstallation;
+    
+    if (hasOAuth && hasApp) {
+      console.log('[GitNativeFederation] ✅ Fully configured - OAuth + GitHub App available');
+    } else if (hasOAuth || hasApp) {
+      console.log('[GitNativeFederation] ⚠️  Partially configured - only', hasOAuth ? 'OAuth' : 'GitHub App', 'available');
+    } else {
+      console.log('[GitNativeFederation] ❌ Not configured - manual setup required');
+    }
+  }, []); // Run once on mount
+  
   // Restore GitHub App installation from persistent storage on mount
   useEffect(() => {
     const storedInstallation = persistentAuth.getAppInstallation();
@@ -184,6 +222,137 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       setUserRepositories(storedInstallation.repositories || []);
     }
   }, []); // Run once on mount
+  
+  // Auto-connect when GitHub App installation is restored or available
+  useEffect(() => {
+    if (githubAppInstallation && !isConnected && !isConnecting) {
+      console.log('[GitNativeFederation] GitHub App installation detected, attempting auto-connection...');
+      attemptAutoConnection();
+    }
+  }, [githubAppInstallation, isConnected, isConnecting]);
+  
+  // Auto-connection function
+  const attemptAutoConnection = async () => {
+    if (!githubAppInstallation) {
+      console.log('[GitNativeFederation] No GitHub App installation available for auto-connection');
+      return;
+    }
+    
+    try {
+      console.log('[GitNativeFederation] Starting auto-connection with stored GitHub App installation...');
+      setIsConnecting(true);
+      setError(null);
+      
+      const { installationId, repositories, userData, username } = githubAppInstallation;
+      
+      // Get fresh installation token
+      console.log('[GitNativeFederation] Requesting fresh installation token for auto-connection...');
+      const installationResponse = await oauthFetch(`/api/github/app/installation/${encodeURIComponent(installationId)}/token`, {
+        method: 'GET'
+      });
+      
+      if (!installationResponse.ok) {
+        const errorText = await installationResponse.text();
+        console.error('[GitNativeFederation] Auto-connection failed - invalid installation token:', errorText);
+        
+        // Clear invalid installation data
+        console.log('[GitNativeFederation] Clearing invalid GitHub App installation data');
+        clearGithubAppInstallation();
+        setError('GitHub App connection expired. Please reconnect.');
+        return;
+      }
+      
+      const tokenData = await installationResponse.json();
+      const freshAccessToken = tokenData.token;
+      console.log('[GitNativeFederation] Fresh installation token obtained for auto-connection');
+      
+      // Update stored installation with fresh token
+      const updatedInstallation = {
+        ...githubAppInstallation,
+        accessToken: freshAccessToken
+      };
+      setGithubAppInstallation(updatedInstallation);
+      persistentAuth.storeAppInstallation(updatedInstallation);
+      
+      // Set connection status
+      setIsConnected(true);
+      setConnectionHealth('healthy');
+      
+      console.log(`[GitNativeFederation] ✅ Auto-connection successful! Connected as @${username} with ${repositories.length} repositories`);
+      
+      // Optional: Test the connection by making a simple API call
+      try {
+        const testResponse = await fetch('https://api.github.com/user', {
+          headers: {
+            'Authorization': `Bearer ${freshAccessToken}`,
+            'Accept': 'application/vnd.github.v3+json'
+          }
+        });
+        
+        if (testResponse.ok) {
+          console.log('[GitNativeFederation] 🟢 Connection health check passed');
+          setConnectionHealth('healthy');
+        } else {
+          console.warn('[GitNativeFederation] 🟡 Connection health check failed, but installation is valid');
+          setConnectionHealth('degraded');
+        }
+      } catch (healthError) {
+        console.warn('[GitNativeFederation] 🟡 Connection health check error:', healthError.message);
+        setConnectionHealth('degraded');
+      }
+      
+    } catch (error) {
+      console.error('[GitNativeFederation] ❌ Auto-connection failed:', error);
+      setConnectionHealth('failed');
+      setError(`Auto-connection failed: ${error.message}`);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+  
+  // Periodic connection health monitoring
+  useEffect(() => {
+    if (!githubAppInstallation || !isConnected) return;
+    
+    const healthCheckInterval = setInterval(async () => {
+      console.log('[GitNativeFederation] 🔄 Performing periodic health check...');
+      
+      try {
+        const { accessToken, username } = githubAppInstallation;
+        
+        const healthResponse = await fetch('https://api.github.com/user', {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/vnd.github.v3+json'
+          }
+        });
+        
+        if (healthResponse.ok) {
+          console.log(`[GitNativeFederation] 🟢 Health check passed - connection to @${username} is healthy`);
+          setConnectionHealth('healthy');
+        } else {
+          console.warn(`[GitNativeFederation] 🟡 Health check failed - status ${healthResponse.status}`);
+          setConnectionHealth('degraded');
+          
+          // If it's a 401, the token might be expired
+          if (healthResponse.status === 401) {
+            console.log('[GitNativeFederation] 🔄 Token expired, attempting refresh...');
+            attemptAutoConnection(); // This will get a fresh token
+          }
+        }
+      } catch (error) {
+        console.error('[GitNativeFederation] 🔴 Health check error:', error);
+        setConnectionHealth('failed');
+      }
+    }, 5 * 60 * 1000); // Check every 5 minutes
+    
+    console.log('[GitNativeFederation] ⏰ Started periodic health monitoring (every 5 minutes)');
+    
+    return () => {
+      console.log('[GitNativeFederation] ⏰ Stopped periodic health monitoring');
+      clearInterval(healthCheckInterval);
+    };
+  }, [githubAppInstallation, isConnected]);
 
   // Helpers for universes & storage (now using UniverseManager)
   const getActiveUniverse = () => universeManager.getActiveUniverse();

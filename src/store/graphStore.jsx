@@ -268,6 +268,14 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
     isUniverseLoading: true, // Start in loading state
     universeLoadingError: null,
     hasUniverseFile: false,
+    
+    // Storage mode settings
+    storageMode: 'hybrid', // 'local', 'git', 'hybrid'
+    gitSettings: {
+      autoSync: false,
+      defaultRemote: 'origin',
+      syncOnSave: true
+    },
 
     // Thing node ID for abstraction system
     thingNodeId: 'base-thing-prototype',
@@ -2304,6 +2312,16 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
   setUniverseConnected: (hasFile = true) => set(state => ({
     ...state,
     hasUniverseFile: hasFile
+  })),
+  
+  // Storage mode actions
+  setStorageMode: (mode) => set(state => ({
+    ...state,
+    storageMode: mode
+  })),
+  updateGitSettings: (settings) => set(state => ({
+    ...state,
+    gitSettings: { ...state.gitSettings, ...settings }
   })),
 
   updateGraphView: (graphId, panOffset, zoomLevel) => {
