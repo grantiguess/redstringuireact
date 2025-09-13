@@ -1551,17 +1551,17 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           console.log('[GitNativeFederation] GitHub App installation successful:', username, repositories.length, 'repositories');
           
           // Store the installation data in state and persistent storage
-          const installationData = { 
+          const appInstallationData = { 
             installationId, 
             accessToken,
             repositories, 
             userData,
             username
           };
-          setGithubAppInstallation(installationData);
+          setGithubAppInstallation(appInstallationData);
           
           // Persist to localStorage for sessions
-          persistentAuth.storeAppInstallation(installationData);
+          persistentAuth.storeAppInstallation(appInstallationData);
           setUserRepositories(repositories);
           
           // Provide helpful feedback based on repository count
