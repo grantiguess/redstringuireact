@@ -864,12 +864,12 @@ function NodeCanvas() {
   // Onboarding modal state
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   
-  // Show onboarding modal when there's no universe file
+  // Show onboarding modal when there's no universe file and universe isn't loaded
   useEffect(() => {
-    if (!isUniverseLoading && !hasUniverseFile && !showOnboardingModal) {
+    if (!isUniverseLoading && !hasUniverseFile && !isUniverseLoaded && !showOnboardingModal) {
       setShowOnboardingModal(true);
     }
-  }, [isUniverseLoading, hasUniverseFile, showOnboardingModal]);
+  }, [isUniverseLoading, hasUniverseFile, isUniverseLoaded, showOnboardingModal]);
   const [draggingNodeInfo, setDraggingNodeInfo] = useState(null); // Renamed, structure might change
   const [longPressingInstanceId, setLongPressingInstanceId] = useState(null); // Store ID
   const [drawingConnectionFrom, setDrawingConnectionFrom] = useState(null); // Structure might change (store source ID)
@@ -9103,9 +9103,20 @@ function NodeCanvas() {
           } else if (step === 'complete') {
             console.log('[NodeCanvas] Starting complete GitHub setup...');
             // TODO: Trigger both OAuth and GitHub App flows
+          } else if (step === 'use-existing') {
+            console.log('[NodeCanvas] Using existing GitHub connections for Git-based universe');
+            
+            // Mark universe as loaded and connected to prevent modal from reopening
+            storeActions.setUniverseLoaded(true, true);
+            
+            // Explicitly close the onboarding modal
+            setShowOnboardingModal(false);
+            
+            console.log('[NodeCanvas] ✅ Git-based storage mode activated with existing GitHub connections');
+            return; // Don't show Git Federation panel since they're already set up
           }
           
-          // Guide user to Git Federation
+          // Guide user to Git Federation for setup
           console.log('Expanded left panel for Git Federation access. User should click the Globe icon to access Git Federation.');
         }}
       />

@@ -18,11 +18,20 @@ import { storageWrapper } from '../utils/storageWrapper.js';
 
 // Lazy import to avoid circular dependency
 let _fileStorage = null;
+let _useGraphStore = null;
 const getFileStorage = async () => {
   if (!_fileStorage) {
     _fileStorage = await import('../store/fileStorage.js');
   }
   return _fileStorage;
+};
+
+const getGraphStore = async () => {
+  if (!_useGraphStore) {
+    const module = await import('../store/graphStore.jsx');
+    _useGraphStore = module.default;
+  }
+  return _useGraphStore;
 };
 
 // Storage keys
@@ -938,7 +947,8 @@ class UniverseManager {
     
     // Get store state if not provided
     if (!storeState) {
-      storeState = getGraphStore().getState();
+      const graphStore = await getGraphStore();
+      storeState = graphStore.getState();
     }
     
     // Export data asynchronously to prevent UI blocking
@@ -1023,7 +1033,8 @@ class UniverseManager {
     
     try {
       // Use the GitSyncEngine's existing export logic instead of bypassing it
-      const storeState = getGraphStore().getState();
+      const graphStore = await getGraphStore();
+      const storeState = graphStore.getState();
       
       // Force commit through the existing GitSyncEngine which handles SHA conflicts properly
       await gitSyncEngine.forceCommit(storeState);
@@ -1038,7 +1049,8 @@ class UniverseManager {
             const gitData = await gitSyncEngine.loadFromGit();
             if (gitData) {
               const { storeState: newState } = importFromRedstring(gitData);
-              getGraphStore().getState().loadUniverseFromFile(newState);
+              const graphStore = await getGraphStore();
+              graphStore.getState().loadUniverseFromFile(newState);
               
               this.notifyStatus('info', 'Loaded latest changes from Git repository');
               return; // Successfully resolved by loading Git data
@@ -1053,7 +1065,8 @@ class UniverseManager {
         await new Promise(resolve => setTimeout(resolve, 2000));
         
         try {
-          const storeState = getGraphStore().getState();
+          const graphStore = await getGraphStore();
+          const storeState = graphStore.getState();
           await gitSyncEngine.forceCommit(storeState);
           this.notifyStatus('success', 'Conflict resolved with retry');
         } catch (retryError) {
@@ -1337,7 +1350,8 @@ class UniverseManager {
         // Git is source of truth, load from Git and overwrite local
         const gitData = await this.loadFromGit(universe);
         if (gitData) {
-          getGraphStore().getState().loadUniverseFromFile(gitData);
+          const graphStore = await getGraphStore();
+          graphStore.getState().loadUniverseFromFile(gitData);
           this.notifyStatus('info', 'Conflict resolved: loaded from Git repository');
           return true;
         }
@@ -1345,7 +1359,8 @@ class UniverseManager {
         // Local is source of truth, force push to Git
         const gitSyncEngine = this.gitSyncEngines.get(universe.slug);
         if (gitSyncEngine) {
-          const storeState = getGraphStore().getState();
+          const graphStore = await getGraphStore();
+          const storeState = graphStore.getState();
           await gitSyncEngine.forceCommit(storeState);
           this.notifyStatus('info', 'Conflict resolved: pushed local changes to Git');
           return true;

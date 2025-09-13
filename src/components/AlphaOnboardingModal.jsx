@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import CanvasModal from './CanvasModal';
+import { persistentAuth } from '../services/persistentAuth.js';
 
 /**
  * Alpha Onboarding Modal
@@ -18,6 +19,11 @@ const AlphaOnboardingModal = ({
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [selectedOption, setSelectedOption] = useState('github'); // Default to GitHub as recommended
   const [currentStep, setCurrentStep] = useState('selection'); // 'selection', 'github-onboarding', 'github-connecting'
+  const [connectionStatus, setConnectionStatus] = useState({
+    oauth: false,
+    app: false,
+    checking: true
+  });
 
   // Check if user has already seen this modal
   useEffect(() => {
@@ -27,6 +33,47 @@ const AlphaOnboardingModal = ({
         // User has seen it before and it's not being forcibly shown
         return;
       }
+    }
+  }, [isVisible]);
+  
+  // Check connection status when modal becomes visible
+  useEffect(() => {
+    if (isVisible) {
+      const checkConnections = () => {
+        console.log('[AlphaOnboardingModal] Checking GitHub connection status...');
+        
+        // Check OAuth status
+        const oauthStatus = persistentAuth.getAuthStatus();
+        const hasOAuth = oauthStatus.isAuthenticated;
+        
+        // Check GitHub App status  
+        const appInstallation = persistentAuth.getAppInstallation();
+        const hasApp = !!appInstallation;
+        
+        console.log('[AlphaOnboardingModal] Connection status:', { 
+          oauth: hasOAuth, 
+          app: hasApp,
+          oauthUser: oauthStatus.userData?.login || 'none',
+          appUser: appInstallation?.username || 'none'
+        });
+        
+        setConnectionStatus({
+          oauth: hasOAuth,
+          app: hasApp,
+          checking: false
+        });
+        
+        // If already fully connected, show suggestion to use existing connection
+        if (hasOAuth && hasApp) {
+          console.log('[AlphaOnboardingModal] ✅ Fully connected to GitHub - both OAuth and App available');
+        } else if (hasOAuth || hasApp) {
+          console.log('[AlphaOnboardingModal] ⚠️ Partially connected - only', hasOAuth ? 'OAuth' : 'GitHub App', 'available');
+        } else {
+          console.log('[AlphaOnboardingModal] ❌ Not connected to GitHub');
+        }
+      };
+      
+      checkConnections();
     }
   }, [isVisible]);
 
@@ -345,17 +392,17 @@ const AlphaOnboardingModal = ({
         
         {/* Step 1: OAuth */}
         <div style={{
-          border: '2px solid #ddd',
+          border: `2px solid ${connectionStatus.oauth ? '#4CAF50' : '#ddd'}`,
           borderRadius: '8px',
           padding: '20px',
-          backgroundColor: '#f9f9f9'
+          backgroundColor: connectionStatus.oauth ? '#e8f5e8' : '#f9f9f9'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
             <div style={{
               width: '24px',
               height: '24px',
               borderRadius: '50%',
-              backgroundColor: '#8B0000',
+              backgroundColor: connectionStatus.oauth ? '#4CAF50' : '#8B0000',
               color: 'white',
               display: 'flex',
               alignItems: 'center',
@@ -363,46 +410,64 @@ const AlphaOnboardingModal = ({
               marginRight: '12px',
               fontSize: '0.8rem',
               fontWeight: 'bold'
-            }}>1</div>
+            }}>
+              {connectionStatus.oauth ? '✓' : '1'}
+            </div>
             <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#260000' }}>Repository Access (OAuth)</h3>
+            {connectionStatus.oauth && (
+              <span style={{ 
+                marginLeft: '8px', 
+                fontSize: '0.8rem', 
+                color: '#4CAF50', 
+                fontWeight: 'bold' 
+              }}>
+                Connected
+              </span>
+            )}
           </div>
           <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: '#666' }}>
             Connect your GitHub account to browse and create repositories
           </p>
-          <button
-            onClick={() => {
-              setCurrentStep('github-connecting');
-              if (onConnectGitHub) onConnectGitHub('oauth');
-            }}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#24292f',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '0.9rem',
-              fontWeight: 'bold',
-              fontFamily: "'EmOne', sans-serif"
-            }}
-          >
-            Connect OAuth
-          </button>
+          {connectionStatus.oauth ? (
+            <div style={{ fontSize: '0.9rem', color: '#4CAF50', fontWeight: 'bold' }}>
+              ✅ OAuth connection is active
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setCurrentStep('github-connecting');
+                if (onConnectGitHub) onConnectGitHub('oauth');
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#24292f',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                fontWeight: 'bold',
+                fontFamily: "'EmOne', sans-serif"
+              }}
+            >
+              Connect OAuth
+            </button>
+          )}
         </div>
 
         {/* Step 2: GitHub App */}
         <div style={{
-          border: '2px solid #ddd',
+          border: `2px solid ${connectionStatus.app ? '#4CAF50' : '#ddd'}`,
           borderRadius: '8px',
           padding: '20px',
-          backgroundColor: '#f9f9f9'
+          backgroundColor: connectionStatus.app ? '#e8f5e8' : '#f9f9f9'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
             <div style={{
               width: '24px',
               height: '24px',
               borderRadius: '50%',
-              backgroundColor: '#8B0000',
+              backgroundColor: connectionStatus.app ? '#4CAF50' : '#8B0000',
               color: 'white',
               display: 'flex',
               alignItems: 'center',
@@ -410,63 +475,119 @@ const AlphaOnboardingModal = ({
               marginRight: '12px',
               fontSize: '0.8rem',
               fontWeight: 'bold'
-            }}>2</div>
+            }}>
+              {connectionStatus.app ? '✓' : '2'}
+            </div>
             <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#260000' }}>Auto-Sync (GitHub App)</h3>
+            {connectionStatus.app && (
+              <span style={{ 
+                marginLeft: '8px', 
+                fontSize: '0.8rem', 
+                color: '#4CAF50', 
+                fontWeight: 'bold' 
+              }}>
+                Installed
+              </span>
+            )}
           </div>
           <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: '#666' }}>
             Install the RedString app for automatic universe synchronization
           </p>
-          <button
-            onClick={() => {
-              setCurrentStep('github-connecting');
-              if (onConnectGitHub) onConnectGitHub('app');
-            }}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#8B0000',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '0.9rem',
-              fontWeight: 'bold',
-              fontFamily: "'EmOne', sans-serif"
-            }}
-          >
-            Install App
-          </button>
+          {connectionStatus.app ? (
+            <div style={{ fontSize: '0.9rem', color: '#4CAF50', fontWeight: 'bold' }}>
+              ✅ GitHub App is installed and active
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setCurrentStep('github-connecting');
+                if (onConnectGitHub) onConnectGitHub('app');
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#8B0000',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                fontWeight: 'bold',
+                fontFamily: "'EmOne', sans-serif"
+              }}
+            >
+              Install App
+            </button>
+          )}
         </div>
 
         {/* Complete Setup */}
         <div style={{
           textAlign: 'center',
           padding: '20px',
-          backgroundColor: 'rgba(139, 0, 0, 0.05)',
+          backgroundColor: (connectionStatus.oauth && connectionStatus.app) ? 'rgba(76, 175, 80, 0.1)' : 'rgba(139, 0, 0, 0.05)',
           borderRadius: '8px',
-          border: '1px solid rgba(139, 0, 0, 0.2)'
+          border: `1px solid ${(connectionStatus.oauth && connectionStatus.app) ? 'rgba(76, 175, 80, 0.3)' : 'rgba(139, 0, 0, 0.2)'}`
         }}>
-          <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: '#666' }}>
-            Complete both steps for full GitHub integration
-          </p>
-          <button
-            onClick={() => {
-              setCurrentStep('github-connecting');
-              if (onConnectGitHub) onConnectGitHub('complete');
-            }}
-            style={{
-              padding: '12px 24px',
-              backgroundColor: '#8B0000',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '1rem',
-              fontWeight: 'bold',
-              fontFamily: "'EmOne', sans-serif"
-            }}
-          >
-            Complete GitHub Setup
-          </button>
+          {(connectionStatus.oauth && connectionStatus.app) ? (
+            <>
+              <p style={{ margin: '0 0 16px 0', fontSize: '1rem', color: '#4CAF50', fontWeight: 'bold' }}>
+                🎉 GitHub Integration Complete!
+              </p>
+              <button
+                onClick={() => {
+                  // Set up Git storage mode and close modal properly
+                  if (onConnectGitHub) {
+                    console.log('[AlphaOnboardingModal] Starting with existing GitHub connections');
+                    onConnectGitHub('use-existing');
+                  }
+                  handleClose();
+                }}
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: '#4CAF50',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  fontWeight: 'bold',
+                  fontFamily: "'EmOne', sans-serif"
+                }}
+              >
+                Start with GitHub Sync
+              </button>
+            </>
+          ) : (
+            <>
+              <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: '#666' }}>
+                Complete both steps for full GitHub integration
+                {connectionStatus.oauth || connectionStatus.app ? (
+                  <span style={{ display: 'block', marginTop: '4px', color: '#f57c00', fontSize: '0.8rem' }}>
+                    ({connectionStatus.oauth ? '1' : '0'} of 2 steps completed)
+                  </span>
+                ) : null}
+              </p>
+              <button
+                onClick={() => {
+                  setCurrentStep('github-connecting');
+                  if (onConnectGitHub) onConnectGitHub('complete');
+                }}
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: '#8B0000',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  fontWeight: 'bold',
+                  fontFamily: "'EmOne', sans-serif"
+                }}
+              >
+                Complete GitHub Setup
+              </button>
+            </>
+          )}
         </div>
       </div>
     </>

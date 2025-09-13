@@ -2314,6 +2314,14 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
     hasUniverseFile: hasFile
   })),
   
+  setUniverseLoaded: (loaded = true, hasFile = true) => set(state => ({
+    ...state,
+    isUniverseLoaded: loaded,
+    isUniverseLoading: false,
+    hasUniverseFile: hasFile,
+    universeLoadingError: null
+  })),
+  
   // Storage mode actions
   setStorageMode: (mode) => set(state => ({
     ...state,
