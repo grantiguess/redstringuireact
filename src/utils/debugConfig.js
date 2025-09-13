@@ -262,8 +262,8 @@ class DebugConfig {
 // Export singleton instance
 export const debugConfig = new DebugConfig();
 
-// Expose debugging interface globally in development
-if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.search.includes('debug'))) {
+// Always expose debugging interface globally
+if (typeof window !== 'undefined') {
   debugConfig.exposeGlobalDebug();
 }
 

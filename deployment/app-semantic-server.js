@@ -105,6 +105,221 @@ app.post('/api/github/oauth/token', async (req, res) => {
   }
 });
 
+// OAuth/GitHub App callback handler - serves an HTML page that processes both types of callbacks
+app.get('/oauth/callback', (req, res) => {
+  const { code, state, error, error_description, installation_id, setup_action } = req.query;
+  
+  // Determine callback type
+  const isOAuthCallback = !!(code && state);
+  const isGitHubAppCallback = !!(installation_id);
+  
+  logger.info('Callback received:', {
+    type: isOAuthCallback ? 'OAuth' : isGitHubAppCallback ? 'GitHub App' : 'Unknown',
+    hasCode: !!code,
+    hasState: !!state,
+    hasError: !!error,
+    hasInstallationId: !!installation_id,
+    setupAction: setup_action,
+    state: state ? state.substring(0, 8) + '...' : null
+  });
+  
+  if (error) {
+    logger.error('Callback error:', error, error_description);
+  }
+  
+  // Return HTML page that will handle the OAuth callback in the frontend
+  const callbackHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RedString - GitHub OAuth</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            text-align: center;
+            max-width: 400px;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            margin: 0 auto 20px;
+            border: 4px solid #333;
+            border-top: 4px solid #4CAF50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error {
+            color: #f44336;
+            margin-top: 20px;
+        }
+        .success {
+            color: #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner"></div>
+        <h2 id="status">Processing GitHub authorization...</h2>
+        <p id="message">Please wait while we complete the OAuth flow.</p>
+        <div id="error-details" class="error" style="display: none;"></div>
+    </div>
+    
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        const state = urlParams.get('state');
+        const installationId = urlParams.get('installation_id');
+        const setupAction = urlParams.get('setup_action');
+        const error = urlParams.get('error');
+        const errorDescription = urlParams.get('error_description');
+        
+        const statusEl = document.getElementById('status');
+        const messageEl = document.getElementById('message');
+        const errorEl = document.getElementById('error-details');
+        
+        // Determine callback type
+        const isOAuthCallback = !!(code && state);
+        const isGitHubAppCallback = !!(installationId);
+        
+        console.log('[Callback] Type detected:', {
+            isOAuth: isOAuthCallback,
+            isGitHubApp: isGitHubAppCallback,
+            hasCode: !!code,
+            hasState: !!state,
+            hasInstallationId: !!installationId,
+            setupAction: setupAction
+        });
+        
+        if (error) {
+            statusEl.textContent = 'Authorization Failed';
+            statusEl.className = 'error';
+            messageEl.textContent = 'GitHub authorization was not completed.';
+            errorEl.textContent = error + (errorDescription ? ': ' + errorDescription : '');
+            errorEl.style.display = 'block';
+            document.querySelector('.spinner').style.display = 'none';
+            
+            // Close window after showing error
+            setTimeout(() => {
+                if (window.opener) {
+                    window.close();
+                } else {
+                    window.location.href = '/';
+                }
+            }, 3000);
+        } else if (isOAuthCallback) {
+            // Handle OAuth callback
+            try {
+                const oauthResult = { code, state };
+                
+                // Always store in sessionStorage for reliability
+                sessionStorage.setItem('github_oauth_result', JSON.stringify(oauthResult));
+                console.log('[OAuth Callback] Stored OAuth result in sessionStorage:', oauthResult);
+                
+                // Try to notify parent window (for popup flow)
+                if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage({
+                        type: 'GITHUB_OAUTH_SUCCESS',
+                        data: oauthResult
+                    }, window.location.origin);
+                    
+                    statusEl.textContent = 'Authorization Successful!';
+                    statusEl.className = 'success';
+                    messageEl.textContent = 'You can close this window.';
+                    document.querySelector('.spinner').style.display = 'none';
+                    
+                    // Close the popup window
+                    setTimeout(() => window.close(), 1500);
+                } else {
+                    // Same-window flow: store in sessionStorage and redirect
+                    statusEl.textContent = 'Authorization Successful!';
+                    statusEl.className = 'success';
+                    messageEl.textContent = 'Redirecting back to app...';
+                    document.querySelector('.spinner').style.display = 'none';
+                    
+                    // Redirect back to main app
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                }
+            } catch (err) {
+                console.error('OAuth callback processing error:', err);
+                statusEl.textContent = 'Processing Error';
+                statusEl.className = 'error';
+                messageEl.textContent = 'Failed to process authorization. Please try again.';
+                document.querySelector('.spinner').style.display = 'none';
+            }
+        } else if (isGitHubAppCallback) {
+            // Handle GitHub App installation callback
+            try {
+                const appResult = { installation_id: installationId, setup_action: setupAction, state: state };
+                
+                // Store GitHub App result in sessionStorage
+                sessionStorage.setItem('github_app_result', JSON.stringify(appResult));
+                console.log('[GitHub App Callback] Stored app result in sessionStorage:', appResult);
+                
+                // Try to notify parent window (for popup flow)
+                if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage({
+                        type: 'GITHUB_APP_SUCCESS',
+                        data: appResult
+                    }, window.location.origin);
+                    
+                    statusEl.textContent = 'App Installation Successful!';
+                    statusEl.className = 'success';
+                    messageEl.textContent = 'You can close this window.';
+                    document.querySelector('.spinner').style.display = 'none';
+                    
+                    // Close the popup window
+                    setTimeout(() => window.close(), 1500);
+                } else {
+                    // Same-window flow: store in sessionStorage and redirect
+                    statusEl.textContent = 'App Installation Successful!';
+                    statusEl.className = 'success';
+                    messageEl.textContent = 'Redirecting back to app...';
+                    document.querySelector('.spinner').style.display = 'none';
+                    
+                    // Redirect back to main app
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                }
+            } catch (err) {
+                console.error('GitHub App callback processing error:', err);
+                statusEl.textContent = 'Processing Error';
+                statusEl.className = 'error';
+                messageEl.textContent = 'Failed to process app installation. Please try again.';
+                document.querySelector('.spinner').style.display = 'none';
+            }
+        } else {
+            statusEl.textContent = 'Invalid Request';
+            statusEl.className = 'error';
+            messageEl.textContent = 'Missing required parameters for OAuth or App installation.';
+            document.querySelector('.spinner').style.display = 'none';
+        }
+    </script>
+</body>
+</html>`;
+
+  res.send(callbackHtml);
+});
+
 // GitHub App client-id proxy to OAuth server
 app.get('/api/github/app/client-id', async (req, res) => {
   try {

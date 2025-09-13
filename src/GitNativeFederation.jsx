@@ -1216,20 +1216,85 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     const handleGitHubCallbacks = async () => {
       console.log('[GitNativeFederation] GitHub callback handler started');
       console.log('[GitNativeFederation] Full URL:', window.location.href);
+      console.log('[GitNativeFederation] URL Search params:', window.location.search);
+      console.log('[GitNativeFederation] URL Hash:', window.location.hash);
       
       const urlParams = new URLSearchParams(window.location.search);
       // Some environments might place params in the hash fragment
       const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
       
-      // Check for OAuth callback first
-      const oauthCode = urlParams.get('code') || hashParams.get('code');
-      const oauthState = urlParams.get('state') || hashParams.get('state');
-      const oauthError = urlParams.get('error') || hashParams.get('error');
+      // Check for OAuth callback from sessionStorage first (popup window flow)
+      let oauthCode, oauthState, oauthError;
+      const storedOAuthResult = sessionStorage.getItem('github_oauth_result');
+      console.log('[GitNativeFederation] Checking sessionStorage for OAuth result:', storedOAuthResult);
       
-      // Check for GitHub App callback
-      const appInstallationId = urlParams.get('installation_id') || hashParams.get('installation_id');
-      const appSetupAction = urlParams.get('setup_action') || hashParams.get('setup_action');
-      const appState = urlParams.get('state') || hashParams.get('state');
+      if (storedOAuthResult) {
+        try {
+          const oauthResult = JSON.parse(storedOAuthResult);
+          oauthCode = oauthResult.code;
+          oauthState = oauthResult.state;
+          // Clean up the stored result
+          sessionStorage.removeItem('github_oauth_result');
+          console.log('[GitNativeFederation] Found OAuth result in sessionStorage:', oauthResult);
+        } catch (error) {
+          console.error('[GitNativeFederation] Failed to parse stored OAuth result:', error);
+          sessionStorage.removeItem('github_oauth_result');
+        }
+      } else {
+        console.log('[GitNativeFederation] No OAuth result found in sessionStorage');
+      }
+      
+      // Check for GitHub App callback from sessionStorage
+      const storedAppResult = sessionStorage.getItem('github_app_result');
+      console.log('[GitNativeFederation] Checking sessionStorage for GitHub App result:', storedAppResult);
+      
+      let appInstallationIdFromStorage, appSetupActionFromStorage, appStateFromStorage;
+      if (storedAppResult) {
+        try {
+          const appResult = JSON.parse(storedAppResult);
+          appInstallationIdFromStorage = appResult.installation_id;
+          appSetupActionFromStorage = appResult.setup_action;
+          appStateFromStorage = appResult.state;
+          // Clean up the stored result
+          sessionStorage.removeItem('github_app_result');
+          console.log('[GitNativeFederation] Found GitHub App result in sessionStorage:', appResult);
+        } catch (error) {
+          console.error('[GitNativeFederation] Failed to parse stored GitHub App result:', error);
+          sessionStorage.removeItem('github_app_result');
+        }
+      } else {
+        console.log('[GitNativeFederation] No GitHub App result found in sessionStorage');
+      }
+      
+      // Fallback to URL parameters if no sessionStorage result
+      if (!oauthCode) {
+        oauthCode = urlParams.get('code') || hashParams.get('code');
+        oauthState = urlParams.get('state') || hashParams.get('state');
+        oauthError = urlParams.get('error') || hashParams.get('error');
+      }
+      
+      // Check for GitHub App callback (sessionStorage first, then URL parameters)
+      const appInstallationId = appInstallationIdFromStorage || urlParams.get('installation_id') || hashParams.get('installation_id');
+      const appSetupAction = appSetupActionFromStorage || urlParams.get('setup_action') || hashParams.get('setup_action');
+      const appState = appStateFromStorage || urlParams.get('state') || hashParams.get('state');
+      
+      console.log('[GitNativeFederation] GitHub App params detected:', {
+        fromSessionStorage: {
+          installationId: appInstallationIdFromStorage,
+          setupAction: appSetupActionFromStorage,
+          state: appStateFromStorage
+        },
+        fromURL: {
+          installationId: urlParams.get('installation_id') || hashParams.get('installation_id'),
+          setupAction: urlParams.get('setup_action') || hashParams.get('setup_action'),
+          state: urlParams.get('state') || hashParams.get('state')
+        },
+        final: {
+          installationId: appInstallationId,
+          setupAction: appSetupAction,
+          state: appState
+        }
+      });
 
       // Handle OAuth callback
       if (oauthCode && oauthState) {
@@ -1508,6 +1573,11 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         }
               } else if (isGitHubReturn) {
         console.log('[GitNativeFederation] Returned from GitHub but no installation_id found');
+        console.log('[GitNativeFederation] This suggests the GitHub App Setup URL is pointing to the wrong endpoint');
+        console.log('[GitNativeFederation] Current URL:', window.location.href);
+        console.log('[GitNativeFederation] Expected: GitHub should redirect to /oauth/callback with installation_id parameter');
+        console.log('[GitNativeFederation] Actual: Redirected to root / with no parameters');
+        console.log('[GitNativeFederation] Fix: Update GitHub App Setup URL to end with /oauth/callback');
         
         // Check if we've already attempted an automatic retry
         const autoRetryAttempted = sessionStorage.getItem('github_app_auto_retry_attempted');

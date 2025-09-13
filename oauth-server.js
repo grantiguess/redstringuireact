@@ -65,13 +65,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Helper to detect if request comes from dev environment (localhost only for now)
+// Helper to detect if request comes from dev/test environment
 function isLocalRequest(req) {
   try {
     const host = (req.headers['x-forwarded-host'] || req.headers.host || '').toString().toLowerCase();
     return host.includes('localhost') || 
-           host.includes('127.0.0.1');
-           // Temporarily use PROD app for test deployment until dev app is created
+           host.includes('127.0.0.1') ||
+           host.includes('redstring-test-umk552kp4q-uc.a.run.app'); // Test environment should use dev/test credentials
   } catch { return false; }
 }
 

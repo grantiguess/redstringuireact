@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MaroonSlider from './components/MaroonSlider.jsx';
-import { ChevronRight, FileText, FolderOpen, Save, Clock, Globe } from 'lucide-react';
+import { ChevronRight, FileText, FolderOpen, Save, Clock, Globe, Bug } from 'lucide-react';
 import './RedstringMenu.css';
 import DebugOverlay from './DebugOverlay';
 import UniverseOperationsDialog from './components/UniverseOperationsDialog.jsx';
 import './components/UniverseOperationsDialog.css';
 import * as fileStorage from './store/fileStorage.js';
+import { debugConfig } from './utils/debugConfig.js';
 
 const RedstringMenu = ({ 
   isOpen, 
@@ -47,7 +48,8 @@ const RedstringMenu = ({
   const [closeTimeout, setCloseTimeout] = useState(null);
   const [showUniverseDialog, setShowUniverseDialog] = useState(false);
   const [universeDialogOperation, setUniverseDialogOperation] = useState(null);
-  const menuItems = ['File', 'Edit', 'View', 'Connections', 'Help'];
+  const [debugSettings, setDebugSettings] = useState(debugConfig.getConfig());
+  const menuItems = ['File', 'Edit', 'View', 'Connections', 'Debug', 'Help'];
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -74,6 +76,14 @@ const RedstringMenu = ({
       return () => clearTimeout(timer);
     }
   }, [isOpen, closeTimeout]);
+
+  // Listen for debug configuration changes
+  useEffect(() => {
+    const unsubscribe = debugConfig.addListener((newConfig) => {
+      setDebugSettings(newConfig);
+    });
+    return unsubscribe;
+  }, []);
 
   // Handle clicks outside the menu
   useEffect(() => {
@@ -332,13 +342,6 @@ const RedstringMenu = ({
                             >
                                 <div
                                   className="submenu-item"
-                                  onClick={() => setDebugMode(!debugMode)}
-                                  style={{ cursor: 'pointer' }}
-                                >
-                                  {debugMode ? 'Hide Debug Overlay' : 'Show Debug Overlay'}
-                                </div>
-                                <div
-                                  className="submenu-item"
                                   onClick={() => onToggleTrackpadZoom?.()}
                                   style={{ cursor: 'pointer' }}
                                 >
@@ -489,6 +492,85 @@ const RedstringMenu = ({
                                   </div>
                                 </div>
                               )}
+                            </div>
+                          )}
+                      </div>
+                  );
+              } else if(item === 'Debug'){
+                  return (
+                      <div 
+                        key={index} 
+                        onMouseEnter={() => handleMenuItemHover('Debug')}
+                        onMouseLeave={handleMenuItemLeave}
+                        style={{ position: 'relative', width: '100%' }}
+                      >
+                          <button className="menu-item">
+                              <span>{item}</span>
+                              <ChevronRight size={16} className="menu-item-chevron" />
+                          </button>
+                          {openSubmenu === 'Debug' && (
+                            <div 
+                              className="submenu-container"
+                              onMouseEnter={handleSubmenuEnter}
+                              onMouseLeave={handleMenuItemLeave}
+                            >
+                                <div
+                                  className="submenu-item"
+                                  onClick={() => setDebugMode(!debugMode)}
+                                  style={{ cursor: 'pointer' }}
+                                >
+                                  <Bug size={14} style={{ marginRight: '8px' }} />
+                                  {debugMode ? 'Hide Debug Overlay' : 'Show Debug Overlay'}
+                                </div>
+                                
+                                <div className="submenu-divider" style={{ margin: '8px 0', borderTop: '1px solid #444', opacity: 0.3 }} />
+                                
+                                <div
+                                  className="submenu-item"
+                                  onClick={() => debugConfig.setLocalStorageDisabled(!debugSettings.disableLocalStorage)}
+                                  style={{ cursor: 'pointer', opacity: debugSettings.disableLocalStorage ? 1 : 0.8 }}
+                                >
+                                  {debugSettings.disableLocalStorage ? '✓' : ''} Disable Local Storage
+                                </div>
+                                
+                                <div
+                                  className="submenu-item"
+                                  onClick={() => debugConfig.setForceGitOnly(!debugSettings.forceGitOnly)}
+                                  style={{ cursor: 'pointer', opacity: debugSettings.forceGitOnly ? 1 : 0.8 }}
+                                >
+                                  {debugSettings.forceGitOnly ? '✓' : ''} Force Git-Only Mode
+                                </div>
+                                
+                                <div
+                                  className="submenu-item"
+                                  onClick={() => debugConfig.setDebugMode(!debugSettings.debugMode)}
+                                  style={{ cursor: 'pointer', opacity: debugSettings.debugMode ? 1 : 0.8 }}
+                                >
+                                  {debugSettings.debugMode ? '✓' : ''} Enable Debug Logging
+                                </div>
+                                
+                                <div className="submenu-divider" style={{ margin: '8px 0', borderTop: '1px solid #444', opacity: 0.3 }} />
+                                
+                                <div
+                                  className="submenu-item"
+                                  onClick={() => {
+                                    debugConfig.reset();
+                                    setDebugMode(false);
+                                  }}
+                                  style={{ cursor: 'pointer', color: '#ff6b6b' }}
+                                >
+                                  Reset All Debug Settings
+                                </div>
+                                
+                                <div
+                                  className="submenu-item"
+                                  onClick={() => {
+                                    debugConfig.logToConsole();
+                                  }}
+                                  style={{ cursor: 'pointer', color: '#4ecdc4' }}
+                                >
+                                  Show Debug Info in Console
+                                </div>
                             </div>
                           )}
                       </div>
