@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Test Environment Deployment Script for RedString UI React
-# Deploys to Google Cloud Run test environment
+# Deploys locally but uses the exact same URL as the test environment
 
 set -e
 
@@ -18,10 +18,18 @@ NC='\033[0m' # No Color
 PROJECT_ID=${1:-$(gcloud config get-value project 2>/dev/null)}
 REGION=${2:-"us-central1"}
 SERVICE_NAME="redstring-test"
+CONTAINER_NAME="redstring-test-local"
+IMAGE_NAME="redstring-test-local"
+MAIN_PORT=4001
+OAUTH_PORT=3003
+
+# Get the exact test URL
+TEST_URL="https://redstring-test-umk552kp4q-uc.a.run.app"
+TEST_DOMAIN="redstring-test-umk552kp4q-uc.a.run.app"
 
 # Header
-echo -e "${BOLD}${CYAN}🧪 RedString UI React - TEST DEPLOYMENT${NC}"
-echo -e "${CYAN}===========================================${NC}"
+echo -e "${BOLD}${CYAN}🧪 RedString UI React - LOCAL TEST DEPLOYMENT${NC}"
+echo -e "${CYAN}===================================================${NC}"
 echo ""
 
 # Validation
@@ -32,11 +40,14 @@ if [ -z "$PROJECT_ID" ]; then
     exit 1
 fi
 
-echo -e "${BLUE}📋 Deployment Configuration:${NC}"
+echo -e "${BLUE}📋 Local Test Deployment Configuration:${NC}"
 echo -e "   Project ID: ${BOLD}${PROJECT_ID}${NC}"
 echo -e "   Region: ${BOLD}${REGION}${NC}"
-echo -e "   Service: ${BOLD}${SERVICE_NAME}${NC}"
-echo -e "   Environment: ${BOLD}${CYAN}TEST${NC}"
+echo -e "   Container: ${BOLD}${CONTAINER_NAME}${NC}"
+echo -e "   Image: ${BOLD}${IMAGE_NAME}${NC}"
+echo -e "   Test URL: ${BOLD}${TEST_URL}${NC}"
+echo -e "   Local Ports: ${BOLD}${MAIN_PORT}:${OAUTH_PORT}${NC}"
+echo -e "   Environment: ${BOLD}${CYAN}LOCAL (same URL as test)${NC}"
 echo ""
 
 # Set project context
@@ -55,10 +66,9 @@ echo -e "${GREEN}✅ Project access confirmed (${PROJECT_NUMBER})${NC}"
 # Check if required APIs are enabled
 echo -e "${YELLOW}🔍 Checking required APIs...${NC}"
 REQUIRED_APIS=(
-    "cloudbuild.googleapis.com"
     "run.googleapis.com" 
-    "secretmanager.googleapis.com"
     "containerregistry.googleapis.com"
+    "secretmanager.googleapis.com"
 )
 
 for api in "${REQUIRED_APIS[@]}"; do
@@ -115,13 +125,6 @@ echo -e "${GREEN}✅ OAuth permissions configured${NC}"
 # Pre-deployment checks
 echo -e "${YELLOW}🔍 Pre-deployment checks...${NC}"
 
-# Check if build config exists
-if [ ! -f "cloudbuild-test.yaml" ]; then
-    echo -e "${RED}❌ cloudbuild-test.yaml not found${NC}"
-    exit 1
-fi
-echo -e "   ✅ cloudbuild-test.yaml found"
-
 # Check if Dockerfile exists
 if [ ! -f "deployment/docker/Dockerfile" ]; then
     echo -e "${RED}❌ deployment/docker/Dockerfile not found${NC}"
@@ -140,39 +143,50 @@ echo -e "${GREEN}✅ All pre-deployment checks passed${NC}"
 echo ""
 
 # Start deployment
-echo -e "${BOLD}${CYAN}🚀 Starting Test Environment Deployment...${NC}"
+echo -e "${BOLD}${CYAN}🚀 Starting Local Build + Cloud Deploy...${NC}"
 echo ""
 
-# Submit build
-echo -e "${YELLOW}📦 Submitting build to Cloud Build...${NC}"
-BUILD_ID=$(gcloud builds submit \
-    --config cloudbuild-test.yaml \
-    --substitutions _REGION=$REGION \
-    --format="value(id)" \
-    .)
+# Build Docker image locally
+echo -e "${YELLOW}🏗️  Building Docker image locally...${NC}"
+docker build --platform linux/amd64 -f deployment/docker/Dockerfile -t gcr.io/${PROJECT_ID}/redstring-test:latest .
 
-if [ -z "$BUILD_ID" ]; then
-    echo -e "${RED}❌ Failed to submit build${NC}"
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ Docker image built successfully${NC}"
+else
+    echo -e "${RED}❌ Docker build failed${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✅ Build submitted successfully${NC}"
-echo -e "${BLUE}   Build ID: ${BUILD_ID}${NC}"
-echo -e "${BLUE}   View logs: gcloud builds log ${BUILD_ID}${NC}"
-echo ""
+# Push image to Google Container Registry
+echo -e "${YELLOW}📤 Pushing image to Google Container Registry...${NC}"
+docker push gcr.io/${PROJECT_ID}/redstring-test:latest
 
-# Wait for build to complete
-echo -e "${YELLOW}⏳ Waiting for build to complete...${NC}"
-gcloud builds log $BUILD_ID --stream
-
-# Check build status
-BUILD_STATUS=$(gcloud builds describe $BUILD_ID --format="value(status)")
-
-if [ "$BUILD_STATUS" = "SUCCESS" ]; then
-    echo -e "${GREEN}✅ Build completed successfully${NC}"
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ Image pushed successfully${NC}"
 else
-    echo -e "${RED}❌ Build failed with status: ${BUILD_STATUS}${NC}"
-    echo -e "${YELLOW}💡 Check build logs: gcloud builds log ${BUILD_ID}${NC}"
+    echo -e "${RED}❌ Failed to push image${NC}"
+    exit 1
+fi
+
+# Deploy to Cloud Run
+echo -e "${YELLOW}🚀 Deploying to Cloud Run...${NC}"
+gcloud run deploy ${SERVICE_NAME} \
+    --image gcr.io/${PROJECT_ID}/redstring-test:latest \
+    --region ${REGION} \
+    --platform managed \
+    --allow-unauthenticated \
+    --port 4000 \
+    --memory 512Mi \
+    --cpu 1 \
+    --concurrency 25 \
+    --max-instances 3 \
+    --set-env-vars "NODE_ENV=production,OAUTH_PORT=3002" \
+    --set-secrets "GITHUB_CLIENT_ID=github-client-id-test:latest,GITHUB_CLIENT_SECRET=github-client-secret-test:latest"
+
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ Cloud Run deployment successful${NC}"
+else
+    echo -e "${RED}❌ Cloud Run deployment failed${NC}"
     exit 1
 fi
 
@@ -189,7 +203,7 @@ else
 fi
 
 # Test deployment
-echo -e "${YELLOW}🔍 Testing deployment...${NC}"
+echo -e "${YELLOW}🔍 Testing cloud deployment...${NC}"
 sleep 10  # Give service time to start
 
 if curl -s --max-time 30 "${SERVICE_URL}/health" | grep -q "healthy"; then
@@ -218,14 +232,14 @@ fi
 
 # Deployment summary
 echo ""
-echo -e "${BOLD}${GREEN}🎉 TEST DEPLOYMENT COMPLETE!${NC}"
-echo -e "${GREEN}=============================${NC}"
+echo -e "${BOLD}${GREEN}🎉 LOCAL BUILD + CLOUD DEPLOY COMPLETE!${NC}"
+echo -e "${GREEN}===========================================${NC}"
 echo ""
 echo -e "${BLUE}📊 Deployment Summary:${NC}"
 echo -e "   Service: ${BOLD}${SERVICE_NAME}${NC}"
 echo -e "   URL: ${BOLD}${CYAN}${SERVICE_URL}${NC}"
 echo -e "   Region: ${BOLD}${REGION}${NC}"
-echo -e "   Build ID: ${BOLD}${BUILD_ID}${NC}"
+echo -e "   Build Method: ${BOLD}${GREEN}Local Docker + Cloud Deploy${NC}"
 echo -e "   Environment: ${BOLD}${CYAN}TEST${NC}"
 echo ""
 echo -e "${BLUE}🔗 Useful Links:${NC}"
@@ -233,7 +247,6 @@ echo -e "   🌐 Application: ${SERVICE_URL}"
 echo -e "   💚 Health Check: ${SERVICE_URL}/health"
 echo -e "   🔐 OAuth Check: ${SERVICE_URL}/api/github/oauth/client-id"
 echo -e "   📊 Cloud Console: https://console.cloud.google.com/run/detail/${REGION}/${SERVICE_NAME}/metrics?project=${PROJECT_ID}"
-echo -e "   📋 Build Logs: https://console.cloud.google.com/cloud-build/builds/${BUILD_ID}?project=${PROJECT_ID}"
 echo ""
 echo -e "${BLUE}🧪 Testing Commands:${NC}"
 echo -e "   Health check: ${BOLD}curl ${SERVICE_URL}/health${NC}"
@@ -245,5 +258,6 @@ echo -e "   View logs: ${BOLD}gcloud logs tail --filter=\"resource.type=cloud_ru
 echo -e "   Scale service: ${BOLD}gcloud run services update ${SERVICE_NAME} --max-instances=5 --region=${REGION}${NC}"
 echo -e "   View service: ${BOLD}gcloud run services describe ${SERVICE_NAME} --region=${REGION}${NC}"
 echo ""
-echo -e "${CYAN}🧪 Test environment is ready for validation! 🧪${NC}"
-echo -e "${YELLOW}💡 Remember to update your GitHub OAuth app callback URL to: ${SERVICE_URL}/oauth/callback${NC}"
+echo -e "${CYAN}🧪 Test environment deployed from local build! 🧪${NC}"
+echo -e "${GREEN}✨ Bypassed Cloud Build - built locally and deployed to cloud! ✨${NC}"
+echo -e "${YELLOW}💡 Open ${SERVICE_URL} in your browser to get started${NC}"
