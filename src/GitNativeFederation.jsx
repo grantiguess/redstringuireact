@@ -3260,9 +3260,9 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                       )}
                     </div>
 
-                    {/* Linked Repository */}
+                    {/* Primary Repository (Storage + Source) */}
                     <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
-                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Linked Repository</div>
+                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Primary Repository</div>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <div style={{ minWidth: '220px', maxWidth: '360px', flex: 1 }}>
                           <RepositoryDropdown
@@ -3280,11 +3280,25 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                             {activeUniverse.gitRepo.linkedRepo.private ? 'Private' : 'Public'}
                           </span>
                         )}
+                        {activeUniverse?.gitRepo?.linkedRepo && (
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#4caf50', color: 'white' }}>
+                              Read
+                            </span>
+                            <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#2196f3', color: 'white' }}>
+                              Write
+                            </span>
+                          </div>
+                        )}
                       </div>
-                      {/* Show universe location in repo */}
+                      {/* Show universe location in repo with activity */}
                       {activeUniverse?.gitRepo?.linkedRepo && (
                         <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px', fontFamily: 'monospace' }}>
                           📁 {activeUniverse.gitRepo.universeFolder || `universes/${activeUniverseSlug}`}/{activeUniverseSlug}.redstring
+                          <div style={{ marginTop: '2px', fontSize: '0.7rem' }}>
+                            <span style={{ color: '#4caf50' }}>↓ Read:</span> Connected • 
+                            <span style={{ color: '#2196f3', marginLeft: '6px' }}>↑ Write:</span> {hasAppForAutoSave ? 'Auto-save' : 'Manual'}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -3445,11 +3459,102 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           </div>
         </div>
 
-        {/* Sources */}
+        {/* Repositories (Read + Write) */}
         <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
           <div style={{ marginBottom: '12px' }}>
-            <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>Sources</div>
-            <div style={{ fontSize: '0.8rem', color: '#666' }}>Connect data repositories</div>
+            <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>📚 Repositories</div>
+            <div style={{ fontSize: '0.8rem', color: '#666' }}>Storage locations that can read and write (GitHub, local files)</div>
+          </div>
+
+          {/* Current Repository (if linked) */}
+          {activeUniverse?.gitRepo?.linkedRepo ? (
+            <div style={{ 
+              padding: '12px',
+              backgroundColor: '#bdb5b5',
+              border: '1px solid #4caf50',
+              borderRadius: '6px',
+              marginBottom: '8px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <div style={{ fontSize: '1.1rem' }}>🐙</div>
+                <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+                  {activeUniverse.gitRepo.linkedRepo.user}/{activeUniverse.gitRepo.linkedRepo.repo}
+                </div>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#4caf50', color: 'white' }}>
+                    Read
+                  </span>
+                  <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#2196f3', color: 'white' }}>
+                    Write
+                  </span>
+                  <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#ff9800', color: 'white' }}>
+                    Primary
+                  </span>
+                </div>
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#666', fontFamily: 'monospace', marginBottom: '4px' }}>
+                📁 {activeUniverse.gitRepo.universeFolder || `universes/${activeUniverseSlug}`}/{activeUniverseSlug}.redstring
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#666' }}>
+                <span style={{ color: '#4caf50' }}>↓ Read:</span> Connected • 
+                <span style={{ color: '#2196f3', marginLeft: '6px' }}>↑ Write:</span> {hasAppForAutoSave ? 'Auto-save enabled' : 'Manual sync'} • 
+                <span style={{ color: '#ff9800', marginLeft: '6px' }}>Status:</span> {isConnected ? 'Healthy' : 'Disconnected'}
+              </div>
+            </div>
+          ) : (
+            /* No Repository Connected */
+            <div style={{ 
+              padding: '12px',
+              backgroundColor: '#fff3e0',
+              border: '2px dashed #ff9800',
+              borderRadius: '6px',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '0.9rem', color: '#e65100', marginBottom: '4px' }}>
+                ⚠️ No repository connected
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#666' }}>
+                Connect a repository above to save your universe
+              </div>
+            </div>
+          )}
+
+          {/* Local File Repository (if applicable) */}
+          {deviceConfig.enableLocalFileStorage && currentFileStatus?.hasFileHandle && (
+            <div style={{ 
+              padding: '12px',
+              backgroundColor: '#bdb5b5',
+              border: '1px solid #666',
+              borderRadius: '6px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <div style={{ fontSize: '1.1rem' }}>📁</div>
+                <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+                  {currentFileStatus.fileName}
+                </div>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#4caf50', color: 'white' }}>
+                    Read
+                  </span>
+                  <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#2196f3', color: 'white' }}>
+                    Write
+                  </span>
+                </div>
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#666' }}>
+                <span style={{ color: '#4caf50' }}>↓ Read:</span> Local file • 
+                <span style={{ color: '#2196f3', marginLeft: '6px' }}>↑ Write:</span> {currentFileStatus?.autoSaveActive ? 'Auto-save' : 'Manual'} • 
+                <span style={{ color: '#666', marginLeft: '6px' }}>Last saved:</span> {currentFileStatus?.lastSaveTime ? new Date(currentFileStatus.lastSaveTime).toLocaleTimeString() : 'Never'}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Data Sources (Read-only feeds) */}
+        <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>📥 Data Sources</div>
+            <div style={{ fontSize: '0.8rem', color: '#666' }}>Read-only feeds and imports (URLs, APIs, other repos)</div>
           </div>
 
           {/* Add Source Card */}
@@ -3479,7 +3584,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           >
             <Plus size={20} color="#260000" />
             <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#260000' }}>
-              Add Source
+              Add Data Source
             </div>
           </div>
 
