@@ -14,7 +14,13 @@ const STORAGE_KEYS = {
   REFRESH_TOKEN: 'github_refresh_token',
   TOKEN_EXPIRY: 'github_token_expiry',
   USER_DATA: 'github_user_data',
-  AUTH_METHOD: 'github_auth_method'
+  AUTH_METHOD: 'github_auth_method',
+  // GitHub App Installation keys
+  APP_INSTALLATION_ID: 'github_app_installation_id',
+  APP_ACCESS_TOKEN: 'github_app_access_token',
+  APP_REPOSITORIES: 'github_app_repositories',
+  APP_USER_DATA: 'github_app_user_data',
+  APP_LAST_UPDATED: 'github_app_last_updated'
 };
 
 // Token refresh buffer - refresh 5 minutes before expiry
@@ -354,6 +360,98 @@ export class PersistentAuth {
         console.error(`[PersistentAuth] Event listener error for ${eventName}:`, error);
       }
     });
+  }
+
+  /**
+   * Store GitHub App installation data
+   */
+  storeAppInstallation(installationData) {
+    const { installationId, accessToken, repositories, userData } = installationData;
+    
+    try {
+      // Store app installation data with storageWrapper to respect debug settings
+      storageWrapper.setItem(STORAGE_KEYS.APP_INSTALLATION_ID, installationId);
+      storageWrapper.setItem(STORAGE_KEYS.APP_ACCESS_TOKEN, accessToken);
+      storageWrapper.setItem(STORAGE_KEYS.APP_REPOSITORIES, JSON.stringify(repositories || []));
+      storageWrapper.setItem(STORAGE_KEYS.APP_USER_DATA, JSON.stringify(userData || {}));
+      storageWrapper.setItem(STORAGE_KEYS.APP_LAST_UPDATED, Date.now().toString());
+      
+      console.log('[PersistentAuth] GitHub App installation stored successfully');
+      this.emit('appInstallationStored', installationData);
+    } catch (error) {
+      console.error('[PersistentAuth] Failed to store GitHub App installation:', error);
+      this.emit('authError', error);
+    }
+  }
+
+  /**
+   * Get stored GitHub App installation data
+   */
+  getAppInstallation() {
+    try {
+      const installationId = storageWrapper.getItem(STORAGE_KEYS.APP_INSTALLATION_ID);
+      const accessToken = storageWrapper.getItem(STORAGE_KEYS.APP_ACCESS_TOKEN);
+      const repositories = storageWrapper.getItem(STORAGE_KEYS.APP_REPOSITORIES);
+      const userData = storageWrapper.getItem(STORAGE_KEYS.APP_USER_DATA);
+      const lastUpdated = storageWrapper.getItem(STORAGE_KEYS.APP_LAST_UPDATED);
+      
+      if (!installationId || !accessToken) {
+        return null;
+      }
+      
+      return {
+        installationId,
+        accessToken,
+        repositories: repositories ? JSON.parse(repositories) : [],
+        userData: userData ? JSON.parse(userData) : {},
+        lastUpdated: lastUpdated ? parseInt(lastUpdated) : Date.now()
+      };
+    } catch (error) {
+      console.error('[PersistentAuth] Failed to get GitHub App installation:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if we have a valid GitHub App installation
+   */
+  hasAppInstallation() {
+    const installation = this.getAppInstallation();
+    return !!(installation?.installationId && installation?.accessToken);
+  }
+
+  /**
+   * Clear GitHub App installation data
+   */
+  clearAppInstallation() {
+    try {
+      storageWrapper.removeItem(STORAGE_KEYS.APP_INSTALLATION_ID);
+      storageWrapper.removeItem(STORAGE_KEYS.APP_ACCESS_TOKEN);
+      storageWrapper.removeItem(STORAGE_KEYS.APP_REPOSITORIES);
+      storageWrapper.removeItem(STORAGE_KEYS.APP_USER_DATA);
+      storageWrapper.removeItem(STORAGE_KEYS.APP_LAST_UPDATED);
+      
+      console.log('[PersistentAuth] GitHub App installation cleared');
+      this.emit('appInstallationCleared');
+    } catch (error) {
+      console.error('[PersistentAuth] Failed to clear GitHub App installation:', error);
+    }
+  }
+
+  /**
+   * Get comprehensive authentication status including GitHub App
+   */
+  getComprehensiveAuthStatus() {
+    const oauthStatus = this.getAuthStatus();
+    const appInstallation = this.getAppInstallation();
+    
+    return {
+      ...oauthStatus,
+      githubApp: {
+        isInstalled: this.hasAppInstallation(),
+        installation: appInstallation
+      }
+    };
   }
 
   /**

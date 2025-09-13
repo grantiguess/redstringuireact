@@ -10,9 +10,12 @@ const AlphaOnboardingModal = ({
   isVisible,
   onClose,
   onDontShowAgain = null,
+  onCreateLocal = null,
+  onConnectGitHub = null,
   ...canvasModalProps
 }) => {
   const [dontShowAgain, setDontShowAgain] = useState(false);
+  const [selectedOption, setSelectedOption] = useState('github'); // Default to GitHub as recommended
 
   // Check if user has already seen this modal
   useEffect(() => {
@@ -100,75 +103,106 @@ const AlphaOnboardingModal = ({
           margin: '0 0 16px 0',
           fontSize: '0.95rem',
           color: '#333',
-          fontFamily: "'EmOne', sans-serif"
+          fontFamily: "'EmOne', sans-serif",
+          textAlign: 'center'
         }}>
           <strong>Redstring</strong> is an open knowledge graph platform that lets you build, connect, and explore
-          ideas through semantic relationships. We're currently in <strong>open alpha</strong>, which means
-          you're one of the first people to experience this new way of working with information.
+          ideas through semantic relationships.
         </p>
 
-                <div style={{
-          backgroundColor: 'transparent',
-          padding: '12px',
-          marginBottom: '12px'
+        <h4 style={{
+          margin: '0 0 16px 0',
+          color: '#8B0000',
+          fontSize: '1rem',
+          fontWeight: 'bold',
+          fontFamily: "'EmOne', sans-serif",
+          textAlign: 'center'
         }}>
-          <h4 style={{
-            margin: '0 0 8px 0',
-            color: '#8B0000',
-            fontSize: '1rem',
-            fontWeight: 'bold',
-            fontFamily: "'EmOne', sans-serif"
-          }}>
-            Features
-          </h4>
-          <ul style={{
-            margin: 0,
-            paddingLeft: '16px',
-            fontSize: '0.85rem',
-            color: '#333',
-            lineHeight: '1.3',
-            fontFamily: "'EmOne', sans-serif"
-          }}>
-            <li>Create and connect nodes in your knowledge graph</li>
-            <li>Explore semantic relationships between concepts</li>
-            <li><strong>Decompose</strong> complex concepts into smaller parts</li>
-            <li><strong>Generalize</strong> specific instances into broader categories</li>
-            <li>Import data from external semantic web sources</li>
-            <li>Build rich, interconnected knowledge structures</li>
-          </ul>
-        </div>
+          Choose how to store your universes:
+        </h4>
 
-        <div style={{
-          backgroundColor: 'rgba(139, 0, 0, 0.05)',
-          border: '1px solid rgba(139, 0, 0, 0.2)',
-          borderRadius: '6px',
-          padding: '12px',
-          marginBottom: '12px'
-        }}>
-          <h4 style={{
-            margin: '0 0 8px 0',
-            color: '#8B0000',
-            fontSize: '1rem',
-            fontWeight: 'bold',
-            fontFamily: "'EmOne', sans-serif"
-          }}>
-            Limitations
-          </h4>
-          <ul style={{
-            margin: 0,
-            paddingLeft: '16px',
-            fontSize: '0.85rem',
-            color: '#333',
-            lineHeight: '1.3',
-            fontFamily: "'EmOne', sans-serif"
-          }}>
-            <li><strong>Mobile:</strong> Not functional yet</li>
-            <li><strong>Performance:</strong> Some features may be slower during alpha</li>
-            <li><strong>Data:</strong> Your work is saved, but backup frequently</li>
-            <li><strong>The Wizard: Is still sleeping</strong></li>
-            <li><strong>Git: Partially implemented</strong></li>
-            <li><strong>External Sources:</strong> Some endpoints may have CORS restrictions</li>
-          </ul>
+        {/* Storage Options */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+          
+          {/* GitHub Option (Recommended) */}
+          <div 
+            onClick={() => setSelectedOption('github')}
+            style={{
+              border: `2px solid ${selectedOption === 'github' ? '#8B0000' : '#ddd'}`,
+              borderRadius: '8px',
+              padding: '16px',
+              cursor: 'pointer',
+              backgroundColor: selectedOption === 'github' ? 'rgba(139, 0, 0, 0.05)' : 'transparent',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+              <div style={{
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                border: `2px solid ${selectedOption === 'github' ? '#8B0000' : '#ddd'}`,
+                backgroundColor: selectedOption === 'github' ? '#8B0000' : 'transparent',
+                marginRight: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                {selectedOption === 'github' && (
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'white' }} />
+                )}
+              </div>
+              <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#260000' }}>
+                GitHub Sync <span style={{ color: '#8B0000', fontSize: '0.8rem' }}>(Recommended)</span>
+              </div>
+            </div>
+            <div style={{ marginLeft: '32px', fontSize: '0.85rem', color: '#666' }}>
+              • <strong>GitHub App</strong>: Secure, persistent connections<br />
+              • <strong>OAuth</strong>: Repository browsing and creation<br />
+              • Automatic cloud backup and version history<br />
+              • Access your universes from anywhere
+            </div>
+          </div>
+
+          {/* Local File Option */}
+          <div 
+            onClick={() => setSelectedOption('local')}
+            style={{
+              border: `2px solid ${selectedOption === 'local' ? '#8B0000' : '#ddd'}`,
+              borderRadius: '8px',
+              padding: '16px',
+              cursor: 'pointer',
+              backgroundColor: selectedOption === 'local' ? 'rgba(139, 0, 0, 0.05)' : 'transparent',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+              <div style={{
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                border: `2px solid ${selectedOption === 'local' ? '#8B0000' : '#ddd'}`,
+                backgroundColor: selectedOption === 'local' ? '#8B0000' : 'transparent',
+                marginRight: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                {selectedOption === 'local' && (
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'white' }} />
+                )}
+              </div>
+              <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#260000' }}>
+                Local Files
+              </div>
+            </div>
+            <div style={{ marginLeft: '32px', fontSize: '0.85rem', color: '#666' }}>
+              • Store universe files on your device<br />
+              • Full control over your data<br />
+              • Works without internet connection<br />
+              • Manual backup and file management
+            </div>
+          </div>
         </div>
       </div>
 
@@ -182,9 +216,16 @@ const AlphaOnboardingModal = ({
         marginBottom: '12px'
       }}>
         <button
-          onClick={handleClose}
+          onClick={() => {
+            if (selectedOption === 'github' && onConnectGitHub) {
+              onConnectGitHub();
+            } else if (selectedOption === 'local' && onCreateLocal) {
+              onCreateLocal();
+            }
+            handleClose();
+          }}
           style={{
-            padding: '10px 24px',
+            padding: '12px 32px',
             border: 'none',
             borderRadius: '8px',
             backgroundColor: '#8B0000',
@@ -195,7 +236,7 @@ const AlphaOnboardingModal = ({
             fontFamily: "'EmOne', sans-serif"
           }}
         >
-          Make My First Universe
+          {selectedOption === 'github' ? 'Connect to GitHub' : 'Create Local Universe'}
         </button>
       </div>
     </div>
@@ -206,8 +247,8 @@ const AlphaOnboardingModal = ({
       isVisible={isVisible}
       onClose={handleClose}
       title=""
-      width={520}
-      height={720}
+      width={560}
+      height={600}
       position="center"
       margin={20}
       {...canvasModalProps}

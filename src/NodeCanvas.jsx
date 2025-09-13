@@ -69,6 +69,7 @@ import TypeList from './TypeList'; // Re-add TypeList component
 import NodeSelectionGrid from './NodeSelectionGrid'; // Import the new node selection grid
 import UnifiedSelector from './UnifiedSelector'; // Import the new unified selector
 import OrbitOverlay from './components/OrbitOverlay.jsx';
+import AlphaOnboardingModal from './components/AlphaOnboardingModal.jsx';
 
 
 const SPAWNABLE_NODE = 'spawnable_node';
@@ -859,6 +860,16 @@ function NodeCanvas() {
 
   // --- Local UI State (Keep these) ---
   const [selectedInstanceIds, setSelectedInstanceIds] = useState(new Set());
+  
+  // Onboarding modal state
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+  
+  // Show onboarding modal when there's no universe file
+  useEffect(() => {
+    if (!isUniverseLoading && !hasUniverseFile && !showOnboardingModal) {
+      setShowOnboardingModal(true);
+    }
+  }, [isUniverseLoading, hasUniverseFile, showOnboardingModal]);
   const [draggingNodeInfo, setDraggingNodeInfo] = useState(null); // Renamed, structure might change
   const [longPressingInstanceId, setLongPressingInstanceId] = useState(null); // Store ID
   const [drawingConnectionFrom, setDrawingConnectionFrom] = useState(null); // Structure might change (store source ID)
@@ -6933,126 +6944,58 @@ function NodeCanvas() {
               </style>
             </div>
           ) : (!isUniverseLoaded || !hasUniverseFile) ? (
-            // Show universe file setup screen
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#555', padding: '20px' }}>
-              <div style={{ fontSize: '32px', marginBottom: '20px', fontFamily: "'EmOne', sans-serif" }}>
-                Welcome to Redstring
-              </div>
-              {universeLoadingError ? (
-                <div style={{ textAlign: 'center', maxWidth: '500px', marginBottom: '30px' }}>
-                  <div style={{ marginBottom: '10px', color: '#d32f2f', fontSize: '18px' }}>
-                    {universeLoadingError}
-                  </div>
-                  <div style={{ fontSize: '16px', color: '#666', marginBottom: '20px' }}>
-                    A universe file is required to work with Redstring. Click below to create or open one.
+            // Show simplified universe loading screen
+            <div style={{ 
+              height: '100%', 
+              display: 'flex', 
+              flexDirection: 'column',
+              backgroundColor: '#bdb5b5'
+            }}>
+              {/* Main content area - mostly empty, just branding */}
+              <div style={{ 
+                flex: 1, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                color: '#555' 
+              }}>
+                <div style={{ 
+                  fontSize: '32px', 
+                  fontFamily: "'EmOne', sans-serif",
+                  color: '#260000',
+                  opacity: 0.8,
+                  textAlign: 'center'
+                }}>
+                  Redstring
+                  <div style={{ 
+                    fontSize: '12px', 
+                    color: '#666', 
+                    marginTop: '8px',
+                    opacity: 0.6
+                  }}>
+                    Loading...
                   </div>
                 </div>
-              ) : (
-                <div style={{ textAlign: 'center', maxWidth: '500px', marginBottom: '30px' }}>
-                  <div style={{ fontSize: '20px', marginBottom: '15px', fontFamily: "'EmOne', sans-serif" }}>
-                    An open, recursive knowledge graph interface.
-                    <br />
-                  </div>
-                  <div style={{ fontSize: '14px', color: '#666', fontFamily: "'EmOne', sans-serif" }}>
-                    Create your universe.redstring file once, and it will auto-reconnect on every visit.
-                  </div>
-                  <div style={{ fontSize: '14px', color: '#888', marginTop: '10px', fontFamily: "'EmOne', sans-serif" }}>
-                    Save to your Documents folder for easy auto-discovery.
-                  </div>
+              </div>
+              
+              {/* Error message at bottom with proper margins */}
+              {universeLoadingError && (
+                <div style={{ 
+                  padding: '20px',
+                  marginBottom: '100px', // Account for TypeList
+                  textAlign: 'center',
+                  color: '#d32f2f',
+                  fontSize: '14px',
+                  fontFamily: "'EmOne', sans-serif",
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                  border: '1px solid rgba(211, 47, 47, 0.3)',
+                  borderRadius: '8px',
+                  maxWidth: '500px',
+                  margin: '0 auto 100px auto'
+                }}>
+                  {universeLoadingError}
                 </div>
               )}
-              
-              <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                <button
-                  onClick={async () => {
-                    try {
-                      
-                      // Clear any existing universe
-                      // storeActions.clearUniverse(); // This is redundant
-                      
-                      // Import the createUniverseFile function
-                      const { createUniverseFile, enableAutoSave } = fileStorage;
-                      
-                      // This will prompt for save location and create the universe file
-                      const initialData = await createUniverseFile();
-                      
-                      if (initialData !== null) {
-                        // Successfully created universe file, load the empty state
-                        storeActions.loadUniverseFromFile(initialData);
-                        
-                        // Enable auto-save
-                        enableAutoSave(() => useGraphStore.getState());
-                        
-                        
-                        // Ensure universe connection is marked as established
-                        storeActions.setUniverseConnected(true);
-                      } else {
-                        // User cancelled the file creation dialog
-                        
-                        storeActions.setUniverseError('File creation was cancelled. Please try again to set up your universe.');
-                      }
-                    } catch (error) {
-                      
-                      storeActions.setUniverseError(`Failed to create universe: ${error.message}. Please try again.`);
-                    }
-                  }}
-                  style={{
-                    padding: '12px 24px',
-                    fontSize: '16px',
-                    backgroundColor: 'maroon',
-                    color: '#bdb5b5',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => e.target.style.backgroundColor = '#a00000'}
-                  onMouseLeave={(e) => e.target.style.backgroundColor = 'maroon'}
-                >
-                  Set Up My Universe
-                </button>
-                
-                <button
-                  onClick={async () => {
-                    try {
-                      
-                      // Clear any existing universe
-                      // storeActions.clearUniverse(); // This is redundant
-                      
-                      const { openUniverseFile, enableAutoSave } = fileStorage;
-                      const loadedData = await openUniverseFile();
-                      
-                      if (loadedData !== null) {
-                        storeActions.loadUniverseFromFile(loadedData);
-                        
-                        // Enable auto-save
-                        enableAutoSave(() => useGraphStore.getState());
-                        
-                        
-                        // Ensure universe connection is marked as established
-                        storeActions.setUniverseConnected(true);
-                      }
-                    } catch (error) {
-                      
-                      storeActions.setUniverseError(`Failed to open file: ${error.message}`);
-                    }
-                  }}
-                  style={{
-                    padding: '12px 24px',
-                    fontSize: '16px',
-                    backgroundColor: '#666',
-                    color: '#bdb5b5',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => e.target.style.backgroundColor = '#555'}
-                  onMouseLeave={(e) => e.target.style.backgroundColor = '#666'}
-                >
-                  Open Existing File
-                </button>
-              </div>
             </div>
           ) : !activeGraphId ? ( // Check local state
             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
@@ -9077,6 +9020,48 @@ function NodeCanvas() {
 
       
 
+      {/* Onboarding Modal */}
+      <AlphaOnboardingModal
+        isVisible={showOnboardingModal}
+        onClose={() => setShowOnboardingModal(false)}
+        onCreateLocal={async () => {
+          try {
+            // Import file storage functions
+            const { createUniverseFile, enableAutoSave } = fileStorage;
+            
+            // Create universe file with file picker
+            const initialData = await createUniverseFile();
+            
+            if (initialData !== null) {
+              // Successfully created universe file, load the empty state
+              storeActions.loadUniverseFromFile(initialData);
+              
+              // Enable auto-save
+              enableAutoSave(() => useGraphStore.getState());
+              
+              // Ensure universe connection is marked as established
+              storeActions.setUniverseConnected(true);
+            } else {
+              // User cancelled the file creation dialog
+              storeActions.setUniverseError('File creation was cancelled. Please try again to set up your universe.');
+            }
+          } catch (error) {
+            storeActions.setUniverseError(`Failed to create universe: ${error.message}. Please try again.`);
+          }
+        }}
+        onConnectGitHub={() => {
+          // Open Git Native Federation for GitHub connection
+          // First, we need to expand the right panel to access Git features
+          setRightPanelExpanded(true);
+          
+          // Set active tab to Git Federation (tab index 2)
+          storeActions.setActiveRightTab(2);
+          
+          // The user will then use the GitHub connection in the Git Federation panel
+          console.log('Redirecting to Git Federation for GitHub setup');
+        }}
+      />
+      
       {/* <div>NodeCanvas Simplified - Testing Loop</div> */}
     </div>
   );

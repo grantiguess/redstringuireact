@@ -156,6 +156,13 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   const [universes, setUniverses] = useState(universeManager.getAllUniverses());
   const [activeUniverseSlug, setActiveUniverseSlug] = useState(universeManager.activeUniverseSlug);
 
+  // Helper function to clear GitHub App installation from both state and storage
+  const clearGithubAppInstallation = () => {
+    setGithubAppInstallation(null);
+    persistentAuth.clearAppInstallation();
+    console.log('[GitNativeFederation] GitHub App installation cleared from state and storage');
+  };
+
   // Subscribe to UniverseManager changes
   useEffect(() => {
     const unsubscribe = universeManager.onStatusChange((status) => {
@@ -167,6 +174,16 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     
     return unsubscribe;
   }, []);
+  
+  // Restore GitHub App installation from persistent storage on mount
+  useEffect(() => {
+    const storedInstallation = persistentAuth.getAppInstallation();
+    if (storedInstallation && !githubAppInstallation) {
+      console.log('[GitNativeFederation] Restoring GitHub App installation from storage:', storedInstallation);
+      setGithubAppInstallation(storedInstallation);
+      setUserRepositories(storedInstallation.repositories || []);
+    }
+  }, []); // Run once on mount
 
   // Helpers for universes & storage (now using UniverseManager)
   const getActiveUniverse = () => universeManager.getActiveUniverse();
@@ -1533,14 +1550,18 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           
           console.log('[GitNativeFederation] GitHub App installation successful:', username, repositories.length, 'repositories');
           
-          // Store the installation data
-          setGithubAppInstallation({ 
+          // Store the installation data in state and persistent storage
+          const installationData = { 
             installationId, 
             accessToken,
             repositories, 
             userData,
             username
-          });
+          };
+          setGithubAppInstallation(installationData);
+          
+          // Persist to localStorage for sessions
+          persistentAuth.storeAppInstallation(installationData);
           setUserRepositories(repositories);
           
           // Provide helpful feedback based on repository count
@@ -1632,14 +1653,18 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                     
                     console.log('[GitNativeFederation] Automatic installation completion successful:', username, repositories.length, 'repositories');
                     
-                    // Store the installation data
-                    setGithubAppInstallation({ 
+                    // Store the installation data in state and persistent storage
+                    const autoInstallationData = { 
                       installationId, 
                       accessToken,
                       repositories, 
                       userData,
                       username
-                    });
+                    };
+                    setGithubAppInstallation(autoInstallationData);
+                    
+                    // Persist to localStorage for sessions
+                    persistentAuth.storeAppInstallation(autoInstallationData);
                     setUserRepositories(repositories);
                     
                     // Provide helpful feedback based on repository count
@@ -1952,14 +1977,18 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       
       console.log('[GitNativeFederation] Manual installation completion successful:', username, repositories.length, 'repositories');
       
-      // Store the installation data
-      setGithubAppInstallation({ 
+      // Store the installation data in state and persistent storage
+      const manualInstallationData = { 
         installationId, 
         accessToken,
         repositories, 
         userData,
         username
-      });
+      };
+      setGithubAppInstallation(manualInstallationData);
+      
+      // Persist to localStorage for sessions
+      persistentAuth.storeAppInstallation(manualInstallationData);
       setUserRepositories(repositories);
       
       // Provide helpful feedback based on repository count
@@ -4153,7 +4182,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             <div style={{ width: '520px', maxWidth: '90%', backgroundColor: '#bdb5b5', border: '1px solid #260000', borderRadius: '8px', padding: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                 <div style={{ fontWeight: 'bold', color: '#260000', fontSize: '1.1rem' }}>Repository Access Required</div>
-                <button onClick={() => { setGithubAppInstallation(null); setError(null); }} style={{ background: 'transparent', border: 'none', color: '#260000', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+                <button onClick={() => { clearGithubAppInstallation(); setError(null); }} style={{ background: 'transparent', border: 'none', color: '#260000', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
               </div>
               
               <div style={{ marginBottom: '15px', color: '#260000', lineHeight: '1.4' }}>
@@ -4209,7 +4238,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 </button>
                 <button
                   onClick={() => {
-                    setGithubAppInstallation(null);
+                    clearGithubAppInstallation();
                     setError(null);
                   }}
                   style={{
