@@ -726,6 +726,22 @@ export const autoConnectToUniverse = async () => {
 
   console.log('[FileStorage] Starting auto-connect to universe...');
   
+  // Strategy 0: Try Git-based universe restoration if configured
+  try {
+    const activeUniverse = universeManager.getActiveUniverse();
+    if (activeUniverse && activeUniverse.gitRepo && activeUniverse.gitRepo.enabled) {
+      console.log('[FileStorage] Attempting Git universe restoration for:', activeUniverse.slug);
+      const gitStoreState = await universeManager.loadUniverseData(activeUniverse);
+      if (gitStoreState) {
+        console.log('[FileStorage] Auto-connected (Git repository)');
+        return gitStoreState;
+      }
+    }
+  } catch (error) {
+    console.warn('[FileStorage] Git auto-connect failed:', error);
+    // Continue to other strategies
+  }
+  
   
   // Strategy 1: Try to restore the exact file handle
   const fileRestored = await tryRestoreFileHandle();

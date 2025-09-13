@@ -9079,7 +9079,7 @@ function NodeCanvas() {
             storeActions.setUniverseError(`Failed to open file: ${error.message}`);
           }
         }}
-        onConnectGitHub={(step) => {
+        onConnectGitHub={async (step) => {
           // Handle different GitHub setup steps
           console.log('[NodeCanvas] GitHub setup step:', step);
           
@@ -9106,8 +9106,31 @@ function NodeCanvas() {
           } else if (step === 'use-existing') {
             console.log('[NodeCanvas] Using existing GitHub connections for Git-based universe');
             
-            // Mark universe as loaded and connected to prevent modal from reopening
-            storeActions.setUniverseLoaded(true, true);
+            try {
+              // Import universe manager to try loading Git universe
+              const { default: universeManager } = await import('./services/universeManager.js');
+              
+              // Try to load from the active universe
+              const activeUniverse = universeManager.getActiveUniverse();
+              if (activeUniverse && activeUniverse.gitRepo && activeUniverse.gitRepo.enabled) {
+                console.log('[NodeCanvas] Found existing Git universe, attempting to load:', activeUniverse.slug);
+                const storeState = await universeManager.loadUniverseData(activeUniverse);
+                if (storeState) {
+                  storeActions.loadUniverseFromFile(storeState);
+                  console.log('[NodeCanvas] ✅ Successfully restored Git-based universe from:', activeUniverse.slug);
+                } else {
+                  console.log('[NodeCanvas] Git universe exists but no data found, using empty state');
+                  storeActions.setUniverseLoaded(true, true);
+                }
+              } else {
+                console.log('[NodeCanvas] No Git universe configured, creating empty state for Git-based storage');
+                storeActions.setUniverseLoaded(true, true);
+              }
+            } catch (error) {
+              console.warn('[NodeCanvas] Failed to restore Git universe, falling back to empty state:', error);
+              // Still mark as loaded to prevent modal reopening
+              storeActions.setUniverseLoaded(true, true);
+            }
             
             // Explicitly close the onboarding modal
             setShowOnboardingModal(false);

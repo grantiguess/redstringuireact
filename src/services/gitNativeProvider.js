@@ -631,11 +631,21 @@ This repository was automatically initialized by RedString UI React. You can now
   async readFileRaw(path) {
     try {
       const info = await this.getFileInfo(path);
-      if (!info) throw new Error(`File not found: ${path}`);
+      if (!info) {
+        // File not found - this is expected for new files, so don't log as error
+        console.log(`[GitHubSemanticProvider] File not found: ${path}`);
+        throw new Error(`File not found: ${path}`);
+      }
       return this.base64ToUtf8(info.content);
     } catch (e) {
-      console.error('[GitHubSemanticProvider] readFileRaw failed:', e);
-      throw e;
+      // Only log as error if it's not a "file not found" error
+      if (e.message && e.message.includes('File not found')) {
+        // Re-throw without additional error logging since this is expected
+        throw e;
+      } else {
+        console.error('[GitHubSemanticProvider] readFileRaw failed:', e);
+        throw e;
+      }
     }
   }
 
@@ -1077,11 +1087,21 @@ export class GiteaSemanticProvider extends SemanticProvider {
   async readFileRaw(path) {
     try {
       const info = await this.getFileInfo(path);
-      if (!info) throw new Error(`File not found: ${path}`);
+      if (!info) {
+        // File not found - this is expected for new files, so don't log as error
+        console.log(`[GiteaSemanticProvider] File not found: ${path}`);
+        throw new Error(`File not found: ${path}`);
+      }
       return this.base64ToUtf8(info.content);
     } catch (e) {
-      console.error('[GiteaSemanticProvider] readFileRaw failed:', e);
-      throw e;
+      // Only log as error if it's not a "file not found" error
+      if (e.message && e.message.includes('File not found')) {
+        // Re-throw without additional error logging since this is expected
+        throw e;
+      } else {
+        console.error('[GiteaSemanticProvider] readFileRaw failed:', e);
+        throw e;
+      }
     }
   }
 

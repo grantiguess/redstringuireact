@@ -253,12 +253,34 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       
       if (!installationResponse.ok) {
         const errorText = await installationResponse.text();
-        console.error('[GitNativeFederation] Auto-connection failed - invalid installation token:', errorText);
+        console.error('[GitNativeFederation] Auto-connection failed - server error:', errorText);
         
-        // Clear invalid installation data
-        console.log('[GitNativeFederation] Clearing invalid GitHub App installation data');
-        clearGithubAppInstallation();
-        setError('GitHub App connection expired. Please reconnect.');
+        // Only clear installation data for authentication errors (401, 403)
+        // Don't clear for server errors (500+) or configuration issues
+        if (installationResponse.status === 401 || installationResponse.status === 403) {
+          console.log('[GitNativeFederation] Authentication error detected, clearing invalid GitHub App installation data');
+          clearGithubAppInstallation();
+          setError('GitHub App connection expired. Please reconnect.');
+        } else {
+          console.log('[GitNativeFederation] Server error detected, keeping installation data and retrying later');
+          setError(`Server error (${installationResponse.status}). Will retry automatically.`);
+        }
+        return;
+      }
+      
+      // Check if response is JSON before parsing
+      const contentType = installationResponse.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const responseText = await installationResponse.text();
+        console.error('[GitNativeFederation] Auto-connection failed - unexpected response format:', {
+          status: installationResponse.status,
+          contentType,
+          responseText: responseText.substring(0, 200) + (responseText.length > 200 ? '...' : '')
+        });
+        
+        // This is likely a server configuration issue, not an installation issue
+        console.log('[GitNativeFederation] Server configuration error detected, keeping installation data');
+        setError('OAuth server configuration error. Check server setup.');
         return;
       }
       
@@ -304,7 +326,16 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     } catch (error) {
       console.error('[GitNativeFederation] ❌ Auto-connection failed:', error);
       setConnectionHealth('failed');
-      setError(`Auto-connection failed: ${error.message}`);
+      
+      // Provide more specific error messages
+      let errorMessage = error.message;
+      if (errorMessage.includes('Unexpected token') && errorMessage.includes('<!doctype')) {
+        errorMessage = 'OAuth server returned HTML instead of JSON. Check server configuration.';
+      } else if (errorMessage.includes('Failed to fetch')) {
+        errorMessage = 'Unable to connect to OAuth server. Check network connection.';
+      }
+      
+      setError(`Auto-connection failed: ${errorMessage}`);
     } finally {
       setIsConnecting(false);
     }
