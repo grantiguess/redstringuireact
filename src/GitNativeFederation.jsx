@@ -54,6 +54,7 @@ import { getFileStatus } from './store/fileStorage.js';
 import * as fileStorageModule from './store/fileStorage.js';
 import githubRateLimiter from './services/githubRateLimiter.js';
 import startupCoordinator from './services/startupCoordinator.js';
+import universeManager from './services/universeManager.js';
 // Note: Using inline device detection to avoid circular dependencies during React initialization
 // The external device detection utilities are available but not used during component init
 
