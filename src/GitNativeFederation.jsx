@@ -191,7 +191,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     });
     
     return unsubscribe;
-  }, [currentProvider, storeGitSyncEngine, gitSyncEngine, deviceConfig.enableLocalFileStorage]);
+  }, [currentProvider, deviceConfig.enableLocalFileStorage]);
 
   // Ensure Git engine is registered early for the active universe (helps reads on session restore)
   useLayoutEffect(() => {
@@ -743,17 +743,17 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
 
   // In Git-only mode, schedule an immediate engine ensure on first render (before other loaders)
   const didScheduleEnsureRef = useRef(false);
-  if (!deviceConfig.enableLocalFileStorage && !didScheduleEnsureRef.current) {
-    didScheduleEnsureRef.current = true;
-    try {
-      // Microtask to avoid blocking render
-      Promise.resolve().then(() => {
-        ensureEngineForActiveUniverse();
-        // If engine creation is delayed, try a direct read to prime the store
-        readDirectFromGitIfNoEngine();
-      });
-    } catch (_) {}
-  }
+  useEffect(() => {
+    if (!deviceConfig.enableLocalFileStorage && !didScheduleEnsureRef.current) {
+      didScheduleEnsureRef.current = true;
+      (async () => {
+        try {
+          await ensureEngineForActiveUniverse();
+          await readDirectFromGitIfNoEngine();
+        } catch (_) {}
+      })();
+    }
+  }, [deviceConfig.enableLocalFileStorage]);
 
   // File System Access helpers (mobile-aware with graceful fallbacks)
   const pickLocalFileForActiveUniverse = async () => {
