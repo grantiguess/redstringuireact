@@ -795,7 +795,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       console.warn('[GitNativeFederation] pickLocalFileForActiveUniverse failed:', e);
     }
   };
-
   const saveActiveUniverseToLocalHandle = async () => {
     // Skip File System API operations on mobile/tablet devices
     if (!deviceConfig.enableLocalFileStorage) {
@@ -1295,22 +1294,16 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   // Only pause/resume, don't change any other state to ensure consistency
   useEffect(() => {
     if (gitSyncEngine) {
-      if (isVisible && isInteractive) {
-        gitSyncEngine.resume();
-      } else {
-        gitSyncEngine.pause();
-      }
+      // Always keep engine running regardless of panel visibility
+      gitSyncEngine.resume();
     }
     
     // Also control the store-level engine
     if (storeGitSyncEngine) {
-      if (isVisible && isInteractive) {
-        storeGitSyncEngine.resume();
-      } else {
-        storeGitSyncEngine.pause();
-      }
+      // Always keep engine running regardless of panel visibility
+      storeGitSyncEngine.resume();
     }
-  }, [isVisible, isInteractive, gitSyncEngine, storeGitSyncEngine]);
+  }, [gitSyncEngine, storeGitSyncEngine]);
 
   // Initialize sync engine, federation, and Git storage when provider changes
   // CRITICAL: Only create NEW engines, never recreate existing ones to prevent conflicts
@@ -1550,7 +1543,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       console.log('[GitNativeFederation] Component unmounting, but keeping SaveCoordinator active for background saves');
     };
   }, [gitSyncEngine, universeManager]);
-
   // Prevent page unload when there are unsaved changes and add Ctrl+S shortcut
   useEffect(() => {
     const handleBeforeUnload = (e) => {
@@ -2305,7 +2297,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       setError(`Repository selection failed: ${err.message}`);
     }
   };
-
   // Handle manual installation completion (for admin/testing cases)
   const handleCompleteInstallation = async () => {
     try {
@@ -3075,7 +3066,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     
     // Only restore connection when needed, but avoid unnecessary re-runs
     restoreConnection();
-  }, [gitConnection, currentProvider, clearGitConnection]); // Keep necessary dependencies but minimize re-runs
+  }, [gitSyncEngine, storeGitSyncEngine]);
   
   if (useNewLayout) {
     const activeUniverse = getActiveUniverse();

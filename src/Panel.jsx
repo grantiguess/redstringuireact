@@ -1,4 +1,4 @@
-import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, useCallback, useMemo, Suspense, lazy } from 'react';
 import { useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend'; // Import for hiding default preview
 import { HEADER_HEIGHT, NODE_CORNER_RADIUS, THUMBNAIL_MAX_DIMENSION, NODE_DEFAULT_COLOR, PANEL_CLOSE_ICON_SIZE } from './constants';
@@ -22,7 +22,7 @@ import useGraphStore, {
 } from './store/graphStore';
 import { shallow } from 'zustand/shallow';
 import GraphListItem from './GraphListItem'; // <<< Import the new component
-import GitNativeFederation from './GitNativeFederation'; // Import Git-Native Federation component
+const GitNativeFederation = lazy(() => import('./GitNativeFederation')); // Lazy import to avoid circular init
 // Inline AI Collaboration Panel as internal component below
 import './ai/AICollaborationPanel.css';
 import APIKeySetup from './ai/components/APIKeySetup.jsx';
