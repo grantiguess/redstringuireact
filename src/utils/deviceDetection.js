@@ -67,6 +67,8 @@ export const getDeviceInfo = () => {
   };
 };
 
+let __loggedLocalStorageDisabledOnce = false;
+
 /**
  * Check if device should use Git-Only mode
  * Considers both device capabilities and File System API availability
@@ -82,7 +84,10 @@ export const shouldUseGitOnlyMode = () => {
   
   // Check if local storage is disabled for debugging
   if (isLocalStorageDisabled()) {
-    console.log('[DeviceDetection] Git-Only mode enabled due to local storage disabled for debugging');
+    if (!__loggedLocalStorageDisabledOnce) {
+      __loggedLocalStorageDisabledOnce = true;
+      console.log('[DeviceDetection] Git-Only mode enabled due to local storage disabled for debugging');
+    }
     return true;
   }
   

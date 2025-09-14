@@ -51,14 +51,12 @@ export function getOAuthBaseUrl() {
     const { protocol, hostname, port } = window.location;
     
     // In production (Cloud Run or custom domain), use the same origin as the main app
-    if (hostname.includes('run.app') || 
-        hostname === 'redstring.io' || 
-        hostname.includes('.redstring.io') ||
-        protocol === 'https:') {
+    if (hostname.includes('run.app') || hostname === 'redstring.io' || hostname.includes('.redstring.io')) {
       return `${protocol}//${hostname}${port && port !== '443' && port !== '80' ? ':' + port : ''}`;
     }
     
-    // In development, use dedicated OAuth server port
+    // For development, prefer dedicated OAuth port even if served over https locally,
+    // unless explicitly overridden via VITE_OAUTH_URL above.
     const oauthPort = 3002;
     return `${protocol}//${hostname}:${oauthPort}`;
   }
