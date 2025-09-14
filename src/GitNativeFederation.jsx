@@ -4,7 +4,7 @@
  * Provides real-time responsiveness, true decentralization, and distributed resilience
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import {
   GitBranch, 
   GitCommit, 
@@ -183,16 +183,18 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           const existingEngine = storeGitSyncEngine || gitSyncEngine;
           if (existingEngine) {
             universeManager.setGitSyncEngine(active.slug, existingEngine);
+          } else if (!deviceConfig.enableLocalFileStorage) {
+            ensureEngineForActiveUniverse();
           }
         }
       } catch (_) {}
     });
     
     return unsubscribe;
-  }, []);
+  }, [currentProvider, storeGitSyncEngine, gitSyncEngine, deviceConfig.enableLocalFileStorage]);
 
   // Ensure Git engine is registered early for the active universe (helps reads on session restore)
-  useEffect(() => {
+  useLayoutEffect(() => {
     try {
       const active = universeManager.getActiveUniverse();
       if (active?.gitRepo?.linkedRepo) {
@@ -202,6 +204,10 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         } else {
           // Try to connect so the engine can be created and registered
           attemptConnectUniverseRepo();
+          // Also force-create engine if local storage is disabled (Git-only path)
+          if (!deviceConfig.enableLocalFileStorage) {
+            ensureEngineForActiveUniverse();
+          }
         }
       }
     } catch (_) {}
@@ -630,6 +636,124 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       console.warn('[GitNativeFederation] attemptConnectUniverseRepo failed:', e);
     }
   };
+
+  // Ensure a Git engine exists and is registered for the active universe (used when local storage is disabled)
+  const ensureEngineForActiveUniverse = async () => {
+    try {
+      const u = getActiveUniverse();
+      if (!u?.gitRepo?.linkedRepo) return;
+
+      // If an engine is already registered, nothing to do
+      const existing = universeManager.getGitSyncEngine(u.slug) || storeGitSyncEngine || gitSyncEngine;
+      if (existing) {
+        try { universeManager.setGitSyncEngine(u.slug, existing); } catch (_) {}
+        return;
+      }
+
+      // Build provider from linked repo
+      const cfg = {
+        type: 'github',
+        user: u.gitRepo.linkedRepo.user,
+        repo: u.gitRepo.linkedRepo.repo,
+        authMethod: 'oauth',
+        semanticPath: u.gitRepo.schemaPath || 'schema'
+      };
+      try {
+        const token = await persistentAuth.getAccessToken();
+        if (token) cfg.token = token;
+      } catch (_) {}
+
+      const provider = SemanticProviderFactory.createProvider(cfg);
+      const available = await provider.isAvailable();
+      if (!available) return;
+
+      // Derive file base name
+      let fileBaseName = 'universe';
+      try {
+        const fileStatus = storeActions.getFileStatus?.();
+        if (fileStatus?.fileName && fileStatus.fileName.endsWith('.redstring')) {
+          fileBaseName = fileStatus.fileName.replace(/\.redstring$/i, '');
+        }
+      } catch (_) {}
+
+      const newEngine = new GitSyncEngine(provider, sourceOfTruthMode, u.slug, fileBaseName, universeManager);
+      try { universeManager.setGitSyncEngine(u.slug, newEngine); } catch (_) {}
+      setGitSyncEngine(newEngine);
+      setGitSyncEngineStore(newEngine);
+      newEngine.onStatusChange?.((s) => setSyncStatus(s));
+      newEngine.start();
+
+      // Attempt immediate read from Git
+      try {
+        const data = await newEngine.loadFromGit();
+        if (data) {
+          const { storeState: importedState } = importFromRedstring(data, storeActions);
+          storeActions.loadUniverseFromFile(importedState);
+          setSyncStatus({ type: 'success', status: 'Loaded existing data from repository' });
+          setTimeout(() => setSyncStatus(null), 3000);
+        }
+      } catch (e) {
+        // Non-fatal; engine is active for future reads
+      }
+    } catch (_) {}
+  };
+
+  // Direct read from Git without an engine (fallback when engine not yet configured)
+  const readDirectFromGitIfNoEngine = async () => {
+    try {
+      const u = getActiveUniverse();
+      if (!u?.gitRepo?.linkedRepo) return false;
+      const existing = universeManager.getGitSyncEngine(u.slug) || storeGitSyncEngine || gitSyncEngine;
+      if (existing) return false;
+
+      const cfg = {
+        type: 'github',
+        user: u.gitRepo.linkedRepo.user,
+        repo: u.gitRepo.linkedRepo.repo,
+        authMethod: 'oauth',
+        semanticPath: u.gitRepo.schemaPath || 'schema'
+      };
+      try {
+        const token = await persistentAuth.getAccessToken();
+        if (token) cfg.token = token;
+      } catch (_) {}
+
+      const provider = SemanticProviderFactory.createProvider(cfg);
+      const available = await provider.isAvailable();
+      if (!available) return false;
+
+      const folder = u.gitRepo.universeFolder || `universes/${u.slug}`;
+      const filePath = `${folder}/${u.slug}.redstring`;
+      try {
+        const content = await provider.readFileRaw(filePath);
+        if (content) {
+          const parsed = JSON.parse(content);
+          const { storeState: importedState } = importFromRedstring(parsed, storeActions);
+          storeActions.loadUniverseFromFile(importedState);
+          setSyncStatus({ type: 'success', status: 'Loaded repository data' });
+          setTimeout(() => setSyncStatus(null), 2500);
+          return true;
+        }
+      } catch (_) {
+        // no file yet
+      }
+    } catch (_) {}
+    return false;
+  };
+
+  // In Git-only mode, schedule an immediate engine ensure on first render (before other loaders)
+  const didScheduleEnsureRef = useRef(false);
+  if (!deviceConfig.enableLocalFileStorage && !didScheduleEnsureRef.current) {
+    didScheduleEnsureRef.current = true;
+    try {
+      // Microtask to avoid blocking render
+      Promise.resolve().then(() => {
+        ensureEngineForActiveUniverse();
+        // If engine creation is delayed, try a direct read to prime the store
+        readDirectFromGitIfNoEngine();
+      });
+    } catch (_) {}
+  }
 
   // File System Access helpers (mobile-aware with graceful fallbacks)
   const pickLocalFileForActiveUniverse = async () => {
@@ -1474,8 +1598,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [gitSyncEngine, hasUnsavedChanges, isSaving, storeState]);
-
-
   // Handle GitHub App installation callback and OAuth callback
   useEffect(() => {
     const handleGitHubCallbacks = async () => {
@@ -2267,7 +2389,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       setIsConnecting(false);
     }
   };
-
   // Handle GitHub OAuth authentication for repository creation
   const handleGitHubAuth = async () => {
     try {
@@ -3310,10 +3431,10 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <div style={{ minWidth: '220px', maxWidth: '360px', flex: 1 }}>
                           {(activeUniverse?.gitRepo?.enabled ?? false) ? (
-                            <RepositoryDropdown
-                            selectedRepository={activeUniverse?.gitRepo?.linkedRepo ? {
-                              name: activeUniverse.gitRepo.linkedRepo.repo,
-                              owner: { login: activeUniverse.gitRepo.linkedRepo.user }
+                          <RepositoryDropdown
+                            selectedRepository={activeUniverse?.gitRepo?.linkedRepo ? { 
+                              name: activeUniverse.gitRepo.linkedRepo.repo, 
+                              owner: { login: activeUniverse.gitRepo.linkedRepo.user } 
                             } : null}
                             onSelectRepository={(repo) => handleLinkRepositoryToActiveUniverse(repo)}
                             placeholder={hasOAuthForBrowsing ? 'Browse Repositories' : 'OAuth required for browsing'}
@@ -3350,140 +3471,139 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                       {deviceConfig.enableLocalFileStorage && (activeUniverse?.localFile?.enabled || (activeUniverse?.localFile?.enabled ?? false) || (activeUniverse?.gitRepo?.enabled && activeUniverse?.localFile?.enabled)) ? (
                         <div style={{ marginTop: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
                           <div style={{ fontSize: '0.8rem', color: '#260000' }}>Local file</div>
-                          <input
-                            value={activeUniverse?.localFile?.path || actualFileName}
-                            onChange={(e) => updateActiveUniverse({
-                              localFile: {
-                                ...activeUniverse?.localFile,
-                                path: e.target.value
-                              }
-                            })}
-                            className="editable-title-input"
-                            style={{
-                              fontSize: '0.9rem',
-                              padding: '6px 8px',
+                          <input 
+                            value={activeUniverse?.localFile?.path || actualFileName} 
+                            onChange={(e) => updateActiveUniverse({ 
+                              localFile: { 
+                                ...activeUniverse?.localFile, 
+                                path: e.target.value 
+                              } 
+                            })} 
+                            className="editable-title-input" 
+                            style={{ 
+                              fontSize: '0.9rem', 
+                              padding: '6px 8px', 
                               borderRadius: '4px',
                               flex: 1
-                            }}
+                            }} 
                           />
-                          <button
-                            onClick={pickLocalFileForActiveUniverse}
+                          <button 
+                            onClick={pickLocalFileForActiveUniverse} 
                             title="Edit file location"
-                            style={{
-                              padding: '4px',
-                              backgroundColor: '#EFE8E5',
-                              color: '#260000',
-                              border: '1px solid #260000',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
+                            style={{ 
+                              padding: '4px', 
+                              backgroundColor: '#EFE8E5', 
+                              color: '#260000', 
+                              border: '1px solid #260000', 
+                              borderRadius: '4px', 
+                              cursor: 'pointer', 
+                              display: 'flex', 
+                              alignItems: 'center', 
                               justifyContent: 'center'
                             }}
                           >
                             <Edit3 size={12} />
                           </button>
-                          <button
+                          <button 
                             onClick={async () => {
                               const ok = await saveActiveUniverseToLocalHandle();
                               if (!ok) {
                                 const current = useGraphStore.getState();
                                 downloadRedstringFile(current, actualFileName);
                               }
-                            }}
+                            }} 
                             title="Download file"
-                            style={{
-                              padding: '4px',
-                              backgroundColor: '#EFE8E5',
-                              color: '#260000',
-                              border: '1px solid #260000',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
+                            style={{ 
+                              padding: '4px', 
+                              backgroundColor: '#EFE8E5', 
+                              color: '#260000', 
+                              border: '1px solid #260000', 
+                              borderRadius: '4px', 
+                              cursor: 'pointer', 
+                              display: 'flex', 
+                              alignItems: 'center', 
                               justifyContent: 'center'
                             }}
                           >
                             <Download size={12} />
                           </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                setIsSaving(true);
-                                const localEnabled = activeUniverse?.localFile?.enabled ?? false;
-                                const gitEnabled = activeUniverse?.gitRepo?.enabled ?? false;
-                                const sourceOfTruth = activeUniverse?.sourceOfTruth || 'local';
-
-                                const shouldSaveLocal = localEnabled && (sourceOfTruth === 'local' || (localEnabled && gitEnabled));
-                                const shouldSaveGit = gitEnabled;
-
-                                if (shouldSaveLocal) {
-                                  const current = useGraphStore.getState();
-                                  const ok = await saveActiveUniverseToLocalHandle();
-                                  if (!ok) {
-                                    downloadRedstringFile(current, actualFileName);
-                                  }
+                        <button 
+                          onClick={async () => {
+                            try {
+                              setIsSaving(true);
+                              const localEnabled = activeUniverse?.localFile?.enabled ?? false;
+                              const gitEnabled = activeUniverse?.gitRepo?.enabled ?? false;
+                              const sourceOfTruth = activeUniverse?.sourceOfTruth || 'local';
+                              
+                              const shouldSaveLocal = localEnabled && (sourceOfTruth === 'local' || (localEnabled && gitEnabled));
+                              const shouldSaveGit = gitEnabled;
+                              
+                              if (shouldSaveLocal) {
+                                const current = useGraphStore.getState();
+                                const ok = await saveActiveUniverseToLocalHandle();
+                                if (!ok) {
+                                  downloadRedstringFile(current, actualFileName);
                                 }
-
-                                if (shouldSaveGit) {
-                                  await handleSaveToGit();
-                                }
-
-                                const savedTo = [];
-                                if (shouldSaveLocal) savedTo.push('local');
-                                if (shouldSaveGit) savedTo.push('git');
-
-                                setHasUnsavedChanges(false);
-                                setLastSaveTime(Date.now());
-                                setSyncStatus({
-                                  type: 'success',
-                                  status: `Manual save completed${savedTo.length ? ' to: ' + savedTo.join(' + ') : ''}`
-                                });
-                                setTimeout(() => setSyncStatus(null), 4000);
-                              } catch (e) {
-                                setError(`Manual save failed: ${e.message}`);
-                              } finally {
-                                setIsSaving(false);
                               }
-                            }}
-                            title="Manual save"
-                            disabled={isConnecting || isSaving}
-                            style={{
-                              padding: '4px',
-                              backgroundColor: (isConnecting || isSaving) ? '#ccc' : '#EFE8E5',
-                              color: '#260000',
-                              border: '1px solid #260000',
-                              borderRadius: '4px',
-                              cursor: (isConnecting || isSaving) ? 'not-allowed' : 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center'
-                            }}
-                          >
-                            {isSaving ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={12} />}
-                          </button>
-                        </div>
+                              
+                              if (shouldSaveGit) {
+                                await handleSaveToGit();
+                              }
+                              
+                              const savedTo = [];
+                              if (shouldSaveLocal) savedTo.push('local');
+                              if (shouldSaveGit) savedTo.push('git');
+                              
+                              setHasUnsavedChanges(false);
+                              setLastSaveTime(Date.now());
+                              setSyncStatus({ 
+                                type: 'success', 
+                                status: `Manual save completed${savedTo.length ? ' to: ' + savedTo.join(' + ') : ''}` 
+                              });
+                              setTimeout(() => setSyncStatus(null), 4000);
+                            } catch (e) {
+                              setError(`Manual save failed: ${e.message}`);
+                            } finally {
+                              setIsSaving(false);
+                            }
+                          }} 
+                          title="Manual save"
+                          disabled={isConnecting || isSaving}
+                          style={{ 
+                            padding: '4px', 
+                            backgroundColor: (isConnecting || isSaving) ? '#ccc' : '#EFE8E5', 
+                            color: '#260000', 
+                            border: '1px solid #260000', 
+                            borderRadius: '4px', 
+                            cursor: (isConnecting || isSaving) ? 'not-allowed' : 'pointer', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center'
+                          }}
+                        >
+                          {isSaving ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={12} />}
+                        </button>
+                      </div>
                       ) : deviceConfig.enableLocalFileStorage ? (
-                        <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
-                          <div style={{
-                            padding: '12px',
+                      <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
+                        <div style={{ 
+                          padding: '12px', 
                             backgroundColor: '#EFE8E5',
                             border: '1px solid #260000',
-                            borderRadius: '6px',
-                            textAlign: 'center'
-                          }}>
+                          borderRadius: '6px',
+                          textAlign: 'center'
+                        }}>
                             <div style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '4px', color: '#260000' }}>
                               Mobile-Optimized Storage
-                            </div>
-                            <div style={{ fontSize: '0.8rem', color: '#666', lineHeight: '1.3' }}>
-                              Your device uses Git repositories for storage instead of local files.
-                              All your work is automatically synced to the cloud.
-                            </div>
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: '#666', lineHeight: '1.3' }}>
+                            Your device uses Git repositories for storage instead of local files. 
+                            All your work is automatically synced to the cloud.
                           </div>
                         </div>
+                      </div>
                       ) : null}
                     </div>
-
                     {/* Data Sources (embedded per-universe) */}
                     <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2', marginTop: '10px' }}>
                       <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Data Sources</div>
@@ -4227,7 +4347,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           </div>
         </div>
         )}
-
         {/* Enhanced Add Source Modal */}
         {showAddSourceModal && (
           <div style={{
@@ -4990,7 +5109,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             </div>
           );
         })()}
-
         {/* Provider Selection */}
         <div style={{ marginBottom: '20px', marginTop: '30px', padding: '15px', backgroundColor: '#979090', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
@@ -5619,7 +5737,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       </div>
     );
   }
-
   return (
     <div 
       style={{ 
