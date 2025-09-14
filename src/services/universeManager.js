@@ -14,6 +14,7 @@ import {
   hasCapability 
 } from '../utils/deviceDetection.js';
 import { persistentAuth } from '../services/persistentAuth.js';
+import { SemanticProviderFactory } from './gitNativeProvider.js';
 import { storageWrapper } from '../utils/storageWrapper.js';
 
 // Lazy import to avoid circular dependency
@@ -282,7 +283,7 @@ class UniverseManager {
       browserStorage: {
         enabled: universe.browserStorage?.enabled ?? true,
         role: universe.browserStorage?.role || 'fallback',
-        lastSync: universe.browserStorage?.lastSync || null
+        key: universe.browserStorage?.key || `universe_${(universe.slug || 'universe')}`
       },
       
       // Metadata
@@ -831,6 +832,13 @@ class UniverseManager {
         if (gitData) return gitData;
       } catch (error) {
         console.warn('[UniverseManager] Git load failed, trying fallback:', error);
+        // Direct-read fallback when engine isn't configured yet
+        try {
+          const directGitData = await this.loadFromGitDirect(universe);
+          if (directGitData) return directGitData;
+        } catch (fallbackError) {
+          console.warn('[UniverseManager] Direct Git fallback failed:', fallbackError);
+        }
       }
     }
     
@@ -881,6 +889,9 @@ class UniverseManager {
   async loadFromGit(universe) {
     const gitSyncEngine = this.gitSyncEngines.get(universe.slug);
     if (!gitSyncEngine) {
+      // Try a provider-backed direct read before giving up
+      const direct = await this.loadFromGitDirect(universe);
+      if (direct) return direct;
       throw new Error('Git sync engine not configured for this universe');
     }
     
@@ -889,6 +900,76 @@ class UniverseManager {
     
     const { storeState } = importFromRedstring(redstringData);
     return storeState;
+  }
+
+  /**
+   * Direct Git read without requiring a registered GitSyncEngine
+   * Useful during early startup or Git-Only mode before engine registration
+   */
+  async loadFromGitDirect(universe) {
+    try {
+      const linked = universe?.gitRepo?.linkedRepo;
+      if (!linked) return null;
+
+      let user, repo;
+      if (typeof linked === 'string') {
+        const parts = linked.split('/');
+        user = parts[0];
+        repo = parts[1];
+      } else if (linked && typeof linked === 'object') {
+        user = linked.user;
+        repo = linked.repo;
+      }
+      if (!user || !repo) return null;
+
+      // Try to obtain a token if available
+      let token;
+      try {
+        token = await persistentAuth.getAccessToken();
+      } catch (_) {}
+
+      const provider = SemanticProviderFactory.createProvider({
+        type: 'github',
+        user,
+        repo,
+        token,
+        authMethod: token ? 'oauth' : undefined,
+        semanticPath: universe?.gitRepo?.schemaPath || 'schema'
+      });
+
+      try {
+        const ok = await provider.isAvailable();
+        if (!ok) return null;
+      } catch (_) {
+        // Even if the availability check fails due to rate limits, attempt raw read below
+      }
+
+      const folder = universe?.gitRepo?.universeFolder || `universes/${universe.slug}`;
+      const filePath = `${folder}/${universe.slug}.redstring`;
+
+      let content;
+      try {
+        content = await provider.readFileRaw(filePath);
+      } catch (_) {
+        return null; // File not found yet
+      }
+
+      if (!content || typeof content !== 'string' || content.trim() === '') return null;
+
+      let redstringData;
+      try {
+        redstringData = JSON.parse(content);
+      } catch (e) {
+        console.warn('[UniverseManager] Direct Git read parse failed:', e.message);
+        return null;
+      }
+
+      const { storeState } = importFromRedstring(redstringData);
+      return storeState;
+    } catch (error) {
+      console.warn('[UniverseManager] Direct Git read failed:', error);
+      return null;
+    }
   }
 
   // Load from local file

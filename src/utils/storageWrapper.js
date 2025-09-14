@@ -7,19 +7,21 @@
 // Import after the module is defined to avoid circular dependencies
 let debugConfig = null;
 const getDebugConfig = async () => {
-  if (!debugConfig) {
-    try {
-      const module = await import('./debugConfig.js');
-      debugConfig = module.debugConfig;
-    } catch (error) {
-      console.warn('[StorageWrapper] Could not load debug config:', error);
-      // Create a minimal fallback
-      debugConfig = {
-        isLocalStorageDisabled: () => false,
-        isDebugMode: () => false
-      };
+  // Prefer any pre-initialized global debug config
+  try {
+    if (typeof window !== 'undefined' && window.__REDSTRING_DEBUG_CONFIG__) {
+      return window.__REDSTRING_DEBUG_CONFIG__;
     }
-  }
+  } catch (_) {}
+
+  // If we already cached a config, return it
+  if (debugConfig) return debugConfig;
+
+  // Use a minimal, safe fallback without dynamic imports
+  debugConfig = {
+    isLocalStorageDisabled: () => false,
+    isDebugMode: () => false
+  };
   return debugConfig;
 };
 
@@ -37,14 +39,15 @@ class StorageWrapper {
   async initializeDebugCheck() {
     try {
       this.debugConfig = await getDebugConfig();
-      this.isDisabledForDebug = this.debugConfig.isLocalStorageDisabled();
+      this.isDisabledForDebug = !!this.debugConfig.isLocalStorageDisabled?.();
       
       if (this.isDisabledForDebug) {
-        console.warn('[StorageWrapper] 🐛 Local storage disabled for debugging - using memory storage');
-        console.warn('[StorageWrapper] ⚠️  All data will be lost on page reload');
+        console.warn('[StorageWrapper] Local storage disabled for debugging - using memory storage (data not persisted)');
       }
-    } catch (error) {
-      console.error('[StorageWrapper] Failed to initialize debug check:', error);
+    } catch (_) {
+      // Silent failure; keep safe defaults
+      this.debugConfig = { isLocalStorageDisabled: () => false, isDebugMode: () => false };
+      this.isDisabledForDebug = false;
     }
   }
 
@@ -68,8 +71,8 @@ class StorageWrapper {
     if (this.shouldUseMemoryStorage()) {
       this.memoryStorage.set(key, value);
       
-      if (this.debugConfig?.isDebugMode()) {
-        console.log(`[StorageWrapper] 🐛 Stored in memory: ${key}`);
+      if (this.debugConfig?.isDebugMode?.()) {
+        console.log(`[StorageWrapper] Stored in memory: ${key}`);
       }
       return;
     }
@@ -86,8 +89,8 @@ class StorageWrapper {
     if (this.shouldUseMemoryStorage()) {
       const value = this.memoryStorage.get(key);
       
-      if (this.debugConfig?.isDebugMode()) {
-        console.log(`[StorageWrapper] 🐛 Retrieved from memory: ${key} = ${value ? 'found' : 'not found'}`);
+      if (this.debugConfig?.isDebugMode?.()) {
+        console.log(`[StorageWrapper] Retrieved from memory: ${key} = ${value ? 'found' : 'not found'}`);
       }
       
       return value || null;
@@ -105,8 +108,8 @@ class StorageWrapper {
     if (this.shouldUseMemoryStorage()) {
       this.memoryStorage.delete(key);
       
-      if (this.debugConfig?.isDebugMode()) {
-        console.log(`[StorageWrapper] 🐛 Removed from memory: ${key}`);
+      if (this.debugConfig?.isDebugMode?.()) {
+        console.log(`[StorageWrapper] Removed from memory: ${key}`);
       }
       return;
     }
@@ -125,8 +128,8 @@ class StorageWrapper {
     if (this.shouldUseMemoryStorage()) {
       this.memoryStorage.clear();
       
-      if (this.debugConfig?.isDebugMode()) {
-        console.log('[StorageWrapper] 🐛 Cleared memory storage');
+      if (this.debugConfig?.isDebugMode?.()) {
+        console.log('[StorageWrapper] Cleared memory storage');
       }
       return;
     }
@@ -182,8 +185,7 @@ class StorageWrapper {
   // Warn about data loss when using memory storage
   warnAboutDataLoss() {
     if (this.shouldUseMemoryStorage() && this.memoryStorage.size > 0) {
-      console.warn('[StorageWrapper] ⚠️  Data is stored in memory only and will be lost on page reload!');
-      console.warn('[StorageWrapper] Consider saving to Git or disabling debug mode to persist data');
+      console.warn('[StorageWrapper] Data is stored in memory only and will be lost on page reload!');
     }
   }
 
