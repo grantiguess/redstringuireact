@@ -434,7 +434,8 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
 
   const renderEditUniverse = () => {
     const universeSlug = operation.replace('edit-', '');
-    const universe = (await getUniverseManager()).getUniverse(universeSlug);
+    // Use universe from local state that is refreshed elsewhere
+    const universe = universes.find(u => u.slug === universeSlug);
     if (!universe) return renderOverview();
 
     return (
