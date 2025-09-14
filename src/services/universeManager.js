@@ -937,11 +937,15 @@ class UniverseManager {
         semanticPath: universe?.gitRepo?.schemaPath || 'schema'
       });
 
+      // Check availability briefly; continue if reachable
       try {
         const ok = await provider.isAvailable();
-        if (!ok) return null;
+        // If not available, do not abort; we may still be able to create the file with existing auth
+        if (!ok) {
+          console.warn('[UniverseManager] Provider reported unavailable; attempting direct write anyway');
+        }
       } catch (_) {
-        // Even if the availability check fails due to rate limits, attempt raw read below
+        // If availability check throws (rate limit, etc.), still attempt raw read/write
       }
 
       const folder = universe?.gitRepo?.universeFolder || `universes/${universe.slug}`;
@@ -950,11 +954,31 @@ class UniverseManager {
       let content;
       try {
         content = await provider.readFileRaw(filePath);
-      } catch (_) {
-        return null; // File not found yet
+      } catch (readError) {
+        content = null;
       }
-
-      if (!content || typeof content !== 'string' || content.trim() === '') return null;
+      
+      if (!content || typeof content !== 'string' || content.trim() === '') {
+        // File missing or empty: create an initial universe file on Git
+        try {
+          const initialStoreState = this.createEmptyState();
+          // Export asynchronously to avoid blocking
+          const initialRedstring = await new Promise((resolve) => {
+            if (typeof requestIdleCallback !== 'undefined') {
+              requestIdleCallback(() => resolve(exportToRedstring(initialStoreState)));
+            } else {
+              setTimeout(() => resolve(exportToRedstring(initialStoreState)), 0);
+            }
+          });
+          await provider.writeFileRaw(filePath, JSON.stringify(initialRedstring, null, 2));
+          this.notifyStatus('success', `Created new universe file at ${filePath}`);
+          const { storeState } = importFromRedstring(initialRedstring);
+          return storeState;
+        } catch (createErr) {
+          console.warn('[UniverseManager] Failed to create initial universe file on Git:', createErr);
+          return null;
+        }
+      }
 
       let redstringData;
       try {
