@@ -8,7 +8,15 @@ import { exportToRedstring, importFromRedstring } from '../formats/redstringForm
 import { v4 as uuidv4 } from 'uuid';
 import { CONNECTION_DEFAULT_COLOR } from '../constants.js';
 
-import universeManager from '../services/universeManager.js';
+// Lazy import UniverseManager to avoid circular initialization
+let __universeManager = null;
+const getUniverseManager = async () => {
+  if (!__universeManager) {
+    const mod = await import('../services/universeManager.js');
+    __universeManager = mod.default || mod.universeManager;
+  }
+  return __universeManager;
+};
 
 // Global state - now primarily for backward compatibility
 let fileHandle = null;
@@ -21,7 +29,8 @@ let preferredDirectory = null;
 // Bridge to UniverseManager for new file operations
 const bridgeToUniverseManager = async (operation, ...args) => {
   try {
-    return await universeManager[operation](...args);
+    const um = await getUniverseManager();
+    return await um[operation](...args);
   } catch (error) {
     console.error(`[FileStorage] UniverseManager bridge failed for ${operation}:`, error);
     throw error;
@@ -728,10 +737,11 @@ export const autoConnectToUniverse = async () => {
   
   // Strategy 0: Try Git-based universe restoration if configured
   try {
-    const activeUniverse = universeManager.getActiveUniverse();
+    const um = await getUniverseManager();
+    const activeUniverse = um.getActiveUniverse();
     if (activeUniverse && activeUniverse.gitRepo && activeUniverse.gitRepo.enabled) {
       console.log('[FileStorage] Attempting Git universe restoration for:', activeUniverse.slug);
-      const gitStoreState = await universeManager.loadUniverseData(activeUniverse);
+      const gitStoreState = await um.loadUniverseData(activeUniverse);
       if (gitStoreState) {
         console.log('[FileStorage] Auto-connected (Git repository)');
         return gitStoreState;
@@ -871,7 +881,8 @@ export const restoreLastSession = async () => {
  */
 export const saveToFile = async (storeState, showSuccess = true) => {
   try {
-    await universeManager.saveActiveUniverse(storeState);
+    const um = await getUniverseManager();
+    await um.saveActiveUniverse(storeState);
     lastSaveTime = Date.now();
     if (showSuccess) {
       console.log('[FileStorage] Universe saved via UniverseManager');
@@ -922,16 +933,17 @@ export const canAutoSave = () => {
  * Get current file status
  */
 export const getFileStatus = () => {
-  const activeUniverse = universeManager.getActiveUniverse();
+  const um = __universeManager; // May be null early in startup
+  const activeUniverse = um ? um.getActiveUniverse() : null;
   return {
-    hasFileHandle: fileHandle !== null || !!universeManager.getFileHandle(universeManager.activeUniverseSlug),
+    hasFileHandle: fileHandle !== null || !!(um && um.getFileHandle(um.activeUniverseSlug)),
     fileName: activeUniverse?.localFile?.path || (fileHandle ? (fileHandle.name || FILE_NAME) : null),
     autoSaveEnabled: isAutoSaveEnabled,
     autoSaveActive: autoSaveInterval !== null,
     lastSaveTime: lastSaveTime,
     lastChangeTime: lastChangeTime,
     // New UniverseManager integration
-    activeUniverseSlug: universeManager.activeUniverseSlug,
+    activeUniverseSlug: um ? um.activeUniverseSlug : null,
     sourceOfTruth: activeUniverse?.sourceOfTruth
   };
 };
