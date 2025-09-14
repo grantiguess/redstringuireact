@@ -26,7 +26,16 @@ import {
   Link,
   QrCode
 } from 'lucide-react';
-import universeManager, { SOURCE_OF_TRUTH } from '../services/universeManager.js';
+// Lazy import UniverseManager to avoid circular init during federation tab load
+let __um = null;
+const getUniverseManager = async () => {
+  if (!__um) {
+    const mod = await import('../services/universeManager.js');
+    __um = mod.default || mod.universeManager;
+  }
+  return __um;
+};
+// SOURCE_OF_TRUTH values not used outside universeManager calls here; fetch from manager when needed
 import useGraphStore from "../store/graphStore.jsx";
 import { 
   getCurrentDeviceConfig, 
@@ -59,7 +68,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
       refreshUniverses();
       
       // Subscribe to universe manager status updates
-      const unsubscribe = universeManager.onStatusChange((statusUpdate) => {
+      const unsubscribe = (await getUniverseManager()).onStatusChange((statusUpdate) => {
         setStatus(statusUpdate);
         setTimeout(() => setStatus(null), 3000);
       });
@@ -78,9 +87,9 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
     }
   }, [isOpen]);
 
-  const refreshUniverses = () => {
-    setUniverses(universeManager.getAllUniverses());
-    setActiveUniverse(universeManager.getActiveUniverse());
+  const refreshUniverses = async () => {
+    setUniverses((await getUniverseManager()).getAllUniverses());
+    setActiveUniverse((await getUniverseManager()).getActiveUniverse());
   };
 
   const handleSwitchUniverse = async (slug) => {
@@ -88,7 +97,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
     
     setIsLoading(true);
     try {
-      const result = await universeManager.switchActiveUniverse(slug, { saveCurrent: true });
+      const result = await (await getUniverseManager()).switchActiveUniverse(slug, { saveCurrent: true });
       if (result.storeState) {
         loadUniverseFromFile(result.storeState);
       }
@@ -105,7 +114,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
     
     setIsLoading(true);
     try {
-      universeManager.createUniverse(newUniverseName.trim());
+      (await getUniverseManager()).createUniverse(newUniverseName.trim());
       setNewUniverseName('');
       refreshUniverses();
     } catch (error) {
@@ -117,7 +126,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
 
   const handleDeleteUniverse = async (slug) => {
     try {
-      universeManager.deleteUniverse(slug);
+      (await getUniverseManager()).deleteUniverse(slug);
       refreshUniverses();
       setShowDeleteConfirm(null);
     } catch (error) {
@@ -128,7 +137,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
   const handleSaveUniverse = async () => {
     setIsLoading(true);
     try {
-      await universeManager.saveActiveUniverse();
+      await (await getUniverseManager()).saveActiveUniverse();
     } catch (error) {
       setStatus({ type: 'error', status: error.message });
     } finally {
@@ -146,14 +155,14 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
       return;
     }
 
-    const universe = universeManager.getUniverse(universeSlug);
+    const universe = (await getUniverseManager()).getUniverse(universeSlug);
     if (!universe) return;
 
     setIsLoading(true);
     try {
       if (operationType === 'pick') {
         // Let user pick a new file for this universe
-        await universeManager.setupFileHandle(universeSlug);
+        await (await getUniverseManager()).setupFileHandle(universeSlug);
         refreshUniverses();
       } else if (operationType === 'save') {
         // Save current data to a new file for this universe
@@ -162,11 +171,11 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
           types: [{ description: 'RedString Files', accept: { 'application/json': ['.redstring'] } }]
         });
         
-        universeManager.setFileHandle(universeSlug, fileHandle);
+        (await getUniverseManager()).setFileHandle(universeSlug, fileHandle);
         
         // Save current data to the new file
         if (universeSlug === activeUniverse?.slug) {
-          await universeManager.saveActiveUniverse();
+          await (await getUniverseManager()).saveActiveUniverse();
         }
         refreshUniverses();
       }
@@ -188,7 +197,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
 
     setIsLoading(true);
     try {
-      await universeManager.createUniverseFromGitUrl(gitUrl.trim(), {
+      await (await getUniverseManager()).createUniverseFromGitUrl(gitUrl.trim(), {
         name: newUniverseName.trim() || undefined
       });
       setGitUrl('');
@@ -221,13 +230,13 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
     }
   };
 
-  const handleUpdateSourceOfTruth = (universeSlug, newSourceOfTruth) => {
-    universeManager.updateUniverse(universeSlug, { sourceOfTruth: newSourceOfTruth });
+  const handleUpdateSourceOfTruth = async (universeSlug, newSourceOfTruth) => {
+    (await getUniverseManager()).updateUniverse(universeSlug, { sourceOfTruth: newSourceOfTruth });
     refreshUniverses();
   };
 
-  const handleToggleStorageSlot = (universeSlug, slotType, enabled) => {
-    const universe = universeManager.getUniverse(universeSlug);
+  const handleToggleStorageSlot = async (universeSlug, slotType, enabled) => {
+    const universe = (await getUniverseManager()).getUniverse(universeSlug);
     if (!universe) return;
 
     // Prevent enabling local storage in Git-Only mode
@@ -264,7 +273,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
       updates.browserStorage = { ...universe.browserStorage, enabled };
     }
 
-    universeManager.updateUniverse(universeSlug, updates);
+    (await getUniverseManager()).updateUniverse(universeSlug, updates);
     refreshUniverses();
   };
 
@@ -421,7 +430,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
 
   const renderEditUniverse = () => {
     const universeSlug = operation.replace('edit-', '');
-    const universe = universeManager.getUniverse(universeSlug);
+    const universe = (await getUniverseManager()).getUniverse(universeSlug);
     if (!universe) return renderOverview();
 
     return (
@@ -560,7 +569,11 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
           <div className="dialog-title">
             {operation === 'overview' && 'Universe Manager'}
             {operation === 'create' && 'Create New Universe'}
-            {operation.startsWith('edit-') && `Edit Universe: ${universeManager.getUniverse(operation.replace('edit-', ''))?.name || 'Unknown'}`}
+            {operation.startsWith('edit-') && (() => {
+              const id = operation.replace('edit-', '');
+              const name = (__um && __um.getUniverse(id)?.name) || 'Unknown';
+              return `Edit Universe: ${name}`;
+            })()}
           </div>
           <button 
             onClick={onClose}
@@ -597,7 +610,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
             <div className="delete-confirm-dialog">
               <h4>Delete Universe?</h4>
               <p>
-                This will remove the universe "{universeManager.getUniverse(showDeleteConfirm)?.name}" 
+                This will remove the universe "{(__um && __um.getUniverse(showDeleteConfirm)?.name) || ''}" 
                 from your universe list. This does not delete any actual files or Git repositories.
               </p>
               <div className="delete-confirm-actions">

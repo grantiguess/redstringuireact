@@ -5,7 +5,15 @@ import { oauthFetch } from '../services/bridgeConfig.js';
 import { persistentAuth } from '../services/persistentAuth.js';
 import { GitSyncEngine, SOURCE_OF_TRUTH } from '../services/gitSyncEngine.js';
 import { importFromRedstring } from '../formats/redstringFormat.js';
-import universeManager from '../services/universeManager.js';
+// Lazy manager to avoid circular init
+let __um = null;
+const getUniverseManager = async () => {
+  if (!__um) {
+    const mod = await import('../services/universeManager.js');
+    __um = mod.default || mod.universeManager;
+  }
+  return __um;
+};
 import startupCoordinator from '../services/startupCoordinator.js';
 import * as fileStorageModule from '../store/fileStorage.js';
 
@@ -72,10 +80,11 @@ export default function GitFederationBootstrap() {
         setGitConnection({ ...restoredConfig, token: undefined });
 
         // Link this Git connection to the active universe
-        const activeUniverse = universeManager.getActiveUniverse();
+        const um = await getUniverseManager();
+        const activeUniverse = um.getActiveUniverse();
         if (activeUniverse && restoredConfig.user && restoredConfig.repo) {
           try {
-            universeManager.updateUniverse(activeUniverse.slug, {
+            um.updateUniverse(activeUniverse.slug, {
               gitRepo: {
                 ...activeUniverse.gitRepo,
                 enabled: true,
@@ -103,7 +112,7 @@ export default function GitFederationBootstrap() {
         } catch {}
 
         const sourceOfTruthMode = activeUniverse?.sourceOfTruth === 'local' ? SOURCE_OF_TRUTH.LOCAL : SOURCE_OF_TRUTH.GIT;
-        const universeSlug = universeManager.activeUniverseSlug || 'universe';
+        const universeSlug = um.activeUniverseSlug || 'universe';
 
         // Check with startup coordinator if we're allowed to initialize
         const canInitialize = await startupCoordinator.requestEngineInitialization(universeSlug, 'GitFederationBootstrap');
@@ -113,12 +122,12 @@ export default function GitFederationBootstrap() {
         }
 
         // Double check if there's already an engine for this universe
-        if (universeManager.getGitSyncEngine(universeSlug)) {
+        if (um.getGitSyncEngine(universeSlug)) {
           console.log('[GitFederationBootstrap] Engine already exists for universe, skipping creation');
           return;
         }
         
-        const engine = new GitSyncEngine(provider, sourceOfTruthMode, universeSlug, fileBaseName, universeManager);
+        const engine = new GitSyncEngine(provider, sourceOfTruthMode, universeSlug, fileBaseName, um);
         if (cancelled) return;
         
         // If engine creation was rejected, don't proceed
@@ -148,13 +157,13 @@ export default function GitFederationBootstrap() {
           setGitSyncEngine(engine);
           
           // Ensure the engine stays registered with UniverseManager
-          if (universeManager && universeSlug) {
-            universeManager.setGitSyncEngine(universeSlug, engine);
+          if (um && universeSlug) {
+            um.setGitSyncEngine(universeSlug, engine);
             
             // Update the universe to enable Git repo if it's linked
-            const activeUniverse = universeManager.getActiveUniverse();
+            const activeUniverse = um.getActiveUniverse();
             if (activeUniverse && !activeUniverse.gitRepo.enabled && restoredConfig.user && restoredConfig.repo) {
-              universeManager.updateUniverse(activeUniverse.slug, {
+              um.updateUniverse(activeUniverse.slug, {
                 gitRepo: {
                   ...activeUniverse.gitRepo,
                   enabled: true,
@@ -175,7 +184,7 @@ export default function GitFederationBootstrap() {
               if (saveCoordinator && fileStorageModule && engine) {
                 // Only initialize if not already enabled or if Git engine changed
                 if (!saveCoordinator.isEnabled || saveCoordinator.gitSyncEngine !== engine) {
-                  saveCoordinator.initialize(fileStorageModule, engine, universeManager);
+                  saveCoordinator.initialize(fileStorageModule, engine, um);
                   console.log('[GitFederationBootstrap] SaveCoordinator initialized/updated with Git sync engine');
                 } else {
                   console.log('[GitFederationBootstrap] SaveCoordinator already initialized, skipping');
