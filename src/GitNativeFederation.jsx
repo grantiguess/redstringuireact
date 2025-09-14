@@ -52,7 +52,6 @@ import RepositoryManager from './components/repositories/RepositoryManager.jsx';
 import RepositoryDropdown from './components/repositories/RepositoryDropdown.jsx';
 import { getFileStatus } from './store/fileStorage.js';
 import * as fileStorageModule from './store/fileStorage.js';
-import { persistentAuth } from './services/persistentAuth.js';
 import githubRateLimiter from './services/githubRateLimiter.js';
 import startupCoordinator from './services/startupCoordinator.js';
 // Note: Using inline device detection to avoid circular dependencies during React initialization

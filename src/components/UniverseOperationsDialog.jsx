@@ -68,10 +68,14 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
       refreshUniverses();
       
       // Subscribe to universe manager status updates
-      const unsubscribe = (await getUniverseManager()).onStatusChange((statusUpdate) => {
-        setStatus(statusUpdate);
-        setTimeout(() => setStatus(null), 3000);
-      });
+      let unsubscribe = () => {};
+      (async () => {
+        const um = await getUniverseManager();
+        unsubscribe = um.onStatusChange((statusUpdate) => {
+          setStatus(statusUpdate);
+          setTimeout(() => setStatus(null), 3000);
+        });
+      })();
 
       // Listen for device configuration changes
       const handleDeviceConfigChange = (event) => {
