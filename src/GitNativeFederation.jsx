@@ -619,8 +619,18 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         semanticPath: u.gitRepo.schemaPath || 'schema'
       };
       try {
-        const token = await persistentAuth.getAccessToken();
-        if (token) config.token = token;
+        // Prefer GitHub App token if available; fall back to OAuth token
+        if (githubAppInstallation && githubAppInstallation.accessToken) {
+          config.authMethod = 'github-app';
+          config.installationId = githubAppInstallation.installationId;
+          config.token = githubAppInstallation.accessToken;
+        } else {
+          const token = await persistentAuth.getAccessToken();
+          if (token) {
+            config.authMethod = 'oauth';
+            config.token = token;
+          }
+        }
       } catch {}
       const provider = SemanticProviderFactory.createProvider(config);
       const ok = await provider.isAvailable();
@@ -659,8 +669,18 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         semanticPath: u.gitRepo.schemaPath || 'schema'
       };
       try {
-        const token = await persistentAuth.getAccessToken();
-        if (token) cfg.token = token;
+        // Prefer GitHub App token if available; fall back to OAuth token
+        if (githubAppInstallation && githubAppInstallation.accessToken) {
+          cfg.authMethod = 'github-app';
+          cfg.installationId = githubAppInstallation.installationId;
+          cfg.token = githubAppInstallation.accessToken;
+        } else {
+          const token = await persistentAuth.getAccessToken();
+          if (token) {
+            cfg.authMethod = 'oauth';
+            cfg.token = token;
+          }
+        }
       } catch (_) {}
 
       const provider = SemanticProviderFactory.createProvider(cfg);
@@ -714,8 +734,18 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         semanticPath: u.gitRepo.schemaPath || 'schema'
       };
       try {
-        const token = await persistentAuth.getAccessToken();
-        if (token) cfg.token = token;
+        // Prefer GitHub App token if available; fall back to OAuth token
+        if (githubAppInstallation && githubAppInstallation.accessToken) {
+          cfg.authMethod = 'github-app';
+          cfg.installationId = githubAppInstallation.installationId;
+          cfg.token = githubAppInstallation.accessToken;
+        } else {
+          const token = await persistentAuth.getAccessToken();
+          if (token) {
+            cfg.authMethod = 'oauth';
+            cfg.token = token;
+          }
+        }
       } catch (_) {}
 
       const provider = SemanticProviderFactory.createProvider(cfg);

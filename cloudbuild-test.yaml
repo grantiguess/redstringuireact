@@ -16,6 +16,8 @@ steps:
       - 'NODE_ENV=test'
       # Test environment gets test client ID
       - 'VITE_GITHUB_CLIENT_ID=${_TEST_GITHUB_CLIENT_ID}'
+      # OAuth server URL for test environment
+      - 'VITE_OAUTH_URL=${_TEST_OAUTH_URL}'
     id: 'build-frontend'
     waitFor: ['install-deps']
 
@@ -76,6 +78,7 @@ substitutions:
   _TEST_GITHUB_CLIENT_ID: 'your-test-client-id'  # For build-time (frontend)
   _TEST_GITHUB_CLIENT_ID_SECRET: 'github-client-id-test'  # Test Secret Manager secret
   _TEST_GITHUB_CLIENT_SECRET_SECRET: 'github-client-secret-test'  # Test Secret Manager secret
+  _TEST_OAUTH_URL: 'https://redstring-test-umk552kp4q-uc.a.run.app'  # Test OAuth server URL
 
 # Build timeout
 timeout: '900s'
