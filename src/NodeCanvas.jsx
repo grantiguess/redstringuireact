@@ -166,12 +166,14 @@ function NodeCanvas() {
   // Track last touch coordinates for touchend where touches are empty
   const lastTouchRef = useRef({ x: 0, y: 0 });
   const touchMultiPanRef = useRef(false);
+  const isTouchDeviceRef = useRef(false);
   const pinchRef = useRef({
     active: false,
     startDist: 0,
     startZoom: 1,
     centerClient: { x: 0, y: 0 },
     centerWorld: { x: 0, y: 0 },
+    lastCenterClient: { x: 0, y: 0 }
   });
   
   // Pinch zoom smoothing system
@@ -433,6 +435,7 @@ function NodeCanvas() {
       e.preventDefault();
       e.stopPropagation();
     }
+    isTouchDeviceRef.current = true;
     // One-finger pan by default on touch, but also synthesize a mousedown for node hit-testing/long-press
     if (e.touches && e.touches.length === 1) {
       const t = e.touches[0];
@@ -452,7 +455,6 @@ function NodeCanvas() {
     }
     if (e.touches && e.touches.length >= 2) {
       // Pinch-to-zoom setup
-      
       const t1 = e.touches[0];
       const t2 = e.touches[1];
       const dx = t2.clientX - t1.clientX;
@@ -469,7 +471,15 @@ function NodeCanvas() {
         startZoom: zoomLevel,
         centerClient: { x: centerX, y: centerY },
         centerWorld: { x: worldX, y: worldY },
+        lastCenterClient: { x: centerX, y: centerY }
       };
+      // Cancel any in-progress one-finger pan when second finger is placed
+      isMouseDown.current = false;
+      setIsPanning(false);
+      setPanStart(null);
+      if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); clickTimeoutIdRef.current = null; }
+      potentialClickNodeRef.current = null;
+      touchMultiPanRef.current = false;
       return;
     }
     const { clientX, clientY } = normalizeTouchEvent(e);
@@ -493,44 +503,31 @@ function NodeCanvas() {
     }
     
     if (e.touches && e.touches.length >= 2 && pinchRef.current.active) {
-      // OPTIMIZED: Apply keyboard zoom lessons - throttle and simplify
-      isPanningOrZooming.current = true; // Prevent Panel jitter by blocking store updates
+      // Touch-only pinch zoom (higher sensitivity), no two-finger pan on touch
+      isPanningOrZooming.current = true;
       const now = performance.now();
       const smoothing = pinchSmoothingRef.current;
-      
-      // Throttle to ~60fps like keyboard zoom for smooth updates
-      if (now - smoothing.lastFrameTime < 16) return; // ~60fps throttle
+      if (now - smoothing.lastFrameTime < 16) return;
       smoothing.lastFrameTime = now;
-      
-      // Simple distance calculation
+
       const t1 = e.touches[0];
       const t2 = e.touches[1];
       const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1;
       const ratio = dist / (pinchRef.current.startDist || 1);
-      
-      // Convert ratio change to incremental zoom delta (like keyboard)
-      const targetZoom = pinchRef.current.startZoom * ratio;
-      const zoomDelta = (targetZoom - zoomLevel) * 0.1; // Smooth increment like keyboard
-      
-      if (Math.abs(zoomDelta) < 0.001) return; // Skip tiny changes
-      
-      // Use functional setState like keyboard zoom for predictable updates
+      const targetZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pinchRef.current.startZoom * ratio));
+
+      // Anchor zoom at initial pinch center to avoid unintended translation
+      const anchorX = pinchRef.current.centerClient.x;
+      const anchorY = pinchRef.current.centerClient.y;
       setZoomLevel(prevZoom => {
-        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom + zoomDelta));
-        
-        if (newZoom !== prevZoom) {
-          // Simple center-based pan adjustment like keyboard zoom
-          const centerX = (t1.clientX + t2.clientX) / 2;
-          const centerY = (t1.clientY + t2.clientY) / 2;
-          const rect = containerRef.current.getBoundingClientRect();
-          const zoomRatio = newZoom / prevZoom;
-          
-          setPanOffset(prevPan => ({
-            x: centerX - rect.left - (centerX - rect.left - prevPan.x) * zoomRatio,
-            y: centerY - rect.top - (centerY - rect.top - prevPan.y) * zoomRatio
-          }));
-        }
-        
+        const easedZoom = prevZoom + (targetZoom - prevZoom) * 0.5; // increase sensitivity on touch
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, easedZoom));
+        const rect = containerRef.current.getBoundingClientRect();
+        const zoomRatio = newZoom / prevZoom;
+        setPanOffset(prevPan => ({
+          x: anchorX - rect.left - (anchorX - rect.left - prevPan.x) * zoomRatio,
+          y: anchorY - rect.top - (anchorY - rect.top - prevPan.y) * zoomRatio
+        }));
         return newZoom;
       });
       return;
@@ -551,27 +548,59 @@ function NodeCanvas() {
       e.preventDefault();
       e.stopPropagation();
     }
-    // End pinch if active
+    // End pinch if active – no glide for two-finger gesture on touch
     if (pinchRef.current.active) {
       pinchRef.current.active = false;
-      
-      // Save the final view state after pinch ends to persist user's final position
-      setTimeout(() => {
-        isPanningOrZooming.current = false;
-        if (activeGraphId && panOffset && zoomLevel) {
-          updateGraphViewInStore();
-        }
-      }, 100);
+      isPanningOrZooming.current = false;
+      return;
     }
     const { clientX, clientY } = normalizeTouchEvent(e);
+    // Determine if this was a tap (minimal movement). Use a larger threshold for touch.
+    const dxEnd = clientX - (mouseDownPosition.current?.x || clientX);
+    const dyEnd = clientY - (mouseDownPosition.current?.y || clientY);
+    const distEnd = Math.hypot(dxEnd, dyEnd);
+    const tapThreshold = Math.max(MOVEMENT_THRESHOLD || 6, 16);
+    const isTap = distEnd <= tapThreshold && !mouseMoved.current;
     const synthetic = {
       clientX,
       clientY,
       preventDefault: () => { try { e.preventDefault(); } catch {} },
       stopPropagation: () => { try { e.stopPropagation(); } catch {} }
     };
-    // Use existing mouse-up canvas handler to finalize panning/selection
-    handleMouseUpCanvas(synthetic);
+    // Route to mouseUp to reuse inertia/glide for single-finger pan
+    handleMouseUp(synthetic);
+    // Ensure touch tap behaves like click-off: close UI overlays if present
+    if (isTap) {
+      if (groupControlPanelShouldShow || selectedGroup) {
+        setGroupControlPanelShouldShow(false);
+        setSelectedGroup(null);
+      }
+      if (selectedEdgeId || selectedEdgeIds.size > 0) {
+        storeActions.setSelectedEdgeId(null);
+        storeActions.clearSelectedEdgeIds();
+      }
+      if (selectedNodeIdForPieMenu) {
+        setSelectedNodeIdForPieMenu(null);
+      }
+      if (plusSign && !nodeNamePrompt.visible) {
+        setPlusSign(ps => ps && { ...ps, mode: 'disappear' });
+      }
+    }
+    // If it was a tap on empty canvas, mirror click-to-plus-sign behavior
+    if (isTap) {
+      if (!isPaused && !draggingNodeInfo && !drawingConnectionFrom && !recentlyPanned && !nodeNamePrompt.visible && activeGraphId) {
+        if (selectedInstanceIds.size > 0) {
+          // Mimic click-off behavior: clear selection on tap
+          setSelectedInstanceIds(new Set());
+        } else if (!plusSign) {
+          const rect = containerRef.current.getBoundingClientRect();
+          const mouseX = (clientX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
+          const mouseY = (clientY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
+          setPlusSign({ x: mouseX, y: mouseY, mode: 'appear', tempName: '' });
+          setLastInteractionType('plus_sign_shown_touch');
+        }
+      }
+    }
     touchMultiPanRef.current = false;
   };
 
@@ -7016,6 +7045,10 @@ function NodeCanvas() {
               }}
               onMouseUp={handleMouseUp} // Uncommented
               onMouseMove={handleMouseMove}
+              onPointerDown={(e) => {
+                // Prevent grid overlay from swallowing pointer events; PlusSign handles its own
+                if (e && e.cancelable) { e.preventDefault(); }
+              }}
             >
               {/* Groups layer - render group rectangles behind nodes */}
               {(() => {

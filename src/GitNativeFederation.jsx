@@ -653,6 +653,72 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     handleRepositoryManagerSelect({ ...repo, owner: { login: owner } });
   };
 
+  // Load all universes from connected repository
+  const handleLoadUniverses = async () => {
+    try {
+      const activeUniverse = getActiveUniverse();
+      if (!activeUniverse?.gitRepo?.linkedRepo) {
+        console.warn('[GitNativeFederation] No repository linked to load universes from');
+        return;
+      }
+
+      const repoConfig = activeUniverse.gitRepo.linkedRepo;
+      console.log(`[GitNativeFederation] Loading universes from ${repoConfig.user}/${repoConfig.repo}...`);
+
+      // Discover universes in the repository
+      const discovered = await universeManager.discoverUniversesInRepository(repoConfig);
+
+      if (discovered.length === 0) {
+        console.log('[GitNativeFederation] No universes found in repository');
+        setSyncStatus('No universes found in repository');
+        setTimeout(() => setSyncStatus(null), 3000);
+        return;
+      }
+
+      console.log(`[GitNativeFederation] Found ${discovered.length} universes, loading them...`);
+
+      // Load each discovered universe (avoiding duplicates)
+      let loadedCount = 0;
+      for (const universe of discovered) {
+        try {
+          // Check if universe already exists to prevent duplicates
+          const existingUniverses = universeManager.getAllUniverses();
+          const alreadyExists = existingUniverses.some(existing =>
+            existing.slug === universe.slug ||
+            (existing.gitRepo?.linkedRepo?.user === repoConfig.user &&
+             existing.gitRepo?.linkedRepo?.repo === repoConfig.repo &&
+             existing.metadata?.originalPath === universe.path)
+          );
+
+          if (!alreadyExists) {
+            await universeManager.linkToDiscoveredUniverse(universe, repoConfig);
+            loadedCount++;
+          } else {
+            console.log(`[GitNativeFederation] Universe ${universe.name} already exists, skipping`);
+          }
+        } catch (error) {
+          console.error(`[GitNativeFederation] Failed to load universe ${universe.name}:`, error);
+        }
+      }
+
+      // Update status
+      if (loadedCount > 0) {
+        setSyncStatus(`Loaded ${loadedCount} universes from repository`);
+        console.log(`[GitNativeFederation] Successfully loaded ${loadedCount} universes`);
+      } else {
+        setSyncStatus('All universes already loaded');
+        console.log('[GitNativeFederation] All discovered universes were already present');
+      }
+
+      setTimeout(() => setSyncStatus(null), 4000);
+
+    } catch (error) {
+      console.error('[GitNativeFederation] Failed to load universes:', error);
+      setSyncStatus(`Failed to load universes: ${error.message}`);
+      setTimeout(() => setSyncStatus(null), 5000);
+    }
+  };
+
   // Prefer GitHub App installation token; fall back to OAuth access token
   const getPreferredGitCredentials = async () => {
     try {
@@ -3681,6 +3747,24 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                           />
                           ) : null}
                         </div>
+                        {(activeUniverse?.gitRepo?.enabled ?? false) && (
+                          <button
+                            onClick={() => handleLoadUniverses()}
+                            style={{
+                              padding: '4px 8px',
+                              backgroundColor: '#260000',
+                              color: '#bdb5b5',
+                              border: 'none',
+                              borderRadius: '4px',
+                              fontSize: '0.7rem',
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap'
+                            }}
+                            title="Automatically load all universes from connected repository"
+                          >
+                            Load in Universes
+                          </button>
+                        )}
                         {activeUniverse?.gitRepo?.linkedRepo && (
                           <span style={{ fontSize: '0.65rem', padding: '2px 5px', borderRadius: '8px', border: '1px solid #260000', color: '#260000', whiteSpace: 'nowrap' }}>
                             {activeUniverse.gitRepo.linkedRepo.private ? 'Private' : 'Public'}
@@ -6663,6 +6747,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           )}
         </div>
       )}
+
     </div>
   );
 };

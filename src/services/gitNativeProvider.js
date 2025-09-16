@@ -55,6 +55,15 @@ export class SemanticProvider {
   }
 
   /**
+   * List contents of a directory
+   * @param {string} dirPath - Directory path to list
+   * @returns {Promise<Array>} Array of directory contents
+   */
+  async listDirectoryContents(dirPath) {
+    throw new Error('listDirectoryContents() must be implemented by provider');
+  }
+
+  /**
    * Commit changes to the repository
    * @param {string} message - Commit message
    * @param {string[]} files - Array of changed file paths
@@ -353,21 +362,64 @@ This repository was automatically initialized by RedString UI React. You can now
 
   async readSemanticFile(path) {
     // Don't add .ttl if the path already ends with it
-    const fullPath = path.endsWith('.ttl') 
+    const fullPath = path.endsWith('.ttl')
       ? `${this.semanticPath}/${path}`
       : `${this.semanticPath}/${path}.ttl`;
-    
+
     try {
       const fileInfo = await this.getFileInfo(fullPath);
       if (!fileInfo) {
         throw new Error(`File not found: ${path}`);
       }
-      
+
       const content = this.base64ToUtf8(fileInfo.content);
       return content;
     } catch (error) {
       console.error('[GitHubProvider] Read failed:', error);
       throw error;
+    }
+  }
+
+  async listDirectoryContents(dirPath = '') {
+    try {
+      const path = dirPath || '';
+      const url = `${this.rootUrl}/${path}`;
+
+      const headers = this.useAppToken && this.accessToken
+        ? { 'Authorization': `Bearer ${this.accessToken}` }
+        : { 'Authorization': `token ${this.authToken}` };
+
+      console.log(`[GitHubSemanticProvider] Listing directory: ${path}`);
+
+      // Use direct fetch instead of githubRateLimiter to avoid import issues
+      const response = await fetch(url, { headers });
+
+      if (response.status === 404) {
+        return []; // Directory doesn't exist
+      }
+
+      if (!response.ok) {
+        throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      // GitHub returns an array for directory contents
+      if (!Array.isArray(data)) {
+        return []; // Not a directory
+      }
+
+      return data.map(item => ({
+        name: item.name,
+        type: item.type, // 'file' or 'dir'
+        path: item.path,
+        size: item.size,
+        sha: item.sha
+      }));
+
+    } catch (error) {
+      console.error(`[GitHubSemanticProvider] Failed to list directory ${dirPath}:`, error);
+      return [];
     }
   }
 

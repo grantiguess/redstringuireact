@@ -1479,10 +1479,10 @@ class UniverseManager {
   // Resolve sync conflicts by choosing source of truth
   async resolveSyncConflict(universe) {
     const { sourceOfTruth } = universe;
-    
+
     try {
       console.log(`[UniverseManager] Resolving sync conflict for ${universe.slug}, source of truth: ${sourceOfTruth}`);
-      
+
       if (sourceOfTruth === SOURCE_OF_TRUTH.GIT) {
         // Git is source of truth, load from Git and overwrite local
         const gitData = await this.loadFromGit(universe);
@@ -1503,12 +1503,152 @@ class UniverseManager {
           return true;
         }
       }
-      
+
       return false;
     } catch (error) {
       console.error('[UniverseManager] Failed to resolve sync conflict:', error);
       this.notifyStatus('error', `Conflict resolution failed: ${error.message}`);
       return false;
+    }
+  }
+
+  /**
+   * Discover universes in a repository
+   * @param {Object} repoConfig - Repository configuration {type, user, repo, authMethod}
+   * @returns {Promise<Array>} Array of discovered universes
+   */
+  async discoverUniversesInRepository(repoConfig) {
+    try {
+      console.log(`[UniverseManager] Discovering universes in ${repoConfig.user}/${repoConfig.repo}...`);
+
+      // Get authentication token
+      let token;
+      try {
+        const app = persistentAuth.getAppInstallation?.();
+        if (app?.accessToken) {
+          token = app.accessToken;
+        } else {
+          token = await persistentAuth.getAccessToken();
+        }
+      } catch (_) {}
+
+      if (!token) {
+        throw new Error('Authentication required to discover universes');
+      }
+
+      // Create provider for repository discovery
+      const provider = SemanticProviderFactory.createProvider({
+        type: repoConfig.type || 'github',
+        user: repoConfig.user,
+        repo: repoConfig.repo,
+        token,
+        authMethod: repoConfig.authMethod || 'oauth',
+        semanticPath: 'schema' // Default path for discovery
+      });
+
+      // Import discovery service dynamically to avoid circular dependency
+      const { discoverUniversesInRepo } = await import('./universeDiscovery.js');
+
+      const discovered = await discoverUniversesInRepo(provider);
+
+      console.log(`[UniverseManager] Discovered ${discovered.length} universes in repository`);
+      return discovered;
+
+    } catch (error) {
+      console.error('[UniverseManager] Universe discovery failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Link to a discovered universe from a repository
+   * @param {Object} discoveredUniverse - Universe found by discovery
+   * @param {Object} repoConfig - Repository configuration
+   * @returns {Promise<string>} Universe slug
+   */
+  async linkToDiscoveredUniverse(discoveredUniverse, repoConfig) {
+    try {
+      console.log(`[UniverseManager] Linking to discovered universe: ${discoveredUniverse.name}`);
+
+      // Import discovery service dynamically
+      const { createUniverseConfigFromDiscovered } = await import('./universeDiscovery.js');
+
+      const universeConfig = createUniverseConfigFromDiscovered(discoveredUniverse, repoConfig);
+
+      // Check if universe already exists
+      if (this.universes.has(universeConfig.slug)) {
+        // Update existing universe
+        const existing = this.universes.get(universeConfig.slug);
+        const updated = {
+          ...existing,
+          ...universeConfig,
+          metadata: {
+            ...existing.metadata,
+            ...universeConfig.metadata,
+            relinked: new Date().toISOString()
+          }
+        };
+        this.universes.set(universeConfig.slug, this.normalizeUniverse(updated));
+        this.notifyStatus('info', `Updated universe link: ${universeConfig.name}`);
+      } else {
+        // Create new universe
+        this.universes.set(universeConfig.slug, this.normalizeUniverse(universeConfig));
+        this.notifyStatus('success', `Linked to universe: ${universeConfig.name}`);
+      }
+
+      this.saveToStorage();
+
+      // Set as active universe
+      this.setActiveUniverse(universeConfig.slug);
+
+      return universeConfig.slug;
+
+    } catch (error) {
+      console.error('[UniverseManager] Failed to link to discovered universe:', error);
+      this.notifyStatus('error', `Failed to link universe: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all universes
+   * @returns {Array} Array of all universe objects
+   */
+  getAllUniverses() {
+    return Array.from(this.universes.values());
+  }
+
+  /**
+   * Get available universes in connected repositories
+   * @returns {Promise<Array>} Array of available universe options
+   */
+  async getAvailableRepositoryUniverses() {
+    try {
+      const availableUniverses = [];
+
+      // Check all universes with Git repositories
+      for (const [slug, universe] of this.universes) {
+        if (universe.gitRepo?.enabled && universe.gitRepo?.linkedRepo) {
+          try {
+            const repoConfig = universe.gitRepo.linkedRepo;
+            const discovered = await this.discoverUniversesInRepository(repoConfig);
+
+            availableUniverses.push({
+              repository: `${repoConfig.user}/${repoConfig.repo}`,
+              universes: discovered,
+              linkedUniverse: slug
+            });
+          } catch (error) {
+            console.warn(`[UniverseManager] Failed to discover universes in ${universe.gitRepo.linkedRepo}:`, error);
+          }
+        }
+      }
+
+      return availableUniverses;
+
+    } catch (error) {
+      console.error('[UniverseManager] Failed to get available repository universes:', error);
+      return [];
     }
   }
 }

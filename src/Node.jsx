@@ -226,14 +226,34 @@ const Node = ({
       className={`node ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isPreviewing ? 'previewing' : ''}`}
       data-has-context-menu="true"
       onMouseDown={onMouseDown}
-      onContextMenu={onContextMenu}
+      onContextMenu={(e) => {
+        // On touch devices, prevent long-press context menu; allow desktop right-click
+        if (e && e.nativeEvent && ('touches' in e.nativeEvent || 'pointerType' in e.nativeEvent && e.nativeEvent.pointerType !== 'mouse')) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        onContextMenu?.(e);
+      }}
       onTouchStart={(e) => {
         // Prevent OS text selection/callout and long-press gestures
         if (e && e.cancelable) { e.preventDefault(); e.stopPropagation(); }
         const t = e.touches?.[0];
         if (!t) return;
-        const synthetic = { clientX: t.clientX, clientY: t.clientY, detail: 1, preventDefault: () => { try { e.preventDefault(); } catch {} }, stopPropagation: () => { try { e.stopPropagation(); } catch {} } };
+        // Forward as a synthetic single-click mousedown for unified logic
+        const synthetic = {
+          clientX: t.clientX,
+          clientY: t.clientY,
+          detail: 1,
+          preventDefault: () => { try { e.preventDefault(); } catch {} },
+          stopPropagation: () => { try { e.stopPropagation(); } catch {} }
+        };
         onMouseDown?.(synthetic);
+      }}
+      onTouchEnd={(e) => {
+        // Let NodeCanvas manage the click-vs-pan resolution via its handlers
+        if (e && e.cancelable) { e.preventDefault(); }
+        e.stopPropagation();
       }}
       role="graphics-symbol"
       aria-label={displayTitle}

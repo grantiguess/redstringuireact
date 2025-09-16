@@ -21,6 +21,8 @@ const PlusSign = ({
     textOpacity: 0,
   });
   const [, forceUpdate] = React.useReducer((s) => s + 1, 0);
+  const touchActiveRef = useRef(false);
+  const pointerActiveRef = useRef(false);
 
   useEffect(() => {
     runAnimation();
@@ -238,13 +240,56 @@ const PlusSign = ({
     <g
       data-plus-sign="true"
       transform={`translate(${plusSign.x}, ${plusSign.y}) rotate(${rotation})`}
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: 'pointer', touchAction: 'manipulation', pointerEvents: 'auto' }}
       onClick={(e) => {
         e.stopPropagation();
         e.preventDefault();
         onClick?.();
       }}
+      onPointerDown={(e) => {
+        // Fallback for devices using Pointer Events (covers touch, pen, mouse)
+        if (e && e.cancelable) { e.preventDefault(); }
+        e.stopPropagation();
+        pointerActiveRef.current = true;
+      }}
+      onPointerUp={(e) => {
+        if (e && e.cancelable) { e.preventDefault(); }
+        e.stopPropagation();
+        if (pointerActiveRef.current) {
+          pointerActiveRef.current = false;
+          onClick?.();
+        }
+      }}
+      onTouchStart={(e) => {
+        if (e && e.cancelable) { e.preventDefault(); }
+        e.stopPropagation();
+        touchActiveRef.current = true;
+      }}
+      onTouchEnd={(e) => {
+        if (e && e.cancelable) { e.preventDefault(); }
+        e.stopPropagation();
+        if (touchActiveRef.current) {
+          touchActiveRef.current = false;
+          onClick?.();
+        }
+      }}
     >
+      {(() => {
+        // Ensure a comfortable touch hit area even when small
+        const hit = Math.max(44, width || 0, height || 0);
+        if (hit <= 0) return null;
+        return (
+          <rect
+            x={-hit / 2}
+            y={-hit / 2}
+            width={hit}
+            height={hit}
+            fill="transparent"
+            stroke="none"
+            pointerEvents="auto"
+          />
+        );
+      })()}
       <rect
         x={-width / 2}
         y={-height / 2}
