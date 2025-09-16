@@ -254,6 +254,35 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         repositoryCount: storedAppInstallation.repositories?.length || 0,
         lastUpdated: new Date(storedAppInstallation.lastUpdated).toLocaleString()
       });
+
+      // If installation exists but no accessToken, fetch one immediately for startup Git loads
+      (async () => {
+        try {
+          if (!storedAppInstallation.accessToken && storedAppInstallation.installationId) {
+            console.log('[GitNativeFederation] Fetching installation token at startup');
+            const resp = await oauthFetch('/api/github/app/installation-token', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ installation_id: storedAppInstallation.installationId })
+            });
+            if (resp.ok) {
+              const data = await resp.json();
+              const updated = {
+                ...storedAppInstallation,
+                accessToken: data.token
+              };
+              persistentAuth.storeAppInstallation(updated);
+              // Ask UniverseManager to reload with fresh auth
+              try { await universeManager.reloadActiveUniverse?.(); } catch (_) {}
+            } else {
+              const t = await resp.text();
+              console.warn('[GitNativeFederation] Startup installation token fetch failed:', resp.status, t);
+            }
+          }
+        } catch (e) {
+          console.warn('[GitNativeFederation] Startup installation token fetch error:', e?.message || e);
+        }
+      })();
     } else {
       console.log('[GitNativeFederation] 🔴 No GitHub App installation found');
     }
@@ -671,12 +700,32 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         semanticPath: u.gitRepo.schemaPath || 'schema'
       };
       try {
-        // Prefer GitHub App token if available; fall back to OAuth token
-        if (githubAppInstallation && githubAppInstallation.accessToken) {
-          config.authMethod = 'github-app';
-          config.installationId = githubAppInstallation.installationId;
-          config.token = githubAppInstallation.accessToken;
-        } else {
+        // Prefer GitHub App token; fetch if missing
+        if (githubAppInstallation && githubAppInstallation.installationId) {
+          let token = githubAppInstallation.accessToken;
+          if (!token) {
+            try {
+              const resp = await oauthFetch('/api/github/app/installation-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ installation_id: githubAppInstallation.installationId })
+              });
+              if (resp.ok) {
+                const data = await resp.json();
+                token = data.token;
+                const updated = { ...githubAppInstallation, accessToken: token };
+                setGithubAppInstallation(updated);
+                persistentAuth.storeAppInstallation(updated);
+              }
+            } catch (_) {}
+          }
+          if (token) {
+            config.authMethod = 'github-app';
+            config.installationId = githubAppInstallation.installationId;
+            config.token = token;
+          }
+        }
+        if (!config.token) {
           const token = await persistentAuth.getAccessToken();
           if (token) {
             config.authMethod = 'oauth';

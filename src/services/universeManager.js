@@ -1053,6 +1053,25 @@ class UniverseManager {
     }
   }
 
+  // Reload the active universe using current auth and apply to the graph store
+  async reloadActiveUniverse() {
+    try {
+      const universe = this.getActiveUniverse();
+      if (!universe) return false;
+      const storeState = await this.loadUniverseData(universe);
+      if (storeState) {
+        const graphStore = await getGraphStore();
+        graphStore.getState().loadUniverseFromFile(storeState);
+        this.notifyStatus('info', 'Active universe reloaded from Git');
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.warn('[UniverseManager] Failed to reload active universe:', error);
+      return false;
+    }
+  }
+
   // Save active universe to all enabled storage slots
   async saveActiveUniverse(storeState = null) {
     let universe = this.getActiveUniverse();
