@@ -679,6 +679,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
 
       // Load each discovered universe (avoiding duplicates)
       let loadedCount = 0;
+      let skippedCount = 0;
+      let failedCount = 0;
       for (const universe of discovered) {
         try {
           // Check if universe already exists to prevent duplicates
@@ -695,26 +697,24 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             loadedCount++;
           } else {
             console.log(`[GitNativeFederation] Universe ${universe.name} already exists, skipping`);
+            skippedCount++;
           }
         } catch (error) {
           console.error(`[GitNativeFederation] Failed to load universe ${universe.name}:`, error);
+          failedCount++;
         }
       }
 
       // Update status
-      if (loadedCount > 0) {
-        setSyncStatus(`Loaded ${loadedCount} universes from repository`);
-        console.log(`[GitNativeFederation] Successfully loaded ${loadedCount} universes`);
-      } else {
-        setSyncStatus('All universes already loaded');
-        console.log('[GitNativeFederation] All discovered universes were already present');
-      }
+      const summary = `Loaded ${loadedCount} • skipped ${skippedCount}${failedCount ? ` • failed ${failedCount}` : ''}`;
+      setSyncStatus({ type: failedCount ? 'warning' : 'success', status: summary });
+      console.log(`[GitNativeFederation] ${summary}`);
 
       setTimeout(() => setSyncStatus(null), 4000);
 
     } catch (error) {
       console.error('[GitNativeFederation] Failed to load universes:', error);
-      setSyncStatus(`Failed to load universes: ${error.message}`);
+      setSyncStatus({ type: 'error', status: `Failed to load universes: ${error.message}` });
       setTimeout(() => setSyncStatus(null), 5000);
     }
   };

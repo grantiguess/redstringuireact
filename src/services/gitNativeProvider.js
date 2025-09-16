@@ -385,9 +385,10 @@ This repository was automatically initialized by RedString UI React. You can now
       const path = dirPath || '';
       const url = `${this.rootUrl}/${path}`;
 
-      const headers = this.useAppToken && this.accessToken
-        ? { 'Authorization': `Bearer ${this.accessToken}` }
-        : { 'Authorization': `token ${this.authToken}` };
+      const headers = {
+        'Authorization': this.getAuthHeader(),
+        'Accept': 'application/vnd.github.v3+json'
+      };
 
       console.log(`[GitHubSemanticProvider] Listing directory: ${path}`);
 

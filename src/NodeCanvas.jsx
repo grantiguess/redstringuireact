@@ -203,6 +203,8 @@ function NodeCanvas() {
   const groupLongPressTimeout = useRef(null);
   const [isHoveringLeftResizer, setIsHoveringLeftResizer] = useState(false);
   const [isHoveringRightResizer, setIsHoveringRightResizer] = useState(false);
+  // Track last pan velocity to produce consistent glide on release
+  const lastPanVelocityRef = useRef({ vx: 0, vy: 0 });
   // Track latest widths in refs to avoid stale closures in global listeners
   const leftWidthRef = useRef(leftPanelWidth);
   const rightWidthRef = useRef(rightPanelWidth);
@@ -3854,6 +3856,19 @@ function NodeCanvas() {
     }
   }, [trackpadZoomEnabled]);
 
+  // Prevent native long-press context menu on touch devices (iOS/Android)
+  useEffect(() => {
+    const likelyTouch = () => (typeof navigator !== 'undefined' && (navigator.maxTouchPoints > 0 || navigator.msMaxTouchPoints > 0))
+      || (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    const preventContextMenu = (e) => {
+      if (isTouchDeviceRef.current || likelyTouch()) {
+        try { e.preventDefault(); } catch {}
+      }
+    };
+    document.addEventListener('contextmenu', preventContextMenu, { passive: false });
+    return () => document.removeEventListener('contextmenu', preventContextMenu);
+  }, []);
+
   // --- Clean routing helpers (orthogonal, low-bend path with simple detours) ---
   // Inflate a rectangle by padding
   const inflateRect = (rect, pad) => ({
@@ -4641,20 +4656,26 @@ function NodeCanvas() {
         if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); clickTimeoutIdRef.current = null; potentialClickNodeRef.current = null;}
         // REMOVED: setSelectedNodeIdForPieMenu(null); 
 
-        // Start drawing connection ONLY if a long-press has been recognized
+        // Start drawing connection when dragging from a node (desktop quick-drag or long-press)
         if (longPressingInstanceId && !draggingNodeInfo) {
              const longPressNodeData = nodes.find(n => n.id === longPressingInstanceId); // Get data
-             if (longPressNodeData && !isInsideNode(longPressNodeData, e.clientX, e.clientY)) {
-                 clearTimeout(longPressTimeout.current);
-                 mouseInsideNode.current = false;
-                 const startNodeDims = getNodeDimensions(longPressNodeData, previewingNodeId === longPressNodeData.id, null);
-                 const startPt = { x: longPressNodeData.x + startNodeDims.currentWidth / 2, y: longPressNodeData.y + startNodeDims.currentHeight / 2 };
-                 const rect = containerRef.current.getBoundingClientRect();
-                 const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
-                 const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
-                 const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
-                 setDrawingConnectionFrom({ sourceInstanceId: longPressingInstanceId, startX: startPt.x, startY: startPt.y, currentX, currentY });
-                 setLongPressingInstanceId(null); // Clear ID
+             if (longPressNodeData) {
+                 const leftNodeArea = !isInsideNode(longPressNodeData, e.clientX, e.clientY);
+                 // Allow both patterns:
+                 // 1) Move outside the node (original behavior)
+                 // 2) Quick drag while still inside the node (desktop-friendly)
+                 if (leftNodeArea || startedOnNode.current) {
+                     clearTimeout(longPressTimeout.current);
+                     mouseInsideNode.current = false;
+                     const startNodeDims = getNodeDimensions(longPressNodeData, previewingNodeId === longPressNodeData.id, null);
+                     const startPt = { x: longPressNodeData.x + startNodeDims.currentWidth / 2, y: longPressNodeData.y + startNodeDims.currentHeight / 2 };
+                     const rect = containerRef.current.getBoundingClientRect();
+                     const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
+                     const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
+                     const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
+                     setDrawingConnectionFrom({ sourceInstanceId: longPressingInstanceId, startX: startPt.x, startY: startPt.y, currentX, currentY });
+                     setLongPressingInstanceId(null); // Clear ID
+                 }
              }
         } else if (!draggingNodeInfo && !drawingConnectionFrom && !isPanning && !startedOnNode.current) {
           // Start panning after threshold exceeded
@@ -4805,6 +4826,8 @@ function NodeCanvas() {
                 }
                 return { x: newX, y: newY };
             });
+            // Track last velocity for consistent glide
+            lastPanVelocityRef.current = { vx: dx, vy: dy };
         });
     }
 
@@ -4935,9 +4958,9 @@ function NodeCanvas() {
 
     // Finalize panning state
     if (isPanning && panStart) {
-      // Inertia on release: continue motion briefly based on last deltas
-      let vx = (e.clientX - panStart.x) * 0.14; // velocity scale tuned for feel
-      let vy = (e.clientY - panStart.y) * 0.14;
+      // Inertia on release: continue motion based on last tracked velocity
+      let vx = (lastPanVelocityRef.current?.vx || (e.clientX - panStart.x)) * 0.14;
+      let vy = (lastPanVelocityRef.current?.vy || (e.clientY - panStart.y)) * 0.14;
       let remaining = 260; // ms decay duration
       const friction = 0.9; // decay factor per frame
       const step = () => {
@@ -7045,10 +7068,7 @@ function NodeCanvas() {
               }}
               onMouseUp={handleMouseUp} // Uncommented
               onMouseMove={handleMouseMove}
-              onPointerDown={(e) => {
-                // Prevent grid overlay from swallowing pointer events; PlusSign handles its own
-                if (e && e.cancelable) { e.preventDefault(); }
-              }}
+              // Remove pointerDown preventDefault to avoid interfering with gestures
             >
               {/* Groups layer - render group rectangles behind nodes */}
               {(() => {

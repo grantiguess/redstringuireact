@@ -79,6 +79,119 @@ export const discoverUniversesInRepo = async (provider) => {
 };
 
 /**
+ * Discover universes in a repository with basic statistics
+ * @param {Object} provider - Git provider instance
+ * @returns {{ universes: Array, stats: { scannedDirs: number, candidates: number, valid: number, invalid: number } }}
+ */
+export const discoverUniversesWithStats = async (provider) => {
+  const stats = { scannedDirs: 0, candidates: 0, valid: 0, invalid: 0 };
+  const universes = [];
+  try {
+    console.log('[UniverseDiscovery] Scanning repository for universes...');
+
+    const universePaths = [
+      'universes',
+      'universe',
+      '',
+    ];
+
+    for (const basePath of universePaths) {
+      try {
+        const contents = await provider.listDirectoryContents(basePath);
+        stats.scannedDirs += 1;
+
+        const redstringFiles = contents.filter(item =>
+          item.name.endsWith('.redstring') && item.type === 'file'
+        );
+        stats.candidates += redstringFiles.length;
+
+        const universeDirs = contents.filter(item =>
+          item.type === 'dir' && (
+            item.name.startsWith('universe') ||
+            item.name === 'default' ||
+            item.name === 'main'
+          )
+        );
+
+        for (const file of redstringFiles) {
+          const universeInfo = await analyzeUniverseFile(provider, `${basePath}/${file.name}`.replace(/^\//, ''));
+          if (universeInfo) {
+            universes.push({
+              ...universeInfo,
+              path: `${basePath}/${file.name}`.replace(/^\//, ''),
+              location: basePath || 'root',
+              type: 'file'
+            });
+            stats.valid += 1;
+          } else {
+            stats.invalid += 1;
+          }
+        }
+
+        for (const dir of universeDirs) {
+          const dirPath = `${basePath}/${dir.name}`.replace(/^\//, '');
+          const { universes: dirUniverses, stats: dirStats } = await scanUniverseDirectoryWithStats(provider, dirPath);
+          universes.push(...dirUniverses.map(u => ({
+            ...u,
+            location: dirPath,
+            type: 'directory'
+          })));
+          stats.candidates += dirStats.candidates;
+          stats.valid += dirStats.valid;
+          stats.invalid += dirStats.invalid;
+          stats.scannedDirs += dirStats.scannedDirs;
+        }
+
+      } catch (error) {
+        console.log(`[UniverseDiscovery] Path ${basePath} not accessible:`, error.message);
+      }
+    }
+
+    console.log(`[UniverseDiscovery] Found ${universes.length} universes in repository`);
+    return { universes, stats };
+
+  } catch (error) {
+    console.error('[UniverseDiscovery] Failed to discover universes:', error);
+    return { universes: [], stats };
+  }
+};
+
+/**
+ * Scan a specific directory for universe files with stats
+ */
+const scanUniverseDirectoryWithStats = async (provider, dirPath) => {
+  const stats = { scannedDirs: 1, candidates: 0, valid: 0, invalid: 0 };
+  try {
+    const contents = await provider.listDirectoryContents(dirPath);
+    const universes = [];
+
+    const redstringFiles = contents.filter(item =>
+      item.name.endsWith('.redstring') && item.type === 'file'
+    );
+    stats.candidates += redstringFiles.length;
+
+    for (const file of redstringFiles) {
+      const filePath = `${dirPath}/${file.name}`;
+      const universeInfo = await analyzeUniverseFile(provider, filePath);
+      if (universeInfo) {
+        universes.push({
+          ...universeInfo,
+          path: filePath
+        });
+        stats.valid += 1;
+      } else {
+        stats.invalid += 1;
+      }
+    }
+
+    return { universes, stats };
+  } catch (error) {
+    console.error(`[UniverseDiscovery] Failed to scan directory ${dirPath}:`, error);
+    return { universes: [], stats };
+  }
+};
+
+/**
  * Scan a specific directory for universe files
  * @param {Object} provider - Git provider instance
  * @param {string} dirPath - Directory path to scan
@@ -119,7 +232,8 @@ const scanUniverseDirectory = async (provider, dirPath) => {
  */
 const analyzeUniverseFile = async (provider, filePath) => {
   try {
-    const content = await provider.readSemanticFile(filePath);
+    // Universe files are JSON .redstring files; read raw contents
+    const content = await provider.readFileRaw(filePath);
     const data = JSON.parse(content);
 
     // Check if it's a valid redstring file with content
@@ -295,7 +409,10 @@ export const createUniverseConfigFromDiscovered = (discoveredUniverse, repoConfi
         repo: repoConfig.repo,
         authMethod: repoConfig.authMethod
       },
-      schemaPath: extractSchemaPath(discoveredUniverse.path),
+      // Keep semantic schema at default; universes live outside schema
+      schemaPath: 'schema',
+      // Preserve the discovered universe folder and file for direct Git access
+      universeFolder: extractSchemaPath(discoveredUniverse.path),
       universeFile: discoveredUniverse.fileName,
       priority: 'primary'
     },

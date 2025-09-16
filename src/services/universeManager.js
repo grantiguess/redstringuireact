@@ -962,7 +962,8 @@ class UniverseManager {
       }
 
       const folder = universe?.gitRepo?.universeFolder || `universes/${universe.slug}`;
-      const filePath = `${folder}/${universe.slug}.redstring`;
+      const fileName = universe?.gitRepo?.universeFile || `${universe.slug}.redstring`;
+      const filePath = `${folder}/${fileName}`;
 
       let content;
       try {
@@ -1547,11 +1548,12 @@ class UniverseManager {
       });
 
       // Import discovery service dynamically to avoid circular dependency
-      const { discoverUniversesInRepo } = await import('./universeDiscovery.js');
+      const { discoverUniversesWithStats } = await import('./universeDiscovery.js');
 
-      const discovered = await discoverUniversesInRepo(provider);
+      const { universes: discovered, stats } = await discoverUniversesWithStats(provider);
 
       console.log(`[UniverseManager] Discovered ${discovered.length} universes in repository`);
+      this.notifyStatus('info', `Discovery: ${discovered.length} found • scanned ${stats.scannedDirs} dirs • ${stats.valid} valid • ${stats.invalid} invalid`);
       return discovered;
 
     } catch (error) {
