@@ -182,7 +182,10 @@ app.post('/api/github/oauth/refresh', async (req, res) => {
 app.post('/api/github/oauth/validate', async (req, res) => {
   try {
     const { access_token } = req.body || {};
+    console.log('[OAuth] Validate request received, token length:', access_token ? access_token.length : 0);
+    
     if (!access_token) {
+      console.log('[OAuth] No access token provided');
       return res.status(400).json({
         error: 'Missing access_token',
         service: 'oauth-server'
@@ -198,7 +201,10 @@ app.post('/api/github/oauth/validate', async (req, res) => {
       ? (process.env.GITHUB_CLIENT_SECRET_DEV || process.env.GITHUB_CLIENT_SECRET)
       : process.env.GITHUB_CLIENT_SECRET;
 
+    console.log('[OAuth] Using credentials:', { useDev, clientIdLength: clientId ? clientId.length : 0, clientSecretLength: clientSecret ? clientSecret.length : 0 });
+
     if (!clientId || !clientSecret) {
+      console.log('[OAuth] Missing OAuth credentials');
       return res.status(500).json({
         error: 'GitHub OAuth not configured',
         service: 'oauth-server'
@@ -206,6 +212,7 @@ app.post('/api/github/oauth/validate', async (req, res) => {
     }
 
     const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    console.log('[OAuth] Making GitHub validation request...');
 
     const ghResp = await fetch(`https://api.github.com/applications/${clientId}/token`, {
       method: 'POST',
@@ -218,8 +225,11 @@ app.post('/api/github/oauth/validate', async (req, res) => {
       body: JSON.stringify({ access_token })
     });
 
+    console.log('[OAuth] GitHub validation response:', ghResp.status, ghResp.statusText);
+
     if (!ghResp.ok) {
       const text = await ghResp.text();
+      console.log('[OAuth] GitHub validation failed:', text);
       const status = ghResp.status === 404 || ghResp.status === 401 ? 401 : ghResp.status;
       return res.status(status).json({
         valid: false,
@@ -230,11 +240,15 @@ app.post('/api/github/oauth/validate', async (req, res) => {
     }
 
     const data = await ghResp.json();
+    console.log('[OAuth] GitHub validation success, data keys:', Object.keys(data));
+    
     // GitHub may return scopes as array or string
     let scopes = [];
     if (Array.isArray(data.scopes)) scopes = data.scopes;
     else if (typeof data.scopes === 'string') scopes = data.scopes.split(',').map(s => s.trim()).filter(Boolean);
     else if (typeof data.scope === 'string') scopes = data.scope.split(',').map(s => s.trim()).filter(Boolean);
+
+    console.log('[OAuth] Extracted scopes:', scopes);
 
     return res.json({
       valid: true,

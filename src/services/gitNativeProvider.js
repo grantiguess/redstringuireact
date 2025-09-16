@@ -412,6 +412,11 @@ This repository was automatically initialized by RedString UI React. You can now
 
   async isAvailable() {
     try {
+      // Short-circuit if we don't have credentials yet
+      if (!this.token || String(this.token).trim().length === 0) {
+        // No auth: cannot check private repo availability
+        return false;
+      }
       // Check rate limit before making request
       await githubRateLimiter.waitForAvailability(this.authMethod);
       

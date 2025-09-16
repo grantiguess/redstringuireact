@@ -1255,9 +1255,28 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         }
         
         try {
+          console.log('[GitNativeFederation] Restoring connection with config:', { 
+            type: restoredConfig?.type, 
+            hasToken: !!restoredConfig?.token, 
+            tokenLength: restoredConfig?.token ? restoredConfig.token.length : 0,
+            authMethod: restoredConfig?.authMethod 
+          });
+
+          // Prefer GitHub App token during restore if available
+          try {
+            const app = persistentAuth.getAppInstallation?.();
+            console.log('[GitNativeFederation] GitHub App installation available:', !!app?.accessToken);
+            if (app?.accessToken && restoredConfig?.type === 'github') {
+              restoredConfig = { ...restoredConfig, token: app.accessToken, authMethod: 'github-app' };
+              console.log('[GitNativeFederation] Using GitHub App token for restore');
+            }
+          } catch (_) {}
+
           // Test the connection before considering it restored
+          console.log('[GitNativeFederation] Creating provider and testing availability...');
           const provider = SemanticProviderFactory.createProvider(restoredConfig);
           const isAvailable = await provider.isAvailable();
+          console.log('[GitNativeFederation] Provider availability result:', isAvailable);
           
           if (isAvailable) {
             setProviderConfig(restoredConfig);
@@ -1288,11 +1307,45 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             
             // Try to handle authentication issues automatically
             if (gitConnection.authMethod === 'oauth') {
-              // Avoid triggering validation loops; require explicit user re-auth
-              console.warn('[GitNativeFederation] OAuth token appears invalid; prompting user to reconnect');
+              // Only try OAuth validation if we actually have a token
+              if (restoredConfig.token && restoredConfig.token.length > 0) {
+                console.log('[GitNativeFederation] Attempting automatic token validation for OAuth connection');
+                try {
+                  await persistentAuth.refreshAccessToken();
+                  console.log('[GitNativeFederation] Token refresh successful, retrying connection...');
+                  
+                  // Retry with refreshed token
+                  const refreshedConfig = { ...restoredConfig };
+                  const refreshedToken = await persistentAuth.getAccessToken();
+                  if (refreshedToken) {
+                    refreshedConfig.token = refreshedToken;
+                    const refreshedProvider = SemanticProviderFactory.createProvider(refreshedConfig);
+                    const retryAvailable = await refreshedProvider.isAvailable();
+                    
+                    if (retryAvailable) {
+                      setProviderConfig(refreshedConfig);
+                      setSelectedProvider(refreshedConfig.type);
+                      setCurrentProvider(refreshedProvider);
+                      setIsConnected(true);
+                      setConnectionHealth('healthy');
+                      setSyncStatus({
+                        type: 'success',
+                        status: 'Connection restored after token refresh'
+                      });
+                      console.log('[GitNativeFederation] 🎉 Git connection restored after token refresh');
+                      return; // Success after refresh
+                    }
+                  }
+                } catch (refreshError) {
+                  console.warn('[GitNativeFederation] Token refresh failed:', refreshError);
+                }
+              }
+              
+              // If no token or refresh failed, prompt for reconnection
+              console.warn('[GitNativeFederation] OAuth connection needs re-authentication');
               setSyncStatus({
                 type: 'error',
-                status: 'Authentication expired - please reconnect'
+                status: 'Authentication required - please connect'
               });
             }
           }
@@ -2215,7 +2268,23 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     setError(null);
     
     try {
-      const config = selectedProvider === 'github' ? providerConfig : giteaConfig;
+      let config = selectedProvider === 'github' ? providerConfig : giteaConfig;
+
+      // Ensure we have a token before attempting availability: prefer App, then OAuth
+      if (selectedProvider === 'github' && (!config.token || String(config.token).trim().length === 0)) {
+        try {
+          const app = persistentAuth.getAppInstallation?.();
+          if (app?.accessToken) {
+            config = { ...config, token: app.accessToken, authMethod: 'github-app', installationId: app.installationId };
+          } else {
+            const oauthToken = await persistentAuth.getAccessToken();
+            if (oauthToken) {
+              config = { ...config, token: oauthToken, authMethod: 'oauth' };
+            }
+          }
+        } catch (_) {}
+      }
+
       const provider = SemanticProviderFactory.createProvider(config);
       
       // Test connection

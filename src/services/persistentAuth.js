@@ -169,6 +169,13 @@ export class PersistentAuth {
    */
   async performTokenValidation() {
     try {
+      // Check if we have a token before attempting validation
+      const accessToken = sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+      if (!accessToken || accessToken.trim().length === 0) {
+        console.log('[PersistentAuth] No token to validate, skipping validation');
+        throw new Error('No token available for validation');
+      }
+      
       console.log('[PersistentAuth] Validating current token...');
       
       const isValid = await this.testTokenValidity();
@@ -206,26 +213,51 @@ export class PersistentAuth {
     const accessToken = sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
     
     if (!accessToken) {
+      console.log('[PersistentAuth] No access token found in session storage');
       return false;
     }
 
+    console.log('[PersistentAuth] Testing token validity, token length:', accessToken.length);
+
     try {
-      const response = await fetch('https://api.github.com/user', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/vnd.github.v3+json'
-        }
+      // Prefer server-side introspection to avoid mixed token types and browser CORS issues
+      console.log('[PersistentAuth] Attempting server-side validation...');
+      const validateResp = await oauthFetch('/api/github/oauth/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ access_token: accessToken })
       });
 
-      const isValid = response.ok;
-      
-      if (!isValid) {
-        console.warn('[PersistentAuth] Token validation failed:', response.status);
-        // Do not attempt to refresh here to avoid re-entrancy; return false and let caller handle re-auth
-        if (response.status === 401) return false;
+      console.log('[PersistentAuth] Server validation response:', validateResp.status, validateResp.statusText);
+
+      if (validateResp.ok) {
+        const data = await validateResp.json();
+        console.log('[PersistentAuth] Server validation result:', data);
+        return !!data.valid;
+      } else {
+        const errorText = await validateResp.text();
+        console.warn('[PersistentAuth] Server validation failed:', validateResp.status, errorText);
       }
-      
-      return isValid;
+
+      // Fallback to direct GitHub call if server validation unavailable
+      console.log('[PersistentAuth] Falling back to direct GitHub validation...');
+      try {
+        const response = await fetch('https://api.github.com/user', {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/vnd.github.v3+json'
+          }
+        });
+        console.log('[PersistentAuth] Direct GitHub validation response:', response.status, response.statusText);
+        if (!response.ok) {
+          console.warn('[PersistentAuth] Token validation failed:', response.status);
+          if (response.status === 401) return false;
+        }
+        return response.ok;
+      } catch (fallbackErr) {
+        console.error('[PersistentAuth] Token validation fallback failed:', fallbackErr);
+        return false;
+      }
     } catch (error) {
       console.error('[PersistentAuth] Token validation failed:', error);
       return false;
