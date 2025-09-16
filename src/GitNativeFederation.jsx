@@ -592,12 +592,15 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     if (mode === 'local') {
       updates.localFile = { ...getActiveUniverse()?.localFile, enabled: true };
       updates.gitRepo = { ...getActiveUniverse()?.gitRepo, enabled: false };
+      updates.sourceOfTruth = 'local';
     } else if (mode === 'github') {
       updates.localFile = { ...getActiveUniverse()?.localFile, enabled: false };
       updates.gitRepo = { ...getActiveUniverse()?.gitRepo, enabled: true };
+      updates.sourceOfTruth = 'git';
     } else if (mode === 'mixed') {
       updates.localFile = { ...getActiveUniverse()?.localFile, enabled: true };
       updates.gitRepo = { ...getActiveUniverse()?.gitRepo, enabled: true };
+      updates.sourceOfTruth = 'git'; // Prefer git as source of truth in mixed mode
     }
     updateActiveUniverse(updates);
   };
@@ -609,13 +612,14 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     
     // Update universe with linked repository
     const activeUniverse = getActiveUniverse();
-    updateActiveUniverse({ 
-      gitRepo: { 
+    updateActiveUniverse({
+      gitRepo: {
         enabled: true,
         linkedRepo: { type: 'github', user: owner, repo: name },
         schemaPath: providerConfig.semanticPath || 'schema',
         universeFolder: `universes/${activeUniverseSlug}`
-      }
+      },
+      sourceOfTruth: 'git' // Automatically use Git as source of truth when linking repository
     });
     
     // Auto-add as a source if not already present
@@ -3044,6 +3048,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   const InfoTooltip = ({ children, tooltip }) => {
     const [showTooltip, setShowTooltip] = useState(false);
     const [touchTimeout, setTouchTimeout] = useState(null);
+    const [hoverTimeout, setHoverTimeout] = useState(null);
     
     const handleTouchStart = () => {
       // Clear any existing timeout
@@ -3068,16 +3073,36 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     
     const handleMouseEnter = () => {
       if (!deviceInfo.isTouchDevice) {
+        // Clear any existing timeout
+        if (hoverTimeout) {
+          clearTimeout(hoverTimeout);
+        }
         setShowTooltip(true);
       }
     };
     
     const handleMouseLeave = () => {
       if (!deviceInfo.isTouchDevice) {
-        setShowTooltip(false);
+        // Add a small delay to prevent flickering when moving between elements
+        const timeout = setTimeout(() => {
+          setShowTooltip(false);
+        }, 100);
+        setHoverTimeout(timeout);
       }
     };
     
+    // Cleanup timeouts on unmount
+    React.useEffect(() => {
+      return () => {
+        if (hoverTimeout) {
+          clearTimeout(hoverTimeout);
+        }
+        if (touchTimeout) {
+          clearTimeout(touchTimeout);
+        }
+      };
+    }, [hoverTimeout, touchTimeout]);
+
     return (
       <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
         {children}
@@ -3119,7 +3144,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 borderRadius: '8px',
                 fontSize: deviceInfo.isTouchDevice ? '0.9rem' : '0.8rem',
                 zIndex: 1000,
-                marginBottom: '8px',
+                marginBottom: '2px',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
                 maxWidth: deviceInfo.isTouchDevice ? '280px' : '400px',
                 whiteSpace: 'normal',
@@ -3149,7 +3174,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                   height: 0,
                   borderLeft: '6px solid transparent',
                   borderRight: '6px solid transparent',
-                  borderTop: '6px solid #260000'
+                  borderTop: '6px solid #260000',
+                  marginTop: '-1px'
                 }}
               />
             </div>
@@ -3298,10 +3324,10 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     return (
       <div 
         ref={containerRef} 
-        style={{ 
-          padding: deviceInfo.isMobile ? '12px' : '15px', 
-          fontFamily: "'EmOne', sans-serif", 
-          height: '100%', 
+        style={{
+          padding: deviceInfo.isMobile ? '12px' : '15px',
+          fontFamily: "'EmOne', sans-serif",
+          height: '100%',
           color: '#260000',
           pointerEvents: isInteractive ? 'auto' : 'none',
           opacity: isVisible ? 1 : 0.5
@@ -3389,47 +3415,60 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '8px' }}>
-            <div style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: '10px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>GitHub OAuth</div>
-                <div style={{ fontSize: '0.75rem', color: hasOAuthForBrowsing ? '#7A0000' : '#666', fontWeight: 600 }}>
+          {/* OAuth Backup Toggle - Prominent placement */}
+          <div style={{ marginBottom: '12px', padding: '8px', backgroundColor: '#bdb5b5', border: '1px solid #979090', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <label style={{ fontSize: '0.85rem', color: '#260000', fontWeight: 600 }}>Use OAuth as backup for sync</label>
+            </div>
+            <input
+              type="checkbox"
+              checked={allowOAuthBackup}
+              onChange={(e) => setAllowOAuthBackup(e.target.checked)}
+              style={{ accentColor: '#7A0000', transform: 'scale(1.1)' }}
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '6px' }}>
+            <div style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: isSlim ? '6px' : '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>GitHub OAuth</div>
+                <div style={{ fontSize: '0.7rem', color: hasOAuthForBrowsing ? '#7A0000' : '#666', fontWeight: 600 }}>
                   {hasOAuthForBrowsing ? '✓ Connected' : 'Not connected'}
                 </div>
               </div>
-              <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '8px', lineHeight: '1.3' }}>
+              <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '6px', lineHeight: '1.2' }}>
                 Browse and create repositories
               </div>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexWrap: 'wrap', flexDirection: isSlim ? 'column' : 'row' }}>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'stretch', flexWrap: 'wrap', flexDirection: isSlim ? 'column' : 'row' }}>
                 {hasOAuthForBrowsing ? (
                   <>
-                    <button disabled style={{ padding: '8px 12px', backgroundColor: '#7A0000', color: '#bdb5b5', border: 'none', borderRadius: '4px', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>@{authStatus.userData?.login}</button>
-                    <button onClick={handleGitHubAuth} style={{ padding: '6px 10px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }} title="Reconnect OAuth">Refresh</button>
+                    <button disabled style={{ padding: '6px 10px', backgroundColor: '#7A0000', color: '#bdb5b5', border: 'none', borderRadius: '4px', fontSize: '0.75rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>@{authStatus.userData?.login}</button>
+                    <button onClick={handleGitHubAuth} style={{ padding: '5px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }} title="Reconnect OAuth">Refresh</button>
                   </>
                 ) : (
-                  <button onClick={handleGitHubAuth} disabled={isConnecting} style={{ padding: '8px 12px', backgroundColor: isConnecting ? '#ccc' : '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>Connect OAuth</button>
+                  <button onClick={handleGitHubAuth} disabled={isConnecting} style={{ padding: '6px 10px', backgroundColor: isConnecting ? '#ccc' : '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.75rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>Connect OAuth</button>
                 )}
               </div>
             </div>
             
-            <div style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: '10px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>GitHub App</div>
-                <div style={{ fontSize: '0.75rem', color: hasAppForAutoSave ? '#7A0000' : '#666', fontWeight: 600 }}>
+            <div style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: isSlim ? '6px' : '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>GitHub App</div>
+                <div style={{ fontSize: '0.7rem', color: hasAppForAutoSave ? '#7A0000' : '#666', fontWeight: 600 }}>
                   {hasAppForAutoSave ? '✓ Installed' : 'Not installed'}
                 </div>
               </div>
-              <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '8px', lineHeight: '1.3' }}>
+              <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '6px', lineHeight: '1.2' }}>
                 Secure auto-sync with permissions
               </div>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
                 {hasAppForAutoSave ? (
                   <>
-                    <button disabled style={{ padding: '8px 12px', backgroundColor: '#7A0000', color: '#bdb5b5', border: 'none', borderRadius: '4px', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>Installed</button>
-                    <button onClick={handleGitHubApp} style={{ padding: '6px 10px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }} title="Reconfigure App">Settings</button>
+                    <button disabled style={{ padding: '6px 10px', backgroundColor: '#7A0000', color: '#bdb5b5', border: 'none', borderRadius: '4px', fontSize: '0.75rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>Installed</button>
+                    <button onClick={handleGitHubApp} style={{ padding: '5px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }} title="Reconfigure App">Settings</button>
                   </>
                 ) : (
-                  <button onClick={handleGitHubApp} disabled={isConnecting} style={{ padding: '8px 12px', backgroundColor: isConnecting ? '#ccc' : '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.8rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>Install App</button>
+                  <button onClick={handleGitHubApp} disabled={isConnecting} style={{ padding: '6px 10px', backgroundColor: isConnecting ? '#ccc' : '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.75rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>Install App</button>
                 )}
               </div>
             </div>
@@ -3534,21 +3573,21 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
 
                 {/* Universe Details (only show for active universe) */}
                 {universe.slug === activeUniverseSlug && (
-                  <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '10px', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #979090' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: isSlim ? '8px' : '10px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #979090' }}>
                     {/* Name and Schema */}
                     <div>
-                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Name</div>
-                      <input value={universe.name || ''} onChange={(e) => renameActiveUniverse(e.target.value)} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                      <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Name</div>
+                      <input value={universe.name || ''} onChange={(e) => renameActiveUniverse(e.target.value)} className="editable-title-input" style={{ fontSize: '0.85rem', padding: '5px 7px', borderRadius: '4px' }} />
                     </div>
                     <div>
-                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
-                      <input value={activeUniverse?.gitRepo?.schemaPath || 'schema'} onChange={(e) => setActiveUniverseSchema(e.target.value)} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                      <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
+                      <input value={activeUniverse?.gitRepo?.schemaPath || 'schema'} onChange={(e) => setActiveUniverseSchema(e.target.value)} className="editable-title-input" style={{ fontSize: '0.85rem', padding: '5px 7px', borderRadius: '4px' }} />
                     </div>
 
                     {/* Storage Mode */}
                     <div>
-                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Storage Mode</div>
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Storage Mode</div>
+                      <div style={{ display: 'flex', gap: isSlim ? '4px' : '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                         {['local','github','mixed'].map(mode => {
                           // Determine if this mode is currently active based on enabled slots
                           const isActive = (() => {
@@ -3562,7 +3601,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                           })();
                           
                           return (
-                            <button key={mode} onClick={() => setActiveUniverseStorageMode(mode)} style={{ padding: '4px 8px', backgroundColor: isActive ? '#260000' : 'transparent', color: isActive ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>{mode.toUpperCase()}</button>
+                            <button key={mode} onClick={() => setActiveUniverseStorageMode(mode)} style={{ padding: isSlim ? '3px 6px' : '4px 8px', backgroundColor: isActive ? '#260000' : 'transparent', color: isActive ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: isSlim ? '0.7rem' : '0.75rem', fontWeight: 'bold' }}>{mode.toUpperCase()}</button>
                           );
                         })}
                       </div>
@@ -3627,9 +3666,9 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
 
                     {/* Repository (combined: linked repo + local file) */}
                     <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
-                      <div style={{ fontSize: '0.8rem', color: '#260000', marginBottom: '4px' }}>Repository</div>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <div style={{ minWidth: '220px', maxWidth: '360px', flex: 1 }}>
+                      <div style={{ fontSize: '0.75rem', color: '#260000', marginBottom: '4px' }}>Repository</div>
+                      <div style={{ display: 'flex', gap: isSlim ? '4px' : '6px', alignItems: 'center', flexWrap: isSlim ? 'wrap' : 'nowrap' }}>
+                        <div style={{ minWidth: isSlim ? '180px' : '220px', maxWidth: isSlim ? '280px' : '360px', flex: 1 }}>
                           {(activeUniverse?.gitRepo?.enabled ?? false) ? (
                           <RepositoryDropdown
                             selectedRepository={activeUniverse?.gitRepo?.linkedRepo ? { 
@@ -3643,16 +3682,16 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                           ) : null}
                         </div>
                         {activeUniverse?.gitRepo?.linkedRepo && (
-                          <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', border: '1px solid #260000', color: '#260000' }}>
+                          <span style={{ fontSize: '0.65rem', padding: '2px 5px', borderRadius: '8px', border: '1px solid #260000', color: '#260000', whiteSpace: 'nowrap' }}>
                             {activeUniverse.gitRepo.linkedRepo.private ? 'Private' : 'Public'}
                           </span>
                         )}
                         {activeUniverse?.gitRepo?.linkedRepo && (
-                          <div style={{ display: 'flex', gap: '4px' }}>
-                            <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#bdb5b5', color: '#260000' }}>
+                          <div style={{ display: 'flex', gap: '3px' }}>
+                            <span style={{ fontSize: '0.65rem', padding: '2px 5px', borderRadius: '8px', backgroundColor: '#bdb5b5', color: '#260000', whiteSpace: 'nowrap' }}>
                               Read
                             </span>
-                            <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', backgroundColor: '#bdb5b5', color: '#260000' }}>
+                            <span style={{ fontSize: '0.65rem', padding: '2px 5px', borderRadius: '8px', backgroundColor: '#bdb5b5', color: '#260000', whiteSpace: 'nowrap' }}>
                               Write
                             </span>
                           </div>
@@ -3784,41 +3823,23 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                           {isSaving ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={12} />}
                         </button>
                       </div>
-                      ) : deviceConfig.enableLocalFileStorage ? (
-                      <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
-                        <div style={{ 
-                          padding: '12px', 
-                            backgroundColor: '#EFE8E5',
-                            border: '1px solid #260000',
-                          borderRadius: '6px',
-                          textAlign: 'center'
-                        }}>
-                            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '4px', color: '#260000' }}>
-                              Mobile-Optimized Storage
-                          </div>
-                          <div style={{ fontSize: '0.8rem', color: '#666', lineHeight: '1.3' }}>
-                            Your device uses Git repositories for storage instead of local files. 
-                            All your work is automatically synced to the cloud.
-                          </div>
-                        </div>
-                      </div>
                       ) : null}
                     </div>
                     {/* Data Sources (embedded per-universe) */}
-                    <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2', marginTop: '10px' }}>
-                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Data Sources</div>
+                    <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2', marginTop: '8px' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Data Sources</div>
                       {/* Add Source Card */}
                       <div style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '12px',
-                        padding: '12px',
+                        gap: isSlim ? '8px' : '10px',
+                        padding: isSlim ? '8px' : '10px',
                         backgroundColor: '#bdb5b5',
                         border: '2px dashed #979090',
                         borderRadius: '6px',
                         cursor: 'pointer',
                         transition: 'all 0.2s ease',
-                        marginBottom: '8px'
+                        marginBottom: '6px'
                       }}
                       onClick={() => setShowAddSourceModal(true)}
                       onMouseEnter={(e) => {
@@ -3832,8 +3853,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                         e.currentTarget.style.borderStyle = 'dashed';
                       }}
                       >
-                        <Plus size={20} color="#260000" />
-                        <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#260000' }}>
+                        <Plus size={isSlim ? 16 : 18} color="#260000" />
+                        <div style={{ fontSize: isSlim ? '0.8rem' : '0.85rem', fontWeight: 600, color: '#260000' }}>
                           Add Data Source
                         </div>
                       </div>
@@ -3866,11 +3887,11 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                                       !isConfigured ? '2px dashed #7A0000' :
                                       '1px solid #260000',
                               borderRadius: '6px',
-                              padding: '10px'
+                              padding: isSlim ? '8px' : '10px'
                             }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <div style={{ fontWeight: 600 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: isSlim ? 'wrap' : 'nowrap', gap: isSlim ? '6px' : '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: isSlim ? '6px' : '8px', flexWrap: 'wrap' }}>
+                                  <div style={{ fontWeight: 600, fontSize: isSlim ? '0.85rem' : '0.9rem' }}>
                                     {src.name ||
                                      (src.type === 'github' ? 'GitHub Repository' :
                                       src.type === 'gitea' ? 'Gitea Repository' :
@@ -3878,17 +3899,17 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                                       'Local File')}
                                   </div>
                                   {isPrimaryGitSource && (
-                                    <div style={{ fontSize: '0.75rem', color: '#260000', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(38,0,0,0.1)', borderRadius: '10px' }}>PRIMARY</div>
+                                    <div style={{ fontSize: '0.65rem', color: '#260000', fontWeight: 600, padding: '2px 5px', backgroundColor: 'rgba(38,0,0,0.1)', borderRadius: '8px', whiteSpace: 'nowrap' }}>PRIMARY</div>
                                   )}
                                   {!isPrimaryGitSource && isConnectedSource && (
-                                    <div style={{ fontSize: '0.75rem', color: '#7A0000', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '10px' }}>CONNECTED</div>
+                                    <div style={{ fontSize: '0.65rem', color: '#7A0000', fontWeight: 600, padding: '2px 5px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '8px', whiteSpace: 'nowrap' }}>CONNECTED</div>
                                   )}
                                   {!isConfigured && (
-                                    <div style={{ fontSize: '0.75rem', color: '#7A0000', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '10px' }}>NEEDS CONFIG</div>
+                                    <div style={{ fontSize: '0.65rem', color: '#7A0000', fontWeight: 600, padding: '2px 5px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '8px', whiteSpace: 'nowrap' }}>NEEDS CONFIG</div>
                                   )}
                                 </div>
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                  <label style={{ fontSize: '0.75rem', color: '#666' }}>Enabled</label>
+                                <div style={{ display: 'flex', gap: isSlim ? '6px' : '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                  <label style={{ fontSize: '0.7rem', color: '#666' }}>Enabled</label>
                                   <input
                                     type="checkbox"
                                     checked={!!src.enabled}
@@ -3896,7 +3917,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                                     disabled={!isConfigured || isPrimaryGitSource}
                                     style={{
                                       accentColor: '#7A0000',
-                                      transform: 'scale(1.1)',
+                                      transform: 'scale(1.0)',
                                       opacity: isConfigured ? 1 : 0.5
                                     }}
                                   />
@@ -3906,8 +3927,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                                     } else {
                                       removeSourceFromActiveUniverse(src.id);
                                     }
-                                  }} style={{ padding: '4px', background: 'transparent', color: '#d32f2f', border: '1px solid #d32f2f', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title={isPrimaryGitSource ? 'Unlink repository' : 'Remove source'}>
-                                    <Trash2 size={12} />
+                                  }} style={{ padding: '3px', background: 'transparent', color: '#d32f2f', border: '1px solid #d32f2f', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title={isPrimaryGitSource ? 'Unlink repository' : 'Remove source'}>
+                                    <Trash2 size={10} />
                                   </button>
                                 </div>
                               </div>
@@ -5546,18 +5567,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '4px', textAlign: 'center' }}>
                   {isAuthenticated ? 'Can create repositories • Full repo access' : 'Required for repository creation • Browse repositories'}
                 </div>
-                {/* OAuth Backup Toggle */}
-                <div style={{ marginTop: '10px', padding: '8px', backgroundColor: '#bdb5b5', border: '1px solid #979090', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <label style={{ fontSize: '0.85rem', color: '#260000', fontWeight: 600 }}>Use OAuth as backup for sync</label>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={allowOAuthBackup}
-                    onChange={(e) => setAllowOAuthBackup(e.target.checked)}
-                    style={{ accentColor: '#7A0000', transform: 'scale(1.1)' }}
-                  />
-                </div>
               </div>
 
               {/* GitHub App Configuration */}
@@ -5591,6 +5600,24 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 </button>
                 <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '4px', textAlign: 'center' }}>
                   Secure • Persistent • Repository-specific permissions
+                </div>
+              </div>
+
+              {/* OAuth Backup Toggle - Available for all GitHub auth methods */}
+              <div style={{ marginTop: '15px', marginBottom: '10px' }}>
+                <div style={{ padding: '8px', backgroundColor: '#bdb5b5', border: '1px solid #979090', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <label style={{ fontSize: '0.85rem', color: '#260000', fontWeight: 600 }}>Use OAuth as backup for sync</label>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={allowOAuthBackup}
+                    onChange={(e) => setAllowOAuthBackup(e.target.checked)}
+                    style={{ accentColor: '#7A0000', transform: 'scale(1.1)' }}
+                  />
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px', paddingLeft: '8px' }}>
+                  Enable OAuth as fallback authentication for Git operations when GitHub App is unavailable
                 </div>
               </div>
 

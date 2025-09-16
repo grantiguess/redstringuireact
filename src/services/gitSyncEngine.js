@@ -151,13 +151,58 @@ class GitSyncEngine {
    */
   mergeWithLocalContent(gitData, localState) {
     console.log(`[GitSyncEngine] Evaluating Git data against local RedString content (source: ${this.sourceOfTruth})...`);
-    
+
+    // Debug: log the actual gitData structure
+    console.log('[GitSyncEngine] DEBUG: gitData structure:', gitData ? {
+      // Top level keys
+      topLevelKeys: Object.keys(gitData),
+
+      // New format (v2.0.0-semantic)
+      hasPrototypeSpace: !!gitData.prototypeSpace,
+      prototypeSpaceKeys: gitData.prototypeSpace ? Object.keys(gitData.prototypeSpace) : null,
+      prototypesCount: gitData.prototypeSpace?.prototypes ? Object.keys(gitData.prototypeSpace.prototypes).length : 0,
+
+      hasSpatialGraphs: !!gitData.spatialGraphs,
+      spatialGraphsKeys: gitData.spatialGraphs ? Object.keys(gitData.spatialGraphs) : null,
+      spatialGraphsCount: gitData.spatialGraphs?.graphs ? Object.keys(gitData.spatialGraphs.graphs).length : 0,
+
+      hasRelationships: !!gitData.relationships,
+      relationshipsKeys: gitData.relationships ? Object.keys(gitData.relationships) : null,
+      relationshipsCount: gitData.relationships?.edges ? Object.keys(gitData.relationships.edges).length : 0,
+
+      // Legacy format
+      hasLegacy: !!gitData.legacy,
+      legacyKeys: gitData.legacy ? Object.keys(gitData.legacy) : null,
+
+      // Old legacy format
+      hasGraphs: !!gitData.graphs,
+      graphsKeys: gitData.graphs ? Object.keys(gitData.graphs) : null,
+      hasNodePrototypes: !!gitData.nodePrototypes,
+      nodePrototypesKeys: gitData.nodePrototypes ? Object.keys(gitData.nodePrototypes) : null,
+      hasEdges: !!gitData.edges,
+      edgesKeys: gitData.edges ? Object.keys(gitData.edges) : null
+    } : 'null');
+
+    // Check for content in any of the supported RedString formats
     const gitHasContent = gitData && (
+      // New format (v2.0.0-semantic): prototypeSpace, spatialGraphs, relationships
+      (gitData.prototypeSpace && gitData.prototypeSpace.prototypes && Object.keys(gitData.prototypeSpace.prototypes).length > 0) ||
+      (gitData.spatialGraphs && gitData.spatialGraphs.graphs && Object.keys(gitData.spatialGraphs.graphs).length > 0) ||
+      (gitData.relationships && gitData.relationships.edges && Object.keys(gitData.relationships.edges).length > 0) ||
+
+      // Legacy format with legacy section
+      (gitData.legacy && gitData.legacy.graphs && Object.keys(gitData.legacy.graphs).length > 0) ||
+      (gitData.legacy && gitData.legacy.nodePrototypes && Object.keys(gitData.legacy.nodePrototypes).length > 0) ||
+      (gitData.legacy && gitData.legacy.edges && Object.keys(gitData.legacy.edges).length > 0) ||
+
+      // Old legacy format (v1.0.0): direct properties
       (gitData.graphs && Object.keys(gitData.graphs).length > 0) ||
       (gitData.nodePrototypes && Object.keys(gitData.nodePrototypes).length > 0) ||
       (gitData.edges && Object.keys(gitData.edges).length > 0)
     );
-    
+
+    console.log('[GitSyncEngine] DEBUG: gitHasContent =', gitHasContent);
+
     const localHasContent = localState && (
       localState.graphs.size > 0 ||
       localState.nodePrototypes.size > 0 ||
