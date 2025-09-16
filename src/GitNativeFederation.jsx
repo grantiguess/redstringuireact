@@ -159,15 +159,24 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   });
   
   // Clear stale pending OAuth/App flags on mount to avoid stuck UI
+  // BUT only if there are no actual OAuth/App results waiting to be processed
   useEffect(() => {
     try {
       const pendingOAuth = sessionStorage.getItem('github_oauth_pending') === 'true';
       const pendingApp = sessionStorage.getItem('github_app_pending') === 'true';
+      const hasOAuthResult = sessionStorage.getItem('github_oauth_result');
+      const hasAppResult = sessionStorage.getItem('github_app_result');
+
       if (pendingOAuth || pendingApp) {
-        console.log('[GitNativeFederation] Clearing stale pending auth flags on mount');
-        sessionStorage.removeItem('github_oauth_pending');
-        sessionStorage.removeItem('github_app_pending');
-        setIsConnecting(false);
+        // Only clear if there are no actual results waiting to be processed
+        if (!hasOAuthResult && !hasAppResult) {
+          console.log('[GitNativeFederation] Clearing stale pending auth flags on mount (no results found)');
+          sessionStorage.removeItem('github_oauth_pending');
+          sessionStorage.removeItem('github_app_pending');
+          setIsConnecting(false);
+        } else {
+          console.log('[GitNativeFederation] Keeping pending auth flags - results found to process');
+        }
       }
     } catch (_) {}
   }, []);

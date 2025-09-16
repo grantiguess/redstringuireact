@@ -410,6 +410,60 @@ app.post('/api/github/oauth/create-repository', async (req, res) => {
   }
 });
 
+// Validate OAuth token
+app.post('/api/github/oauth/validate', async (req, res) => {
+  try {
+    const response = await fetch(`${oauthBaseUrl}/api/github/oauth/validate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    logger.error('OAuth proxy error (validate):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
+// Refresh OAuth token
+app.post('/api/github/oauth/refresh', async (req, res) => {
+  try {
+    const response = await fetch(`${oauthBaseUrl}/api/github/oauth/refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    logger.error('OAuth proxy error (refresh):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
+// Revoke OAuth token
+app.delete('/api/github/oauth/revoke', async (req, res) => {
+  try {
+    const response = await fetch(`${oauthBaseUrl}/api/github/oauth/revoke`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    logger.error('OAuth proxy error (revoke):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
 // Serve static files from the dist directory
 app.use(express.static(distPath));
 
