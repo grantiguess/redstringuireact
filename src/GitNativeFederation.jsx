@@ -158,6 +158,20 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     } catch (_) { return true; }
   });
   
+  // Clear stale pending OAuth/App flags on mount to avoid stuck UI
+  useEffect(() => {
+    try {
+      const pendingOAuth = sessionStorage.getItem('github_oauth_pending') === 'true';
+      const pendingApp = sessionStorage.getItem('github_app_pending') === 'true';
+      if (pendingOAuth || pendingApp) {
+        console.log('[GitNativeFederation] Clearing stale pending auth flags on mount');
+        sessionStorage.removeItem('github_oauth_pending');
+        sessionStorage.removeItem('github_app_pending');
+        setIsConnecting(false);
+      }
+    } catch (_) {}
+  }, []);
+  
   // Use UniverseManager for universe state
   const [universes, setUniverses] = useState(universeManager.getAllUniverses());
   const [activeUniverseSlug, setActiveUniverseSlug] = useState(universeManager.activeUniverseSlug);
@@ -295,8 +309,10 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       
       // Get fresh installation token
       console.log('[GitNativeFederation] Requesting fresh installation token for auto-connection...');
-      const installationResponse = await oauthFetch(`/api/github/app/installation/${encodeURIComponent(installationId)}/token`, {
-        method: 'GET'
+      const installationResponse = await oauthFetch('/api/github/app/installation-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installation_id: installationId })
       });
       
       if (!installationResponse.ok) {
@@ -1057,6 +1073,9 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       setAuthStatus(persistentAuth.getAuthStatus());
       setConnectionHealth('failed');
       setError('Authentication expired. Please reconnect to continue using Git features.');
+      // Ensure UI is re-enabled for retry
+      try { sessionStorage.removeItem('github_oauth_pending'); } catch {}
+      setIsConnecting(false);
     };
     
     const handleReAuthRequired = (data) => {
@@ -1066,6 +1085,9 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         type: 'error',
         status: `Re-authentication required: ${data.reason}`
       });
+      // Ensure UI is re-enabled for retry
+      try { sessionStorage.removeItem('github_oauth_pending'); } catch {}
+      setIsConnecting(false);
     };
     
     const handleHealthCheck = (healthData) => {
@@ -2435,6 +2457,9 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       setIsConnecting(true);
       setError(null);
       
+      // If a previous attempt left a pending flag, clear it so the button can re-activate
+      try { sessionStorage.removeItem('github_oauth_pending'); } catch {}
+
       console.log('[GitNativeFederation] Starting GitHub OAuth authentication');
       
       // Get OAuth client ID from backend

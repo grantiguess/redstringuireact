@@ -922,10 +922,18 @@ class UniverseManager {
       }
       if (!user || !repo) return null;
 
-      // Require a valid token for any direct Git operations
+      // Prefer GitHub App installation token when available; fall back to OAuth
       let token;
+      let authMethod = 'oauth';
       try {
-        token = await persistentAuth.getAccessToken();
+        const app = persistentAuth.getAppInstallation?.();
+        if (app?.accessToken) {
+          token = app.accessToken;
+          authMethod = 'github-app';
+        } else {
+          token = await persistentAuth.getAccessToken();
+          authMethod = token ? 'oauth' : authMethod;
+        }
       } catch (_) {}
       if (!token) {
         this.notifyStatus('error', 'Git authentication required to access repository');
@@ -937,7 +945,7 @@ class UniverseManager {
         user,
         repo,
         token,
-        authMethod: token ? 'oauth' : undefined,
+        authMethod,
         semanticPath: universe?.gitRepo?.schemaPath || 'schema'
       });
 

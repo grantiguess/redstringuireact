@@ -97,14 +97,18 @@ export class PersistentAuth {
    */
   async getAccessToken() {
     try {
-      // Check if we need to refresh
+      // Always read the token first
+      const token = sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+      if (!token) {
+        // No token present; do not trigger validation/refresh loop
+        return null;
+      }
+      // Check if we need to validate/refresh
       if (this.shouldRefreshToken()) {
-        console.log('[PersistentAuth] Token needs refresh');
+        console.log('[PersistentAuth] Token needs validation/refresh');
         await this.refreshAccessToken();
       }
-      
-      const token = sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-      return token;
+      return sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN) || null;
     } catch (error) {
       console.error('[PersistentAuth] Failed to get access token:', error);
       this.emit('authError', error);
