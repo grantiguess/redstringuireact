@@ -133,7 +133,11 @@ export class GitHubSemanticProvider extends SemanticProvider {
 
   // Prefer correct auth scheme for GitHub App tokens
   getAuthHeader() {
-    return this.authMethod === 'github-app' ? `Bearer ${this.token}` : `token ${this.token}`;
+    // Use Bearer for GitHub App and OAuth tokens; some environments reject the legacy 'token' scheme
+    if (this.authMethod === 'github-app' || this.authMethod === 'oauth') {
+      return `Bearer ${this.token}`;
+    }
+    return `token ${this.token}`;
   }
 
   // UTF-8 safe base64 helpers

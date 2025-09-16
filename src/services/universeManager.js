@@ -922,11 +922,15 @@ class UniverseManager {
       }
       if (!user || !repo) return null;
 
-      // Try to obtain a token if available
+      // Require a valid token for any direct Git operations
       let token;
       try {
         token = await persistentAuth.getAccessToken();
       } catch (_) {}
+      if (!token) {
+        this.notifyStatus('error', 'Git authentication required to access repository');
+        return null;
+      }
 
       const provider = SemanticProviderFactory.createProvider({
         type: 'github',
@@ -937,15 +941,16 @@ class UniverseManager {
         semanticPath: universe?.gitRepo?.schemaPath || 'schema'
       });
 
-      // Check availability briefly; continue if reachable
+      // Check availability; if not reachable with current auth, bail out
       try {
         const ok = await provider.isAvailable();
-        // If not available, do not abort; we may still be able to create the file with existing auth
         if (!ok) {
-          console.warn('[UniverseManager] Provider reported unavailable; attempting direct write anyway');
+          console.warn('[UniverseManager] Provider unavailable or unauthorized; skipping direct Git access');
+          return null;
         }
-      } catch (_) {
-        // If availability check throws (rate limit, etc.), still attempt raw read/write
+      } catch (e) {
+        console.warn('[UniverseManager] Provider availability check failed; skipping direct Git access:', e?.message || e);
+        return null;
       }
 
       const folder = universe?.gitRepo?.universeFolder || `universes/${universe.slug}`;

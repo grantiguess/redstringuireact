@@ -650,7 +650,7 @@ app.get('/api/github/app/installation/:installation_id', async (req, res) => {
     const reposResponse = await fetch(reposUrl, {
       headers: {
         'Accept': 'application/vnd.github.v3+json',
-        'Authorization': `token ${installationToken}`,
+        'Authorization': `Bearer ${installationToken}`,
         'User-Agent': 'Redstring-GitHubApp-Server/1.0'
       }
     });
@@ -768,7 +768,7 @@ app.post('/api/github/app/create-repository', async (req, res) => {
       method: 'POST',
       headers: {
         'Accept': 'application/vnd.github.v3+json',
-        'Authorization': `token ${installationToken}`,
+        'Authorization': `Bearer ${installationToken}`,
         'User-Agent': 'Redstring-GitHubApp-Server/1.0',
         'Content-Type': 'application/json'
       },

@@ -208,7 +208,7 @@ export class PersistentAuth {
     try {
       const response = await fetch('https://api.github.com/user', {
         headers: {
-          'Authorization': `token ${accessToken}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Accept': 'application/vnd.github.v3+json'
         }
       });
@@ -217,17 +217,8 @@ export class PersistentAuth {
       
       if (!isValid) {
         console.warn('[PersistentAuth] Token validation failed:', response.status);
-        
-        // Try to refresh if we get 401 Unauthorized
-        if (response.status === 401) {
-          try {
-            await this.refreshAccessToken();
-            return true; // Refresh successful
-          } catch (refreshError) {
-            console.error('[PersistentAuth] Token refresh during validation failed:', refreshError);
-            return false;
-          }
-        }
+        // Do not attempt to refresh here to avoid re-entrancy; return false and let caller handle re-auth
+        if (response.status === 401) return false;
       }
       
       return isValid;
