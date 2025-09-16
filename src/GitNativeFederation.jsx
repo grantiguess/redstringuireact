@@ -151,6 +151,12 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [lastSaveTime, setLastSaveTime] = useState(Date.now());
+  const [allowOAuthBackup, setAllowOAuthBackup] = useState(() => {
+    try {
+      const v = localStorage.getItem('allow_oauth_backup');
+      return v == null ? true : v === 'true';
+    } catch (_) { return true; }
+  });
   
   // Use UniverseManager for universe state
   const [universes, setUniverses] = useState(universeManager.getAllUniverses());
@@ -589,6 +595,36 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     handleRepositoryManagerSelect({ ...repo, owner: { login: owner } });
   };
 
+  // Prefer GitHub App installation token; fall back to OAuth access token
+  const getPreferredGitCredentials = async () => {
+    try {
+      if (githubAppInstallation && githubAppInstallation.installationId) {
+        try {
+          const resp = await oauthFetch(`/api/github/app/installation/${encodeURIComponent(githubAppInstallation.installationId)}/token`, {
+            method: 'GET'
+          });
+          const contentType = resp.headers.get('content-type') || '';
+          if (resp.ok && contentType.includes('application/json')) {
+            const data = await resp.json();
+            if (data && data.token) {
+              return { authMethod: 'github-app', token: data.token, installationId: githubAppInstallation.installationId };
+            }
+          }
+        } catch (_) {}
+        if (githubAppInstallation.accessToken) {
+          return { authMethod: 'github-app', token: githubAppInstallation.accessToken, installationId: githubAppInstallation.installationId };
+        }
+      }
+      if (allowOAuthBackup) {
+        const token = await persistentAuth.getAccessToken();
+        if (token) {
+          return { authMethod: 'oauth', token };
+        }
+      }
+    } catch (_) {}
+    return null;
+  };
+
   const attemptConnectUniverseRepo = async () => {
     try {
       const u = getActiveUniverse();
@@ -661,27 +697,16 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       }
 
       // Build provider from linked repo
+      const creds = await getPreferredGitCredentials();
       const cfg = {
         type: 'github',
         user: u.gitRepo.linkedRepo.user,
         repo: u.gitRepo.linkedRepo.repo,
-        authMethod: 'oauth',
-        semanticPath: u.gitRepo.schemaPath || 'schema'
+        authMethod: creds?.authMethod || 'oauth',
+        semanticPath: u.gitRepo.schemaPath || 'schema',
+        ...(creds?.token ? { token: creds.token } : {}),
+        ...(creds?.installationId ? { installationId: creds.installationId } : {})
       };
-      try {
-        // Prefer GitHub App token if available; fall back to OAuth token
-        if (githubAppInstallation && githubAppInstallation.accessToken) {
-          cfg.authMethod = 'github-app';
-          cfg.installationId = githubAppInstallation.installationId;
-          cfg.token = githubAppInstallation.accessToken;
-        } else {
-          const token = await persistentAuth.getAccessToken();
-          if (token) {
-            cfg.authMethod = 'oauth';
-            cfg.token = token;
-          }
-        }
-      } catch (_) {}
 
       const provider = SemanticProviderFactory.createProvider(cfg);
       const available = await provider.isAvailable();
@@ -726,27 +751,16 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       const existing = universeManager.getGitSyncEngine(u.slug) || storeGitSyncEngine || gitSyncEngine;
       if (existing) return false;
 
+      const creds = await getPreferredGitCredentials();
       const cfg = {
         type: 'github',
         user: u.gitRepo.linkedRepo.user,
         repo: u.gitRepo.linkedRepo.repo,
-        authMethod: 'oauth',
-        semanticPath: u.gitRepo.schemaPath || 'schema'
+        authMethod: creds?.authMethod || 'oauth',
+        semanticPath: u.gitRepo.schemaPath || 'schema',
+        ...(creds?.token ? { token: creds.token } : {}),
+        ...(creds?.installationId ? { installationId: creds.installationId } : {})
       };
-      try {
-        // Prefer GitHub App token if available; fall back to OAuth token
-        if (githubAppInstallation && githubAppInstallation.accessToken) {
-          cfg.authMethod = 'github-app';
-          cfg.installationId = githubAppInstallation.installationId;
-          cfg.token = githubAppInstallation.accessToken;
-        } else {
-          const token = await persistentAuth.getAccessToken();
-          if (token) {
-            cfg.authMethod = 'oauth';
-            cfg.token = token;
-          }
-        }
-      } catch (_) {}
 
       const provider = SemanticProviderFactory.createProvider(cfg);
       const available = await provider.isAvailable();
@@ -1245,6 +1259,11 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       localStorage.setItem('git_only_mode', gitOnlyMode ? 'true' : 'false');
     } catch {}
   }, [gitOnlyMode]);
+
+  // Persist OAuth backup preference
+  useEffect(() => {
+    try { localStorage.setItem('allow_oauth_backup', allowOAuthBackup ? 'true' : 'false'); } catch {}
+  }, [allowOAuthBackup]);
 
   // Observe panel width to switch layouts (slim vs wide)
   useEffect(() => {
@@ -5366,6 +5385,18 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 </button>
                 <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '4px', textAlign: 'center' }}>
                   {isAuthenticated ? 'Can create repositories • Full repo access' : 'Required for repository creation • Browse repositories'}
+                </div>
+                {/* OAuth Backup Toggle */}
+                <div style={{ marginTop: '10px', padding: '8px', backgroundColor: '#bdb5b5', border: '1px solid #979090', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <label style={{ fontSize: '0.85rem', color: '#260000', fontWeight: 600 }}>Use OAuth as backup for sync</label>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={allowOAuthBackup}
+                    onChange={(e) => setAllowOAuthBackup(e.target.checked)}
+                    style={{ accentColor: '#7A0000', transform: 'scale(1.1)' }}
+                  />
                 </div>
               </div>
 
