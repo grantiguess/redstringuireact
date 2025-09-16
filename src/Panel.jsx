@@ -2457,7 +2457,7 @@ const LeftGridView = ({
           />
         ))}
         {openGraphsForList.length === 0 && (
-          <div style={{ color: '#666', textAlign: 'center', marginTop: '20px', fontFamily: "'EmOne', sans-serif" }}>No graphs currently open.</div>
+          <div style={{ color: '#666', textAlign: 'center', marginTop: '20px', fontFamily: "'EmOne', sans-serif" }}>No Things currently open.</div>
         )}
       </div>
     </div>

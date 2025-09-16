@@ -178,6 +178,133 @@ app.post('/api/github/oauth/refresh', async (req, res) => {
   }
 });
 
+// Validate an OAuth access token against GitHub OAuth App API
+app.post('/api/github/oauth/validate', async (req, res) => {
+  try {
+    const { access_token } = req.body || {};
+    if (!access_token) {
+      return res.status(400).json({
+        error: 'Missing access_token',
+        service: 'oauth-server'
+      });
+    }
+
+    // Select dev/prod credentials based on request origin
+    const useDev = isLocalRequest(req);
+    const clientId = useDev
+      ? (process.env.GITHUB_CLIENT_ID_DEV || process.env.GITHUB_CLIENT_ID)
+      : process.env.GITHUB_CLIENT_ID;
+    const clientSecret = useDev
+      ? (process.env.GITHUB_CLIENT_SECRET_DEV || process.env.GITHUB_CLIENT_SECRET)
+      : process.env.GITHUB_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({
+        error: 'GitHub OAuth not configured',
+        service: 'oauth-server'
+      });
+    }
+
+    const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+    const ghResp = await fetch(`https://api.github.com/applications/${clientId}/token`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `Basic ${basic}`,
+        'User-Agent': 'Redstring-OAuth-Server/1.0',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ access_token })
+    });
+
+    if (!ghResp.ok) {
+      const text = await ghResp.text();
+      const status = ghResp.status === 404 || ghResp.status === 401 ? 401 : ghResp.status;
+      return res.status(status).json({
+        valid: false,
+        error: 'Token invalid or revoked',
+        details: text,
+        service: 'oauth-server'
+      });
+    }
+
+    const data = await ghResp.json();
+    // GitHub may return scopes as array or string
+    let scopes = [];
+    if (Array.isArray(data.scopes)) scopes = data.scopes;
+    else if (typeof data.scopes === 'string') scopes = data.scopes.split(',').map(s => s.trim()).filter(Boolean);
+    else if (typeof data.scope === 'string') scopes = data.scope.split(',').map(s => s.trim()).filter(Boolean);
+
+    return res.json({
+      valid: true,
+      scopes,
+      note: 'Token is valid',
+      service: 'oauth-server'
+    });
+  } catch (error) {
+    console.error('[OAuth] Validate failed:', error);
+    return res.status(500).json({ error: error.message, service: 'oauth-server' });
+  }
+});
+
+// Revoke an OAuth access token via OAuth App API
+app.delete('/api/github/oauth/revoke', async (req, res) => {
+  try {
+    const { access_token } = req.body || {};
+    if (!access_token) {
+      return res.status(400).json({
+        error: 'Missing access_token',
+        service: 'oauth-server'
+      });
+    }
+
+    const useDev = isLocalRequest(req);
+    const clientId = useDev
+      ? (process.env.GITHUB_CLIENT_ID_DEV || process.env.GITHUB_CLIENT_ID)
+      : process.env.GITHUB_CLIENT_ID;
+    const clientSecret = useDev
+      ? (process.env.GITHUB_CLIENT_SECRET_DEV || process.env.GITHUB_CLIENT_SECRET)
+      : process.env.GITHUB_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({
+        error: 'GitHub OAuth not configured',
+        service: 'oauth-server'
+      });
+    }
+
+    const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+    const ghResp = await fetch(`https://api.github.com/applications/${clientId}/token`, {
+      method: 'DELETE',
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `Basic ${basic}`,
+        'User-Agent': 'Redstring-OAuth-Server/1.0',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ access_token })
+    });
+
+    if (ghResp.status === 204) {
+      return res.json({ revoked: true, service: 'oauth-server' });
+    }
+
+    const text = await ghResp.text();
+    const status = ghResp.status === 404 || ghResp.status === 401 ? 401 : ghResp.status;
+    return res.status(status).json({
+      revoked: false,
+      error: 'Failed to revoke token',
+      details: text,
+      service: 'oauth-server'
+    });
+  } catch (error) {
+    console.error('[OAuth] Revoke failed:', error);
+    return res.status(500).json({ error: error.message, service: 'oauth-server' });
+  }
+});
+
 // Exchange OAuth code for access token with enhanced error handling
 app.post('/api/github/oauth/token', async (req, res) => {
   try {
@@ -314,8 +441,55 @@ app.post('/api/github/oauth/token', async (req, res) => {
     }
     
     logger.info('[OAuth] Token exchange successful');
-    
-    // Return token data to frontend
+
+    // Immediately validate the token against OAuth App API and ensure required scopes
+    try {
+      const basic = Buffer.from(`${clientId.trim()}:${clientSecret.trim()}`).toString('base64');
+      const validateResp = await fetch(`https://api.github.com/applications/${clientId.trim()}/token`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'Authorization': `Basic ${basic}`,
+          'User-Agent': 'Redstring-OAuth-Server/1.0',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ access_token: tokenData.access_token })
+      });
+
+      if (!validateResp.ok) {
+        const vtext = await validateResp.text();
+        return res.status(400).json({
+          error: 'Token validation failed',
+          details: vtext,
+          service: 'oauth-server'
+        });
+      }
+
+      const vdata = await validateResp.json();
+      let scopes = [];
+      if (Array.isArray(vdata.scopes)) scopes = vdata.scopes;
+      else if (typeof vdata.scopes === 'string') scopes = vdata.scopes.split(',').map(s => s.trim()).filter(Boolean);
+      else if (typeof vdata.scope === 'string') scopes = vdata.scope.split(',').map(s => s.trim()).filter(Boolean);
+
+      // Require 'repo' scope for private repo operations
+      if (!scopes.includes('repo')) {
+        return res.status(400).json({
+          error: 'Insufficient OAuth scope',
+          required: ['repo'],
+          scopes,
+          service: 'oauth-server'
+        });
+      }
+    } catch (validationError) {
+      console.error('[OAuth] Post-exchange validation error:', validationError);
+      return res.status(400).json({
+        error: 'Token validation error',
+        details: validationError.message,
+        service: 'oauth-server'
+      });
+    }
+
+    // Return token data to frontend (validated)
     res.json({
       access_token: tokenData.access_token,
       token_type: tokenData.token_type || 'bearer',

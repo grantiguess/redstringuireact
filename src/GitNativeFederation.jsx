@@ -1288,26 +1288,12 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             
             // Try to handle authentication issues automatically
             if (gitConnection.authMethod === 'oauth') {
-              console.log('[GitNativeFederation] Attempting automatic token validation for OAuth connection');
-              try {
-                await persistentAuth.refreshAccessToken();
-                // If successful, retry the connection
-                const retryProvider = SemanticProviderFactory.createProvider(restoredConfig);
-                const retryAvailable = await retryProvider.isAvailable();
-                
-                if (retryAvailable) {
-                  setCurrentProvider(retryProvider);
-                  setIsConnected(true);
-                  setConnectionHealth('healthy');
-                  console.log('[GitNativeFederation] Connection recovered after token validation');
-                }
-              } catch (authError) {
-                console.error('[GitNativeFederation] Automatic token validation failed:', authError);
-                setSyncStatus({
-                  type: 'error',
-                  status: 'Authentication expired - please reconnect'
-                });
-              }
+              // Avoid triggering validation loops; require explicit user re-auth
+              console.warn('[GitNativeFederation] OAuth token appears invalid; prompting user to reconnect');
+              setSyncStatus({
+                type: 'error',
+                status: 'Authentication expired - please reconnect'
+              });
             }
           }
         } catch (connectionError) {
@@ -1860,6 +1846,28 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             
             // Store token in persistent auth with user data
             await persistentAuth.storeTokens(tokenData, userData);
+
+            // Optional: validate token and scopes on server (clear message if insufficient)
+            try {
+              const validateResp = await oauthFetch('/api/github/oauth/validate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ access_token: tokenData.access_token })
+              });
+              if (validateResp.ok) {
+                const v = await validateResp.json();
+                const scopes = Array.isArray(v.scopes) ? v.scopes : [];
+                if (!v.valid || !scopes.includes('repo')) {
+                  console.warn('[GitNativeFederation] OAuth scope insufficient:', { valid: v.valid, scopes });
+                  setError('GitHub OAuth connected, but the token is missing the required "repo" scope. Please reconnect and grant repository access.');
+                }
+              } else {
+                const t = await validateResp.text();
+                console.warn('[GitNativeFederation] OAuth token validation failed:', validateResp.status, t);
+              }
+            } catch (validateError) {
+              console.warn('[GitNativeFederation] OAuth validation error:', validateError);
+            }
             
             // Get user repositories
             const reposResponse = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
