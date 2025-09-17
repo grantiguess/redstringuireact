@@ -296,17 +296,23 @@ class DocumentationGenerator {
    * Extract description from JSDoc or comments
    */
   extractDescription(content, jsdocs) {
+    let description = '';
+
     if (jsdocs.length > 0) {
-      return jsdocs[0].description;
+      description = jsdocs[0].description;
+    } else {
+      // Look for file-level comment
+      const fileCommentMatch = content.match(/\/\*\*?\s*\n\s*\*\s*([^\n]+)/);
+      if (fileCommentMatch) {
+        description = fileCommentMatch[1];
+      }
     }
 
-    // Look for file-level comment
-    const fileCommentMatch = content.match(/\/\*\*?\s*\n\s*\*\s*([^\n]+)/);
-    if (fileCommentMatch) {
-      return fileCommentMatch[1];
-    }
-
-    return '';
+    // Sanitize description for YAML frontmatter
+    return description
+      .replace(/"/g, '\\"')  // Escape quotes
+      .replace(/\n/g, ' ')   // Replace newlines with spaces
+      .trim();
   }
 
   /**
