@@ -3875,22 +3875,17 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                             {activeUniverse.gitRepo.linkedRepo.private ? 'Private' : 'Public'}
                           </span>
                         )}
-                        {activeUniverse?.gitRepo?.linkedRepo && (
-                          <div style={{ display: 'flex', gap: '3px' }}>
-                            <span style={{ fontSize: '0.65rem', padding: '2px 5px', borderRadius: '8px', backgroundColor: '#bdb5b5', color: '#260000', whiteSpace: 'nowrap' }}>
-                              Read
-                            </span>
-                            <span style={{ fontSize: '0.65rem', padding: '2px 5px', borderRadius: '8px', backgroundColor: '#bdb5b5', color: '#260000', whiteSpace: 'nowrap' }}>
-                              Write
-                            </span>
-                          </div>
-                        )}
                       </div>
                       {activeUniverse?.gitRepo?.linkedRepo && (
-                        <div style={{ fontSize: '0.75rem', color: '#260000', marginTop: '4px', fontFamily: 'monospace' }}>
-                          {activeUniverse.gitRepo.universeFolder || `universes/${activeUniverseSlug}`}/{activeUniverseSlug}.redstring
-                          <div style={{ marginTop: '2px', fontSize: '0.7rem', color: '#260000' }}>
-                            Read: Connected • Write: {hasAppForAutoSave ? 'Auto-save' : 'Manual'}
+                        <div style={{ fontSize: '0.8rem', color: '#260000', marginTop: '4px' }}>
+                          <div>{activeUniverse.gitRepo.universeFolder || `universes/${activeUniverseSlug}`}/{activeUniverseSlug}.redstring</div>
+                          <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                            <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '8px', backgroundColor: '#bdb5b5', color: '#260000', whiteSpace: 'nowrap' }} title="Read access ready">
+                              Read
+                            </span>
+                            <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '8px', backgroundColor: '#bdb5b5', color: '#260000', whiteSpace: 'nowrap' }} title={`Write mode: ${hasAppForAutoSave ? 'Auto-save' : 'Manual'}`}>
+                              Write
+                            </span>
                           </div>
                         </div>
                       )}
@@ -4122,7 +4117,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                                 </div>
                               </div>
 
-                              <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '10px', marginTop: '8px' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: (isSlim || src.type === 'github' || src.type === 'local') ? '1fr' : '1fr 1fr', gap: '10px', marginTop: '8px' }}>
                                 {src.type === 'github' && (
                                   <>
                                     <div>
@@ -4183,10 +4178,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                                           Connect GitHub OAuth above to browse repositories
                                         </div>
                                       )}
-                                    </div>
-                                    <div>
-                                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
-                                      <input value={src.schemaPath || schemaPath} onChange={(e) => updateSourceInActiveUniverse(src.id, { schemaPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
                                     </div>
                                   </>
                                 )}
@@ -4263,13 +4254,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                                         Local .redstring file to import from
                                       </div>
                                     </div>
-                                    <div>
-                                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
-                                      <input value={src.schemaPath || schemaPath} onChange={(e) => updateSourceInActiveUniverse(src.id, { schemaPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
-                                      <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
-                                        Folder path within the file structure
-                                      </div>
-                                    </div>
                                   </>
                                 )}
 
@@ -4333,39 +4317,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                         })}
                       </div>
                     </div>
-
-                    {/* Universes in Repo (full width under data sources) */}
-                    {(() => {
-                      const u = getActiveUniverse();
-                      const primaryGit = u?.gitRepo?.linkedRepo;
-                      if (!primaryGit) return null;
-                      const key = `${primaryGit.user}/${primaryGit.repo}`;
-                      return (
-                        <div style={{ gridColumn: '1 / span 2', marginTop: '8px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ fontSize: '0.8rem', color: '#666' }}>Universes in repo</div>
-                            <button onClick={() => refreshRepoUniversesList(primaryGit.user, primaryGit.repo)} style={{ padding: '4px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Refresh</button>
-                          </div>
-                          <div style={{ marginTop: '6px', background: 'transparent', border: '1px solid #979090', borderRadius: '4px', padding: '6px', maxHeight: '200px', overflowY: 'auto' }}>
-                              {repoUniverseLists[key]?.loading ? (
-                                <div style={{ fontSize: '0.75rem', color: '#666' }}>Loading…</div>
-                              ) : (repoUniverseLists[key]?.items || []).length === 0 ? (
-                                <div style={{ fontSize: '0.75rem', color: '#666' }}>No universes discovered</div>
-                              ) : (
-                                (repoUniverseLists[key].items || []).map((uitem) => (
-                                  <div key={uitem.slug + uitem.path} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px', borderBottom: '1px dashed #ddd' }}>
-                                    <div style={{ fontSize: '0.8rem', color: '#260000', fontWeight: 600 }}>{uitem.name}</div>
-                                    <div style={{ display: 'flex', gap: '6px' }}>
-                                      <button onClick={() => universeManager.linkToDiscoveredUniverse(uitem, { type: 'github', user: primaryGit.user, repo: primaryGit.repo, authMethod: dataAuthMethod || 'oauth' })} style={{ padding: '3px 6px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Add</button>
-                                      <button onClick={handleReloadFromGit} style={{ padding: '3px 6px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Reload</button>
-                                    </div>
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                        </div>
-                      );
-                    })()}
 
                     {/* Status */}
                     {syncStatus && universe.slug === activeUniverseSlug && (
@@ -4576,7 +4527,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 </div>
 
                 {/* Body */}
-                <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '10px', marginTop: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: (isSlim || src.type === 'github' || src.type === 'local') ? '1fr' : '1fr 1fr', gap: '10px', marginTop: '8px' }}>
                   {src.type === 'github' && (
                     <>
                       <div>
@@ -4604,10 +4555,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                             Connect GitHub OAuth above to browse repositories
                           </div>
                         )}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
-                        <input value={src.schemaPath || schemaPath} onChange={(e) => updateSourceInActiveUniverse(src.id, { schemaPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
                       </div>
                     </>
                   )}
@@ -4682,13 +4629,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                         />
                         <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
                           Local .redstring file to import from
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
-                        <input value={src.schemaPath || schemaPath} onChange={(e) => updateSourceInActiveUniverse(src.id, { schemaPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
-                        <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
-                          Folder path within the file structure
                         </div>
                       </div>
                     </>

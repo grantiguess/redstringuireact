@@ -5547,7 +5547,7 @@ function NodeCanvas() {
       if (connectionNamePrompt.name.trim()) {
         // Create a new node prototype for this connection type
         const newConnectionNodeId = uuidv4();
-        addNodePrototype({
+        storeActions.addNodePrototype({
           id: newConnectionNodeId,
           name: connectionNamePrompt.name.trim(),
           description: '',
@@ -5559,7 +5559,7 @@ function NodeCanvas() {
         
         // Update the edge to use this new connection type
         if (connectionNamePrompt.edgeId) {
-          updateEdge(connectionNamePrompt.edgeId, (draft) => {
+          storeActions.updateEdge(connectionNamePrompt.edgeId, (draft) => {
             draft.definitionNodeIds = [newConnectionNodeId];
           });
         }
@@ -8188,7 +8188,7 @@ function NodeCanvas() {
                                e.stopPropagation();
                                
                                // Toggle the arrow state for the specific node
-                               updateEdge(edge.id, (draft) => {
+                               storeActions.updateEdge(edge.id, (draft) => {
                                  // Ensure directionality object exists
                                  if (!draft.directionality) {
                                    draft.directionality = { arrowsToward: new Set() };
@@ -8841,9 +8841,9 @@ function NodeCanvas() {
                   onSubmit={({ name, color }) => {
                     if (name.trim()) {
                       const newConnectionNodeId = uuidv4();
-                      addNodePrototype({ id: newConnectionNodeId, name: name.trim(), description: '', picture: null, color: color || NODE_DEFAULT_COLOR, typeNodeId: null, definitionGraphIds: [] });
+                      storeActions.addNodePrototype({ id: newConnectionNodeId, name: name.trim(), description: '', picture: null, color: color || NODE_DEFAULT_COLOR, typeNodeId: null, definitionGraphIds: [] });
                       if (connectionNamePrompt.edgeId) {
-                        updateEdge(connectionNamePrompt.edgeId, (draft) => { draft.definitionNodeIds = [newConnectionNodeId]; });
+                        storeActions.updateEdge(connectionNamePrompt.edgeId, (draft) => { draft.definitionNodeIds = [newConnectionNodeId]; });
                       }
                       setConnectionNamePrompt({ visible: false, name: '', color: null, edgeId: null });
                       setDialogColorPickerVisible(false);
@@ -8851,7 +8851,7 @@ function NodeCanvas() {
                   }}
                   onNodeSelect={(node) => {
                     if (connectionNamePrompt.edgeId) {
-                      updateEdge(connectionNamePrompt.edgeId, (draft) => { draft.definitionNodeIds = [node.id]; });
+                      storeActions.updateEdge(connectionNamePrompt.edgeId, (draft) => { draft.definitionNodeIds = [node.id]; });
                     }
                     setConnectionNamePrompt({ visible: false, name: '', color: null, edgeId: null });
                     setDialogColorPickerVisible(false);

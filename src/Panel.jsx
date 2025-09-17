@@ -1319,53 +1319,58 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
                   </div>
                 )}
               </div>
-              
-              {/* Manual Search Bar */}
-              <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                <input
-                  type="text"
-                  value={manualQuery}
-                  onChange={(e) => setManualQuery(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleManualSearch()}
-                  placeholder="Search semantic web..."
-                  style={{
-                    flex: 1,
-                    padding: '6px 8px',
-                    border: '1px solid #260000',
-                    borderRadius: '4px',
-                    fontSize: '11px',
-                    fontFamily: "'EmOne', sans-serif",
-                    background: 'transparent',
-                    color: '#260000'
-                  }}
-                />
-                <button
-                  onClick={handleManualSearch}
-                  disabled={isSearching || !manualQuery?.trim()}
-                  style={{
-                    padding: '6px 12px',
-                    border: '1px solid #260000',
-                    borderRadius: '4px',
-                    background: 'transparent',
-                    color: '#260000',
-                    fontSize: '11px',
-                    fontFamily: "'EmOne', sans-serif",
-                    cursor: isSearching ? 'wait' : 'pointer',
-                    fontWeight: 'bold',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  {isSearching ? (
-                    <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                  ) : (
-                    <Search size={14} />
-                  )}
-                </button>
-              </div>
             </div>
           )}
+          
+          {/* Manual Search Bar - Always visible */}
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontSize: '11px', color: '#260000', fontFamily: "'EmOne', sans-serif", marginBottom: '8px', fontWeight: 'bold' }}>
+              Search Semantic Web
+            </div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <input
+                type="text"
+                value={manualQuery}
+                onChange={(e) => setManualQuery(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleManualSearch()}
+                placeholder="Search semantic web..."
+                style={{
+                  flex: 1,
+                  padding: '6px 8px',
+                  border: '1px solid #260000',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  fontFamily: "'EmOne', sans-serif",
+                  background: 'transparent',
+                  color: '#260000'
+                }}
+              />
+              <button
+                onClick={handleManualSearch}
+                disabled={isSearching || !manualQuery?.trim()}
+                style={{
+                  padding: '6px 12px',
+                  border: '1px solid #260000',
+                  borderRadius: '4px',
+                  background: 'transparent',
+                  color: '#260000',
+                  fontSize: '11px',
+                  fontFamily: "'EmOne', sans-serif",
+                  cursor: isSearching ? 'wait' : 'pointer',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                {isSearching ? (
+                  <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                ) : (
+                  <Search size={14} />
+                )}
+              </button>
+            </div>
+          </div>
           
 
 
@@ -4382,7 +4387,7 @@ const Panel = forwardRef(
     if (!isStoreReady) {
         return (
             <div className="panel-loading">
-                <div className="loading-spinner">Loading...</div>
+                <div className="loading-spinner"></div>
             </div>
         );
     }
