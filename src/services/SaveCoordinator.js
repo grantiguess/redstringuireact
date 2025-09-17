@@ -121,6 +121,7 @@ class SaveCoordinator {
 
       const priority = this.determinePriority(newState, changeContext);
       const now = Date.now();
+      let finishedDragging = false;
 
       // Handle dragging state
       if (changeContext.isDragging || this.detectDragging(changeContext)) {
@@ -135,13 +136,15 @@ class SaveCoordinator {
         this.isDragging = false;
         this.dragStartTime = 0;
         console.log('[SaveCoordinator] Dragging finished, processing queued changes');
+        finishedDragging = true;
       }
 
       // Queue the change with appropriate priority
       this.queueChange(priority, newState, changeContext);
       
       // Schedule saves based on priority
-      this.scheduleSaves(priority, newState);
+      const immediateGit = finishedDragging || this.shouldCommitImmediately(changeContext);
+      this.scheduleSaves(priority, newState, { immediateGit });
 
     } catch (error) {
       console.error('[SaveCoordinator] Error processing state change:', error);
@@ -218,7 +221,7 @@ class SaveCoordinator {
   }
 
   // Schedule saves based on priority
-  scheduleSaves(priority, state) {
+  scheduleSaves(priority, state, { immediateGit = false } = {}) {
     const priorityName = priority.name;
     
     // Clear existing timer for this priority
@@ -232,13 +235,33 @@ class SaveCoordinator {
     }, priority.localDelay);
 
     // Schedule git save (if different timing)
-    if (priority.gitDelay !== priority.localDelay) {
+    if (immediateGit) {
+      setTimeout(() => this.executeGitSave(priorityName), 0);
+    } else if (priority.gitDelay !== priority.localDelay) {
       setTimeout(() => {
         this.executeGitSave(priorityName);
       }, priority.gitDelay);
     }
 
     this.saveTimers.set(priorityName, localTimer);
+  }
+
+  shouldCommitImmediately(changeContext = {}) {
+    if (!changeContext || typeof changeContext !== 'object') return false;
+    if (changeContext.immediateSave) return true;
+    if (changeContext.finalize) return true;
+    if (typeof changeContext.phase === 'string' && changeContext.phase.toLowerCase() === 'end') {
+      return true;
+    }
+
+    switch (changeContext.type) {
+      case 'node_place':
+      case 'edge_create':
+      case 'edge_delete':
+        return true;
+      default:
+        return false;
+    }
   }
 
   // Execute local file save
@@ -441,3 +464,4 @@ class SaveCoordinator {
 // Export singleton instance
 export const saveCoordinator = new SaveCoordinator();
 export default saveCoordinator;
+

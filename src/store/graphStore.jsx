@@ -787,7 +787,7 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
   
   // Adds a new instance of a prototype to a specific graph.
   addNodeInstance: (graphId, prototypeId, position, instanceId = uuidv4()) => {
-    api.setChangeContext({ type: 'node_place', target: 'instance' });
+    api.setChangeContext({ type: 'node_place', target: 'instance', finalize: true });
     return set(produce((draft) => {
     const graph = draft.graphs.get(graphId);
     const prototype = draft.nodePrototypes.get(prototypeId);
@@ -987,8 +987,8 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
   },
 
   // Update an instance's unique data (e.g., position)
-  updateNodeInstance: (graphId, instanceId, recipe) => {
-    api.setChangeContext({ type: 'node_position', target: 'instance' });
+  updateNodeInstance: (graphId, instanceId, recipe, contextOptions = {}) => {
+    api.setChangeContext({ type: 'node_position', target: 'instance', ...contextOptions });
     return set(produce((draft) => {
       const graph = draft.graphs.get(graphId);
       if (graph && graph.instances) {
@@ -1001,9 +1001,11 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
       }
     }));
   },
-  
+
   // Update positions of multiple instances efficiently
-  updateMultipleNodeInstancePositions: (graphId, updates) => set(produce((draft) => {
+  updateMultipleNodeInstancePositions: (graphId, updates, contextOptions = {}) => {
+    api.setChangeContext({ type: 'node_position', target: 'instance', ...contextOptions });
+    return set(produce((draft) => {
     const graph = draft.graphs.get(graphId);
     if (!graph || !graph.instances) return;
 
@@ -1014,10 +1016,13 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
         instance.y = y;
       }
     });
-  })),
+  }));
+  },
 
   // Adds a NEW edge connecting two instances.
-  addEdge: (graphId, newEdgeData) => set(produce((draft) => {
+  addEdge: (graphId, newEdgeData, contextOptions = {}) => {
+    api.setChangeContext({ type: 'edge_create', target: 'edge', finalize: true, ...contextOptions });
+    return set(produce((draft) => {
       const graph = draft.graphs.get(graphId);
       if (!graph) {
           console.error(`[addEdge] Graph with ID ${graphId} not found.`);
@@ -1049,7 +1054,8 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
           }
           graph.edgeIds.push(edgeId);
       }
-  })),
+  }));
+  },
 
   // Update an edge's data using Immer's recipe (no change needed here)
   updateEdge: (edgeId, recipe) => set(produce((draft) => {
@@ -1153,7 +1159,9 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
   updateNode: () => console.warn("`updateNode` is deprecated. Use `updateNodePrototype` or `updateNodeInstance`."),
   updateMultipleNodePositions: () => console.warn("`updateMultipleNodePositions` is deprecated. Use `updateMultipleNodeInstancePositions`."),
   removeNode: () => console.warn("`removeNode` is deprecated. Use `removeNodeInstance`."),
-  removeEdge: (edgeId) => set(produce((draft) => {
+  removeEdge: (edgeId, contextOptions = {}) => {
+    api.setChangeContext({ type: 'edge_delete', target: 'edge', finalize: true, ...contextOptions });
+    return set(produce((draft) => {
     const edge = draft.edges.get(edgeId);
     if (!edge) {
       console.warn(`[Store removeEdge] Edge with ID ${edgeId} not found.`);
@@ -1180,7 +1188,8 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
     }
 
     console.log(`[Store removeEdge] Edge ${edgeId} removed successfully.`);
-  })),
+  }));
+  },
 
 
   // --- Tab Management Actions --- (Unaffected by prototype change)

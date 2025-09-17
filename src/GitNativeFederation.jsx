@@ -4159,15 +4159,35 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                                                 ) : (repoUniverseLists[key]?.items || []).length === 0 ? (
                                                   <div style={{ fontSize: '0.75rem', color: '#666' }}>No universes discovered</div>
                                                 ) : (
-                                                  (repoUniverseLists[key].items || []).map((uitem) => (
-                                                    <div key={uitem.slug + uitem.path} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px', borderBottom: '1px dashed #ddd' }}>
-                                                      <div style={{ fontSize: '0.8rem', color: '#260000', fontWeight: 600 }}>{uitem.name}</div>
-                                                      <div style={{ display: 'flex', gap: '6px' }}>
-                                                        <button onClick={() => universeManager.linkToDiscoveredUniverse(uitem, { type: 'github', user: src.user, repo: src.repo, authMethod: dataAuthMethod || 'oauth' })} style={{ padding: '3px 6px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Add</button>
-                                                        <button onClick={handleReloadFromGit} style={{ padding: '3px 6px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Reload</button>
+                                                  (repoUniverseLists[key].items || []).map((uitem) => {
+                                                    const activeUniverse = getActiveUniverse();
+                                                    const isActiveUniverse = activeUniverse && activeUniverse.slug === uitem.slug;
+                                                    const isInUniversesList = universes.some(u => u.slug === uitem.slug);
+
+                                                    return (
+                                                      <div key={uitem.slug + uitem.path} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px', borderBottom: '1px dashed #ddd' }}>
+                                                        <div style={{ fontSize: '0.8rem', color: '#260000', fontWeight: 600 }}>{uitem.name}</div>
+                                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                                          {!isActiveUniverse && (
+                                                            <button
+                                                              onClick={() => {
+                                                                if (isInUniversesList) {
+                                                                  // Switch to the universe
+                                                                  universeManager.setActiveUniverse(uitem.slug);
+                                                                } else {
+                                                                  // Link/add the universe
+                                                                  universeManager.linkToDiscoveredUniverse(uitem, { type: 'github', user: src.user, repo: src.repo, authMethod: dataAuthMethod || 'oauth' });
+                                                                }
+                                                              }}
+                                                              style={{ padding: '3px 6px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}
+                                                            >
+                                                              {isInUniversesList ? 'Switch' : 'Add'}
+                                                            </button>
+                                                          )}
+                                                        </div>
                                                       </div>
-                                                    </div>
-                                                  ))
+                                                    );
+                                                  })
                                                 )}
                                               </div>
                                           </div>

@@ -1681,7 +1681,7 @@ function NodeCanvas() {
         instance.prototypeId = focusedPrototypeId;
         instance.x = newX;
         instance.y = newY;
-      });
+      }, { finalize: true });
       
       // Update the carousel node to be based on the new prototype
       // This preserves the carousel for future use but with the new starting point
@@ -4712,7 +4712,7 @@ function NodeCanvas() {
                     const snappedY = snappedCenterY - (dims.currentHeight / 2);
                     return { instanceId: id, x: snappedX, y: snappedY };
                 });
-                storeActions.updateMultipleNodeInstancePositions(activeGraphId, positionUpdates);
+                storeActions.updateMultipleNodeInstancePositions(activeGraphId, positionUpdates, { isDragging: true, phase: 'move' });
                 return;
             }
 
@@ -4759,13 +4759,18 @@ function NodeCanvas() {
                     });
                 });
 
-                storeActions.updateMultipleNodeInstancePositions(activeGraphId, positionUpdates);
+                storeActions.updateMultipleNodeInstancePositions(activeGraphId, positionUpdates, { isDragging: true, phase: 'move' });
                 
                 // Maintain scaling animation during drag for all selected nodes
                 selectedInstanceIds.forEach(id => {
-                    storeActions.updateNodeInstance(activeGraphId, id, draft => { 
-                        if (draft.scale !== 1.1) draft.scale = 1.1; 
-                    });
+                  storeActions.updateNodeInstance(
+                    activeGraphId,
+                    id,
+                    draft => {
+                      if (draft.scale !== 1.1) draft.scale = 1.1;
+                    },
+                    { isDragging: true, phase: 'move' }
+                  );
                 });
 
             } else {
@@ -4798,7 +4803,7 @@ function NodeCanvas() {
                   storeActions.updateNodeInstance(activeGraphId, instanceId, draft => {
                       draft.x = newX;
                       draft.y = newY;
-                  });
+                  }, { isDragging: true, phase: 'move' });
                 }
             }
         });
@@ -4913,10 +4918,22 @@ function NodeCanvas() {
         } else if (draggingNodeInfo.instanceId) {
             instanceIdsToReset.add(draggingNodeInfo.instanceId);
         }
+        if (instanceIdsToReset.size === 0 && Array.isArray(draggingNodeInfo.memberOffsets) && draggingNodeInfo.memberOffsets.length > 0) {
+            instanceIdsToReset.add(draggingNodeInfo.memberOffsets[0].id);
+        }
+        const primaryFinalizeId = draggingNodeInfo.primaryId || draggingNodeInfo.instanceId || (Array.isArray(draggingNodeInfo.memberOffsets) ? draggingNodeInfo.memberOffsets[0]?.id : null);
+        let finalizeSent = false;
         instanceIdsToReset.forEach(id => {
             const nodeExists = nodes.some(n => n.id === id);
             if(nodeExists) {
-                storeActions.updateNodeInstance(activeGraphId, id, draft => { draft.scale = 1; });
+                const shouldFinalize = primaryFinalizeId ? id === primaryFinalizeId : !finalizeSent;
+                storeActions.updateNodeInstance(
+                  activeGraphId,
+                  id,
+                  draft => { draft.scale = 1; },
+                  { phase: 'end', isDragging: false, finalize: shouldFinalize }
+                );
+                if (shouldFinalize) finalizeSent = true;
             }
         });
         setDraggingNodeInfo(null);
