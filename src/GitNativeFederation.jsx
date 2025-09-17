@@ -184,6 +184,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   // Use UniverseManager for universe state
   const [universes, setUniverses] = useState(universeManager.getAllUniverses());
   const [activeUniverseSlug, setActiveUniverseSlug] = useState(universeManager.activeUniverseSlug);
+  const [dataAuthMethod, setDataAuthMethod] = useState(null);
+  const [repoUniverseLists, setRepoUniverseLists] = useState({});
 
   // Helper function to clear GitHub App installation from both state and storage
   const clearGithubAppInstallation = () => {
@@ -221,6 +223,67 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     
     return unsubscribe;
   }, [currentProvider, deviceConfig.enableLocalFileStorage]);
+
+  // Determine which auth powers data access (GitHub App preferred, fallback OAuth)
+  useEffect(() => {
+    (async () => {
+      try {
+        const creds = await getPreferredGitCredentials();
+        setDataAuthMethod(creds?.authMethod || null);
+      } catch (_) {
+        setDataAuthMethod(null);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [githubAppInstallation?.accessToken, allowOAuthBackup, providerConfig?.user, providerConfig?.repo]);
+
+  // Toggle and fetch universes contained in a repo for the GitHub data source card
+  const toggleRepoUniversesList = async (user, repo) => {
+    const key = `${user}/${repo}`;
+    setRepoUniverseLists(prev => {
+      const existing = prev[key] || { open: false, loading: false, items: [] };
+      return { ...prev, [key]: { ...existing, open: !existing.open } };
+    });
+    const current = repoUniverseLists[key];
+    if (!current || (!current.items || current.items.length === 0)) {
+      setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: true, items: [] } }));
+      try {
+        const authMethod = githubAppInstallation?.accessToken ? 'github-app' : 'oauth';
+        const discovered = await universeManager.discoverUniversesInRepository({ type: 'github', user, repo, authMethod });
+        setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: false, items: discovered } }));
+      } catch (_) {
+        setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: false, items: [] } }));
+      }
+    }
+  };
+
+  const refreshRepoUniversesList = async (user, repo) => {
+    const key = `${user}/${repo}`;
+    setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: true } }));
+    try {
+      const authMethod = githubAppInstallation?.accessToken ? 'github-app' : 'oauth';
+      const discovered = await universeManager.discoverUniversesInRepository({ type: 'github', user, repo, authMethod });
+      setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: false, items: discovered } }));
+    } catch (_) {
+      setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: false } }));
+    }
+  };
+
+  const handleReloadFromGit = async () => {
+    try {
+      const ok = await universeManager.reloadActiveUniverse();
+      if (ok) {
+        setSyncStatus({ type: 'success', status: 'Reloaded from Git' });
+        setTimeout(() => setSyncStatus(null), 2500);
+      } else {
+        setSyncStatus({ type: 'warning', status: 'No Git data available to reload' });
+        setTimeout(() => setSyncStatus(null), 3000);
+      }
+    } catch (e) {
+      setSyncStatus({ type: 'error', status: `Reload failed: ${e.message}` });
+      setTimeout(() => setSyncStatus(null), 3500);
+    }
+  };
 
   // Ensure Git engine is registered early for the active universe (helps reads on session restore)
   useLayoutEffect(() => {
@@ -575,6 +638,29 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           setTimeout(() => setSyncStatus(null), 3500);
         }
       }
+
+      // Also sync Git universe file and folder names
+      try {
+        const u = getActiveUniverse();
+        const folder = u?.gitRepo?.universeFolder || `universes/${activeUniverseSlug}`;
+        const folderParts = folder.split('/');
+        // If last folder segment equals previous slug, update it to new slug
+        if (folderParts.length > 0) {
+          const last = folderParts[folderParts.length - 1];
+          if (last.toLowerCase() === (prev?.slug || activeUniverseSlug).toLowerCase()) {
+            folderParts[folderParts.length - 1] = sanitizeFilename(newName);
+          }
+        }
+        const newFolder = folderParts.join('/');
+        const newGitFile = `${sanitizeFilename(newName)}.redstring`;
+        updateActiveUniverse({
+          gitRepo: {
+            ...u?.gitRepo,
+            universeFolder: newFolder,
+            universeFile: newGitFile
+          }
+        });
+      } catch (_) {}
     } catch {}
   };
   const setActiveUniverseSchema = (newSchema) => {
@@ -3428,56 +3514,43 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             <div style={{ fontSize: '0.8rem', color: '#666' }}>Link services to unlock repositories</div>
           </div>
           
-          {/* Status Summary Bar */}
+          {/* Status Summary Bar (single-column, with fixed-size dot) */}
           <div style={{ 
-            padding: '8px 12px', 
-            backgroundColor: '#bdb5b5', 
-            borderRadius: '6px', 
+            padding: '8px 12px',
+            backgroundColor: '#bdb5b5',
+            borderRadius: '6px',
             marginBottom: '12px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
+            display: 'grid',
+            gridTemplateColumns: '1fr',
+            alignItems: 'stretch',
+            gap: '6px',
             border: `1px solid ${(hasOAuthForBrowsing || hasAppForAutoSave) ? '#7A0000' : '#ff9800'}`
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ 
-                width: '8px', 
-                height: '8px', 
-                borderRadius: '50%', 
-                backgroundColor: (hasOAuthForBrowsing || hasAppForAutoSave) ? '#7A0000' : '#ff9800'
-              }} />
-              <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+              <span style={{ display: 'inline-flex', width: '10px', height: '10px', minWidth: '10px', minHeight: '10px', borderRadius: '50%', backgroundColor: (hasOAuthForBrowsing || hasAppForAutoSave) ? '#7A0000' : '#ff9800', flex: '0 0 auto' }} />
+              <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>
                 {(hasOAuthForBrowsing && hasAppForAutoSave) ? 'Fully Connected' : 
                  (hasOAuthForBrowsing || hasAppForAutoSave) ? 'Partially Connected' : 
                  'Not Connected'}
               </span>
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#666', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span>
-                {hasOAuthForBrowsing ? 'Can browse repos' : ''} 
-                {hasOAuthForBrowsing && hasAppForAutoSave ? ' • ' : ''}
-                {hasAppForAutoSave ? 'Auto-sync enabled' : ''}
-                {!hasOAuthForBrowsing && !hasAppForAutoSave ? 'Authentication required' : ''}
-              </span>
-              {/* Saving indicator */}
-              {isSaving && (
-                <span style={{ fontSize: '0.7rem', color: '#ff9800', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <RefreshCw size={10} style={{ animation: 'spin 1s linear infinite' }} />
-                  Saving...
-                </span>
-              )}
-              {/* Unsaved changes indicator */}
-              {!isSaving && hasUnsavedChanges && gitSyncEngine && (
-                <span style={{ fontSize: '0.7rem', color: '#d32f2f', fontWeight: 600 }}>
-                  • Unsaved changes
-                </span>
-              )}
-              {/* Last saved indicator */}
-              {!hasUnsavedChanges && gitSyncEngine && (
-                <span style={{ fontSize: '0.7rem', color: '#2e7d32', fontWeight: 600 }}>
-                  ✓ Saved {Math.floor((Date.now() - lastSaveTime) / 1000)}s ago
-                </span>
-              )}
+            <div style={{ fontSize: '0.78rem', color: '#260000', fontWeight: 600 }}>
+              {hasOAuthForBrowsing ? 'Can browse repos' : ''}
+              {hasOAuthForBrowsing && hasAppForAutoSave ? ' • ' : ''}
+              {hasAppForAutoSave ? 'Auto-sync enabled' : ''}
+              {!hasOAuthForBrowsing && !hasAppForAutoSave ? 'Authentication required' : ''}
+            </div>
+
+            {/* Data Auth Method */}
+            <div style={{ fontSize: '0.78rem', color: '#260000', fontWeight: 600 }}>
+              {dataAuthMethod === 'github-app' && 'Data via GitHub App'}
+              {dataAuthMethod === 'oauth' && 'Data via OAuth'}
+              {!dataAuthMethod && (hasOAuthForBrowsing || hasAppForAutoSave) && 'Data auth unresolved'}
+            </div>
+
+            {/* Status (red strip style) */}
+            <div style={{ backgroundColor: 'rgba(122,0,0,0.08)', border: '1px solid #7A0000', borderRadius: '4px', padding: '6px 8px', color: '#260000', fontSize: '0.78rem', fontWeight: 600 }}>
+              {syncStatus?.status || 'Idle'}
             </div>
           </div>
 
@@ -4054,6 +4127,34 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                                     <div>
                                       <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
                                       <input value={src.schemaPath || schemaPath} onChange={(e) => updateSourceInActiveUniverse(src.id, { schemaPath: e.target.value })} className="editable-title-input" style={{ fontSize: '0.9rem', padding: '6px 8px', borderRadius: '4px' }} />
+                                      <div style={{ marginTop: '8px', borderTop: '1px dashed #979090', paddingTop: '8px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                          <div style={{ fontSize: '0.8rem', color: '#666' }}>Universes in repo</div>
+                                          <div style={{ display: 'flex', gap: '6px' }}>
+                                            <button onClick={() => toggleRepoUniversesList(src.user, src.repo)} style={{ padding: '4px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>{(repoUniverseLists[`${src.user}/${src.repo}`]?.open ? 'Hide' : 'Show')}</button>
+                                            <button onClick={() => refreshRepoUniversesList(src.user, src.repo)} style={{ padding: '4px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Refresh</button>
+                                          </div>
+                                        </div>
+                                        {repoUniverseLists[`${src.user}/${src.repo}`]?.open && (
+                                          <div style={{ marginTop: '6px', background: '#f5f5f5', border: '1px solid #ddd', borderRadius: '4px', padding: '6px', maxHeight: '180px', overflowY: 'auto' }}>
+                                            {repoUniverseLists[`${src.user}/${src.repo}`]?.loading ? (
+                                              <div style={{ fontSize: '0.75rem', color: '#666' }}>Loading…</div>
+                                            ) : (repoUniverseLists[`${src.user}/${src.repo}`]?.items || []).length === 0 ? (
+                                              <div style={{ fontSize: '0.75rem', color: '#666' }}>No universes discovered</div>
+                                            ) : (
+                                              (repoUniverseLists[`${src.user}/${src.repo}`].items || []).map((u) => (
+                                                <div key={u.slug + u.path} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px', borderBottom: '1px dashed #ddd' }}>
+                                                  <div style={{ fontSize: '0.8rem', color: '#260000', fontWeight: 600 }}>{u.name}</div>
+                                                  <div style={{ display: 'flex', gap: '6px' }}>
+                                                    <button onClick={() => universeManager.linkToDiscoveredUniverse(u, { type: 'github', user: src.user, repo: src.repo, authMethod: dataAuthMethod || 'oauth' })} style={{ padding: '3px 6px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Link</button>
+                                                    <button onClick={handleReloadFromGit} style={{ padding: '3px 6px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Reload</button>
+                                                  </div>
+                                                </div>
+                                              ))
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
                                   </>
                                 )}

@@ -698,7 +698,7 @@ class UniverseManager {
       sourceOfTruth: options.sourceOfTruth || (this.isGitOnlyMode ? SOURCE_OF_TRUTH.GIT : SOURCE_OF_TRUTH.LOCAL),
       localFile: { 
         enabled: options.enableLocal ?? true, 
-        path: `${this.sanitizeFileName(safeName)}.redstring` 
+        path: this.sanitizeFileName(safeName) 
       },
       gitRepo: { 
         enabled: options.enableGit ?? false, 
