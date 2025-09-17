@@ -26,6 +26,8 @@ import {
   Link,
   QrCode
 } from 'lucide-react';
+// Ensure SOURCE_OF_TRUTH is available to this component
+import { SOURCE_OF_TRUTH } from '../services/universeManager.js';
 // Lazy import UniverseManager to avoid circular init during federation tab load
 let __um = null;
 const getUniverseManager = async () => {

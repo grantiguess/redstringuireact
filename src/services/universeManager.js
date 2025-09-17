@@ -763,6 +763,16 @@ class UniverseManager {
     return updated;
   }
 
+  // Set active universe without switching logic (lightweight setter)
+  setActiveUniverse(slug) {
+    if (!this.universes.has(slug)) {
+      throw new Error(`Universe not found: ${slug}`);
+    }
+    this.activeUniverseSlug = slug;
+    this.saveToStorage();
+    this.notifyStatus('info', `Active universe set: ${this.universes.get(slug)?.name || slug}`);
+  }
+
   // Delete universe
   deleteUniverse(slug) {
     if (this.universes.size <= 1) {

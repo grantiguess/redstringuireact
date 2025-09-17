@@ -36,6 +36,7 @@ export default function GitFederationBootstrap() {
 
     const restore = async () => {
       try {
+        if (cancelled) return;
         if (existingEngine) return; // Already initialized
         if (!gitConnection) return; // Nothing to restore
 
@@ -117,7 +118,14 @@ export default function GitFederationBootstrap() {
         // Check with startup coordinator if we're allowed to initialize
         const canInitialize = await startupCoordinator.requestEngineInitialization(universeSlug, 'GitFederationBootstrap');
         if (!canInitialize) {
-          console.log('[GitFederationBootstrap] Startup coordinator blocked initialization - another component is handling it');
+          // Reduce log noise outside of dev: only warn once per mount cycle
+          try {
+            if (!window.__rs_bootstrap_blocked_once) {
+              console.log('[GitFederationBootstrap] Startup coordinator blocked initialization - another component is handling it');
+              window.__rs_bootstrap_blocked_once = true;
+              setTimeout(() => { window.__rs_bootstrap_blocked_once = false; }, 3000);
+            }
+          } catch (_) {}
           return;
         }
 
@@ -136,9 +144,12 @@ export default function GitFederationBootstrap() {
           return;
         }
 
-        // Mark store as ready immediately to avoid panel delay
+        // Mark store as ready immediately to avoid panel delay (only once)
         try {
-          useGraphStore.setState({ isUniverseLoaded: true, isUniverseLoading: false });
+          const { isUniverseLoaded } = useGraphStore.getState();
+          if (!isUniverseLoaded) {
+            useGraphStore.setState({ isUniverseLoaded: true, isUniverseLoading: false });
+          }
         } catch (_) {}
 
         // Load from Git and import if needed
