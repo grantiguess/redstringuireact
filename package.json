@@ -38,7 +38,10 @@
     "ai-wizard": "node ai-connection-wizard-simple.js",
     "server": "node deployment/app-semantic-server.js",
     "dev:full": "concurrently \"npm run oauth\" \"npm run server\" \"npm run dev\"",
-    "setup:oauth": "node setup-oauth.js"
+    "setup:oauth": "node setup-oauth.js",
+    "docs:generate": "node scripts/generate-docs.js",
+    "docs:dev": "cd docs && npx mintlify dev",
+    "docs:build": "cd docs && npx mintlify build"
   },
   "dependencies": {
     "@inrupt/solid-client": "^1.23.1",

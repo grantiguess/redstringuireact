@@ -237,26 +237,30 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [githubAppInstallation?.accessToken, allowOAuthBackup, providerConfig?.user, providerConfig?.repo]);
 
-  // Toggle and fetch universes contained in a repo for the GitHub data source card
-  const toggleRepoUniversesList = async (user, repo) => {
+  // Auto-fetch universes for repo on first load (no toggle, always show)
+  const ensureRepoUniversesList = async (user, repo) => {
     const key = `${user}/${repo}`;
-    let willOpen = false;
-    setRepoUniverseLists(prev => {
-      const existing = prev[key] || { open: false, loading: false, items: [] };
-      willOpen = !existing.open;
-      return { ...prev, [key]: { ...existing, open: willOpen } };
-    });
-    if (willOpen) {
-      setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: true, items: [] } }));
-      try {
-        const authMethod = githubAppInstallation?.accessToken ? 'github-app' : 'oauth';
-        const discovered = await universeManager.discoverUniversesInRepository({ type: 'github', user, repo, authMethod });
-        setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: false, items: discovered } }));
-      } catch (_) {
-        setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: false, items: [] } }));
-      }
+    const existing = repoUniverseLists[key];
+    if (existing && !existing.loading) return; // Already loaded
+    
+    setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: true, items: [] } }));
+    try {
+      const authMethod = githubAppInstallation?.accessToken ? 'github-app' : 'oauth';
+      const discovered = await universeManager.discoverUniversesInRepository({ type: 'github', user, repo, authMethod });
+      setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: false, items: discovered } }));
+    } catch (_) {
+      setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: false, items: [] } }));
     }
   };
+
+  // Auto-load repo universe lists when we have the necessary data (only once)
+  const didLoadRepoUniversesRef = useRef(false);
+  useEffect(() => {
+    if (providerConfig?.user && providerConfig?.repo && (githubAppInstallation?.accessToken || allowOAuthBackup) && !didLoadRepoUniversesRef.current) {
+      didLoadRepoUniversesRef.current = true;
+      ensureRepoUniversesList(providerConfig.user, providerConfig.repo);
+    }
+  }, [providerConfig?.user, providerConfig?.repo, githubAppInstallation?.accessToken, allowOAuthBackup]);
 
   const refreshRepoUniversesList = async (user, repo) => {
     const key = `${user}/${repo}`;
@@ -664,15 +668,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       } catch (_) {}
     } catch {}
   };
-  const setActiveUniverseSchema = (newSchema) => {
-    updateActiveUniverse({ 
-      gitRepo: { 
-        ...getActiveUniverse()?.gitRepo, 
-        schemaPath: newSchema || 'schema' 
-      } 
-    });
-    setProviderConfig(prev => ({ ...prev, semanticPath: newSchema || 'schema' }));
-  };
   const setActiveUniverseStorageMode = (mode) => {
     // Convert storage mode to new dual-slot system
     const updates = {};
@@ -927,6 +922,13 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         return;
       }
 
+      // Don't create engines if we're within the startup window and another component might handle it
+      if (startupCoordinator.isStartupWindow()) {
+        console.log(`[GitNativeFederation] Delaying engine creation for ${u.slug} - within startup window`);
+        setTimeout(() => ensureEngineForActiveUniverse(), 2000); // Retry after startup window
+        return;
+      }
+
       // Build provider from linked repo
       const creds = await getPreferredGitCredentials();
       const cfg = {
@@ -1023,8 +1025,13 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       didScheduleEnsureRef.current = true;
       (async () => {
         try {
-          await ensureEngineForActiveUniverse();
-          await readDirectFromGitIfNoEngine();
+          // Only run if no engine exists and we're not in startup window
+          const u = getActiveUniverse();
+          const hasEngine = u && universeManager.getGitSyncEngine(u.slug);
+          if (!hasEngine && !startupCoordinator.isStartupWindow()) {
+            await ensureEngineForActiveUniverse();
+            await readDirectFromGitIfNoEngine();
+          }
         } catch (_) {}
       })();
     }
@@ -1684,28 +1691,31 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         }
       } catch {}
       
+      // Check if we already have an engine for this universe
+      const existingEngine = universeManager.getGitSyncEngine(universeSlug);
+      if (existingEngine) {
+        console.log(`[GitNativeFederation] Using existing GitSyncEngine for ${universeSlug}`);
+        setGitSyncEngine(existingEngine);
+        setGitSyncEngineStore(existingEngine);
+        return;
+      }
+
       // Check with startup coordinator if we're allowed to initialize
       const initializeEngine = async () => {
         const canInitialize = await startupCoordinator.requestEngineInitialization(universeSlug, 'GitNativeFederation');
         if (!canInitialize) {
-          console.log('[GitNativeFederation] Startup coordinator blocked initialization - another component is handling it');
+          // Try to use existing engine if blocked
+          const blockedExistingEngine = universeManager.getGitSyncEngine(universeSlug);
+          if (blockedExistingEngine) {
+            setGitSyncEngine(blockedExistingEngine);
+            setGitSyncEngineStore(blockedExistingEngine);
+          }
           return;
         }
 
         console.log(`[GitNativeFederation] Creating new GitSyncEngine for ${universeSlug}...`);
         const newGitSyncEngine = new GitSyncEngine(currentProvider, sourceOfTruthMode, universeSlug, fileBaseName, universeManager);
         
-        // Check if the engine was successfully registered (not rejected as duplicate)
-        if (!newGitSyncEngine.isRunning && universeManager.getGitSyncEngine(universeSlug) !== newGitSyncEngine) {
-          console.log(`[GitNativeFederation] Engine creation was rejected as duplicate, using existing engine`);
-          const existingEngine = universeManager.getGitSyncEngine(universeSlug);
-          if (existingEngine) {
-            setGitSyncEngine(existingEngine);
-            setGitSyncEngineStore(existingEngine);
-          }
-          return;
-        }
-
         // Store the new engine
         setGitSyncEngine(newGitSyncEngine);
         setGitSyncEngineStore(newGitSyncEngine);
@@ -3593,23 +3603,32 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             
             <div style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: isSlim ? '6px' : '8px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>GitHub App</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>GitHub Settings</div>
                 <div style={{ fontSize: '0.7rem', color: hasAppForAutoSave ? '#7A0000' : '#666', fontWeight: 600 }}>
-                  {hasAppForAutoSave ? '✓ Installed' : 'Not installed'}
+                  {hasAppForAutoSave ? '✓ App Installed' : 'App Not installed'}
                 </div>
               </div>
               <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '6px', lineHeight: '1.2' }}>
-                Secure auto-sync with permissions
+                App enables secure auto-sync with permissions
               </div>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
                 {hasAppForAutoSave ? (
                   <>
                     <button disabled style={{ padding: '6px 10px', backgroundColor: '#7A0000', color: '#bdb5b5', border: 'none', borderRadius: '4px', fontSize: '0.75rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>Installed</button>
-                    <button onClick={handleGitHubApp} style={{ padding: '5px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }} title="Reconfigure App">Settings</button>
+                    <button onClick={handleGitHubApp} style={{ padding: '5px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }} title="Reconfigure App">GitHub Settings</button>
                   </>
                 ) : (
                   <button onClick={handleGitHubApp} disabled={isConnecting} style={{ padding: '6px 10px', backgroundColor: isConnecting ? '#ccc' : '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.75rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>Install App</button>
                 )}
+              </div>
+              
+              {/* Save Mode Settings */}
+              <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #979090' }}>
+                <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Save Mode</div>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button style={{ padding: '3px 6px', backgroundColor: '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Auto</button>
+                  <button style={{ padding: '3px 6px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Manual</button>
+                </div>
               </div>
             </div>
           </div>
@@ -3713,99 +3732,111 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
 
                 {/* Universe Details (only show for active universe) */}
                 {universe.slug === activeUniverseSlug && (
-                  <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: isSlim ? '8px' : '10px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #979090' }}>
-                    {/* Name and Schema */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: isSlim ? '8px' : '10px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #979090' }}>
+                    {/* Name */}
                     <div>
                       <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Name</div>
-                      <input value={universe.name || ''} onChange={(e) => renameActiveUniverse(e.target.value)} className="editable-title-input" style={{ fontSize: '0.85rem', padding: '5px 7px', borderRadius: '4px' }} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Schema Path</div>
-                      <input value={activeUniverse?.gitRepo?.schemaPath || 'schema'} onChange={(e) => setActiveUniverseSchema(e.target.value)} className="editable-title-input" style={{ fontSize: '0.85rem', padding: '5px 7px', borderRadius: '4px' }} />
+                      <input value={universe.name || ''} onChange={(e) => renameActiveUniverse(e.target.value)} className="editable-title-input" style={{ fontSize: '0.85rem', padding: '5px 7px', borderRadius: '4px', width: '100%' }} />
                     </div>
 
-                    {/* Storage Mode */}
-                    <div>
-                      <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Storage Mode</div>
-                      <div style={{ display: 'flex', gap: isSlim ? '4px' : '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        {['local','github','mixed'].map(mode => {
-                          // Determine if this mode is currently active based on enabled slots
-                          const isActive = (() => {
-                            const localEnabled = activeUniverse?.localFile?.enabled ?? false;
-                            const gitEnabled = activeUniverse?.gitRepo?.enabled ?? false;
-                            
-                            if (mode === 'local') return localEnabled && !gitEnabled;
-                            if (mode === 'github') return !localEnabled && gitEnabled;
-                            if (mode === 'mixed') return localEnabled && gitEnabled;
-                            return false;
-                          })();
-                          
-                          return (
-                            <button key={mode} onClick={() => setActiveUniverseStorageMode(mode)} style={{ padding: isSlim ? '3px 6px' : '4px 8px', backgroundColor: isActive ? '#260000' : 'transparent', color: isActive ? '#bdb5b5' : '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: isSlim ? '0.7rem' : '0.75rem', fontWeight: 'bold' }}>{mode.toUpperCase()}</button>
-                          );
-                        })}
+                    {/* Storage Mode and Source of Truth */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: isSlim ? '6px' : '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Storage Mode</div>
+                        <div style={{ display: 'flex', gap: isSlim ? '4px' : '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          {['local','github','mixed'].map(mode => {
+                            // Determine if this mode is currently active based on enabled slots
+                            const isActive = (() => {
+                              const localEnabled = activeUniverse?.localFile?.enabled ?? false;
+                              const gitEnabled = activeUniverse?.gitRepo?.enabled ?? false;
+
+                              if (mode === 'local') return localEnabled && !gitEnabled;
+                              if (mode === 'github') return !localEnabled && gitEnabled;
+                              if (mode === 'mixed') return localEnabled && gitEnabled;
+                              return false;
+                            })();
+
+                            return (
+                              <button
+                                key={mode}
+                                onClick={() => setActiveUniverseStorageMode(mode)}
+                                style={{
+                                  padding: isSlim ? '4px 8px' : '6px 10px',
+                                  backgroundColor: isActive ? '#260000' : 'transparent',
+                                  color: isActive ? '#bdb5b5' : '#260000',
+                                  border: '1px solid #260000',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontSize: isSlim ? '0.7rem' : '0.75rem',
+                                  fontWeight: 'bold'
+                                }}
+                              >
+                                {mode.toUpperCase()}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Source of Truth - Mobile-aware */}
-                    <div>
-                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '4px' }}>Source of Truth</div>
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        {deviceConfig.enableLocalFileStorage ? (
-                          <button 
-                            onClick={() => { if (activeUniverse?.sourceOfTruth !== 'local') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('local'); } }} 
-                            style={{ 
-                              padding: '4px 8px', 
-                              backgroundColor: activeUniverse?.sourceOfTruth === 'local' ? '#260000' : 'transparent', 
-                              color: activeUniverse?.sourceOfTruth === 'local' ? '#bdb5b5' : '#260000', 
-                              border: '1px solid #260000', 
-                              borderRadius: '4px', 
-                              cursor: 'pointer', 
-                              fontSize: '0.75rem', 
-                              fontWeight: 'bold' 
+                      <div>
+                        <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Source of Truth</div>
+                        <div style={{ display: 'flex', gap: isSlim ? '4px' : '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          {deviceConfig.enableLocalFileStorage ? (
+                            <button
+                              onClick={() => { if (activeUniverse?.sourceOfTruth !== 'local') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('local'); } }}
+                              style={{
+                                padding: isSlim ? '4px 8px' : '6px 10px',
+                                backgroundColor: activeUniverse?.sourceOfTruth === 'local' ? '#260000' : 'transparent',
+                                color: activeUniverse?.sourceOfTruth === 'local' ? '#bdb5b5' : '#260000',
+                                border: '1px solid #260000',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: isSlim ? '0.7rem' : '0.75rem',
+                                fontWeight: 'bold'
+                              }}
+                            >
+                              FILE
+                            </button>
+                          ) : (
+                            <div style={{
+                              padding: isSlim ? '4px 8px' : '6px 10px',
+                              backgroundColor: '#f5f5f5',
+                              color: '#999',
+                              border: '1px solid #ccc',
+                              borderRadius: '4px',
+                              fontSize: isSlim ? '0.7rem' : '0.75rem',
+                              fontWeight: 'bold',
+                              opacity: 0.6
+                            }}>
+                              FILE (N/A)
+                            </div>
+                          )}
+                          <button
+                            onClick={() => { if (activeUniverse?.sourceOfTruth !== 'git') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('git'); } }}
+                            style={{
+                              padding: isSlim ? '4px 8px' : '6px 10px',
+                              backgroundColor: activeUniverse?.sourceOfTruth === 'git' ? '#260000' : 'transparent',
+                              color: activeUniverse?.sourceOfTruth === 'git' ? '#bdb5b5' : '#260000',
+                              border: '1px solid #260000',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: isSlim ? '0.7rem' : '0.75rem',
+                              fontWeight: 'bold'
                             }}
                           >
-                            FILE
+                            GIT
                           </button>
-                        ) : (
-                          <div style={{ 
-                            padding: '4px 8px', 
-                            backgroundColor: '#f5f5f5', 
-                            color: '#999', 
-                            border: '1px solid #ccc', 
-                            borderRadius: '4px', 
-                            fontSize: '0.75rem', 
-                            fontWeight: 'bold',
-                            opacity: 0.6
-                          }}>
-                            FILE (N/A)
+                        </div>
+                        {!deviceConfig.enableLocalFileStorage && (
+                          <div style={{ fontSize: '0.7rem', color: '#666', marginTop: '4px' }}>
+                            Git mode recommended for {deviceInfo.isMobile ? 'mobile' : 'this device'}
                           </div>
                         )}
-                        <button 
-                          onClick={() => { if (activeUniverse?.sourceOfTruth !== 'git') { handleToggleSourceOfTruth(); setActiveUniverseSourceOfTruth('git'); } }} 
-                          style={{ 
-                            padding: '4px 8px', 
-                            backgroundColor: activeUniverse?.sourceOfTruth === 'git' ? '#260000' : 'transparent', 
-                            color: activeUniverse?.sourceOfTruth === 'git' ? '#bdb5b5' : '#260000', 
-                            border: '1px solid #260000', 
-                            borderRadius: '4px', 
-                            cursor: 'pointer', 
-                            fontSize: '0.75rem', 
-                            fontWeight: 'bold' 
-                          }}
-                        >
-                          GIT
-                        </button>
                       </div>
-                      {!deviceConfig.enableLocalFileStorage && (
-                        <div style={{ fontSize: '0.7rem', color: '#666', marginTop: '4px' }}>
-                          Git mode recommended for {deviceInfo.isMobile ? 'mobile' : 'this device'}
-                        </div>
-                      )}
                     </div>
 
                     {/* Repository (combined: linked repo + local file) */}
-                    <div style={{ gridColumn: isSlim ? '1 / span 1' : '1 / span 2' }}>
+                    <div>
                       <div style={{ fontSize: '0.75rem', color: '#260000', marginBottom: '4px' }}>Repository</div>
                       <div style={{ display: 'flex', gap: isSlim ? '4px' : '6px', alignItems: 'center', flexWrap: isSlim ? 'wrap' : 'nowrap' }}>
                         <div style={{ minWidth: isSlim ? '180px' : '220px', maxWidth: isSlim ? '280px' : '360px', flex: 1 }}>
@@ -4125,13 +4156,9 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                                           <div style={{ marginTop: '8px', borderTop: '1px dashed #979090', paddingTop: '8px' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                               <div style={{ fontSize: '0.8rem', color: '#666' }}>Universes in repo</div>
-                                              <div style={{ display: 'flex', gap: '6px' }}>
-                                                <button onClick={() => toggleRepoUniversesList(src.user, src.repo)} style={{ padding: '4px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>{(repoUniverseLists[key]?.open ? 'Hide' : 'Show')}</button>
-                                                <button onClick={() => refreshRepoUniversesList(src.user, src.repo)} style={{ padding: '4px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Refresh</button>
-                                              </div>
+                                              <button onClick={() => refreshRepoUniversesList(src.user, src.repo)} style={{ padding: '4px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Refresh</button>
                                             </div>
-                                            {repoUniverseLists[key]?.open && (
-                                              <div style={{ marginTop: '6px', background: '#f5f5f5', border: '1px solid #ddd', borderRadius: '4px', padding: '6px', maxHeight: '200px', overflowY: 'auto' }}>
+                                            <div style={{ marginTop: '6px', background: 'transparent', border: '1px solid #979090', borderRadius: '4px', padding: '6px', maxHeight: '200px', overflowY: 'auto' }}>
                                                 {repoUniverseLists[key]?.loading ? (
                                                   <div style={{ fontSize: '0.75rem', color: '#666' }}>Loading…</div>
                                                 ) : (repoUniverseLists[key]?.items || []).length === 0 ? (
@@ -4148,7 +4175,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                                                   ))
                                                 )}
                                               </div>
-                                            )}
                                           </div>
                                         );
                                       })()}
@@ -4318,13 +4344,9 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                         <div style={{ gridColumn: '1 / span 2', marginTop: '8px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ fontSize: '0.8rem', color: '#666' }}>Universes in repo</div>
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                              <button onClick={() => toggleRepoUniversesList(primaryGit.user, primaryGit.repo)} style={{ padding: '4px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>{(repoUniverseLists[key]?.open ? 'Hide' : 'Show')}</button>
-                              <button onClick={() => refreshRepoUniversesList(primaryGit.user, primaryGit.repo)} style={{ padding: '4px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Refresh</button>
-                            </div>
+                            <button onClick={() => refreshRepoUniversesList(primaryGit.user, primaryGit.repo)} style={{ padding: '4px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Refresh</button>
                           </div>
-                          {repoUniverseLists[key]?.open && (
-                            <div style={{ marginTop: '6px', background: '#f5f5f5', border: '1px solid #ddd', borderRadius: '4px', padding: '6px', maxHeight: '200px', overflowY: 'auto' }}>
+                          <div style={{ marginTop: '6px', background: 'transparent', border: '1px solid #979090', borderRadius: '4px', padding: '6px', maxHeight: '200px', overflowY: 'auto' }}>
                               {repoUniverseLists[key]?.loading ? (
                                 <div style={{ fontSize: '0.75rem', color: '#666' }}>Loading…</div>
                               ) : (repoUniverseLists[key]?.items || []).length === 0 ? (
@@ -4341,7 +4363,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                                 ))
                               )}
                             </div>
-                          )}
                         </div>
                       );
                     })()}

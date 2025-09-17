@@ -1566,32 +1566,9 @@ class UniverseManager {
       console.log(`[UniverseManager] Discovered ${discovered.length} universes in repository`);
       this.notifyStatus('info', `Discovery: ${discovered.length} found • scanned ${stats.scannedDirs} dirs • ${stats.valid} valid • ${stats.invalid} invalid`);
 
-      // If none found, auto-create a universe named after the repo for clarity
+      // If none found, just notify - don't auto-create to avoid loops
       if (discovered.length === 0) {
-        const autoName = repoConfig.repo;
-        const slug = this.generateUniqueSlug(autoName);
-        const newUniverse = this.normalizeUniverse({
-          slug,
-          name: autoName,
-          sourceOfTruth: SOURCE_OF_TRUTH.GIT,
-          localFile: { enabled: false, unavailableReason: 'Git is primary' },
-          gitRepo: {
-            enabled: true,
-            linkedRepo: { type: repoConfig.type || 'github', user: repoConfig.user, repo: repoConfig.repo, authMethod: repoConfig.authMethod || 'oauth' },
-            schemaPath: 'schema',
-            universeFolder: `universes/${slug}`,
-            universeFile: `${this.sanitizeFileName(autoName)}`.replace(/\.redstring$/i, '') + '.redstring',
-            priority: 'primary'
-          },
-          metadata: { created: new Date().toISOString() }
-        });
-        this.universes.set(slug, newUniverse);
-        this.saveToStorage();
-        this.setActiveUniverse(slug);
-        try {
-          await this.reloadActiveUniverse();
-        } catch (_) {}
-        this.notifyStatus('success', `No universes found • created ${autoName}`);
+        this.notifyStatus('info', `No universes found in ${repoConfig.user}/${repoConfig.repo}`);
       }
 
       return discovered;
@@ -1643,10 +1620,13 @@ class UniverseManager {
       // Set as active universe
       this.setActiveUniverse(universeConfig.slug);
 
-      // Immediately load the active universe data so UI reflects it without reload
-      try {
-        await this.reloadActiveUniverse();
-      } catch (_) {}
+      // Only reload if no engine exists (avoid duplicate engine creation)
+      const hasEngine = this.getGitSyncEngine(universeConfig.slug);
+      if (!hasEngine) {
+        try {
+          await this.reloadActiveUniverse();
+        } catch (_) {}
+      }
 
       return universeConfig.slug;
 
