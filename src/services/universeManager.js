@@ -691,13 +691,14 @@ class UniverseManager {
     }
     
     const slug = this.generateUniqueSlug(name);
+    const safeName = (typeof name === 'string' && name.trim().length > 0) ? name : slug;
     const universe = this.normalizeUniverse({
       slug,
-      name,
+      name: safeName,
       sourceOfTruth: options.sourceOfTruth || (this.isGitOnlyMode ? SOURCE_OF_TRUTH.GIT : SOURCE_OF_TRUTH.LOCAL),
       localFile: { 
         enabled: options.enableLocal ?? true, 
-        path: `${name}.redstring` 
+        path: `${this.sanitizeFileName(safeName)}.redstring` 
       },
       gitRepo: { 
         enabled: options.enableGit ?? false, 
@@ -715,7 +716,7 @@ class UniverseManager {
 
   // Generate unique slug for universe
   generateUniqueSlug(name) {
-    let baseSlug = name.toLowerCase()
+    let baseSlug = String(name || 'universe').toLowerCase()
       .replace(/[^a-z0-9-_]/g, '-') // Replace all non-alphanumeric chars with hyphens
       .replace(/\s+/g, '-') // Replace spaces with hyphens
       .replace(/-+/g, '-') // Collapse multiple hyphens
@@ -1554,6 +1555,35 @@ class UniverseManager {
 
       console.log(`[UniverseManager] Discovered ${discovered.length} universes in repository`);
       this.notifyStatus('info', `Discovery: ${discovered.length} found • scanned ${stats.scannedDirs} dirs • ${stats.valid} valid • ${stats.invalid} invalid`);
+
+      // If none found, auto-create a universe named after the repo for clarity
+      if (discovered.length === 0) {
+        const autoName = repoConfig.repo;
+        const slug = this.generateUniqueSlug(autoName);
+        const newUniverse = this.normalizeUniverse({
+          slug,
+          name: autoName,
+          sourceOfTruth: SOURCE_OF_TRUTH.GIT,
+          localFile: { enabled: false, unavailableReason: 'Git is primary' },
+          gitRepo: {
+            enabled: true,
+            linkedRepo: { type: repoConfig.type || 'github', user: repoConfig.user, repo: repoConfig.repo, authMethod: repoConfig.authMethod || 'oauth' },
+            schemaPath: 'schema',
+            universeFolder: `universes/${slug}`,
+            universeFile: `${this.sanitizeFileName(autoName)}`.replace(/\.redstring$/i, '') + '.redstring',
+            priority: 'primary'
+          },
+          metadata: { created: new Date().toISOString() }
+        });
+        this.universes.set(slug, newUniverse);
+        this.saveToStorage();
+        this.setActiveUniverse(slug);
+        try {
+          await this.reloadActiveUniverse();
+        } catch (_) {}
+        this.notifyStatus('success', `No universes found • created ${autoName}`);
+      }
+
       return discovered;
 
     } catch (error) {
@@ -1602,6 +1632,11 @@ class UniverseManager {
 
       // Set as active universe
       this.setActiveUniverse(universeConfig.slug);
+
+      // Immediately load the active universe data so UI reflects it without reload
+      try {
+        await this.reloadActiveUniverse();
+      } catch (_) {}
 
       return universeConfig.slug;
 

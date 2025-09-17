@@ -234,6 +234,10 @@ const analyzeUniverseFile = async (provider, filePath) => {
   try {
     // Universe files are JSON .redstring files; read raw contents
     const content = await provider.readFileRaw(filePath);
+    if (!content || typeof content !== 'string' || content.trim() === '') {
+      // Empty file – skip silently
+      return null;
+    }
     const data = JSON.parse(content);
 
     // Check if it's a valid redstring file with content
@@ -274,7 +278,7 @@ const analyzeUniverseFile = async (provider, filePath) => {
     };
 
   } catch (error) {
-    console.error(`[UniverseDiscovery] Failed to analyze ${filePath}:`, error);
+    console.warn(`[UniverseDiscovery] Failed to analyze ${filePath}: ${error.message || error}`);
     return null;
   }
 };
@@ -393,9 +397,11 @@ const extractSlugFromPath = (filePath) => {
  * @returns {Object} Universe configuration for UniverseManager
  */
 export const createUniverseConfigFromDiscovered = (discoveredUniverse, repoConfig) => {
+  // Enforce name alignment with file name to reduce confusion
+  const baseFileName = String(discoveredUniverse.fileName || '').replace(/\.redstring$/i, '');
   return {
     slug: discoveredUniverse.slug,
-    name: discoveredUniverse.name,
+    name: baseFileName || discoveredUniverse.name,
     sourceOfTruth: 'git',
     localFile: {
       enabled: false,
