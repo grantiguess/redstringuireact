@@ -4150,7 +4150,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                                         return (
                                           <div style={{ marginTop: '8px', borderTop: '1px dashed #979090', paddingTop: '8px' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                              <div style={{ fontSize: '0.8rem', color: '#666' }}>Universes in repo</div>
+                                              <div style={{ fontSize: '0.8rem', color: '#666' }}>Universes in Repo</div>
                                               <button onClick={() => refreshRepoUniversesList(src.user, src.repo)} style={{ padding: '4px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Refresh</button>
                                             </div>
                                             <div style={{ marginTop: '6px', background: 'transparent', border: '1px solid #979090', borderRadius: '4px', padding: '6px', maxHeight: '200px', overflowY: 'auto' }}>
