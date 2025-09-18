@@ -721,8 +721,12 @@ export const openUniverseFile = async () => {
 
 /**
  * Smart auto-connect that tries multiple strategies to find universe.redstring
+ * @param {Object} options - Options for auto-connect behavior
+ * @param {boolean} options.allowGitLoading - Whether to attempt Git loading (default: false for lazy loading)
  */
-export const autoConnectToUniverse = async () => {
+export const autoConnectToUniverse = async (options = {}) => {
+  const { allowGitLoading = false } = options;
+  
   if (isBrowserStorageMode()) {
     const data = await loadBrowserUniverse();
     if (data) {
@@ -735,21 +739,25 @@ export const autoConnectToUniverse = async () => {
 
   console.log('[FileStorage] Starting auto-connect to universe...');
   
-  // Strategy 0: Try Git-based universe restoration if configured
-  try {
-    const um = await getUniverseManager();
-    const activeUniverse = um.getActiveUniverse();
-    if (activeUniverse && activeUniverse.gitRepo && activeUniverse.gitRepo.enabled) {
-      console.log('[FileStorage] Attempting Git universe restoration for:', activeUniverse.slug);
-      const gitStoreState = await um.loadUniverseData(activeUniverse);
-      if (gitStoreState) {
-        console.log('[FileStorage] Auto-connected (Git repository)');
-        return gitStoreState;
+  // Strategy 0: Try Git-based universe restoration if configured AND explicitly allowed
+  if (allowGitLoading) {
+    try {
+      const um = await getUniverseManager();
+      const activeUniverse = um.getActiveUniverse();
+      if (activeUniverse && activeUniverse.gitRepo && activeUniverse.gitRepo.enabled) {
+        console.log('[FileStorage] Attempting Git universe restoration for:', activeUniverse.slug);
+        const gitStoreState = await um.loadUniverseData(activeUniverse);
+        if (gitStoreState) {
+          console.log('[FileStorage] Auto-connected (Git repository)');
+          return gitStoreState;
+        }
       }
+    } catch (error) {
+      console.warn('[FileStorage] Git auto-connect failed:', error);
+      // Continue to other strategies
     }
-  } catch (error) {
-    console.warn('[FileStorage] Git auto-connect failed:', error);
-    // Continue to other strategies
+  } else {
+    console.log('[FileStorage] Skipping Git auto-connect (lazy loading - will load when Git federation tab is accessed)');
   }
   
   
@@ -845,11 +853,14 @@ export const getSuggestedLocations = () => {
 
 /**
  * Try to restore the last session with smart auto-connect
+ * @param {Object} options - Options for restoration behavior
+ * @param {boolean} options.allowGitLoading - Whether to attempt Git loading (default: false for lazy loading)
  */
-export const restoreLastSession = async () => {
+export const restoreLastSession = async (options = {}) => {
   try {
     // Only try auto-connect to universe file - no localStorage fallback
-    const autoConnectResult = await autoConnectToUniverse();
+    // Pass through the allowGitLoading option for lazy loading control
+    const autoConnectResult = await autoConnectToUniverse(options);
     if (autoConnectResult) {
       return {
         success: true,
@@ -873,6 +884,27 @@ export const restoreLastSession = async () => {
       reason: 'error',
       message: `Failed to restore session: ${error.message}`
     };
+  }
+};
+
+/**
+ * Force Git loading for the current universe (called when user accesses Git federation)
+ */
+export const forceGitUniverseLoad = async () => {
+  try {
+    console.log('[FileStorage] Force loading Git universe data...');
+    const autoConnectResult = await autoConnectToUniverse({ allowGitLoading: true });
+    if (autoConnectResult) {
+      return {
+        success: true,
+        storeState: autoConnectResult,
+        hasUniverseFile: true
+      };
+    }
+    return { success: false, message: 'No Git universe data found' };
+  } catch (error) {
+    console.error('[FileStorage] Failed to force load Git universe:', error);
+    return { success: false, error: error.message };
   }
 };
 

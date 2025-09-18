@@ -4201,10 +4201,13 @@ const Panel = forwardRef(
               />
             );
         } else if (leftViewActive === 'federation') {
-            // Git-Native Federation view
+            // Git-Native Federation view with lazy GitFederationBootstrap
+            const GitFederationBootstrap = lazy(() => import('./components/GitFederationBootstrap.jsx'));
             panelContent = (
                 <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                     <Suspense fallback={<div style={{ padding: '8px', fontSize: '0.85rem' }}>Loading Git federation…</div>}>
+                        {/* Enable GitFederationBootstrap when Git federation tab is accessed */}
+                        <GitFederationBootstrap enableEagerInit={true} />
                         <GitNativeFederation 
                             isVisible={leftViewActive === 'federation'}
                             isInteractive={leftViewActive === 'federation'}

@@ -1077,7 +1077,13 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   ]);
 
   // Ensure Git engine is registered early for the active universe (helps reads on session restore)
+  // Only run when component is visible and interactive to prevent eager loading
   useLayoutEffect(() => {
+    // Only initialize when component is visible and interactive (user has accessed the Git federation tab)
+    if (!isVisible || !isInteractive) {
+      return;
+    }
+    
     try {
       const active = universeManager.getActiveUniverse();
       if (active?.gitRepo?.linkedRepo) {
@@ -1092,7 +1098,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         }
       }
     } catch (_) {}
-  }, [attemptConnectUniverseRepo, deviceConfig.enableLocalFileStorage, ensureEngineForActiveUniverse, gitSyncEngine, storeGitSyncEngine]);
+  }, [attemptConnectUniverseRepo, deviceConfig.enableLocalFileStorage, ensureEngineForActiveUniverse, gitSyncEngine, storeGitSyncEngine, isVisible, isInteractive]);
 
   // Subscribe to UniverseManager changes
   useEffect(() => {
@@ -1101,24 +1107,27 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       setUniverses(universeManager.getAllUniverses());
       setActiveUniverseSlug(universeManager.activeUniverseSlug);
 
-      try {
-        const active = universeManager.getActiveUniverse();
-        if (active?.gitRepo?.linkedRepo) {
-          if (!currentProvider) {
-            attemptConnectUniverseRepo();
+      // Only attempt Git connections when component is visible and interactive
+      if (isVisible && isInteractive) {
+        try {
+          const active = universeManager.getActiveUniverse();
+          if (active?.gitRepo?.linkedRepo) {
+            if (!currentProvider) {
+              attemptConnectUniverseRepo();
+            }
+            const existingEngine = storeGitSyncEngine || gitSyncEngine;
+            if (existingEngine) {
+              universeManager.setGitSyncEngine(active.slug, existingEngine);
+            } else if (!deviceConfig.enableLocalFileStorage) {
+              ensureEngineForActiveUniverse();
+            }
           }
-          const existingEngine = storeGitSyncEngine || gitSyncEngine;
-          if (existingEngine) {
-            universeManager.setGitSyncEngine(active.slug, existingEngine);
-          } else if (!deviceConfig.enableLocalFileStorage) {
-            ensureEngineForActiveUniverse();
-          }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
     });
 
     return unsubscribe;
-  }, [attemptConnectUniverseRepo, currentProvider, deviceConfig.enableLocalFileStorage, ensureEngineForActiveUniverse, gitSyncEngine, storeGitSyncEngine]);
+  }, [attemptConnectUniverseRepo, currentProvider, deviceConfig.enableLocalFileStorage, ensureEngineForActiveUniverse, gitSyncEngine, storeGitSyncEngine, isVisible, isInteractive]);
 
   // Determine which auth powers data access (GitHub App preferred, fallback OAuth)
   useEffect(() => {
@@ -1133,9 +1142,10 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   }, [getPreferredGitCredentials]);
 
   // In Git-only mode, schedule an immediate engine ensure on first render (before other loaders)
+  // Only when component is visible and interactive to prevent eager loading
   const didScheduleEnsureRef = useRef(false);
   useEffect(() => {
-    if (!deviceConfig.enableLocalFileStorage && !didScheduleEnsureRef.current) {
+    if (!deviceConfig.enableLocalFileStorage && !didScheduleEnsureRef.current && isVisible && isInteractive) {
       didScheduleEnsureRef.current = true;
       (async () => {
         try {
@@ -1149,7 +1159,50 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         } catch (_) {}
       })();
     }
-  }, [deviceConfig.enableLocalFileStorage, ensureEngineForActiveUniverse, getActiveUniverse, readDirectFromGitIfNoEngine]);
+  }, [deviceConfig.enableLocalFileStorage, ensureEngineForActiveUniverse, getActiveUniverse, readDirectFromGitIfNoEngine, isVisible, isInteractive]);
+
+  // State for lazy loading
+  const [isInitializing, setIsInitializing] = useState(false);
+
+  // Trigger Git loading when component becomes visible and interactive (lazy loading)
+  useEffect(() => {
+    if (isVisible && isInteractive && !isInitializing) {
+      (async () => {
+        try {
+          setIsInitializing(true);
+          console.log('[GitNativeFederation] Component became visible and interactive, initializing Git federation...');
+          
+          // Try to load Git universe data if available
+          const activeUniverse = getActiveUniverse();
+          if (activeUniverse?.gitRepo?.enabled && !storeGitSyncEngine && !gitSyncEngine) {
+            console.log('[GitNativeFederation] Attempting lazy Git universe load...');
+            
+            setSyncStatus({ type: 'info', status: 'Loading Git universe data...' });
+            
+            const { forceGitUniverseLoad } = await import('../store/fileStorage.js');
+            const result = await forceGitUniverseLoad();
+            
+            if (result.success) {
+              console.log('[GitNativeFederation] Successfully loaded Git universe data');
+              storeActions.loadUniverseFromFile(result.storeState);
+              setSyncStatus({ type: 'success', status: 'Git universe data loaded successfully' });
+              setTimeout(() => setSyncStatus(null), 3000);
+            } else {
+              setSyncStatus({ type: 'info', status: 'No Git universe data found - ready for setup' });
+              setTimeout(() => setSyncStatus(null), 3000);
+            }
+          }
+          
+        } catch (error) {
+          console.warn('[GitNativeFederation] Failed to initialize Git federation:', error);
+          setSyncStatus({ type: 'error', status: `Initialization failed: ${error.message}` });
+          setTimeout(() => setSyncStatus(null), 5000);
+        } finally {
+          setIsInitializing(false);
+        }
+      })();
+    }
+  }, [isVisible, isInteractive, getActiveUniverse, storeActions, storeGitSyncEngine, gitSyncEngine, isInitializing]);
 
   // File System Access helpers (mobile-aware with graceful fallbacks)
   const pickLocalFileForActiveUniverse = async () => {
@@ -1683,8 +1736,13 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     }
   }, [currentProvider, providerConfig.user, providerConfig.repo, activeUniverseSlug]);
 
-  // Auto-connect source when universe has linked repository
+  // Auto-connect source when universe has linked repository (only when component is visible and interactive)
   useEffect(() => {
+    // Only auto-connect if the component is visible and interactive (user has accessed the Git federation tab)
+    if (!isVisible || !isInteractive) {
+      return;
+    }
+    
     const activeUniverse = getActiveUniverse();
     if (activeUniverse?.gitRepo?.linkedRepo && !currentProvider) {
       const linkedRepo = activeUniverse.gitRepo.linkedRepo;
@@ -1717,7 +1775,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       // Attempt to connect to the repository
       attemptConnectUniverseRepo();
     }
-  }, [activeUniverseSlug, currentProvider]);
+  }, [activeUniverseSlug, currentProvider, isVisible, isInteractive]);
 
   // Control Git sync engine pause state based on panel visibility
   // Only pause/resume, don't change any other state to ensure consistency

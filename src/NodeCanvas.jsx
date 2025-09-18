@@ -428,10 +428,13 @@ function NodeCanvas() {
 
   // --- Touch helpers for canvas interactions (pan, node drag, connections) ---
   const normalizeTouchEvent = (e) => {
+    // For touch end events, changedTouches has the final position where finger lifted
     const t = e.touches?.[0] || e.changedTouches?.[0];
-    const clientX = t?.clientX ?? lastTouchRef.current.x;
-    const clientY = t?.clientY ?? lastTouchRef.current.y;
-    return { clientX, clientY };
+    if (t) {
+      return { clientX: t.clientX, clientY: t.clientY };
+    }
+    // Fallback to last known position
+    return { clientX: lastTouchRef.current.x, clientY: lastTouchRef.current.y };
   };
 
   const handleTouchStartCanvas = (e) => {
@@ -3445,6 +3448,13 @@ function NodeCanvas() {
         clearTimeout(longPressTimeout.current);
         setLongPressingInstanceId(instanceId);
         longPressTimeout.current = setTimeout(() => {
+            console.log('Long press timeout fired:', {
+              instanceId,
+              mouseInsideNode: mouseInsideNode.current,
+              mouseMoved: mouseMoved.current,
+              isTouchDevice: isTouchDeviceRef.current,
+              willProceed: mouseInsideNode.current && (!mouseMoved.current || isTouchDeviceRef.current)
+            });
             if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); clickTimeoutIdRef.current = null; }
             potentialClickNodeRef.current = null;
 
@@ -3479,6 +3489,7 @@ function NodeCanvas() {
                     const mouseCanvasX = (e.clientX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
                     const mouseCanvasY = (e.clientY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
                     const offset = { x: mouseCanvasX - nodeData.x, y: mouseCanvasY - nodeData.y };
+                    console.log('Setting dragging node info:', { instanceId, offset });
                     setDraggingNodeInfo({ instanceId: instanceId, offset });
                     storeActions.updateNodeInstance(activeGraphId, instanceId, draft => { draft.scale = 1.1; });
                     
@@ -4722,6 +4733,7 @@ function NodeCanvas() {
 
     // Dragging Node or Group Logic (only after long-press has set draggingNodeInfo)
     if (draggingNodeInfo) {
+        console.log('Mouse move with draggingNodeInfo:', draggingNodeInfo);
         // Use requestAnimationFrame for smooth dragging performance, but ensure labels update immediately
         requestAnimationFrame(() => { // Keep RAF
             // Group drag via label
@@ -4924,6 +4936,12 @@ function NodeCanvas() {
     // Finalize drawing connection
     if (drawingConnectionFrom) {
         const targetNodeData = nodes.find(n => isInsideNode(n, e.clientX, e.clientY));
+        console.log('Connection end:', {
+          clientX: e.clientX,
+          clientY: e.clientY,
+          targetNodeData: targetNodeData?.id,
+          sourceId: drawingConnectionFrom.sourceInstanceId
+        });
 
         if (targetNodeData && targetNodeData.id !== drawingConnectionFrom.sourceInstanceId) {
             const sourceId = drawingConnectionFrom.sourceInstanceId;
@@ -8454,6 +8472,21 @@ function NodeCanvas() {
                              isSelected={selectedInstanceIds.has(node.id)}
                              isDragging={false} // These are explicitly not the dragging node
                              onMouseDown={(e) => handleNodeMouseDown(node, e)}
+                             onTouchStart={(e) => {
+                               // Convert touch to synthetic mouse event for node interactions
+                               const touch = e.touches[0];
+                               if (touch) {
+                                 const synthetic = {
+                                   ...e,
+                                   clientX: touch.clientX,
+                                   clientY: touch.clientY,
+                                   button: 0,
+                                   stopPropagation: () => e.stopPropagation(),
+                                   preventDefault: () => e.preventDefault()
+                                 };
+                                 handleNodeMouseDown(node, synthetic);
+                               }
+                             }}
                              onContextMenu={(e) => {
                                e.preventDefault();
                                e.stopPropagation();
@@ -8640,6 +8673,20 @@ function NodeCanvas() {
                                  isSelected={selectedInstanceIds.has(activeNodeToRender.id)}
                                  isDragging={false} // Explicitly not the dragging node if rendered here
                                  onMouseDown={(e) => handleNodeMouseDown(activeNodeToRender, e)}
+                                 onTouchStart={(e) => {
+                                   const touch = e.touches[0];
+                                   if (touch) {
+                                     const synthetic = {
+                                       ...e,
+                                       clientX: touch.clientX,
+                                       clientY: touch.clientY,
+                                       button: 0,
+                                       stopPropagation: () => e.stopPropagation(),
+                                       preventDefault: () => e.preventDefault()
+                                     };
+                                     handleNodeMouseDown(activeNodeToRender, synthetic);
+                                   }
+                                 }}
                                  onContextMenu={(e) => {
                                    e.preventDefault();
                                    e.stopPropagation();
@@ -8727,6 +8774,20 @@ function NodeCanvas() {
                                isSelected={selectedInstanceIds.has(draggingNodeToRender.id)}
                                isDragging={true} // This is the dragging node
                                onMouseDown={(e) => handleNodeMouseDown(draggingNodeToRender, e)}
+                               onTouchStart={(e) => {
+                                 const touch = e.touches[0];
+                                 if (touch) {
+                                   const synthetic = {
+                                     ...e,
+                                     clientX: touch.clientX,
+                                     clientY: touch.clientY,
+                                     button: 0,
+                                     stopPropagation: () => e.stopPropagation(),
+                                     preventDefault: () => e.preventDefault()
+                                   };
+                                   handleNodeMouseDown(draggingNodeToRender, synthetic);
+                                 }
+                               }}
                                onContextMenu={(e) => {
                                  e.preventDefault();
                                  e.stopPropagation();

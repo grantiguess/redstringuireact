@@ -18,7 +18,8 @@ import startupCoordinator from '../services/startupCoordinator.js';
 import * as fileStorageModule from '../store/fileStorage.js';
 
 // Headless bootstrapper to restore Git federation early (before UI panels mount)
-export default function GitFederationBootstrap() {
+// Modified to prevent eager loading - only initializes when explicitly requested
+export default function GitFederationBootstrap({ enableEagerInit = false }) {
   const gitConnection = useGraphStore(state => state.gitConnection);
   const gitSourceOfTruth = useGraphStore(state => state.gitSourceOfTruth);
   const setGitConnection = useGraphStore(state => state.setGitConnection);
@@ -32,6 +33,12 @@ export default function GitFederationBootstrap() {
   }
 
   useEffect(() => {
+    // Skip initialization unless explicitly enabled (prevents eager loading)
+    if (!enableEagerInit) {
+      console.log('[GitFederationBootstrap] Skipping eager initialization (lazy loading enabled)');
+      return;
+    }
+    
     let cancelled = false;
 
     const restore = async () => {

@@ -9,7 +9,8 @@ import './App.css';
 function App() {
   return (
     <>
-      <GitFederationBootstrap />
+      {/* GitFederationBootstrap disabled for lazy loading - Git federation will initialize when user accesses the tab */}
+      {/* <GitFederationBootstrap /> */}
       <NodeCanvas />
       <SpawningNodeDragLayer />
       {/* <BridgeClient /> */}
