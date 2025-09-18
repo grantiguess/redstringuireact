@@ -3448,7 +3448,7 @@ function NodeCanvas() {
             if (clickTimeoutIdRef.current) { clearTimeout(clickTimeoutIdRef.current); clickTimeoutIdRef.current = null; }
             potentialClickNodeRef.current = null;
 
-            if (mouseInsideNode.current && !mouseMoved.current) { 
+            if (mouseInsideNode.current && (!mouseMoved.current || isTouchDeviceRef.current)) { 
                 if (selectedInstanceIds.has(instanceId)) {
                     // Multi-node drag setup
                     const initialPositions = {};
@@ -4703,8 +4703,8 @@ function NodeCanvas() {
                      const startNodeDims = getNodeDimensions(longPressNodeData, previewingNodeId === longPressNodeData.id, null);
                      const startPt = { x: longPressNodeData.x + startNodeDims.currentWidth / 2, y: longPressNodeData.y + startNodeDims.currentHeight / 2 };
                      const rect = containerRef.current.getBoundingClientRect();
-                     const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
-                     const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
+                     const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
+                     const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
                      const { x: currentX, y: currentY } = clampCoordinates(rawX, rawY);
                      setDrawingConnectionFrom({ sourceInstanceId: longPressingInstanceId, startX: startPt.x, startY: startPt.y, currentX, currentY });
                      setLongPressingInstanceId(null); // Clear ID
@@ -4715,7 +4715,7 @@ function NodeCanvas() {
           isPanningOrZooming.current = true;
           setIsPanning(true);
           setPanStart({ x: e.clientX, y: e.clientY });
-          panSourceRef.current = 'mouse';
+          panSourceRef.current = isTouchDeviceRef.current ? 'touch' : 'mouse';
         }
       }
     }
@@ -4842,8 +4842,8 @@ function NodeCanvas() {
             }
         });
     } else if (drawingConnectionFrom) {
-        // Don't clamp coordinates when drawing connections - let the line follow the mouse freely
-        setDrawingConnectionFrom(prev => prev && ({ ...prev, currentX: rawX, currentY: rawY }));
+        // Update connection drawing coordinates to follow mouse
+        setDrawingConnectionFrom(prev => prev && ({ ...prev, currentX: currentX, currentY: currentY }));
     } else if (isPanning) {
         if (abstractionCarouselVisible) {
             setIsPanning(false);
@@ -4913,7 +4913,7 @@ function NodeCanvas() {
     }
     setPanStart({ x: e.clientX, y: e.clientY });
     setIsPanning(true);
-    panSourceRef.current = 'mouse';
+    panSourceRef.current = isTouchDeviceRef.current ? 'touch' : 'mouse';
   };
   const handleMouseUp = (e) => {
     if (isPaused || !activeGraphId) return;

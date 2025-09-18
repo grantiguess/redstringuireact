@@ -234,6 +234,24 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   const [dataAuthMethod, setDataAuthMethod] = useState(null);
   const [repoUniverseLists, setRepoUniverseLists] = useState({});
 
+  // Declare gitSyncEngine state early to avoid temporal dead zone issues in useCallback functions
+  const [gitSyncEngine, setGitSyncEngine] = useState(null);
+  
+  // Get store state needed by early functions
+  const storeState = useGraphStore();
+  const storeActions = useGraphStore.getState();
+  const gitConnection = useGraphStore(state => state.gitConnection);
+  const gitSourceOfTruth = useGraphStore(state => state.gitSourceOfTruth);
+  const setGitConnection = useGraphStore(state => state.setGitConnection);
+  const clearGitConnection = useGraphStore(state => state.clearGitConnection);
+  const setGitSyncEngineStore = useGraphStore(state => state.setGitSyncEngine);
+  const setGitSourceOfTruth = useGraphStore(state => state.setGitSourceOfTruth);
+  const storeGitSyncEngine = useGraphStore(state => state.gitSyncEngine);
+  
+  const [sourceOfTruthMode, setSourceOfTruthMode] = useState(
+    gitSourceOfTruth === 'git' ? SOURCE_OF_TRUTH.GIT : SOURCE_OF_TRUTH.LOCAL
+  );
+
   const universeCards = useMemo(() => {
     const seen = new Set();
     return (universes || [])
@@ -1308,23 +1326,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   
   // Computed authentication state
   const isAuthenticated = authStatus.isAuthenticated;
-  // Get the actual RedString store
-  const storeState = useGraphStore();
-  const storeActions = useGraphStore.getState();
-  
-  // Get persistent Git connection state from store
-  const gitConnection = useGraphStore(state => state.gitConnection);
-  const gitSourceOfTruth = useGraphStore(state => state.gitSourceOfTruth);
-  const setGitConnection = useGraphStore(state => state.setGitConnection);
-  const clearGitConnection = useGraphStore(state => state.clearGitConnection);
-  const setGitSyncEngineStore = useGraphStore(state => state.setGitSyncEngine);
-  const setGitSourceOfTruth = useGraphStore(state => state.setGitSourceOfTruth);
-  const storeGitSyncEngine = useGraphStore(state => state.gitSyncEngine);
-  
-  const [gitSyncEngine, setGitSyncEngine] = useState(null);
-  const [sourceOfTruthMode, setSourceOfTruthMode] = useState(
-    gitSourceOfTruth === 'git' ? SOURCE_OF_TRUTH.GIT : SOURCE_OF_TRUTH.LOCAL
-  );
 
   // Adopt preloaded engine from store for instant readiness on mount/tab switch
   useEffect(() => {
