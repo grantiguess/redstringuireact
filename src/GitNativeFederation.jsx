@@ -1163,13 +1163,15 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
 
   // State for lazy loading
   const [isInitializing, setIsInitializing] = useState(false);
+  const didLazyLoadRef = useRef(false);
 
   // Trigger Git loading when component becomes visible and interactive (lazy loading)
   useEffect(() => {
-    if (isVisible && isInteractive && !isInitializing) {
+    if (isVisible && isInteractive && !isInitializing && !didLazyLoadRef.current) {
       (async () => {
         try {
           setIsInitializing(true);
+          didLazyLoadRef.current = true;
           console.log('[GitNativeFederation] Component became visible and interactive, initializing Git federation...');
           
           // Try to load Git universe data if available

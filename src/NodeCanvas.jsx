@@ -8493,6 +8493,20 @@ function NodeCanvas() {
                                  handleNodeMouseDown(node, synthetic);
                                }
                              }}
+                             onTouchMove={(e) => {
+                               // Convert touch move to synthetic mouse move for dragging
+                               const touch = e.touches[0];
+                               if (touch) {
+                                 const synthetic = {
+                                   ...e,
+                                   clientX: touch.clientX,
+                                   clientY: touch.clientY,
+                                   stopPropagation: () => e.stopPropagation(),
+                                   preventDefault: () => e.preventDefault()
+                                 };
+                                 handleMouseMove(synthetic);
+                               }
+                             }}
                              onContextMenu={(e) => {
                                e.preventDefault();
                                e.stopPropagation();
@@ -8693,6 +8707,19 @@ function NodeCanvas() {
                                      handleNodeMouseDown(activeNodeToRender, synthetic);
                                    }
                                  }}
+                                 onTouchMove={(e) => {
+                                   const touch = e.touches[0];
+                                   if (touch) {
+                                     const synthetic = {
+                                       ...e,
+                                       clientX: touch.clientX,
+                                       clientY: touch.clientY,
+                                       stopPropagation: () => e.stopPropagation(),
+                                       preventDefault: () => e.preventDefault()
+                                     };
+                                     handleMouseMove(synthetic);
+                                   }
+                                 }}
                                  onContextMenu={(e) => {
                                    e.preventDefault();
                                    e.stopPropagation();
@@ -8792,6 +8819,19 @@ function NodeCanvas() {
                                      preventDefault: () => e.preventDefault()
                                    };
                                    handleNodeMouseDown(draggingNodeToRender, synthetic);
+                                 }
+                               }}
+                               onTouchMove={(e) => {
+                                 const touch = e.touches[0];
+                                 if (touch) {
+                                   const synthetic = {
+                                     ...e,
+                                     clientX: touch.clientX,
+                                     clientY: touch.clientY,
+                                     stopPropagation: () => e.stopPropagation(),
+                                     preventDefault: () => e.preventDefault()
+                                   };
+                                   handleMouseMove(synthetic);
                                  }
                                }}
                                onContextMenu={(e) => {

@@ -1434,6 +1434,10 @@ class UniverseManager {
   setGitSyncEngine(slug, gitSyncEngine) {
     // Check if we already have an engine for this universe
     const existingEngine = this.gitSyncEngines.get(slug);
+    // If it's the same engine instance, do nothing to avoid log spam
+    if (existingEngine && existingEngine === gitSyncEngine) {
+      return true;
+    }
     if (existingEngine && existingEngine !== gitSyncEngine) {
       // STRICT: Never allow replacement during startup to prevent loops
       console.warn(`[UniverseManager] STRICTLY REJECTING duplicate engine for ${slug} - one already exists`);

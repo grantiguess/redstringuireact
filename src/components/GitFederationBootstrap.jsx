@@ -40,10 +40,13 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
     }
     
     let cancelled = false;
+    let ranOnce = false;
 
     const restore = async () => {
       try {
         if (cancelled) return;
+        if (ranOnce) return;
+        ranOnce = true;
         if (existingEngine) return; // Already initialized
         if (!gitConnection) return; // Nothing to restore
 

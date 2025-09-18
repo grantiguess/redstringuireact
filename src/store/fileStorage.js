@@ -908,6 +908,10 @@ export const restoreLastSession = async (options = {}) => {
 export const forceGitUniverseLoad = async () => {
   try {
     console.log('[FileStorage] Force loading Git universe data...');
+    if (gitLoadingInProgress) {
+      console.log('[FileStorage] Git loading already in progress, skipping force load');
+      return { success: false, message: 'Already loading' };
+    }
     const autoConnectResult = await autoConnectToUniverse({ allowGitLoading: true });
     if (autoConnectResult) {
       return {
