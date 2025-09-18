@@ -48,7 +48,7 @@ const prototypeToSemanticClass = (prototype) => ({
   "rdfs:label": prototype.name,
   "rdfs:comment": prototype.description,
   "rdfs:seeAlso": prototype.externalLinks || [],
-  "rdfs:isDefinedBy": { "@id": "https://redstring.dev" },
+  "rdfs:isDefinedBy": { "@id": "https://redstring.io" },
   
   // Rosetta Stone mechanism - core semantic web linking
   "owl:sameAs": prototype.externalLinks || [],
@@ -321,7 +321,7 @@ const prototypeToSemantic = (prototype) => ({
   "rdfs:label": prototype.name,
   "rdfs:comment": prototype.description,
   "rdfs:seeAlso": prototype.externalLinks || [],
-  "rdfs:isDefinedBy": { "@id": "https://redstring.dev" },
+  "rdfs:isDefinedBy": { "@id": "https://redstring.io" },
   
   // Core RedString properties (preserved)
   "redstring:color": prototype.color,
@@ -975,7 +975,7 @@ export const exportToSemanticRedstring = (storeState) => {
       "rdfs:label": prototype.name,
       "rdfs:comment": prototype.description,
       "rdfs:seeAlso": prototype.externalLinks || [],
-      "rdfs:isDefinedBy": { "@id": "https://redstring.dev" },
+      "rdfs:isDefinedBy": { "@id": "https://redstring.io" },
       
       // Core RedString properties (preserved)
       "redstring:color": prototype.color,

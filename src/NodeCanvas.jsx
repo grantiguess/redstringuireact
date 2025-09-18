@@ -438,23 +438,7 @@ function NodeCanvas() {
       e.stopPropagation();
     }
     isTouchDeviceRef.current = true;
-    // One-finger pan by default on touch, but also synthesize a mousedown for node hit-testing/long-press
-    if (e.touches && e.touches.length === 1) {
-      const t = e.touches[0];
-      lastTouchRef.current = { x: t.clientX, y: t.clientY };
-      isMouseDown.current = true;
-      startedOnNode.current = false;
-      mouseMoved.current = false;
-      setPanStart({ x: t.clientX, y: t.clientY });
-      const synthetic = {
-        clientX: t.clientX,
-        clientY: t.clientY,
-        detail: 1,
-        preventDefault: () => { try { e.preventDefault(); } catch {} },
-        stopPropagation: () => { try { e.stopPropagation(); } catch {} }
-      };
-      handleMouseDown(synthetic);
-    }
+    
     if (e.touches && e.touches.length >= 2) {
       // Pinch-to-zoom setup
       const t1 = e.touches[0];
@@ -484,18 +468,37 @@ function NodeCanvas() {
       touchMultiPanRef.current = false;
       return;
     }
-    const { clientX, clientY } = normalizeTouchEvent(e);
-    lastTouchRef.current = { x: clientX, y: clientY };
-    // Synthesize minimal mouse-like event for existing handlers
-    const synthetic = {
-      clientX,
-      clientY,
-      ctrlKey: false,
-      metaKey: false,
-      preventDefault: () => { try { e.preventDefault(); } catch {} },
-      stopPropagation: () => { try { e.stopPropagation(); } catch {} }
-    };
-    handleMouseDown(synthetic);
+    
+    // Handle single touch - synthesize mouse event only once
+    if (e.touches && e.touches.length === 1) {
+      const t = e.touches[0];
+      lastTouchRef.current = { x: t.clientX, y: t.clientY };
+      isMouseDown.current = true;
+      startedOnNode.current = false;
+      mouseMoved.current = false;
+      setPanStart({ x: t.clientX, y: t.clientY });
+      const synthetic = {
+        clientX: t.clientX,
+        clientY: t.clientY,
+        detail: 1,
+        preventDefault: () => { try { e.preventDefault(); } catch {} },
+        stopPropagation: () => { try { e.stopPropagation(); } catch {} }
+      };
+      handleMouseDown(synthetic);
+    } else {
+      // Fallback for other touch events
+      const { clientX, clientY } = normalizeTouchEvent(e);
+      lastTouchRef.current = { x: clientX, y: clientY };
+      const synthetic = {
+        clientX,
+        clientY,
+        ctrlKey: false,
+        metaKey: false,
+        preventDefault: () => { try { e.preventDefault(); } catch {} },
+        stopPropagation: () => { try { e.stopPropagation(); } catch {} }
+      };
+      handleMouseDown(synthetic);
+    }
   };
 
   const handleTouchMoveCanvas = (e) => {
@@ -536,6 +539,15 @@ function NodeCanvas() {
     }
     const { clientX, clientY } = normalizeTouchEvent(e);
     lastTouchRef.current = { x: clientX, y: clientY };
+    
+    // Update mouseInsideNode for touch events to maintain proper drag state
+    if (longPressingInstanceId) {
+      const longPressNodeData = nodes.find(n => n.id === longPressingInstanceId);
+      if (longPressNodeData) {
+        mouseInsideNode.current = isInsideNode(longPressNodeData, clientX, clientY);
+      }
+    }
+    
     const synthetic = {
       clientX,
       clientY,
@@ -3317,20 +3329,30 @@ function NodeCanvas() {
      const scaledX = (clientX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
      const scaledY = (clientY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
 
-     // TODO: Adapt getNodeDimensions or get dimensions directly
-     // For now, use fixed size as placeholder
-     const { currentWidth, currentHeight } = getNodeDimensions(nodeData, previewingNodeId === nodeData.id, null); // Pass NodeData
-     // const currentWidth = NODE_WIDTH; // Placeholder
-     // const currentHeight = NODE_HEIGHT; // Placeholder
+     // Get base dimensions
+     const { currentWidth, currentHeight } = getNodeDimensions(nodeData, previewingNodeId === nodeData.id, null);
+     
+     // Apply node scale if it exists (for dragged nodes)
+     const nodeScale = nodeData.scale || 1;
+     const scaledWidth = currentWidth * nodeScale;
+     const scaledHeight = currentHeight * nodeScale;
 
      const nodeX = nodeData.x;
      const nodeY = nodeData.y;
+     
+     // Calculate the center point for scaling
+     const centerX = nodeX + currentWidth / 2;
+     const centerY = nodeY + currentHeight / 2;
+     
+     // Calculate scaled bounds centered on the original center
+     const scaledNodeX = centerX - scaledWidth / 2;
+     const scaledNodeY = centerY - scaledHeight / 2;
 
      return (
-       scaledX >= nodeX &&
-       scaledX <= nodeX + currentWidth &&
-       scaledY >= nodeY &&
-       scaledY <= nodeY + currentHeight
+       scaledX >= scaledNodeX &&
+       scaledX <= scaledNodeX + scaledWidth &&
+       scaledY >= scaledNodeY &&
+       scaledY <= scaledNodeY + scaledHeight
      );
   };
 
@@ -4808,8 +4830,8 @@ function NodeCanvas() {
             }
         });
     } else if (drawingConnectionFrom) {
-        const bounded = clampCoordinates(currentX, currentY);
-        setDrawingConnectionFrom(prev => prev && ({ ...prev, currentX: bounded.x, currentY: bounded.y }));
+        // Don't clamp coordinates when drawing connections - let the line follow the mouse freely
+        setDrawingConnectionFrom(prev => prev && ({ ...prev, currentX: rawX, currentY: rawY }));
     } else if (isPanning) {
         if (abstractionCarouselVisible) {
             setIsPanning(false);

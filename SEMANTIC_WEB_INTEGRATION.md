@@ -147,7 +147,7 @@ Legal Professional
 ### Redstring Native Format (.redstring)
 ```json
 {
-  "@context": "https://redstring.org/context",
+  "@context": "https://redstring.net/context",
   "@type": "redstring:CognitiveSpace",
   "edges": {
     "connection-1": {
@@ -311,7 +311,7 @@ The system maintains an RDF index of all cognitive spaces:
 
 ```turtle
 @prefix schema: <http://schema.org/> .
-@prefix redstring: <https://redstring.org/vocab/> .
+@prefix redstring: <https://redstring.net/vocab/> .
 @prefix dc: <http://purl.org/dc/terms/> .
 
 <#my_research> a redstring:CognitiveSpace ;
@@ -367,7 +367,7 @@ async listCognitiveSpaces() {
     name: getStringNoLocale(thing, 'http://schema.org/name'),
     title: getStringNoLocale(thing, 'http://schema.org/title'),
     description: getStringNoLocale(thing, 'http://schema.org/description'),
-    spaceUrl: getUrl(thing, 'https://redstring.org/vocab/spaceLocation'),
+    spaceUrl: getUrl(thing, 'https://redstring.net/vocab/spaceLocation'),
     modified: getStringNoLocale(thing, 'http://purl.org/dc/terms/modified')
   }));
 }

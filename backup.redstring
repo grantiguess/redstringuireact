@@ -244,7 +244,7 @@
           "https://en.wikipedia.org/wiki/Thing"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": null,
         "owl:sameAs": [
@@ -289,7 +289,7 @@
           "http://dbpedia.org/resource/The_Beatles"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:e9785c71-82a2-425e-94f8-d9bfbd72b7a7"
@@ -340,7 +340,7 @@
           "http://dbpedia.org/resource/Paul_McCartney"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -387,7 +387,7 @@
           "https://en.wikipedia.org/wiki/John_Lennon"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -434,7 +434,7 @@
           "http://dbpedia.org/resource/George_Harrison"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -483,7 +483,7 @@
           "http://www.wikidata.org/entity/Q84442756"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -533,7 +533,7 @@
           "http://www.wikidata.org/entity/Q135208804"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": null,
         "owl:sameAs": [
@@ -573,7 +573,7 @@
         "description": "",
         "rdfs:seeAlso": [],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": null,
         "owl:sameAs": [],
@@ -612,7 +612,7 @@
           "http://dbpedia.org/resource/Martha_My_Dear"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -657,7 +657,7 @@
         "description": "",
         "rdfs:seeAlso": [],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": null,
         "owl:sameAs": [],
@@ -695,7 +695,7 @@
           "http://dbpedia.org/resource/Stereo_MC's"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -741,7 +741,7 @@
         "description": "",
         "rdfs:seeAlso": [],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": null,
         "owl:sameAs": [],
@@ -789,7 +789,7 @@
           "http://www.wikidata.org/entity/Q123372382"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": null,
         "owl:sameAs": [
@@ -837,7 +837,7 @@
           "http://www.wikidata.org/entity/Q120493383"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -886,7 +886,7 @@
           "http://www.wikidata.org/entity/Q111176466"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -935,7 +935,7 @@
           "http://www.wikidata.org/entity/Q117012"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -986,7 +986,7 @@
           "http://www.wikidata.org/entity/Q3072527"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -1031,7 +1031,7 @@
         "description": "",
         "rdfs:seeAlso": [],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -1880,7 +1880,7 @@
           "https://en.wikipedia.org/wiki/Thing"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": null,
         "owl:sameAs": [
@@ -1925,7 +1925,7 @@
           "http://dbpedia.org/resource/The_Beatles"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:e9785c71-82a2-425e-94f8-d9bfbd72b7a7"
@@ -1976,7 +1976,7 @@
           "http://dbpedia.org/resource/Paul_McCartney"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -2023,7 +2023,7 @@
           "https://en.wikipedia.org/wiki/John_Lennon"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -2070,7 +2070,7 @@
           "http://dbpedia.org/resource/George_Harrison"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -2119,7 +2119,7 @@
           "http://www.wikidata.org/entity/Q84442756"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -2169,7 +2169,7 @@
           "http://www.wikidata.org/entity/Q135208804"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": null,
         "owl:sameAs": [
@@ -2209,7 +2209,7 @@
         "description": "",
         "rdfs:seeAlso": [],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": null,
         "owl:sameAs": [],
@@ -2248,7 +2248,7 @@
           "http://dbpedia.org/resource/Martha_My_Dear"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -2293,7 +2293,7 @@
         "description": "",
         "rdfs:seeAlso": [],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": null,
         "owl:sameAs": [],
@@ -2331,7 +2331,7 @@
           "http://dbpedia.org/resource/Stereo_MC's"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -2377,7 +2377,7 @@
         "description": "",
         "rdfs:seeAlso": [],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": null,
         "owl:sameAs": [],
@@ -2425,7 +2425,7 @@
           "http://www.wikidata.org/entity/Q123372382"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": null,
         "owl:sameAs": [
@@ -2473,7 +2473,7 @@
           "http://www.wikidata.org/entity/Q120493383"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -2522,7 +2522,7 @@
           "http://www.wikidata.org/entity/Q111176466"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -2571,7 +2571,7 @@
           "http://www.wikidata.org/entity/Q117012"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -2622,7 +2622,7 @@
           "http://www.wikidata.org/entity/Q3072527"
         ],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"
@@ -2667,7 +2667,7 @@
         "description": "",
         "rdfs:seeAlso": [],
         "rdfs:isDefinedBy": {
-          "@id": "https://redstring.dev"
+          "@id": "https://redstring.io"
         },
         "rdfs:subClassOf": {
           "@id": "type:base-thing-prototype"

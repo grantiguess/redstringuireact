@@ -3,6 +3,65 @@
  * Scans repositories to find existing universes and enables easy linking
  */
 
+const toTitleCase = (value) => value
+  .split(/[-_\s]+/)
+  .filter(Boolean)
+  .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+  .join(' ');
+
+const sanitizeSlug = (value) => {
+  if (!value) return 'universe';
+  return value
+    .toString()
+    .replace(/\.redstring$/i, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'universe';
+};
+
+const DEFAULT_PLACEHOLDER_NAMES = new Set([
+  'untitled',
+  'untitled universe',
+  'untitled space',
+  'untitled graph',
+  'untitled web',
+  'untitled node',
+  'add',
+  'switch',
+  'nothing'
+]);
+
+const derivePathNaming = (filePath) => {
+  const parts = (filePath || '').split('/').filter(Boolean);
+  const fileName = parts.pop() || '';
+  const fileBase = fileName.replace(/\.redstring$/i, '').trim();
+  const folderCandidate = parts.length > 0 ? parts[parts.length - 1] : '';
+
+  const genericFileNames = new Set(['universe', 'space', 'default', 'redstring']);
+  const isGenericFileName = genericFileNames.has(fileBase.toLowerCase());
+
+  const baseCandidate = (isGenericFileName ? folderCandidate : fileBase) || folderCandidate || fileBase;
+  const safeBase = baseCandidate && baseCandidate.trim().length > 0 ? baseCandidate : 'universe';
+
+  const slug = sanitizeSlug(safeBase);
+  const fallbackName = toTitleCase(slug);
+
+  return { slug, fallbackName };
+};
+
+const pickDisplayName = (candidateName, fallbackName) => {
+  const trimmed = (candidateName || '').trim();
+  const normalized = trimmed.toLowerCase();
+
+  if (!trimmed || DEFAULT_PLACEHOLDER_NAMES.has(normalized) || normalized.startsWith('untitled ')) {
+    return fallbackName;
+  }
+
+  return trimmed;
+};
+
 /**
  * Discover universes in a repository
  * @param {Object} provider - Git provider instance
@@ -254,17 +313,14 @@ const analyzeUniverseFile = async (provider, filePath) => {
     // Count content
     const stats = getUniverseStats(data);
 
-    // Determine universe name from multiple sources
-    const name =
-      metadata.title ||
-      metadata.name ||
-      userInterface.title ||
-      extractNameFromPath(filePath) ||
-      'Untitled Universe';
+    const fallbackName = extractNameFromPath(filePath) || 'Universe';
+    const rawCandidateName = metadata.title || metadata.name || userInterface.title;
+    const name = pickDisplayName(rawCandidateName, fallbackName);
+    const slug = extractSlugFromPath(filePath);
 
     return {
       name,
-      slug: extractSlugFromPath(filePath),
+      slug,
       fileName: filePath.split('/').pop(),
       stats,
       metadata: {
@@ -370,14 +426,8 @@ const getUniverseStats = (data) => {
  * @returns {string} Extracted name
  */
 const extractNameFromPath = (filePath) => {
-  const fileName = filePath.split('/').pop();
-  const baseName = fileName.replace('.redstring', '');
-
-  // Clean up common naming patterns
-  return baseName
-    .replace(/[-_]/g, ' ')
-    .replace(/\b\w/g, l => l.toUpperCase())
-    .trim();
+  const { fallbackName } = derivePathNaming(filePath);
+  return fallbackName;
 };
 
 /**
@@ -386,8 +436,8 @@ const extractNameFromPath = (filePath) => {
  * @returns {string} Universe slug
  */
 const extractSlugFromPath = (filePath) => {
-  const fileName = filePath.split('/').pop();
-  return fileName.replace('.redstring', '').toLowerCase();
+  const { slug } = derivePathNaming(filePath);
+  return slug;
 };
 
 /**

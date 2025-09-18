@@ -10,10 +10,10 @@ Redstring's file format is designed to mirror cognitive processes - how thoughts
 {
   "@context": {
     "@version": 1.1,
-    "@vocab": "https://redstring.org/vocab/",
+    "@vocab": "https://redstring.net/vocab/",
     
     // Core Redstring Concepts
-    "redstring": "https://redstring.org/vocab/",
+    "redstring": "https://redstring.net/vocab/",
     "Graph": "redstring:Graph",
     "Node": "redstring:Node", 
     "Edge": "redstring:Edge",
@@ -98,7 +98,7 @@ This approach enables:
 
 ```json
 {
-  "@context": "https://redstring.org/contexts/v1.jsonld",
+  "@context": "https://redstring.net/contexts/v1.jsonld",
   "@type": "redstring:CognitiveSpace",
   "format": "redstring-v1.0.0",
   "metadata": {

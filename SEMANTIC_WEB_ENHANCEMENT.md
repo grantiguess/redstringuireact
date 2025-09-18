@@ -685,7 +685,7 @@ const createRDFCompliantNode = (nodeData) => ({
   "rdfs:label": nodeData.name,
   "rdfs:comment": nodeData.description,
   "rdfs:seeAlso": nodeData.externalLinks || [],
-  "rdfs:isDefinedBy": { "@id": "https://redstring.dev" },
+  "rdfs:isDefinedBy": { "@id": "https://redstring.io" },
   
   // RedString-specific properties (preserved)
   "redstring:color": nodeData.color,

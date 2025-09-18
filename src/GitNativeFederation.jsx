@@ -4,7 +4,7 @@
  * Provides real-time responsiveness, true decentralization, and distributed resilience
  */
 
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import {
   GitBranch, 
   GitCommit, 
@@ -57,6 +57,53 @@ import startupCoordinator from './services/startupCoordinator.js';
 import universeManager from './services/universeManager.js';
 // Note: Using inline device detection to avoid circular dependencies during React initialization
 // The external device detection utilities are available but not used during component init
+
+const PLACEHOLDER_UNIVERSE_NAMES = new Set([
+  '',
+  'untitled',
+  'untitled universe',
+  'untitled space',
+  'untitled graph',
+  'untitled web',
+  'untitled node',
+  'add',
+  'switch',
+  'nothing'
+]);
+
+const toTitleCase = (value = '') => value
+  .split(/[-_\s]+/)
+  .filter(Boolean)
+  .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+  .join(' ') || 'Universe';
+
+const getUniverseDisplayName = (universe) => {
+  if (!universe || typeof universe !== 'object') {
+    return 'Universe';
+  }
+
+  const rawName = (universe.name || '').trim();
+  const normalized = rawName.toLowerCase();
+
+  if (rawName && !PLACEHOLDER_UNIVERSE_NAMES.has(normalized) && !normalized.startsWith('untitled ')) {
+    return rawName;
+  }
+
+  const folder = universe?.gitRepo?.universeFolder;
+  if (folder) {
+    const folderSegments = folder.split('/').filter(Boolean);
+    const folderName = folderSegments.pop();
+    if (folderName) {
+      return toTitleCase(folderName);
+    }
+  }
+
+  if (universe.slug) {
+    return toTitleCase(universe.slug);
+  }
+
+  return 'Universe';
+};
 
 const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   // Use simple device detection to avoid circular dependencies during React initialization
@@ -187,6 +234,24 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   const [dataAuthMethod, setDataAuthMethod] = useState(null);
   const [repoUniverseLists, setRepoUniverseLists] = useState({});
 
+  const universeCards = useMemo(() => {
+    const seen = new Set();
+    return (universes || [])
+      .filter((u) => u && typeof u === 'object' && u.slug)
+      .filter((u) => {
+        if (seen.has(u.slug)) {
+          console.warn(`[GitNativeFederation] Duplicate universe slug filtered: ${u.slug}`);
+          return false;
+        }
+        seen.add(u.slug);
+        return true;
+      })
+      .map((u) => ({
+        universe: u,
+        displayName: getUniverseDisplayName(u)
+      }));
+  }, [universes]);
+
   // Helper function to clear GitHub App installation from both state and storage
   const clearGithubAppInstallation = () => {
     setGithubAppInstallation(null);
@@ -222,7 +287,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     });
     
     return unsubscribe;
-  }, [currentProvider, deviceConfig.enableLocalFileStorage]);
+  }, [attemptConnectUniverseRepo, currentProvider, deviceConfig.enableLocalFileStorage, ensureEngineForActiveUniverse, gitSyncEngine, storeGitSyncEngine]);
 
   // Determine which auth powers data access (GitHub App preferred, fallback OAuth)
   useEffect(() => {
@@ -234,15 +299,14 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         setDataAuthMethod(null);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [githubAppInstallation?.accessToken, allowOAuthBackup, providerConfig?.user, providerConfig?.repo]);
+  }, [getPreferredGitCredentials]);
 
   // Auto-fetch universes for repo on first load (no toggle, always show)
-  const ensureRepoUniversesList = async (user, repo) => {
+  const ensureRepoUniversesList = useCallback(async (user, repo) => {
     const key = `${user}/${repo}`;
     const existing = repoUniverseLists[key];
-    if (existing && !existing.loading) return; // Already loaded
-    
+    if (existing && !existing.loading) return;
+
     setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: true, items: [] } }));
     try {
       const authMethod = githubAppInstallation?.accessToken ? 'github-app' : 'oauth';
@@ -251,18 +315,20 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     } catch (_) {
       setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: false, items: [] } }));
     }
-  };
+  }, [githubAppInstallation?.accessToken, repoUniverseLists]);
 
-  // Auto-load repo universe lists when we have the necessary data (only once)
-  const didLoadRepoUniversesRef = useRef(false);
+  const lastLoadedRepoKeyRef = useRef(null);
   useEffect(() => {
-    if (providerConfig?.user && providerConfig?.repo && (githubAppInstallation?.accessToken || allowOAuthBackup) && !didLoadRepoUniversesRef.current) {
-      didLoadRepoUniversesRef.current = true;
-      ensureRepoUniversesList(providerConfig.user, providerConfig.repo);
+    const user = providerConfig?.user;
+    const repo = providerConfig?.repo;
+    const key = user && repo ? `${user}/${repo}` : null;
+    if (key && (githubAppInstallation?.accessToken || allowOAuthBackup) && lastLoadedRepoKeyRef.current !== key) {
+      lastLoadedRepoKeyRef.current = key;
+      ensureRepoUniversesList(user, repo);
     }
-  }, [providerConfig?.user, providerConfig?.repo, githubAppInstallation?.accessToken, allowOAuthBackup]);
+  }, [providerConfig?.user, providerConfig?.repo, githubAppInstallation?.accessToken, allowOAuthBackup, ensureRepoUniversesList]);
 
-  const refreshRepoUniversesList = async (user, repo) => {
+  const refreshRepoUniversesList = useCallback(async (user, repo) => {
     const key = `${user}/${repo}`;
     setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: true } }));
     try {
@@ -272,7 +338,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     } catch (_) {
       setRepoUniverseLists(prev => ({ ...prev, [key]: { ...(prev[key] || {}), open: true, loading: false } }));
     }
-  };
+  }, [githubAppInstallation?.accessToken]);
 
   const handleReloadFromGit = async () => {
     try {
@@ -308,7 +374,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         }
       }
     } catch (_) {}
-  }, []);
+  }, [attemptConnectUniverseRepo, deviceConfig.enableLocalFileStorage, ensureEngineForActiveUniverse, gitSyncEngine, storeGitSyncEngine]);
   
   // Startup logging and status check
   useEffect(() => {
@@ -556,15 +622,18 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   }, [githubAppInstallation, isConnected]);
 
   // Helpers for universes & storage (now using UniverseManager)
-  const getActiveUniverse = () => universeManager.getActiveUniverse();
-  const updateActiveUniverse = (updates) => {
+  const getActiveUniverse = useCallback(() => universeManager.getActiveUniverse(), []);
+
+  const updateActiveUniverse = useCallback((updates) => {
     try {
-      universeManager.updateUniverse(activeUniverseSlug, updates);
-      setUniverses(universeManager.getAllUniverses()); // Refresh local state
+      const slug = universeManager.activeUniverseSlug;
+      if (!slug) return;
+      universeManager.updateUniverse(slug, updates);
+      setUniverses(universeManager.getAllUniverses());
     } catch (error) {
       console.error('[GitNativeFederation] Failed to update active universe:', error);
     }
-  };
+  }, []);
   const addUniverse = () => {
     try {
       universeManager.createUniverse(`Universe ${universes.length + 1}`, {
@@ -579,7 +648,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     }
   };
   const removeUniverse = (slug) => {
-    if (universes.length <= 1) return;
+    if (universeCards.length <= 1) return;
     const confirmed = window.confirm('Remove this universe? This does not delete any GitHub data.');
     if (!confirmed) return;
     
@@ -802,7 +871,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   };
 
   // Prefer GitHub App installation token; fall back to OAuth access token
-  const getPreferredGitCredentials = async () => {
+  const getPreferredGitCredentials = useCallback(async () => {
     try {
       if (githubAppInstallation && githubAppInstallation.installationId) {
         try {
@@ -829,9 +898,9 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       }
     } catch (_) {}
     return null;
-  };
+  }, [allowOAuthBackup, githubAppInstallation]);
 
-  const attemptConnectUniverseRepo = async () => {
+  const attemptConnectUniverseRepo = useCallback(async () => {
     try {
       const u = getActiveUniverse();
       if (!u?.gitRepo?.linkedRepo) {
@@ -903,14 +972,30 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         setGitConnection({ ...config, token: undefined });
       } else {
         setSyncStatus({ type: 'warning', status: 'Linked repository not accessible yet. Complete GitHub auth.' });
-      }
-    } catch (e) {
+    }
+  } catch (e) {
       console.warn('[GitNativeFederation] attemptConnectUniverseRepo failed:', e);
     }
-  };
+  }, [
+    activeUniverseSlug,
+    allowOAuthBackup,
+    currentProvider,
+    getActiveUniverse,
+    getPreferredGitCredentials,
+    githubAppInstallation,
+    providerConfig.repo,
+    providerConfig.user,
+    setCurrentProvider,
+    setGitConnection,
+    setGithubAppInstallation,
+    setIsConnected,
+    setProviderConfig,
+    setSyncStatus,
+    updateActiveUniverse
+  ]);
 
   // Ensure a Git engine exists and is registered for the active universe (used when local storage is disabled)
-  const ensureEngineForActiveUniverse = async () => {
+  const ensureEngineForActiveUniverse = useCallback(async () => {
     try {
       const u = getActiveUniverse();
       if (!u?.gitRepo?.linkedRepo) return;
@@ -974,10 +1059,20 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         // Non-fatal; engine is active for future reads
       }
     } catch (_) {}
-  };
+  }, [
+    getActiveUniverse,
+    getPreferredGitCredentials,
+    gitSyncEngine,
+    setGitSyncEngine,
+    setGitSyncEngineStore,
+    setSyncStatus,
+    sourceOfTruthMode,
+    storeActions,
+    storeGitSyncEngine
+  ]);
 
   // Direct read from Git without an engine (fallback when engine not yet configured)
-  const readDirectFromGitIfNoEngine = async () => {
+  const readDirectFromGitIfNoEngine = useCallback(async () => {
     try {
       const u = getActiveUniverse();
       if (!u?.gitRepo?.linkedRepo) return false;
@@ -1016,7 +1111,14 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       }
     } catch (_) {}
     return false;
-  };
+  }, [
+    getActiveUniverse,
+    getPreferredGitCredentials,
+    gitSyncEngine,
+    setSyncStatus,
+    storeActions,
+    storeGitSyncEngine
+  ]);
 
   // In Git-only mode, schedule an immediate engine ensure on first render (before other loaders)
   const didScheduleEnsureRef = useRef(false);
@@ -1035,7 +1137,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         } catch (_) {}
       })();
     }
-  }, [deviceConfig.enableLocalFileStorage]);
+  }, [deviceConfig.enableLocalFileStorage, ensureEngineForActiveUniverse, getActiveUniverse, readDirectFromGitIfNoEngine]);
 
   // File System Access helpers (mobile-aware with graceful fallbacks)
   const pickLocalFileForActiveUniverse = async () => {
@@ -3674,7 +3776,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
 
           {/* Universe Cards */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {universes.map((universe) => (
+            {universeCards.map(({ universe, displayName }) => (
               <div key={universe.slug} style={{ 
                 background: '#bdb5b5', 
                 border: universe.slug === activeUniverseSlug ? '2px solid #7A0000' : '1px solid #260000', 
@@ -3684,7 +3786,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-                      {universe.name || universe.slug}
+                      {displayName}
                     </div>
                     {universe.slug === activeUniverseSlug && (
                       <div style={{ fontSize: '0.75rem', color: '#7A0000', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '10px' }}>ACTIVE</div>
@@ -3710,18 +3812,18 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                     )}
                     <button 
                       onClick={() => removeUniverse(universe.slug)} 
-                      disabled={universes.length <= 1}
+                      disabled={universeCards.length <= 1}
                       style={{ 
                         padding: '4px', 
                         backgroundColor: 'transparent', 
-                        color: universes.length <= 1 ? '#999' : '#d32f2f', 
-                        border: `1px solid ${universes.length <= 1 ? '#999' : '#d32f2f'}`, 
+                        color: universeCards.length <= 1 ? '#999' : '#d32f2f', 
+                        border: `1px solid ${universeCards.length <= 1 ? '#999' : '#d32f2f'}`, 
                         borderRadius: '4px', 
-                        cursor: universes.length <= 1 ? 'not-allowed' : 'pointer', 
+                        cursor: universeCards.length <= 1 ? 'not-allowed' : 'pointer', 
                         display: 'flex', 
                         alignItems: 'center', 
                         justifyContent: 'center',
-                        opacity: universes.length <= 1 ? 0.5 : 1
+                        opacity: universeCards.length <= 1 ? 0.5 : 1
                       }}
                       title="Delete universe"
                     >

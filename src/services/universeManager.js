@@ -255,13 +255,18 @@ class UniverseManager {
 
   // Safe universe normalization that doesn't call device detection (prevents startup recursion)
   safeNormalizeUniverse(universe) {
+    const slug = universe.slug || 'universe';
+    const providedGitRepo = universe.gitRepo || {};
+    const providedUniverseFolder = providedGitRepo.universeFolder || universe.universeFolder;
+    const providedUniverseFile = providedGitRepo.universeFile || universe.universeFile;
+
     return {
-      slug: universe.slug || 'universe',
+      slug,
       name: universe.name || 'Universe',
-      
+
       // Use conservative defaults during startup
       sourceOfTruth: universe.sourceOfTruth || 'local',
-      
+
       // Local storage slot - enabled by default during startup
       localFile: {
         enabled: universe.localFile?.enabled ?? true,
@@ -269,23 +274,24 @@ class UniverseManager {
         handle: null, // Will be restored separately
         unavailableReason: universe.localFile?.unavailableReason || null
       },
-      
+
       // Git storage slot - preserve existing settings
       gitRepo: {
-        enabled: universe.gitRepo?.enabled ?? false,
-        linkedRepo: universe.gitRepo?.linkedRepo || universe.linkedRepo || null,
-        schemaPath: universe.gitRepo?.schemaPath || universe.schemaPath || 'schema',
-        universeFolder: `universes/${universe.slug}`,
-        priority: universe.gitRepo?.priority || 'secondary'
+        enabled: providedGitRepo.enabled ?? false,
+        linkedRepo: providedGitRepo.linkedRepo || universe.linkedRepo || null,
+        schemaPath: providedGitRepo.schemaPath || universe.schemaPath || 'schema',
+        universeFolder: providedUniverseFolder || `universes/${slug}`,
+        universeFile: providedUniverseFile || `${slug}.redstring`,
+        priority: providedGitRepo.priority || 'secondary'
       },
-      
+
       // Browser storage - enabled as fallback
       browserStorage: {
         enabled: universe.browserStorage?.enabled ?? true,
         role: universe.browserStorage?.role || 'fallback',
-        key: universe.browserStorage?.key || `universe_${(universe.slug || 'universe')}`
+        key: universe.browserStorage?.key || `universe_${slug}`
       },
-      
+
       // Metadata
       sources: Array.isArray(universe.sources) ? universe.sources : [],
       created: universe.created || new Date().toISOString(),
@@ -388,7 +394,7 @@ class UniverseManager {
     // Use safe defaults if device config isn't ready yet (prevents infinite recursion)
     let deviceConfig = this.deviceConfig;
     let isGitOnlyMode = this.isGitOnlyMode;
-    
+
     if (!deviceConfig) {
       try {
         deviceConfig = getCurrentDeviceConfig();
@@ -406,8 +412,13 @@ class UniverseManager {
       }
     }
     
+    const slug = universe.slug || 'universe';
+    const providedGitRepo = universe.gitRepo || {};
+    const providedUniverseFolder = providedGitRepo.universeFolder || universe.universeFolder;
+    const providedUniverseFile = providedGitRepo.universeFile || universe.universeFile;
+
     return {
-      slug: universe.slug || 'universe',
+      slug,
       name: universe.name || 'Universe',
       
       // Storage configuration - device-aware defaults
@@ -425,19 +436,20 @@ class UniverseManager {
       
       // Git storage slot - enabled by default in Git-Only mode
       gitRepo: {
-        enabled: isGitOnlyMode 
-          ? true 
-          : (universe.gitRepo?.enabled ?? false),
-        linkedRepo: universe.gitRepo?.linkedRepo || universe.linkedRepo || null, // Migration from old format
-        schemaPath: universe.gitRepo?.schemaPath || universe.schemaPath || 'schema',
-        universeFolder: `universes/${universe.slug}`, // Standard path structure
-        priority: isGitOnlyMode ? 'primary' : 'secondary'
+        enabled: isGitOnlyMode
+          ? true
+          : (providedGitRepo.enabled ?? false),
+        linkedRepo: providedGitRepo.linkedRepo || universe.linkedRepo || null, // Migration from old format
+        schemaPath: providedGitRepo.schemaPath || universe.schemaPath || 'schema',
+        universeFolder: providedUniverseFolder || `universes/${slug}`,
+        universeFile: providedUniverseFile || `${slug}.redstring`,
+        priority: providedGitRepo.priority || (isGitOnlyMode ? 'primary' : 'secondary')
       },
       
       // Browser storage fallback - always enabled on mobile/tablet
       browserStorage: {
         enabled: universe.browserStorage?.enabled ?? deviceConfig.preferBrowserStorage,
-        key: `universe_${universe.slug}`,
+        key: `universe_${slug}`,
         role: isGitOnlyMode ? 'cache' : 'fallback' // Different roles based on mode
       },
       
@@ -1635,14 +1647,6 @@ class UniverseManager {
       this.notifyStatus('error', `Failed to link universe: ${error.message}`);
       throw error;
     }
-  }
-
-  /**
-   * Get all universes
-   * @returns {Array} Array of all universe objects
-   */
-  getAllUniverses() {
-    return Array.from(this.universes.values());
   }
 
   /**
