@@ -1115,6 +1115,11 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
     }
   };
 
+  // Debug logging
+  console.log('[SemanticDiscovery] Rendering with viewMode:', viewMode);
+  console.log('[SemanticDiscovery] Contexts:', contexts);
+  console.log('[SemanticDiscovery] Manual query:', manualQuery);
+
   return (
     <>
       {/* Ghost animation CSS */}
@@ -1174,6 +1179,11 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
       </style>
       
       <div className="panel-content-inner semantic-discovery-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {/* Debug Test */}
+        <div style={{ background: 'red', color: 'white', padding: '10px', marginBottom: '10px' }}>
+          DEBUG: Semantic Discovery View is rendering! ViewMode: {viewMode}
+        </div>
+        
         {/* Header */}
       <div className="semantic-discovery-header" style={{ marginBottom: '16px' }}>
         <h2 style={{ margin: 0, color: '#260000', userSelect: 'none', fontSize: '1.1rem', fontWeight: 'bold', fontFamily: "'EmOne', sans-serif", marginBottom: '12px' }}>
@@ -4204,6 +4214,7 @@ const Panel = forwardRef(
             );
         } else if (leftViewActive === 'semantic') {
             // Semantic Discovery view - concept discovery engine
+            console.log('[Panel] Rendering semantic discovery view');
             panelContent = (
                 <LeftSemanticDiscoveryView
                     storeActions={storeActions}

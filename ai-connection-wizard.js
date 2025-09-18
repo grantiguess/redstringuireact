@@ -159,6 +159,8 @@ class AIConnectionWizard {
         }
       }, this.config.startupTimeout);
 
+      let stderrBuffer = '';
+
       // Check if MCP server is actually responding to health checks
       const checkMCPHealth = () => {
         get('http://localhost:3001/health', (res) => {
@@ -188,6 +190,7 @@ class AIConnectionWizard {
 
       mcpProcess.stderr.on('data', (data) => {
         const error = data.toString();
+        stderrBuffer += error;
         if (error.includes('Waiting for Redstring store bridge')) {
           clearTimeout(startupTimeout);
           console.log('✅ MCP server started (waiting for bridge)');
@@ -201,6 +204,8 @@ class AIConnectionWizard {
           this.status.mcpServer = true;
           this.processes.set('mcp', mcpProcess);
           resolve();
+        } else {
+          console.error('MCP stderr:', error.trim());
         }
       });
 
@@ -213,6 +218,9 @@ class AIConnectionWizard {
       mcpProcess.on('exit', (code) => {
         if (code !== 0 && !this.status.mcpServer) {
           clearTimeout(startupTimeout);
+          if (stderrBuffer.trim()) {
+            console.error('MCP stderr before exit:\n' + stderrBuffer.trim());
+          }
           reject(new Error(`MCP server exited with code ${code}`));
         }
       });

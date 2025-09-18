@@ -205,6 +205,8 @@ function NodeCanvas() {
   const [isHoveringRightResizer, setIsHoveringRightResizer] = useState(false);
   // Track last pan velocity to produce consistent glide on release
   const lastPanVelocityRef = useRef({ vx: 0, vy: 0 });
+  // Track the source of current panning for momentum decisions
+  const panSourceRef = useRef(null); // 'touch', 'trackpad', 'mouse', null
   // Track latest widths in refs to avoid stale closures in global listeners
   const leftWidthRef = useRef(leftPanelWidth);
   const rightWidthRef = useRef(rightPanelWidth);
@@ -477,6 +479,7 @@ function NodeCanvas() {
       startedOnNode.current = false;
       mouseMoved.current = false;
       setPanStart({ x: t.clientX, y: t.clientY });
+      panSourceRef.current = 'touch';
       const synthetic = {
         clientX: t.clientX,
         clientY: t.clientY,
@@ -3775,15 +3778,17 @@ function NodeCanvas() {
           }
           // setDebugData call removed - debug mode disabled
           // Clear the flag after a delay
-          setTimeout(() => { 
+          setTimeout(() => {
             if (opId === zoomOpIdRef.current) {
-              isPanningOrZooming.current = false; 
+              isPanningOrZooming.current = false;
+              panSourceRef.current = null;
             }
           }, 100);
         } catch (error) {
-          
+
           // setDebugData call removed - debug mode disabled
           isPanningOrZooming.current = false;
+          panSourceRef.current = null;
         }
         return; // Processed
     }
@@ -3795,6 +3800,7 @@ function NodeCanvas() {
     if (deviceType === 'trackpad' || deviceType === 'trackpad_inertia' || (deviceType === 'undetermined' && isMac && (Math.abs(deltaX) > 0.05 || (Math.abs(deltaY) < 30 && Math.abs(deltaX) > 0)))) {
         e.stopPropagation();
         isPanningOrZooming.current = true;
+        panSourceRef.current = deviceType === 'trackpad_inertia' ? 'trackpad' : 'trackpad';
         const dx = -deltaX * PAN_DRAG_SENSITIVITY;
         const dy = -deltaY * PAN_DRAG_SENSITIVITY;
         
@@ -3812,7 +3818,10 @@ function NodeCanvas() {
           return { x: newX, y: newY };
         });
         // Clear the flag after a delay
-        setTimeout(() => { isPanningOrZooming.current = false; }, 100);
+        setTimeout(() => {
+          isPanningOrZooming.current = false;
+          panSourceRef.current = null;
+        }, 100);
         return; // Processed
     }
 
@@ -3840,15 +3849,17 @@ function NodeCanvas() {
             }
             // setDebugData call removed - debug mode disabled
             // Clear the flag after a delay
-            setTimeout(() => { 
+            setTimeout(() => {
               if (opId === zoomOpIdRef.current) {
-                isPanningOrZooming.current = false; 
+                isPanningOrZooming.current = false;
+                panSourceRef.current = null;
               }
             }, 100);
         } catch (error) {
-            
+
             // setDebugData call removed - debug mode disabled
             isPanningOrZooming.current = false;
+            panSourceRef.current = null;
         }
         return; // Processed
     }
@@ -4704,6 +4715,7 @@ function NodeCanvas() {
           isPanningOrZooming.current = true;
           setIsPanning(true);
           setPanStart({ x: e.clientX, y: e.clientY });
+          panSourceRef.current = 'mouse';
         }
       }
     }
@@ -4901,6 +4913,7 @@ function NodeCanvas() {
     }
     setPanStart({ x: e.clientX, y: e.clientY });
     setIsPanning(true);
+    panSourceRef.current = 'mouse';
   };
   const handleMouseUp = (e) => {
     if (isPaused || !activeGraphId) return;
@@ -4997,34 +5010,40 @@ function NodeCanvas() {
 
     // Finalize panning state
     if (isPanning && panStart) {
-      // Inertia on release: continue motion based on last tracked velocity
-      let vx = (lastPanVelocityRef.current?.vx || (e.clientX - panStart.x)) * 0.14;
-      let vy = (lastPanVelocityRef.current?.vy || (e.clientY - panStart.y)) * 0.14;
-      let remaining = 260; // ms decay duration
-      const friction = 0.9; // decay factor per frame
-      const step = () => {
-        if (remaining <= 0) return;
-        setPanOffset(prevOff => {
-          const currentCanvasWidth = canvasSize.width * zoomLevel;
-          const currentCanvasHeight = canvasSize.height * zoomLevel;
-          const minX = viewportSize.width - currentCanvasWidth;
-          const minY = viewportSize.height - currentCanvasHeight;
-          const maxX = 0;
-          const maxY = 0;
-          const nx = Math.min(Math.max(prevOff.x + vx, minX), maxX);
-          const ny = Math.min(Math.max(prevOff.y + vy, minY), maxY);
-          return { x: nx, y: ny };
-        });
-        remaining -= 16;
-        // decay velocity
-        vx *= friction;
-        vy *= friction;
+      // Only apply momentum/inertia for touch and trackpad gestures, not regular mouse drags
+      const shouldApplyMomentum = panSourceRef.current === 'touch' || panSourceRef.current === 'trackpad';
+
+      if (shouldApplyMomentum) {
+        // Inertia on release: continue motion based on last tracked velocity
+        let vx = (lastPanVelocityRef.current?.vx || (e.clientX - panStart.x)) * 0.14;
+        let vy = (lastPanVelocityRef.current?.vy || (e.clientY - panStart.y)) * 0.14;
+        let remaining = 260; // ms decay duration
+        const friction = 0.9; // decay factor per frame
+        const step = () => {
+          if (remaining <= 0) return;
+          setPanOffset(prevOff => {
+            const currentCanvasWidth = canvasSize.width * zoomLevel;
+            const currentCanvasHeight = canvasSize.height * zoomLevel;
+            const minX = viewportSize.width - currentCanvasWidth;
+            const minY = viewportSize.height - currentCanvasHeight;
+            const maxX = 0;
+            const maxY = 0;
+            const nx = Math.min(Math.max(prevOff.x + vx, minX), maxX);
+            const ny = Math.min(Math.max(prevOff.y + vy, minY), maxY);
+            return { x: nx, y: ny };
+          });
+          remaining -= 16;
+          // decay velocity
+          vx *= friction;
+          vy *= friction;
+          requestAnimationFrame(step);
+        };
         requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
+      }
     }
     setIsPanning(false);
     isPanningOrZooming.current = false; // Clear the flag when panning ends
+    panSourceRef.current = null; // Reset pan source
     isMouseDown.current = false;
     // Reset mouseMoved.current immediately after mouse up logic is done
     // This prevents race condition with canvas click handler
@@ -5058,6 +5077,7 @@ function NodeCanvas() {
     }
     setIsPanning(false);
     isPanningOrZooming.current = false; // Clear the flag when canvas mouse up
+    panSourceRef.current = null; // Reset pan source
     setDraggingNodeInfo(null);
     setDrawingConnectionFrom(null);
 

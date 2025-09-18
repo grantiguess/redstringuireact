@@ -193,7 +193,8 @@ class SimpleAIConnectionWizard {
 
     if (!this.status.bridge) {
       console.log('❌ Bridge server is not running');
-      console.log('   Start it with: npm run server\n');
+      console.log('   Start the MCP bridge with: node redstring-mcp-server.js');
+      console.log('   (Alternatively, legacy bridge: npm run bridge:start)\n');
       return;
     }
 
