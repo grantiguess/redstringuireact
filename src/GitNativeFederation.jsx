@@ -1179,7 +1179,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
             
             setSyncStatus({ type: 'info', status: 'Loading Git universe data...' });
             
-            const { forceGitUniverseLoad } = await import('../store/fileStorage.js');
+            const { forceGitUniverseLoad } = await import('./store/fileStorage.js');
             const result = await forceGitUniverseLoad();
             
             if (result.success) {
