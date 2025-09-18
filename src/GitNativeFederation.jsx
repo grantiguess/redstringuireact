@@ -1774,8 +1774,12 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         console.log('[GitNativeFederation] Auto-added linked repository as source');
       }
       
-      // Attempt to connect to the repository
-      attemptConnectUniverseRepo();
+      // Attempt to connect to the repository ONCE per mount to avoid loops
+      if (!window.__rs_attemptConnect_once) {
+        window.__rs_attemptConnect_once = true;
+        setTimeout(() => { try { attemptConnectUniverseRepo(); } catch (_) {} }, 0);
+        setTimeout(() => { window.__rs_attemptConnect_once = false; }, 5000);
+      }
     }
   }, [activeUniverseSlug, currentProvider, isVisible, isInteractive]);
 
@@ -1804,7 +1808,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     }
     
     // SECOND: Check if UniverseManager already has an engine for this universe
-    const existingEngine = universeManager.getGitSyncEngine(universeSlug);
+    const targetSlug = universeManager.activeUniverseSlug || activeUniverseSlug || universeSlug;
+    const existingEngine = universeManager.getGitSyncEngine(targetSlug);
     if (existingEngine && currentProvider) {
       console.log('[GitNativeFederation] Using existing UniverseManager engine, adopting it');
       setGitSyncEngine(existingEngine);
@@ -1825,7 +1830,7 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     
     // THIRD: Only create new engine if we have provider and no existing engines
     if (currentProvider && !syncEngine && providerConfig.repo && !existingEngine) {
-      console.log('[GitNativeFederation] Creating NEW sync engine for:', providerConfig.repo, 'universe:', universeSlug);
+      console.log('[GitNativeFederation] Creating NEW sync engine for:', providerConfig.repo, 'universe:', targetSlug);
       
       const newSyncEngine = new SemanticSyncEngine(providerConfig);
       const newFederation = new SemanticFederation(newSyncEngine);
@@ -1849,9 +1854,9 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       } catch {}
       
       // Check if we already have an engine for this universe
-      const existingEngine = universeManager.getGitSyncEngine(universeSlug);
+      const existingEngine = universeManager.getGitSyncEngine(targetSlug);
       if (existingEngine) {
-        console.log(`[GitNativeFederation] Using existing GitSyncEngine for ${universeSlug}`);
+        console.log(`[GitNativeFederation] Using existing GitSyncEngine for ${targetSlug}`);
         setGitSyncEngine(existingEngine);
         setGitSyncEngineStore(existingEngine);
         return;
@@ -1859,10 +1864,10 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
 
       // Check with startup coordinator if we're allowed to initialize
       const initializeEngine = async () => {
-        const canInitialize = await startupCoordinator.requestEngineInitialization(universeSlug, 'GitNativeFederation');
+        const canInitialize = await startupCoordinator.requestEngineInitialization(targetSlug, 'GitNativeFederation');
         if (!canInitialize) {
           // Try to use existing engine if blocked
-          const blockedExistingEngine = universeManager.getGitSyncEngine(universeSlug);
+          const blockedExistingEngine = universeManager.getGitSyncEngine(targetSlug);
           if (blockedExistingEngine) {
             setGitSyncEngine(blockedExistingEngine);
             setGitSyncEngineStore(blockedExistingEngine);
@@ -1870,8 +1875,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
           return;
         }
 
-        console.log(`[GitNativeFederation] Creating new GitSyncEngine for ${universeSlug}...`);
-        const newGitSyncEngine = new GitSyncEngine(currentProvider, sourceOfTruthMode, universeSlug, fileBaseName, universeManager);
+        console.log(`[GitNativeFederation] Creating new GitSyncEngine for ${targetSlug}...`);
+        const newGitSyncEngine = new GitSyncEngine(currentProvider, sourceOfTruthMode, targetSlug, fileBaseName, universeManager);
         
         // Store the new engine
         setGitSyncEngine(newGitSyncEngine);

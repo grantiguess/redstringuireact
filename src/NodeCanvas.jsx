@@ -508,7 +508,7 @@ function NodeCanvas() {
   };
 
   const handleTouchMoveCanvas = (e) => {
-    console.log('handleTouchMoveCanvas called, draggingNodeInfo:', !!draggingNodeInfo);
+    console.log('handleTouchMoveCanvas called, touches:', e.touches?.length, 'dragging:', !!draggingNodeInfo);
     if (e && e.cancelable) {
       e.preventDefault();
       e.stopPropagation();
@@ -7134,7 +7134,7 @@ function NodeCanvas() {
             </div>
           ) : !activeGraphId ? ( // Check local state
             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
-              No graph selected. Open or create a graph from the left panel.
+              No Thing selected. Open or create a thing from the left panel.
             </div>
           ) : (
             <svg
@@ -8494,6 +8494,7 @@ function NodeCanvas() {
                                }
                              }}
                              onTouchMove={(e) => {
+                               console.log('Node onTouchMove called!');
                                // Convert touch move to synthetic mouse move for dragging
                                const touch = e.touches[0];
                                if (touch) {
