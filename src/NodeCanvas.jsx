@@ -4524,6 +4524,11 @@ function NodeCanvas() {
 
   const handleMouseMove = async (e) => {
     if (isPaused || !activeGraphId) return;
+
+    // Debug: Log when mouse move is called during dragging
+    if (draggingNodeInfo) {
+      console.log('handleMouseMove called with draggingNodeInfo:', draggingNodeInfo);
+    }
     
     // Clear label cache when mouse moves significantly to ensure labels follow connections
     clearLabelsOnMouseMove(e);
