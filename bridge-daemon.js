@@ -8,6 +8,9 @@ import fetch from 'node-fetch';
 import queueManager from './src/services/queue/Queue.js';
 import eventLog from './src/services/EventLog.js';
 import committer from './src/services/Committer.js';
+import fs from 'fs';
+import http from 'http';
+import https from 'https';
 // Lazily import the scheduler to avoid pulling UI store modules at startup
 let scheduler = null;
 
@@ -41,11 +44,33 @@ const logger = {
 const app = express();
 const PORT = process.env.BRIDGE_PORT || 3001;
 
+const TRUST_PROXY = process.env.TRUST_PROXY;
+if (TRUST_PROXY) {
+  if (TRUST_PROXY === 'true') {
+    app.set('trust proxy', 1);
+  } else if (TRUST_PROXY === 'false') {
+    app.set('trust proxy', false);
+  } else if (!Number.isNaN(Number(TRUST_PROXY))) {
+    app.set('trust proxy', Number(TRUST_PROXY));
+  } else {
+    app.set('trust proxy', TRUST_PROXY);
+  }
+}
+
 // Broaden CORS in development so devices on the LAN can access the bridge via the UI origin
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '2mb' }));
 
-let bridgeStoreData = { graphs: [], nodePrototypes: [], activeGraphId: null, openGraphIds: [], summary: { totalGraphs: 0, totalPrototypes: 0, lastUpdate: Date.now() }, source: 'bridge-daemon' };
+let bridgeStoreData = {
+  graphs: [],
+  nodePrototypes: [],
+  activeGraphId: null,
+  openGraphIds: [],
+  summary: { totalGraphs: 0, totalPrototypes: 0, lastUpdate: Date.now() },
+  graphLayouts: {},
+  graphSummaries: {},
+  source: 'bridge-daemon'
+};
 let pendingActions = [];
 const inflightActionIds = new Set();
 const inflightMeta = new Map(); // id -> { ts, action, params }
@@ -197,6 +222,48 @@ app.post('/api/bridge/state', (req, res) => {
     } catch {}
     if (bridgeStoreData.summary) bridgeStoreData.summary.lastUpdate = Date.now();
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+app.post('/api/bridge/layout', (req, res) => {
+  try {
+    const { layouts, mode = 'merge' } = req.body || {};
+    if (!layouts || typeof layouts !== 'object') {
+      return res.status(400).json({ error: 'layouts object is required' });
+    }
+
+    if (!bridgeStoreData.graphLayouts || typeof bridgeStoreData.graphLayouts !== 'object') {
+      bridgeStoreData.graphLayouts = {};
+    }
+
+    const graphIds = Object.keys(layouts);
+    graphIds.forEach((graphId) => {
+      const incoming = layouts[graphId];
+      if (!graphId || !incoming || typeof incoming !== 'object') return;
+      const existing = bridgeStoreData.graphLayouts[graphId] || {};
+      const mergedNodes = mode === 'replace'
+        ? { ...(incoming.nodes || {}) }
+        : { ...(existing.nodes || {}), ...(incoming.nodes || {}) };
+      const metadata = {
+        ...(existing.metadata || {}),
+        ...(incoming.metadata || {}),
+        updatedAt: Date.now()
+      };
+      bridgeStoreData.graphLayouts[graphId] = {
+        ...existing,
+        ...incoming,
+        nodes: mergedNodes,
+        metadata
+      };
+    });
+
+    if (bridgeStoreData.summary) {
+      bridgeStoreData.summary.lastUpdate = Date.now();
+    }
+
+    res.json({ success: true, graphs: graphIds.length });
   } catch (err) {
     res.status(500).json({ error: String(err?.message || err) });
   }
@@ -1292,14 +1359,50 @@ app.post('/api/ai/agent', async (req, res) => {
   }
 });
 
-const server = app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(`✅ Bridge daemon listening on http://localhost:${PORT}`);
-  // Start committer loop
-  committer.start();
-  // Lazy-load scheduler after server starts to avoid import-time side effects
-  import('./src/services/orchestrator/Scheduler.js').then(mod => { scheduler = mod.default; }).catch(() => {});
-});
+const requestedHttps = process.env.BRIDGE_USE_HTTPS === 'true';
+let serverProtocol = 'http';
+
+const createBridgeServer = () => {
+  if (requestedHttps) {
+    try {
+      const keyPath = process.env.BRIDGE_SSL_KEY_PATH;
+      const certPath = process.env.BRIDGE_SSL_CERT_PATH;
+      if (!keyPath || !certPath) {
+        console.error('⚠️ BRIDGE_USE_HTTPS=true but BRIDGE_SSL_KEY_PATH or BRIDGE_SSL_CERT_PATH is missing. Falling back to HTTP.');
+      } else {
+        const tlsOptions = {
+          key: fs.readFileSync(keyPath, 'utf8'),
+          cert: fs.readFileSync(certPath, 'utf8')
+        };
+        if (process.env.BRIDGE_SSL_CA_PATH && fs.existsSync(process.env.BRIDGE_SSL_CA_PATH)) {
+          tlsOptions.ca = fs.readFileSync(process.env.BRIDGE_SSL_CA_PATH, 'utf8');
+        }
+        if (process.env.BRIDGE_SSL_PASSPHRASE) {
+          tlsOptions.passphrase = process.env.BRIDGE_SSL_PASSPHRASE;
+        }
+        return { server: https.createServer(tlsOptions, app), protocol: 'https' };
+      }
+    } catch (error) {
+      console.error('⚠️  Failed to initialize HTTPS for bridge daemon:', error?.message || error);
+      console.error('    Falling back to HTTP.');
+    }
+  }
+  return { server: http.createServer(app), protocol: 'http' };
+};
+
+const startBridgeListener = () => {
+  const { server: netServer, protocol } = createBridgeServer();
+  serverProtocol = protocol;
+  netServer.listen(PORT, () => {
+    console.log(`✅ Bridge daemon listening on ${protocol}://localhost:${PORT}`);
+    committer.start();
+    import('./src/services/orchestrator/Scheduler.js').then(mod => { scheduler = mod.default; }).catch(() => {});
+  });
+  netServer.on('error', handleServerError);
+  return netServer;
+};
+
+let server = startBridgeListener();
 
 // -----------------------
 // Safety Drainer (when UI/Committer stalls)
@@ -1339,7 +1442,7 @@ async function killOnPort(port) {
   });
 }
 
-server.on('error', async (err) => {
+async function handleServerError(err) {
   if (err && err.code === 'EADDRINUSE') {
     console.error(`❌ Port ${PORT} is already in use. Attempting automatic recovery...`);
     const killed = await killOnPort(PORT);
@@ -1350,24 +1453,17 @@ server.on('error', async (err) => {
     }
     setTimeout(() => {
       try {
-        const retry = app.listen(PORT, () => {
-          console.log(`✅ Bridge daemon recovered and listening on http://localhost:${PORT}`);
-          committer.start();
-        });
-        retry.on('error', (e2) => {
-          console.error('❌ Failed to recover bridge daemon:', e2?.message || e2);
-          process.exit(1);
-        });
+        server = startBridgeListener();
       } catch (e) {
         console.error('❌ Unexpected failure during recovery:', e?.message || e);
         process.exit(1);
       }
     }, 500);
   } else {
-    console.error('❌ HTTP server failed to start:', err?.message || err);
+    console.error('❌ Bridge network server failed to start:', err?.message || err);
     process.exit(1);
   }
-});
+}
 
 // -----------------------
 // Orchestration Endpoints

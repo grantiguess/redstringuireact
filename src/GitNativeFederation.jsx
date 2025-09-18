@@ -259,48 +259,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     console.log('[GitNativeFederation] GitHub App installation cleared from state and storage');
   };
 
-  // Subscribe to UniverseManager changes
-  useEffect(() => {
-    const unsubscribe = universeManager.onStatusChange((status) => {
-      setSyncStatus(status);
-      // Refresh local state when universes change
-      setUniverses(universeManager.getAllUniverses());
-      setActiveUniverseSlug(universeManager.activeUniverseSlug);
-
-      // Ensure Git engine is configured for the active universe as soon as state changes
-      try {
-        const active = universeManager.getActiveUniverse();
-        if (active?.gitRepo?.linkedRepo) {
-          // Attempt to connect if provider not ready
-          if (!currentProvider) {
-            attemptConnectUniverseRepo();
-          }
-          // Register any existing engine to this universe to satisfy immediate Git loads
-          const existingEngine = storeGitSyncEngine || gitSyncEngine;
-          if (existingEngine) {
-            universeManager.setGitSyncEngine(active.slug, existingEngine);
-          } else if (!deviceConfig.enableLocalFileStorage) {
-            ensureEngineForActiveUniverse();
-          }
-        }
-      } catch (_) {}
-    });
-    
-    return unsubscribe;
-  }, [attemptConnectUniverseRepo, currentProvider, deviceConfig.enableLocalFileStorage, ensureEngineForActiveUniverse, gitSyncEngine, storeGitSyncEngine]);
-
-  // Determine which auth powers data access (GitHub App preferred, fallback OAuth)
-  useEffect(() => {
-    (async () => {
-      try {
-        const creds = await getPreferredGitCredentials();
-        setDataAuthMethod(creds?.authMethod || null);
-      } catch (_) {
-        setDataAuthMethod(null);
-      }
-    })();
-  }, [getPreferredGitCredentials]);
-
   // Auto-fetch universes for repo on first load (no toggle, always show)
   const ensureRepoUniversesList = useCallback(async (user, repo) => {
     const key = `${user}/${repo}`;
@@ -356,26 +314,6 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     }
   };
 
-  // Ensure Git engine is registered early for the active universe (helps reads on session restore)
-  useLayoutEffect(() => {
-    try {
-      const active = universeManager.getActiveUniverse();
-      if (active?.gitRepo?.linkedRepo) {
-        const existing = universeManager.getGitSyncEngine(active.slug) || storeGitSyncEngine || gitSyncEngine;
-        if (existing) {
-          universeManager.setGitSyncEngine(active.slug, existing);
-        } else {
-          // Try to connect so the engine can be created and registered
-          attemptConnectUniverseRepo();
-          // Also force-create engine if local storage is disabled (Git-only path)
-          if (!deviceConfig.enableLocalFileStorage) {
-            ensureEngineForActiveUniverse();
-          }
-        }
-      }
-    } catch (_) {}
-  }, [attemptConnectUniverseRepo, deviceConfig.enableLocalFileStorage, ensureEngineForActiveUniverse, gitSyncEngine, storeGitSyncEngine]);
-  
   // Startup logging and status check
   useEffect(() => {
     console.log('[GitNativeFederation] 🚀 Component mounted, checking authentication status...');
@@ -1119,6 +1057,62 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
     storeActions,
     storeGitSyncEngine
   ]);
+
+  // Ensure Git engine is registered early for the active universe (helps reads on session restore)
+  useLayoutEffect(() => {
+    try {
+      const active = universeManager.getActiveUniverse();
+      if (active?.gitRepo?.linkedRepo) {
+        const existing = universeManager.getGitSyncEngine(active.slug) || storeGitSyncEngine || gitSyncEngine;
+        if (existing) {
+          universeManager.setGitSyncEngine(active.slug, existing);
+        } else {
+          attemptConnectUniverseRepo();
+          if (!deviceConfig.enableLocalFileStorage) {
+            ensureEngineForActiveUniverse();
+          }
+        }
+      }
+    } catch (_) {}
+  }, [attemptConnectUniverseRepo, deviceConfig.enableLocalFileStorage, ensureEngineForActiveUniverse, gitSyncEngine, storeGitSyncEngine]);
+
+  // Subscribe to UniverseManager changes
+  useEffect(() => {
+    const unsubscribe = universeManager.onStatusChange((status) => {
+      setSyncStatus(status);
+      setUniverses(universeManager.getAllUniverses());
+      setActiveUniverseSlug(universeManager.activeUniverseSlug);
+
+      try {
+        const active = universeManager.getActiveUniverse();
+        if (active?.gitRepo?.linkedRepo) {
+          if (!currentProvider) {
+            attemptConnectUniverseRepo();
+          }
+          const existingEngine = storeGitSyncEngine || gitSyncEngine;
+          if (existingEngine) {
+            universeManager.setGitSyncEngine(active.slug, existingEngine);
+          } else if (!deviceConfig.enableLocalFileStorage) {
+            ensureEngineForActiveUniverse();
+          }
+        }
+      } catch (_) {}
+    });
+
+    return unsubscribe;
+  }, [attemptConnectUniverseRepo, currentProvider, deviceConfig.enableLocalFileStorage, ensureEngineForActiveUniverse, gitSyncEngine, storeGitSyncEngine]);
+
+  // Determine which auth powers data access (GitHub App preferred, fallback OAuth)
+  useEffect(() => {
+    (async () => {
+      try {
+        const creds = await getPreferredGitCredentials();
+        setDataAuthMethod(creds?.authMethod || null);
+      } catch (_) {
+        setDataAuthMethod(null);
+      }
+    })();
+  }, [getPreferredGitCredentials]);
 
   // In Git-only mode, schedule an immediate engine ensure on first render (before other loaders)
   const didScheduleEnsureRef = useRef(false);

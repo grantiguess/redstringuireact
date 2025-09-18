@@ -12,7 +12,8 @@
  */
 
 import { spawn } from 'child_process';
-import { createServer, get } from 'http';
+import { get, request } from 'http';
+import https from 'https';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -21,7 +22,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 class AIConnectionWizard {
-  constructor() {
+  constructor(options = {}) {
+    this.options = { keepAlive: false, ...options };
     this.processes = new Map();
     this.status = {
       bridge: false,
@@ -43,6 +45,37 @@ class AIConnectionWizard {
       mcpServer: 0,
       data: 0
     };
+    this.bridgeOrigin = this.options.bridgeUrl || `http://localhost:${this.config.bridgePort}`;
+    if (!this.options.bridgeUrl && process.env.MCP_USE_HTTPS === 'true') {
+      this.bridgeOrigin = `https://localhost:${this.config.bridgePort}`;
+    }
+    this.rejectUnauthorized = this.options.allowInsecure ? false : (this.options.rejectUnauthorized ?? true);
+    if (process.env.MCP_TLS_REJECT_UNAUTHORIZED === 'false') {
+      this.rejectUnauthorized = false;
+    }
+    this.options.hasCliAction = Boolean(
+      this.options.hasCliAction ||
+      this.options.summarize ||
+      this.options.layoutReport ||
+      this.options.layoutApply ||
+      this.options.semanticImport
+    );
+    this.httpTimeoutMs = this.options.httpTimeout || 10000;
+  }
+
+  resolveBridgeUrl(pathname = '/') {
+    try {
+      const base = this.bridgeOrigin.endsWith('/') ? this.bridgeOrigin : `${this.bridgeOrigin}/`;
+      return new URL(pathname, base);
+    } catch (error) {
+      const fallback = `http://localhost:${this.config.bridgePort}`;
+      if (this.bridgeOrigin !== fallback) {
+        console.warn(`⚠️  Invalid bridge URL "${this.bridgeOrigin}". Falling back to ${fallback}`);
+      }
+      this.bridgeOrigin = fallback;
+      const base = `${fallback}/`;
+      return new URL(pathname, base);
+    }
   }
 
   async start() {
@@ -66,8 +99,16 @@ class AIConnectionWizard {
       
       // Step 5: Provide connection instructions
       await this.provideInstructions();
+
+      if (this.options.hasCliAction) {
+        await this.runCliTasks();
+        if (!this.options.keepAlive) {
+          this.cleanup();
+          return;
+        }
+      }
       
-      // Step 6: Start monitoring with improved retry logic
+      // Step 6: Start monitoring with improved retry logic (unless CLI one-shot)
       this.startMonitoring();
       
     } catch (error) {
@@ -115,7 +156,7 @@ class AIConnectionWizard {
     // If an MCP server is already running on the expected port, reuse it
     const existing = await this._pingHealthOnce();
     if (existing) {
-      console.log('✅ MCP server already running on localhost:3001');
+      console.log(`✅ MCP server already running on ${this.bridgeOrigin}`);
       this.status.mcpServer = true;
       return;
     }
@@ -163,21 +204,20 @@ class AIConnectionWizard {
 
       // Check if MCP server is actually responding to health checks
       const checkMCPHealth = () => {
-        get('http://localhost:3001/health', (res) => {
-          if (res.statusCode === 200) {
+        this.httpRequest('GET', '/health')
+          .then(() => {
+            if (this.status.mcpServer) return;
             clearTimeout(startupTimeout);
             console.log('✅ MCP server started');
             this.status.mcpServer = true;
             this.processes.set('mcp', mcpProcess);
             resolve();
-          } else {
-            // Not ready yet, try again in 500ms
-            setTimeout(checkMCPHealth, 500);
-          }
-        }).on('error', () => {
-          // Server not ready yet, try again in 500ms
-          setTimeout(checkMCPHealth, 500);
-        });
+          })
+          .catch(() => {
+            if (!this.status.mcpServer) {
+              setTimeout(checkMCPHealth, 500);
+            }
+          });
       };
 
       // Start checking after a short delay to let the server initialize
@@ -228,13 +268,9 @@ class AIConnectionWizard {
   }
 
   _pingHealthOnce() {
-    return new Promise((resolve) => {
-      const req = get('http://localhost:3001/health', (res) => {
-        resolve(res.statusCode === 200);
-      });
-      req.on('error', () => resolve(false));
-      req.setTimeout(1000, () => { req.destroy(); resolve(false); });
-    });
+    return this.httpRequest('GET', '/health')
+      .then(() => true)
+      .catch(() => false);
   }
 
   async detectAIClients() {
@@ -341,6 +377,256 @@ class AIConnectionWizard {
     console.log('   - add_node_instance (LEGACY)');
   }
 
+  async httpRequest(method, path, payload) {
+    const url = this.resolveBridgeUrl(path);
+    const isHttps = url.protocol === 'https:';
+    const options = {
+      method,
+      hostname: url.hostname,
+      port: url.port || (isHttps ? 443 : 80),
+      path: `${url.pathname}${url.search}`,
+      headers: { Accept: 'application/json' },
+      timeout: this.httpTimeoutMs
+    };
+
+    if (isHttps) {
+      options.rejectUnauthorized = this.rejectUnauthorized;
+    }
+
+    let body = null;
+    if (payload !== undefined && payload !== null) {
+      body = JSON.stringify(payload);
+      options.headers['Content-Type'] = 'application/json';
+      options.headers['Content-Length'] = Buffer.byteLength(body);
+    }
+
+    return new Promise((resolve, reject) => {
+      const req = (isHttps ? https.request : request)(options, (res) => {
+        let data = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            return reject(new Error(`HTTP ${res.statusCode}: ${data || res.statusMessage}`));
+          }
+          if (!data) return resolve(null);
+          try {
+            resolve(JSON.parse(data));
+          } catch {
+            resolve(data);
+          }
+        });
+      });
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy(new Error(`Request to ${url.href} timed out after ${this.httpTimeoutMs}ms`));
+      });
+      if (body) {
+        req.write(body);
+      }
+      req.end();
+    });
+  }
+
+  async fetchBridgeState() {
+    try {
+      return await this.httpRequest('GET', '/api/bridge/state');
+    } catch (error) {
+      console.error('❌ Failed to fetch bridge state:', error.message);
+      return null;
+    }
+  }
+
+  async postJson(path, payload) {
+    return this.httpRequest('POST', path, payload);
+  }
+
+  printGraphSummaries(state) {
+    const summaries = state?.graphSummaries;
+    if (!summaries || Object.keys(summaries).length === 0) {
+      console.log('\nℹ️  No graph summaries available yet. Update the UI bridge to send graphLayouts/graphSummaries.');
+      return;
+    }
+
+    console.log('\n🧠 Graph Summaries');
+    Object.values(summaries).forEach((summary) => {
+      console.log(`\n- ${summary.name} (${summary.id})`);
+      console.log(`  Nodes: ${summary.nodeCount} | Edges: ${summary.edgeCount} | Density: ${summary.density ?? 'n/a'} | Quality: ${summary.quality ?? 'unknown'} | Score: ${summary.score ?? 'n/a'}`);
+      if (summary.text) {
+        const trimmed = summary.text.split('\n').slice(0, 40); // keep it readable
+        trimmed.forEach(line => console.log(`    ${line}`));
+        if (summary.text.split('\n').length > trimmed.length) {
+          console.log('    ... (truncated)');
+        }
+      }
+    });
+  }
+
+  computeLayoutPlan(state, strategy = 'normalize') {
+    const layouts = state?.graphLayouts || {};
+    const plan = {};
+    const strategyName = strategy.toLowerCase();
+
+    Object.entries(layouts).forEach(([graphId, layout]) => {
+      if (!layout || typeof layout !== 'object') return;
+      const nodes = layout.nodes || {};
+      const entries = Object.entries(nodes);
+      if (entries.length === 0) return;
+
+      if (strategyName === 'grid') {
+        const spacing = Number(this.options.gridSpacing) || 200;
+        const total = entries.length;
+        const columns = Math.max(1, Math.ceil(Math.sqrt(total)));
+        const rows = Math.max(1, Math.ceil(total / columns));
+        const width = (columns - 1) * spacing;
+        const height = (rows - 1) * spacing;
+        const offsetX = width / 2;
+        const offsetY = height / 2;
+
+        const ordered = [...entries].sort((a, b) => {
+          const protoA = a[1]?.prototypeId || '';
+          const protoB = b[1]?.prototypeId || '';
+          if (protoA === protoB) return a[0].localeCompare(b[0]);
+          return protoA.localeCompare(protoB);
+        });
+
+        const nextNodes = {};
+        ordered.forEach(([nodeId, node], index) => {
+          const row = Math.floor(index / columns);
+          const col = index % columns;
+          const x = (col * spacing) - offsetX;
+          const y = (row * spacing) - offsetY;
+          nextNodes[nodeId] = {
+            x: Math.round(x),
+            y: Math.round(y),
+            scale: node?.scale ?? 1
+          };
+        });
+
+        plan[graphId] = {
+          nodes: nextNodes,
+          metadata: {
+            strategy: 'grid',
+            spacing,
+            columns,
+            rows,
+            nodeCount: entries.length,
+            computedAt: Date.now()
+          }
+        };
+        return;
+      }
+
+      const centroid = layout?.metadata?.centroid;
+      let cx = centroid?.x ?? 0;
+      let cy = centroid?.y ?? 0;
+      if (!centroid) {
+        entries.forEach(([, node]) => {
+          cx += node?.x || 0;
+          cy += node?.y || 0;
+        });
+        cx = cx / entries.length;
+        cy = cy / entries.length;
+      }
+
+      const normalizedNodes = {};
+      entries.forEach(([nodeId, node]) => {
+        const nx = Math.round((node?.x || 0) - cx);
+        const ny = Math.round((node?.y || 0) - cy);
+        normalizedNodes[nodeId] = {
+          x: nx,
+          y: ny,
+          scale: node?.scale ?? 1
+        };
+      });
+
+      plan[graphId] = {
+        nodes: normalizedNodes,
+        metadata: {
+          strategy: 'normalize',
+          appliedOffset: { x: Math.round(-cx), y: Math.round(-cy) },
+          nodeCount: entries.length,
+          computedAt: Date.now(),
+          sourceBoundingBox: layout?.metadata?.boundingBox || null
+        }
+      };
+    });
+
+    return plan;
+  }
+
+  printLayoutPlan(plan, state) {
+    const entries = Object.entries(plan || {});
+    if (entries.length === 0) {
+      console.log('\n🧭 Layout: no adjustments suggested.');
+      return;
+    }
+
+    console.log('\n🧭 Layout Suggestions');
+    const summaries = state?.graphSummaries || {};
+    entries.forEach(([graphId, layout]) => {
+      const name = summaries[graphId]?.name || graphId;
+      const meta = layout.metadata || {};
+      console.log(`- ${name} (${graphId})`);
+      console.log(`    Strategy: ${meta.strategy || 'custom'} | Nodes: ${meta.nodeCount || 0}`);
+      if (meta.appliedOffset) {
+        console.log(`    Offset applied: Δx=${meta.appliedOffset.x}, Δy=${meta.appliedOffset.y}`);
+      }
+      if (meta.spacing) {
+        console.log(`    Grid: ${meta.columns} × ${meta.rows}, spacing ${meta.spacing}px`);
+      }
+      if (meta.sourceBoundingBox) {
+        const bbox = meta.sourceBoundingBox;
+        console.log(`    Previous bounds: x[${bbox.minX}, ${bbox.maxX}] y[${bbox.minY}, ${bbox.maxY}]`);
+      }
+    });
+  }
+
+  async applyLayoutPlan(plan, mode = 'merge') {
+    const graphCount = Object.keys(plan || {}).length;
+    if (!graphCount) {
+      console.log('ℹ️  No layout changes to apply.');
+      return;
+    }
+    try {
+      await this.postJson('/api/bridge/layout', { layouts: plan, mode });
+      console.log(`✅ Applied layout updates for ${graphCount} graph${graphCount === 1 ? '' : 's'}.`);
+    } catch (error) {
+      console.error('❌ Failed to write layout metadata:', error.message);
+    }
+  }
+
+  async runSemanticImport(state) {
+    console.log('\n🌐 Semantic Web import:');
+    console.log('   This wizard now exposes graph summaries/layouts so external agents can grade or augment the workspace.');
+    console.log('   Hook your semantic ingestion scripts to /api/bridge/state, enrich the graph, and repost via /api/bridge/layout or pending actions.');
+    console.log('   (Automated semantic import is not bundled yet; contribute your loader via scripts/semantic-import.js).');
+  }
+
+  async runCliTasks() {
+    const state = await this.fetchBridgeState();
+    if (!state) {
+      console.log('❌ Unable to read bridge state; CLI tasks skipped.');
+      return;
+    }
+
+    if (this.options.summarize) {
+      this.printGraphSummaries(state);
+    }
+
+    if (this.options.layoutReport || this.options.layoutApply) {
+      const plan = this.computeLayoutPlan(state, this.options.layoutStrategy || 'normalize');
+      this.printLayoutPlan(plan, state);
+      if (this.options.layoutApply) {
+        await this.applyLayoutPlan(plan, this.options.layoutMode || 'merge');
+      }
+    }
+
+    if (this.options.semanticImport) {
+      await this.runSemanticImport(state);
+    }
+  }
+
   startMonitoring() {
     console.log('\n📊 Starting connection monitor...');
     console.log('   Press Ctrl+C to stop the wizard\n');
@@ -437,61 +723,24 @@ class AIConnectionWizard {
   }
 
   async checkMCPStatus() {
-    return new Promise((resolve, reject) => {
-      // First check if MCP server is responding at all
-      const healthRequest = get(`http://localhost:3001/health`, (res) => {
-        if (res.statusCode !== 200) {
-          reject(new Error('MCP server health check failed'));
-          return;
-        }
-        
-        // Server is responding, now check for bridge data
-        const bridgeRequest = get(`http://localhost:3001/api/bridge/state`, (bridgeRes) => {
-          let data = '';
-          bridgeRes.on('data', (chunk) => {
-            data += chunk;
-          });
-          bridgeRes.on('end', () => {
-            try {
-              if (bridgeRes.statusCode === 503) {
-                // Redstring store not available yet, but MCP server is running
-                resolve({ hasData: false, hasRecentData: false });
-                return;
-              }
-              
-              const bridgeData = JSON.parse(data);
-              const hasData = bridgeData.graphs?.length > 0;
-              const hasRecentData = bridgeData.summary?.lastUpdate && 
-                (Date.now() - bridgeData.summary.lastUpdate) < 30000; // Within 30 seconds
-              
-              resolve({ hasData, hasRecentData });
-            } catch (error) {
-              // MCP server is running but no valid bridge data yet
-              resolve({ hasData: false, hasRecentData: false });
-            }
-          });
-        });
-        
-        bridgeRequest.on('error', () => {
-          // MCP server is running but bridge endpoint not available yet
-          resolve({ hasData: false, hasRecentData: false });
-        });
-        
-        bridgeRequest.setTimeout(2000, () => {
-          bridgeRequest.destroy();
-          resolve({ hasData: false, hasRecentData: false });
-        });
-      });
-      
-      healthRequest.on('error', () => {
-        reject(new Error('MCP server not responding'));
-      });
-      
-      healthRequest.setTimeout(2000, () => {
-        healthRequest.destroy();
-        reject(new Error('MCP server health check timeout'));
-      });
-    });
+    try {
+      await this.httpRequest('GET', '/health');
+    } catch (error) {
+      throw new Error('MCP server not responding');
+    }
+
+    try {
+      const bridgeData = await this.httpRequest('GET', '/api/bridge/state');
+      const hasData = bridgeData?.graphs?.length > 0;
+      const hasRecentData = Boolean(
+        bridgeData?.summary?.lastUpdate &&
+        (Date.now() - bridgeData.summary.lastUpdate) < 30000
+      );
+      return { hasData, hasRecentData };
+    } catch (error) {
+      // MCP server up but bridge payload not ready yet
+      return { hasData: false, hasRecentData: false };
+    }
   }
 
   async checkRedstringDirect() {
@@ -598,9 +847,52 @@ class AIConnectionWizard {
   }
 }
 
-// Start the wizard
-const wizard = new AIConnectionWizard();
-wizard.start().catch(error => {
-  console.error('❌ Wizard failed:', error.message);
-  process.exit(1);
-}); 
+const parseCliOptions = () => {
+  const args = process.argv.slice(2);
+  const options = { keepAlive: false };
+
+  args.forEach((arg) => {
+    if (arg === '--summarize' || arg === '-s') {
+      options.summarize = true;
+    } else if (arg === '--layout-report') {
+      options.layoutReport = true;
+    } else if (arg === '--apply-layout') {
+      options.layoutApply = true;
+    } else if (arg.startsWith('--layout-strategy=')) {
+      options.layoutStrategy = arg.split('=')[1];
+    } else if (arg.startsWith('--layout-mode=')) {
+      options.layoutMode = arg.split('=')[1];
+    } else if (arg.startsWith('--grid-spacing=')) {
+      const value = Number(arg.split('=')[1]);
+      if (!Number.isNaN(value)) options.gridSpacing = value;
+    } else if (arg === '--semantic-import') {
+      options.semanticImport = true;
+    } else if (arg === '--watch') {
+      options.keepAlive = true;
+    } else if (arg === '--allow-insecure') {
+      options.allowInsecure = true;
+    } else if (arg.startsWith('--bridge-url=')) {
+      options.bridgeUrl = arg.split('=')[1];
+    } else if (arg.startsWith('--http-timeout=')) {
+      const value = Number(arg.split('=')[1]);
+      if (!Number.isNaN(value)) options.httpTimeout = value;
+    }
+  });
+
+  options.hasCliAction = Boolean(options.summarize || options.layoutReport || options.layoutApply || options.semanticImport);
+  return options;
+};
+
+const cliOptions = parseCliOptions();
+const wizard = new AIConnectionWizard(cliOptions);
+
+wizard.start()
+  .then(() => {
+    if (cliOptions.hasCliAction && !cliOptions.keepAlive) {
+      process.exit(0);
+    }
+  })
+  .catch(error => {
+    console.error('❌ Wizard failed:', error.message);
+    process.exit(1);
+  });

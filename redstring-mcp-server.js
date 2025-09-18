@@ -12,6 +12,9 @@ import cors from 'cors';
 import { RolePrompts, ToolAllowlists } from './src/services/roles.js';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import http from 'http';
+import https from 'https';
 
 // Load environment variables (debug off to avoid noisy logs)
 dotenv.config({});
@@ -33,6 +36,20 @@ const ENV_PORT = process.env.PORT;
 const PORT = 3001;
 if (ENV_PORT && String(ENV_PORT) !== String(PORT)) {
   console.warn(`⚠️ Ignoring PORT=${ENV_PORT} from environment; using ${PORT} for internal bridge compatibility.`);
+}
+
+// Respect proxy headers when running behind Cloudflare/NGINX
+const TRUST_PROXY = process.env.TRUST_PROXY;
+if (TRUST_PROXY) {
+  if (TRUST_PROXY === 'true') {
+    app.set('trust proxy', 1);
+  } else if (TRUST_PROXY === 'false') {
+    app.set('trust proxy', false);
+  } else if (!Number.isNaN(Number(TRUST_PROXY))) {
+    app.set('trust proxy', Number(TRUST_PROXY));
+  } else {
+    app.set('trust proxy', TRUST_PROXY);
+  }
 }
 
 // Middleware
@@ -58,18 +75,51 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', stage: 'boot', timestamp: new Date().toISOString() });
 });
 
-// Start HTTP server IMMEDIATELY so /health responds before any async init
-const httpServer = app.listen(PORT, () => {
-  console.log(`MCP HTTP listening on ${PORT}`);
-  console.error(`Redstring MCP Server running on port ${PORT} (HTTP) and stdio (MCP)`);
-  console.error(`GitHub OAuth callback URL: http://localhost:${PORT}/oauth/callback`);
-  console.error("Waiting for Redstring store bridge...");
+// Start HTTP/HTTPS server IMMEDIATELY so /health responds before any async init
+const requestedHttps = process.env.MCP_USE_HTTPS === 'true';
+const createNetworkServer = () => {
+  if (requestedHttps) {
+    try {
+      const keyPath = process.env.MCP_SSL_KEY_PATH;
+      const certPath = process.env.MCP_SSL_CERT_PATH;
+      if (!keyPath || !certPath) {
+        console.error('⚠️ MCP_USE_HTTPS=true but MCP_SSL_KEY_PATH or MCP_SSL_CERT_PATH is missing. Falling back to HTTP.');
+      } else {
+        const tlsOptions = {
+          key: fs.readFileSync(keyPath, 'utf8'),
+          cert: fs.readFileSync(certPath, 'utf8'),
+        };
+        if (process.env.MCP_SSL_CA_PATH && fs.existsSync(process.env.MCP_SSL_CA_PATH)) {
+          tlsOptions.ca = fs.readFileSync(process.env.MCP_SSL_CA_PATH, 'utf8');
+        }
+        if (process.env.MCP_SSL_PASSPHRASE) {
+          tlsOptions.passphrase = process.env.MCP_SSL_PASSPHRASE;
+        }
+        return { server: https.createServer(tlsOptions, app), protocol: 'https' };
+      }
+    } catch (error) {
+      console.error('⚠️  Failed to initialize HTTPS for MCP server:', error?.message || error);
+      console.error('    Falling back to HTTP.');
+    }
+  }
+  return { server: http.createServer(app), protocol: 'http' };
+};
+
+const { server: networkServer, protocol: networkProtocol } = createNetworkServer();
+
+networkServer.listen(PORT, () => {
+  console.log(`MCP ${networkProtocol.toUpperCase()} listening on ${PORT}`);
+  console.error(`Redstring MCP Server running on port ${PORT} (${networkProtocol.toUpperCase()}) and stdio (MCP)`);
+  console.error(`GitHub OAuth callback URL: ${networkProtocol}://localhost:${PORT}/oauth/callback`);
+  console.error('Waiting for Redstring store bridge...');
 });
-httpServer.on('error', (err) => {
+networkServer.on('error', (err) => {
   if (err && err.code === 'EADDRINUSE') {
     console.error(`❌ Port ${PORT} is already in use. If another Redstring MCP server is running, the wizard can reuse it. Otherwise, free the port and retry.`);
+  } else if (err && err.code === 'EACCES') {
+    console.error(`❌ Unable to bind to port ${PORT}. Try a different port or run with elevated permissions.`);
   } else {
-    console.error('❌ HTTP server failed to start:', err?.message || err);
+    console.error('❌ MCP network server failed to start:', err?.message || err);
   }
   process.exit(1);
 });
@@ -81,6 +131,8 @@ const earlyBridgeState = {
   activeGraphId: null,
   openGraphIds: [],
   summary: { totalGraphs: 0, totalPrototypes: 0, lastUpdate: Date.now() },
+  graphLayouts: {},
+  graphSummaries: {},
   mcpConnected: true,
   source: 'early-bridge'
 };
@@ -179,6 +231,8 @@ let bridgeStoreData = {
     totalPrototypes: 0,
     lastUpdate: Date.now()
   },
+  graphLayouts: {},
+  graphSummaries: {},
   source: 'server-initial'
 };
 
@@ -3610,6 +3664,49 @@ app.post('/api/bridge/state', (req, res) => {
   } catch (error) {
     console.error('Bridge POST error:', error);
     res.status(500).json({ error: 'Failed to update store state' });
+  }
+});
+
+app.post('/api/bridge/layout', (req, res) => {
+  try {
+    const { layouts, mode = 'merge' } = req.body || {};
+    if (!layouts || typeof layouts !== 'object') {
+      return res.status(400).json({ error: 'layouts object is required' });
+    }
+
+    if (!bridgeStoreData.graphLayouts || typeof bridgeStoreData.graphLayouts !== 'object') {
+      bridgeStoreData.graphLayouts = {};
+    }
+
+    const graphIds = Object.keys(layouts);
+    graphIds.forEach((graphId) => {
+      const incoming = layouts[graphId];
+      if (!graphId || !incoming || typeof incoming !== 'object') return;
+      const existing = bridgeStoreData.graphLayouts[graphId] || {};
+      const mergedNodes = mode === 'replace'
+        ? { ...(incoming.nodes || {}) }
+        : { ...(existing.nodes || {}), ...(incoming.nodes || {}) };
+      const metadata = {
+        ...(existing.metadata || {}),
+        ...(incoming.metadata || {}),
+        updatedAt: Date.now()
+      };
+      bridgeStoreData.graphLayouts[graphId] = {
+        ...existing,
+        ...incoming,
+        nodes: mergedNodes,
+        metadata
+      };
+    });
+
+    if (bridgeStoreData.summary) {
+      bridgeStoreData.summary.lastUpdate = Date.now();
+    }
+
+    res.json({ success: true, graphs: graphIds.length });
+  } catch (error) {
+    console.error('Bridge layout update error:', error);
+    res.status(500).json({ error: 'Failed to update layout metadata', details: error.message });
   }
 });
 
