@@ -12,39 +12,48 @@ Git universes were loading eagerly on application startup, causing:
 3. Multiple `useEffect` hooks in `GitNativeFederation.jsx` were triggering connections immediately
 4. No proper lazy loading mechanism for Git operations
 
-## Solution: Lazy Loading Implementation
+## Solution: Smart Lazy Loading Implementation
 
 ### 1. Modified `autoConnectToUniverse()` 
-- Added `allowGitLoading` parameter (default: false)
-- Only attempts Git loading when explicitly enabled
-- Prevents eager Git requests during app startup
+- Added `allowGitLoading` parameter (default: false for most calls, true for session restore)
+- Added concurrency control to prevent duplicate Git loading attempts
+- Only attempts Git loading when explicitly enabled and not already in progress
+- Prevents spam while allowing legitimate session restore
 
 ### 2. Updated `restoreLastSession()`
 - Now accepts options parameter to control Git loading
-- Passes through `allowGitLoading` flag to `autoConnectToUniverse`
+- Defaults to `allowGitLoading: true` for session restore (but controlled)
+- Passes through flag to `autoConnectToUniverse` with spam prevention
 
 ### 3. Added `forceGitUniverseLoad()` function
 - New function to trigger Git loading when user accesses Git federation tab
 - Uses `allowGitLoading: true` to bypass lazy loading restrictions
+- Provides fallback loading mechanism
 
 ### 4. Modified `GitNativeFederation.jsx`
 - Added visibility checks to all Git-related `useEffect` hooks
 - Only runs Git operations when `isVisible && isInteractive`
 - Added lazy loading trigger when component becomes visible
 - Added loading states and user feedback
+- Improved error handling and status messages
 
 ### 5. Updated `GitFederationBootstrap.jsx`
 - Added `enableEagerInit` parameter (default: false)
-- Prevents eager initialization unless explicitly enabled
+- Prevents multiple initializations and spam
 - Can be triggered on-demand when Git federation is accessed
 
 ### 6. Modified `App.jsx`
-- Disabled eager `GitFederationBootstrap` execution
-- Prevents startup request spam
+- Re-enabled `GitFederationBootstrap` with controlled initialization
+- Uses `enableEagerInit: true` but with spam prevention logic
 
-### 7. Updated `Panel.jsx`
-- Added lazy `GitFederationBootstrap` when Git federation tab is accessed
-- Enables proper initialization only when user needs Git features
+### 7. Fixed `SaveCoordinator.js`
+- Added logic to prevent spam when Git engine is not yet initialized
+- Quietly skips saves during lazy loading phase
+- Only logs and retries when engine has been previously healthy
+
+### 8. Updated `Panel.jsx`
+- Removed duplicate GitFederationBootstrap (now handled in App.jsx)
+- Simplified Git federation view rendering
 
 ## Benefits
 1. **No more request spam** - Git requests only happen when user accesses Git federation

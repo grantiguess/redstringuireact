@@ -719,6 +719,10 @@ export const openUniverseFile = async () => {
   }
 };
 
+// Track Git loading attempts to prevent spam
+let gitLoadingInProgress = false;
+let gitLoadingAttempted = false;
+
 /**
  * Smart auto-connect that tries multiple strategies to find universe.redstring
  * @param {Object} options - Options for auto-connect behavior
@@ -740,8 +744,11 @@ export const autoConnectToUniverse = async (options = {}) => {
   console.log('[FileStorage] Starting auto-connect to universe...');
   
   // Strategy 0: Try Git-based universe restoration if configured AND explicitly allowed
-  if (allowGitLoading) {
+  if (allowGitLoading && !gitLoadingInProgress) {
     try {
+      // Prevent concurrent Git loading attempts
+      gitLoadingInProgress = true;
+      
       const um = await getUniverseManager();
       const activeUniverse = um.getActiveUniverse();
       if (activeUniverse && activeUniverse.gitRepo && activeUniverse.gitRepo.enabled) {
@@ -749,14 +756,19 @@ export const autoConnectToUniverse = async (options = {}) => {
         const gitStoreState = await um.loadUniverseData(activeUniverse);
         if (gitStoreState) {
           console.log('[FileStorage] Auto-connected (Git repository)');
+          gitLoadingAttempted = true;
           return gitStoreState;
         }
       }
     } catch (error) {
       console.warn('[FileStorage] Git auto-connect failed:', error);
       // Continue to other strategies
+    } finally {
+      gitLoadingInProgress = false;
     }
-  } else {
+  } else if (allowGitLoading && gitLoadingInProgress) {
+    console.log('[FileStorage] Git loading already in progress, skipping duplicate attempt');
+  } else if (!allowGitLoading && !gitLoadingAttempted) {
     console.log('[FileStorage] Skipping Git auto-connect (lazy loading - will load when Git federation tab is accessed)');
   }
   
@@ -854,13 +866,16 @@ export const getSuggestedLocations = () => {
 /**
  * Try to restore the last session with smart auto-connect
  * @param {Object} options - Options for restoration behavior
- * @param {boolean} options.allowGitLoading - Whether to attempt Git loading (default: false for lazy loading)
+ * @param {boolean} options.allowGitLoading - Whether to attempt Git loading (default: true for session restore)
  */
 export const restoreLastSession = async (options = {}) => {
+  // Default to allowing Git loading for session restore (but prevent spam by being selective)
+  const { allowGitLoading = true } = options;
+  
   try {
     // Only try auto-connect to universe file - no localStorage fallback
     // Pass through the allowGitLoading option for lazy loading control
-    const autoConnectResult = await autoConnectToUniverse(options);
+    const autoConnectResult = await autoConnectToUniverse({ allowGitLoading });
     if (autoConnectResult) {
       return {
         success: true,

@@ -508,6 +508,7 @@ function NodeCanvas() {
   };
 
   const handleTouchMoveCanvas = (e) => {
+    console.log('handleTouchMoveCanvas called, draggingNodeInfo:', !!draggingNodeInfo);
     if (e && e.cancelable) {
       e.preventDefault();
       e.stopPropagation();

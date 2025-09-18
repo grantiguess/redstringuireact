@@ -300,9 +300,17 @@ class SaveCoordinator {
 
       // Check if Git sync engine is healthy before attempting save
       if (!this.gitSyncEngine.isHealthy()) {
-        console.log(`[SaveCoordinator] Git sync engine unhealthy, skipping git save for ${priorityName}`);
-        // Keep the change pending and retry later
-        setTimeout(() => this.executeGitSave(priorityName), 10000); // Retry in 10 seconds
+        // Only log and retry if we've had a healthy engine before (avoid spam during lazy loading)
+        if (this.gitSyncEngine.lastCommitTime > 0 || this.gitSyncEngine.consecutiveErrors > 0) {
+          console.log(`[SaveCoordinator] Git sync engine unhealthy, skipping git save for ${priorityName}`);
+          // Keep the change pending and retry later
+          setTimeout(() => this.executeGitSave(priorityName), 10000); // Retry in 10 seconds
+        } else {
+          // Engine hasn't been used yet (lazy loading scenario), just quietly skip
+          // Remove the pending change to prevent infinite retries
+          this.pendingChanges.delete(priorityName);
+          this.saveTimers.delete(priorityName);
+        }
         return;
       }
 
