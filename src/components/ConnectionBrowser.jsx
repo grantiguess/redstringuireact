@@ -254,7 +254,7 @@ const RDFTriplet = ({
  * Shows connections with dropdown: In Graph | Universe | Semantic Web
  */
 const ConnectionBrowser = ({ nodeData, onMaterializeConnection, isUltraSlim = false }) => {
-  const [connectionScope, setConnectionScope] = useState('semantic'); // 'graph' | 'universe' | 'semantic'
+  const [connectionScope, setConnectionScope] = useState('graph'); // 'graph' | 'universe' | 'semantic'
   const [semanticConnections, setSemanticConnections] = useState([]);
   const [nativeConnections, setNativeConnections] = useState([]);
   const [isLoadingSemanticWeb, setIsLoadingSemanticWeb] = useState(false);

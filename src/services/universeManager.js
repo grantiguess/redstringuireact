@@ -814,28 +814,45 @@ class UniverseManager {
     if (!universe) {
       throw new Error(`Universe not found: ${slug}`);
     }
-    
+
     if (this.activeUniverseSlug === slug) {
       return universe; // Already active
     }
-    
-    // Optional: Save current universe before switching
-    if (options.saveCurrent && this.activeUniverseSlug) {
+
+    // Always save current universe before switching (unless explicitly disabled)
+    if (options.saveCurrent !== false && this.activeUniverseSlug) {
       try {
         await this.saveActiveUniverse();
+        console.log('[UniverseManager] Saved current universe before switching');
       } catch (error) {
         console.warn('[UniverseManager] Failed to save current universe before switch:', error);
       }
     }
-    
+
     this.activeUniverseSlug = slug;
     this.saveToStorage();
-    
+
     this.notifyStatus('info', `Switched to universe: ${universe.name}`);
-    
+
     // Load the universe data based on source of truth
     try {
       const storeState = await this.loadUniverseData(universe);
+
+      // Update universe metadata with current node count after loading
+      if (storeState && storeState.nodePrototypes) {
+        const nodeCount = storeState.nodePrototypes instanceof Map
+          ? storeState.nodePrototypes.size
+          : Object.keys(storeState.nodePrototypes || {}).length;
+
+        this.updateUniverse(slug, {
+          metadata: {
+            ...universe.metadata,
+            nodeCount,
+            lastOpened: new Date().toISOString()
+          }
+        });
+      }
+
       return { universe, storeState };
     } catch (error) {
       console.error('[UniverseManager] Failed to load universe data:', error);
@@ -1082,16 +1099,72 @@ class UniverseManager {
     try {
       const universe = this.getActiveUniverse();
       if (!universe) return false;
-      const storeState = await this.loadUniverseData(universe);
+
+      console.log('[UniverseManager] Reloading active universe:', universe.name);
+
+      // Try multiple reload strategies for better mobile reliability
+      let storeState = null;
+      let loadMethod = 'unknown';
+
+      // Strategy 1: Try primary source
+      try {
+        storeState = await this.loadUniverseData(universe);
+        loadMethod = universe.sourceOfTruth;
+      } catch (primaryError) {
+        console.warn('[UniverseManager] Primary load failed:', primaryError);
+
+        // Strategy 2: Try direct Git read if we have Git repo config
+        if (universe.gitRepo?.enabled && universe.gitRepo?.linkedRepo) {
+          try {
+            storeState = await this.loadFromGitDirect(universe);
+            loadMethod = 'git-direct';
+            console.log('[UniverseManager] Direct Git fallback succeeded');
+          } catch (directError) {
+            console.warn('[UniverseManager] Direct Git fallback failed:', directError);
+          }
+        }
+
+        // Strategy 3: Try browser storage fallback
+        if (!storeState && universe.browserStorage?.enabled) {
+          try {
+            storeState = await this.loadFromBrowserStorage(universe);
+            loadMethod = 'browser-fallback';
+            console.log('[UniverseManager] Browser storage fallback succeeded');
+          } catch (browserError) {
+            console.warn('[UniverseManager] Browser storage fallback failed:', browserError);
+          }
+        }
+      }
+
       if (storeState) {
         const graphStore = await getGraphStore();
         graphStore.getState().loadUniverseFromFile(storeState);
-        this.notifyStatus('info', 'Active universe reloaded from Git');
+
+        // Update metadata with node count
+        if (storeState.nodePrototypes) {
+          const nodeCount = storeState.nodePrototypes instanceof Map
+            ? storeState.nodePrototypes.size
+            : Object.keys(storeState.nodePrototypes || {}).length;
+
+          this.updateUniverse(universe.slug, {
+            metadata: {
+              ...universe.metadata,
+              nodeCount,
+              lastOpened: new Date().toISOString(),
+              lastLoadMethod: loadMethod
+            }
+          });
+        }
+
+        this.notifyStatus('success', `Reloaded universe from ${loadMethod}`);
         return true;
       }
+
+      this.notifyStatus('warning', 'Could not reload universe from any source');
       return false;
     } catch (error) {
-      console.warn('[UniverseManager] Failed to reload active universe:', error);
+      console.error('[UniverseManager] Failed to reload active universe:', error);
+      this.notifyStatus('error', `Reload failed: ${error.message}`);
       return false;
     }
   }
@@ -1102,16 +1175,35 @@ class UniverseManager {
     if (!universe) {
       throw new Error('No active universe to save');
     }
-    
+
     // Ensure at least one storage slot is available
     universe = this.ensureStorageAvailable(universe);
-    
+
     // Get store state if not provided
     if (!storeState) {
       const graphStore = await getGraphStore();
       storeState = graphStore.getState();
     }
-    
+
+    // Update universe metadata with current node count before saving
+    if (storeState && storeState.nodePrototypes) {
+      const nodeCount = storeState.nodePrototypes instanceof Map
+        ? storeState.nodePrototypes.size
+        : Object.keys(storeState.nodePrototypes || {}).length;
+
+      universe = {
+        ...universe,
+        metadata: {
+          ...universe.metadata,
+          nodeCount,
+          lastModified: new Date().toISOString(),
+          lastSync: new Date().toISOString()
+        }
+      };
+
+      this.universes.set(universe.slug, universe);
+    }
+
     // Export data asynchronously to prevent UI blocking
     const redstringData = await new Promise((resolve) => {
       if (typeof requestIdleCallback !== 'undefined') {

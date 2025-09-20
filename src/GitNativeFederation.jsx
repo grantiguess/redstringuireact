@@ -1077,13 +1077,8 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
   ]);
 
   // Ensure Git engine is registered early for the active universe (helps reads on session restore)
-  // Only run when component is visible and interactive to prevent eager loading
+  // Critical for Git-only mode - must work regardless of tab visibility
   useLayoutEffect(() => {
-    // Only initialize when component is visible and interactive (user has accessed the Git federation tab)
-    if (!isVisible || !isInteractive) {
-      return;
-    }
-    
     try {
       const active = universeManager.getActiveUniverse();
       if (active?.gitRepo?.linkedRepo) {
@@ -1091,7 +1086,11 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
         if (existing) {
           universeManager.setGitSyncEngine(active.slug, existing);
         } else {
-          attemptConnectUniverseRepo();
+          // Only attempt connection if tab is visible (UI operation)
+          if (isVisible && isInteractive) {
+            attemptConnectUniverseRepo();
+          }
+          // Always ensure engine for Git-only mode (critical for data access)
           if (!deviceConfig.enableLocalFileStorage) {
             ensureEngineForActiveUniverse();
           }
@@ -1107,23 +1106,28 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
       setUniverses(universeManager.getAllUniverses());
       setActiveUniverseSlug(universeManager.activeUniverseSlug);
 
-      // Only attempt Git connections when component is visible and interactive
-      if (isVisible && isInteractive) {
-        try {
-          const active = universeManager.getActiveUniverse();
-          if (active?.gitRepo?.linkedRepo) {
-            if (!currentProvider) {
-              attemptConnectUniverseRepo();
-            }
-            const existingEngine = storeGitSyncEngine || gitSyncEngine;
-            if (existingEngine) {
-              universeManager.setGitSyncEngine(active.slug, existingEngine);
-            } else if (!deviceConfig.enableLocalFileStorage) {
-              ensureEngineForActiveUniverse();
-            }
+      // Always handle essential universe management - don't gate behind tab visibility
+      try {
+        const active = universeManager.getActiveUniverse();
+        if (active?.gitRepo?.linkedRepo) {
+          // Only attempt UI-heavy operations when visible
+          if (isVisible && isInteractive && !currentProvider) {
+            attemptConnectUniverseRepo();
           }
-        } catch (_) {}
-      }
+
+          // Always register engines for data consistency
+          const existingEngine = storeGitSyncEngine || gitSyncEngine;
+          if (existingEngine) {
+            universeManager.setGitSyncEngine(active.slug, existingEngine);
+          }
+
+          // Ensure Git-only mode universes have engines (critical for mobile)
+          if (!deviceConfig.enableLocalFileStorage && !existingEngine) {
+            // Don't gate engine creation behind visibility for Git-only mode
+            ensureEngineForActiveUniverse();
+          }
+        }
+      } catch (_) {}
     });
 
     return unsubscribe;
@@ -3851,6 +3855,12 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                     {universe.slug === activeUniverseSlug && (
                       <div style={{ fontSize: '0.75rem', color: '#7A0000', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '10px' }}>ACTIVE</div>
                     )}
+                    {/* Node count display */}
+                    {universe.metadata?.nodeCount > 0 && (
+                      <div style={{ fontSize: '0.7rem', color: '#666', fontWeight: 500, padding: '2px 5px', backgroundColor: 'rgba(0,0,0,0.1)', borderRadius: '8px' }}>
+                        {universe.metadata.nodeCount} node{universe.metadata.nodeCount !== 1 ? 's' : ''}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                     {universe.slug !== activeUniverseSlug && (
@@ -3895,10 +3905,27 @@ const GitNativeFederation = ({ isVisible = true, isInteractive = true }) => {
                 {/* Universe Details (only show for active universe) */}
                 {universe.slug === activeUniverseSlug && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: isSlim ? '8px' : '10px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #979090' }}>
-                    {/* Name */}
-                    <div>
-                      <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Name</div>
-                      <input value={universe.name || ''} onChange={(e) => renameActiveUniverse(e.target.value)} className="editable-title-input" style={{ fontSize: '0.85rem', padding: '5px 7px', borderRadius: '4px', width: '100%' }} />
+                    {/* Name and Stats */}
+                    <div style={{ display: 'flex', flexDirection: isSlim ? 'column' : 'row', gap: isSlim ? '8px' : '12px' }}>
+                      <div style={{ flex: isSlim ? '1' : '2' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Name</div>
+                        <input value={universe.name || ''} onChange={(e) => renameActiveUniverse(e.target.value)} className="editable-title-input" style={{ fontSize: '0.85rem', padding: '5px 7px', borderRadius: '4px', width: '100%' }} />
+                      </div>
+                      {/* Universe Stats */}
+                      <div style={{ flex: '1', minWidth: isSlim ? 'auto' : '120px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Statistics</div>
+                        <div style={{ display: 'flex', gap: '8px', fontSize: '0.75rem', color: '#666' }}>
+                          <span>{universe.metadata?.nodeCount || 0} nodes</span>
+                          {universe.metadata?.lastOpened && (
+                            <span>•</span>
+                          )}
+                          {universe.metadata?.lastOpened && (
+                            <span title={new Date(universe.metadata.lastOpened).toLocaleString()}>
+                              opened {new Date(universe.metadata.lastOpened).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
                     {/* Storage Mode and Source of Truth */}
