@@ -22,7 +22,7 @@ import useGraphStore, {
 } from './store/graphStore';
 import { shallow } from 'zustand/shallow';
 import GraphListItem from './GraphListItem'; // <<< Import the new component
-const GitNativeFederation = lazy(() => import('./GitNativeFederation')); // Lazy import to avoid circular init
+import GitNativeFederation from './GitNativeFederation.jsx'; // Direct import for immediate initialization
 // Inline AI Collaboration Panel as internal component below
 import './ai/AICollaborationPanel.css';
 import APIKeySetup from './ai/components/APIKeySetup.jsx';
@@ -4204,12 +4204,7 @@ const Panel = forwardRef(
             // Git-Native Federation view
             panelContent = (
                 <div className="panel-content-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                    <Suspense fallback={<div style={{ padding: '8px', fontSize: '0.85rem' }}>Loading Git federation…</div>}>
-                        <GitNativeFederation 
-                            isVisible={leftViewActive === 'federation'}
-                            isInteractive={leftViewActive === 'federation'}
-                        />
-                    </Suspense>
+                    <GitNativeFederation />
                 </div>
             );
         } else if (leftViewActive === 'semantic') {
