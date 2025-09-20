@@ -3027,7 +3027,7 @@ const MIN_PANEL_WIDTH = 100;
 const INITIAL_PANEL_WIDTH = 280; // Match NodeCanvas default
 
 // Feature flag: toggle visibility of the "All Things" tab in the left panel header
-const ENABLE_ALL_THINGS_TAB = false;
+const ENABLE_ALL_THINGS_TAB = true;
 
 // Helper to read width from storage
 const getInitialWidth = (side, defaultValue) => {

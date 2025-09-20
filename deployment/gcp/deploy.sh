@@ -42,6 +42,7 @@ if [ "$ENVIRONMENT" = "prod" ]; then
     
     echo -e "${GREEN}✅ Production deployment initiated!${NC}"
     echo -e "${GREEN}Check status: gcloud builds list --limit=5${NC}"
+    echo -e "${GREEN}Deployment initiated at: $(date)${NC}"
     
 elif [ "$ENVIRONMENT" = "test" ]; then
     echo -e "${YELLOW}🧪 Deploying to TEST${NC}"
@@ -54,6 +55,7 @@ elif [ "$ENVIRONMENT" = "test" ]; then
     
     echo -e "${GREEN}✅ Test deployment initiated!${NC}"
     echo -e "${GREEN}Check status: gcloud builds list --limit=5${NC}"
+    echo -e "${GREEN}Deployment initiated at: $(date)${NC}"
     
 else
     echo "❌ Invalid environment. Use 'prod' or 'test'"

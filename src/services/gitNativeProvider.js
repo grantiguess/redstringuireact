@@ -390,12 +390,13 @@ This repository was automatically initialized by RedString UI React. You can now
         'Accept': 'application/vnd.github.v3+json'
       };
 
-      console.log(`[GitHubSemanticProvider] Listing directory: ${path}`);
+      console.log(`[GitHubSemanticProvider] Checking for universes in: ${path || 'root'}`);
 
       // Use direct fetch instead of githubRateLimiter to avoid import issues
       const response = await fetch(url, { headers });
 
       if (response.status === 404) {
+        console.log(`[GitHubSemanticProvider] Directory '${path || 'root'}' not found (expected during discovery)`);
         return []; // Directory doesn't exist
       }
 

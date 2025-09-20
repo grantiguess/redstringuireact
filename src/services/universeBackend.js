@@ -37,8 +37,7 @@ class UniverseBackend {
       await persistentAuth.initialize();
       this.authStatus = persistentAuth.getAuthStatus();
 
-      // Initialize universe manager background sync
-      await universeManager.initializeBackgroundSync();
+      // Universe manager is already initialized
 
       // Set up event listeners
       this.setupUniverseManagerEvents();

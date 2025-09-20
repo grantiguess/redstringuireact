@@ -148,3 +148,5 @@ echo -e "   Delete service: ${BOLD}gcloud run services delete ${SERVICE_NAME} --
 echo ""
 echo -e "${PURPLE}🔐 OAuth server is now live in production! 🔐${NC}"
 echo -e "${YELLOW}💡 Remember to update your main RedString app to use this OAuth server URL${NC}"
+echo ""
+echo -e "${GREEN}Deployment completed at: $(date)${NC}"

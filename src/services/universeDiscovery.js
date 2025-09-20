@@ -69,7 +69,7 @@ const pickDisplayName = (candidateName, fallbackName) => {
  */
 export const discoverUniversesInRepo = async (provider) => {
   try {
-    console.log('[UniverseDiscovery] Scanning repository for universes...');
+    console.log('[UniverseDiscovery] Scanning repository for .redstring universe files in standard locations (root, universes/, universe/)...');
 
     const universes = [];
 
@@ -123,12 +123,16 @@ export const discoverUniversesInRepo = async (provider) => {
         }
 
       } catch (error) {
-        // Directory might not exist, continue
-        console.log(`[UniverseDiscovery] Path ${basePath} not accessible:`, error.message);
+        // Directory might not exist during discovery - this is expected
+        if (error.message && error.message.includes('404')) {
+          console.log(`[UniverseDiscovery] Directory '${basePath || 'root'}' not found (expected during repository scanning)`);
+        } else {
+          console.log(`[UniverseDiscovery] Path '${basePath}' not accessible: ${error.message}`);
+        }
       }
     }
 
-    console.log(`[UniverseDiscovery] Found ${universes.length} universes in repository`);
+    console.log(`[UniverseDiscovery] Discovery complete: Found ${universes.length} valid universe files in repository`);
     return universes;
 
   } catch (error) {
@@ -146,7 +150,7 @@ export const discoverUniversesWithStats = async (provider) => {
   const stats = { scannedDirs: 0, candidates: 0, valid: 0, invalid: 0 };
   const universes = [];
   try {
-    console.log('[UniverseDiscovery] Scanning repository for universes...');
+    console.log('[UniverseDiscovery] Scanning repository for .redstring universe files with detailed statistics...');
 
     const universePaths = [
       'universes',
@@ -202,11 +206,16 @@ export const discoverUniversesWithStats = async (provider) => {
         }
 
       } catch (error) {
-        console.log(`[UniverseDiscovery] Path ${basePath} not accessible:`, error.message);
+        // Directory might not exist during discovery - this is expected
+        if (error.message && error.message.includes('404')) {
+          console.log(`[UniverseDiscovery] Directory '${basePath || 'root'}' not found (expected during repository scanning)`);
+        } else {
+          console.log(`[UniverseDiscovery] Path '${basePath}' not accessible: ${error.message}`);
+        }
       }
     }
 
-    console.log(`[UniverseDiscovery] Found ${universes.length} universes in repository`);
+    console.log(`[UniverseDiscovery] Discovery complete: Found ${universes.length} valid universes from ${stats.candidates} candidates across ${stats.scannedDirs} directories`);
     return { universes, stats };
 
   } catch (error) {
@@ -245,7 +254,11 @@ const scanUniverseDirectoryWithStats = async (provider, dirPath) => {
 
     return { universes, stats };
   } catch (error) {
-    console.error(`[UniverseDiscovery] Failed to scan directory ${dirPath}:`, error);
+    if (error.message && error.message.includes('404')) {
+      console.log(`[UniverseDiscovery] Directory '${dirPath}' not found (expected during repository scanning)`);
+    } else {
+      console.error(`[UniverseDiscovery] Failed to scan directory ${dirPath}: ${error.message}`);
+    }
     return { universes: [], stats };
   }
 };
@@ -278,7 +291,11 @@ const scanUniverseDirectory = async (provider, dirPath) => {
 
     return universes;
   } catch (error) {
-    console.error(`[UniverseDiscovery] Failed to scan directory ${dirPath}:`, error);
+    if (error.message && error.message.includes('404')) {
+      console.log(`[UniverseDiscovery] Directory '${dirPath}' not found (expected during repository scanning)`);
+    } else {
+      console.error(`[UniverseDiscovery] Failed to scan directory ${dirPath}: ${error.message}`);
+    }
     return [];
   }
 };

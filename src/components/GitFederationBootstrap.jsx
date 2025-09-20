@@ -1,5 +1,14 @@
 import React, { useEffect, useRef } from 'react';
-import universeBackend from '../services/universeBackend.js';
+
+// Lazy import to avoid circular dependency
+let _universeBackend = null;
+const getUniverseBackend = async () => {
+  if (!_universeBackend) {
+    const module = await import('../services/universeBackend.js');
+    _universeBackend = module.default || module.universeBackend;
+  }
+  return _universeBackend;
+};
 
 /**
  * Universe Backend Bootstrap
@@ -21,7 +30,9 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
     // The backend handles EVERYTHING now
     // No UI logic, no engine creation, no state management here
     // Just initialize the backend service and it takes care of the rest
-    universeBackend.initialize().catch(error => {
+    getUniverseBackend().then(backend => {
+      return backend.initialize();
+    }).catch(error => {
       console.error('[GitFederationBootstrap] Backend initialization failed:', error);
     });
 

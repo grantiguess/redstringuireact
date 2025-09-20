@@ -229,3 +229,5 @@ echo -e "   Scale service: ${BOLD}gcloud run services update ${SERVICE_NAME} --m
 echo -e "   View service: ${BOLD}gcloud run services describe ${SERVICE_NAME} --region=${REGION}${NC}"
 echo ""
 echo -e "${GREEN}✨ Your RedString app is now live in production! ✨${NC}"
+echo ""
+echo -e "${GREEN}Deployment completed at: $(date)${NC}"

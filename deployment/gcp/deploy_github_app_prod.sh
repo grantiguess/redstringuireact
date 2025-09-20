@@ -136,3 +136,5 @@ echo -e "   📊 App Installation Data: ${SERVICE_URL}/api/github/app/installati
 echo -e "   🪝 App Webhook: ${SERVICE_URL}/api/github/app/webhook"
 echo ""
 echo -e "${PURPLE}🚀 GitHub App integration is now live in production! 🚀${NC}"
+echo ""
+echo -e "${GREEN}Deployment completed at: $(date)${NC}"
