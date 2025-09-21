@@ -9,7 +9,7 @@ import './App.css';
 function App() {
   return (
     <>
-      {/* GitFederationBootstrap enabled but with controlled initialization to prevent spam */}
+      {/* GitFederationBootstrap handles backend initialization */}
       <GitFederationBootstrap enableEagerInit={true} />
       <NodeCanvas />
       <SpawningNodeDragLayer />

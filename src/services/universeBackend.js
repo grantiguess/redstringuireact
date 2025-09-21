@@ -33,8 +33,7 @@ class UniverseBackend {
     console.log('[UniverseBackend] Initializing backend service...');
 
     try {
-      // Initialize authentication
-      await persistentAuth.initialize();
+      // Get authentication status (persistentAuth auto-initializes)
       this.authStatus = persistentAuth.getAuthStatus();
 
       // Universe manager is already initialized
