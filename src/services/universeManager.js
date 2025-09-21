@@ -17,22 +17,16 @@ import { persistentAuth } from '../services/persistentAuth.js';
 import { SemanticProviderFactory } from './gitNativeProvider.js';
 import { storageWrapper } from '../utils/storageWrapper.js';
 
+// NO GRAPH STORE IMPORT - This creates circular dependency
+// Store operations will be injected from outside when needed
+
 // Lazy import to avoid circular dependency
 let _fileStorage = null;
-let _useGraphStore = null;
 const getFileStorage = async () => {
   if (!_fileStorage) {
     _fileStorage = await import('../store/fileStorage.js');
   }
   return _fileStorage;
-};
-
-const getGraphStore = async () => {
-  if (!_useGraphStore) {
-    const module = await import('../store/graphStore.jsx');
-    _useGraphStore = module.default;
-  }
-  return _useGraphStore;
 };
 
 // Storage keys
@@ -57,21 +51,29 @@ class UniverseManager {
     this.fileHandles = new Map(); // slug -> FileSystemFileHandle
     this.gitSyncEngines = new Map(); // slug -> GitSyncEngine
     this.statusHandlers = new Set();
-    
+
     // Device-aware configuration (lazy initialization to avoid circular dependencies)
     this.deviceConfig = null;
     this.isGitOnlyMode = false;
-    
+
     // Process watchdog to ensure Git sync engines stay alive
     this.watchdogInterval = null;
     this.watchdogDelay = 60000; // Default delay, will be updated when device config loads
-    
+
+    // Store operations injected from outside to avoid circular dependencies
+    this.storeOperations = null;
+
     this.loadFromStorage();
-    
+
     // Initialize device config after a brief delay to avoid circular dependencies
     setTimeout(() => {
       this.initializeDeviceConfig();
     }, 100);
+  }
+
+  // Set store operations from outside to avoid circular dependencies
+  setStoreOperations(storeOperations) {
+    this.storeOperations = storeOperations;
   }
 
   // Initialize device configuration (delayed to avoid circular dependencies)
@@ -1137,8 +1139,10 @@ class UniverseManager {
       }
 
       if (storeState) {
-        const graphStore = await getGraphStore();
-        graphStore.getState().loadUniverseFromFile(storeState);
+        // Load data into store if store operations are available
+        if (this.storeOperations?.loadUniverseFromFile) {
+          this.storeOperations.loadUniverseFromFile(storeState);
+        }
 
         // Update metadata with node count
         if (storeState.nodePrototypes) {
@@ -1181,8 +1185,11 @@ class UniverseManager {
 
     // Get store state if not provided
     if (!storeState) {
-      const graphStore = await getGraphStore();
-      storeState = graphStore.getState();
+      if (this.storeOperations?.getState) {
+        storeState = this.storeOperations.getState();
+      } else {
+        throw new Error('No store state provided and store operations not available');
+      }
     }
 
     // Update universe metadata with current node count before saving
@@ -1286,11 +1293,13 @@ class UniverseManager {
     
     try {
       // Use the GitSyncEngine's existing export logic instead of bypassing it
-      const graphStore = await getGraphStore();
-      const storeState = graphStore.getState();
-      
-      // Force commit through the existing GitSyncEngine which handles SHA conflicts properly
-      await gitSyncEngine.forceCommit(storeState);
+      if (this.storeOperations?.getState) {
+        const storeState = this.storeOperations.getState();
+        // Force commit through the existing GitSyncEngine which handles SHA conflicts properly
+        await gitSyncEngine.forceCommit(storeState);
+      } else {
+        throw new Error('Store operations not available for Git sync');
+      }
     } catch (error) {
       // If force commit fails with 409, try conflict resolution
       if (error.message && error.message.includes('409')) {
@@ -1302,9 +1311,10 @@ class UniverseManager {
             const gitData = await gitSyncEngine.loadFromGit();
             if (gitData) {
               const { storeState: newState } = importFromRedstring(gitData);
-              const graphStore = await getGraphStore();
-              graphStore.getState().loadUniverseFromFile(newState);
-              
+              if (this.storeOperations?.loadUniverseFromFile) {
+                this.storeOperations.loadUniverseFromFile(newState);
+              }
+
               this.notifyStatus('info', 'Loaded latest changes from Git repository');
               return; // Successfully resolved by loading Git data
             }
@@ -1316,12 +1326,15 @@ class UniverseManager {
         // If Git load failed or local is source of truth, wait and retry
         console.log('[UniverseManager] Waiting 2 seconds before retry...');
         await new Promise(resolve => setTimeout(resolve, 2000));
-        
+
         try {
-          const graphStore = await getGraphStore();
-          const storeState = graphStore.getState();
-          await gitSyncEngine.forceCommit(storeState);
-          this.notifyStatus('success', 'Conflict resolved with retry');
+          if (this.storeOperations?.getState) {
+            const storeState = this.storeOperations.getState();
+            await gitSyncEngine.forceCommit(storeState);
+            this.notifyStatus('success', 'Conflict resolved with retry');
+          } else {
+            throw new Error('Store operations not available for retry');
+          }
         } catch (retryError) {
           throw new Error(`Persistent 409 conflict: ${retryError.message}`);
         }
@@ -1607,8 +1620,9 @@ class UniverseManager {
         // Git is source of truth, load from Git and overwrite local
         const gitData = await this.loadFromGit(universe);
         if (gitData) {
-          const graphStore = await getGraphStore();
-          graphStore.getState().loadUniverseFromFile(gitData);
+          if (this.storeOperations?.loadUniverseFromFile) {
+            this.storeOperations.loadUniverseFromFile(gitData);
+          }
           this.notifyStatus('info', 'Conflict resolved: loaded from Git repository');
           return true;
         }
@@ -1616,11 +1630,14 @@ class UniverseManager {
         // Local is source of truth, force push to Git
         const gitSyncEngine = this.gitSyncEngines.get(universe.slug);
         if (gitSyncEngine) {
-          const graphStore = await getGraphStore();
-          const storeState = graphStore.getState();
-          await gitSyncEngine.forceCommit(storeState);
-          this.notifyStatus('info', 'Conflict resolved: pushed local changes to Git');
-          return true;
+          if (this.storeOperations?.getState) {
+            const storeState = this.storeOperations.getState();
+            await gitSyncEngine.forceCommit(storeState);
+            this.notifyStatus('info', 'Conflict resolved: pushed local changes to Git');
+            return true;
+          } else {
+            throw new Error('Store operations not available for conflict resolution');
+          }
         }
       }
 

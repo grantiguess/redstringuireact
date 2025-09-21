@@ -8,15 +8,8 @@ import { exportToRedstring, importFromRedstring } from '../formats/redstringForm
 import { v4 as uuidv4 } from 'uuid';
 import { CONNECTION_DEFAULT_COLOR } from '../constants.js';
 
-// Lazy import UniverseManager to avoid circular initialization
-let __universeManager = null;
-const getUniverseManager = async () => {
-  if (!__universeManager) {
-    const mod = await import('../services/universeManager.js');
-    __universeManager = mod.default || mod.universeManager;
-  }
-  return __universeManager;
-};
+// NO UNIVERSE MANAGER IMPORT - This module must be standalone to avoid circular dependencies
+// This is a legacy compatibility layer that doesn't need universeManager access
 
 // Global state - now primarily for backward compatibility
 let fileHandle = null;
@@ -25,17 +18,6 @@ let isAutoSaveEnabled = true;
 let lastSaveTime = 0;
 let lastChangeTime = 0;
 let preferredDirectory = null;
-
-// Bridge to UniverseManager for new file operations
-const bridgeToUniverseManager = async (operation, ...args) => {
-  try {
-    const um = await getUniverseManager();
-    return await um[operation](...args);
-  } catch (error) {
-    console.error(`[FileStorage] UniverseManager bridge failed for ${operation}:`, error);
-    throw error;
-  }
-};
 
 // Constants
 const AUTO_SAVE_INTERVAL = 500; // Auto-save every 500ms (2x per second)
@@ -873,9 +855,18 @@ export const restoreLastSession = async (options = {}) => {
   const { allowGitLoading = true } = options;
   
   try {
-    // Only try auto-connect to universe file - no localStorage fallback
-    // Pass through the allowGitLoading option for lazy loading control
-    const autoConnectResult = await autoConnectToUniverse({ allowGitLoading });
+    // Simplified auto-connect to avoid circular dependency with universeManager
+    let autoConnectResult = null;
+
+    // Try browser storage mode only (no universeManager calls)
+    if (isBrowserStorageMode()) {
+      const data = await loadBrowserUniverse();
+      if (data) {
+        const importResult = importFromRedstring(data);
+        autoConnectResult = importResult.storeState;
+        console.log('[FileStorage] Auto-connected (browser storage)');
+      }
+    }
     if (autoConnectResult) {
       return {
         success: true,
@@ -931,16 +922,34 @@ export const forceGitUniverseLoad = async () => {
  * Save current state to the universe file
  */
 export const saveToFile = async (storeState, showSuccess = true) => {
+  // Legacy save function - simplified to avoid circular dependency with universeManager
   try {
-    const um = await getUniverseManager();
-    await um.saveActiveUniverse(storeState);
-    lastSaveTime = Date.now();
-    if (showSuccess) {
-      console.log('[FileStorage] Universe saved via UniverseManager');
+    if (isBrowserStorageMode()) {
+      // Save to browser storage
+      const redstringData = exportToRedstring(storeState);
+      await storeBrowserUniverse(redstringData);
+      lastSaveTime = Date.now();
+      if (showSuccess) {
+        console.log('[FileStorage] Universe saved to browser storage');
+      }
+      return true;
+    } else if (fileHandle) {
+      // Save to local file handle
+      const redstringData = exportToRedstring(storeState);
+      const jsonString = JSON.stringify(redstringData, null, 2);
+      const writable = await fileHandle.createWritable();
+      await writable.write(jsonString);
+      await writable.close();
+      lastSaveTime = Date.now();
+      if (showSuccess) {
+        console.log('[FileStorage] Universe saved to local file');
+      }
+      return true;
+    } else {
+      throw new Error('No save method available');
     }
-    return true;
   } catch (error) {
-    console.error('[FileStorage] Failed to save universe via UniverseManager:', error);
+    console.error('[FileStorage] Failed to save universe:', error);
     throw error;
   }
 };
@@ -984,18 +993,17 @@ export const canAutoSave = () => {
  * Get current file status
  */
 export const getFileStatus = () => {
-  const um = __universeManager; // May be null early in startup
-  const activeUniverse = um ? um.getActiveUniverse() : null;
+  // Legacy compatibility function - no universe manager access to avoid circular dependencies
   return {
-    hasFileHandle: fileHandle !== null || !!(um && um.getFileHandle(um.activeUniverseSlug)),
-    fileName: activeUniverse?.localFile?.path || (fileHandle ? (fileHandle.name || FILE_NAME) : null),
+    hasFileHandle: fileHandle !== null,
+    fileName: fileHandle ? (fileHandle.name || FILE_NAME) : null,
     autoSaveEnabled: isAutoSaveEnabled,
     autoSaveActive: autoSaveInterval !== null,
     lastSaveTime: lastSaveTime,
     lastChangeTime: lastChangeTime,
-    // New UniverseManager integration
-    activeUniverseSlug: um ? um.activeUniverseSlug : null,
-    sourceOfTruth: activeUniverse?.sourceOfTruth
+    // Legacy values for backward compatibility
+    activeUniverseSlug: null,
+    sourceOfTruth: null
   };
 };
 

@@ -36,7 +36,8 @@ class UniverseBackend {
       // Get authentication status (persistentAuth auto-initializes)
       this.authStatus = persistentAuth.getAuthStatus();
 
-      // Universe manager is already initialized
+      // Set up store operations for universe manager to avoid circular dependencies
+      await this.setupStoreOperations();
 
       // Set up event listeners
       this.setupUniverseManagerEvents();
@@ -52,6 +53,27 @@ class UniverseBackend {
     } catch (error) {
       console.error('[UniverseBackend] Failed to initialize backend:', error);
       this.notifyStatus('error', `Backend initialization failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Set up store operations for universeManager to avoid circular dependencies
+   */
+  async setupStoreOperations() {
+    try {
+      // Dynamically import graphStore from backend (outside the circular dependency)
+      const { default: useGraphStore } = await import('../store/graphStore.jsx');
+
+      const storeOperations = {
+        getState: () => useGraphStore.getState(),
+        loadUniverseFromFile: (storeState) => useGraphStore.getState().loadUniverseFromFile(storeState)
+      };
+
+      universeManager.setStoreOperations(storeOperations);
+      console.log('[UniverseBackend] Store operations set up for universeManager');
+    } catch (error) {
+      console.warn('[UniverseBackend] Failed to set up store operations:', error);
+      // Continue without store operations - some functionality may be limited
     }
   }
 

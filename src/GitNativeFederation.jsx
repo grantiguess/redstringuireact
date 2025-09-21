@@ -36,15 +36,84 @@ import {
   Trash2
 } from 'lucide-react';
 
-// Backend service - handles ALL universe operations (lazy import to avoid circular dependency)
-let _universeBackend = null;
-const getUniverseBackend = async () => {
-  if (!_universeBackend) {
-    const module = await import('./services/universeBackend.js');
-    _universeBackend = module.default || module.universeBackend;
+// Universe Backend Bridge - communicate with backend without direct imports
+class UniverseBackendBridge {
+  constructor() {
+    this.listeners = new Set();
   }
-  return _universeBackend;
-};
+
+  // Send commands to backend via window events
+  async sendCommand(command, payload = {}) {
+    return new Promise((resolve, reject) => {
+      const id = Date.now() + Math.random();
+      const timeoutId = setTimeout(() => {
+        window.removeEventListener(`universe-backend-response-${id}`, handleResponse);
+        reject(new Error('Backend command timeout'));
+      }, 10000);
+
+      const handleResponse = (event) => {
+        clearTimeout(timeoutId);
+        window.removeEventListener(`universe-backend-response-${id}`, handleResponse);
+        if (event.detail.error) {
+          reject(new Error(event.detail.error));
+        } else {
+          resolve(event.detail.result);
+        }
+      };
+
+      window.addEventListener(`universe-backend-response-${id}`, handleResponse);
+      window.dispatchEvent(new CustomEvent('universe-backend-command', {
+        detail: { command, payload, id }
+      }));
+    });
+  }
+
+  // Listen for backend status updates
+  onStatusChange(callback) {
+    const handler = (event) => callback(event.detail);
+    window.addEventListener('universe-backend-status', handler);
+    return () => window.removeEventListener('universe-backend-status', handler);
+  }
+
+  // Universe operations
+  async getAllUniverses() {
+    return this.sendCommand('getAllUniverses');
+  }
+
+  async getActiveUniverse() {
+    return this.sendCommand('getActiveUniverse');
+  }
+
+  async getAuthStatus() {
+    return this.sendCommand('getAuthStatus');
+  }
+
+  async switchActiveUniverse(slug, options) {
+    return this.sendCommand('switchActiveUniverse', { slug, options });
+  }
+
+  async createUniverse(name, options) {
+    return this.sendCommand('createUniverse', { name, options });
+  }
+
+  async deleteUniverse(slug) {
+    return this.sendCommand('deleteUniverse', { slug });
+  }
+
+  async updateUniverse(slug, updates) {
+    return this.sendCommand('updateUniverse', { slug, updates });
+  }
+
+  async discoverUniversesInRepository(repoConfig) {
+    return this.sendCommand('discoverUniversesInRepository', { repoConfig });
+  }
+
+  async linkToDiscoveredUniverse(discoveredUniverse, repoConfig) {
+    return this.sendCommand('linkToDiscoveredUniverse', { discoveredUniverse, repoConfig });
+  }
+}
+
+const universeBackendBridge = new UniverseBackendBridge();
 
 // UI-only imports
 import { persistentAuth } from './services/persistentAuth.js';
@@ -117,14 +186,20 @@ const GitNativeFederation = () => {
   const hasOAuthForBrowsing = authStatus?.isAuthenticated || false;
   const hasAppForAutoSave = githubAppInstallation?.accessToken ? true : false;
 
+  const activeUniverse = useMemo(() => {
+    return universes.find(u => u.slug === activeUniverseSlug);
+  }, [universes, activeUniverseSlug]);
+
   // Load data from backend
   const loadUniverseData = useCallback(async () => {
     try {
-      const backend = await getUniverseBackend();
-      setUniverses(backend.getAllUniverses());
-      const activeUniverse = backend.getActiveUniverse();
+      const universes = await universeBackendBridge.getAllUniverses();
+      const activeUniverse = await universeBackendBridge.getActiveUniverse();
+      const authStatus = await universeBackendBridge.getAuthStatus();
+
+      setUniverses(universes || []);
       setActiveUniverseSlug(activeUniverse?.slug || null);
-      setAuthStatus(backend.getAuthStatus());
+      setAuthStatus(authStatus);
     } catch (error) {
       console.error('[GitNativeFederation] Failed to load universe data:', error);
       setError('Failed to load universe data');
@@ -143,8 +218,7 @@ const GitNativeFederation = () => {
         await loadUniverseData();
 
         // Subscribe to backend status changes
-        const backend = await getUniverseBackend();
-        unsubscribeRef = backend.onStatusChange((status) => {
+        unsubscribeRef = universeBackendBridge.onStatusChange((status) => {
           setSyncStatus(status);
           // Refresh universe data when status changes
           loadUniverseData();
@@ -191,7 +265,7 @@ const GitNativeFederation = () => {
         }
       }
     });
-  }, [activeUniverse?.sources, dataAuthMethod, repoUniverseLists]);
+  }, [activeUniverse, dataAuthMethod, repoUniverseLists]);
 
   // Observe panel width to switch layouts (slim vs wide)
   useEffect(() => {
@@ -223,8 +297,7 @@ const GitNativeFederation = () => {
       setIsLoading(true);
       setError(null);
 
-      const backend = await getUniverseBackend();
-      await backend.switchActiveUniverse(slug, { saveCurrent: confirmed });
+      await universeBackendBridge.switchActiveUniverse(slug, { saveCurrent: confirmed });
       await loadUniverseData();
 
     } catch (error) {
@@ -247,8 +320,7 @@ const GitNativeFederation = () => {
       setIsLoading(true);
       setError(null);
 
-      const backend = await getUniverseBackend();
-      await backend.createUniverse(name, {
+      await universeBackendBridge.createUniverse(name, {
         enableGit: deviceInfo.gitOnlyMode
       });
       await loadUniverseData();
@@ -278,8 +350,7 @@ const GitNativeFederation = () => {
       setIsLoading(true);
       setError(null);
 
-      const backend = await getUniverseBackend();
-      await backend.deleteUniverse(slug);
+      await universeBackendBridge.deleteUniverse(slug);
       await loadUniverseData();
 
     } catch (error) {
@@ -294,8 +365,7 @@ const GitNativeFederation = () => {
     if (!activeUniverseSlug) return;
 
     try {
-      const backend = await getUniverseBackend();
-      await backend.updateUniverse(activeUniverseSlug, { name: newName });
+      await universeBackendBridge.updateUniverse(activeUniverseSlug, { name: newName });
       await loadUniverseData();
     } catch (error) {
       console.error('[GitNativeFederation] Failed to rename universe:', error);
@@ -307,8 +377,7 @@ const GitNativeFederation = () => {
     if (!activeUniverseSlug) return;
 
     try {
-      const backend = await getUniverseBackend();
-      await backend.updateUniverse(activeUniverseSlug, { sourceOfTruth });
+      await universeBackendBridge.updateUniverse(activeUniverseSlug, { sourceOfTruth });
       await loadUniverseData();
     } catch (error) {
       console.error('[GitNativeFederation] Failed to set source of truth:', error);
@@ -375,8 +444,7 @@ const GitNativeFederation = () => {
       }));
 
       console.log(`[GitNativeFederation] Discovering universes in ${key}...`);
-      const backend = await getUniverseBackend();
-      const discovered = await backend.discoverUniversesInRepository(repoConfig);
+      const discovered = await universeBackendBridge.discoverUniversesInRepository(repoConfig);
       console.log(`[GitNativeFederation] Found ${discovered.length} universes in ${key}`);
 
       setRepoUniverseLists(prev => ({
@@ -402,8 +470,7 @@ const GitNativeFederation = () => {
       setIsLoading(true);
       setError(null);
 
-      const backend = await getUniverseBackend();
-      await backend.linkToDiscoveredUniverse(discoveredUniverse, repoConfig);
+      await universeBackendBridge.linkToDiscoveredUniverse(discoveredUniverse, repoConfig);
       await loadUniverseData();
 
     } catch (error) {
@@ -415,10 +482,6 @@ const GitNativeFederation = () => {
   };
 
   // Get active universe
-  const activeUniverse = useMemo(() => {
-    return universes.find(u => u.slug === activeUniverseSlug);
-  }, [universes, activeUniverseSlug]);
-
   // Format universe cards for display
   const universeCards = useMemo(() => {
     return universes.map(universe => ({
