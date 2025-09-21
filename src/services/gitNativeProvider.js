@@ -142,10 +142,15 @@ export class GitHubSemanticProvider extends SemanticProvider {
 
   // Prefer correct auth scheme for GitHub App tokens
   getAuthHeader() {
-    // Use Bearer for GitHub App and OAuth tokens; some environments reject the legacy 'token' scheme
-    if (this.authMethod === 'github-app' || this.authMethod === 'oauth') {
+    if (!this.token) {
+      throw new Error('GitHub provider missing authentication token');
+    }
+
+    if (this.authMethod === 'github-app') {
       return `Bearer ${this.token}`;
     }
+
+    // OAuth and legacy tokens still require the historic `token` prefix
     return `token ${this.token}`;
   }
 

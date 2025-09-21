@@ -245,6 +245,17 @@ const GitNativeFederation = () => {
     };
   }, [loadUniverseData]);
 
+  // Track which authentication method is available for data operations
+  useEffect(() => {
+    if (githubAppInstallation?.accessToken) {
+      setDataAuthMethod('github-app');
+    } else if (authStatus?.isAuthenticated) {
+      setDataAuthMethod('oauth');
+    } else {
+      setDataAuthMethod(null);
+    }
+  }, [githubAppInstallation, authStatus]);
+
   // Auto-load repository universes when active universe changes
   useEffect(() => {
     if (!activeUniverse?.sources) return;
