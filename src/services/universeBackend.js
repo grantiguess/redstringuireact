@@ -20,8 +20,8 @@ class UniverseBackend {
     this.isInitialized = false;
     this.authStatus = null;
 
-    // Auto-initialize on construction
-    this.initialize();
+    // Don't auto-initialize on construction to avoid circular dependencies
+    // Initialization will happen on first method call
   }
 
   /**
@@ -253,6 +253,9 @@ class UniverseBackend {
    * Discover universes in a repository
    */
   async discoverUniversesInRepository(repoConfig) {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
     return universeManager.discoverUniversesInRepository(repoConfig);
   }
 
@@ -260,6 +263,9 @@ class UniverseBackend {
    * Link to a discovered universe
    */
   async linkToDiscoveredUniverse(discoveredUniverse, repoConfig) {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
     const slug = await universeManager.linkToDiscoveredUniverse(discoveredUniverse, repoConfig);
 
     // Auto-setup Git sync engine for the new universe
@@ -276,6 +282,9 @@ class UniverseBackend {
    * Switch active universe
    */
   async switchActiveUniverse(slug, options = {}) {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
     const result = await universeManager.switchActiveUniverse(slug, options);
 
     // Ensure engine is set up for the new active universe
@@ -306,6 +315,9 @@ class UniverseBackend {
    * Get all universes
    */
   getAllUniverses() {
+    if (!this.isInitialized) {
+      this.initialize();
+    }
     return universeManager.getAllUniverses();
   }
 
@@ -313,6 +325,9 @@ class UniverseBackend {
    * Get active universe
    */
   getActiveUniverse() {
+    if (!this.isInitialized) {
+      this.initialize();
+    }
     return universeManager.getActiveUniverse();
   }
 
@@ -320,6 +335,9 @@ class UniverseBackend {
    * Create new universe
    */
   createUniverse(name, options = {}) {
+    if (!this.isInitialized) {
+      this.initialize();
+    }
     const universe = universeManager.createUniverse(name, options);
 
     // Auto-setup engine if Git is enabled
@@ -338,6 +356,9 @@ class UniverseBackend {
    * Delete universe
    */
   deleteUniverse(slug) {
+    if (!this.isInitialized) {
+      this.initialize();
+    }
     // Remove engine first
     this.removeGitSyncEngine(slug);
 
@@ -356,6 +377,9 @@ class UniverseBackend {
    * Get authentication status
    */
   getAuthStatus() {
+    if (!this.isInitialized) {
+      this.initialize();
+    }
     return this.authStatus || persistentAuth.getAuthStatus();
   }
 
