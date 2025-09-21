@@ -190,14 +190,35 @@ const GitNativeFederation = () => {
     return universes.find(u => u.slug === activeUniverseSlug);
   }, [universes, activeUniverseSlug]);
 
+  const applyActiveUniverseUpdate = useCallback(async (updates) => {
+    if (!activeUniverse?.slug) return;
+    try {
+      await universeBackendBridge.updateUniverse(activeUniverse.slug, updates);
+      await loadUniverseData();
+    } catch (error) {
+      console.error('[GitNativeFederation] Failed to update universe:', error);
+      setError(`Failed to update universe: ${error.message}`);
+    }
+  }, [activeUniverse, loadUniverseData]);
+
   // Load data from backend
   const loadUniverseData = useCallback(async () => {
     try {
       const universes = await universeBackendBridge.getAllUniverses();
+      const uniqueUniverses = [];
+      const seenSlugs = new Set();
+
+      (universes || []).forEach((u) => {
+        if (u?.slug && !seenSlugs.has(u.slug)) {
+          seenSlugs.add(u.slug);
+          uniqueUniverses.push(u);
+        }
+      });
+
       const activeUniverse = await universeBackendBridge.getActiveUniverse();
       const authStatus = await universeBackendBridge.getAuthStatus();
 
-      setUniverses(universes || []);
+      setUniverses(uniqueUniverses);
       setActiveUniverseSlug(activeUniverse?.slug || null);
       setAuthStatus(authStatus);
     } catch (error) {
@@ -244,6 +265,272 @@ const GitNativeFederation = () => {
       }
     };
   }, [loadUniverseData]);
+
+  // Handle OAuth and GitHub App callbacks stored in sessionStorage
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const safeSessionGet = (key) => {
+      try {
+        return sessionStorage.getItem(key);
+      } catch (_) {
+        return null;
+      }
+    };
+
+    const safeSessionRemove = (key) => {
+      try {
+        sessionStorage.removeItem(key);
+      } catch (_) {}
+    };
+
+    const readSessionJSON = (key) => {
+      try {
+        const raw = sessionStorage.getItem(key);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        sessionStorage.removeItem(key);
+        return parsed;
+      } catch (error) {
+        console.warn(`[GitNativeFederation] Failed to parse session data for ${key}:`, error);
+        sessionStorage.removeItem(key);
+        return null;
+      }
+    };
+
+    const cleanupUrl = () => {
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (_) {}
+    };
+
+    const processOAuthCallback = async () => {
+      const storedResult = readSessionJSON('github_oauth_result');
+      const urlParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+
+      let oauthCode = storedResult?.code || urlParams.get('code') || hashParams.get('code');
+      let oauthState = storedResult?.state || urlParams.get('state') || hashParams.get('state');
+
+      const expectedState = safeSessionGet('github_oauth_state');
+      const pendingOAuth = safeSessionGet('github_oauth_pending') === 'true';
+
+      if (!oauthCode || !oauthState || !pendingOAuth) {
+        return false;
+      }
+
+      if (expectedState && oauthState !== expectedState) {
+        setError('GitHub authentication state mismatch. Please try connecting again.');
+        safeSessionRemove('github_oauth_pending');
+        safeSessionRemove('github_oauth_state');
+        cleanupUrl();
+        return false;
+      }
+
+      const redirectUri = `${window.location.origin}/oauth/callback`;
+
+      try {
+        setIsConnecting(true);
+        setError(null);
+
+        const tokenResp = await oauthFetch('/api/github/oauth/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: oauthCode, state: oauthState, redirect_uri: redirectUri })
+        });
+
+        if (!tokenResp.ok) {
+          const errorText = await tokenResp.text().catch(() => '');
+          throw new Error(`Token exchange failed (${tokenResp.status} ${errorText || 'unknown error'})`);
+        }
+
+        const tokenData = await tokenResp.json();
+
+        const userResponse = await fetch('https://api.github.com/user', {
+          headers: {
+            'Authorization': `Bearer ${tokenData.access_token}`,
+            'Accept': 'application/vnd.github.v3+json'
+          }
+        });
+
+        if (!userResponse.ok) {
+          const errorText = await userResponse.text().catch(() => '');
+          throw new Error(`Failed to fetch GitHub user (${userResponse.status} ${errorText || 'unknown error'})`);
+        }
+
+        const userData = await userResponse.json();
+        await persistentAuth.storeTokens(tokenData, userData);
+
+        try {
+          const reposResponse = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
+            headers: {
+              'Authorization': `Bearer ${tokenData.access_token}`,
+              'Accept': 'application/vnd.github.v3+json'
+            }
+          });
+
+          if (reposResponse.ok) {
+            const repos = await reposResponse.json();
+            if (!cancelled) {
+              setUserRepositories(repos);
+            }
+          }
+        } catch (repoError) {
+          console.warn('[GitNativeFederation] Failed to preload repositories after OAuth:', repoError);
+        }
+
+        if (!cancelled) {
+          setAuthStatus(persistentAuth.getAuthStatus());
+        }
+
+        return true;
+      } catch (error) {
+        if (!cancelled) {
+          console.error('[GitNativeFederation] OAuth callback processing failed:', error);
+          setError(`GitHub authentication failed: ${error.message}`);
+        }
+        return false;
+      } finally {
+        safeSessionRemove('github_oauth_pending');
+        safeSessionRemove('github_oauth_state');
+        setIsConnecting(false);
+        cleanupUrl();
+      }
+    };
+
+    const processGitHubAppCallback = async () => {
+      const storedResult = readSessionJSON('github_app_result');
+      const urlParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+
+      const installationId = storedResult?.installation_id || urlParams.get('installation_id') || hashParams.get('installation_id');
+
+      if (!installationId) {
+        return false;
+      }
+
+      const pendingApp = safeSessionGet('github_app_pending') === 'true';
+
+      try {
+        setIsConnecting(true);
+        setError(null);
+
+        const tokenResp = await oauthFetch('/api/github/app/installation-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ installation_id: installationId })
+        });
+
+        if (!tokenResp.ok) {
+          const errorText = await tokenResp.text().catch(() => '');
+          throw new Error(`Failed to obtain installation token (${tokenResp.status} ${errorText || 'unknown error'})`);
+        }
+
+        const tokenData = await tokenResp.json();
+        const accessToken = tokenData?.token;
+
+        if (!accessToken) {
+          throw new Error('GitHub App token response missing token field');
+        }
+
+        let repositories = [];
+        let account = null;
+
+        try {
+          const detailsResp = await oauthFetch(`/api/github/app/installation/${encodeURIComponent(installationId)}`, { method: 'GET' });
+          if (detailsResp.ok) {
+            const details = await detailsResp.json();
+            account = details?.account || null;
+            if (Array.isArray(details?.repositories)) {
+              repositories = details.repositories.map(repo => ({
+                name: repo.name,
+                full_name: repo.full_name,
+                description: repo.description,
+                private: repo.private,
+                created_at: repo.created_at,
+                updated_at: repo.updated_at
+              }));
+            }
+          }
+        } catch (detailsError) {
+          console.warn('[GitNativeFederation] Failed to fetch installation details:', detailsError);
+        }
+
+        const installationPayload = {
+          installationId,
+          accessToken,
+          repositories,
+          userData: account || {},
+          lastUpdated: Date.now()
+        };
+
+        persistentAuth.storeAppInstallation(installationPayload);
+
+        if (!cancelled) {
+          setGithubAppInstallation(installationPayload);
+          setUserRepositories(repositories);
+          setAuthStatus(persistentAuth.getAuthStatus());
+        }
+
+        if (repositories.length === 0 && !cancelled) {
+          setError('GitHub App connected, but no repositories are accessible. Configure repository access on GitHub and try again.');
+        }
+
+        return true;
+      } catch (error) {
+        if (!cancelled) {
+          console.error('[GitNativeFederation] GitHub App callback processing failed:', error);
+          setError(`GitHub App connection failed: ${error.message}`);
+        }
+        return false;
+      } finally {
+        if (pendingApp) {
+          safeSessionRemove('github_app_pending');
+        }
+        setIsConnecting(false);
+        cleanupUrl();
+      }
+    };
+
+    const handleCallbacks = async () => {
+      const oauthProcessed = await processOAuthCallback();
+      const appProcessed = await processGitHubAppCallback();
+
+      if ((oauthProcessed || appProcessed) && !cancelled) {
+        await loadUniverseData();
+      }
+    };
+
+    handleCallbacks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadUniverseData]);
+
+  // Keep GitHub App installation state in sync with persistent storage
+  useEffect(() => {
+    const handleAppInstallationUpdate = () => {
+      const updatedInstallation = persistentAuth.getAppInstallation();
+      if (updatedInstallation) {
+        setGithubAppInstallation(updatedInstallation);
+      }
+    };
+
+    if (typeof persistentAuth?.on === 'function') {
+      persistentAuth.on('appInstallationStored', handleAppInstallationUpdate);
+    }
+
+    return () => {
+      if (typeof persistentAuth?.off === 'function') {
+        persistentAuth.off('appInstallationStored', handleAppInstallationUpdate);
+      }
+    };
+  }, []);
 
   // Track which authentication method is available for data operations
   useEffect(() => {
@@ -387,14 +674,124 @@ const GitNativeFederation = () => {
   const handleSetSourceOfTruth = async (sourceOfTruth) => {
     if (!activeUniverseSlug) return;
 
+    const active = universes.find(u => u.slug === activeUniverseSlug);
+    const nextGitConfig = (() => {
+      if (!active?.gitRepo) return undefined;
+      if (sourceOfTruth === 'git') {
+        return { ...active.gitRepo, enabled: true };
+      }
+      if (sourceOfTruth === 'local') {
+        return { ...active.gitRepo, enabled: false };
+      }
+      return undefined;
+    })();
+
     try {
-      await universeBackendBridge.updateUniverse(activeUniverseSlug, { sourceOfTruth });
-      await loadUniverseData();
+      const payload = nextGitConfig ? { sourceOfTruth, gitRepo: nextGitConfig } : { sourceOfTruth };
+      await applyActiveUniverseUpdate(payload);
     } catch (error) {
       console.error('[GitNativeFederation] Failed to set source of truth:', error);
       setError(`Failed to set source of truth: ${error.message}`);
     }
   };
+
+  const handleAddGitSource = useCallback(async () => {
+    if (!activeUniverse) return;
+    const input = window.prompt('Enter repository (owner/repo):');
+    if (!input) return;
+
+    const normalized = input.trim().replace(/^https?:\/\/github\.com\//i, '');
+    const [userRaw, repoRaw] = normalized.split('/');
+    const user = userRaw?.trim();
+    const repo = repoRaw?.replace(/\.git$/i, '').trim();
+
+    if (!user || !repo) {
+      setError('Repository must be in the format owner/repo');
+      setTimeout(() => setError(null), 4000);
+      return;
+    }
+
+    const existingSources = activeUniverse.sources || [];
+    const duplicate = existingSources.some(src => src.type === 'github' && src.user?.toLowerCase() === user.toLowerCase() && src.repo?.toLowerCase() === repo.toLowerCase());
+    if (duplicate) {
+      setError('Repository already added to this universe');
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+
+    const newSource = {
+      id: `src_${Date.now().toString(36)}`,
+      type: 'github',
+      user,
+      repo,
+      name: `@${user}/${repo}`,
+      addedAt: new Date().toISOString()
+    };
+
+    await applyActiveUniverseUpdate({ sources: [...existingSources, newSource] });
+    setSyncStatus({ type: 'success', status: `Added data source @${user}/${repo}` });
+    setTimeout(() => setSyncStatus(null), 3000);
+  }, [activeUniverse, applyActiveUniverseUpdate]);
+
+  const handleUpdateGitSourceRepo = useCallback(async (source, repository) => {
+    if (!activeUniverse || !source || !repository) return;
+    const user = repository.owner?.login;
+    const repo = repository.name;
+    if (!user || !repo) return;
+
+    const updatedSources = (activeUniverse.sources || []).map(src => src.id === source.id ? { ...src, user, repo, name: `@${user}/${repo}` } : src);
+    await applyActiveUniverseUpdate({ sources: updatedSources });
+  }, [activeUniverse, applyActiveUniverseUpdate]);
+
+  const handleSetPrimaryGitSource = useCallback(async (source) => {
+    if (!activeUniverse || !source || source.type !== 'github' || !source.user || !source.repo) return;
+    const linkedRepo = { type: 'github', user: source.user, repo: source.repo };
+    const gitRepoConfig = {
+      ...activeUniverse.gitRepo,
+      enabled: true,
+      linkedRepo,
+      universeFolder: activeUniverse.gitRepo?.universeFolder || `universes/${activeUniverse.slug}`,
+      universeFile: activeUniverse.gitRepo?.universeFile || `${activeUniverse.slug}.redstring`
+    };
+
+    await applyActiveUniverseUpdate({ gitRepo: gitRepoConfig });
+    setSyncStatus({ type: 'success', status: `Primary source set to @${source.user}/${source.repo}` });
+    setTimeout(() => setSyncStatus(null), 3000);
+  }, [activeUniverse, applyActiveUniverseUpdate]);
+
+  const handleRemoveSource = useCallback(async (source) => {
+    if (!activeUniverse || !source) return;
+
+    const isPrimaryGit = source.type === 'github' && activeUniverse.gitRepo?.linkedRepo &&
+      activeUniverse.gitRepo.linkedRepo.user?.toLowerCase() === source.user?.toLowerCase() &&
+      activeUniverse.gitRepo.linkedRepo.repo?.toLowerCase() === source.repo?.toLowerCase();
+
+    if (isPrimaryGit) {
+      const confirmed = window.confirm('Unlink the primary Git repository?');
+      if (!confirmed) return;
+    }
+
+    const remainingSources = (activeUniverse.sources || []).filter(src => src.id !== source.id);
+    const updatePayload = { sources: remainingSources };
+
+    if (isPrimaryGit) {
+      updatePayload.gitRepo = { ...activeUniverse.gitRepo, enabled: false, linkedRepo: null };
+    }
+
+    await applyActiveUniverseUpdate(updatePayload);
+  }, [activeUniverse, applyActiveUniverseUpdate]);
+
+  const handleOpenGitHubRepo = useCallback((source) => {
+    if (!source?.user || !source?.repo) return;
+    const url = `https://github.com/${source.user}/${source.repo}`;
+    window.open(url, '_blank', 'noopener');
+  }, []);
+
+  const handleDeleteDiscoveredUniverse = useCallback(async (slug) => {
+    const existing = universes.find(u => u.slug === slug);
+    if (!existing) return;
+    await removeUniverse(slug);
+  }, [universes, removeUniverse]);
 
   // Auth operations
   const handleGitHubAuth = async () => {
@@ -402,12 +799,32 @@ const GitNativeFederation = () => {
       setIsConnecting(true);
       setError(null);
 
-      // Open OAuth window
-      const state = Date.now().toString();
+      try {
+        sessionStorage.removeItem('github_oauth_pending');
+        sessionStorage.removeItem('github_oauth_state');
+        sessionStorage.removeItem('github_oauth_result');
+      } catch (_) {}
+
+      const clientResp = await oauthFetch('/api/github/oauth/client-id');
+      if (!clientResp.ok) {
+        throw new Error('Failed to load OAuth configuration from server');
+      }
+
+      const { clientId } = await clientResp.json();
+      if (!clientId) {
+        throw new Error('GitHub OAuth client ID is not configured');
+      }
+
+      const state = Math.random().toString(36).slice(2);
+      const redirectUri = `${window.location.origin}/oauth/callback`;
+      const scopes = 'repo';
+
+      sessionStorage.setItem('github_oauth_state', state);
       sessionStorage.setItem('github_oauth_pending', 'true');
 
-      const oauthUrl = `/api/github/oauth/authorize?state=${state}`;
-      window.location.href = oauthUrl;
+      const authUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(state)}`;
+
+      window.location.href = authUrl;
 
     } catch (error) {
       console.error('[GitNativeFederation] OAuth failed:', error);
@@ -432,6 +849,10 @@ const GitNativeFederation = () => {
       } catch (_) {}
 
       const state = Date.now().toString();
+      try {
+        sessionStorage.removeItem('github_app_pending');
+        sessionStorage.removeItem('github_app_result');
+      } catch (_) {}
       sessionStorage.setItem('github_app_pending', 'true');
 
       const installationUrl = `https://github.com/apps/${appName}/installations/new?state=${state}`;
@@ -879,95 +1300,161 @@ const GitNativeFederation = () => {
                     </div>
                   </div>
 
-                  {/* Sources section for active universe */}
-                  {activeUniverse?.sources && activeUniverse.sources.length > 0 && (
-                    <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #979090' }}>
-                      <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '6px' }}>Sources</div>
-                      {activeUniverse.sources.map((src, index) => {
-                        const isPrimaryGitSource = src.type === 'github' && activeUniverse?.gitRepo?.linkedRepo?.user === src.user && activeUniverse?.gitRepo?.linkedRepo?.repo === src.repo;
+                  {/* Data Sources */}
+                  <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #979090', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#666' }}>Data Sources</div>
+                      <button
+                        onClick={handleAddGitSource}
+                        style={{ padding: '4px 8px', background: 'transparent', color: '#260000', border: '1px dashed #260000', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <Plus size={12} /> Add Git Repo
+                      </button>
+                    </div>
 
-                        return (
-                          <div key={src.id || index} style={{ marginBottom: '8px', padding: '8px', backgroundColor: isPrimaryGitSource ? 'rgba(122,0,0,0.1)' : 'rgba(255,255,255,0.1)', border: '1px solid #979090', borderRadius: '4px' }}>
-                            {src.type === 'github' && (
-                              <>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                                  <Github size={14} />
-                                  <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{src.user}/{src.repo}</span>
-                                  {isPrimaryGitSource && (
-                                    <span style={{ fontSize: '0.7rem', color: '#7A0000', fontWeight: 600, padding: '1px 4px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '6px' }}>PRIMARY</span>
+                    {(activeUniverse?.sources && activeUniverse.sources.length > 0) ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {activeUniverse.sources.map((source, index) => {
+                          const isGitSource = source.type === 'github';
+                          const isPrimaryGitSource = isGitSource && activeUniverse?.gitRepo?.linkedRepo &&
+                            activeUniverse.gitRepo.linkedRepo.user?.toLowerCase() === source.user?.toLowerCase() &&
+                            activeUniverse.gitRepo.linkedRepo.repo?.toLowerCase() === source.repo?.toLowerCase();
+                          const repoKey = isGitSource && source.user && source.repo ? `${source.user}/${source.repo}` : null;
+                          const repoItems = repoKey ? (repoUniverseLists[repoKey]?.items || []) : [];
+                          const repoLoading = repoKey ? repoUniverseLists[repoKey]?.loading : false;
+
+                          return (
+                            <div
+                              key={source.id || `${source.type}-${source.user || source.name}-${index}`}
+                              style={{
+                                background: '#EFE8E5',
+                                border: isPrimaryGitSource ? '2px solid #260000' : '1px solid #979090',
+                                borderRadius: '6px',
+                                padding: '8px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '6px'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isSlim ? 'flex-start' : 'center', flexDirection: isSlim ? 'column' : 'row', gap: isSlim ? '6px' : '0px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  {isGitSource && <Github size={14} />}
+                                  <div>
+                                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#260000' }}>
+                                      {isGitSource && source.user && source.repo ? `@${source.user}/${source.repo}` : (source.name || source.type)}
+                                    </div>
+                                    <div style={{ fontSize: '0.7rem', color: '#666' }}>
+                                      {isPrimaryGitSource ? 'Primary Git Repository' : source.type}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                  {isGitSource && source.user && source.repo && (
+                                    <button
+                                      onClick={() => handleOpenGitHubRepo(source)}
+                                      style={{ padding: '4px 6px', background: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                      <ExternalLink size={12} /> Open
+                                    </button>
+                                  )}
+                                  {isGitSource && !isPrimaryGitSource && source.user && source.repo && (
+                                    <button
+                                      onClick={() => handleSetPrimaryGitSource(source)}
+                                      style={{ padding: '4px 6px', background: '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer' }}
+                                    >
+                                      Set Primary
+                                    </button>
+                                  )}
+                                  {isGitSource && repoKey && (
+                                    <button
+                                      onClick={() => refreshRepoUniversesList(source.user, source.repo)}
+                                      style={{ padding: '4px 6px', background: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                      <RefreshCw size={12} /> Refresh
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleRemoveSource(source)}
+                                    style={{ padding: '4px 6px', background: 'transparent', color: '#d32f2f', border: '1px solid #d32f2f', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                  >
+                                    <Trash2 size={12} /> Remove
+                                  </button>
+                                </div>
+                              </div>
+
+                              {isGitSource && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  {!isPrimaryGitSource && (
+                                    <RepositoryDropdown
+                                      selectedRepository={source.user && source.repo ? { name: source.repo, owner: { login: source.user } } : null}
+                                      onSelectRepository={(repo) => handleUpdateGitSourceRepo(source, repo)}
+                                      placeholder={hasOAuthForBrowsing ? 'Select repository' : 'OAuth required'}
+                                      disabled={!hasOAuthForBrowsing}
+                                    />
+                                  )}
+
+                                  {isPrimaryGitSource && repoKey && (
+                                    <div style={{ borderTop: '1px dashed #979090', paddingTop: '6px' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ fontSize: '0.75rem', color: '#666' }}>Universes in Repository</div>
+                                        <button
+                                          onClick={() => refreshRepoUniversesList(source.user, source.repo)}
+                                          style={{ padding: '3px 6px', background: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer' }}
+                                        >
+                                          Refresh
+                                        </button>
+                                      </div>
+                                      <div style={{ marginTop: '6px', border: '1px solid #979090', borderRadius: '4px', maxHeight: '180px', overflowY: 'auto' }}>
+                                        {repoLoading ? (
+                                          <div style={{ padding: '6px', fontSize: '0.75rem', color: '#666' }}>Loading…</div>
+                                        ) : repoItems.length === 0 ? (
+                                          <div style={{ padding: '6px', fontSize: '0.75rem', color: '#666' }}>No universes discovered in this repository</div>
+                                        ) : (
+                                          repoItems.map((uitem) => {
+                                            const existingUniverse = universes.find(u => u.slug === uitem.slug);
+                                            const isLinked = existingUniverse && existingUniverse.slug === activeUniverse.slug;
+                                            return (
+                                              <div key={`${uitem.slug}-${uitem.fileName}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px', borderBottom: '1px dashed #ddd' }}>
+                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                  <span style={{ fontWeight: 600, fontSize: '0.8rem' }}>{uitem.name || uitem.slug}</span>
+                                                  <span style={{ fontSize: '0.7rem', color: '#666' }}>{uitem.metadata?.nodeCount || 0} nodes</span>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '4px' }}>
+                                                  {!isLinked && (
+                                                    <button
+                                                      onClick={() => handleLinkUniverse(uitem, { type: 'github', user: source.user, repo: source.repo, authMethod: dataAuthMethod || 'oauth' })}
+                                                      style={{ padding: '3px 6px', background: '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer' }}
+                                                    >
+                                                      Link
+                                                    </button>
+                                                  )}
+                                                  {existingUniverse && (
+                                                    <button
+                                                      onClick={() => handleDeleteDiscoveredUniverse(uitem.slug)}
+                                                      style={{ padding: '3px 6px', background: 'transparent', color: '#d32f2f', border: '1px solid #d32f2f', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer' }}
+                                                    >
+                                                      Delete
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            );
+                                          })
+                                        )}
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '0.75rem', color: '#666' }}>No data sources configured for this universe.</div>
+                    )}
+                  </div>
 
-                                {isPrimaryGitSource && (() => {
-                                  const key = `${src.user}/${src.repo}`;
-                                  return (
-                                    <div style={{ marginTop: '8px', borderTop: '1px dashed #979090', paddingTop: '8px' }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                        <div style={{ fontSize: '0.8rem', color: '#666' }}>Universes in Repo</div>
-                                        <button onClick={() => refreshRepoUniversesList(src.user, src.repo)} style={{ padding: '4px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Refresh</button>
-                                      </div>
-                                      <div style={{ marginTop: '6px', background: 'transparent', border: '1px solid #979090', borderRadius: '4px', padding: '6px', maxHeight: '200px', overflowY: 'auto' }}>
-                                          {repoUniverseLists[key]?.loading ? (
-                                            <div style={{ fontSize: '0.75rem', color: '#666' }}>Loading…</div>
-                                          ) : (repoUniverseLists[key]?.items || []).length === 0 ? (
-                                            <div style={{ fontSize: '0.75rem', color: '#666' }}>No universes discovered in this repository</div>
-                                          ) : (
-                                            (repoUniverseLists[key].items || []).map((uitem) => {
-                                              const activeUniverse = universes.find(u => u.slug === activeUniverseSlug);
-                                              const isActiveUniverse = activeUniverse && activeUniverse.slug === uitem.slug;
-                                              const isInUniversesList = universes.some(u => u.slug === uitem.slug);
-
-                                              return (
-                                                <div key={uitem.slug + uitem.path} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px', marginBottom: '4px', backgroundColor: isActiveUniverse ? 'rgba(122,0,0,0.05)' : 'transparent', borderBottom: '1px dashed #ddd' }}>
-                                                  <div style={{ flex: 1 }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                                                      <div style={{ fontSize: '0.8rem', color: '#260000', fontWeight: 600 }}>{uitem.name}</div>
-                                                      {isActiveUniverse && (
-                                                        <div style={{ fontSize: '0.65rem', color: '#7A0000', fontWeight: 600, padding: '1px 4px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '6px' }}>ACTIVE</div>
-                                                      )}
-                                                      {uitem.stats?.nodes > 0 && (
-                                                        <div style={{ fontSize: '0.65rem', color: '#666', fontWeight: 500, padding: '1px 4px', backgroundColor: 'rgba(0,0,0,0.1)', borderRadius: '6px' }}>
-                                                          {uitem.stats.nodes} node{uitem.stats.nodes !== 1 ? 's' : ''}
-                                                        </div>
-                                                      )}
-                                                    </div>
-                                                    <div style={{ fontSize: '0.7rem', color: '#666' }}>
-                                                      {uitem.fileName} {uitem.stats?.graphs > 0 && `• ${uitem.stats.graphs} graph${uitem.stats.graphs !== 1 ? 's' : ''}`} {uitem.stats?.edges > 0 && `• ${uitem.stats.edges} edge${uitem.stats.edges !== 1 ? 's' : ''}`}
-                                                    </div>
-                                                  </div>
-                                                  <div style={{ display: 'flex', gap: '6px' }}>
-                                                    {!isActiveUniverse && (
-                                                      <button
-                                                        onClick={() => {
-                                                          if (isInUniversesList) {
-                                                            // Switch to the universe
-                                                            handleSwitchUniverse(uitem.slug);
-                                                          } else {
-                                                            // Link/add the universe
-                                                            handleLinkUniverse(uitem, { type: 'github', user: src.user, repo: src.repo, authMethod: dataAuthMethod || 'oauth' });
-                                                          }
-                                                        }}
-                                                        style={{ padding: '3px 6px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}
-                                                      >
-                                                        {isInUniversesList ? 'Switch' : 'Add'}
-                                                      </button>
-                                                    )}
-                                                  </div>
-                                                </div>
-                                              );
-                                            })
-                                          )}
-                                        </div>
-                                    </div>
-                                  );
-                                })()}
-                              </>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
                 </div>
               )}
             </div>

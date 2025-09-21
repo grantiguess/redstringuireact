@@ -15,6 +15,7 @@ import {
 } from '../utils/deviceDetection.js';
 import { persistentAuth } from '../services/persistentAuth.js';
 import { SemanticProviderFactory } from './gitNativeProvider.js';
+import { oauthFetch } from './bridgeConfig.js';
 import { storageWrapper } from '../utils/storageWrapper.js';
 
 // NO GRAPH STORE IMPORT - This creates circular dependency
@@ -481,6 +482,83 @@ class UniverseManager {
     };
   }
 
+  async ensureGitHubAppAccessToken(forceRefresh = false) {
+    if (!persistentAuth?.getAppInstallation) {
+      return null;
+    }
+
+    const installation = persistentAuth.getAppInstallation();
+    if (!installation?.installationId) {
+      return null;
+    }
+
+    const { installationId } = installation;
+    let token = installation.accessToken || null;
+    const lastUpdated = installation.lastUpdated || 0;
+    const TOKEN_STALE_AFTER_MS = 45 * 60 * 1000; // refresh 15 minutes before expiry
+    const tokenStale = forceRefresh || !token || (Date.now() - lastUpdated) > TOKEN_STALE_AFTER_MS;
+
+    if (!tokenStale && token) {
+      return { token, installationId };
+    }
+
+    try {
+      const response = await oauthFetch('/api/github/app/installation-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installation_id: installationId })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`status ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      token = data?.token || null;
+
+      if (token) {
+        const updated = {
+          ...installation,
+          accessToken: token,
+          lastUpdated: Date.now()
+        };
+        try {
+          persistentAuth.storeAppInstallation(updated);
+        } catch (error) {
+          console.warn('[UniverseManager] Failed to persist refreshed GitHub App token:', error);
+        }
+        return { token, installationId };
+      }
+    } catch (error) {
+      console.warn('[UniverseManager] GitHub App token refresh failed:', error);
+    }
+
+    return token ? { token, installationId } : null;
+  }
+
+  async ensureOAuthAccessToken(forceRefresh = false) {
+    if (!persistentAuth?.getAccessToken) {
+      return null;
+    }
+
+    try {
+      if (forceRefresh && typeof persistentAuth.refreshAccessToken === 'function') {
+        await persistentAuth.refreshAccessToken();
+      }
+
+      let token = await persistentAuth.getAccessToken();
+      if (!token && typeof persistentAuth.refreshAccessToken === 'function') {
+        await persistentAuth.refreshAccessToken();
+        token = await persistentAuth.getAccessToken();
+      }
+      return token || null;
+    } catch (error) {
+      console.warn('[UniverseManager] OAuth token retrieval failed:', error);
+      return null;
+    }
+  }
+
   // Create the default universe with device-aware configuration
   createDefaultUniverse() {
     // Use safe defaults if device config isn't ready yet (prevents infinite recursion during startup)
@@ -687,14 +765,32 @@ class UniverseManager {
     return Array.from(this.universes.values());
   }
 
-  // Get active universe
-  getActiveUniverse() {
-    return this.universes.get(this.activeUniverseSlug);
+  // Internal helper to resolve universe entry with case-insensitive fallback
+  resolveUniverseEntry(slug) {
+    if (!slug) return null;
+    if (this.universes.has(slug)) {
+      return { key: slug, universe: this.universes.get(slug) };
+    }
+
+    const target = String(slug).toLowerCase();
+    for (const [key, value] of this.universes.entries()) {
+      if (typeof key === 'string' && key.toLowerCase() === target) {
+        return { key, universe: value };
+      }
+    }
+    return null;
   }
 
-  // Get universe by slug
+  // Get active universe
+  getActiveUniverse() {
+    const resolved = this.resolveUniverseEntry(this.activeUniverseSlug);
+    return resolved ? resolved.universe : undefined;
+  }
+
+  // Get universe by slug (case-insensitive)
   getUniverse(slug) {
-    return this.universes.get(slug);
+    const resolved = this.resolveUniverseEntry(slug);
+    return resolved ? resolved.universe : undefined;
   }
 
   // Create new universe
@@ -736,15 +832,26 @@ class UniverseManager {
       .replace(/-+/g, '-') // Collapse multiple hyphens
       .replace(/^-|-$/g, '') // Remove leading/trailing hyphens
       .substring(0, 50) || 'universe';
-    
+
+    const existingLower = new Set();
+    for (const key of this.universes.keys()) {
+      if (typeof key === 'string') {
+        existingLower.add(key.toLowerCase());
+      }
+    }
+
+    if (!existingLower.has(baseSlug)) {
+      return baseSlug;
+    }
+
     let slug = baseSlug;
     let counter = 1;
-    
-    while (this.universes.has(slug)) {
+
+    while (existingLower.has(slug.toLowerCase())) {
       slug = `${baseSlug}-${counter}`;
       counter++;
     }
-    
+
     return slug;
   }
 
@@ -759,32 +866,34 @@ class UniverseManager {
 
   // Update universe
   updateUniverse(slug, updates) {
-    const universe = this.universes.get(slug);
-    if (!universe) {
+    const resolved = this.resolveUniverseEntry(slug);
+    if (!resolved) {
       throw new Error(`Universe not found: ${slug}`);
     }
-    
+    const { key, universe } = resolved;
+
     const updated = {
       ...universe,
       ...updates,
       lastModified: new Date().toISOString()
     };
-    
-    this.universes.set(slug, this.normalizeUniverse(updated));
+
+    this.universes.set(key, this.normalizeUniverse(updated));
     this.saveToStorage();
-    
+
     this.notifyStatus('info', `Updated universe: ${universe.name}`);
     return updated;
   }
 
   // Set active universe without switching logic (lightweight setter)
   setActiveUniverse(slug) {
-    if (!this.universes.has(slug)) {
+    const resolved = this.resolveUniverseEntry(slug);
+    if (!resolved) {
       throw new Error(`Universe not found: ${slug}`);
     }
-    this.activeUniverseSlug = slug;
+    this.activeUniverseSlug = resolved.key;
     this.saveToStorage();
-    this.notifyStatus('info', `Active universe set: ${this.universes.get(slug)?.name || slug}`);
+    this.notifyStatus('info', `Active universe set: ${resolved.universe?.name || resolved.key}`);
   }
 
   // Delete universe
@@ -793,16 +902,17 @@ class UniverseManager {
       throw new Error('Cannot delete the last universe');
     }
     
-    const universe = this.universes.get(slug);
-    if (!universe) {
+    const resolved = this.resolveUniverseEntry(slug);
+    if (!resolved) {
       throw new Error(`Universe not found: ${slug}`);
     }
-    
-    this.universes.delete(slug);
-    this.fileHandles.delete(slug);
+    const { key, universe } = resolved;
+
+    this.universes.delete(key);
+    this.fileHandles.delete(key);
     
     // If we deleted the active universe, switch to another one
-    if (this.activeUniverseSlug === slug) {
+    if (this.activeUniverseSlug === key) {
       this.activeUniverseSlug = this.universes.keys().next().value;
     }
     
@@ -812,12 +922,13 @@ class UniverseManager {
 
   // Switch active universe (this changes what's displayed on screen)
   async switchActiveUniverse(slug, options = {}) {
-    const universe = this.universes.get(slug);
-    if (!universe) {
+    const resolved = this.resolveUniverseEntry(slug);
+    if (!resolved) {
       throw new Error(`Universe not found: ${slug}`);
     }
+    const { key, universe } = resolved;
 
-    if (this.activeUniverseSlug === slug) {
+    if (this.activeUniverseSlug === key) {
       return universe; // Already active
     }
 
@@ -831,7 +942,7 @@ class UniverseManager {
       }
     }
 
-    this.activeUniverseSlug = slug;
+    this.activeUniverseSlug = key;
     this.saveToStorage();
 
     this.notifyStatus('info', `Switched to universe: ${universe.name}`);
@@ -846,7 +957,7 @@ class UniverseManager {
           ? storeState.nodePrototypes.size
           : Object.keys(storeState.nodePrototypes || {}).length;
 
-        this.updateUniverse(slug, {
+        this.updateUniverse(key, {
           metadata: {
             ...universe.metadata,
             nodeCount,
@@ -1658,35 +1769,103 @@ class UniverseManager {
     try {
       console.log(`[UniverseManager] Discovering universes in ${repoConfig.user}/${repoConfig.repo}...`);
 
-      // Get authentication token
-      let token;
-      try {
-        const app = persistentAuth.getAppInstallation?.();
-        if (app?.accessToken) {
-          token = app.accessToken;
-        } else {
-          token = await persistentAuth.getAccessToken();
+      const resolveDiscoveryAuth = async (preferredMethod = null) => {
+        // Try GitHub App credentials first if requested or no preference
+        if (!preferredMethod || preferredMethod === 'github-app') {
+          const appToken = await this.ensureGitHubAppAccessToken(preferredMethod === 'github-app');
+          if (appToken?.token) {
+            return {
+              token: appToken.token,
+              authMethod: 'github-app',
+              installationId: appToken.installationId
+            };
+          }
         }
-      } catch (_) {}
 
-      if (!token) {
+        // Fall back to OAuth tokens
+        const oauthToken = await this.ensureOAuthAccessToken(false);
+        if (oauthToken) {
+          return { token: oauthToken, authMethod: 'oauth' };
+        }
+
+        return { token: null, authMethod: null };
+      };
+
+      const refreshDiscoveryAuth = async (currentContext) => {
+        if (!currentContext) {
+          return null;
+        }
+
+        if (currentContext.authMethod === 'github-app') {
+          const refreshed = await this.ensureGitHubAppAccessToken(true);
+          if (refreshed?.token) {
+            return {
+              token: refreshed.token,
+              authMethod: 'github-app',
+              installationId: refreshed.installationId
+            };
+          }
+
+          // Allow graceful fallback to OAuth if app token refresh failed
+          const fallback = await this.ensureOAuthAccessToken(true);
+          if (fallback) {
+            return { token: fallback, authMethod: 'oauth' };
+          }
+
+          return null;
+        }
+
+        const refreshedOAuth = await this.ensureOAuthAccessToken(true);
+        return refreshedOAuth ? { token: refreshedOAuth, authMethod: 'oauth' } : null;
+      };
+
+      const authContext = await resolveDiscoveryAuth(repoConfig.authMethod || null);
+
+      if (!authContext?.token) {
         throw new Error('Authentication required to discover universes');
       }
 
-      // Create provider for repository discovery
-      const provider = SemanticProviderFactory.createProvider({
+      const providerBaseConfig = {
         type: repoConfig.type || 'github',
         user: repoConfig.user,
         repo: repoConfig.repo,
-        token,
-        authMethod: repoConfig.authMethod || 'oauth',
-        semanticPath: 'schema' // Default path for discovery
-      });
+        semanticPath: repoConfig.semanticPath || 'schema'
+      };
 
-      // Import discovery service dynamically to avoid circular dependency
       const { discoverUniversesWithStats } = await import('./universeDiscovery.js');
 
-      const { universes: discovered, stats } = await discoverUniversesWithStats(provider);
+      const runDiscovery = async (context, allowRetry = true) => {
+        const providerConfig = {
+          ...providerBaseConfig,
+          token: context.token,
+          authMethod: context.authMethod || 'oauth'
+        };
+
+        if (context.installationId) {
+          providerConfig.installationId = context.installationId;
+        }
+
+        const provider = SemanticProviderFactory.createProvider(providerConfig);
+
+        try {
+          return await discoverUniversesWithStats(provider);
+        } catch (error) {
+          const message = error?.message || '';
+          const isAuthError = message.includes('401') || message.toLowerCase().includes('unauthorized');
+
+          if (allowRetry && isAuthError) {
+            const refreshedContext = await refreshDiscoveryAuth(context);
+            if (refreshedContext?.token && refreshedContext.token !== context.token) {
+              console.log('[UniverseManager] Retrying universe discovery with refreshed credentials');
+              return runDiscovery(refreshedContext, false);
+            }
+          }
+
+          throw error;
+        }
+      };
+
+      const { universes: discovered, stats } = await runDiscovery(authContext, true);
 
       console.log(`[UniverseManager] Discovered ${discovered.length} universes in repository`);
       this.notifyStatus('info', `Discovery: ${discovered.length} found • scanned ${stats.scannedDirs} dirs • ${stats.valid} valid • ${stats.invalid} invalid`);
@@ -1720,9 +1899,10 @@ class UniverseManager {
       const universeConfig = createUniverseConfigFromDiscovered(discoveredUniverse, repoConfig);
 
       // Check if universe already exists
-      if (this.universes.has(universeConfig.slug)) {
+      const existingEntry = this.resolveUniverseEntry(universeConfig.slug);
+      if (existingEntry) {
         // Update existing universe
-        const existing = this.universes.get(universeConfig.slug);
+        const { key, universe: existing } = existingEntry;
         const updated = {
           ...existing,
           ...universeConfig,
@@ -1732,7 +1912,7 @@ class UniverseManager {
             relinked: new Date().toISOString()
           }
         };
-        this.universes.set(universeConfig.slug, this.normalizeUniverse(updated));
+        this.universes.set(key, this.normalizeUniverse(updated));
         this.notifyStatus('info', `Updated universe link: ${universeConfig.name}`);
       } else {
         // Create new universe

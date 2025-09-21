@@ -42,6 +42,22 @@ export class PersistentAuth {
     }
   }
 
+  dispatchAuthEvent(type, payload = {}) {
+    try {
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('redstring:auth-token-stored', {
+          detail: {
+            type,
+            timestamp: Date.now(),
+            ...payload
+          }
+        }));
+      }
+    } catch (error) {
+      console.warn('[PersistentAuth] Failed to dispatch auth event:', error);
+    }
+  }
+
   /**
    * Store OAuth tokens securely
    */
@@ -84,6 +100,7 @@ export class PersistentAuth {
       this.startHealthMonitoring();
       
       this.emit('tokenStored', { tokenData, userData });
+      this.dispatchAuthEvent('oauth', { user: userData?.login || null });
       
       return true;
     } catch (error) {
@@ -321,6 +338,7 @@ export class PersistentAuth {
       
       console.log('[PersistentAuth] Tokens cleared');
       this.emit('tokensCleared');
+      this.dispatchAuthEvent('oauth', { hasTokens: false });
     } catch (error) {
       console.error('[PersistentAuth] Failed to clear tokens:', error);
     }
@@ -405,6 +423,7 @@ export class PersistentAuth {
       
       console.log('[PersistentAuth] GitHub App installation stored successfully');
       this.emit('appInstallationStored', installationData);
+      this.dispatchAuthEvent('github-app', { installationId, repositoryCount: repositories?.length || 0 });
     } catch (error) {
       console.error('[PersistentAuth] Failed to store GitHub App installation:', error);
       this.emit('authError', error);
@@ -460,6 +479,7 @@ export class PersistentAuth {
       
       console.log('[PersistentAuth] GitHub App installation cleared');
       this.emit('appInstallationCleared');
+      this.dispatchAuthEvent('github-app', { hasInstallation: false });
     } catch (error) {
       console.error('[PersistentAuth] Failed to clear GitHub App installation:', error);
     }

@@ -13,13 +13,13 @@ gcloud auth configure-docker
 ### 2. Create Dev GitHub Apps
 
 **Dev OAuth App:**
-- Authorization callback URL: `https://redstring-test-784175375476-umk552kp4q-uc.a.run.app/oauth/callback`
+- Authorization callback URL: `https://redstring-test-umk552kp4q-uc.a.run.app/oauth/callback`
 - Save Client ID/Secret as: `GITHUB_CLIENT_ID_DEV`, `GITHUB_CLIENT_SECRET_DEV`
 
 **Dev GitHub App:**
-- Homepage URL: `https://redstring-test-784175375476-umk552kp4q-uc.a.run.app/`
+- Homepage URL: `https://redstring-test-umk552kp4q-uc.a.run.app/`
 - User authorization callback URL: `https://redstring-test-784175375476-umk552kp4q-uc.a.run.app/oauth/callback`
-- Webhook URL: `https://redstring-test-784175375476-umk552kp4q-uc.a.run.app/api/github/app/webhook`
+- Webhook URL: `https://redstring-test-umk552kp4q-uc.a.run.app/api/github/app/webhook`
 - Save as: `GITHUB_APP_ID_DEV`, `GITHUB_APP_PRIVATE_KEY_DEV`, `GITHUB_APP_SLUG_DEV`
 
 ### 3. Store Dev Secrets in Google Secret Manager

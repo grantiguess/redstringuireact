@@ -6,7 +6,7 @@
 set -e
 
 PROJECT_ID="redstring-470201"
-SERVICE_NAME="redstring-test-784175375476"
+SERVICE_NAME="redstring-test"
 REGION="us-central1"
 PORT="8080"
 
