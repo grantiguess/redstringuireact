@@ -10,7 +10,7 @@ function App() {
   return (
     <>
       {/* GitFederationBootstrap handles backend initialization */}
-      <GitFederationBootstrap enableEagerInit={true} />
+      <GitFederationBootstrap enableEagerInit={false} />
       <NodeCanvas />
       <SpawningNodeDragLayer />
       {/* <BridgeClient /> */}

@@ -190,17 +190,6 @@ const GitNativeFederation = () => {
     return universes.find(u => u.slug === activeUniverseSlug);
   }, [universes, activeUniverseSlug]);
 
-  const applyActiveUniverseUpdate = useCallback(async (updates) => {
-    if (!activeUniverse?.slug) return;
-    try {
-      await universeBackendBridge.updateUniverse(activeUniverse.slug, updates);
-      await loadUniverseData();
-    } catch (error) {
-      console.error('[GitNativeFederation] Failed to update universe:', error);
-      setError(`Failed to update universe: ${error.message}`);
-    }
-  }, [activeUniverse, loadUniverseData]);
-
   // Load data from backend
   const loadUniverseData = useCallback(async () => {
     try {
@@ -226,6 +215,17 @@ const GitNativeFederation = () => {
       setError('Failed to load universe data');
     }
   }, []);
+
+  const applyActiveUniverseUpdate = useCallback(async (updates) => {
+    if (!activeUniverse?.slug) return;
+    try {
+      await universeBackendBridge.updateUniverse(activeUniverse.slug, updates);
+      await loadUniverseData();
+    } catch (error) {
+      console.error('[GitNativeFederation] Failed to update universe:', error);
+      setError(`Failed to update universe: ${error.message}`);
+    }
+  }, [activeUniverse, loadUniverseData]);
 
   // Initialize component
   useEffect(() => {
