@@ -33,18 +33,21 @@ class UniverseBackend {
     console.log('[UniverseBackend] Initializing backend service...');
 
     try {
-      // Get authentication status (persistentAuth auto-initializes)
+      console.log('[UniverseBackend] Getting authentication status...');
       this.authStatus = persistentAuth.getAuthStatus();
 
-      // Set up store operations for universe manager to avoid circular dependencies
+      console.log('[UniverseBackend] Setting up store operations...');
       await this.setupStoreOperations();
 
-      // Set up event listeners
+      console.log('[UniverseBackend] Setting up event listeners...');
       this.setupUniverseManagerEvents();
       this.setupAuthEvents();
 
-      // Auto-setup engines for existing universes
-      await this.autoSetupExistingUniverses();
+      console.log('[UniverseBackend] Initializing background sync (auth + active universe)...');
+      await universeManager.initializeBackgroundSync(); // This initializes persistentAuth!
+
+      console.log('[UniverseBackend] Skipping auto-setup of ALL existing universes to avoid hanging...');
+      // await this.autoSetupExistingUniverses(); // DISABLED - can hang during initialization
 
       this.isInitialized = true;
       this.notifyStatus('info', 'Universe backend initialized');
@@ -53,6 +56,7 @@ class UniverseBackend {
     } catch (error) {
       console.error('[UniverseBackend] Failed to initialize backend:', error);
       this.notifyStatus('error', `Backend initialization failed: ${error.message}`);
+      throw error;
     }
   }
 
@@ -287,12 +291,25 @@ class UniverseBackend {
     }
     const result = await universeManager.switchActiveUniverse(slug, options);
 
-    // Ensure engine is set up for the new active universe
-    try {
-      await this.ensureGitSyncEngine(slug);
-    } catch (error) {
-      console.warn(`[UniverseBackend] Failed to setup engine after universe switch:`, error);
+    // CRITICAL: Load the new universe data into the graph store
+    if (result?.storeState && this.storeOperations?.loadUniverseFromFile) {
+      console.log('[UniverseBackend] Loading new universe data into graph store...');
+      try {
+        this.storeOperations.loadUniverseFromFile(result.storeState);
+        console.log('[UniverseBackend] Successfully loaded universe data into graph store');
+      } catch (error) {
+        console.error('[UniverseBackend] Failed to load universe data into graph store:', error);
+      }
+    } else {
+      console.warn('[UniverseBackend] Cannot load universe data - missing storeState or storeOperations');
     }
+
+    // Ensure engine is set up for the new active universe (but don't block on it)
+    setTimeout(() => {
+      this.ensureGitSyncEngine(slug).catch(error => {
+        console.warn(`[UniverseBackend] Failed to setup engine after universe switch:`, error);
+      });
+    }, 100);
 
     return result;
   }

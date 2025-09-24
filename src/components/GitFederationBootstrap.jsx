@@ -28,13 +28,30 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
         if (!backendRef.current) {
           console.log('[GitFederationBootstrap] First command received, loading backend...');
 
-          // Use setTimeout to defer the import until next tick to avoid parse-time dependencies
-          await new Promise(resolve => setTimeout(resolve, 0));
+          try {
+            // Use setTimeout to defer the import until next tick to avoid parse-time dependencies
+            await new Promise(resolve => setTimeout(resolve, 0));
 
-          const module = await import('../services/universeBackend.js');
-          const backend = module.default || module.universeBackend;
-          await backend.initialize();
-          backendRef.current = backend;
+            console.log('[GitFederationBootstrap] Importing universeBackend...');
+            const module = await import('../services/universeBackend.js');
+            const backend = module.default || module.universeBackend;
+
+            console.log('[GitFederationBootstrap] Backend imported, initializing...');
+
+            // Add timeout to prevent hanging
+            const initPromise = backend.initialize();
+            const timeoutPromise = new Promise((_, reject) => {
+              setTimeout(() => reject(new Error('Backend initialization timeout')), 15000);
+            });
+
+            await Promise.race([initPromise, timeoutPromise]);
+            console.log('[GitFederationBootstrap] Backend initialization completed');
+
+            backendRef.current = backend;
+          } catch (initError) {
+            console.error('[GitFederationBootstrap] Backend initialization failed:', initError);
+            throw initError;
+          }
 
           // Set up status forwarding after backend is loaded
           backend.onStatusChange((status) => {
@@ -63,7 +80,7 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
             result = await backend.switchActiveUniverse(payload.slug, payload.options);
             break;
           case 'createUniverse':
-            result = await backend.createUniverse(payload.name, payload.options);
+            result = backend.createUniverse(payload.name, payload.options);
             break;
           case 'deleteUniverse':
             result = await backend.deleteUniverse(payload.slug);
