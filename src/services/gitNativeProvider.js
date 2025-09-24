@@ -5,6 +5,7 @@
  */
 
 import githubRateLimiter from './githubRateLimiter.js';
+import { githubAPI } from './GitHubAPIWrapper.js';
 
 /**
  * Universal Semantic Provider Interface
@@ -283,10 +284,9 @@ This repository was automatically initialized by RedString UI React. You can now
         console.log('[GitHubSemanticProvider] Creating new file');
       }
       
-      const response = await fetch(`${this.rootUrl}/${fullPath}`, {
+      const response = await githubAPI.requestWithRetry(`${this.rootUrl}/${fullPath}`, {
         method: 'PUT',
         headers: {
-          'Authorization': this.getAuthHeader(),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody)
@@ -530,11 +530,7 @@ This repository was automatically initialized by RedString UI React. You can now
   // Helper methods
   async getFileInfo(path) {
     try {
-      const response = await fetch(`${this.rootUrl}/${path}`, {
-        headers: {
-          'Authorization': this.getAuthHeader()
-        }
-      });
+      const response = await githubAPI.request(`${this.rootUrl}/${path}`);
       
       if (response.status === 404) {
         return null;

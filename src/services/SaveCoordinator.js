@@ -14,6 +14,7 @@
  */
 
 import { exportToRedstring } from '../formats/redstringFormat.js';
+import { gitAutosavePolicy } from './GitAutosavePolicy.js';
 
 // Save priority levels and their timing
 const SAVE_PRIORITIES = {
@@ -102,9 +103,12 @@ class SaveCoordinator {
     this.gitSyncEngine = gitSyncEngine;
     this.universeManager = universeManager;
     this.isEnabled = true;
-    
-    console.log('[SaveCoordinator] Initialized with dependencies');
-    this.notifyStatus('info', 'Save coordinator ready');
+
+    // Initialize Git autosave policy
+    gitAutosavePolicy.initialize(gitSyncEngine, this);
+
+    console.log('[SaveCoordinator] Initialized with dependencies and autosave policy');
+    this.notifyStatus('info', 'Save coordinator ready with Git autosave policy');
   }
 
   // Main entry point for state changes
@@ -141,7 +145,10 @@ class SaveCoordinator {
 
       // Queue the change with appropriate priority
       this.queueChange(priority, newState, changeContext);
-      
+
+      // Notify Git autosave policy of the change
+      gitAutosavePolicy.onEditActivity();
+
       // Schedule saves based on priority
       const immediateGit = finishedDragging || this.shouldCommitImmediately(changeContext);
       this.scheduleSaves(priority, newState, { immediateGit });
@@ -423,6 +430,22 @@ class SaveCoordinator {
     }
   }
 
+  // Get current state for autosave policy
+  getState() {
+    // Return the most recent state from pending changes
+    const pendingStates = Array.from(this.pendingChanges.values()).map(change => change.state);
+    if (pendingStates.length > 0) {
+      return pendingStates[pendingStates.length - 1]; // Most recent
+    }
+
+    // Fallback to Git sync engine's local state
+    if (this.gitSyncEngine && this.gitSyncEngine.localState) {
+      return this.gitSyncEngine.localState.get('current');
+    }
+
+    return null;
+  }
+
   // Get current status
   getStatus() {
     return {
@@ -432,13 +455,14 @@ class SaveCoordinator {
       pendingChanges: this.pendingChanges.size,
       pendingByPriority: Object.fromEntries(
         Array.from(this.pendingChanges.entries()).map(([priority, data]) => [
-          priority, 
+          priority,
           { count: data.count, age: Date.now() - data.timestamp }
         ])
       ),
       activeTimers: this.saveTimers.size,
       lastGitCommitTime: this.lastGitCommitTime,
-      lastError: this.lastError
+      lastError: this.lastError,
+      gitAutosavePolicy: gitAutosavePolicy.getStatus()
     };
   }
 

@@ -7,7 +7,8 @@
  * The UI (GitNativeFederation.jsx) should ONLY display data and call these methods.
  */
 
-import universeManager from './universeManager.js';
+// Defer universeManager import to avoid circular dependencies
+let universeManager = null;
 import { GitSyncEngine } from './gitSyncEngine.js';
 import { persistentAuth } from './persistentAuth.js';
 import { SemanticProviderFactory } from './gitNativeProvider.js';
@@ -33,6 +34,14 @@ class UniverseBackend {
     console.log('[UniverseBackend] Initializing backend service...');
 
     try {
+      // Load universeManager first to avoid circular dependencies
+      if (!universeManager) {
+        console.log('[UniverseBackend] Loading universeManager...');
+        const module = await import('./universeManager.js');
+        universeManager = module.default || module.universeManager;
+        console.log('[UniverseBackend] UniverseManager loaded successfully');
+      }
+
       console.log('[UniverseBackend] Getting authentication status...');
       this.authStatus = persistentAuth.getAuthStatus();
 
@@ -44,7 +53,23 @@ class UniverseBackend {
       this.setupAuthEvents();
 
       console.log('[UniverseBackend] Initializing background sync (auth + active universe)...');
-      await universeManager.initializeBackgroundSync(); // This initializes persistentAuth!
+      console.log('[UniverseBackend] About to call universeManager.initializeBackgroundSync()...');
+      const syncStartTime = Date.now();
+
+      // Add timeout to prevent hanging
+      try {
+        await Promise.race([
+          universeManager.initializeBackgroundSync(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Background sync timeout after 8s')), 8000)
+          )
+        ]);
+        const syncEndTime = Date.now();
+        console.log(`[UniverseBackend] Background sync completed in ${syncEndTime - syncStartTime}ms`);
+      } catch (error) {
+        console.warn('[UniverseBackend] Background sync failed or timed out:', error.message);
+        console.log('[UniverseBackend] Continuing with backend initialization...');
+      }
 
       console.log('[UniverseBackend] Skipping auto-setup of ALL existing universes to avoid hanging...');
       // await this.autoSetupExistingUniverses(); // DISABLED - can hang during initialization
@@ -68,13 +93,13 @@ class UniverseBackend {
       // Dynamically import graphStore from backend (outside the circular dependency)
       const { default: useGraphStore } = await import('../store/graphStore.jsx');
 
-      const storeOperations = {
+      this.storeOperations = {
         getState: () => useGraphStore.getState(),
         loadUniverseFromFile: (storeState) => useGraphStore.getState().loadUniverseFromFile(storeState)
       };
 
-      universeManager.setStoreOperations(storeOperations);
-      console.log('[UniverseBackend] Store operations set up for universeManager');
+      universeManager.setStoreOperations(this.storeOperations);
+      console.log('[UniverseBackend] Store operations set up for universeManager and backend');
     } catch (error) {
       console.warn('[UniverseBackend] Failed to set up store operations:', error);
       // Continue without store operations - some functionality may be limited
@@ -332,33 +357,58 @@ class UniverseBackend {
    * Get all universes
    */
   getAllUniverses() {
-    if (!this.isInitialized) {
-      this.initialize();
+    try {
+      if (!universeManager) {
+        console.warn('[UniverseBackend] universeManager not loaded yet, returning empty array');
+        return [];
+      }
+      console.log('[UniverseBackend] Getting universes from universeManager...');
+      const universes = universeManager.getAllUniverses();
+      console.log('[UniverseBackend] Retrieved universes:', universes.length);
+      return universes;
+    } catch (error) {
+      console.error('[UniverseBackend] getAllUniverses failed with error:', error);
+      console.error('[UniverseBackend] Error stack:', error.stack);
+      console.warn('[UniverseBackend] Returning empty array as fallback');
+      return [];
     }
-    return universeManager.getAllUniverses();
   }
 
   /**
    * Get active universe
    */
   getActiveUniverse() {
-    if (!this.isInitialized) {
-      this.initialize();
+    try {
+      return universeManager.getActiveUniverse();
+    } catch (error) {
+      console.warn('[UniverseBackend] getActiveUniverse failed:', error);
+      return null;
     }
-    return universeManager.getActiveUniverse();
   }
 
   /**
    * Create new universe
    */
-  createUniverse(name, options = {}) {
-    if (!this.isInitialized) {
-      this.initialize();
+  async createUniverse(name, options = {}) {
+    console.log(`[UniverseBackend] createUniverse called with name: "${name}", options:`, options);
+
+    try {
+      if (!this.isInitialized) {
+        console.log('[UniverseBackend] Backend not initialized, initializing now...');
+        await this.initialize();
+        console.log('[UniverseBackend] Backend initialization completed');
+      }
+    } catch (error) {
+      console.warn('[UniverseBackend] Initialization failed, continuing anyway:', error);
     }
+
+    console.log('[UniverseBackend] Creating universe via universeManager...');
     const universe = universeManager.createUniverse(name, options);
+    console.log('[UniverseBackend] Universe created:', universe.slug);
 
     // Auto-setup engine if Git is enabled
     if (universe.gitRepo?.enabled && universe.gitRepo?.linkedRepo) {
+      console.log('[UniverseBackend] Scheduling async Git sync engine setup...');
       setTimeout(() => {
         this.ensureGitSyncEngine(universe.slug).catch(error => {
           console.warn(`[UniverseBackend] Failed to auto-setup engine for new universe:`, error);
@@ -366,6 +416,7 @@ class UniverseBackend {
       }, 100);
     }
 
+    console.log('[UniverseBackend] createUniverse completed successfully, returning universe');
     return universe;
   }
 

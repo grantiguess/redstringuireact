@@ -169,29 +169,41 @@ class UniverseManager {
   async initializeBackgroundSync() {
     try {
       console.log('[UniverseManager] Initializing background sync services...');
-      
-      // Initialize auth first
+
+      console.log('[UniverseManager] Step 1: Initializing persistentAuth...');
+      const authStartTime = Date.now();
       await persistentAuth.initialize();
-      
+      console.log(`[UniverseManager] PersistentAuth initialized in ${Date.now() - authStartTime}ms`);
+
+      console.log('[UniverseManager] Step 2: Getting auth status...');
       const authStatus = persistentAuth.getAuthStatus();
+      console.log('[UniverseManager] Auth status:', authStatus);
+
       if (!authStatus.hasValidToken) {
         console.log('[UniverseManager] No valid auth token, skipping Git sync setup');
         return;
       }
 
-      // Try to set up Git sync for the active universe
+      console.log('[UniverseManager] Step 3: Getting active universe...');
       const activeUniverse = this.getActiveUniverse();
+      console.log('[UniverseManager] Active universe:', activeUniverse?.slug || 'none');
+
       if (activeUniverse && activeUniverse.gitRepo?.linkedRepo && activeUniverse.gitRepo?.enabled) {
-        console.log('[UniverseManager] Setting up background Git sync for active universe');
-        
+        console.log('[UniverseManager] Step 4: Setting up background Git sync for active universe');
+        console.log('[UniverseManager] Git repo config:', activeUniverse.gitRepo);
+
         try {
+          console.log('[UniverseManager] About to call connectUniverseToGit...');
+          const connectStartTime = Date.now();
+
           await this.connectUniverseToGit(activeUniverse.slug, {
             type: 'github',
             user: activeUniverse.gitRepo.linkedRepo.split('/')[0],
             repo: activeUniverse.gitRepo.linkedRepo.split('/')[1],
             authMethod: authStatus.authMethod
           });
-          
+
+          console.log(`[UniverseManager] connectUniverseToGit completed in ${Date.now() - connectStartTime}ms`);
           console.log('[UniverseManager] Background Git sync initialized');
         } catch (error) {
           console.warn('[UniverseManager] Background Git sync setup failed:', error);
@@ -225,13 +237,38 @@ class UniverseManager {
     try {
       const saved = storageWrapper.getItem(STORAGE_KEYS.UNIVERSES_LIST);
       const activeSlug = storageWrapper.getItem(STORAGE_KEYS.ACTIVE_UNIVERSE);
-      
+
       if (saved) {
         const universesList = JSON.parse(saved);
         universesList.forEach(universe => {
           // Use safe normalization during initial load to prevent recursion
           this.universes.set(universe.slug, this.safeNormalizeUniverse(universe));
         });
+      }
+
+      // Load file handles (Note: File handles can't be serialized, but we can track which universes had them)
+      try {
+        const fileHandlesInfo = storageWrapper.getItem(STORAGE_KEYS.UNIVERSE_FILE_HANDLES);
+        if (fileHandlesInfo) {
+          const handlesData = JSON.parse(fileHandlesInfo);
+          // We can't restore actual FileSystemFileHandle objects, but we can mark which universes had them
+          // The actual file handles will need to be re-established by user action
+          Object.keys(handlesData).forEach(slug => {
+            const universe = this.universes.get(slug);
+            if (universe && handlesData[slug]) {
+              // Mark that this universe had a file handle setup previously
+              this.updateUniverse(slug, {
+                localFile: {
+                  ...universe.localFile,
+                  hadFileHandle: true, // Flag to indicate user previously set up a file handle
+                  lastFilePath: handlesData[slug].path || universe.localFile.path
+                }
+              });
+            }
+          });
+        }
+      } catch (error) {
+        console.warn('[UniverseManager] Failed to load file handles info:', error);
       }
       
       // Create default universe if none exist
@@ -743,14 +780,26 @@ class UniverseManager {
           ...rest,
           localFile: {
             enabled: localFile.enabled,
-            path: localFile.path
+            path: localFile.path,
+            hadFileHandle: localFile.hadFileHandle,
+            lastFilePath: localFile.lastFilePath
           }
         };
       });
-      
+
       storageWrapper.setItem(STORAGE_KEYS.UNIVERSES_LIST, JSON.stringify(universesList));
       storageWrapper.setItem(STORAGE_KEYS.ACTIVE_UNIVERSE, this.activeUniverseSlug);
-      
+
+      // Save file handles info (can't serialize actual FileSystemFileHandle objects)
+      const fileHandlesInfo = {};
+      this.fileHandles.forEach((handle, slug) => {
+        fileHandlesInfo[slug] = {
+          path: handle.name || this.universes.get(slug)?.localFile?.path || `${slug}.redstring`,
+          hasHandle: true
+        };
+      });
+      storageWrapper.setItem(STORAGE_KEYS.UNIVERSE_FILE_HANDLES, JSON.stringify(fileHandlesInfo));
+
       // Warn about data loss if using memory storage
       if (storageWrapper.shouldUseMemoryStorage()) {
         storageWrapper.warnAboutDataLoss();
@@ -1458,22 +1507,32 @@ class UniverseManager {
   // Save to local file
   async saveToLocalFile(universe, redstringData) {
     let fileHandle = this.fileHandles.get(universe.slug);
-    
+
     if (!fileHandle) {
       // If no file handle but local storage is enabled, auto-prompt to set one up
       if (universe.localFile.enabled && typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
         try {
           console.log('[UniverseManager] No file handle for local save, prompting user to select file location');
-          
+
+          // Use the last known file path if available, otherwise use current path
+          const suggestedName = universe.localFile.lastFilePath || universe.localFile.path;
+          const hadPreviousHandle = universe.localFile.hadFileHandle;
+
+          const message = hadPreviousHandle
+            ? `Re-establish file connection for ${universe.name} (previously: ${suggestedName})`
+            : `Set up local file for ${universe.name}`;
+
+          this.notifyStatus('info', message);
+
           fileHandle = await window.showSaveFilePicker({
-            suggestedName: universe.localFile.path,
+            suggestedName: suggestedName,
             types: [{ description: 'RedString Files', accept: { 'application/json': ['.redstring'] } }]
           });
-          
+
           // Store the file handle
           this.setFileHandle(universe.slug, fileHandle);
-          this.notifyStatus('success', `Local file set up: ${fileHandle.name}`);
-          
+          this.notifyStatus('success', `Local file ${hadPreviousHandle ? 're-' : ''}connected: ${fileHandle.name}`);
+
         } catch (error) {
           if (error.name === 'AbortError') {
             throw new Error('Local file setup cancelled by user');
@@ -1613,7 +1672,7 @@ class UniverseManager {
   // Set file handle for universe
   setFileHandle(slug, fileHandle) {
     this.fileHandles.set(slug, fileHandle);
-    
+
     // Also update the universe configuration
     const universe = this.getUniverse(slug);
     if (universe) {
@@ -1621,10 +1680,15 @@ class UniverseManager {
         localFile: {
           ...universe.localFile,
           enabled: true,
-          path: fileHandle.name || universe.localFile.path
+          path: fileHandle.name || universe.localFile.path,
+          hadFileHandle: true,
+          lastFilePath: fileHandle.name || universe.localFile.path
         }
       });
     }
+
+    // Persist file handle information to storage
+    this.saveToStorage();
   }
 
   // Setup file handle for universe (user picks file)

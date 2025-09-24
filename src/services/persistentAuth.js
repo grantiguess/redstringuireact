@@ -42,6 +42,24 @@ export class PersistentAuth {
     }
   }
 
+  /**
+   * Initialize the authentication service
+   * This is called by universeManager during backend initialization
+   */
+  async initialize() {
+    console.log('[PersistentAuth] Initializing authentication service...');
+
+    // Start health monitoring if we have tokens
+    if (this.hasValidTokens()) {
+      console.log('[PersistentAuth] Valid tokens found, starting health monitoring');
+      this.startHealthMonitoring();
+    } else {
+      console.log('[PersistentAuth] No valid tokens found');
+    }
+
+    console.log('[PersistentAuth] Authentication service initialized');
+  }
+
   dispatchAuthEvent(type, payload = {}) {
     try {
       if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
@@ -66,12 +84,12 @@ export class PersistentAuth {
     
     try {
       // Store in session for immediate use
-      sessionStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, access_token);
+      storageWrapper.setItem(STORAGE_KEYS.ACCESS_TOKEN, access_token);
       
       // GitHub tokens don't usually have refresh tokens or expiry
       // But we'll store them if provided for future compatibility
       if (refresh_token) {
-        localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, refresh_token);
+        storageWrapper.setItem(STORAGE_KEYS.REFRESH_TOKEN, refresh_token);
       }
       
       // For GitHub, tokens don't expire by default
@@ -80,12 +98,12 @@ export class PersistentAuth {
         Date.now() + (expires_in * 1000) : 
         Date.now() + (365 * 24 * 60 * 60 * 1000); // Default 1 year for GitHub
       
-      localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRY, expiryTime.toString());
-      localStorage.setItem(STORAGE_KEYS.AUTH_METHOD, 'oauth');
+      storageWrapper.setItem(STORAGE_KEYS.TOKEN_EXPIRY, expiryTime.toString());
+      storageWrapper.setItem(STORAGE_KEYS.AUTH_METHOD, 'oauth');
       
       // Store user data if provided
       if (userData) {
-        localStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userData));
+        storageWrapper.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userData));
       }
       
       console.log('[PersistentAuth] Tokens stored successfully', {
@@ -115,7 +133,7 @@ export class PersistentAuth {
   async getAccessToken() {
     try {
       // Always read the token first
-      const token = sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+      const token = storageWrapper.getItem(STORAGE_KEYS.ACCESS_TOKEN);
       if (!token) {
         // No token present; do not trigger validation/refresh loop
         return null;
@@ -125,7 +143,7 @@ export class PersistentAuth {
         console.log('[PersistentAuth] Token needs validation/refresh');
         await this.refreshAccessToken();
       }
-      return sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN) || null;
+      return storageWrapper.getItem(STORAGE_KEYS.ACCESS_TOKEN) || null;
     } catch (error) {
       console.error('[PersistentAuth] Failed to get access token:', error);
       this.emit('authError', error);
@@ -137,8 +155,8 @@ export class PersistentAuth {
    * Check if we have valid tokens
    */
   hasValidTokens() {
-    const accessToken = sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-    const expiryTime = parseInt(localStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRY) || '0');
+    const accessToken = storageWrapper.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    const expiryTime = parseInt(storageWrapper.getItem(STORAGE_KEYS.TOKEN_EXPIRY) || '0');
     const now = Date.now();
     
     return !!(accessToken && expiryTime > now);
@@ -151,7 +169,7 @@ export class PersistentAuth {
   shouldRefreshToken() {
     // GitHub tokens don't expire by default, so we focus on validation
     // We only "refresh" (re-validate) if the token is very old or we've had recent failures
-    const expiryTime = parseInt(localStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRY) || '0');
+    const expiryTime = parseInt(storageWrapper.getItem(STORAGE_KEYS.TOKEN_EXPIRY) || '0');
     const now = Date.now();
     
     // Only consider refresh if token is approaching our artificial expiry
@@ -187,7 +205,7 @@ export class PersistentAuth {
   async performTokenValidation() {
     try {
       // Check if we have a token before attempting validation
-      const accessToken = sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+      const accessToken = storageWrapper.getItem(STORAGE_KEYS.ACCESS_TOKEN);
       if (!accessToken || accessToken.trim().length === 0) {
         console.log('[PersistentAuth] No token to validate, skipping validation');
         throw new Error('No token available for validation');
@@ -200,7 +218,7 @@ export class PersistentAuth {
       if (isValid) {
         // Token is still valid, extend its life
         const newExpiryTime = Date.now() + (365 * 24 * 60 * 60 * 1000); // Another year
-        localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRY, newExpiryTime.toString());
+        storageWrapper.setItem(STORAGE_KEYS.TOKEN_EXPIRY, newExpiryTime.toString());
         
         console.log('[PersistentAuth] Token validation successful, extended expiry');
         this.emit('tokenValidated', { 
@@ -227,7 +245,7 @@ export class PersistentAuth {
    * Test if current tokens are valid by making a test request
    */
   async testTokenValidity() {
-    const accessToken = sessionStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    const accessToken = storageWrapper.getItem(STORAGE_KEYS.ACCESS_TOKEN);
     
     if (!accessToken) {
       console.log('[PersistentAuth] No access token found in session storage');
@@ -328,11 +346,11 @@ export class PersistentAuth {
    */
   clearTokens() {
     try {
-      sessionStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
-      localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
-      localStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY);
-      localStorage.removeItem(STORAGE_KEYS.USER_DATA);
-      localStorage.removeItem(STORAGE_KEYS.AUTH_METHOD);
+      storageWrapper.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+      storageWrapper.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+      storageWrapper.removeItem(STORAGE_KEYS.TOKEN_EXPIRY);
+      storageWrapper.removeItem(STORAGE_KEYS.USER_DATA);
+      storageWrapper.removeItem(STORAGE_KEYS.AUTH_METHOD);
       
       this.stopHealthMonitoring();
       
@@ -349,7 +367,7 @@ export class PersistentAuth {
    */
   getUserData() {
     try {
-      const userData = localStorage.getItem(STORAGE_KEYS.USER_DATA);
+      const userData = storageWrapper.getItem(STORAGE_KEYS.USER_DATA);
       return userData ? JSON.parse(userData) : null;
     } catch (error) {
       console.error('[PersistentAuth] Failed to get user data:', error);
@@ -363,14 +381,14 @@ export class PersistentAuth {
   getAuthStatus() {
     const hasTokens = this.hasValidTokens();
     const needsRefresh = this.shouldRefreshToken();
-    const expiryTime = parseInt(localStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRY) || '0');
+    const expiryTime = parseInt(storageWrapper.getItem(STORAGE_KEYS.TOKEN_EXPIRY) || '0');
     
     return {
       isAuthenticated: hasTokens,
       needsRefresh,
       expiryTime: expiryTime > 0 ? new Date(expiryTime) : null,
       timeToExpiry: expiryTime > 0 ? Math.max(0, expiryTime - Date.now()) : 0,
-      authMethod: localStorage.getItem(STORAGE_KEYS.AUTH_METHOD),
+      authMethod: storageWrapper.getItem(STORAGE_KEYS.AUTH_METHOD),
       userData: this.getUserData(),
       isRefreshing: this.isRefreshing
     };
