@@ -406,6 +406,21 @@ class UniverseBackend {
     const universe = universeManager.createUniverse(name, options);
     console.log('[UniverseBackend] Universe created:', universe.slug);
 
+    // Set as active universe and ensure store is updated
+    try {
+      console.log('[UniverseBackend] Setting new universe as active...');
+      universeManager.setActiveUniverse(universe.slug);
+
+      // Ensure the graph store is properly initialized with empty state
+      if (this.storeOperations?.loadUniverseFromFile) {
+        const emptyState = universeManager.createEmptyState();
+        this.storeOperations.loadUniverseFromFile(emptyState);
+        console.log('[UniverseBackend] Graph store initialized with empty state for new active universe');
+      }
+    } catch (error) {
+      console.warn('[UniverseBackend] Failed to activate new universe:', error);
+    }
+
     // Auto-setup engine if Git is enabled
     if (universe.gitRepo?.enabled && universe.gitRepo?.linkedRepo) {
       console.log('[UniverseBackend] Scheduling async Git sync engine setup...');

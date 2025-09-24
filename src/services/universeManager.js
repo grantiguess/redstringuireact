@@ -367,7 +367,18 @@ class UniverseManager {
     this.universes.set('universe', this.safeNormalizeUniverse(defaultUniverse));
     this.activeUniverseSlug = 'universe';
     this.saveToStorage();
-    
+
+    // Initialize the store with empty state for the default universe if store operations are available
+    if (this.storeOperations?.loadUniverseFromFile) {
+      const emptyState = this.createEmptyState();
+      try {
+        this.storeOperations.loadUniverseFromFile(emptyState);
+        console.log('[UniverseManager] Initialized graph store with empty state for safe default universe');
+      } catch (error) {
+        console.warn('[UniverseManager] Failed to initialize graph store for safe default universe:', error);
+      }
+    }
+
     console.log('[UniverseManager] Created safe default universe during startup');
   }
 
@@ -650,7 +661,18 @@ class UniverseManager {
     this.universes.set('universe', this.normalizeUniverse(defaultUniverse));
     this.activeUniverseSlug = 'universe';
     this.saveToStorage();
-    
+
+    // Initialize the store with empty state for the default universe if store operations are available
+    if (this.storeOperations?.loadUniverseFromFile) {
+      const emptyState = this.createEmptyState();
+      try {
+        this.storeOperations.loadUniverseFromFile(emptyState);
+        console.log('[UniverseManager] Initialized graph store with empty state for default universe');
+      } catch (error) {
+        console.warn('[UniverseManager] Failed to initialize graph store for default universe:', error);
+      }
+    }
+
     // Show helpful message for Git-Only mode users
     if (isGitOnlyMode) {
       this.notifyStatus('info', 'Git-Only mode active - connect to a repository to sync your universe across devices');
@@ -848,27 +870,38 @@ class UniverseManager {
     if (!this.deviceConfig) {
       this.initializeDeviceConfig();
     }
-    
+
     const slug = this.generateUniqueSlug(name);
     const safeName = (typeof name === 'string' && name.trim().length > 0) ? name : slug;
     const universe = this.normalizeUniverse({
       slug,
       name: safeName,
       sourceOfTruth: options.sourceOfTruth || (this.isGitOnlyMode ? SOURCE_OF_TRUTH.GIT : SOURCE_OF_TRUTH.LOCAL),
-      localFile: { 
-        enabled: options.enableLocal ?? true, 
-        path: this.sanitizeFileName(safeName) 
+      localFile: {
+        enabled: options.enableLocal ?? true,
+        path: this.sanitizeFileName(safeName)
       },
-      gitRepo: { 
-        enabled: options.enableGit ?? false, 
+      gitRepo: {
+        enabled: options.enableGit ?? false,
         linkedRepo: options.linkedRepo || null,
         schemaPath: options.schemaPath || 'schema'
       }
     });
-    
+
     this.universes.set(slug, universe);
     this.saveToStorage();
-    
+
+    // Initialize the store with empty state for the new universe if store operations are available
+    if (this.storeOperations?.loadUniverseFromFile) {
+      const emptyState = this.createEmptyState();
+      try {
+        this.storeOperations.loadUniverseFromFile(emptyState);
+        console.log('[UniverseManager] Initialized graph store with empty state for new universe:', slug);
+      } catch (error) {
+        console.warn('[UniverseManager] Failed to initialize graph store for new universe:', error);
+      }
+    }
+
     this.notifyStatus('success', `Created universe: ${name}`);
     return universe;
   }
