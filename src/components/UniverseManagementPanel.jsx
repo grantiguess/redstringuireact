@@ -20,6 +20,9 @@ import {
 } from 'lucide-react';
 
 import universeBackendBridge from '../services/universeBackendBridge.js';
+import RepositoryDropdown from './repositories/RepositoryDropdown.jsx';
+import { persistentAuth } from '../services/persistentAuth.js';
+import { formatUniverseNameFromRepo, buildUniqueUniverseName } from '../utils/universeNaming.js';
 
 // Simple device detection
 const getDeviceInfo = () => {
@@ -52,6 +55,14 @@ const UniverseManagementPanel = ({
   const [syncStatus, setSyncStatus] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [authStatus, setAuthStatus] = useState(() => {
+    try { return persistentAuth.getAuthStatus(); } catch (_) { return null; }
+  });
+  const [githubAppInstallation, setGithubAppInstallation] = useState(() => {
+    try { return persistentAuth.getAppInstallation(); } catch (_) { return null; }
+  });
+  const [userRepositories, setUserRepositories] = useState(() => githubAppInstallation?.repositories || []);
+  const [isRepoLoading, setIsRepoLoading] = useState(false);
 
   // UI state
   const containerRef = useRef(null);
@@ -60,6 +71,13 @@ const UniverseManagementPanel = ({
 
   // Backend bridge
   const bridge = universeBackendBridge;
+
+  const canSelectRepositories = useMemo(() => {
+    return Boolean(
+      githubAppInstallation?.accessToken ||
+      authStatus?.isAuthenticated
+    );
+  }, [authStatus, githubAppInstallation?.accessToken]);
 
   // Derived state
   const activeUniverse = useMemo(() => {
@@ -101,6 +119,53 @@ const UniverseManagementPanel = ({
     }
   }, [bridge]);
 
+  const fetchUserRepositories = useCallback(async () => {
+    if (!canSelectRepositories) {
+      setUserRepositories([]);
+      return;
+    }
+
+    setIsRepoLoading(true);
+    try {
+      // Prefer stored installation repositories
+      const installation = persistentAuth.getAppInstallation();
+      setGithubAppInstallation(installation);
+      if (installation?.repositories?.length) {
+        setUserRepositories(installation.repositories);
+      }
+
+      let token = installation?.accessToken || null;
+      if (!token) {
+        token = await persistentAuth.getAccessToken();
+      }
+
+      if (!token) {
+        return;
+      }
+
+      const response = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+
+      if (!response.ok) {
+        console.warn('[UniverseManagementPanel] Failed to fetch user repositories:', response.status);
+        return;
+      }
+
+      const repos = await response.json();
+      if (Array.isArray(repos)) {
+        setUserRepositories(repos);
+      }
+    } catch (repoError) {
+      console.warn('[UniverseManagementPanel] Repository fetch failed:', repoError);
+    } finally {
+      setIsRepoLoading(false);
+    }
+  }, [canSelectRepositories]);
+
   // Initialize component
   useEffect(() => {
     console.log('[UniverseManagementPanel] Initializing...');
@@ -125,12 +190,46 @@ const UniverseManagementPanel = ({
 
     initializeComponent();
 
+    // Load repositories using cached credentials
+    fetchUserRepositories();
+
+    const handleTokenStored = () => {
+      try {
+        setAuthStatus(persistentAuth.getAuthStatus());
+        fetchUserRepositories();
+      } catch (tokenError) {
+        console.warn('[UniverseManagementPanel] tokenStored handler error:', tokenError);
+      }
+    };
+
+    const handleAppStored = () => {
+      try {
+        const installation = persistentAuth.getAppInstallation();
+        setGithubAppInstallation(installation);
+        setUserRepositories(installation?.repositories || []);
+      } catch (appError) {
+        console.warn('[UniverseManagementPanel] appInstallationStored handler error:', appError);
+      }
+    };
+
+    const handleAppCleared = () => {
+      setGithubAppInstallation(null);
+      setUserRepositories([]);
+    };
+
+    persistentAuth.on('tokenStored', handleTokenStored);
+    persistentAuth.on('appInstallationStored', handleAppStored);
+    persistentAuth.on('appInstallationCleared', handleAppCleared);
+
     return () => {
       if (unsubscribeRef) {
         unsubscribeRef();
       }
+      persistentAuth.off('tokenStored', handleTokenStored);
+      persistentAuth.off('appInstallationStored', handleAppStored);
+      persistentAuth.off('appInstallationCleared', handleAppCleared);
     };
-  }, [bridge, loadUniverseData]);
+  }, [bridge, loadUniverseData, fetchUserRepositories]);
 
   // Observe panel width for responsive layout
   useEffect(() => {
@@ -262,6 +361,123 @@ const UniverseManagementPanel = ({
     }
   };
 
+  const ensureSourceEntry = (universe, owner, repoName) => {
+    const existingSources = Array.isArray(universe?.sources) ? [...universe.sources] : [];
+    const matchIndex = existingSources.findIndex(src =>
+      src?.type === 'github' &&
+      src?.user?.toLowerCase() === owner.toLowerCase() &&
+      src?.repo?.toLowerCase() === repoName.toLowerCase()
+    );
+
+    if (matchIndex >= 0) {
+      const existing = existingSources[matchIndex];
+      existingSources[matchIndex] = {
+        ...existing,
+        user: owner,
+        repo: repoName,
+        name: existing?.name || `@${owner}/${repoName}`,
+        enabled: true
+      };
+      return existingSources;
+    }
+
+    return [
+      ...existingSources,
+      {
+        id: `src_${Date.now().toString(36)}`,
+        type: 'github',
+        user: owner,
+        repo: repoName,
+        name: `@${owner}/${repoName}`,
+        enabled: true,
+        addedAt: new Date().toISOString()
+      }
+    ];
+  };
+
+  const handleLinkRepository = async (universe, repository) => {
+    if (!universe || !repository) return;
+
+    const owner = repository?.owner?.login || repository?.owner?.name || repository?.owner || (typeof repository?.full_name === 'string' ? repository.full_name.split('/')[0] : null);
+    const repoName = repository?.name || (typeof repository?.full_name === 'string' ? repository.full_name.split('/').slice(-1)[0] : null);
+
+    if (!owner || !repoName) {
+      setError('Repository selection is missing owner or name details.');
+      return;
+    }
+
+    const gitRepoConfig = {
+      ...(universe.gitRepo || {}),
+      enabled: true,
+      linkedRepo: {
+        type: 'github',
+        user: owner,
+        repo: repoName,
+        private: repository?.private ?? universe.gitRepo?.linkedRepo?.private ?? false
+      },
+      universeFolder: universe.gitRepo?.universeFolder || `universes/${universe.slug}`,
+      universeFile: universe.gitRepo?.universeFile || `${universe.slug}.redstring`
+    };
+
+    const formattedName = formatUniverseNameFromRepo(repoName);
+    const uniqueName = buildUniqueUniverseName(formattedName, universes, universe.slug);
+
+    const updates = {
+      sourceOfTruth: 'git',
+      gitRepo: gitRepoConfig,
+      sources: ensureSourceEntry(universe, owner, repoName),
+      name: uniqueName
+    };
+
+    try {
+      setSyncStatus({ type: 'info', status: `Linking @${owner}/${repoName}...` });
+      await bridge.updateUniverse(universe.slug, updates);
+      await loadUniverseData();
+      setSyncStatus({ type: 'success', status: `Linked repository @${owner}/${repoName}` });
+    } catch (linkError) {
+      console.error('[UniverseManagementPanel] Failed to link repository:', linkError);
+      setError(`Failed to link repository: ${linkError.message}`);
+      setSyncStatus({ type: 'error', status: `Link failed: ${linkError.message}` });
+    }
+  };
+
+  const handleUnlinkRepository = async (universe) => {
+    if (!universe?.slug) return;
+
+    try {
+      setSyncStatus({ type: 'info', status: 'Unlinking repository...' });
+
+      const remainingSources = Array.isArray(universe.sources)
+        ? universe.sources.filter(src => {
+            if (src?.type !== 'github') return true;
+            return !(
+              universe.gitRepo?.linkedRepo?.user &&
+              universe.gitRepo?.linkedRepo?.repo &&
+              src.user?.toLowerCase() === universe.gitRepo.linkedRepo.user.toLowerCase() &&
+              src.repo?.toLowerCase() === universe.gitRepo.linkedRepo.repo.toLowerCase()
+            );
+          })
+        : [];
+
+      const updates = {
+        gitRepo: {
+          ...(universe.gitRepo || {}),
+          enabled: false,
+          linkedRepo: null
+        },
+        sources: remainingSources
+      };
+
+      await bridge.updateUniverse(universe.slug, updates);
+      await loadUniverseData();
+      setSyncStatus({ type: 'success', status: 'Repository unlinked' });
+    } catch (unlinkError) {
+      console.error('[UniverseManagementPanel] Failed to unlink repository:', unlinkError);
+      setError(`Failed to unlink repository: ${unlinkError.message}`);
+      setSyncStatus({ type: 'error', status: `Unlink failed: ${unlinkError.message}` });
+    }
+  };
+
   // Clear error after timeout
   useEffect(() => {
     if (error) {
@@ -269,14 +485,6 @@ const UniverseManagementPanel = ({
       return () => clearTimeout(timer);
     }
   }, [error]);
-
-  // Clear sync status after timeout
-  useEffect(() => {
-    if (syncStatus && syncStatus.type !== 'error') {
-      const timer = setTimeout(() => setSyncStatus(null), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [syncStatus]);
 
   const containerStyles = {
     fontFamily: "'EmOne', sans-serif",
@@ -596,6 +804,42 @@ const UniverseManagementPanel = ({
                       No repository linked
                     </div>
                   )}
+                  <div style={{ marginTop: '8px', display: 'flex', flexDirection: isSlim ? 'column' : 'row', gap: '8px', alignItems: isSlim ? 'stretch' : 'center' }}>
+                    <div style={{ flex: '1', minWidth: '220px' }}>
+                      <RepositoryDropdown
+                        selectedRepository={universe.gitRepo?.linkedRepo ? {
+                          name: universe.gitRepo.linkedRepo.repo,
+                          owner: { login: universe.gitRepo.linkedRepo.user },
+                          full_name: `${universe.gitRepo.linkedRepo.user}/${universe.gitRepo.linkedRepo.repo}`,
+                          private: universe.gitRepo.linkedRepo.private
+                        } : null}
+                        onSelectRepository={(repo) => handleLinkRepository(universe, repo)}
+                        placeholder={canSelectRepositories ? 'Select repository' : 'Connect GitHub to select'}
+                        disabled={!canSelectRepositories || isRepoLoading}
+                        repositories={userRepositories}
+                      />
+                    </div>
+                    {isRepoLoading && (
+                      <div style={{ fontSize: '0.65rem', color: '#666' }}>Loading repositories…</div>
+                    )}
+                    {universe.gitRepo?.linkedRepo && (
+                      <button
+                        onClick={() => handleUnlinkRepository(universe)}
+                        style={{
+                          padding: '4px 8px',
+                          backgroundColor: 'transparent',
+                          color: '#d32f2f',
+                          border: '1px solid #d32f2f',
+                          borderRadius: '4px',
+                          fontSize: '0.7rem',
+                          cursor: 'pointer',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        Unlink
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Source of Truth Selection */}

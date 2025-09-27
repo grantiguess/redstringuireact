@@ -89,20 +89,62 @@ class UniverseBackend {
    * Set up store operations for universeManager to avoid circular dependencies
    */
   async setupStoreOperations() {
-    try {
-      // Dynamically import graphStore from backend (outside the circular dependency)
-      const { default: useGraphStore } = await import('../store/graphStore.jsx');
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        // Dynamically import graphStore from backend (outside the circular dependency)
+        const { default: useGraphStore } = await import('../store/graphStore.jsx');
 
-      this.storeOperations = {
-        getState: () => useGraphStore.getState(),
-        loadUniverseFromFile: (storeState) => useGraphStore.getState().loadUniverseFromFile(storeState)
-      };
+        // Validate that the store is properly initialized
+        const testState = useGraphStore.getState();
+        if (!testState || typeof testState.loadUniverseFromFile !== 'function') {
+          throw new Error('GraphStore not properly initialized - missing loadUniverseFromFile method');
+        }
 
-      universeManager.setStoreOperations(this.storeOperations);
-      console.log('[UniverseBackend] Store operations set up for universeManager and backend');
-    } catch (error) {
-      console.warn('[UniverseBackend] Failed to set up store operations:', error);
-      // Continue without store operations - some functionality may be limited
+        this.storeOperations = {
+          getState: () => useGraphStore.getState(),
+          loadUniverseFromFile: (storeState) => {
+            try {
+              const store = useGraphStore.getState();
+              console.log('[UniverseBackend] Loading universe data into store:', {
+                hasStoreState: !!storeState,
+                storeStateType: typeof storeState,
+                hasGraphs: storeState?.graphs ? (storeState.graphs instanceof Map ? storeState.graphs.size : Object.keys(storeState.graphs).length) : 0,
+                hasNodes: storeState?.nodePrototypes ? (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes).length) : 0
+              });
+              
+              store.loadUniverseFromFile(storeState);
+              console.log('[UniverseBackend] Successfully loaded universe data into store');
+              return true;
+            } catch (error) {
+              console.error('[UniverseBackend] Failed to load universe data into store:', error);
+              this.notifyStatus('error', `Failed to load universe data: ${error.message}`);
+              throw error;
+            }
+          }
+        };
+
+        universeManager.setStoreOperations(this.storeOperations);
+        console.log('[UniverseBackend] Store operations set up successfully for universeManager and backend');
+        return; // Success, exit retry loop
+        
+      } catch (error) {
+        retryCount++;
+        console.warn(`[UniverseBackend] Failed to set up store operations (attempt ${retryCount}/${maxRetries}):`, error);
+        
+        if (retryCount >= maxRetries) {
+          console.error('[UniverseBackend] CRITICAL: Failed to set up store operations after all retries. Universe data loading will not work properly.');
+          this.notifyStatus('error', 'Critical system error: Store operations failed to initialize');
+          // Don't throw here - let the system continue but mark as degraded
+          this.storeOperations = null;
+          return;
+        }
+        
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+      }
     }
   }
 
@@ -167,36 +209,77 @@ class UniverseBackend {
    * Ensure a Git sync engine exists for a universe
    */
   async ensureGitSyncEngine(universeSlug) {
-    // Check if engine already exists
+    console.log(`[UniverseBackend] Ensuring Git sync engine for universe: ${universeSlug}`);
+    
+    // Check if engine already exists and is healthy
     if (this.gitSyncEngines.has(universeSlug)) {
-      return this.gitSyncEngines.get(universeSlug);
+      const existingEngine = this.gitSyncEngines.get(universeSlug);
+      if (existingEngine && existingEngine.provider) {
+        console.log(`[UniverseBackend] Using existing healthy engine for ${universeSlug}`);
+        return existingEngine;
+      } else {
+        console.log(`[UniverseBackend] Existing engine for ${universeSlug} is unhealthy, removing`);
+        this.gitSyncEngines.delete(universeSlug);
+      }
     }
 
     // Check if UniverseManager already has one
     const existingEngine = universeManager.getGitSyncEngine(universeSlug);
-    if (existingEngine) {
+    if (existingEngine && existingEngine.provider) {
+      console.log(`[UniverseBackend] Adopting existing engine from UniverseManager for ${universeSlug}`);
       this.gitSyncEngines.set(universeSlug, existingEngine);
       return existingEngine;
     }
 
     const universe = universeManager.getUniverse(universeSlug);
-    if (!universe?.gitRepo?.enabled || !universe?.gitRepo?.linkedRepo) {
-      throw new Error(`Universe ${universeSlug} is not configured for Git sync`);
+    if (!universe) {
+      throw new Error(`Universe ${universeSlug} not found`);
+    }
+    
+    if (!universe?.gitRepo?.enabled) {
+      throw new Error(`Universe ${universeSlug} does not have Git repo enabled`);
+    }
+    
+    if (!universe?.gitRepo?.linkedRepo) {
+      throw new Error(`Universe ${universeSlug} does not have a linked repository`);
     }
 
-    // Create provider
-    const provider = await this.createProviderForUniverse(universe);
-    if (!provider) {
-      throw new Error(`Failed to create provider for universe ${universeSlug}`);
+    console.log(`[UniverseBackend] Creating new Git sync engine for ${universeSlug}`, {
+      linkedRepo: universe.gitRepo.linkedRepo,
+      sourceOfTruth: universe.sourceOfTruth,
+      schemaPath: universe.gitRepo.schemaPath
+    });
+
+    // Create provider with validation
+    let provider;
+    try {
+      provider = await this.createProviderForUniverse(universe);
+      if (!provider) {
+        throw new Error(`Failed to create provider for universe ${universeSlug}`);
+      }
+      
+      // Test provider availability
+      const isAvailable = await provider.isAvailable();
+      if (!isAvailable) {
+        throw new Error(`Provider for ${universeSlug} is not available - check authentication and repository access`);
+      }
+      
+      console.log(`[UniverseBackend] Provider created and validated for ${universeSlug}`);
+    } catch (error) {
+      console.error(`[UniverseBackend] Failed to create/validate provider for ${universeSlug}:`, error);
+      this.notifyStatus('error', `Git sync setup failed: ${error.message}`);
+      throw error;
     }
 
     // Create and configure engine
     const sourceOfTruth = universe.sourceOfTruth || 'git';
-    const engine = new GitSyncEngine(provider, sourceOfTruth, universeSlug, `${universeSlug}.redstring`, universeManager);
+    const fileName = universe.gitRepo.universeFile || `${universeSlug}.redstring`;
+    const engine = new GitSyncEngine(provider, sourceOfTruth, universeSlug, fileName, universeManager);
 
     // Set up event handlers
     engine.onStatusChange((status) => {
-      this.notifyStatus(status.type, `${universe.name}: ${status.status}`);
+      const universeName = universe.name || universeSlug;
+      this.notifyStatus(status.type, `${universeName}: ${status.status}`);
     });
 
     // Register engine
@@ -204,9 +287,16 @@ class UniverseBackend {
     universeManager.setGitSyncEngine(universeSlug, engine);
 
     // Start engine
-    engine.start();
+    try {
+      engine.start();
+      console.log(`[UniverseBackend] Git sync engine started for universe: ${universeSlug}`);
+      this.notifyStatus('success', `Git sync enabled for ${universe.name || universeSlug}`);
+    } catch (startError) {
+      console.error(`[UniverseBackend] Failed to start engine for ${universeSlug}:`, startError);
+      this.notifyStatus('error', `Failed to start Git sync: ${startError.message}`);
+      throw startError;
+    }
 
-    console.log(`[UniverseBackend] Created Git sync engine for universe: ${universeSlug}`);
     return engine;
   }
 
@@ -230,33 +320,80 @@ class UniverseBackend {
       throw new Error('Invalid repository configuration');
     }
 
-    // Get authentication
-    let token, authMethod;
+    // Get authentication with better error handling
+    let token, authMethod, installationId;
+    
     try {
+      // Try GitHub App first (preferred)
       const app = persistentAuth.getAppInstallation?.();
-      if (app?.accessToken) {
-        token = app.accessToken;
-        authMethod = 'github-app';
-      } else {
+      if (app?.installationId) {
+        console.log(`[UniverseBackend] Using GitHub App authentication for ${user}/${repo}`);
+        
+        if (app.accessToken) {
+          // Use existing token if available
+          token = app.accessToken;
+          authMethod = 'github-app';
+          installationId = app.installationId;
+        } else {
+          // Get fresh installation token
+          console.log('[UniverseBackend] Getting fresh GitHub App installation token...');
+          const { oauthFetch } = await import('./bridgeConfig.js');
+          const tokenResp = await oauthFetch('/api/github/app/installation-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ installation_id: app.installationId })
+          });
+          
+          if (tokenResp.ok) {
+            const tokenData = await tokenResp.json();
+            token = tokenData.token;
+            authMethod = 'github-app';
+            installationId = app.installationId;
+            
+            // Update stored installation with fresh token
+            const updatedApp = { ...app, accessToken: token };
+            persistentAuth.storeAppInstallation(updatedApp);
+            console.log('[UniverseBackend] Fresh GitHub App token obtained and stored');
+          } else {
+            console.warn('[UniverseBackend] Failed to get GitHub App token, falling back to OAuth');
+          }
+        }
+      }
+      
+      // Fallback to OAuth if GitHub App failed
+      if (!token) {
+        console.log(`[UniverseBackend] Using OAuth authentication for ${user}/${repo}`);
         token = await persistentAuth.getAccessToken();
         authMethod = 'oauth';
+        
+        if (!token) {
+          throw new Error('No valid authentication token available');
+        }
       }
     } catch (error) {
-      throw new Error('Authentication required for Git operations');
+      console.error('[UniverseBackend] Authentication failed:', error);
+      throw new Error(`Authentication required for Git operations: ${error.message}`);
     }
 
     if (!token) {
       throw new Error('No valid authentication token available');
     }
 
-    return SemanticProviderFactory.createProvider({
+    const providerConfig = {
       type: 'github',
       user,
       repo,
       token,
       authMethod,
       semanticPath: universe.gitRepo.schemaPath || 'schema'
-    });
+    };
+    
+    if (installationId) {
+      providerConfig.installationId = installationId;
+    }
+
+    console.log(`[UniverseBackend] Creating provider for ${user}/${repo} with ${authMethod} auth`);
+    return SemanticProviderFactory.createProvider(providerConfig);
   }
 
   /**
@@ -314,25 +451,70 @@ class UniverseBackend {
     if (!this.isInitialized) {
       await this.initialize();
     }
+    
+    console.log(`[UniverseBackend] Switching to universe: ${slug}`);
     const result = await universeManager.switchActiveUniverse(slug, options);
 
     // CRITICAL: Load the new universe data into the graph store
-    if (result?.storeState && this.storeOperations?.loadUniverseFromFile) {
-      console.log('[UniverseBackend] Loading new universe data into graph store...');
-      try {
-        this.storeOperations.loadUniverseFromFile(result.storeState);
-        console.log('[UniverseBackend] Successfully loaded universe data into graph store');
-      } catch (error) {
-        console.error('[UniverseBackend] Failed to load universe data into graph store:', error);
+    if (result?.storeState) {
+      if (this.storeOperations?.loadUniverseFromFile) {
+        console.log('[UniverseBackend] Loading new universe data into graph store...');
+        try {
+          const success = this.storeOperations.loadUniverseFromFile(result.storeState);
+          if (success) {
+            // Validate that data was actually loaded
+            const storeState = this.storeOperations.getState();
+            const nodeCount = storeState?.nodePrototypes ? (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes).length) : 0;
+            const graphCount = storeState?.graphs ? (storeState.graphs instanceof Map ? storeState.graphs.size : Object.keys(storeState.graphs).length) : 0;
+            
+            console.log('[UniverseBackend] Successfully loaded universe data into graph store:', {
+              nodeCount,
+              graphCount,
+              isUniverseLoaded: storeState?.isUniverseLoaded,
+              hasUniverseFile: storeState?.hasUniverseFile
+            });
+            
+            const universeName = result.universe?.name || slug;
+            if (nodeCount > 0 || graphCount > 0) {
+              this.notifyStatus('success', `Loaded ${universeName}: ${nodeCount} nodes, ${graphCount} graphs`);
+            } else {
+              this.notifyStatus('info', `Switched to empty universe: ${universeName}`);
+            }
+          } else {
+            throw new Error('Store loading returned false');
+          }
+        } catch (error) {
+          console.error('[UniverseBackend] Failed to load universe data into graph store:', error);
+          this.notifyStatus('error', `Failed to load universe data: ${error.message}`);
+          throw error; // Re-throw to surface the error to UI
+        }
+      } else {
+        console.error('[UniverseBackend] CRITICAL: Cannot load universe data - store operations not available');
+        this.notifyStatus('error', 'Critical error: Store operations not initialized. Please refresh the page.');
+        
+        // Try to re-setup store operations
+        try {
+          await this.setupStoreOperations();
+          if (this.storeOperations?.loadUniverseFromFile) {
+            console.log('[UniverseBackend] Store operations recovered, retrying data load...');
+            this.storeOperations.loadUniverseFromFile(result.storeState);
+            this.notifyStatus('success', `Universe switched after recovery: ${result.universe?.name || slug}`);
+          }
+        } catch (recoveryError) {
+          console.error('[UniverseBackend] Failed to recover store operations:', recoveryError);
+          throw new Error(`Universe data loading failed: Store operations unavailable. Please refresh the page.`);
+        }
       }
     } else {
-      console.warn('[UniverseBackend] Cannot load universe data - missing storeState or storeOperations');
+      console.warn('[UniverseBackend] No storeState returned from universe switch - universe may be empty');
+      this.notifyStatus('info', `Switched to empty universe: ${slug}`);
     }
 
     // Ensure engine is set up for the new active universe (but don't block on it)
     setTimeout(() => {
       this.ensureGitSyncEngine(slug).catch(error => {
         console.warn(`[UniverseBackend] Failed to setup engine after universe switch:`, error);
+        this.notifyStatus('warning', `Git sync engine setup failed for ${slug}`);
       });
     }, 100);
 
@@ -343,7 +525,30 @@ class UniverseBackend {
    * Save active universe
    */
   async saveActiveUniverse(storeState = null) {
-    return universeManager.saveActiveUniverse(storeState);
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    
+    // Get current store state if not provided
+    if (!storeState && this.storeOperations?.getState) {
+      storeState = this.storeOperations.getState();
+    }
+    
+    console.log('[UniverseBackend] Saving active universe with store state:', {
+      hasStoreState: !!storeState,
+      hasGraphs: storeState?.graphs ? (storeState.graphs instanceof Map ? storeState.graphs.size : Object.keys(storeState.graphs).length) : 0,
+      hasNodes: storeState?.nodePrototypes ? (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes).length) : 0
+    });
+    
+    try {
+      const result = await universeManager.saveActiveUniverse(storeState);
+      this.notifyStatus('success', 'Universe saved successfully');
+      return result;
+    } catch (error) {
+      console.error('[UniverseBackend] Failed to save active universe:', error);
+      this.notifyStatus('error', `Save failed: ${error.message}`);
+      throw error;
+    }
   }
 
   /**
@@ -452,8 +657,38 @@ class UniverseBackend {
   /**
    * Update universe
    */
-  updateUniverse(slug, updates) {
-    return universeManager.updateUniverse(slug, updates);
+  async updateUniverse(slug, updates) {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    
+    console.log(`[UniverseBackend] Updating universe ${slug}:`, updates);
+    const result = universeManager.updateUniverse(slug, updates);
+    
+    // If Git repo was enabled or linked repo was updated, ensure sync engine is set up
+    if (updates.gitRepo) {
+      const universe = universeManager.getUniverse(slug);
+      if (universe?.gitRepo?.enabled && universe?.gitRepo?.linkedRepo) {
+        console.log(`[UniverseBackend] Git repo updated for ${slug}, ensuring sync engine is set up`);
+        setTimeout(() => {
+          this.ensureGitSyncEngine(slug).catch(error => {
+            console.warn(`[UniverseBackend] Failed to setup engine after repo update:`, error);
+            this.notifyStatus('warning', `Git sync setup failed: ${error.message}`);
+          });
+        }, 100);
+      } else if (updates.gitRepo.enabled === false) {
+        // Git was disabled, remove the engine
+        console.log(`[UniverseBackend] Git disabled for ${slug}, removing sync engine`);
+        this.removeGitSyncEngine(slug);
+      }
+    }
+    
+    // If sources were updated, notify about the change
+    if (updates.sources) {
+      this.notifyStatus('info', `Data sources updated for universe: ${universe?.name || slug}`);
+    }
+    
+    return result;
   }
 
   /**
@@ -478,11 +713,57 @@ class UniverseBackend {
    * Force save for a universe
    */
   async forceSave(universeSlug, storeState) {
-    const engine = this.gitSyncEngines.get(universeSlug);
-    if (engine) {
-      return engine.forceCommit(storeState);
+    if (!this.isInitialized) {
+      await this.initialize();
     }
-    throw new Error(`No Git sync engine for universe: ${universeSlug}`);
+    
+    // Use active universe if no slug provided
+    if (!universeSlug) {
+      const activeUniverse = this.getActiveUniverse();
+      universeSlug = activeUniverse?.slug;
+      if (!universeSlug) {
+        throw new Error('No active universe to save');
+      }
+    }
+    
+    // Get store state if not provided
+    if (!storeState && this.storeOperations?.getState) {
+      storeState = this.storeOperations.getState();
+    }
+    
+    if (!storeState) {
+      throw new Error('No store state available for saving');
+    }
+    
+    console.log(`[UniverseBackend] Force saving universe ${universeSlug}`);
+    
+    // Ensure Git sync engine exists
+    let engine = this.gitSyncEngines.get(universeSlug);
+    if (!engine) {
+      try {
+        console.log(`[UniverseBackend] No engine found for ${universeSlug}, creating one for force save`);
+        engine = await this.ensureGitSyncEngine(universeSlug);
+      } catch (error) {
+        console.error(`[UniverseBackend] Failed to create engine for force save:`, error);
+        // Fallback to regular save through universe manager
+        console.log(`[UniverseBackend] Falling back to universe manager save`);
+        return await this.saveActiveUniverse(storeState);
+      }
+    }
+    
+    if (engine) {
+      try {
+        const result = await engine.forceCommit(storeState);
+        this.notifyStatus('success', `Force save completed for ${universeSlug}`);
+        return result;
+      } catch (error) {
+        console.error(`[UniverseBackend] Force save failed for ${universeSlug}:`, error);
+        this.notifyStatus('error', `Force save failed: ${error.message}`);
+        throw error;
+      }
+    }
+    
+    throw new Error(`No Git sync engine available for universe: ${universeSlug}`);
   }
 
   /**

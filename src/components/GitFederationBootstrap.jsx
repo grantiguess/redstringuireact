@@ -56,7 +56,9 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
               });
             }
 
-            console.log('[GitFederationBootstrap] Backend loaded and ready');
+            // Signal that backend is ready for commands
+            window.dispatchEvent(new CustomEvent('universe-backend-ready'));
+            console.log('[GitFederationBootstrap] Backend loaded and ready - ready signal dispatched');
             return backend;
           } catch (error) {
             console.error('[GitFederationBootstrap] Backend initialization failed:', error);
@@ -112,6 +114,12 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
             break;
           case 'linkToDiscoveredUniverse':
             result = await backend.linkToDiscoveredUniverse(payload.discoveredUniverse, payload.repoConfig);
+            break;
+          case 'forceSave':
+            result = await backend.forceSave(payload.universeSlug, payload.storeState);
+            break;
+          case 'saveActiveUniverse':
+            result = await backend.saveActiveUniverse(payload.storeState);
             break;
           default:
             throw new Error(`Unknown command: ${command}`);

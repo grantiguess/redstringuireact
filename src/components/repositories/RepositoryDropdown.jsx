@@ -73,12 +73,14 @@ const RepositoryDropdown = ({
           if (!disabled) {
             e.currentTarget.style.backgroundColor = '#979090';
             e.currentTarget.style.borderColor = '#260000';
+            e.currentTarget.style.color = '#260000';
           }
         }}
         onMouseLeave={(e) => {
           if (!disabled) {
             e.currentTarget.style.backgroundColor = '#bdb5b5';
             e.currentTarget.style.borderColor = '#979090';
+            e.currentTarget.style.color = '#260000';
           }
         }}
       >
@@ -141,8 +143,14 @@ const RepositoryDropdown = ({
                       color: '#260000',
                       transition: 'background-color 0.2s',
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#979090'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = '#979090';
+                      e.currentTarget.style.color = '#260000';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                      e.currentTarget.style.color = '#260000';
+                    }}
                   >
                     <div style={{ fontWeight: 500, fontSize: '0.85rem', marginBottom: '2px' }}>
                       {repo.full_name || repo.name}

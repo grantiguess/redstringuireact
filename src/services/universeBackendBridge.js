@@ -13,20 +13,74 @@ const RESPONSE_EVENT_PREFIX = 'universe-backend-response-';
 class UniverseBackendBridge {
   constructor(timeoutMs = 10000) {
     this.timeoutMs = timeoutMs;
+    this.commandQueue = [];
+    this.isBackendReady = false;
+    this.backendReadyPromise = null;
+    
+    // Listen for backend ready signal
+    this.setupBackendReadyListener();
   }
-
-  async sendCommand(command, payload = {}) {
-    if (typeof window === 'undefined') {
-      throw new Error('Universe backend bridge is only available in the browser environment.');
+  
+  setupBackendReadyListener() {
+    if (typeof window === 'undefined') return;
+    
+    // Listen for backend initialization completion
+    window.addEventListener('universe-backend-ready', () => {
+      console.log('[UniverseBackendBridge] Backend ready signal received');
+      this.isBackendReady = true;
+      this.processQueuedCommands();
+    });
+  }
+  
+  async waitForBackendReady() {
+    if (this.isBackendReady) return;
+    
+    if (!this.backendReadyPromise) {
+      this.backendReadyPromise = new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Backend initialization timeout'));
+        }, 15000);
+        
+        const handler = () => {
+          clearTimeout(timeout);
+          window.removeEventListener('universe-backend-ready', handler);
+          resolve();
+        };
+        
+        window.addEventListener('universe-backend-ready', handler);
+        
+        // If backend is already ready, resolve immediately
+        if (this.isBackendReady) {
+          clearTimeout(timeout);
+          window.removeEventListener('universe-backend-ready', handler);
+          resolve();
+        }
+      });
     }
-
-    return new Promise((resolve, reject) => {
-      const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    
+    return this.backendReadyPromise;
+  }
+  
+  async processQueuedCommands() {
+    console.log(`[UniverseBackendBridge] Processing ${this.commandQueue.length} queued commands`);
+    
+    while (this.commandQueue.length > 0) {
+      const queuedCommand = this.commandQueue.shift();
+      try {
+        await this.executeCommand(queuedCommand);
+      } catch (error) {
+        console.error('[UniverseBackendBridge] Queued command failed:', error);
+        queuedCommand.reject(error);
+      }
+    }
+  }
+  
+  async executeCommand({ command, payload, id, resolve, reject }) {
+    try {
       const responseEvent = `${RESPONSE_EVENT_PREFIX}${id}`;
       let timeoutId = null;
 
       const cleanup = () => {
-        window.removeEventListener(responseEvent, handleResponse);
         if (timeoutId !== null) {
           window.clearTimeout(timeoutId);
           timeoutId = null;
@@ -43,7 +97,7 @@ class UniverseBackendBridge {
         resolve(detail?.result);
       };
 
-      window.addEventListener(responseEvent, handleResponse);
+      window.addEventListener(responseEvent, handleResponse, { once: true });
 
       timeoutId = window.setTimeout(() => {
         cleanup();
@@ -53,6 +107,42 @@ class UniverseBackendBridge {
       window.dispatchEvent(new CustomEvent(COMMAND_EVENT, {
         detail: { command, payload, id }
       }));
+    } catch (error) {
+      reject(error);
+    }
+  }
+
+  async sendCommand(command, payload = {}) {
+    if (typeof window === 'undefined') {
+      throw new Error('Universe backend bridge is only available in the browser environment.');
+    }
+
+    return new Promise(async (resolve, reject) => {
+      const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      
+      const commandData = { command, payload, id, resolve, reject };
+      
+      // If backend is not ready, queue the command
+      if (!this.isBackendReady) {
+        console.log(`[UniverseBackendBridge] Backend not ready, queueing command: ${command}`);
+        this.commandQueue.push(commandData);
+        
+        // Wait for backend to be ready
+        try {
+          await this.waitForBackendReady();
+        } catch (error) {
+          // Remove from queue and reject
+          const index = this.commandQueue.indexOf(commandData);
+          if (index > -1) {
+            this.commandQueue.splice(index, 1);
+          }
+          reject(error);
+          return;
+        }
+      }
+      
+      // Execute command immediately if backend is ready
+      await this.executeCommand(commandData);
     });
   }
 
@@ -110,6 +200,14 @@ class UniverseBackendBridge {
   linkToDiscoveredUniverse(discoveredUniverse, repoConfig) {
     return this.sendCommand('linkToDiscoveredUniverse', { discoveredUniverse, repoConfig });
   }
+
+  forceSave(universeSlug, storeState) {
+    return this.sendCommand('forceSave', { universeSlug, storeState });
+  }
+
+  saveActiveUniverse(storeState) {
+    return this.sendCommand('saveActiveUniverse', { storeState });
+  }
 }
 
 const bridgeInstance = new UniverseBackendBridge();
@@ -125,7 +223,9 @@ const universeBackendBridge = {
   deleteUniverse: (slug) => bridgeInstance.deleteUniverse(slug),
   updateUniverse: (slug, updates) => bridgeInstance.updateUniverse(slug, updates),
   discoverUniversesInRepository: (repoConfig) => bridgeInstance.discoverUniversesInRepository(repoConfig),
-  linkToDiscoveredUniverse: (discoveredUniverse, repoConfig) => bridgeInstance.linkToDiscoveredUniverse(discoveredUniverse, repoConfig)
+  linkToDiscoveredUniverse: (discoveredUniverse, repoConfig) => bridgeInstance.linkToDiscoveredUniverse(discoveredUniverse, repoConfig),
+  forceSave: (universeSlug, storeState) => bridgeInstance.forceSave(universeSlug, storeState),
+  saveActiveUniverse: (storeState) => bridgeInstance.saveActiveUniverse(storeState)
 };
 
 export default universeBackendBridge;

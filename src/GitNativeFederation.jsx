@@ -37,6 +37,8 @@ import {
 } from 'lucide-react';
 
 import universeBackendBridge from './services/universeBackendBridge.js';
+import { formatUniverseNameFromRepo, buildUniqueUniverseName } from './utils/universeNaming.js';
+import useGraphStore from './store/graphStore.jsx';
 
 // UI-only imports
 import { persistentAuth } from './services/persistentAuth.js';
@@ -724,7 +726,6 @@ const GitNativeFederation = () => {
 
     await applyActiveUniverseUpdate({ sources: [...existingSources, newSource] });
     setSyncStatus({ type: 'success', status: `Added data source @${user}/${repo}` });
-    setTimeout(() => setSyncStatus(null), 3000);
   }, [activeUniverse, applyActiveUniverseUpdate]);
 
   const handleBrowseRepositories = useCallback(() => {
@@ -761,7 +762,6 @@ const GitNativeFederation = () => {
 
     if (duplicate) {
       setSyncStatus({ type: 'info', status: `Repository already linked (@${owner}/${repoName})` });
-      setTimeout(() => setSyncStatus(null), 2500);
       return;
     }
 
@@ -777,7 +777,6 @@ const GitNativeFederation = () => {
     try {
       await applyActiveUniverseUpdate({ sources: [...existingSources, newSource] });
       setSyncStatus({ type: 'success', status: `Added data source @${owner}/${repoName}` });
-      setTimeout(() => setSyncStatus(null), 3000);
     } catch (err) {
       console.error('[GitNativeFederation] Repository selection failed:', err);
       setError(`Failed to add repository: ${err.message}`);
@@ -796,19 +795,46 @@ const GitNativeFederation = () => {
 
   const handleSetPrimaryGitSource = useCallback(async (source) => {
     if (!activeUniverse || !source || source.type !== 'github' || !source.user || !source.repo) return;
-    const linkedRepo = { type: 'github', user: source.user, repo: source.repo };
-    const gitRepoConfig = {
-      ...activeUniverse.gitRepo,
-      enabled: true,
-      linkedRepo,
-      universeFolder: activeUniverse.gitRepo?.universeFolder || `universes/${activeUniverse.slug}`,
-      universeFile: activeUniverse.gitRepo?.universeFile || `${activeUniverse.slug}.redstring`
-    };
+    
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const linkedRepo = { type: 'github', user: source.user, repo: source.repo };
+      const gitRepoConfig = {
+        ...activeUniverse.gitRepo,
+        enabled: true,
+        linkedRepo,
+        universeFolder: activeUniverse.gitRepo?.universeFolder || `universes/${activeUniverse.slug}`,
+        universeFile: activeUniverse.gitRepo?.universeFile || `${activeUniverse.slug}.redstring`
+      };
 
-    await applyActiveUniverseUpdate({ gitRepo: gitRepoConfig });
-    setSyncStatus({ type: 'success', status: `Primary source set to @${source.user}/${source.repo}` });
-    setTimeout(() => setSyncStatus(null), 3000);
-  }, [activeUniverse, applyActiveUniverseUpdate]);
+      const formattedName = formatUniverseNameFromRepo(source.repo);
+      const uniqueName = buildUniqueUniverseName(formattedName, universes, activeUniverse.slug);
+
+      console.log(`[GitNativeFederation] Setting primary Git source: @${source.user}/${source.repo}`);
+      
+      await applyActiveUniverseUpdate({
+        gitRepo: gitRepoConfig,
+        name: uniqueName,
+        sourceOfTruth: 'git'
+      });
+      
+      // Give the backend a moment to process the update and set up the sync engine
+      setTimeout(() => {
+        setSyncStatus({ type: 'success', status: `Primary source set to @${source.user}/${source.repo} - Git sync engine initializing` });
+        
+        // Refresh data to show the updated state
+        loadUniverseData();
+      }, 500);
+      
+    } catch (error) {
+      console.error('[GitNativeFederation] Failed to set primary Git source:', error);
+      setError(`Failed to set primary source: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeUniverse, universes, applyActiveUniverseUpdate, loadUniverseData]);
 
   const handleRemoveSource = useCallback(async (source) => {
     if (!activeUniverse || !source) return;
@@ -976,15 +1002,17 @@ const GitNativeFederation = () => {
   // Clear error after timeout
   useEffect(() => {
     if (error) {
-      const timer = setTimeout(() => setError(null), 5000);
+      const timer = setTimeout(() => setError(null), 8000); // Longer timeout for critical errors
       return () => clearTimeout(timer);
     }
   }, [error]);
 
-  // Clear sync status after timeout
+  // Clear sync status after timeout (but keep success messages longer)
   useEffect(() => {
-    if (syncStatus && syncStatus.type !== 'error') {
-      const timer = setTimeout(() => setSyncStatus(null), 3000);
+    if (syncStatus) {
+      const timeout = syncStatus.type === 'success' ? 4000 : 
+                     syncStatus.type === 'error' ? 8000 : 3000;
+      const timer = setTimeout(() => setSyncStatus(null), timeout);
       return () => clearTimeout(timer);
     }
   }, [syncStatus]);
@@ -1191,6 +1219,59 @@ const GitNativeFederation = () => {
                 >
                   Add by owner/repo
                 </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      // Diagnostic tool to check system state
+                      const universes = await universeBackendBridge.getAllUniverses();
+                      const activeUniverse = await universeBackendBridge.getActiveUniverse();
+                      const authStatus = await universeBackendBridge.getAuthStatus();
+                      
+                      console.log('=== REDSTRING SYSTEM DIAGNOSTIC ===');
+                      console.log('Universes:', universes);
+                      console.log('Active Universe:', activeUniverse);
+                      console.log('Auth Status:', authStatus);
+                      console.log('Store State Summary:', {
+                        hasStoreOperations: 'Available',
+                        currentStoreState: (() => {
+                          try {
+                            const store = useGraphStore.getState();
+                            return {
+                              nodeCount: store.nodePrototypes?.size || 0,
+                              graphCount: store.graphs?.size || 0,
+                              isUniverseLoaded: store.isUniverseLoaded,
+                              hasUniverseFile: store.hasUniverseFile
+                            };
+                          } catch (e) {
+                            return { error: e.message };
+                          }
+                        })()
+                      });
+                      console.log('===================================');
+                      
+                      setSyncStatus({ 
+                        type: 'info', 
+                        status: `Diagnostic: ${universes?.length || 0} universes, active: ${activeUniverse?.name || 'none'}, auth: ${authStatus?.isAuthenticated ? 'OK' : 'MISSING'}` 
+                      });
+                    } catch (error) {
+                      console.error('Diagnostic failed:', error);
+                      setError(`Diagnostic failed: ${error.message}`);
+                    }
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: 'transparent',
+                    color: '#666',
+                    border: '1px solid #666',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '0.75rem',
+                    fontWeight: 'bold'
+                  }}
+                  title="Debug system state"
+                >
+                  Debug
+                </button>
               </div>
             </div>
 
@@ -1275,8 +1356,20 @@ const GitNativeFederation = () => {
                             <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#260000' }}>
                               {source.name || (source.type === 'github' ? `@${source.user}/${source.repo}` : 'Data Source')}
                             </div>
-                            <div style={{ fontSize: '0.72rem', color: '#555' }}>
-                              {source.type === 'github' ? 'GitHub Repository' : (source.type || 'custom')}
+                            <div style={{ fontSize: '0.72rem', color: '#555', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span>{source.type === 'github' ? 'GitHub Repository' : (source.type || 'custom')}</span>
+                              {isPrimaryGit && (
+                                <span style={{ 
+                                  fontSize: '0.65rem', 
+                                  padding: '2px 4px', 
+                                  borderRadius: '4px',
+                                  backgroundColor: syncStatus?.type === 'success' ? '#4caf50' : '#ff9800',
+                                  color: 'white',
+                                  fontWeight: 600
+                                }}>
+                                  {syncStatus?.status?.includes('Git sync enabled') ? 'SYNCING' : 'SETUP'}
+                                </span>
+                              )}
                             </div>
                             {source.type === 'github' && (hasOAuthForBrowsing || hasAppForAutoSave) && (
                               <div style={{ maxWidth: isSlim ? '100%' : '260px' }}>
@@ -1323,6 +1416,36 @@ const GitNativeFederation = () => {
                                   }}
                                 >
                                   Open on GitHub
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      setIsLoading(true);
+                                      setError(null);
+                                      
+                                      // Force save to this specific repository
+                                      await universeBackendBridge.forceSave(activeUniverse.slug);
+                                      setSyncStatus({ type: 'success', status: `Saved to @${source.user}/${source.repo}` });
+                                      setTimeout(() => setSyncStatus(null), 3000);
+                                    } catch (error) {
+                                      console.error('[GitNativeFederation] Manual save failed:', error);
+                                      setError(`Save failed: ${error.message}`);
+                                    } finally {
+                                      setIsLoading(false);
+                                    }
+                                  }}
+                                  style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '4px',
+                                    border: '1px solid #7A0000',
+                                    backgroundColor: '#7A0000',
+                                    color: '#bdb5b5',
+                                    cursor: 'pointer',
+                                    fontSize: '0.7rem',
+                                    fontWeight: 600
+                                  }}
+                                >
+                                  Save Now
                                 </button>
                                 <button
                                   onClick={() => handleRemoveSource(source)}
@@ -1380,6 +1503,36 @@ const GitNativeFederation = () => {
                                   Refresh list
                                 </button>
                               )}
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    setIsLoading(true);
+                                    setError(null);
+                                    
+                                    // Force reload universe data from Git
+                                    const result = await universeBackendBridge.switchActiveUniverse(activeUniverse.slug, { saveCurrent: false });
+                                    setSyncStatus({ type: 'success', status: 'Universe data reloaded from Git' });
+                                    setTimeout(() => setSyncStatus(null), 3000);
+                                  } catch (error) {
+                                    console.error('[GitNativeFederation] Reload failed:', error);
+                                    setError(`Reload failed: ${error.message}`);
+                                  } finally {
+                                    setIsLoading(false);
+                                  }
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  borderRadius: '4px',
+                                  border: '1px solid #260000',
+                                  backgroundColor: 'transparent',
+                                  color: '#260000',
+                                  cursor: 'pointer',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 600
+                                }}
+                              >
+                                Reload from Git
+                              </button>
                             </div>
 
                             {discoveryError && (
