@@ -45,7 +45,7 @@ import { persistentAuth } from './services/persistentAuth.js';
 import RepositoryManager from './components/repositories/RepositoryManager.jsx';
 import RepositoryDropdown from './components/repositories/RepositoryDropdown.jsx';
 import { oauthFetch } from './services/bridgeConfig.js';
-import UniverseManagementPanel from './components/UniverseManagementPanel.jsx';
+import IntegratedUniverseModal from './components/IntegratedUniverseModal.jsx';
 
 // Simple device detection for UI
 const getDeviceInfo = () => {
@@ -89,7 +89,6 @@ const GitNativeFederation = () => {
 
   // UI layout state
   const containerRef = useRef(null);
-  const autoConnectAttemptedRef = useRef(false);
   const [isSlim, setIsSlim] = useState(false);
 
   // Device info
@@ -478,50 +477,47 @@ const GitNativeFederation = () => {
     }
   }, [githubAppInstallation, authStatus]);
 
-  // Automatically attempt OAuth connection on load when allowed and not yet authenticated
+
+  // Listen for auto-connect events from persistentAuth
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
+    if (typeof window === 'undefined') return;
+
+    const handleAutoConnect = (event) => {
+      const { method } = event.detail;
+      console.log(`[GitNativeFederation] Auto-connect successful via ${method}`);
+      // Refresh auth data
+      loadUniverseData();
+    };
+
+    const handleAutoConnectError = (event) => {
+      const error = event.detail;
+      console.warn('[GitNativeFederation] Auto-connect failed:', error);
+      // Don't show error to user as this is automatic
+    };
+
+    window.addEventListener('redstring:auth-token-stored', handleAutoConnect);
+
+    // Listen to persistentAuth events
+    if (persistentAuth?.on) {
+      persistentAuth.on('autoConnected', (data) => {
+        console.log(`[GitNativeFederation] Auto-connected via ${data.method}`);
+        loadUniverseData();
+      });
+
+      persistentAuth.on('autoConnectError', (error) => {
+        console.warn('[GitNativeFederation] Auto-connect error:', error);
+      });
     }
 
-    if (autoConnectAttemptedRef.current) {
-      return undefined;
-    }
+    return () => {
+      window.removeEventListener('redstring:auth-token-stored', handleAutoConnect);
 
-    if (!allowOAuthBackup || isConnecting) {
-      return undefined;
-    }
-
-    if (!authStatus) {
-      return undefined;
-    }
-
-    if (authStatus.isAuthenticated) {
-      autoConnectAttemptedRef.current = true;
-      return undefined;
-    }
-
-    let pending = false;
-    try {
-      pending = sessionStorage.getItem('github_oauth_pending') === 'true';
-    } catch (_) {
-      pending = false;
-    }
-
-    if (pending) {
-      return undefined;
-    }
-
-    autoConnectAttemptedRef.current = true;
-
-    try {
-      sessionStorage.setItem('github_oauth_autoconnect_attempted', 'true');
-    } catch (_) {}
-
-    handleGitHubAuth();
-
-    return undefined;
-  }, [authStatus, allowOAuthBackup, isConnecting]);
+      if (persistentAuth?.off) {
+        persistentAuth.off('autoConnected');
+        persistentAuth.off('autoConnectError');
+      }
+    };
+  }, [loadUniverseData]);
 
   // Auto-load repository universes when active universe changes
   useEffect(() => {
@@ -1048,8 +1044,105 @@ const GitNativeFederation = () => {
         </div>
       )}
 
-      {/* Universes - Using Standalone Component */}
-      <UniverseManagementPanel isModal={false} showTitle={true} style={{ marginBottom: '16px' }} />
+      {/* Universes */}
+      <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>Universes</div>
+          <div style={{ fontSize: '0.8rem', color: '#666' }}>Manage your knowledge spaces</div>
+        </div>
+
+        {/* Add Universe Card */}
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '12px',
+          padding: '12px',
+          backgroundColor: '#bdb5b5',
+          border: '2px dashed #979090',
+          borderRadius: '6px',
+          cursor: 'pointer',
+          transition: 'all 0.2s ease',
+          marginBottom: '8px'
+        }}
+        onClick={addUniverse}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = '#979090';
+          e.currentTarget.style.borderColor = '#260000';
+          e.currentTarget.style.borderStyle = 'solid';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = '#bdb5b5';
+          e.currentTarget.style.borderColor = '#979090';
+          e.currentTarget.style.borderStyle = 'dashed';
+        }}
+        >
+          <Plus size={20} color="#260000" />
+          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#260000' }}>
+            Add Universe
+          </div>
+        </div>
+
+        {/* Universe Cards */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {universeCards.map(({ universe, displayName }) => (
+            <div key={universe.slug} style={{ 
+              background: '#bdb5b5', 
+              border: universe.slug === activeUniverseSlug ? '2px solid #7A0000' : '1px solid #260000', 
+              borderRadius: '6px', 
+              padding: '10px' 
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
+                    {displayName}
+                  </div>
+                  {universe.slug === activeUniverseSlug && (
+                    <div style={{ fontSize: '0.75rem', color: '#7A0000', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '10px' }}>ACTIVE</div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  {universe.slug !== activeUniverseSlug && (
+                    <button 
+                      onClick={() => handleSwitchUniverse(universe.slug)} 
+                      style={{ 
+                        padding: '4px 8px', 
+                        backgroundColor: 'transparent', 
+                        color: '#260000', 
+                        border: '1px solid #260000', 
+                        borderRadius: '4px', 
+                        fontSize: '0.75rem', 
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      Switch To
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => removeUniverse(universe.slug)} 
+                    disabled={universeCards.length <= 1}
+                    style={{ 
+                      padding: '4px', 
+                      backgroundColor: 'transparent', 
+                      color: universeCards.length <= 1 ? '#999' : '#d32f2f', 
+                      border: `1px solid ${universeCards.length <= 1 ? '#999' : '#d32f2f'}`, 
+                      borderRadius: '4px', 
+                      cursor: universeCards.length <= 1 ? 'not-allowed' : 'pointer', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      opacity: universeCards.length <= 1 ? 0.5 : 1
+                    }}
+                    title="Delete universe"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Accounts & Access */}
       <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
@@ -1218,6 +1311,119 @@ const GitNativeFederation = () => {
                   }}
                 >
                   Add by owner/repo
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!hasOAuthForBrowsing && !hasAppForAutoSave) {
+                      setError('Authentication required to discover universes');
+                      return;
+                    }
+                    
+                    try {
+                      setIsLoading(true);
+                      setError(null);
+                      
+                      // Get all user repositories
+                      let repositories = userRepositories;
+                      if (!repositories || repositories.length === 0) {
+                        setSyncStatus({ type: 'info', status: 'Loading your repositories...' });
+                        
+                        // Fetch repositories if not already loaded
+                        const authMethod = dataAuthMethod || 'oauth';
+                        const token = authMethod === 'github-app' ? 
+                          githubAppInstallation?.accessToken : 
+                          await persistentAuth.getAccessToken();
+                          
+                        if (token) {
+                          const reposResponse = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
+                            headers: {
+                              'Authorization': `Bearer ${token}`,
+                              'Accept': 'application/vnd.github.v3+json'
+                            }
+                          });
+                          
+                          if (reposResponse.ok) {
+                            repositories = await reposResponse.json();
+                            setUserRepositories(repositories);
+                          }
+                        }
+                      }
+                      
+                      if (!repositories || repositories.length === 0) {
+                        setSyncStatus({ type: 'warning', status: 'No repositories found' });
+                        return;
+                      }
+                      
+                      setSyncStatus({ type: 'info', status: `Scanning ${repositories.length} repositories for universes...` });
+                      
+                      // Discover universes across all repositories
+                      let totalDiscovered = 0;
+                      let totalLoaded = 0;
+                      let reposWithUniverses = 0;
+                      
+                      for (const repo of repositories.slice(0, 20)) { // Limit to first 20 repos to avoid rate limits
+                        try {
+                          const repoConfig = { 
+                            type: 'github', 
+                            user: repo.owner.login, 
+                            repo: repo.name, 
+                            authMethod: dataAuthMethod || 'oauth' 
+                          };
+                          
+                          const discovered = await universeBackendBridge.discoverUniversesInRepository(repoConfig);
+                          
+                          if (discovered.length > 0) {
+                            reposWithUniverses++;
+                            totalDiscovered += discovered.length;
+                            
+                            // Auto-load universes that don't already exist
+                            for (const universe of discovered) {
+                              try {
+                                const existingUniverses = await universeBackendBridge.getAllUniverses();
+                                const alreadyExists = existingUniverses.some(existing => existing.slug === universe.slug);
+                                
+                                if (!alreadyExists) {
+                                  await universeBackendBridge.linkToDiscoveredUniverse(universe, repoConfig);
+                                  totalLoaded++;
+                                }
+                              } catch (linkError) {
+                                console.warn(`Failed to load universe ${universe.name}:`, linkError);
+                              }
+                            }
+                          }
+                        } catch (repoError) {
+                          console.warn(`Failed to scan repository ${repo.full_name}:`, repoError);
+                        }
+                      }
+                      
+                      // Refresh universe data
+                      await loadUniverseData();
+                      
+                      setSyncStatus({ 
+                        type: 'success', 
+                        status: `Found ${totalDiscovered} universes in ${reposWithUniverses} repos • Loaded ${totalLoaded} new universes` 
+                      });
+                      
+                    } catch (error) {
+                      console.error('[GitNativeFederation] Universe discovery failed:', error);
+                      setError(`Universe discovery failed: ${error.message}`);
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                  disabled={!hasOAuthForBrowsing && !hasAppForAutoSave}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: (hasOAuthForBrowsing || hasAppForAutoSave) ? '#7A0000' : '#ccc',
+                    color: '#bdb5b5',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: (hasOAuthForBrowsing || hasAppForAutoSave) ? 'pointer' : 'not-allowed',
+                    fontSize: '0.75rem',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  Discover All Universes
                 </button>
                 <button
                   onClick={async () => {
@@ -1711,6 +1917,7 @@ const GitNativeFederation = () => {
           </div>
         </div>
       )}
+
 
       {/* Loading Overlay */}
       {isLoading && (

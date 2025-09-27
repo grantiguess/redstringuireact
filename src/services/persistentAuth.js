@@ -57,7 +57,190 @@ export class PersistentAuth {
       console.log('[PersistentAuth] No valid tokens found');
     }
 
+    // Trigger auto-connect if we have stored auth data
+    await this.attemptAutoConnect();
+
     console.log('[PersistentAuth] Authentication service initialized');
+  }
+
+  /**
+   * Attempt auto-connection using stored authentication data
+   */
+  async attemptAutoConnect() {
+    // Check if auto-connect has been attempted in this session
+    try {
+      const attempted = sessionStorage.getItem('oauth_autoconnect_attempted');
+      if (attempted === 'true') {
+        console.log('[PersistentAuth] Auto-connect already attempted this session');
+        return;
+      }
+    } catch (e) {
+      // Ignore session storage errors
+    }
+
+    // Check user preference for auto-connect
+    const allowAutoConnect = this.getAllowAutoConnect();
+    if (!allowAutoConnect) {
+      console.log('[PersistentAuth] Auto-connect disabled by user preference');
+      this.markAutoConnectAttempted();
+      return;
+    }
+
+    console.log('[PersistentAuth] Attempting auto-connection...');
+    this.markAutoConnectAttempted();
+
+    try {
+      // First, try GitHub App auto-connect
+      const appConnected = await this.attemptAppAutoConnect();
+      if (appConnected) {
+        console.log('[PersistentAuth] Successfully auto-connected via GitHub App');
+        this.emit('autoConnected', { method: 'github-app' });
+        return;
+      }
+
+      // Then, try OAuth auto-connect
+      const oauthConnected = await this.attemptOAuthAutoConnect();
+      if (oauthConnected) {
+        console.log('[PersistentAuth] Successfully auto-connected via OAuth');
+        this.emit('autoConnected', { method: 'oauth' });
+        return;
+      }
+
+      console.log('[PersistentAuth] No stored auth data available for auto-connect');
+
+    } catch (error) {
+      console.error('[PersistentAuth] Auto-connect failed:', error);
+      this.emit('autoConnectError', error);
+    }
+  }
+
+  /**
+   * Check if user allows auto-connect
+   */
+  getAllowAutoConnect() {
+    try {
+      const setting = localStorage.getItem('allow_oauth_backup');
+      return setting !== 'false'; // Default to true
+    } catch (e) {
+      return true; // Default to true if storage fails
+    }
+  }
+
+  /**
+   * Mark that auto-connect has been attempted this session
+   */
+  markAutoConnectAttempted() {
+    try {
+      sessionStorage.setItem('oauth_autoconnect_attempted', 'true');
+    } catch (e) {
+      // Ignore storage errors
+    }
+  }
+
+  /**
+   * Attempt auto-connect using stored GitHub App installation
+   */
+  async attemptAppAutoConnect() {
+    const appInstallation = this.getAppInstallation();
+    if (!appInstallation) {
+      return false;
+    }
+
+    console.log('[PersistentAuth] Found stored GitHub App installation, refreshing token...');
+
+    try {
+      // Use oauthFetch directly since it's already imported at the top
+
+      // Get fresh installation token
+      const tokenResponse = await oauthFetch('/api/github/app/installation-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installation_id: appInstallation.installationId })
+      });
+
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text().catch(() => '');
+        throw new Error(`Failed to refresh GitHub App token (${tokenResponse.status}): ${errorText}`);
+      }
+
+      const tokenData = await tokenResponse.json();
+      const freshAccessToken = tokenData.token;
+
+      if (!freshAccessToken) {
+        throw new Error('GitHub App token response missing token field');
+      }
+
+      // Update stored installation with fresh token
+      const updatedInstallation = {
+        ...appInstallation,
+        accessToken: freshAccessToken,
+        lastUpdated: Date.now()
+      };
+
+      this.storeAppInstallation(updatedInstallation);
+      console.log('[PersistentAuth] GitHub App token refreshed successfully');
+
+      // Verify the token works by making a test request
+      const isValid = await this.testGitHubAppToken(freshAccessToken);
+      if (isValid) {
+        console.log('[PersistentAuth] GitHub App token validated successfully');
+        return true;
+      } else {
+        throw new Error('GitHub App token validation failed');
+      }
+
+    } catch (error) {
+      console.error('[PersistentAuth] GitHub App auto-connect failed:', error);
+      // Clear invalid app installation
+      this.clearAppInstallation();
+      return false;
+    }
+  }
+
+  /**
+   * Attempt auto-connect using stored OAuth tokens
+   */
+  async attemptOAuthAutoConnect() {
+    if (!this.hasValidTokens()) {
+      return false;
+    }
+
+    console.log('[PersistentAuth] Found stored OAuth tokens, validating...');
+
+    try {
+      // Test token validity
+      const isValid = await this.testTokenValidity();
+      if (isValid) {
+        console.log('[PersistentAuth] OAuth tokens validated successfully');
+        return true;
+      } else {
+        throw new Error('OAuth token validation failed');
+      }
+
+    } catch (error) {
+      console.error('[PersistentAuth] OAuth auto-connect failed:', error);
+      // Clear invalid tokens
+      this.clearTokens();
+      return false;
+    }
+  }
+
+  /**
+   * Test if a GitHub App token is valid
+   */
+  async testGitHubAppToken(token) {
+    try {
+      const response = await fetch('https://api.github.com/installation/repositories', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+      return response.ok;
+    } catch (error) {
+      console.error('[PersistentAuth] GitHub App token test failed:', error);
+      return false;
+    }
   }
 
   dispatchAuthEvent(type, payload = {}) {
