@@ -19,68 +19,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 
-// Universe Backend Bridge - same as GitNativeFederation but can work independently
-class UniverseBackendBridge {
-  constructor() {
-    this.listeners = new Set();
-  }
-
-  async sendCommand(command, payload = {}) {
-    return new Promise((resolve, reject) => {
-      const id = Date.now() + Math.random();
-      const timeoutId = setTimeout(() => {
-        window.removeEventListener(`universe-backend-response-${id}`, handleResponse);
-        reject(new Error('Backend command timeout'));
-      }, 10000);
-
-      const handleResponse = (event) => {
-        clearTimeout(timeoutId);
-        window.removeEventListener(`universe-backend-response-${id}`, handleResponse);
-        if (event.detail.error) {
-          reject(new Error(event.detail.error));
-        } else {
-          resolve(event.detail.result);
-        }
-      };
-
-      window.addEventListener(`universe-backend-response-${id}`, handleResponse);
-      window.dispatchEvent(new CustomEvent('universe-backend-command', {
-        detail: { command, payload, id }
-      }));
-    });
-  }
-
-  onStatusChange(callback) {
-    const handler = (event) => callback(event.detail);
-    window.addEventListener('universe-backend-status', handler);
-    return () => window.removeEventListener('universe-backend-status', handler);
-  }
-
-  // Core universe operations
-  async getAllUniverses() {
-    return this.sendCommand('getAllUniverses');
-  }
-
-  async getActiveUniverse() {
-    return this.sendCommand('getActiveUniverse');
-  }
-
-  async switchActiveUniverse(slug, options) {
-    return this.sendCommand('switchActiveUniverse', { slug, options });
-  }
-
-  async createUniverse(name, options) {
-    return this.sendCommand('createUniverse', { name, options });
-  }
-
-  async deleteUniverse(slug) {
-    return this.sendCommand('deleteUniverse', { slug });
-  }
-
-  async updateUniverse(slug, updates) {
-    return this.sendCommand('updateUniverse', { slug, updates });
-  }
-}
+import universeBackendBridge from '../services/universeBackendBridge.js';
 
 // Simple device detection
 const getDeviceInfo = () => {
@@ -120,7 +59,7 @@ const UniverseManagementPanel = ({
   const deviceInfo = useMemo(() => getDeviceInfo(), []);
 
   // Backend bridge
-  const [bridge] = useState(() => new UniverseBackendBridge());
+  const bridge = universeBackendBridge;
 
   // Derived state
   const activeUniverse = useMemo(() => {
@@ -588,6 +527,75 @@ const UniverseManagementPanel = ({
                       )}
                     </div>
                   </div>
+                </div>
+
+                {/* Repository summary */}
+                <div style={{ marginTop: isSlim ? '8px' : '10px' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Repository</div>
+                  {universe?.gitRepo?.linkedRepo ? (
+                    <div style={{
+                      backgroundColor: '#efe9e9',
+                      border: universe.gitRepo?.enabled ? '1px solid #260000' : '1px dashed #7A0000',
+                      borderRadius: '6px',
+                      padding: isSlim ? '6px' : '8px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: '#260000', fontSize: '0.85rem' }}>
+                          <Github size={14} />
+                          <span>@{universe.gitRepo.linkedRepo.user}/{universe.gitRepo.linkedRepo.repo}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '0.65rem', fontWeight: 600 }}>
+                          <span style={{ padding: '2px 6px', borderRadius: '10px', backgroundColor: universe.gitRepo?.enabled ? '#7A0000' : '#ff9800', color: '#fff' }}>
+                            {universe.gitRepo?.enabled ? 'Sync Enabled' : 'Sync Disabled'}
+                          </span>
+                          {universe.gitRepo?.linkedRepo?.private ? (
+                            <span style={{ padding: '2px 6px', borderRadius: '10px', backgroundColor: '#4b5563', color: '#fff' }}>Private</span>
+                          ) : (
+                            <span style={{ padding: '2px 6px', borderRadius: '10px', backgroundColor: '#2563eb', color: '#fff' }}>Public</span>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: '#444', marginTop: '6px', fontFamily: 'monospace' }}>
+                        {universe.gitRepo?.universeFolder || `universes/${universe.slug || 'universe'}`}/{universe.slug || 'universe'}.redstring
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', flexWrap: 'wrap' }}>
+                        <div style={{ fontSize: '0.65rem', color: '#260000', fontWeight: 600 }}>
+                          Mode: {universe.sourceOfTruth === 'git' ? 'Git' : 'Local fallback'}
+                        </div>
+                        {universe.gitRepo?.linkedRepo?.type === 'github' && (
+                          <button
+                            onClick={() => {
+                              const { user, repo } = universe.gitRepo.linkedRepo;
+                              const url = `https://github.com/${user}/${repo}`;
+                              window.open(url, '_blank', 'noopener');
+                            }}
+                            style={{
+                              padding: '4px 8px',
+                              backgroundColor: '#260000',
+                              color: '#bdb5b5',
+                              border: 'none',
+                              borderRadius: '4px',
+                              fontSize: '0.7rem',
+                              cursor: 'pointer',
+                              fontWeight: 'bold'
+                            }}
+                          >
+                            Open Repo
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{
+                      padding: isSlim ? '6px' : '8px',
+                      borderRadius: '6px',
+                      border: '1px dashed #979090',
+                      color: '#666',
+                      fontSize: '0.75rem'
+                    }}>
+                      No repository linked
+                    </div>
+                  )}
                 </div>
 
                 {/* Source of Truth Selection */}

@@ -11,6 +11,8 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
   const initRef = useRef(false);
   const backendRef = useRef(null);
   const commandListenerRef = useRef(null);
+  const backendInitPromiseRef = useRef(null);
+  const backendStatusUnsubscribeRef = useRef(null);
 
   useEffect(() => {
     if (!enableEagerInit || initRef.current) return;
@@ -19,26 +21,23 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
 
     console.log('[GitFederationBootstrap] Setting up event bridge...');
 
-    // Command handler that dynamically loads backend only when first command arrives
-    const handleBackendCommand = async (event) => {
-      const { command, payload, id } = event.detail;
+    const ensureBackendReady = async () => {
+      if (backendRef.current) {
+        return backendRef.current;
+      }
 
-      try {
-        // Lazy load backend only when first command is received
-        if (!backendRef.current) {
+      if (!backendInitPromiseRef.current) {
+        backendInitPromiseRef.current = (async () => {
           console.log('[GitFederationBootstrap] First command received, loading backend...');
 
           try {
-            // Use setTimeout to defer the import until next tick to avoid parse-time dependencies
             await new Promise(resolve => setTimeout(resolve, 0));
-
             console.log('[GitFederationBootstrap] Importing universeBackend...');
             const module = await import('../services/universeBackend.js');
             const backend = module.default || module.universeBackend;
 
             console.log('[GitFederationBootstrap] Backend imported, initializing...');
 
-            // Add timeout to prevent hanging
             const initPromise = backend.initialize();
             const timeoutPromise = new Promise((_, reject) => {
               setTimeout(() => reject(new Error('Backend initialization timeout')), 15000);
@@ -48,23 +47,43 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
             console.log('[GitFederationBootstrap] Backend initialization completed');
 
             backendRef.current = backend;
-          } catch (initError) {
-            console.error('[GitFederationBootstrap] Backend initialization failed:', initError);
-            throw initError;
+
+            if (!backendStatusUnsubscribeRef.current) {
+              backendStatusUnsubscribeRef.current = backend.onStatusChange((status) => {
+                window.dispatchEvent(new CustomEvent('universe-backend-status', {
+                  detail: status
+                }));
+              });
+            }
+
+            console.log('[GitFederationBootstrap] Backend loaded and ready');
+            return backend;
+          } catch (error) {
+            console.error('[GitFederationBootstrap] Backend initialization failed:', error);
+            throw error;
+          } finally {
+            backendInitPromiseRef.current = null;
           }
+        })().catch((error) => {
+          if (error instanceof ReferenceError && /Cannot access '\w+' before initialization/.test(error.message)) {
+            console.warn('[GitFederationBootstrap] Detected early initialization ReferenceError. This usually indicates a module circular dependency or concurrent import. Retrying...', error);
+          }
+          backendRef.current = null;
+          throw error;
+        });
+      }
 
-          // Set up status forwarding after backend is loaded
-          backend.onStatusChange((status) => {
-            window.dispatchEvent(new CustomEvent('universe-backend-status', {
-              detail: status
-            }));
-          });
+      return backendInitPromiseRef.current;
+    };
 
-          console.log('[GitFederationBootstrap] Backend loaded and ready');
-        }
+    // Command handler that dynamically loads backend only when first command arrives
+    const handleBackendCommand = async (event) => {
+      const { command, payload, id } = event.detail;
+
+      try {
+        const backend = await ensureBackendReady();
 
         let result;
-        const backend = backendRef.current;
 
         switch (command) {
           case 'getAllUniverses':
@@ -122,10 +141,17 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
       }
       backendRef.current = null;
       commandListenerRef.current = null;
+      backendInitPromiseRef.current = null;
+      if (backendStatusUnsubscribeRef.current) {
+        try {
+          backendStatusUnsubscribeRef.current();
+        } catch (error) {
+          console.warn('[GitFederationBootstrap] Failed to remove backend status listener:', error);
+        }
+      }
+      backendStatusUnsubscribeRef.current = null;
     };
   }, [enableEagerInit]);
 
   return null;
 }
-
-
