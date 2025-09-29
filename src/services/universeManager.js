@@ -167,13 +167,21 @@ class UniverseManager {
 
   // Initialize background sync services (called at app startup)
   async initializeBackgroundSync() {
+    console.log('[UniverseManager] ========== INITIALIZE BACKGROUND SYNC CALLED ==========');
     try {
       console.log('[UniverseManager] Initializing background sync services...');
 
-      console.log('[UniverseManager] Step 1: Initializing persistentAuth...');
+      console.log('[UniverseManager] ===== Step 1: Checking persistentAuth =====');
       const authStartTime = Date.now();
-      await persistentAuth.initialize();
-      console.log(`[UniverseManager] PersistentAuth initialized in ${Date.now() - authStartTime}ms`);
+
+      // Check if persistentAuth has already been initialized (avoid duplicate calls)
+      if (!persistentAuth.initializeCalled) {
+        console.log('[UniverseManager] About to call persistentAuth.initialize()...');
+        await persistentAuth.initialize();
+        console.log(`[UniverseManager] ===== PersistentAuth initialized in ${Date.now() - authStartTime}ms =====`);
+      } else {
+        console.log('[UniverseManager] ===== PersistentAuth already initialized, skipping =====');
+      }
 
       console.log('[UniverseManager] Step 2: Getting auth status...');
       const authStatus = persistentAuth.getAuthStatus();

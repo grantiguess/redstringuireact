@@ -482,11 +482,26 @@ const GitNativeFederation = () => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    console.log('[GitNativeFederation] Setting up auto-connect event listeners...');
+
     const handleAutoConnect = (event) => {
       const { method } = event.detail;
-      console.log(`[GitNativeFederation] Auto-connect successful via ${method}`);
-      // Refresh auth data
-      loadUniverseData();
+      console.log(`[GitNativeFederation] ===== AUTO-CONNECT WINDOW EVENT RECEIVED: ${method} =====`);
+
+      // Trigger backend loading and then refresh data
+      const triggerBackendAndRefresh = async () => {
+        console.log('[GitNativeFederation] Auto-connect success - triggering backend load and data refresh');
+
+        // Simple approach: just wait for the app to be ready and then refresh
+        console.log('[GitNativeFederation] Waiting for app to be ready, then refreshing auth data...');
+
+        setTimeout(() => {
+          console.log('[GitNativeFederation] App should be ready now - refreshing data after auto-connect');
+          loadUniverseData();
+        }, 2000);
+      };
+
+      triggerBackendAndRefresh();
     };
 
     const handleAutoConnectError = (event) => {
@@ -495,18 +510,29 @@ const GitNativeFederation = () => {
       // Don't show error to user as this is automatic
     };
 
+    console.log('[GitNativeFederation] Adding window event listener for redstring:auth-token-stored');
     window.addEventListener('redstring:auth-token-stored', handleAutoConnect);
 
     // Listen to persistentAuth events
     if (persistentAuth?.on) {
+      console.log('[GitNativeFederation] Adding persistentAuth direct event listeners...');
       persistentAuth.on('autoConnected', (data) => {
-        console.log(`[GitNativeFederation] Auto-connected via ${data.method}`);
-        loadUniverseData();
+        console.log(`[GitNativeFederation] ===== AUTO-CONNECT DIRECT EVENT RECEIVED: ${data.method} =====`);
+
+        // Simple approach: just wait for the app to be ready and then refresh
+        console.log('[GitNativeFederation] Auto-connect success via direct event - waiting then refreshing...');
+
+        setTimeout(() => {
+          console.log('[GitNativeFederation] App should be ready now - refreshing data after auto-connect (direct)');
+          loadUniverseData();
+        }, 2000);
       });
 
       persistentAuth.on('autoConnectError', (error) => {
         console.warn('[GitNativeFederation] Auto-connect error:', error);
       });
+    } else {
+      console.warn('[GitNativeFederation] persistentAuth.on not available for direct event listening');
     }
 
     return () => {

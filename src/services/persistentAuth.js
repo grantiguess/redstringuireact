@@ -31,14 +31,38 @@ const HEALTH_CHECK_INTERVAL = 5 * 60 * 1000;
 
 export class PersistentAuth {
   constructor() {
+    console.log('[PersistentAuth] Constructor called - UPDATED');
     this.isRefreshing = false;
     this.refreshPromise = null;
     this.healthCheckInterval = null;
     this.eventListeners = new Map();
-    
-    // Start health monitoring if we have tokens
-    if (this.hasValidTokens()) {
+    this.initializeCalled = false;
+    this.autoConnectAttempted = false; // Track per instance, not session
+
+    // Check what auth data we have
+    const hasOAuthTokens = this.hasValidTokens();
+    const hasAppInstallation = this.hasAppInstallation();
+    console.log('[PersistentAuth] Constructor auth check:', { hasOAuthTokens, hasAppInstallation });
+
+    // Start health monitoring if we have OAuth tokens
+    if (hasOAuthTokens) {
+      console.log('[PersistentAuth] Constructor: Valid OAuth tokens found, starting health monitoring');
       this.startHealthMonitoring();
+    } else {
+      console.log('[PersistentAuth] Constructor: No valid OAuth tokens found');
+    }
+
+    // If we have any stored auth data, trigger auto-connect after a brief delay
+    if (hasOAuthTokens || hasAppInstallation) {
+      console.log('[PersistentAuth] Constructor: Stored auth data found, will attempt auto-connect');
+      setTimeout(() => {
+        if (!this.initializeCalled) {
+          console.log('[PersistentAuth] Constructor: Auto-triggering initialize() because it wasn\'t called');
+          this.initialize().catch(error => {
+            console.error('[PersistentAuth] Constructor auto-initialize failed:', error);
+          });
+        }
+      }, 1000);
     }
   }
 
@@ -47,7 +71,8 @@ export class PersistentAuth {
    * This is called by universeManager during backend initialization
    */
   async initialize() {
-    console.log('[PersistentAuth] Initializing authentication service...');
+    console.log('[PersistentAuth] ===== INITIALIZE CALLED =====');
+    this.initializeCalled = true;
 
     // Check what auth data we have
     const hasOAuthTokens = this.hasValidTokens();
@@ -63,10 +88,10 @@ export class PersistentAuth {
     }
 
     // Trigger auto-connect if we have stored auth data
-    console.log('[PersistentAuth] About to attempt auto-connect...');
+    console.log('[PersistentAuth] ===== ABOUT TO ATTEMPT AUTO-CONNECT =====');
     await this.attemptAutoConnect();
 
-    console.log('[PersistentAuth] Authentication service initialized');
+    console.log('[PersistentAuth] ===== AUTHENTICATION SERVICE INITIALIZED =====');
   }
 
   /**
@@ -112,16 +137,14 @@ export class PersistentAuth {
       console.warn('[PersistentAuth] Debug check failed:', e);
     }
 
-    // Check if auto-connect has been attempted in this session
-    try {
-      const attempted = sessionStorage.getItem('oauth_autoconnect_attempted');
-      if (attempted === 'true') {
-        console.log('[PersistentAuth] Auto-connect already attempted this session');
-        return;
-      }
-    } catch (e) {
-      // Ignore session storage errors
+    // Only attempt auto-connect once per instance to be respectful to GitHub API
+    if (this.autoConnectAttempted) {
+      console.log('[PersistentAuth] Auto-connect already attempted for this instance, skipping to avoid API spam');
+      return;
     }
+
+    this.autoConnectAttempted = true;
+    console.log('[PersistentAuth] Attempting auto-connect (once per page load, GitHub API friendly)');
 
     // Check user preference for auto-connect
     const allowAutoConnect = this.getAllowAutoConnect();
@@ -140,8 +163,12 @@ export class PersistentAuth {
       console.log('[PersistentAuth] Trying GitHub App auto-connect...');
       const appConnected = await this.attemptAppAutoConnect();
       if (appConnected) {
-        console.log('[PersistentAuth] Successfully auto-connected via GitHub App');
+        console.log('[PersistentAuth] ===== Successfully auto-connected via GitHub App =====');
+        console.log('[PersistentAuth] Emitting autoConnected event...');
         this.emit('autoConnected', { method: 'github-app' });
+        console.log('[PersistentAuth] Dispatching auth event...');
+        this.dispatchAuthEvent('github-app', { autoConnected: true });
+        console.log('[PersistentAuth] Events dispatched, UI should update now');
         return;
       }
 
@@ -149,8 +176,9 @@ export class PersistentAuth {
       console.log('[PersistentAuth] Trying OAuth auto-connect...');
       const oauthConnected = await this.attemptOAuthAutoConnect();
       if (oauthConnected) {
-        console.log('[PersistentAuth] Successfully auto-connected via OAuth');
+        console.log('[PersistentAuth] ===== Successfully auto-connected via OAuth =====');
         this.emit('autoConnected', { method: 'oauth' });
+        this.dispatchAuthEvent('oauth', { autoConnected: true });
         return;
       }
 
@@ -178,11 +206,8 @@ export class PersistentAuth {
    * Mark that auto-connect has been attempted this session
    */
   markAutoConnectAttempted() {
-    try {
-      sessionStorage.setItem('oauth_autoconnect_attempted', 'true');
-    } catch (e) {
-      // Ignore storage errors
-    }
+    // No longer needed - using instance-based tracking instead
+    this.autoConnectAttempted = true;
   }
 
   /**
@@ -191,10 +216,18 @@ export class PersistentAuth {
   async attemptAppAutoConnect() {
     const appInstallation = this.getAppInstallation();
     if (!appInstallation) {
+      console.log('[PersistentAuth] No GitHub App installation found');
       return false;
     }
 
-    console.log('[PersistentAuth] Found stored GitHub App installation, refreshing token...');
+    console.log('[PersistentAuth] Found stored GitHub App installation:', {
+      installationId: appInstallation.installationId,
+      hasAccessToken: !!appInstallation.accessToken,
+      repositoryCount: appInstallation.repositories?.length || 0,
+      lastUpdated: appInstallation.lastUpdated
+    });
+
+    console.log('[PersistentAuth] Attempting to refresh GitHub App token...');
 
     try {
       // Use oauthFetch directly since it's already imported at the top
@@ -250,10 +283,20 @@ export class PersistentAuth {
    */
   async attemptOAuthAutoConnect() {
     if (!this.hasValidTokens()) {
+      console.log('[PersistentAuth] No valid OAuth tokens found');
       return false;
     }
 
-    console.log('[PersistentAuth] Found stored OAuth tokens, validating...');
+    const accessToken = storageWrapper.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    const userData = this.getUserData();
+    console.log('[PersistentAuth] Found stored OAuth tokens:', {
+      hasAccessToken: !!accessToken,
+      tokenLength: accessToken ? accessToken.length : 0,
+      hasUserData: !!userData,
+      username: userData?.login || 'unknown'
+    });
+
+    console.log('[PersistentAuth] Validating OAuth tokens...');
 
     try {
       // Test token validity
@@ -754,12 +797,8 @@ export class PersistentAuth {
    * Force re-attempt auto-connect (for debugging/testing)
    */
   async forceAutoConnect() {
-    console.log('[PersistentAuth] Force auto-connect triggered');
-    try {
-      sessionStorage.removeItem('oauth_autoconnect_attempted');
-    } catch (e) {
-      // Ignore
-    }
+    console.log('[PersistentAuth] Force auto-connect triggered - resetting attempt flag');
+    this.autoConnectAttempted = false;
     return this.attemptAutoConnect();
   }
 
