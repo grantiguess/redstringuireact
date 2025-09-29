@@ -1,217 +1,285 @@
-/**
- * Git-Native Federation UI Component
- *
- * PURE UI COMPONENT - No backend logic!
- * All universe operations go through universeBackend service.
- * This component only displays data and handles user interactions.
- */
-
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  GitBranch,
-  GitCommit,
-  Globe,
-  Settings,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  ExternalLink,
-  Copy,
-  Server,
-  RefreshCw,
   Plus,
-  Users,
-  Network,
-  Zap,
-  Shield,
-  ArrowRight,
-  Download,
-  Upload,
-  GitMerge,
-  Info,
+  RefreshCw,
+  XCircle,
   Github,
-  Key,
-  Edit3,
+  Trash2,
   Save,
-  Trash2
+  Settings,
+  Shield,
+  Cloud,
+  GitBranch,
+  ExternalLink,
+  CheckCircle,
+  AlertCircle,
+  Info
 } from 'lucide-react';
 
-import universeBackendBridge from './services/universeBackendBridge.js';
-import { formatUniverseNameFromRepo, buildUniqueUniverseName } from './utils/universeNaming.js';
-import useGraphStore from './store/graphStore.jsx';
-
-// UI-only imports
+import gitFederationService, { STORAGE_TYPES } from './services/gitFederationService.js';
 import { persistentAuth } from './services/persistentAuth.js';
-import RepositoryManager from './components/repositories/RepositoryManager.jsx';
-import RepositoryDropdown from './components/repositories/RepositoryDropdown.jsx';
 import { oauthFetch } from './services/bridgeConfig.js';
-import IntegratedUniverseModal from './components/IntegratedUniverseModal.jsx';
+import RepositoryManager from './components/repositories/RepositoryManager.jsx';
 
-// Simple device detection for UI
-const getDeviceInfo = () => {
-  const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-  const screenWidth = window.screen?.width || 1920;
-  const isMobile = /android|webos|iphone|ipod|blackberry|iemobile|opera mini/i.test(navigator.userAgent.toLowerCase());
-  const isTablet = /ipad|android(?!.*mobile)|kindle|silk|playbook|bb10/i.test(navigator.userAgent.toLowerCase()) ||
-                   (/macintosh/i.test(navigator.userAgent.toLowerCase()) && isTouch);
+const STORAGE_LABELS = {
+  [STORAGE_TYPES.GIT]: 'Git repository',
+  [STORAGE_TYPES.LOCAL]: 'Local file',
+  [STORAGE_TYPES.BROWSER]: 'Browser cache'
+};
+
+const STATUS_COLORS = {
+  success: '#2e7d32',
+  info: '#1565c0',
+  warning: '#ef6c00',
+  error: '#c62828'
+};
+
+const blankState = {
+  universes: [],
+  activeUniverseSlug: null,
+  activeUniverse: null,
+  authStatus: null,
+  githubAppInstallation: null
+};
+
+function detectDeviceInfo() {
+  if (typeof window === 'undefined') {
+    return {
+      isMobile: false,
+      isTablet: false,
+      supportsFileSystemAPI: false,
+      gitOnlyMode: false
+    };
+  }
+
+  const ua = window.navigator.userAgent.toLowerCase();
+  const isTouch = 'ontouchstart' in window || window.navigator.maxTouchPoints > 0;
+  const isMobile = /android|webos|iphone|ipod|blackberry|iemobile|opera mini/.test(ua);
+  const isTablet = /ipad|android(?!.*mobile)|kindle|silk|playbook|bb10/.test(ua) ||
+    (/macintosh/.test(ua) && isTouch);
 
   return {
     isMobile,
     isTablet,
-    isTouchDevice: isTouch,
-    screenWidth,
     supportsFileSystemAPI: 'showSaveFilePicker' in window,
     gitOnlyMode: isMobile || isTablet || !('showSaveFilePicker' in window)
   };
-};
+}
 
-const GitNativeFederation = () => {
-  // UI STATE ONLY
-  const [universes, setUniverses] = useState([]);
-  const [activeUniverseSlug, setActiveUniverseSlug] = useState(null);
+function formatWhen(value) {
+  if (!value) return 'Unknown';
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return value;
+  }
+}
+
+function BrowserFallbackNote() {
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        padding: '10px 12px',
+        borderRadius: 6,
+        border: '1px dashed #7A0000',
+        backgroundColor: 'rgba(122,0,0,0.08)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        color: '#260000',
+        fontSize: '0.8rem'
+      }}
+    >
+      <Cloud size={16} />
+      <div>
+        <div style={{ fontWeight: 600 }}>Browser cache enabled</div>
+        <div>🌩️ Cute but temporary – link Git or local storage for long-term safety.</div>
+      </div>
+    </div>
+  );
+}
+
+function buttonStyle(variant = 'outline') {
+  const base = {
+    border: '1px solid #260000',
+    backgroundColor: 'transparent',
+    color: '#260000',
+    padding: '6px 10px',
+    borderRadius: 6,
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+    fontWeight: 600,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    textDecoration: 'none'
+  };
+
+  switch (variant) {
+    case 'solid':
+      return {
+        ...base,
+        backgroundColor: '#260000',
+        color: '#bdb5b5'
+      };
+    case 'danger':
+      return {
+        ...base,
+        border: '1px solid #7A0000',
+        color: '#7A0000',
+        backgroundColor: 'rgba(122,0,0,0.08)'
+      };
+    case 'disabled':
+      return {
+        ...base,
+        border: '1px solid #999',
+        color: '#666',
+        backgroundColor: '#ccc',
+        cursor: 'not-allowed'
+      };
+    default:
+      return base;
+  }
+}
+
+const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
+  const [serviceState, setServiceState] = useState(blankState);
+  const [loading, setLoading] = useState(false);
+  const [initializing, setInitializing] = useState(true);
   const [syncStatus, setSyncStatus] = useState(null);
-  const [authStatus, setAuthStatus] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isConnecting, setIsConnecting] = useState(false);
-
-  // Repository discovery state
-  const [repoUniverseLists, setRepoUniverseLists] = useState({});
-  const [showRepositoryManager, setShowRepositoryManager] = useState(false);
-  const [dataAuthMethod, setDataAuthMethod] = useState(null);
-
-  // GitHub App state
-  const [githubAppInstallation, setGithubAppInstallation] = useState(null);
-  const [userRepositories, setUserRepositories] = useState([]);
   const [allowOAuthBackup, setAllowOAuthBackup] = useState(() => {
-    try { return localStorage.getItem('allow_oauth_backup') !== 'false'; } catch (_) { return true; }
+    try {
+      return localStorage.getItem('allow_oauth_backup') !== 'false';
+    } catch {
+      return true;
+    }
   });
+  const [showRepositoryManager, setShowRepositoryManager] = useState(false);
+  const [repositoryTargetSlug, setRepositoryTargetSlug] = useState(null);
+  const [discoveryMap, setDiscoveryMap] = useState({});
+  const [syncTelemetry, setSyncTelemetry] = useState({});
 
-  // UI layout state
   const containerRef = useRef(null);
   const [isSlim, setIsSlim] = useState(false);
 
-  // Device info
-  const deviceInfo = useMemo(() => getDeviceInfo(), []);
+  const deviceInfo = useMemo(() => detectDeviceInfo(), []);
 
-  // Get device capability message
-  const deviceCapabilityMessage = useMemo(() => {
-    if (deviceInfo.gitOnlyMode) {
-      if (deviceInfo.isMobile) {
-        return { type: 'info', title: 'Mobile-Optimized Experience', message: 'RedString is running in Git-Only mode for the best mobile experience. Your universes will sync directly with Git repositories.' };
-      } else if (deviceInfo.isTablet) {
-        return { type: 'info', title: 'Tablet-Optimized Experience', message: 'RedString is optimized for tablet use with Git-based universe management and touch-friendly interface.', icon: '📲' };
-      } else {
-        return { type: 'info', title: 'Git-Only Mode Active', message: 'File system access is limited on this device. RedString will work directly with Git repositories.', icon: '🔄' };
-      }
-    }
-    return null;
-  }, [deviceInfo]);
-
-  // Check authentication status
-  const hasOAuthForBrowsing = authStatus?.isAuthenticated || false;
-  const hasAppForAutoSave = githubAppInstallation?.accessToken ? true : false;
-
-  const activeUniverse = useMemo(() => {
-    return universes.find(u => u.slug === activeUniverseSlug);
-  }, [universes, activeUniverseSlug]);
-
-  const activeSourceOfTruth = useMemo(() => {
-    if (!activeUniverse) return null;
-    if (activeUniverse.sourceOfTruth) return activeUniverse.sourceOfTruth;
-    if (activeUniverse.gitRepo?.enabled) return 'git';
-    if (activeUniverse.localFile?.enabled) return 'local';
-    return deviceInfo.gitOnlyMode ? 'git' : 'local';
-  }, [activeUniverse, deviceInfo.gitOnlyMode]);
-
-  // Load data from backend
-  const loadUniverseData = useCallback(async () => {
+  const refreshState = useCallback(async () => {
     try {
-      const universes = await universeBackendBridge.getAllUniverses();
-      const uniqueUniverses = [];
-      const seenSlugs = new Set();
-
-      (universes || []).forEach((u) => {
-        if (u?.slug && !seenSlugs.has(u.slug)) {
-          seenSlugs.add(u.slug);
-          uniqueUniverses.push(u);
-        }
-      });
-
-      const activeUniverse = await universeBackendBridge.getActiveUniverse();
-      const authStatus = await universeBackendBridge.getAuthStatus();
-
-      setUniverses(uniqueUniverses);
-      setActiveUniverseSlug(activeUniverse?.slug || null);
-      setAuthStatus(authStatus);
-    } catch (error) {
-      console.error('[GitNativeFederation] Failed to load universe data:', error);
-      setError('Failed to load universe data');
+      setLoading(true);
+      const next = await gitFederationService.getState();
+      setServiceState(next);
+      setSyncTelemetry(next.syncStatuses || {});
+    } catch (err) {
+      console.error('[GitNativeFederation] Failed to load state:', err);
+      setError('Unable to load Git federation state – please retry.');
+    } finally {
+      setLoading(false);
+      setInitializing(false);
     }
   }, []);
 
-  const applyActiveUniverseUpdate = useCallback(async (updates) => {
-    if (!activeUniverse?.slug) return;
+  const refreshAuth = useCallback(async () => {
     try {
-      await universeBackendBridge.updateUniverse(activeUniverse.slug, updates);
-      await loadUniverseData();
-    } catch (error) {
-      console.error('[GitNativeFederation] Failed to update universe:', error);
-      setError(`Failed to update universe: ${error.message}`);
+      const auth = await gitFederationService.refreshAuth();
+      setServiceState((prev) => ({ ...prev, ...auth }));
+    } catch (err) {
+      console.warn('[GitNativeFederation] Auth refresh failed:', err);
     }
-  }, [activeUniverse, loadUniverseData]);
+  }, []);
 
-  // Initialize component
   useEffect(() => {
-    console.log('[GitNativeFederation] UI component initializing...');
+    refreshState();
 
-    let unsubscribeRef = null;
-
-    const initializeComponent = async () => {
+    const handleAuthConnected = async () => {
       try {
-        // Load initial data
-        await loadUniverseData();
-
-        // Subscribe to backend status changes
-        unsubscribeRef = universeBackendBridge.onStatusChange((status) => {
-          setSyncStatus(status);
-          // Refresh universe data when status changes
-          loadUniverseData();
-        });
-      } catch (error) {
-        console.error('[GitNativeFederation] Failed to initialize component:', error);
-        setError('Failed to initialize Git federation');
+        const next = await gitFederationService.refreshAuth();
+        setServiceState((prev) => ({ ...prev, ...next }));
+        const universes = await gitFederationService.refreshUniverses();
+        setServiceState((prev) => ({ ...prev, ...universes }));
+        setSyncTelemetry(universes.syncStatuses || {});
+      } catch (err) {
+        console.warn('[GitNativeFederation] Auth connected refresh failed:', err);
       }
     };
 
-    initializeComponent();
-
-    // Load GitHub App installation
-    const storedInstallation = persistentAuth.getAppInstallation();
-    if (storedInstallation) {
-      setGithubAppInstallation(storedInstallation);
-      setUserRepositories(storedInstallation.repositories || []);
-    }
+    window.addEventListener('redstring:auth-connected', handleAuthConnected);
 
     return () => {
-      if (unsubscribeRef) {
-        unsubscribeRef();
-      }
+      window.removeEventListener('redstring:auth-connected', handleAuthConnected);
     };
-  }, [loadUniverseData]);
+  }, [refreshState]);
 
-  // Handle OAuth and GitHub App callbacks stored in sessionStorage
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
+    const listener = () => refreshAuth();
+
+    persistentAuth.on('tokenStored', listener);
+    persistentAuth.on('tokenValidated', listener);
+    persistentAuth.on('authExpired', listener);
+    persistentAuth.on('appInstallationStored', listener);
+    persistentAuth.on('appInstallationCleared', listener);
+
+    return () => {
+      persistentAuth.off('tokenStored', listener);
+      persistentAuth.off('tokenValidated', listener);
+      persistentAuth.off('authExpired', listener);
+      persistentAuth.off('appInstallationStored', listener);
+      persistentAuth.off('appInstallationCleared', listener);
+    };
+  }, [refreshAuth]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.contentRect?.width || el.clientWidth || 0;
+        setIsSlim(width < 540);
+      }
+    });
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!syncStatus) return undefined;
+    const timeout = setTimeout(
+      () => setSyncStatus(null),
+      syncStatus.type === 'success' ? 4000 : 6000
+    );
+    return () => clearTimeout(timeout);
+  }, [syncStatus]);
+
+  useEffect(() => {
+    if (!error) return undefined;
+    const timeout = setTimeout(() => setError(null), 8000);
+    return () => clearTimeout(timeout);
+  }, [error]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('allow_oauth_backup', allowOAuthBackup ? 'true' : 'false');
+    } catch {
+      // ignore
     }
+  }, [allowOAuthBackup]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
 
     let cancelled = false;
 
     const safeSessionGet = (key) => {
       try {
         return sessionStorage.getItem(key);
-      } catch (_) {
+      } catch {
         return null;
       }
     };
@@ -219,18 +287,20 @@ const GitNativeFederation = () => {
     const safeSessionRemove = (key) => {
       try {
         sessionStorage.removeItem(key);
-      } catch (_) {}
+      } catch {
+        // ignore
+      }
     };
 
     const readSessionJSON = (key) => {
       try {
         const raw = sessionStorage.getItem(key);
         if (!raw) return null;
-        const parsed = JSON.parse(raw);
+        const data = JSON.parse(raw);
         sessionStorage.removeItem(key);
-        return parsed;
-      } catch (error) {
-        console.warn(`[GitNativeFederation] Failed to parse session data for ${key}:`, error);
+        return data;
+      } catch (err) {
+        console.warn(`[GitNativeFederation] Failed to parse session data for ${key}:`, err);
         sessionStorage.removeItem(key);
         return null;
       }
@@ -239,93 +309,73 @@ const GitNativeFederation = () => {
     const cleanupUrl = () => {
       try {
         window.history.replaceState({}, document.title, window.location.pathname);
-      } catch (_) {}
+      } catch {
+        // ignore
+      }
     };
 
     const processOAuthCallback = async () => {
       const storedResult = readSessionJSON('github_oauth_result');
       const urlParams = new URLSearchParams(window.location.search);
       const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
-
-      let oauthCode = storedResult?.code || urlParams.get('code') || hashParams.get('code');
-      let oauthState = storedResult?.state || urlParams.get('state') || hashParams.get('state');
-
+      const code = storedResult?.code || urlParams.get('code') || hashParams.get('code');
+      const stateValue = storedResult?.state || urlParams.get('state') || hashParams.get('state');
       const expectedState = safeSessionGet('github_oauth_state');
-      const pendingOAuth = safeSessionGet('github_oauth_pending') === 'true';
+      const pending = safeSessionGet('github_oauth_pending') === 'true';
 
-      if (!oauthCode || !oauthState || !pendingOAuth) {
+      if (!code || !stateValue || !pending) {
         return false;
       }
 
-      if (expectedState && oauthState !== expectedState) {
-        setError('GitHub authentication state mismatch. Please try connecting again.');
+      if (expectedState && stateValue !== expectedState) {
+        setError('GitHub authentication state mismatch. Please retry.');
         safeSessionRemove('github_oauth_pending');
         safeSessionRemove('github_oauth_state');
         cleanupUrl();
         return false;
       }
 
-      const redirectUri = `${window.location.origin}/oauth/callback`;
+      const redirectUri = gitFederationService.getOAuthRedirectUri();
 
       try {
         setIsConnecting(true);
-        setError(null);
-
-        const tokenResp = await oauthFetch('/api/github/oauth/token', {
+        const resp = await oauthFetch('/api/github/oauth/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code: oauthCode, state: oauthState, redirect_uri: redirectUri })
+          body: JSON.stringify({ code, state: stateValue, redirect_uri: redirectUri })
         });
 
-        if (!tokenResp.ok) {
-          const errorText = await tokenResp.text().catch(() => '');
-          throw new Error(`Token exchange failed (${tokenResp.status} ${errorText || 'unknown error'})`);
+        if (!resp.ok) {
+          const message = await resp.text().catch(() => 'unknown error');
+          throw new Error(`Token exchange failed (${resp.status} ${message})`);
         }
 
-        const tokenData = await tokenResp.json();
-
-        const userResponse = await fetch('https://api.github.com/user', {
+        const tokenData = await resp.json();
+        const userResp = await fetch('https://api.github.com/user', {
           headers: {
-            'Authorization': `Bearer ${tokenData.access_token}`,
-            'Accept': 'application/vnd.github.v3+json'
+            Authorization: `Bearer ${tokenData.access_token}`,
+            Accept: 'application/vnd.github.v3+json'
           }
         });
 
-        if (!userResponse.ok) {
-          const errorText = await userResponse.text().catch(() => '');
-          throw new Error(`Failed to fetch GitHub user (${userResponse.status} ${errorText || 'unknown error'})`);
+        if (!userResp.ok) {
+          const message = await userResp.text().catch(() => 'unknown error');
+          throw new Error(`Failed to fetch GitHub user (${userResp.status} ${message})`);
         }
 
-        const userData = await userResponse.json();
+        const userData = await userResp.json();
         await persistentAuth.storeTokens(tokenData, userData);
 
-        try {
-          const reposResponse = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
-            headers: {
-              'Authorization': `Bearer ${tokenData.access_token}`,
-              'Accept': 'application/vnd.github.v3+json'
-            }
-          });
-
-          if (reposResponse.ok) {
-            const repos = await reposResponse.json();
             if (!cancelled) {
-              setUserRepositories(repos);
-            }
-          }
-        } catch (repoError) {
-          console.warn('[GitNativeFederation] Failed to preload repositories after OAuth:', repoError);
+          await refreshAuth();
+          await refreshState();
+          setSyncStatus({ type: 'success', message: 'GitHub OAuth connected' });
         }
-
-        if (!cancelled) {
-          setAuthStatus(persistentAuth.getAuthStatus());
-        }
-
         return true;
-      } catch (error) {
+      } catch (err) {
         if (!cancelled) {
-          console.error('[GitNativeFederation] OAuth callback processing failed:', error);
-          setError(`GitHub authentication failed: ${error.message}`);
+          console.error('[GitNativeFederation] OAuth callback failed:', err);
+          setError(`GitHub OAuth failed: ${err.message}`);
         }
         return false;
       } finally {
@@ -336,598 +386,357 @@ const GitNativeFederation = () => {
       }
     };
 
-    const processGitHubAppCallback = async () => {
+    const processAppCallback = async () => {
       const storedResult = readSessionJSON('github_app_result');
       const urlParams = new URLSearchParams(window.location.search);
       const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+      const installationId =
+        storedResult?.installation_id || urlParams.get('installation_id') || hashParams.get('installation_id');
 
-      const installationId = storedResult?.installation_id || urlParams.get('installation_id') || hashParams.get('installation_id');
+      if (!installationId) return false;
 
-      if (!installationId) {
-        return false;
-      }
-
-      const pendingApp = safeSessionGet('github_app_pending') === 'true';
+      const pending = safeSessionGet('github_app_pending') === 'true';
 
       try {
         setIsConnecting(true);
-        setError(null);
-
-        const tokenResp = await oauthFetch('/api/github/app/installation-token', {
+        const resp = await oauthFetch('/api/github/app/installation-token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ installation_id: installationId })
         });
 
-        if (!tokenResp.ok) {
-          const errorText = await tokenResp.text().catch(() => '');
-          throw new Error(`Failed to obtain installation token (${tokenResp.status} ${errorText || 'unknown error'})`);
+        if (!resp.ok) {
+          const message = await resp.text().catch(() => 'unknown error');
+          throw new Error(`Failed to obtain installation token (${resp.status} ${message})`);
         }
 
-        const tokenData = await tokenResp.json();
-        const accessToken = tokenData?.token;
-
-        if (!accessToken) {
-          throw new Error('GitHub App token response missing token field');
+        const tokenData = await resp.json();
+        const token = tokenData?.token;
+        if (!token) {
+          throw new Error('GitHub App token response missing token');
         }
 
-        let repositories = [];
-        let account = null;
-
-        try {
-          const detailsResp = await oauthFetch(`/api/github/app/installation/${encodeURIComponent(installationId)}`, { method: 'GET' });
-          if (detailsResp.ok) {
-            const details = await detailsResp.json();
-            account = details?.account || null;
-            if (Array.isArray(details?.repositories)) {
-              repositories = details.repositories.map(repo => ({
-                name: repo.name,
-                full_name: repo.full_name,
-                description: repo.description,
-                private: repo.private,
-                created_at: repo.created_at,
-                updated_at: repo.updated_at
-              }));
-            }
-          }
-        } catch (detailsError) {
-          console.warn('[GitNativeFederation] Failed to fetch installation details:', detailsError);
-        }
-
-        const installationPayload = {
+        persistentAuth.storeAppInstallation({
           installationId,
-          accessToken,
-          repositories,
-          userData: account || {},
+          accessToken: token,
+          repositories: tokenData.repositories || [],
+          userData: tokenData.account || {},
           lastUpdated: Date.now()
-        };
-
-        persistentAuth.storeAppInstallation(installationPayload);
+        });
 
         if (!cancelled) {
-          setGithubAppInstallation(installationPayload);
-          setUserRepositories(repositories);
-          setAuthStatus(persistentAuth.getAuthStatus());
+          await refreshAuth();
+          await refreshState();
+          setSyncStatus({ type: 'success', message: 'GitHub App connected' });
         }
-
-        if (repositories.length === 0 && !cancelled) {
-          setError('GitHub App connected, but no repositories are accessible. Configure repository access on GitHub and try again.');
-        }
-
         return true;
-      } catch (error) {
+      } catch (err) {
         if (!cancelled) {
-          console.error('[GitNativeFederation] GitHub App callback processing failed:', error);
-          setError(`GitHub App connection failed: ${error.message}`);
+          console.error('[GitNativeFederation] GitHub App callback failed:', err);
+          setError(`GitHub App connection failed: ${err.message}`);
         }
         return false;
       } finally {
-        if (pendingApp) {
-          safeSessionRemove('github_app_pending');
-        }
+        if (pending) safeSessionRemove('github_app_pending');
         setIsConnecting(false);
         cleanupUrl();
       }
     };
 
-    const handleCallbacks = async () => {
-      const oauthProcessed = await processOAuthCallback();
-      const appProcessed = await processGitHubAppCallback();
-
-      if ((oauthProcessed || appProcessed) && !cancelled) {
-        await loadUniverseData();
+    (async () => {
+      const oauthDone = await processOAuthCallback();
+      const appDone = await processAppCallback();
+      if ((oauthDone || appDone) && !cancelled) {
+        await refreshState();
       }
-    };
-
-    handleCallbacks();
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [loadUniverseData]);
+  }, [refreshAuth, refreshState]);
 
-  // Keep GitHub App installation state in sync with persistent storage
+  const activeUniverse = useMemo(() => {
+    if (!serviceState.activeUniverseSlug) return null;
+    return serviceState.universes.find((u) => u.slug === serviceState.activeUniverseSlug) || null;
+  }, [serviceState]);
+
+  const syncStatusFor = useCallback((slug) => {
+    if (!slug) return null;
+    return syncTelemetry?.[slug] || null;
+  }, [syncTelemetry]);
+
   useEffect(() => {
-    const handleAppInstallationUpdate = () => {
-      const updatedInstallation = persistentAuth.getAppInstallation();
-      if (updatedInstallation) {
-        setGithubAppInstallation(updatedInstallation);
-      }
-    };
-
-    if (typeof persistentAuth?.on === 'function') {
-      persistentAuth.on('appInstallationStored', handleAppInstallationUpdate);
-    }
-
-    return () => {
-      if (typeof persistentAuth?.off === 'function') {
-        persistentAuth.off('appInstallationStored', handleAppInstallationUpdate);
-      }
-    };
-  }, []);
-
-  // Track which authentication method is available for data operations
-  useEffect(() => {
-    if (githubAppInstallation?.accessToken) {
-      setDataAuthMethod('github-app');
-    } else if (authStatus?.isAuthenticated) {
-      setDataAuthMethod('oauth');
-    } else {
-      setDataAuthMethod(null);
-    }
-  }, [githubAppInstallation, authStatus]);
-
-
-  // Listen for auto-connect events from persistentAuth
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    console.log('[GitNativeFederation] Setting up auto-connect event listeners...');
-
-    const handleAutoConnect = (event) => {
-      const { method } = event.detail;
-      console.log(`[GitNativeFederation] ===== AUTO-CONNECT WINDOW EVENT RECEIVED: ${method} =====`);
-
-      // Trigger backend loading and then refresh data
-      const triggerBackendAndRefresh = async () => {
-        console.log('[GitNativeFederation] Auto-connect success - triggering backend load and data refresh');
-
-        // Simple approach: just wait for the app to be ready and then refresh
-        console.log('[GitNativeFederation] Waiting for app to be ready, then refreshing auth data...');
-
-        setTimeout(() => {
-          console.log('[GitNativeFederation] App should be ready now - refreshing data after auto-connect');
-          loadUniverseData();
-        }, 2000);
-      };
-
-      triggerBackendAndRefresh();
-    };
-
-    const handleAutoConnectError = (event) => {
-      const error = event.detail;
-      console.warn('[GitNativeFederation] Auto-connect failed:', error);
-      // Don't show error to user as this is automatic
-    };
-
-    console.log('[GitNativeFederation] Adding window event listener for redstring:auth-token-stored');
-    window.addEventListener('redstring:auth-token-stored', handleAutoConnect);
-
-    // Listen to persistentAuth events
-    if (persistentAuth?.on) {
-      console.log('[GitNativeFederation] Adding persistentAuth direct event listeners...');
-      persistentAuth.on('autoConnected', (data) => {
-        console.log(`[GitNativeFederation] ===== AUTO-CONNECT DIRECT EVENT RECEIVED: ${data.method} =====`);
-
-        // Simple approach: just wait for the app to be ready and then refresh
-        console.log('[GitNativeFederation] Auto-connect success via direct event - waiting then refreshing...');
-
-        setTimeout(() => {
-          console.log('[GitNativeFederation] App should be ready now - refreshing data after auto-connect (direct)');
-          loadUniverseData();
-        }, 2000);
-      });
-
-      persistentAuth.on('autoConnectError', (error) => {
-        console.warn('[GitNativeFederation] Auto-connect error:', error);
-      });
-    } else {
-      console.warn('[GitNativeFederation] persistentAuth.on not available for direct event listening');
-    }
-
-    return () => {
-      window.removeEventListener('redstring:auth-token-stored', handleAutoConnect);
-
-      if (persistentAuth?.off) {
-        persistentAuth.off('autoConnected');
-        persistentAuth.off('autoConnectError');
-      }
-    };
-  }, [loadUniverseData]);
-
-  // Auto-load repository universes when active universe changes
-  useEffect(() => {
-    if (!activeUniverse?.sources) return;
-
-    // Auto-discover universes for any GitHub sources
-    activeUniverse.sources.forEach(src => {
+    if (!activeUniverse?.raw?.sources) return;
+    setDiscoveryMap((prev) => {
+      const next = {};
+      activeUniverse.raw.sources.forEach((src) => {
       if (src.type === 'github' && src.user && src.repo) {
         const key = `${src.user}/${src.repo}`;
-        // Only auto-load if we haven't already loaded this repo
-        if (!repoUniverseLists[key]) {
-          console.log(`[GitNativeFederation] Auto-discovering universes in ${key}`);
-          handleDiscoverUniverses({
-            user: src.user,
-            repo: src.repo,
-            type: 'github',
-            authMethod: dataAuthMethod || 'oauth'
-          });
+          if (prev[key]) next[key] = prev[key];
         }
-      }
-    });
-  }, [activeUniverse, dataAuthMethod, repoUniverseLists]);
-
-  // Observe panel width to switch layouts (slim vs wide)
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        const w = entry.contentRect?.width || el.clientWidth || 0;
-        setIsSlim(w < 520);
-      }
-    });
-    ro.observe(el);
-    try { setIsSlim((el.clientWidth || 0) < 520); } catch {}
-    return () => ro.disconnect();
-  }, []);
-
-  // Persist OAuth backup preference
-  useEffect(() => {
-    try { localStorage.setItem('allow_oauth_backup', allowOAuthBackup ? 'true' : 'false'); } catch {}
-  }, [allowOAuthBackup]);
-
-  // Universe operations (all go through backend)
-  const handleSwitchUniverse = async (slug) => {
-    if (slug === activeUniverseSlug) return;
-
-    const confirmed = window.confirm('Save current universe before switching?');
-
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      await universeBackendBridge.switchActiveUniverse(slug, { saveCurrent: confirmed });
-      await loadUniverseData();
-
-    } catch (error) {
-      console.error('[GitNativeFederation] Failed to switch universe:', error);
-      setError(`Failed to switch universe: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const addUniverse = () => {
-    const name = prompt('Enter universe name:');
-    if (!name?.trim()) return;
-
-    handleCreateUniverse(name.trim());
-  };
-
-  const handleCreateUniverse = async (name) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      await universeBackendBridge.createUniverse(name, {
-        enableGit: deviceInfo.gitOnlyMode
       });
-      await loadUniverseData();
-
-    } catch (error) {
-      console.error('[GitNativeFederation] Failed to create universe:', error);
-      setError(`Failed to create universe: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const removeUniverse = async (slug) => {
-    if (universes.length <= 1) {
-      setError('Cannot delete the last universe');
-      return;
-    }
-
-    const universe = universes.find(u => u.slug === slug);
-    if (!universe) return;
-
-    if (!window.confirm(`Delete universe "${universe.name}"? This cannot be undone.`)) {
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      await universeBackendBridge.deleteUniverse(slug);
-      await loadUniverseData();
-
-    } catch (error) {
-      console.error('[GitNativeFederation] Failed to delete universe:', error);
-      setError(`Failed to delete universe: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const renameActiveUniverse = async (newName) => {
-    if (!activeUniverseSlug) return;
-
-    try {
-      await universeBackendBridge.updateUniverse(activeUniverseSlug, { name: newName });
-      await loadUniverseData();
-    } catch (error) {
-      console.error('[GitNativeFederation] Failed to rename universe:', error);
-      setError(`Failed to rename universe: ${error.message}`);
-    }
-  };
-
-  const handleSetSourceOfTruth = useCallback(async (sourceOfTruth) => {
-    if (!activeUniverseSlug) return;
-
-    const active = universes.find(u => u.slug === activeUniverseSlug);
-    const nextGitConfig = (() => {
-      if (!active?.gitRepo) return undefined;
-      if (sourceOfTruth === 'git') {
-        return { ...active.gitRepo, enabled: true };
-      }
-      if (sourceOfTruth === 'local') {
-        return { ...active.gitRepo, enabled: false };
-      }
-      return undefined;
-    })();
-
-    try {
-      const payload = nextGitConfig ? { sourceOfTruth, gitRepo: nextGitConfig } : { sourceOfTruth };
-      await applyActiveUniverseUpdate(payload);
-    } catch (error) {
-      console.error('[GitNativeFederation] Failed to set source of truth:', error);
-      setError(`Failed to set source of truth: ${error.message}`);
-    }
-  }, [activeUniverseSlug, universes, applyActiveUniverseUpdate]);
-
-  useEffect(() => {
-    if (!deviceInfo.gitOnlyMode) return;
-    if (!activeUniverseSlug) return;
-    if (activeSourceOfTruth === 'git') return;
-
-    const active = universes.find(u => u.slug === activeUniverseSlug);
-    if (!active) return;
-
-    const nextGitConfig = active.gitRepo ? { ...active.gitRepo, enabled: true } : undefined;
-    const payload = nextGitConfig ? { sourceOfTruth: 'git', gitRepo: nextGitConfig } : { sourceOfTruth: 'git' };
-
-    applyActiveUniverseUpdate(payload).catch((error) => {
-      console.warn('[GitNativeFederation] Failed to enforce Git-only mode:', error);
+      return next;
     });
-  }, [deviceInfo.gitOnlyMode, activeUniverseSlug, activeSourceOfTruth, universes, applyActiveUniverseUpdate]);
+  }, [activeUniverse?.raw?.sources]);
 
-  const handleAddGitSource = useCallback(async () => {
-    if (!activeUniverse) return;
-    const input = window.prompt('Enter repository (owner/repo):');
-    if (!input) return;
+  const discoveryFor = useCallback(
+    (user, repo) => discoveryMap[`${user}/${repo}`] || { items: [], loading: false },
+    [discoveryMap]
+  );
 
-    const normalized = input.trim().replace(/^https?:\/\/github\.com\//i, '');
-    const [userRaw, repoRaw] = normalized.split('/');
-    const user = userRaw?.trim();
-    const repo = repoRaw?.replace(/\.git$/i, '').trim();
+  const hasOAuth = !!serviceState.authStatus?.isAuthenticated;
+  const hasApp = !!serviceState.githubAppInstallation?.accessToken;
+  const dataAuthMethod = hasApp ? 'github-app' : hasOAuth ? 'oauth' : null;
 
-    if (!user || !repo) {
-      setError('Repository must be in the format owner/repo');
-      setTimeout(() => setError(null), 4000);
-      return;
+  const statusBadge = useMemo(() => {
+    if (hasOAuth && hasApp) return { label: 'Fully Connected', tone: STATUS_COLORS.success };
+    if (hasOAuth || hasApp) return { label: 'Partially Connected', tone: STATUS_COLORS.info };
+    return { label: 'Not Connected', tone: STATUS_COLORS.error };
+  }, [hasOAuth, hasApp]);
+
+  const handleCreateUniverse = async () => {
+    const name = typeof window !== 'undefined' ? window.prompt('Name your new universe:') : null;
+    if (!name || !name.trim()) return;
+
+    try {
+      setLoading(true);
+      await gitFederationService.createUniverse(name.trim(), {
+        enableGit: deviceInfo.gitOnlyMode,
+        enableLocal: !deviceInfo.gitOnlyMode
+      });
+      setSyncStatus({ type: 'success', message: `Universe "${name.trim()}" created` });
+      await refreshState();
+    } catch (err) {
+      console.error('[GitNativeFederation] Create failed:', err);
+      setError(`Failed to create universe: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSwitchUniverse = async (slug) => {
+    if (slug === serviceState.activeUniverseSlug) return;
+    try {
+      setLoading(true);
+      await gitFederationService.switchUniverse(slug);
+      await refreshState();
+      setSyncStatus({ type: 'info', message: 'Universe switched' });
+    } catch (err) {
+      console.error('[GitNativeFederation] Switch failed:', err);
+      setError(`Failed to switch universe: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteUniverse = async (slug, name) => {
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm(`Delete universe "${name}"? This cannot be undone.`);
+      if (!ok) return;
     }
 
-    const existingSources = activeUniverse.sources || [];
-    const duplicate = existingSources.some(src => src.type === 'github' && src.user?.toLowerCase() === user.toLowerCase() && src.repo?.toLowerCase() === repo.toLowerCase());
-    if (duplicate) {
-      setError('Repository already added to this universe');
-      setTimeout(() => setError(null), 3000);
-      return;
+    try {
+      setLoading(true);
+      await gitFederationService.deleteUniverse(slug);
+      setSyncStatus({ type: 'info', message: `Universe "${name}" deleted` });
+      await refreshState();
+    } catch (err) {
+      console.error('[GitNativeFederation] Delete failed:', err);
+      setError(`Failed to delete universe: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    const newSource = {
-      id: `src_${Date.now().toString(36)}`,
-      type: 'github',
-      user,
-      repo,
-      name: `@${user}/${repo}`,
-      addedAt: new Date().toISOString()
-    };
+  const handleSetPrimarySlot = async (slug, slot) => {
+    try {
+      setLoading(true);
+      await gitFederationService.setPrimaryStorage(slug, slot.type);
+      setSyncStatus({ type: 'success', message: `${STORAGE_LABELS[slot.type]} promoted to primary` });
+      await refreshState();
+    } catch (err) {
+      console.error('[GitNativeFederation] Promote failed:', err);
+      setError(`Failed to set primary storage: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    await applyActiveUniverseUpdate({ sources: [...existingSources, newSource] });
-    setSyncStatus({ type: 'success', status: `Added data source @${user}/${repo}` });
-  }, [activeUniverse, applyActiveUniverseUpdate]);
-
-  const handleBrowseRepositories = useCallback(() => {
+  const handleAttachRepo = (slug) => {
+    setRepositoryTargetSlug(slug);
     setShowRepositoryManager(true);
-  }, []);
+  };
 
-  const handleRepositoryManagerClose = useCallback(() => {
-    setShowRepositoryManager(false);
-  }, []);
-
-  const handleRepositoryManagerSelect = useCallback(async (repo) => {
-    if (!activeUniverse || !repo) {
+  const handleRepositorySelect = async (repo) => {
+    if (!repo || !repositoryTargetSlug) {
+      setRepositoryTargetSlug(null);
       setShowRepositoryManager(false);
       return;
     }
 
-    const owner = repo?.owner?.login || repo?.owner?.name || repo?.owner || (typeof repo?.full_name === 'string' ? repo.full_name.split('/')[0] : null);
-    const repoName = repo?.name || (typeof repo?.full_name === 'string' ? repo.full_name.split('/').slice(-1)[0] : null);
+    const owner = repo.owner?.login || repo.owner?.name || repo.owner || repo.full_name?.split('/')[0];
+    const repoName = repo.name || repo.full_name?.split('/').pop();
 
     if (!owner || !repoName) {
-      setError('Selected repository is missing owner or name metadata.');
+      setError('Selected repository missing owner/name metadata.');
+      setRepositoryTargetSlug(null);
       setShowRepositoryManager(false);
       return;
     }
 
-    setShowRepositoryManager(false);
-
-    const existingSources = activeUniverse.sources || [];
-    const duplicate = existingSources.some(src =>
-      src.type === 'github' &&
-      src.user?.toLowerCase() === owner.toLowerCase() &&
-      src.repo?.toLowerCase() === repoName.toLowerCase()
-    );
-
-    if (duplicate) {
-      setSyncStatus({ type: 'info', status: `Repository already linked (@${owner}/${repoName})` });
-      return;
-    }
-
-    const newSource = {
-      id: `src_${Date.now().toString(36)}`,
-      type: 'github',
+    try {
+      setLoading(true);
+      await gitFederationService.attachGitRepository(repositoryTargetSlug, {
       user: owner,
       repo: repoName,
-      name: `@${owner}/${repoName}`,
-      addedAt: new Date().toISOString()
-    };
-
-    try {
-      await applyActiveUniverseUpdate({ sources: [...existingSources, newSource] });
-      setSyncStatus({ type: 'success', status: `Added data source @${owner}/${repoName}` });
-    } catch (err) {
-      console.error('[GitNativeFederation] Repository selection failed:', err);
-      setError(`Failed to add repository: ${err.message}`);
-    }
-  }, [activeUniverse, applyActiveUniverseUpdate]);
-
-  const handleUpdateGitSourceRepo = useCallback(async (source, repository) => {
-    if (!activeUniverse || !source || !repository) return;
-    const user = repository.owner?.login;
-    const repo = repository.name;
-    if (!user || !repo) return;
-
-    const updatedSources = (activeUniverse.sources || []).map(src => src.id === source.id ? { ...src, user, repo, name: `@${user}/${repo}` } : src);
-    await applyActiveUniverseUpdate({ sources: updatedSources });
-  }, [activeUniverse, applyActiveUniverseUpdate]);
-
-  const handleSetPrimaryGitSource = useCallback(async (source) => {
-    if (!activeUniverse || !source || source.type !== 'github' || !source.user || !source.repo) return;
-    
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      const linkedRepo = { type: 'github', user: source.user, repo: source.repo };
-      const gitRepoConfig = {
-        ...activeUniverse.gitRepo,
-        enabled: true,
-        linkedRepo,
-        universeFolder: activeUniverse.gitRepo?.universeFolder || `universes/${activeUniverse.slug}`,
-        universeFile: activeUniverse.gitRepo?.universeFile || `${activeUniverse.slug}.redstring`
-      };
-
-      const formattedName = formatUniverseNameFromRepo(source.repo);
-      const uniqueName = buildUniqueUniverseName(formattedName, universes, activeUniverse.slug);
-
-      console.log(`[GitNativeFederation] Setting primary Git source: @${source.user}/${source.repo}`);
-      
-      await applyActiveUniverseUpdate({
-        gitRepo: gitRepoConfig,
-        name: uniqueName,
-        sourceOfTruth: 'git'
+        authMethod: dataAuthMethod || 'oauth'
       });
-      
-      // Give the backend a moment to process the update and set up the sync engine
-      setTimeout(() => {
-        setSyncStatus({ type: 'success', status: `Primary source set to @${source.user}/${source.repo} - Git sync engine initializing` });
-        
-        // Refresh data to show the updated state
-        loadUniverseData();
-      }, 500);
-      
-    } catch (error) {
-      console.error('[GitNativeFederation] Failed to set primary Git source:', error);
-      setError(`Failed to set primary source: ${error.message}`);
+      setSyncStatus({ type: 'success', message: `Linked @${owner}/${repoName}` });
+      setDiscoveryMap((prev) => {
+        const next = { ...prev };
+        delete next[`${owner}/${repoName}`];
+        return next;
+      });
+      await refreshState();
+    } catch (err) {
+      console.error('[GitNativeFederation] Attach failed:', err);
+      setError(`Failed to link repository: ${err.message}`);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
+      setRepositoryTargetSlug(null);
+      setShowRepositoryManager(false);
     }
-  }, [activeUniverse, universes, applyActiveUniverseUpdate, loadUniverseData]);
+  };
 
-  const handleRemoveSource = useCallback(async (source) => {
-    if (!activeUniverse || !source) return;
-
-    const isPrimaryGit = source.type === 'github' && activeUniverse.gitRepo?.linkedRepo &&
-      activeUniverse.gitRepo.linkedRepo.user?.toLowerCase() === source.user?.toLowerCase() &&
-      activeUniverse.gitRepo.linkedRepo.repo?.toLowerCase() === source.repo?.toLowerCase();
-
-    if (isPrimaryGit) {
-      const confirmed = window.confirm('Unlink the primary Git repository?');
-      if (!confirmed) return;
+  const handleDetachRepo = async (universe, source) => {
+    try {
+      setLoading(true);
+      await gitFederationService.detachGitRepository(universe.slug, {
+        user: source.user,
+        repo: source.repo
+      });
+      setSyncStatus({ type: 'info', message: `Detached @${source.user}/${source.repo}` });
+      setDiscoveryMap((prev) => {
+        const next = { ...prev };
+        delete next[`${source.user}/${source.repo}`];
+        return next;
+      });
+      await refreshState();
+    } catch (err) {
+      console.error('[GitNativeFederation] Detach failed:', err);
+      setError(`Failed to detach repository: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    const remainingSources = (activeUniverse.sources || []).filter(src => src.id !== source.id);
-    const updatePayload = { sources: remainingSources };
+  const handleDiscover = async (source) => {
+    const key = `${source.user}/${source.repo}`;
+    setDiscoveryMap((prev) => ({
+      ...prev,
+      [key]: { ...(prev[key] || {}), loading: true, error: null }
+    }));
 
-    if (isPrimaryGit) {
-      updatePayload.gitRepo = { ...activeUniverse.gitRepo, enabled: false, linkedRepo: null };
+    try {
+      const results = await gitFederationService.discoverUniverses({
+        user: source.user,
+        repo: source.repo,
+        authMethod: dataAuthMethod || 'oauth'
+      });
+      setDiscoveryMap((prev) => ({
+        ...prev,
+        [key]: { items: results, loading: false, error: null }
+      }));
+    } catch (err) {
+      console.error('[GitNativeFederation] Discovery failed:', err);
+      setDiscoveryMap((prev) => ({
+        ...prev,
+        [key]: { items: [], loading: false, error: err.message }
+      }));
+      setError(`Discovery failed: ${err.message}`);
     }
+  };
 
-    await applyActiveUniverseUpdate(updatePayload);
-  }, [activeUniverse, applyActiveUniverseUpdate]);
+  const handleLinkDiscovered = async (discovered, repo) => {
+    try {
+      setLoading(true);
+      await gitFederationService.linkDiscoveredUniverse(discovered, {
+        user: repo.user,
+        repo: repo.repo,
+        authMethod: dataAuthMethod || 'oauth'
+      });
+      setSyncStatus({ type: 'success', message: `Linked ${discovered.name || discovered.slug}` });
+      await refreshState();
+    } catch (err) {
+      console.error('[GitNativeFederation] Link discovered failed:', err);
+      setError(`Failed to link discovered universe: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const handleOpenGitHubRepo = useCallback((source) => {
-    if (!source?.user || !source?.repo) return;
-    const url = `https://github.com/${source.user}/${source.repo}`;
-    window.open(url, '_blank', 'noopener');
-  }, []);
+  const handleForceSave = async (slug) => {
+    try {
+      setLoading(true);
+      await gitFederationService.forceSave(slug);
+      setSyncStatus({ type: 'success', message: 'Universe saved to Git' });
+      await refreshState();
+    } catch (err) {
+      console.error('[GitNativeFederation] Save failed:', err);
+      setError(`Save failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const handleDeleteDiscoveredUniverse = useCallback(async (slug) => {
-    const existing = universes.find(u => u.slug === slug);
-    if (!existing) return;
-    await removeUniverse(slug);
-  }, [universes, removeUniverse]);
+  const handleReloadActive = async () => {
+    try {
+      setLoading(true);
+      await gitFederationService.reloadActiveUniverse();
+      setSyncStatus({ type: 'info', message: 'Universe reloaded from Git' });
+      await refreshState();
+    } catch (err) {
+      console.error('[GitNativeFederation] Reload failed:', err);
+      setError(`Reload failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // Auth operations
   const handleGitHubAuth = async () => {
     try {
       setIsConnecting(true);
-      setError(null);
-
       try {
         sessionStorage.removeItem('github_oauth_pending');
         sessionStorage.removeItem('github_oauth_state');
         sessionStorage.removeItem('github_oauth_result');
-      } catch (_) {}
-
-      const clientResp = await oauthFetch('/api/github/oauth/client-id');
-      if (!clientResp.ok) {
-        throw new Error('Failed to load OAuth configuration from server');
+      } catch {
+        // ignore
       }
 
-      const { clientId } = await clientResp.json();
-      if (!clientId) {
-        throw new Error('GitHub OAuth client ID is not configured');
-      }
+      const resp = await oauthFetch('/api/github/oauth/client-id');
+      if (!resp.ok) throw new Error('Failed to load OAuth configuration');
+      const { clientId } = await resp.json();
+      if (!clientId) throw new Error('GitHub OAuth client ID not configured');
 
-      const state = Math.random().toString(36).slice(2);
-      const redirectUri = `${window.location.origin}/oauth/callback`;
+      const stateValue = Math.random().toString(36).slice(2);
+      const redirectUri = gitFederationService.getOAuthRedirectUri();
       const scopes = 'repo';
 
-      sessionStorage.setItem('github_oauth_state', state);
+      sessionStorage.setItem('github_oauth_state', stateValue);
       sessionStorage.setItem('github_oauth_pending', 'true');
 
-      const authUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(state)}`;
+      const authUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(
+        clientId
+      )}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(
+        scopes
+      )}&state=${encodeURIComponent(stateValue)}`;
 
       window.location.href = authUrl;
-
-    } catch (error) {
-      console.error('[GitNativeFederation] OAuth failed:', error);
-      setError(`OAuth authentication failed: ${error.message}`);
+    } catch (err) {
+      console.error('[GitNativeFederation] OAuth launch failed:', err);
+      setError(`OAuth authentication failed: ${err.message}`);
       setIsConnecting(false);
     }
   };
@@ -935,954 +744,719 @@ const GitNativeFederation = () => {
   const handleGitHubApp = async () => {
     try {
       setIsConnecting(true);
-      setError(null);
-
-      // Get GitHub App name
       let appName = 'redstring-semantic-sync';
       try {
-        const appInfoResponse = await oauthFetch('/api/github/app/info');
-        if (appInfoResponse.ok) {
-          const appInfo = await appInfoResponse.json();
-          appName = appInfo.name || appName;
+        const resp = await oauthFetch('/api/github/app/info');
+        if (resp.ok) {
+          const data = await resp.json();
+          appName = data.name || appName;
         }
-      } catch (_) {}
+      } catch {
+        // ignore
+      }
 
-      const state = Date.now().toString();
-      try {
-        sessionStorage.removeItem('github_app_pending');
-        sessionStorage.removeItem('github_app_result');
-      } catch (_) {}
       sessionStorage.setItem('github_app_pending', 'true');
-
-      const installationUrl = `https://github.com/apps/${appName}/installations/new?state=${state}`;
-      window.location.href = installationUrl;
-
-    } catch (error) {
-      console.error('[GitNativeFederation] GitHub App failed:', error);
-      setError(`GitHub App authentication failed: ${error.message}`);
+      const stateValue = Date.now().toString();
+      const url = `https://github.com/apps/${appName}/installations/new?state=${stateValue}`;
+      window.location.href = url;
+    } catch (err) {
+      console.error('[GitNativeFederation] GitHub App launch failed:', err);
+      setError(`GitHub App authentication failed: ${err.message}`);
       setIsConnecting(false);
     }
   };
 
-  // Repository discovery
-  const handleDiscoverUniverses = async (repoConfig) => {
-    const key = `${repoConfig.user}/${repoConfig.repo}`;
+  const renderStorageSlot = (universe, slot, isPrimary) => {
+    const actions = [];
 
-    try {
-      setRepoUniverseLists(prev => ({
-        ...prev,
-        [key]: { ...prev[key], loading: true, open: true }
-      }));
-
-      console.log(`[GitNativeFederation] Discovering universes in ${key}...`);
-      const discovered = await universeBackendBridge.discoverUniversesInRepository(repoConfig);
-      console.log(`[GitNativeFederation] Found ${discovered.length} universes in ${key}`);
-
-      setRepoUniverseLists(prev => ({
-        ...prev,
-        [key]: { ...prev[key], loading: false, items: discovered, open: true }
-      }));
-
-    } catch (error) {
-      console.warn(`[GitNativeFederation] Discovery failed for ${key}:`, error.message);
-      setRepoUniverseLists(prev => ({
-        ...prev,
-        [key]: { ...prev[key], loading: false, items: [], error: error.message }
-      }));
+    if (slot.type === STORAGE_TYPES.GIT && slot.repo) {
+      actions.push(
+        <button
+          key="open"
+          onClick={() => window.open(`https://github.com/${slot.repo.user}/${slot.repo.repo}`, '_blank', 'noopener')}
+          style={buttonStyle('outline')}
+        >
+          View Repo
+        </button>
+      );
     }
-  };
 
-  const refreshRepoUniversesList = (user, repo) => {
-    handleDiscoverUniverses({ user, repo, type: 'github', authMethod: dataAuthMethod || 'oauth' });
-  };
-
-  const handleLinkUniverse = async (discoveredUniverse, repoConfig) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      await universeBackendBridge.linkToDiscoveredUniverse(discoveredUniverse, repoConfig);
-      await loadUniverseData();
-
-    } catch (error) {
-      console.error('[GitNativeFederation] Failed to link universe:', error);
-      setError(`Failed to link universe: ${error.message}`);
-    } finally {
-      setIsLoading(false);
+    if (!isPrimary) {
+      actions.push(
+        <button
+          key="primary"
+          onClick={() => handleSetPrimarySlot(universe.slug, slot)}
+          style={buttonStyle('solid')}
+        >
+          Make Primary
+        </button>
+      );
     }
-  };
 
-  // Get active universe
-  // Format universe cards for display
-  const universeCards = useMemo(() => {
-    return universes.map(universe => ({
-      universe,
-      displayName: universe.name || universe.slug
-    }));
-  }, [universes]);
-
-  // Clear error after timeout
-  useEffect(() => {
-    if (error) {
-      const timer = setTimeout(() => setError(null), 8000); // Longer timeout for critical errors
-      return () => clearTimeout(timer);
+    if (slot.type === STORAGE_TYPES.GIT && slot.repo) {
+      actions.push(
+        <button
+          key="detach"
+          onClick={() => handleDetachRepo(universe, { user: slot.repo.user, repo: slot.repo.repo })}
+          style={buttonStyle('danger')}
+        >
+          Detach
+        </button>
+      );
     }
-  }, [error]);
-
-  // Clear sync status after timeout (but keep success messages longer)
-  useEffect(() => {
-    if (syncStatus) {
-      const timeout = syncStatus.type === 'success' ? 4000 : 
-                     syncStatus.type === 'error' ? 8000 : 3000;
-      const timer = setTimeout(() => setSyncStatus(null), timeout);
-      return () => clearTimeout(timer);
-    }
-  }, [syncStatus]);
 
   return (
-    <div ref={containerRef} style={{
-      fontFamily: "'EmOne', sans-serif",
-      height: '100%',
-      color: '#260000',
-      pointerEvents: 'auto',
-      opacity: 1
-    }}>
-      {/* Device Capability Banner */}
-      {deviceCapabilityMessage && (
-        <div style={{
-          backgroundColor: '#e3f2fd',
-          border: '1px solid #2196f3',
-          borderRadius: '8px',
-          padding: '12px',
-          marginBottom: '16px',
+      <div
+        key={slot.id}
+        style={{
+          border: `1px solid ${isPrimary ? '#7A0000' : '#260000'}`,
+          borderRadius: 8,
+          padding: 12,
+          backgroundColor: isPrimary ? 'rgba(122,0,0,0.08)' : '#bdb5b5',
           display: 'flex',
-          alignItems: 'center',
-          gap: '10px'
-        }}>
-          <div>
-            <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '2px' }}>
-              {deviceCapabilityMessage.title}
-            </div>
-            <div style={{ fontSize: '0.8rem', color: '#666', lineHeight: '1.3' }}>
-              {deviceCapabilityMessage.message}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Universes */}
-      <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
-        <div style={{ marginBottom: '12px' }}>
-          <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>Universes</div>
-          <div style={{ fontSize: '0.8rem', color: '#666' }}>Manage your knowledge spaces</div>
-        </div>
-
-        {/* Add Universe Card */}
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '12px',
-          padding: '12px',
-          backgroundColor: '#bdb5b5',
-          border: '2px dashed #979090',
-          borderRadius: '6px',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease',
-          marginBottom: '8px'
+          flexDirection: 'column',
+          gap: 6
         }}
-        onClick={addUniverse}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = '#979090';
-          e.currentTarget.style.borderColor = '#260000';
-          e.currentTarget.style.borderStyle = 'solid';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = '#bdb5b5';
-          e.currentTarget.style.borderColor = '#979090';
-          e.currentTarget.style.borderStyle = 'dashed';
-        }}
-        >
-          <Plus size={20} color="#260000" />
-          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#260000' }}>
-            Add Universe
-          </div>
-        </div>
-
-        {/* Universe Cards */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {universeCards.map(({ universe, displayName }) => (
-            <div key={universe.slug} style={{ 
-              background: '#bdb5b5', 
-              border: universe.slug === activeUniverseSlug ? '2px solid #7A0000' : '1px solid #260000', 
-              borderRadius: '6px', 
-              padding: '10px' 
-            }}>
+      >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-                    {displayName}
-                  </div>
-                  {universe.slug === activeUniverseSlug && (
-                    <div style={{ fontSize: '0.75rem', color: '#7A0000', fontWeight: 600, padding: '2px 6px', backgroundColor: 'rgba(122,0,0,0.1)', borderRadius: '10px' }}>ACTIVE</div>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  {universe.slug !== activeUniverseSlug && (
-                    <button 
-                      onClick={() => handleSwitchUniverse(universe.slug)} 
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <GitBranch size={16} />
+          <div>
+              <div style={{ fontWeight: 600 }}>{STORAGE_LABELS[slot.type] || 'Storage slot'}</div>
+              <div style={{ fontSize: '0.75rem', color: '#444' }}>{slot.label}</div>
+            </div>
+            </div>
+          {isPrimary && (
+            <span
                       style={{ 
-                        padding: '4px 8px', 
-                        backgroundColor: 'transparent', 
-                        color: '#260000', 
-                        border: '1px solid #260000', 
-                        borderRadius: '4px', 
-                        fontSize: '0.75rem', 
-                        cursor: 'pointer',
-                        fontWeight: 'bold'
-                      }}
-                    >
-                      Switch To
+                fontSize: '0.7rem',
+                color: '#7A0000',
+                fontWeight: 700,
+                padding: '2px 6px',
+                borderRadius: 10,
+                backgroundColor: 'rgba(122,0,0,0.1)'
+              }}
+            >
+              PRIMARY
+            </span>
+              )}
+          </div>
+        <div style={{ fontSize: '0.72rem', color: '#555' }}>
+          Last sync: {formatWhen(slot.lastSync)} · Status: {slot.status || 'unknown'}
+        </div>
+        {actions.length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{actions}</div>}
+        </div>
+    );
+  };
+
+  const renderSources = (universe) => {
+    const sources = (universe.raw?.sources || []).filter((src) => src.type === 'github');
+    if (sources.length === 0) {
+      return (
+        <div
+          style={{
+            padding: 12,
+            border: '1px dashed #979090',
+            borderRadius: 6,
+          backgroundColor: '#bdb5b5',
+            color: '#555',
+            fontSize: '0.8rem'
+          }}
+        >
+          No repositories linked yet. Add one to enable sync.
+          </div>
+      );
+    }
+
+    return sources.map((source) => {
+      const key = `${source.user}/${source.repo}`;
+      const discovery = discoveryFor(source.user, source.repo);
+
+      return (
+        <div
+          key={source.id}
+          style={{
+            border: '1px solid #260000',
+            borderRadius: 8,
+            padding: 12,
+            backgroundColor: '#bdb5b5',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8
+          }}
+        >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Github size={18} />
+              <div>
+                <div style={{ fontWeight: 600 }}>@{source.user}/{source.repo}</div>
+                <div style={{ fontSize: '0.72rem', color: '#555' }}>
+                  Linked {new Date(source.addedAt).toLocaleDateString()}
+                  </div>
+                </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+                    <button 
+                onClick={() => handleDiscover(source)}
+                style={buttonStyle(discovery.loading ? 'disabled' : 'outline')}
+                disabled={discovery.loading}
+              >
+                {discovery.loading ? 'Scanning…' : 'Discover universes'}
                     </button>
-                  )}
                   <button 
-                    onClick={() => removeUniverse(universe.slug)} 
-                    disabled={universeCards.length <= 1}
-                    style={{ 
-                      padding: '4px', 
-                      backgroundColor: 'transparent', 
-                      color: universeCards.length <= 1 ? '#999' : '#d32f2f', 
-                      border: `1px solid ${universeCards.length <= 1 ? '#999' : '#d32f2f'}`, 
-                      borderRadius: '4px', 
-                      cursor: universeCards.length <= 1 ? 'not-allowed' : 'pointer', 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center',
-                      opacity: universeCards.length <= 1 ? 0.5 : 1
-                    }}
-                    title="Delete universe"
+                onClick={() => handleDetachRepo(universe, source)}
+                style={buttonStyle('danger')}
+              >
+                Remove
+                  </button>
+        </div>
+      </div>
+
+          {discovery.error && (
+            <div style={{ fontSize: '0.72rem', color: '#7A0000' }}>{discovery.error}</div>
+          )}
+
+          {discovery.items && discovery.items.length > 0 && (
+            <div
+                  style={{
+                border: '1px solid #979090',
+                borderRadius: 6,
+                backgroundColor: '#cfc6c6',
+                maxHeight: 160,
+                overflowY: 'auto',
+                padding: 6
+              }}
+            >
+              {discovery.items.map((item) => (
+                <div
+                  key={`${key}:${item.slug || item.path}`}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: 6,
+                    borderBottom: '1px solid #979090',
+                    gap: 8
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '0.78rem' }}>{item.name || item.slug || 'Universe'}</div>
+                    <div style={{ fontSize: '0.68rem', color: '#555' }}>{item.path || item.location || 'Unknown path'}</div>
+                  </div>
+                <button
+                    onClick={() => handleLinkDiscovered(item, { user: source.user, repo: source.repo })}
+                    style={buttonStyle('solid')}
                   >
-                    <Trash2 size={12} />
+                    Link
                   </button>
                 </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    });
+  };
+
+  const renderSyncTelemetry = (universe) => {
+    const sync = universe.sync || {};
+    const engine = sync.engine || syncStatusFor(universe.slug) || {};
+
+    const cards = [];
+
+    cards.push({
+      title: 'Sync State',
+      value: sync.label || 'Unknown',
+      tone: sync.tone || '#1565c0',
+      description: sync.description || '',
+      icon: <GitBranch size={14} />
+    });
+
+    cards.push({
+      title: 'Pending Commits',
+      value: typeof sync.pendingCommits === 'number' ? sync.pendingCommits : '—',
+      tone: sync.pendingCommits > 0 ? '#ef6c00' : '#2e7d32',
+      description: sync.pendingCommits > 0 ? 'Changes queued for the next push.' : 'Working tree clean.',
+      icon: sync.pendingCommits > 0 ? <RefreshCw size={14} /> : <Save size={14} />
+    });
+
+    cards.push({
+      title: 'Engine Health',
+      value: sync.isHealthy === false ? 'Degraded' : (sync.isHealthy === true ? 'Healthy' : 'Unknown'),
+      tone: sync.isHealthy === true ? '#2e7d32' : (sync.isHealthy === false ? '#c62828' : '#1565c0'),
+      description: sync.isInBackoff ? 'Engine is backing off after repeated failures.' : (sync.isHealthy === true ? 'Background commits available.' : 'Monitoring background sync status.'),
+      icon: sync.isHealthy === true ? <CheckCircle size={14} color={STATUS_COLORS.success} /> : <AlertCircle size={14} color={sync.isHealthy === false ? STATUS_COLORS.error : STATUS_COLORS.warning} />
+    });
+
+    cards.push({
+      title: 'Last Sync',
+      value: sync.lastSync ? formatWhen(sync.lastSync) : 'Never',
+      tone: '#1565c0',
+      description: engine.lastCommitTime ? `Last commit at ${formatWhen(engine.lastCommitTime)}` : 'No commits recorded yet.',
+      icon: <Clock size={14} />
+    });
+
+    cards.push({
+      title: 'Source of Truth',
+      value: universe.sync?.sourceOfTruth || universe.sourceOfTruth || 'unknown',
+      tone: universe.sourceOfTruth === 'git' ? '#2e7d32' : universe.sourceOfTruth === 'local' ? '#ef6c00' : '#1565c0',
+      description: universe.sourceOfTruth === 'git'
+        ? 'Git repository is primary.'
+        : universe.sourceOfTruth === 'local'
+          ? 'Local file is primary. Git operates as backup.'
+          : 'Browser cache currently holds the latest state.',
+      icon: universe.sourceOfTruth === 'git'
+        ? <Github size={14} />
+        : universe.sourceOfTruth === 'local'
+          ? <Save size={14} />
+          : <Cloud size={14} />
+    });
+
+    if (sync.consecutiveErrors > 0) {
+      cards.push({
+        title: 'Error Count',
+        value: sync.consecutiveErrors,
+        tone: '#c62828',
+        description: sync.lastErrorTime ? `Last error at ${formatWhen(sync.lastErrorTime)}` : 'Recent sync errors detected.',
+        icon: <AlertCircle size={14} color={STATUS_COLORS.error} />
+      });
+    }
+
+    return (
+      <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isSlim ? '1fr' : 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+        {cards.map((card, idx) => (
+          <div
+            key={`${card.title}-${idx}`}
+            style={{
+              border: `1px solid ${card.tone}`,
+              backgroundColor: 'rgba(255,255,255,0.3)',
+              borderRadius: 8,
+              padding: 10,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+              minHeight: 80
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: '#260000', fontWeight: 700 }}>{card.title}</div>
+              {card.icon || null}
+            </div>
+            <div style={{ fontSize: '1rem', fontWeight: 700, color: card.tone }}>{card.value}</div>
+            {card.description && (
+              <div style={{ fontSize: '0.7rem', color: '#444' }}>{card.description}</div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderActiveUniverse = () => {
+    if (!activeUniverse) {
+      return (
+        <div
+                  style={{
+            padding: 14,
+            border: '1px dashed #979090',
+            borderRadius: 6,
+            backgroundColor: '#bdb5b5',
+            color: '#555',
+            fontSize: '0.8rem'
+          }}
+        >
+          Select or create a universe to configure storage.
+        </div>
+      );
+    }
+
+    const slots = [];
+    if (activeUniverse.storage?.primary) slots.push({ slot: activeUniverse.storage.primary, primary: true });
+    if (activeUniverse.storage?.backups) {
+      activeUniverse.storage.backups.forEach((slot) => slots.push({ slot, primary: false }));
+    }
+
+    return (
+      <div
+                  style={{
+          backgroundColor: '#979090',
+          borderRadius: 8,
+          padding: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: '1rem', fontWeight: 700 }}>{activeUniverse.name}</div>
+            <div style={{ fontSize: '0.75rem', color: '#444' }}>
+              Nodes: {activeUniverse.nodeCount ?? '—'} · Last opened {formatWhen(activeUniverse.lastOpenedAt)}
               </div>
             </div>
-          ))}
-        </div>
-      </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => handleAttachRepo(activeUniverse.slug)} style={buttonStyle('solid')}>
+              Link repository
+                </button>
+            <button onClick={() => handleForceSave(activeUniverse.slug)} style={buttonStyle('outline')}>
+              <Save size={14} /> Save
+            </button>
+            <button onClick={handleReloadActive} style={buttonStyle('outline')}>
+              <RefreshCw size={14} /> Reload
+                </button>
+              </div>
+            </div>
 
-      {/* Accounts & Access */}
-      <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
-        <div style={{ marginBottom: '12px' }}>
-          <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>Accounts & Access</div>
-          <div style={{ fontSize: '0.8rem', color: '#666' }}>Link services to unlock repositories</div>
-        </div>
-
-        {/* Status Summary Bar */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{
-          padding: '8px 12px',
-          backgroundColor: '#bdb5b5',
-          borderRadius: '6px',
-          marginBottom: '12px',
-          display: 'grid',
-          gridTemplateColumns: '1fr',
-          alignItems: 'stretch',
-          gap: '6px',
-          border: `1px solid ${(hasOAuthForBrowsing || hasAppForAutoSave) ? '#7A0000' : '#ff9800'}`
+          fontSize: '0.82rem',
+          fontWeight: 600,
+          color: '#260000',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 8,
+          alignItems: 'center'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ display: 'inline-flex', width: '10px', height: '10px', minWidth: '10px', minHeight: '10px', borderRadius: '50%', backgroundColor: (hasOAuthForBrowsing || hasAppForAutoSave) ? '#7A0000' : '#ff9800', flex: '0 0 auto' }} />
-            <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>
-              {(hasOAuthForBrowsing && hasAppForAutoSave) ? 'Fully Connected' :
-               (hasOAuthForBrowsing || hasAppForAutoSave) ? 'Partially Connected' :
-               'Not Connected'}
-            </span>
-          </div>
-          <div style={{ fontSize: '0.78rem', color: '#260000', fontWeight: 600 }}>
-            {hasOAuthForBrowsing ? 'Can browse repos' : ''}
-            {hasOAuthForBrowsing && hasAppForAutoSave ? ' • ' : ''}
-            {hasAppForAutoSave ? 'Auto-sync enabled' : ''}
-            {!hasOAuthForBrowsing && !hasAppForAutoSave ? 'Authentication required' : ''}
-          </div>
-
-          {/* Data Auth Method */}
-          <div style={{ fontSize: '0.78rem', color: '#260000', fontWeight: 600 }}>
-            {dataAuthMethod === 'github-app' && 'Data via GitHub App'}
-            {dataAuthMethod === 'oauth' && 'Data via OAuth'}
-            {!dataAuthMethod && (hasOAuthForBrowsing || hasAppForAutoSave) && 'Data auth unresolved'}
-          </div>
-
-          {/* Status */}
-          <div style={{ backgroundColor: 'rgba(122,0,0,0.08)', border: '1px solid #7A0000', borderRadius: '4px', padding: '6px 8px', color: '#260000', fontSize: '0.78rem', fontWeight: 600 }}>
-            {syncStatus?.status || 'Idle'}
-          </div>
+          <span>Storage slots</span>
+          <span style={{ fontSize: '0.7rem', color: '#444', fontWeight: 500 }}>
+            Primary: {activeUniverse.storage?.primary?.label || 'None'}
+          </span>
         </div>
-
-        {/* OAuth Backup Toggle */}
-        <div style={{ marginBottom: '12px', padding: '8px', backgroundColor: '#bdb5b5', border: '1px solid #979090', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <label style={{ fontSize: '0.85rem', color: '#260000', fontWeight: 600 }}>Use OAuth as backup for sync</label>
-          </div>
-          <input
-            type="checkbox"
-            checked={allowOAuthBackup}
-            onChange={(e) => setAllowOAuthBackup(e.target.checked)}
-            style={{ accentColor: '#7A0000', transform: 'scale(1.1)' }}
-          />
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr', gap: '6px' }}>
-          <div style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: isSlim ? '6px' : '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>GitHub OAuth</div>
-              <div style={{ fontSize: '0.7rem', color: hasOAuthForBrowsing ? '#7A0000' : '#666', fontWeight: 600 }}>
-                {hasOAuthForBrowsing ? '✓ Connected' : 'Not connected'}
-              </div>
-            </div>
-            <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '6px', lineHeight: '1.2' }}>
-              Browse and create repositories
-            </div>
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'stretch', flexWrap: 'wrap', flexDirection: isSlim ? 'column' : 'row' }}>
-              {hasOAuthForBrowsing ? (
-                <>
-                  <button disabled style={{ padding: '6px 10px', backgroundColor: '#7A0000', color: '#bdb5b5', border: 'none', borderRadius: '4px', fontSize: '0.75rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>@{authStatus.userData?.login}</button>
-                  <button onClick={handleGitHubAuth} style={{ padding: '5px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }} title="Reconnect OAuth">Refresh</button>
-                </>
-              ) : (
-                <button onClick={handleGitHubAuth} disabled={isConnecting} style={{ padding: '6px 10px', backgroundColor: isConnecting ? '#ccc' : '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.75rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>Connect OAuth</button>
-              )}
-            </div>
-          </div>
-
-          <div style={{ background: '#bdb5b5', border: '1px solid #260000', borderRadius: '6px', padding: isSlim ? '6px' : '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>GitHub Settings</div>
-              <div style={{ fontSize: '0.7rem', color: hasAppForAutoSave ? '#7A0000' : '#666', fontWeight: 600 }}>
-                {hasAppForAutoSave ? '✓ App Installed' : 'App Not installed'}
-              </div>
-            </div>
-            <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '6px', lineHeight: '1.2' }}>
-              App enables secure auto-sync with permissions
-            </div>
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'stretch', flexDirection: isSlim ? 'column' : 'row' }}>
-              {hasAppForAutoSave ? (
-                <>
-                  <button disabled style={{ padding: '6px 10px', backgroundColor: '#7A0000', color: '#bdb5b5', border: 'none', borderRadius: '4px', fontSize: '0.75rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>Installed</button>
-                  <button onClick={handleGitHubApp} style={{ padding: '5px 8px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer', width: isSlim ? '100%' : 'auto' }} title="Reconfigure App">GitHub Settings</button>
-                </>
-              ) : (
-                <button onClick={handleGitHubApp} disabled={isConnecting} style={{ padding: '6px 10px', backgroundColor: isConnecting ? '#ccc' : '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: isConnecting ? 'not-allowed' : 'pointer', fontSize: '0.75rem', width: isSlim ? '100%' : 'auto', fontWeight: 'bold' }}>Install App</button>
-              )}
-            </div>
-
-            {/* Save Mode Settings */}
-            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #979090' }}>
-              <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Save Mode</div>
-              <div style={{ display: 'flex', gap: '4px' }}>
-                <button style={{ padding: '3px 6px', backgroundColor: '#260000', color: '#bdb5b5', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Auto</button>
-                <button style={{ padding: '3px 6px', backgroundColor: 'transparent', color: '#260000', border: '1px solid #260000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold' }}>Manual</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Data Sources & Repositories */}
-      <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#979090', borderRadius: '8px' }}>
-        <div style={{ marginBottom: '12px' }}>
-          <div style={{ fontWeight: 'bold', fontSize: '1.05rem', marginBottom: '4px' }}>Repository Sources</div>
-          <div style={{ fontSize: '0.8rem', color: '#666' }}>Manage Git-linked universes and data sources for the active universe.</div>
-        </div>
-
-        {activeUniverse ? (
-          <>
-            <div style={{
-              display: 'flex',
-              flexDirection: isSlim ? 'column' : 'row',
-              gap: '8px',
-              marginBottom: '12px',
-              alignItems: isSlim ? 'stretch' : 'center',
-              justifyContent: 'space-between'
-            }}>
-              <div style={{ fontSize: '0.78rem', color: '#260000', fontWeight: 600 }}>
-                Active universe: <span style={{ fontWeight: 700 }}>{activeUniverse.name || activeUniverse.slug}</span>
-              </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button
-                  onClick={handleBrowseRepositories}
-                  disabled={!hasOAuthForBrowsing && !hasAppForAutoSave}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: (hasOAuthForBrowsing || hasAppForAutoSave) ? '#260000' : '#ccc',
-                    color: '#bdb5b5',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: (hasOAuthForBrowsing || hasAppForAutoSave) ? 'pointer' : 'not-allowed',
-                    fontSize: '0.75rem',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  Browse GitHub Repositories
-                </button>
-                <button
-                  onClick={handleAddGitSource}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: 'transparent',
-                    color: '#260000',
-                    border: '1px solid #260000',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  Add by owner/repo
-                </button>
-                <button
-                  onClick={async () => {
-                    if (!hasOAuthForBrowsing && !hasAppForAutoSave) {
-                      setError('Authentication required to discover universes');
-                      return;
-                    }
-                    
-                    try {
-                      setIsLoading(true);
-                      setError(null);
-                      
-                      // Get all user repositories
-                      let repositories = userRepositories;
-                      if (!repositories || repositories.length === 0) {
-                        setSyncStatus({ type: 'info', status: 'Loading your repositories...' });
-                        
-                        // Fetch repositories if not already loaded
-                        const authMethod = dataAuthMethod || 'oauth';
-                        const token = authMethod === 'github-app' ? 
-                          githubAppInstallation?.accessToken : 
-                          await persistentAuth.getAccessToken();
-                          
-                        if (token) {
-                          const reposResponse = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
-                            headers: {
-                              'Authorization': `Bearer ${token}`,
-                              'Accept': 'application/vnd.github.v3+json'
-                            }
-                          });
-                          
-                          if (reposResponse.ok) {
-                            repositories = await reposResponse.json();
-                            setUserRepositories(repositories);
-                          }
-                        }
-                      }
-                      
-                      if (!repositories || repositories.length === 0) {
-                        setSyncStatus({ type: 'warning', status: 'No repositories found' });
-                        return;
-                      }
-                      
-                      setSyncStatus({ type: 'info', status: `Scanning ${repositories.length} repositories for universes...` });
-                      
-                      // Discover universes across all repositories
-                      let totalDiscovered = 0;
-                      let totalLoaded = 0;
-                      let reposWithUniverses = 0;
-                      
-                      for (const repo of repositories.slice(0, 20)) { // Limit to first 20 repos to avoid rate limits
-                        try {
-                          const repoConfig = { 
-                            type: 'github', 
-                            user: repo.owner.login, 
-                            repo: repo.name, 
-                            authMethod: dataAuthMethod || 'oauth' 
-                          };
-                          
-                          const discovered = await universeBackendBridge.discoverUniversesInRepository(repoConfig);
-                          
-                          if (discovered.length > 0) {
-                            reposWithUniverses++;
-                            totalDiscovered += discovered.length;
-                            
-                            // Auto-load universes that don't already exist
-                            for (const universe of discovered) {
-                              try {
-                                const existingUniverses = await universeBackendBridge.getAllUniverses();
-                                const alreadyExists = existingUniverses.some(existing => existing.slug === universe.slug);
-                                
-                                if (!alreadyExists) {
-                                  await universeBackendBridge.linkToDiscoveredUniverse(universe, repoConfig);
-                                  totalLoaded++;
-                                }
-                              } catch (linkError) {
-                                console.warn(`Failed to load universe ${universe.name}:`, linkError);
-                              }
-                            }
-                          }
-                        } catch (repoError) {
-                          console.warn(`Failed to scan repository ${repo.full_name}:`, repoError);
-                        }
-                      }
-                      
-                      // Refresh universe data
-                      await loadUniverseData();
-                      
-                      setSyncStatus({ 
-                        type: 'success', 
-                        status: `Found ${totalDiscovered} universes in ${reposWithUniverses} repos • Loaded ${totalLoaded} new universes` 
-                      });
-                      
-                    } catch (error) {
-                      console.error('[GitNativeFederation] Universe discovery failed:', error);
-                      setError(`Universe discovery failed: ${error.message}`);
-                    } finally {
-                      setIsLoading(false);
-                    }
-                  }}
-                  disabled={!hasOAuthForBrowsing && !hasAppForAutoSave}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: (hasOAuthForBrowsing || hasAppForAutoSave) ? '#7A0000' : '#ccc',
-                    color: '#bdb5b5',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: (hasOAuthForBrowsing || hasAppForAutoSave) ? 'pointer' : 'not-allowed',
-                    fontSize: '0.75rem',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  Discover All Universes
-                </button>
-                <button
-                  onClick={async () => {
-                    try {
-                      // Diagnostic tool to check system state
-                      const universes = await universeBackendBridge.getAllUniverses();
-                      const activeUniverse = await universeBackendBridge.getActiveUniverse();
-                      const authStatus = await universeBackendBridge.getAuthStatus();
-                      
-                      console.log('=== REDSTRING SYSTEM DIAGNOSTIC ===');
-                      console.log('Universes:', universes);
-                      console.log('Active Universe:', activeUniverse);
-                      console.log('Auth Status:', authStatus);
-                      console.log('Store State Summary:', {
-                        hasStoreOperations: 'Available',
-                        currentStoreState: (() => {
-                          try {
-                            const store = useGraphStore.getState();
-                            return {
-                              nodeCount: store.nodePrototypes?.size || 0,
-                              graphCount: store.graphs?.size || 0,
-                              isUniverseLoaded: store.isUniverseLoaded,
-                              hasUniverseFile: store.hasUniverseFile
-                            };
-                          } catch (e) {
-                            return { error: e.message };
-                          }
-                        })()
-                      });
-                      console.log('===================================');
-                      
-                      setSyncStatus({ 
-                        type: 'info', 
-                        status: `Diagnostic: ${universes?.length || 0} universes, active: ${activeUniverse?.name || 'none'}, auth: ${authStatus?.isAuthenticated ? 'OK' : 'MISSING'}` 
-                      });
-                    } catch (error) {
-                      console.error('Diagnostic failed:', error);
-                      setError(`Diagnostic failed: ${error.message}`);
-                    }
-                  }}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: 'transparent',
-                    color: '#666',
-                    border: '1px solid #666',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    fontWeight: 'bold'
-                  }}
-                  title="Debug system state"
-                >
-                  Debug
-                </button>
-              </div>
-            </div>
-
-            <div style={{
-              display: 'flex',
-              flexDirection: isSlim ? 'column' : 'row',
-              gap: '8px',
-              marginBottom: '12px',
-              alignItems: isSlim ? 'flex-start' : 'center'
-            }}>
-              <div style={{ fontSize: '0.78rem', color: '#260000', fontWeight: 600 }}>Source of truth</div>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                <button
-                  onClick={() => handleSetSourceOfTruth('git')}
-                  disabled={activeSourceOfTruth === 'git'}
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    border: '1px solid #260000',
-                    backgroundColor: activeSourceOfTruth === 'git' ? '#260000' : 'transparent',
-                    color: activeSourceOfTruth === 'git' ? '#bdb5b5' : '#260000',
-                    cursor: activeSourceOfTruth === 'git' ? 'default' : 'pointer',
-                    fontSize: '0.72rem',
-                    fontWeight: 600
-                  }}
-                >
-                  Git repository
-                </button>
-                <button
-                  onClick={() => handleSetSourceOfTruth('local')}
-                  disabled={deviceInfo.gitOnlyMode || activeSourceOfTruth === 'local'}
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    border: '1px solid #979090',
-                    backgroundColor: activeSourceOfTruth === 'local' ? '#979090' : 'transparent',
-                    color: deviceInfo.gitOnlyMode ? '#888' : '#260000',
-                    cursor: (deviceInfo.gitOnlyMode || activeSourceOfTruth === 'local') ? 'default' : 'pointer',
-                    fontSize: '0.72rem',
-                    fontWeight: 600
-                  }}
-                  title={deviceInfo.gitOnlyMode ? 'Local source disabled on this device' : undefined}
-                >
-                  Local file
-                </button>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {(activeUniverse.sources || []).length === 0 ? (
-                <div style={{
-                  padding: '12px',
-                  backgroundColor: '#bdb5b5',
+          {slots.length === 0 ? (
+            <div
+              style={{
+                padding: 12,
                   border: '1px dashed #979090',
-                  borderRadius: '6px',
-                  fontSize: '0.8rem',
-                  color: '#555'
-                }}>
-                  No data sources linked yet. Add a GitHub repository to sync this universe.
+                borderRadius: 6,
+                backgroundColor: '#bdb5b5',
+                color: '#555',
+                fontSize: '0.78rem'
+              }}
+            >
+              No storage linked yet. Link a repository or local file to persist data.
                 </div>
               ) : (
-                (activeUniverse.sources || []).map((source) => (
-                  (() => {
-                    const isPrimaryGit = source.type === 'github' && activeUniverse.gitRepo?.linkedRepo &&
-                      activeUniverse.gitRepo.linkedRepo.user?.toLowerCase() === source.user?.toLowerCase() &&
-                      activeUniverse.gitRepo.linkedRepo.repo?.toLowerCase() === source.repo?.toLowerCase();
-                    const repoKey = source.type === 'github' && source.user && source.repo ? `${source.user}/${source.repo}` : null;
-                    const discoveryState = repoKey ? (repoUniverseLists[repoKey] || {}) : {};
-                    const discoveryItems = Array.isArray(discoveryState.items) ? discoveryState.items : [];
-                    const discoveryLoading = !!discoveryState.loading;
-                    const discoveryError = discoveryState.error;
-
-                    return (
-                      <div key={source.id} style={{
-                        backgroundColor: '#bdb5b5',
-                        border: isPrimaryGit ? '2px solid #260000' : '1px solid #260000',
-                        borderRadius: '6px',
-                        padding: '10px'
-                      }}>
-                        <div style={{ display: 'flex', flexDirection: isSlim ? 'column' : 'row', gap: '10px', justifyContent: 'space-between' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#260000' }}>
-                              {source.name || (source.type === 'github' ? `@${source.user}/${source.repo}` : 'Data Source')}
+            <div style={{ display: 'grid', gap: 10 }}>
+              {slots.map(({ slot, primary }) => renderStorageSlot(activeUniverse, slot, primary))}
                             </div>
-                            <div style={{ fontSize: '0.72rem', color: '#555', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span>{source.type === 'github' ? 'GitHub Repository' : (source.type || 'custom')}</span>
-                              {isPrimaryGit && (
-                                <span style={{ 
-                                  fontSize: '0.65rem', 
-                                  padding: '2px 4px', 
-                                  borderRadius: '4px',
-                                  backgroundColor: syncStatus?.type === 'success' ? '#4caf50' : '#ff9800',
-                                  color: 'white',
-                                  fontWeight: 600
-                                }}>
-                                  {syncStatus?.status?.includes('Git sync enabled') ? 'SYNCING' : 'SETUP'}
-                                </span>
-                              )}
-                            </div>
-                            {source.type === 'github' && (hasOAuthForBrowsing || hasAppForAutoSave) && (
-                              <div style={{ maxWidth: isSlim ? '100%' : '260px' }}>
-                                <RepositoryDropdown
-                                  selectedRepository={{ name: source.repo, owner: { login: source.user } }}
-                                  repositories={userRepositories}
-                                  onSelectRepository={(repo) => handleUpdateGitSourceRepo(source, repo)}
-                                  placeholder="Select repository"
-                                  disabled={!Array.isArray(userRepositories) || userRepositories.length === 0}
-                                />
-                              </div>
-                            )}
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: isSlim ? 'stretch' : 'flex-end' }}>
-                            {source.type === 'github' && (
-                              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: isSlim ? 'flex-start' : 'flex-end' }}>
-                                <button
-                                  onClick={() => handleSetPrimaryGitSource(source)}
-                                  disabled={isPrimaryGit}
-                                  style={{
-                                    padding: '4px 8px',
-                                    borderRadius: '4px',
-                                    border: '1px solid #260000',
-                                    backgroundColor: isPrimaryGit ? '#ccc' : '#260000',
-                                    color: isPrimaryGit ? '#666' : '#bdb5b5',
-                                    cursor: isPrimaryGit ? 'default' : 'pointer',
-                                    fontSize: '0.7rem',
-                                    fontWeight: 600
-                                  }}
-                                >
-                                  {isPrimaryGit ? 'Primary' : 'Set Primary'}
-                                </button>
-                                <button
-                                  onClick={() => handleOpenGitHubRepo(source)}
-                                  style={{
-                                    padding: '4px 8px',
-                                    borderRadius: '4px',
-                                    border: '1px solid #260000',
-                                    backgroundColor: 'transparent',
-                                    color: '#260000',
-                                    cursor: 'pointer',
-                                    fontSize: '0.7rem',
-                                    fontWeight: 600
-                                  }}
-                                >
-                                  Open on GitHub
-                                </button>
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      setIsLoading(true);
-                                      setError(null);
-                                      
-                                      // Force save to this specific repository
-                                      await universeBackendBridge.forceSave(activeUniverse.slug);
-                                      setSyncStatus({ type: 'success', status: `Saved to @${source.user}/${source.repo}` });
-                                      setTimeout(() => setSyncStatus(null), 3000);
-                                    } catch (error) {
-                                      console.error('[GitNativeFederation] Manual save failed:', error);
-                                      setError(`Save failed: ${error.message}`);
-                                    } finally {
-                                      setIsLoading(false);
-                                    }
-                                  }}
-                                  style={{
-                                    padding: '4px 8px',
-                                    borderRadius: '4px',
-                                    border: '1px solid #7A0000',
-                                    backgroundColor: '#7A0000',
-                                    color: '#bdb5b5',
-                                    cursor: 'pointer',
-                                    fontSize: '0.7rem',
-                                    fontWeight: 600
-                                  }}
-                                >
-                                  Save Now
-                                </button>
-                                <button
-                                  onClick={() => handleRemoveSource(source)}
-                                  style={{
-                                    padding: '4px 8px',
-                                    borderRadius: '4px',
-                                    border: '1px solid #7A0000',
-                                    backgroundColor: 'rgba(122,0,0,0.1)',
-                                    color: '#7A0000',
-                                    cursor: 'pointer',
-                                    fontSize: '0.7rem',
-                                    fontWeight: 600
-                                  }}
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {source.type === 'github' && (
-                          <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                              <button
-                                onClick={() => handleDiscoverUniverses({ user: source.user, repo: source.repo, type: 'github', authMethod: dataAuthMethod || 'oauth' })}
-                                disabled={discoveryLoading}
-                                style={{
-                                  padding: '4px 8px',
-                                  borderRadius: '4px',
-                                  border: '1px solid #260000',
-                                  backgroundColor: discoveryLoading ? '#ccc' : 'transparent',
-                                  color: '#260000',
-                                  cursor: discoveryLoading ? 'wait' : 'pointer',
-                                  fontSize: '0.7rem',
-                                  fontWeight: 600
-                                }}
-                              >
-                                {discoveryLoading ? 'Discovering…' : 'Discover universes'}
-                              </button>
-                              {discoveryItems.length > 0 && (
-                                <button
-                                  onClick={() => refreshRepoUniversesList(source.user, source.repo)}
-                                  style={{
-                                    padding: '4px 8px',
-                                    borderRadius: '4px',
-                                    border: '1px solid #260000',
-                                    backgroundColor: 'transparent',
-                                    color: '#260000',
-                                    cursor: 'pointer',
-                                    fontSize: '0.7rem',
-                                    fontWeight: 600
-                                  }}
-                                >
-                                  Refresh list
-                                </button>
-                              )}
-                              <button
-                                onClick={async () => {
-                                  try {
-                                    setIsLoading(true);
-                                    setError(null);
-                                    
-                                    // Force reload universe data from Git
-                                    const result = await universeBackendBridge.switchActiveUniverse(activeUniverse.slug, { saveCurrent: false });
-                                    setSyncStatus({ type: 'success', status: 'Universe data reloaded from Git' });
-                                    setTimeout(() => setSyncStatus(null), 3000);
-                                  } catch (error) {
-                                    console.error('[GitNativeFederation] Reload failed:', error);
-                                    setError(`Reload failed: ${error.message}`);
-                                  } finally {
-                                    setIsLoading(false);
-                                  }
-                                }}
-                                style={{
-                                  padding: '4px 8px',
-                                  borderRadius: '4px',
-                                  border: '1px solid #260000',
-                                  backgroundColor: 'transparent',
-                                  color: '#260000',
-                                  cursor: 'pointer',
-                                  fontSize: '0.7rem',
-                                  fontWeight: 600
-                                }}
-                              >
-                                Reload from Git
-                              </button>
+          )}
+          {activeUniverse.hasBrowserFallback && <BrowserFallbackNote />}
                             </div>
 
-                            {discoveryError && (
-                              <div style={{ fontSize: '0.7rem', color: '#7A0000' }}>
-                                {discoveryError}
-                              </div>
-                            )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            color: '#260000',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 8,
+            alignItems: 'center'
+          }}>
+            <span>Repository sources</span>
+            <span style={{ fontSize: '0.7rem', color: '#444', fontWeight: 500 }}>
+              Linked: {(activeUniverse.raw?.sources || []).filter((src) => src.type === 'github').length}
+            </span>
+          </div>
+          {renderSources(activeUniverse)}
+        </div>
 
-                            {discoveryItems.length > 0 && (
-                              <div style={{
-                                border: '1px solid #979090',
-                                borderRadius: '4px',
-                                maxHeight: '160px',
-                                overflowY: 'auto',
-                                backgroundColor: '#bdb5b5'
-                              }}>
-                                {discoveryItems.map((item) => (
-                                  <div key={item.slug || item.universeName || item.path}
-                                    style={{
-                                      padding: '6px 8px',
-                                      borderBottom: '1px solid #979090',
-                                      display: 'flex',
-                                      justifyContent: 'space-between',
-                                      gap: '8px',
-                                      alignItems: 'center'
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                      <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>
-                                        {item.name || item.universeName || item.slug || 'Discovered universe'}
-                                      </div>
-                                      <div style={{ fontSize: '0.68rem', color: '#555' }}>
-                                        {item.path || item.location || 'Unknown path'}
-                                      </div>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                                      <button
-                                        onClick={() => handleLinkUniverse(item, { user: source.user, repo: source.repo, type: 'github', authMethod: dataAuthMethod || 'oauth' })}
-                                        style={{
-                                          padding: '4px 6px',
-                                          borderRadius: '4px',
-                                          border: '1px solid #260000',
-                                          backgroundColor: 'transparent',
-                                          color: '#260000',
-                                          cursor: 'pointer',
-                                          fontSize: '0.68rem',
-                                          fontWeight: 600
-                                        }}
-                                      >
-                                        Link
-                                      </button>
-                                      {item.slug && (
-                                        <button
-                                          onClick={() => handleDeleteDiscoveredUniverse(item.slug)}
-                                          style={{
-                                            padding: '4px 6px',
-                                            borderRadius: '4px',
-                                            border: '1px solid #7A0000',
-                                            backgroundColor: 'rgba(122,0,0,0.08)',
-                                            color: '#7A0000',
-                                            cursor: 'pointer',
-                                            fontSize: '0.68rem',
-                                            fontWeight: 600
-                                          }}
-                                        >
-                                          Delete
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#260000' }}>Sync telemetry</div>
+          {renderSyncTelemetry(activeUniverse)}
+        </div>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })()
-                ))
+    );
+  };
+
+const renderUniversesList = () => (
+  <div
+                                  style={{
+      backgroundColor: '#979090',
+      borderRadius: 8,
+      padding: 16,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10
+    }}
+  >
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div>
+        <div style={{ fontWeight: 700, fontSize: '1rem' }}>Universes</div>
+        <div style={{ fontSize: '0.75rem', color: '#444' }}>Manage your knowledge spaces</div>
+      </div>
+      <button onClick={handleCreateUniverse} style={buttonStyle('solid')}>
+        <Plus size={14} /> New
+                                </button>
+    </div>
+
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {serviceState.universes.map((universe) => {
+        const isActive = universe.slug === serviceState.activeUniverseSlug;
+        return (
+          <div
+            key={universe.slug}
+                                  style={{
+              border: isActive ? '2px solid #7A0000' : '1px solid #260000',
+              borderRadius: 8,
+              backgroundColor: '#bdb5b5',
+              padding: 12,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 600 }}>{universe.name}</div>
+              <div style={{ fontSize: '0.72rem', color: '#555' }}>
+                Created {formatWhen(universe.createdAt)} · Updated {formatWhen(universe.updatedAt)}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {!isActive && (
+                <button onClick={() => handleSwitchUniverse(universe.slug)} style={buttonStyle('outline')}>
+                  Switch
+                                </button>
+              )}
+              {serviceState.universes.length > 1 && (
+                                <button
+                  onClick={() => handleDeleteUniverse(universe.slug, universe.name)}
+                  style={buttonStyle('danger')}
+                >
+                  <Trash2 size={12} /> Delete
+                </button>
               )}
             </div>
-          </>
-        ) : (
-          <div style={{
-            padding: '12px',
-            backgroundColor: '#bdb5b5',
-            border: '1px dashed #979090',
-            borderRadius: '6px',
-            fontSize: '0.8rem',
-            color: '#555'
-          }}>
-            Select or create a universe first to configure its repositories.
           </div>
-        )}
+        );
+      })}
+    </div>
+  </div>
+);
+
+const renderAuthSection = () => (
+  <div
+                                  style={{
+      backgroundColor: '#979090',
+      borderRadius: 8,
+      padding: 16,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12
+    }}
+  >
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <Settings size={18} />
+      <div style={{ fontWeight: 700 }}>Accounts & Access</div>
+    </div>
+
+    <div
+                                  style={{
+        border: `1px solid ${statusBadge.tone}`,
+        borderRadius: 6,
+        padding: '10px 12px',
+        backgroundColor: 'rgba(255,255,255,0.35)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Shield size={14} color={statusBadge.tone} />
+        <span style={{ fontWeight: 600 }}>{statusBadge.label}</span>
+                              </div>
+      <div style={{ fontSize: '0.75rem', color: '#260000' }}>
+        {hasApp ? 'GitHub App ready for auto-sync' : 'Install GitHub App for auto-sync'}
+        {hasApp && hasOAuth ? ' • ' : ''}
+        {hasOAuth ? 'OAuth available for browsing' : 'Connect OAuth to browse repositories'}
+                          </div>
+      <div style={{ fontSize: '0.72rem', color: '#260000' }}>Data auth method: {dataAuthMethod || 'none'}</div>
+                        </div>
+
+    <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr' }}>
+      <div
+                                style={{
+                                  border: '1px solid #260000',
+          borderRadius: 8,
+          backgroundColor: '#bdb5b5',
+          padding: 12,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontWeight: 600 }}>GitHub OAuth</div>
+          {hasOAuth ? (
+            <span style={{ fontSize: '0.7rem', color: STATUS_COLORS.success, fontWeight: 700 }}>Connected</span>
+          ) : (
+            <span style={{ fontSize: '0.7rem', color: '#555' }}>Not connected</span>
+          )}
+        </div>
+        <div style={{ fontSize: '0.75rem', color: '#555' }}>Browse and manage repositories</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button onClick={handleGitHubAuth} style={buttonStyle(isConnecting ? 'disabled' : 'solid')} disabled={isConnecting}>
+            <Github size={14} /> {hasOAuth ? 'Reconnect' : 'Connect'}
+                              </button>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', color: '#260000' }}>
+            <input type="checkbox" checked={allowOAuthBackup} onChange={(e) => setAllowOAuthBackup(e.target.checked)} />
+            Allow OAuth as backup
+          </label>
+        </div>
       </div>
 
-      {/* Error Display */}
-      {error && (
-        <div style={{
-          backgroundColor: '#ffebee',
-          border: '1px solid #f44336',
-          borderRadius: '6px',
-          padding: '12px',
-          marginBottom: '16px',
+      <div
+                                  style={{
+                                    border: '1px solid #260000',
+          borderRadius: 8,
+          backgroundColor: '#bdb5b5',
+          padding: 12,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontWeight: 600 }}>GitHub App</div>
+          {hasApp ? (
+            <span style={{ fontSize: '0.7rem', color: STATUS_COLORS.success, fontWeight: 700 }}>Installed</span>
+          ) : (
+            <span style={{ fontSize: '0.7rem', color: '#555' }}>Not installed</span>
+          )}
+        </div>
+        <div style={{ fontSize: '0.75rem', color: '#555' }}>Enables secure auto-sync with Git</div>
+        <button onClick={handleGitHubApp} style={buttonStyle(isConnecting ? 'disabled' : 'solid')} disabled={isConnecting}>
+          <Settings size={14} /> {hasApp ? 'Manage' : 'Install App'}
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
+const variantStyles = variant === 'modal'
+  ? {
+      background: 'rgba(12, 0, 0, 0.9)',
+      padding: 20,
+      borderRadius: 12,
+      border: '1px solid #260000',
+      height: '100%',
+      overflow: 'auto'
+    }
+  : {
+      background: 'transparent',
+      padding: 0,
+      height: '100%'
+    };
+
+const deviceMessage = (() => {
+  if (!deviceInfo.gitOnlyMode) {
+    return {
+      type: 'success',
+      title: 'Full Desktop Experience',
+      message: 'All storage options available, including local files and Git sync.'
+    };
+  }
+  if (deviceInfo.isMobile) {
+    return {
+      type: 'info',
+      title: 'Mobile Git-Only Mode',
+      message: 'We stick to Git repositories on this device for seamless synchronization.'
+    };
+  }
+  if (deviceInfo.isTablet) {
+    return {
+      type: 'info',
+      title: 'Tablet Git-Only Mode',
+      message: 'Optimized for tablets with Git as the source of truth.'
+    };
+  }
+  return {
+    type: 'info',
+    title: 'Git-Only Mode Active',
+    message: 'Local file APIs are unavailable, so we sync directly with Git.'
+  };
+})();
+
+return (
+  <div
+    ref={containerRef}
+                                style={{
+      fontFamily: "'EmOne', sans-serif",
+                                  color: '#260000',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 16,
+      position: 'relative',
+      height: '100%',
+      ...variantStyles
+    }}
+  >
+    {variant === 'modal' && typeof onRequestClose === 'function' && (
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button onClick={onRequestClose} style={buttonStyle('outline')}>
+          Close
+                              </button>
+                              </div>
+                            )}
+
+    <div
+                                    style={{
+        borderRadius: 8,
+        border: '1px solid #260000',
+        backgroundColor: '#bdb5b5',
+        padding: 14,
+                                      display: 'flex',
+        alignItems: 'center',
+        gap: 12
+      }}
+    >
+      {deviceMessage.type === 'info' ? <Info size={18} /> : <CheckCircle size={18} color={STATUS_COLORS.success} />}
+      <div>
+        <div style={{ fontWeight: 700 }}>{deviceMessage.title}</div>
+        <div style={{ fontSize: '0.78rem', color: '#333' }}>{deviceMessage.message}</div>
+                                      </div>
+                                      </div>
+
+    {syncStatus && (
+      <div
+                                        style={{
+          borderRadius: 8,
+          border: `1px solid ${STATUS_COLORS[syncStatus.type] || STATUS_COLORS.info}`,
+          backgroundColor: 'rgba(255,255,255,0.4)',
+          padding: 12,
           display: 'flex',
           alignItems: 'center',
-          gap: '8px'
-        }}>
-          <XCircle size={16} color="#d32f2f" />
-          <span style={{ fontSize: '0.85rem' }}>{error}</span>
+          gap: 8
+        }}
+      >
+        <AlertCircle size={16} color={STATUS_COLORS[syncStatus.type] || STATUS_COLORS.info} />
+        <span style={{ fontSize: '0.8rem' }}>{syncStatus.message}</span>
+                              </div>
+                            )}
+
+      {error && (
+      <div
+        style={{
+          borderRadius: 8,
+          border: '1px solid #c62828',
+          backgroundColor: '#ffebee',
+          padding: 12,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8
+        }}
+      >
+        <XCircle size={16} color="#c62828" />
+        <span style={{ fontSize: '0.8rem' }}>{error}</span>
           <button
             onClick={() => setError(null)}
             style={{
               marginLeft: 'auto',
-              background: 'none',
               border: 'none',
-              color: '#d32f2f',
-              cursor: 'pointer'
+            background: 'transparent',
+            color: '#c62828',
+            cursor: 'pointer',
+            fontSize: '1rem'
             }}
           >
             ×
@@ -1890,8 +1464,13 @@ const GitNativeFederation = () => {
         </div>
       )}
 
+    {renderUniversesList()}
+    {renderActiveUniverse()}
+    {renderAuthSection()}
+
       {showRepositoryManager && (
-        <div style={{
+      <div
+        style={{
           position: 'fixed',
           inset: 0,
           backgroundColor: 'rgba(0,0,0,0.45)',
@@ -1900,7 +1479,10 @@ const GitNativeFederation = () => {
           justifyContent: 'center',
           zIndex: 1000
         }}
-          onClick={handleRepositoryManagerClose}
+        onClick={() => {
+          setShowRepositoryManager(false);
+          setRepositoryTargetSlug(null);
+        }}
         >
           <div
             style={{
@@ -1908,26 +1490,31 @@ const GitNativeFederation = () => {
               height: 'min(90vh, 600px)',
               backgroundColor: '#bdb5b5',
               border: '1px solid #260000',
-              borderRadius: '8px',
+            borderRadius: 8,
               display: 'flex',
               flexDirection: 'column',
               boxShadow: '0 12px 28px rgba(0,0,0,0.25)'
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{
+          <div
+            style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '14px 18px',
               borderBottom: '1px solid #260000'
-            }}>
-              <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#260000' }}>Browse Git Repositories</div>
+            }}
+          >
+            <div style={{ fontWeight: 700 }}>Select Repository</div>
               <button
-                onClick={handleRepositoryManagerClose}
+              onClick={() => {
+                setShowRepositoryManager(false);
+                setRepositoryTargetSlug(null);
+              }}
                 style={{
-                  background: 'transparent',
                   border: 'none',
+                background: 'transparent',
                   color: '#260000',
                   fontSize: '1.2rem',
                   cursor: 'pointer'
@@ -1938,53 +1525,41 @@ const GitNativeFederation = () => {
               </button>
             </div>
             <div style={{ flex: 1, overflow: 'hidden' }}>
-              <RepositoryManager onSelectRepository={handleRepositoryManagerSelect} />
+            <RepositoryManager onSelectRepository={handleRepositorySelect} />
             </div>
           </div>
         </div>
       )}
 
-
-      {/* Loading Overlay */}
-      {isLoading && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
+    {(loading || initializing || isConnecting) && (
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
           backgroundColor: 'rgba(0,0,0,0.3)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 999
-        }}>
-          <div style={{
-            backgroundColor: 'white',
-            borderRadius: '8px',
-            padding: '20px',
+        }}
+      >
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            borderRadius: 8,
+            padding: '16px 20px',
             display: 'flex',
             alignItems: 'center',
-            gap: '12px',
-            boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
-          }}>
-            <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite' }} />
-            <span>Loading...</span>
+            gap: 10,
+            fontSize: '0.9rem',
+            color: '#260000'
+          }}
+        >
+          <RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} />
+          {initializing ? 'Preparing...' : isConnecting ? 'Connecting...' : 'Working...'}
           </div>
         </div>
       )}
-
-      <style>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        .editable-title-input {
-          background: #fff;
-          border: 1px solid #ddd;
-          color: #333;
-        }
-      `}</style>
     </div>
   );
 };

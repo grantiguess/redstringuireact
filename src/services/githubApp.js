@@ -342,7 +342,7 @@ export class GitHubAppAuth {
       return `${protocol}//${hostname}:3002`;
     }
     
-    return 'http://localhost:3002';
+    return 'https://redstring-test-umk552kp4q-uc.a.run.app';
   }
 
   /**

@@ -11,7 +11,7 @@ const STATUS_EVENT = 'universe-backend-status';
 const RESPONSE_EVENT_PREFIX = 'universe-backend-response-';
 
 class UniverseBackendBridge {
-  constructor(timeoutMs = 10000) {
+  constructor(timeoutMs = 6000) {
     this.timeoutMs = timeoutMs;
     this.commandQueue = [];
     this.isBackendReady = false;
@@ -25,8 +25,13 @@ class UniverseBackendBridge {
     if (typeof window === 'undefined') return;
     
     // Listen for backend initialization completion
-    window.addEventListener('universe-backend-ready', () => {
+    window.addEventListener('universe-backend-ready', (event) => {
       console.log('[UniverseBackendBridge] Backend ready signal received');
+      if (event.detail?.error) {
+        console.error('[UniverseBackendBridge] Backend ready event reported error:', event.detail.error);
+        this.flushQueuedCommandsWithError(new Error(event.detail.error));
+        return;
+      }
       this.isBackendReady = true;
       this.processQueuedCommands();
     });
@@ -39,12 +44,16 @@ class UniverseBackendBridge {
       this.backendReadyPromise = new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
           reject(new Error('Backend initialization timeout'));
-        }, 15000);
+        }, 6000);
         
-        const handler = () => {
+        const handler = (event) => {
           clearTimeout(timeout);
           window.removeEventListener('universe-backend-ready', handler);
-          resolve();
+          if (event.detail?.error) {
+            reject(new Error(event.detail.error));
+          } else {
+            resolve();
+          }
         };
         
         window.addEventListener('universe-backend-ready', handler);
@@ -59,6 +68,14 @@ class UniverseBackendBridge {
     }
     
     return this.backendReadyPromise;
+  }
+
+  flushQueuedCommandsWithError(error) {
+    console.warn('[UniverseBackendBridge] Flushing queued commands with error:', error.message);
+    while (this.commandQueue.length > 0) {
+      const queuedCommand = this.commandQueue.shift();
+      queuedCommand.reject(error);
+    }
   }
   
   async processQueuedCommands() {
@@ -177,6 +194,10 @@ class UniverseBackendBridge {
     return this.sendCommand('getAuthStatus');
   }
 
+  getSyncStatus(universeSlug) {
+    return this.sendCommand('getSyncStatus', { universeSlug });
+  }
+
   switchActiveUniverse(slug, options) {
     return this.sendCommand('switchActiveUniverse', { slug, options });
   }
@@ -218,6 +239,7 @@ const universeBackendBridge = {
   getAllUniverses: () => bridgeInstance.getAllUniverses(),
   getActiveUniverse: () => bridgeInstance.getActiveUniverse(),
   getAuthStatus: () => bridgeInstance.getAuthStatus(),
+  getSyncStatus: (universeSlug) => bridgeInstance.getSyncStatus(universeSlug),
   switchActiveUniverse: (slug, options) => bridgeInstance.switchActiveUniverse(slug, options),
   createUniverse: (name, options) => bridgeInstance.createUniverse(name, options),
   deleteUniverse: (slug) => bridgeInstance.deleteUniverse(slug),

@@ -350,6 +350,22 @@ export class PersistentAuth {
     }
   }
 
+  dispatchConnectedEvent(type, payload = {}) {
+    try {
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('redstring:auth-connected', {
+          detail: {
+            type,
+            timestamp: Date.now(),
+            ...payload
+          }
+        }));
+      }
+    } catch (error) {
+      console.warn('[PersistentAuth] Failed to dispatch auth connected event:', error);
+    }
+  }
+
   /**
    * Store OAuth tokens securely
    */
@@ -393,6 +409,7 @@ export class PersistentAuth {
       
       this.emit('tokenStored', { tokenData, userData });
       this.dispatchAuthEvent('oauth', { user: userData?.login || null });
+      this.dispatchConnectedEvent('oauth', { user: userData?.login || null });
       
       return true;
     } catch (error) {
@@ -498,6 +515,7 @@ export class PersistentAuth {
         this.emit('tokenValidated', { 
           newExpiryTime: new Date(newExpiryTime).toISOString() 
         });
+        this.dispatchConnectedEvent('oauth', { refreshed: true });
         
         return { validated: true };
       } else {
@@ -716,6 +734,7 @@ export class PersistentAuth {
       console.log('[PersistentAuth] GitHub App installation stored successfully');
       this.emit('appInstallationStored', installationData);
       this.dispatchAuthEvent('github-app', { installationId, repositoryCount: repositories?.length || 0 });
+      this.dispatchConnectedEvent('github-app', { installationId, repositoryCount: repositories?.length || 0 });
     } catch (error) {
       console.error('[PersistentAuth] Failed to store GitHub App installation:', error);
       this.emit('authError', error);
@@ -734,6 +753,23 @@ export class PersistentAuth {
       const lastUpdated = storageWrapper.getItem(STORAGE_KEYS.APP_LAST_UPDATED);
       
       if (!installationId || !accessToken) {
+        const fallback = storageWrapper.getItem('github_app_installation');
+        if (!fallback) {
+          return null;
+        }
+
+        try {
+          const parsed = JSON.parse(fallback);
+          if (parsed?.installationId && parsed?.accessToken) {
+            this.storeAppInstallation(parsed);
+            storageWrapper.removeItem('github_app_installation');
+            return parsed;
+          }
+        } catch (error) {
+          console.warn('[PersistentAuth] Failed to parse legacy app installation storage:', error);
+        }
+
+        storageWrapper.removeItem('github_app_installation');
         return null;
       }
       

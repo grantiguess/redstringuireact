@@ -15,7 +15,7 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
   const backendStatusUnsubscribeRef = useRef(null);
 
   useEffect(() => {
-    if (!enableEagerInit || initRef.current) return;
+    if (initRef.current) return;
 
     initRef.current = true;
 
@@ -40,7 +40,7 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
 
             const initPromise = backend.initialize();
             const timeoutPromise = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error('Backend initialization timeout')), 15000);
+              setTimeout(() => reject(new Error('Backend initialization timeout')), 6000);
             });
 
             await Promise.race([initPromise, timeoutPromise]);
@@ -62,6 +62,9 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
             return backend;
           } catch (error) {
             console.error('[GitFederationBootstrap] Backend initialization failed:', error);
+            window.dispatchEvent(new CustomEvent('universe-backend-ready', {
+              detail: { error: error.message }
+            }));
             throw error;
           } finally {
             backendInitPromiseRef.current = null;
@@ -96,6 +99,9 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
             break;
           case 'getAuthStatus':
             result = backend.getAuthStatus();
+            break;
+          case 'getSyncStatus':
+            result = backend.getSyncStatus(payload.universeSlug);
             break;
           case 'switchActiveUniverse':
             result = await backend.switchActiveUniverse(payload.slug, payload.options);
@@ -141,6 +147,14 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
     window.addEventListener('universe-backend-command', handleBackendCommand);
 
     console.log('[GitFederationBootstrap] Event bridge ready (backend will load on first command)');
+    
+    // If eager init is enabled, start loading the backend immediately
+    if (enableEagerInit) {
+      console.log('[GitFederationBootstrap] Eager initialization enabled, starting backend load...');
+      ensureBackendReady().catch(error => {
+        console.error('[GitFederationBootstrap] Eager initialization failed:', error);
+      });
+    }
 
     // Cleanup
     return () => {
@@ -159,7 +173,7 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
       }
       backendStatusUnsubscribeRef.current = null;
     };
-  }, [enableEagerInit]);
+  }, []);
 
   return null;
 }

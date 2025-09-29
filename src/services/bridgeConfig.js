@@ -1,5 +1,7 @@
 // Bridge configuration helpers for building URLs and cross-device access
 
+const DEFAULT_STAGING_ORIGIN = 'https://redstring-test-umk552kp4q-uc.a.run.app';
+
 export function getBridgeBaseUrl() {
   // Allow override via environment for advanced setups
   // Vite exposes env vars prefixed with VITE_
@@ -30,7 +32,11 @@ export function getBridgeBaseUrl() {
     return `${protocol}//${hostname}:${bridgePort}`;
   }
 
-  // Server-side or unknown: fallback to localhost
+  // Server-side or unknown: prefer staging origin in production
+  if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'production') {
+    return DEFAULT_STAGING_ORIGIN;
+  }
+
   return 'http://localhost:3001';
 }
 
@@ -61,7 +67,11 @@ export function getOAuthBaseUrl() {
     return `${protocol}//${hostname}:${oauthPort}`;
   }
 
-  // Server-side or unknown: fallback to localhost
+  // Server-side or unknown: prefer staging origin in production
+  if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'production') {
+    return DEFAULT_STAGING_ORIGIN;
+  }
+
   return 'http://localhost:3003';
 }
 
@@ -86,8 +96,7 @@ const __bridgeHealth = {
 // Check if we're in test environment (no MCP bridge)
 const isTestEnvironment = () => {
   if (typeof window !== 'undefined' && window.location) {
-    return window.location.hostname.includes('test') || 
-           window.location.hostname.includes('784175375476');
+    return window.location.hostname.includes('test');
   }
   return false;
 };

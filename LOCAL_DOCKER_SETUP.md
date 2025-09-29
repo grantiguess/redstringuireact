@@ -18,7 +18,7 @@ gcloud auth configure-docker
 
 **Dev GitHub App:**
 - Homepage URL: `https://redstring-test-umk552kp4q-uc.a.run.app/`
-- User authorization callback URL: `https://redstring-test-784175375476-umk552kp4q-uc.a.run.app/oauth/callback`
+- User authorization callback URL: `https://redstring-test-umk552kp4q-uc.a.run.app/oauth/callback`
 - Webhook URL: `https://redstring-test-umk552kp4q-uc.a.run.app/api/github/app/webhook`
 - Save as: `GITHUB_APP_ID_DEV`, `GITHUB_APP_PRIVATE_KEY_DEV`, `GITHUB_APP_SLUG_DEV`
 
