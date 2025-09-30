@@ -13,7 +13,8 @@ import {
   ExternalLink,
   CheckCircle,
   AlertCircle,
-  Info
+  Info,
+  Clock
 } from 'lucide-react';
 
 import gitFederationService, { STORAGE_TYPES } from './services/gitFederationService.js';

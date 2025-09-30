@@ -616,6 +616,35 @@ app.post('/api/github/oauth/create-repository', async (req, res) => {
 });
 
 // GitHub App endpoints
+
+// Get GitHub App info (slug/name) for installation links
+app.get('/api/github/app/info', (req, res) => {
+  try {
+    const useDev = isLocalRequest(req);
+    const appSlug = useDev
+      ? (process.env.GITHUB_APP_SLUG_DEV || 'redstring-semantic-sync')
+      : (process.env.GITHUB_APP_SLUG || 'redstring-semantic-sync');
+    
+    logger.info('[GitHubApp] App info requested:', {
+      useDev,
+      appSlug,
+      host: req.headers.host
+    });
+    
+    res.json({
+      name: appSlug,
+      service: 'oauth-server',
+      environment: useDev ? 'dev' : 'prod'
+    });
+  } catch (error) {
+    logger.error('[GitHubApp] App info request failed:', error);
+    res.status(500).json({
+      error: error.message,
+      service: 'oauth-server'
+    });
+  }
+});
+
 // Generate installation access token (server-side only for security)
 app.post('/api/github/app/installation-token', async (req, res) => {
   try {
@@ -635,6 +664,15 @@ app.post('/api/github/app/installation-token', async (req, res) => {
     const privateKey = useDev
       ? (process.env.GITHUB_APP_PRIVATE_KEY_DEV || process.env.GITHUB_APP_PRIVATE_KEY)
       : process.env.GITHUB_APP_PRIVATE_KEY;
+
+    logger.info('[GitHubApp] Installation token request:', {
+      installation_id,
+      useDev,
+      appId: appId ? `${appId.substring(0, 4)}...` : 'MISSING',
+      hasPrivateKey: !!privateKey,
+      host: req.headers.host,
+      forwardedHost: req.headers['x-forwarded-host']
+    });
 
     if (!appId || !privateKey) {
       return res.status(500).json({
@@ -667,9 +705,12 @@ app.post('/api/github/app/installation-token', async (req, res) => {
 
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
-      console.error('[GitHubApp] Installation token request failed:', {
+      logger.error('[GitHubApp] Installation token request failed:', {
         status: tokenResponse.status,
         statusText: tokenResponse.statusText,
+        installation_id,
+        appId: appId ? `${appId.substring(0, 4)}...` : 'MISSING',
+        useDev,
         errorText
       });
       throw new Error(`GitHub API error: ${tokenResponse.status} ${errorText}`);
