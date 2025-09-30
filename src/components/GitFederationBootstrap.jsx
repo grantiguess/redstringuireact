@@ -57,6 +57,8 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
             }
 
             // Signal that backend is ready for commands
+            // Set persistent flag for late-loading components
+            window._universeBackendReady = true;
             window.dispatchEvent(new CustomEvent('universe-backend-ready'));
             console.log('[GitFederationBootstrap] Backend loaded and ready - ready signal dispatched');
             return backend;

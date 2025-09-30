@@ -173,12 +173,12 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       const next = await gitFederationService.getState();
       setServiceState(next);
       setSyncTelemetry(next.syncStatuses || {});
+      setError(null); // Clear any previous errors on success
     } catch (err) {
       console.error('[GitNativeFederation] Failed to load state:', err);
       setError('Unable to load Git federation state – please retry.');
     } finally {
       setLoading(false);
-      setInitializing(false);
     }
   }, []);
 
@@ -192,7 +192,10 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   }, []);
 
   useEffect(() => {
-    refreshState();
+    // CRITICAL: Don't block UI rendering on backend initialization
+    // Load state asynchronously and allow component to render immediately
+    setInitializing(false); // Render immediately
+    refreshState(); // Load state in background
 
     const handleAuthConnected = async () => {
       try {
@@ -1531,7 +1534,7 @@ return (
         </div>
       )}
 
-    {(loading || initializing || isConnecting) && (
+    {(isConnecting) && (
       <div
         style={{
           position: 'absolute',
@@ -1556,7 +1559,7 @@ return (
           }}
         >
           <RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} />
-          {initializing ? 'Preparing...' : isConnecting ? 'Connecting...' : 'Working...'}
+          {isConnecting ? 'Connecting...' : 'Working...'}
           </div>
         </div>
       )}

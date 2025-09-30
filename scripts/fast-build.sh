@@ -5,6 +5,9 @@
 
 set -e
 
+# Start timing
+START_TIME=$(date +%s)
+
 PROJECT_ID="redstring-470201"
 SERVICE_NAME="redstring-test"
 REGION="us-central1"
@@ -42,6 +45,10 @@ wait $PUSH_PID
 
 echo "🚀 Deploying to Cloud Run with M4 Pro specs..."
 
+# Use custom domain for redstring-test
+SERVICE_URL="https://redstring-test-umk552kp4q-uc.a.run.app"
+echo "📍 Using service URL: ${SERVICE_URL}"
+
 # Deploy with high-performance settings
 gcloud run deploy ${SERVICE_NAME} \
     --image gcr.io/${PROJECT_ID}/${SERVICE_NAME}:local \
@@ -56,15 +63,16 @@ gcloud run deploy ${SERVICE_NAME} \
     --timeout 300 \
     --cpu-boost \
     --execution-environment gen2 \
-    --set-env-vars "NODE_ENV=production" \
+    --set-env-vars "NODE_ENV=production,VITE_BRIDGE_URL=${SERVICE_URL},VITE_OAUTH_URL=${SERVICE_URL}" \
     --set-secrets "GITHUB_CLIENT_ID=github-client-id:latest,GITHUB_CLIENT_SECRET=github-client-secret:latest,GITHUB_APP_ID=github-app-id:latest,GITHUB_APP_PRIVATE_KEY=github-app-private-key:latest,GITHUB_CLIENT_ID_DEV=github-client-id-dev:latest,GITHUB_CLIENT_SECRET_DEV=github-client-secret-dev:latest,GITHUB_APP_ID_DEV=github-app-id-dev:latest,GITHUB_APP_PRIVATE_KEY_DEV=github-app-private-key-dev:latest,GITHUB_APP_SLUG_DEV=github-app-slug-dev:latest" \
     --quiet
 
 echo "✅ M4 Pro optimized build and deployment complete!"
 
-# Get the service URL
-SERVICE_URL=$(gcloud run services describe ${SERVICE_NAME} --region=${REGION} --format='value(status.url)')
+# Show the service URL (using custom domain)
 echo "🌐 Service URL: ${SERVICE_URL}"
+ACTUAL_URL=$(gcloud run services describe ${SERVICE_NAME} --region=${REGION} --format='value(status.url)')
+echo "🔗 Auto-generated URL: ${ACTUAL_URL}"
 
 echo ""
 echo "⚡ M4 Pro Performance Settings Applied:"
@@ -77,5 +85,17 @@ echo "   • BuildKit optimized Docker builds"
 echo ""
 echo "📝 For your dev GitHub App, use:"
 echo "   Homepage: ${SERVICE_URL}/"
-echo "   OAuth callback: ${SERVICE_URL}/oauth/callback"
+echo "   OAuth callback: ${SERVICE_URL}/api/github/app/callback"
+echo "   Setup URL: ${SERVICE_URL}/api/github/app/setup"
 echo "   Webhook: ${SERVICE_URL}/api/github/app/webhook"
+echo ""
+
+# Calculate elapsed time and show completion time
+END_TIME=$(date +%s)
+ELAPSED=$((END_TIME - START_TIME))
+MINUTES=$((ELAPSED / 60))
+SECONDS=$((ELAPSED % 60))
+COMPLETION_TIME=$(date +"%I:%M:%S %p")
+
+echo "⏱️  Total build time: ${MINUTES}m ${SECONDS}s"
+echo "🕐 Completed at: ${COMPLETION_TIME}"

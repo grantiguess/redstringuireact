@@ -105,36 +105,22 @@ app.post('/api/github/oauth/token', async (req, res) => {
   }
 });
 
-// OAuth/GitHub App callback handler - serves an HTML page that processes both types of callbacks
-app.get('/oauth/callback', (req, res) => {
-  const { code, state, error, error_description, installation_id, setup_action } = req.query;
-  
-  // Determine callback type
-  const isOAuthCallback = !!(code && state);
-  const isGitHubAppCallback = !!(installation_id);
-  
-  logger.info('Callback received:', {
-    type: isOAuthCallback ? 'OAuth' : isGitHubAppCallback ? 'GitHub App' : 'Unknown',
-    hasCode: !!code,
-    hasState: !!state,
-    hasError: !!error,
-    hasInstallationId: !!installation_id,
-    setupAction: setup_action,
-    state: state ? state.substring(0, 8) + '...' : null
-  });
-  
-  if (error) {
-    logger.error('Callback error:', error, error_description);
-  }
-  
-  // Return HTML page that will handle the OAuth callback in the frontend
-  const callbackHtml = `
+// =============================================================================
+// GitHub Integration Callbacks - Explicit, Purpose-Specific Routes
+// =============================================================================
+
+/**
+ * Helper function to generate callback HTML
+ * This HTML page processes OAuth and GitHub App callbacks in the browser
+ */
+function generateCallbackHtml(callbackType) {
+  return `
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RedString - GitHub OAuth</title>
+    <title>RedString - GitHub ${callbackType}</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -316,8 +302,77 @@ app.get('/oauth/callback', (req, res) => {
     </script>
 </body>
 </html>`;
+}
 
-  res.send(callbackHtml);
+// Route 1: GitHub App Setup (Post-Installation)
+// Called after user installs the GitHub App
+app.get('/api/github/app/setup', (req, res) => {
+  const { installation_id, setup_action, state, error, error_description } = req.query;
+  
+  logger.info('[GitHub App Setup] Installation callback received:', {
+    hasInstallationId: !!installation_id,
+    setupAction: setup_action,
+    hasState: !!state,
+    hasError: !!error,
+    state: state ? state.substring(0, 8) + '...' : null
+  });
+  
+  if (error) {
+    logger.error('[GitHub App Setup] Setup error:', error, error_description);
+  }
+  
+  res.send(generateCallbackHtml('App Setup'));
+});
+
+// Route 2: GitHub App OAuth Callback
+// Called after user authorizes the app to act on their behalf
+app.get('/api/github/app/callback', (req, res) => {
+  const { code, state, error, error_description, installation_id, setup_action } = req.query;
+  
+  // This can be either OAuth authorization or app installation
+  const isOAuth = !!(code && state);
+  const isAppInstall = !!installation_id;
+  
+  logger.info('[GitHub App Callback] Authorization callback received:', {
+    type: isOAuth ? 'OAuth' : isAppInstall ? 'Installation' : 'Unknown',
+    hasCode: !!code,
+    hasState: !!state,
+    hasInstallationId: !!installation_id,
+    hasError: !!error,
+    state: state ? state.substring(0, 8) + '...' : null
+  });
+  
+  if (error) {
+    logger.error('[GitHub App Callback] Callback error:', error, error_description);
+  }
+  
+  res.send(generateCallbackHtml('App Authorization'));
+});
+
+// Legacy route: Keep for backward compatibility
+// This was the old "magic" route that auto-detected callback type
+app.get('/oauth/callback', (req, res) => {
+  const { code, state, error, error_description, installation_id, setup_action } = req.query;
+  
+  // Determine callback type
+  const isOAuthCallback = !!(code && state);
+  const isGitHubAppCallback = !!(installation_id);
+  
+  logger.info('[Legacy Callback] Received (consider updating to specific routes):', {
+    type: isOAuthCallback ? 'OAuth' : isGitHubAppCallback ? 'GitHub App' : 'Unknown',
+    hasCode: !!code,
+    hasState: !!state,
+    hasError: !!error,
+    hasInstallationId: !!installation_id,
+    setupAction: setup_action,
+    state: state ? state.substring(0, 8) + '...' : null
+  });
+  
+  if (error) {
+    logger.error('[Legacy Callback] error:', error, error_description);
+  }
+  
+  res.send(generateCallbackHtml('OAuth'));
 });
 
 // GitHub App client-id proxy to OAuth server
@@ -443,6 +498,31 @@ app.post('/api/github/oauth/refresh', async (req, res) => {
   } catch (error) {
     logger.error('OAuth proxy error (refresh):', error);
     res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
+// Route 3: GitHub App Webhook (proxy to OAuth server)
+// GitHub sends events here about installations, pushes, etc.
+app.post('/api/github/app/webhook', async (req, res) => {
+  try {
+    const event = req.headers['x-github-event'];
+    logger.info('[GitHub App Webhook] Proxying webhook event:', event);
+    
+    const response = await fetch(`${oauthBaseUrl}/api/github/app/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-github-event': req.headers['x-github-event'] || '',
+        'x-hub-signature-256': req.headers['x-hub-signature-256'] || '',
+        'x-github-delivery': req.headers['x-github-delivery'] || ''
+      },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    logger.error('[GitHub App Webhook] Proxy error:', error);
+    res.status(500).json({ error: 'Webhook service unavailable' });
   }
 });
 

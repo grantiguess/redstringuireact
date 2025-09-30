@@ -69,9 +69,10 @@ app.get('/health', (req, res) => {
 function isLocalRequest(req) {
   try {
     const host = (req.headers['x-forwarded-host'] || req.headers.host || '').toString().toLowerCase();
+    // Treat localhost AND redstring-test deployment as dev/test
     return host.includes('localhost') || 
            host.includes('127.0.0.1') ||
-           host.includes('redstring-test-umk552kp4q-uc.a.run.app'); // Test environment should use dev/test credentials
+           host.includes('redstring-test');
   } catch { return false; }
 }
 

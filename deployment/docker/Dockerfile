@@ -11,7 +11,16 @@ RUN npm install
 # Copy all source files
 COPY . .
 
-# Build the React app
+# Build arguments for Vite environment variables
+# Point to the main app itself (which serves OAuth endpoints)
+ARG VITE_BRIDGE_URL=https://redstring-test-umk552kp4q-uc.a.run.app
+ARG VITE_OAUTH_URL=https://redstring-test-umk552kp4q-uc.a.run.app
+
+# Set environment variables for Vite build
+ENV VITE_BRIDGE_URL=${VITE_BRIDGE_URL}
+ENV VITE_OAUTH_URL=${VITE_OAUTH_URL}
+
+# Build the React app with injected URLs
 RUN npm run build
 
 # Expose ports

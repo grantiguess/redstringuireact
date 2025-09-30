@@ -87,9 +87,12 @@ export class PersistentAuth {
       console.log('[PersistentAuth] No valid OAuth tokens found');
     }
 
-    // Trigger auto-connect if we have stored auth data
-    console.log('[PersistentAuth] ===== ABOUT TO ATTEMPT AUTO-CONNECT =====');
-    await this.attemptAutoConnect();
+    // CRITICAL FIX: Don't block initialization on auto-connect (network calls can hang)
+    // Trigger auto-connect in background instead
+    console.log('[PersistentAuth] Triggering auto-connect in background (non-blocking)');
+    this.attemptAutoConnect().catch(error => {
+      console.warn('[PersistentAuth] Background auto-connect failed:', error);
+    });
 
     console.log('[PersistentAuth] ===== AUTHENTICATION SERVICE INITIALIZED =====');
   }

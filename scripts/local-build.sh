@@ -35,7 +35,7 @@ gcloud run deploy ${SERVICE_NAME} \
     --cpu 2 \
     --concurrency 200 \
     --max-instances 5 \
-    --set-env-vars "NODE_ENV=production,VITE_BRIDGE_URL=https://redstring-oauth-app-umk552kp4q-uc.a.run.app,VITE_OAUTH_URL=https://redstring-oauth-app-umk552kp4q-uc.a.run.app" \
+    --set-env-vars "NODE_ENV=production,VITE_BRIDGE_URL=https://redstring-test-umk552kp4q-uc.a.run.app,VITE_OAUTH_URL=https://redstring-test-umk552kp4q-uc.a.run.app" \
     --set-secrets "GITHUB_CLIENT_ID=github-client-id:latest,GITHUB_CLIENT_SECRET=github-client-secret:latest,GITHUB_APP_ID=github-app-id:latest,GITHUB_APP_PRIVATE_KEY=github-app-private-key:latest,GITHUB_CLIENT_ID_DEV=github-client-id-dev:latest,GITHUB_CLIENT_SECRET_DEV=github-client-secret-dev:latest,GITHUB_APP_ID_DEV=github-app-id-dev:latest,GITHUB_APP_PRIVATE_KEY_DEV=github-app-private-key-dev:latest,GITHUB_APP_SLUG_DEV=github-app-slug-dev:latest" \
     --quiet
 

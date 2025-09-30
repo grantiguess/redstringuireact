@@ -24,15 +24,28 @@ class UniverseBackendBridge {
   setupBackendReadyListener() {
     if (typeof window === 'undefined') return;
     
+    // Check if backend is ALREADY ready (for components that load late)
+    if (window._universeBackendReady === true) {
+      console.log('[UniverseBackendBridge] Backend was already ready (late initialization)');
+      this.isBackendReady = true;
+      // Process any commands that were queued during constructor
+      if (this.commandQueue.length > 0) {
+        this.processQueuedCommands();
+      }
+      return;
+    }
+    
     // Listen for backend initialization completion
     window.addEventListener('universe-backend-ready', (event) => {
       console.log('[UniverseBackendBridge] Backend ready signal received');
       if (event.detail?.error) {
         console.error('[UniverseBackendBridge] Backend ready event reported error:', event.detail.error);
         this.flushQueuedCommandsWithError(new Error(event.detail.error));
+        this.backendReadyPromise = null; // Reset promise so new commands can try again
         return;
       }
       this.isBackendReady = true;
+      this.backendReadyPromise = null; // Reset promise now that backend is ready
       this.processQueuedCommands();
     });
   }
@@ -148,7 +161,16 @@ class UniverseBackendBridge {
         try {
           await this.waitForBackendReady();
         } catch (error) {
-          // Remove from queue and reject
+          // Check if backend actually became ready during the wait
+          // (race condition: persistent listener might have set the flag)
+          if (this.isBackendReady) {
+            console.log(`[UniverseBackendBridge] Backend became ready during wait for ${command}, command should have been processed`);
+            // The command was likely already processed by processQueuedCommands()
+            // Don't reject - just return and let that resolution stand
+            return;
+          }
+          
+          // Backend is still not ready, remove from queue and reject
           const index = this.commandQueue.indexOf(commandData);
           if (index > -1) {
             this.commandQueue.splice(index, 1);
