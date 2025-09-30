@@ -14,13 +14,20 @@ import {
   CheckCircle,
   AlertCircle,
   Info,
-  Clock
+  Clock,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 
 import gitFederationService, { STORAGE_TYPES } from './services/gitFederationService.js';
 import { persistentAuth } from './services/persistentAuth.js';
 import { oauthFetch } from './services/bridgeConfig.js';
 import RepositoryManager from './components/repositories/RepositoryManager.jsx';
+import ConnectionStats from './components/git-federation/ConnectionStats.jsx';
+import AuthSection from './components/git-federation/AuthSection.jsx';
+import UniversesList from './components/git-federation/UniversesList.jsx';
+import SourcesSection from './components/git-federation/SourcesSection.jsx';
+import RepositoriesSection from './components/git-federation/RepositoriesSection.jsx';
 
 const STORAGE_LABELS = {
   [STORAGE_TYPES.GIT]: 'Git repository',
@@ -94,8 +101,8 @@ function BrowserFallbackNote() {
     >
       <Cloud size={16} />
       <div>
-        <div style={{ fontWeight: 600 }}>Browser cache enabled</div>
-        <div>🌩️ Cute but temporary – link Git or local storage for long-term safety.</div>
+        <div style={{ fontWeight: 600 }}>Browser cache</div>
+        <div>Data stored in browser. Link a Git repository or local file for persistence.</div>
       </div>
     </div>
   );
@@ -962,100 +969,6 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     });
   };
 
-  const renderSyncTelemetry = (universe) => {
-    const sync = universe.sync || {};
-    const engine = sync.engine || syncStatusFor(universe.slug) || {};
-
-    const cards = [];
-
-    cards.push({
-      title: 'Sync State',
-      value: sync.label || 'Unknown',
-      tone: sync.tone || '#1565c0',
-      description: sync.description || '',
-      icon: <GitBranch size={14} />
-    });
-
-    cards.push({
-      title: 'Pending Commits',
-      value: typeof sync.pendingCommits === 'number' ? sync.pendingCommits : '—',
-      tone: sync.pendingCommits > 0 ? '#ef6c00' : '#2e7d32',
-      description: sync.pendingCommits > 0 ? 'Changes queued for the next push.' : 'Working tree clean.',
-      icon: sync.pendingCommits > 0 ? <RefreshCw size={14} /> : <Save size={14} />
-    });
-
-    cards.push({
-      title: 'Engine Health',
-      value: sync.isHealthy === false ? 'Degraded' : (sync.isHealthy === true ? 'Healthy' : 'Unknown'),
-      tone: sync.isHealthy === true ? '#2e7d32' : (sync.isHealthy === false ? '#c62828' : '#1565c0'),
-      description: sync.isInBackoff ? 'Engine is backing off after repeated failures.' : (sync.isHealthy === true ? 'Background commits available.' : 'Monitoring background sync status.'),
-      icon: sync.isHealthy === true ? <CheckCircle size={14} color={STATUS_COLORS.success} /> : <AlertCircle size={14} color={sync.isHealthy === false ? STATUS_COLORS.error : STATUS_COLORS.warning} />
-    });
-
-    cards.push({
-      title: 'Last Sync',
-      value: sync.lastSync ? formatWhen(sync.lastSync) : 'Never',
-      tone: '#1565c0',
-      description: engine.lastCommitTime ? `Last commit at ${formatWhen(engine.lastCommitTime)}` : 'No commits recorded yet.',
-      icon: <Clock size={14} />
-    });
-
-    cards.push({
-      title: 'Source of Truth',
-      value: universe.sync?.sourceOfTruth || universe.sourceOfTruth || 'unknown',
-      tone: universe.sourceOfTruth === 'git' ? '#2e7d32' : universe.sourceOfTruth === 'local' ? '#ef6c00' : '#1565c0',
-      description: universe.sourceOfTruth === 'git'
-        ? 'Git repository is primary.'
-        : universe.sourceOfTruth === 'local'
-          ? 'Local file is primary. Git operates as backup.'
-          : 'Browser cache currently holds the latest state.',
-      icon: universe.sourceOfTruth === 'git'
-        ? <Github size={14} />
-        : universe.sourceOfTruth === 'local'
-          ? <Save size={14} />
-          : <Cloud size={14} />
-    });
-
-    if (sync.consecutiveErrors > 0) {
-      cards.push({
-        title: 'Error Count',
-        value: sync.consecutiveErrors,
-        tone: '#c62828',
-        description: sync.lastErrorTime ? `Last error at ${formatWhen(sync.lastErrorTime)}` : 'Recent sync errors detected.',
-        icon: <AlertCircle size={14} color={STATUS_COLORS.error} />
-      });
-    }
-
-    return (
-      <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isSlim ? '1fr' : 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-        {cards.map((card, idx) => (
-          <div
-            key={`${card.title}-${idx}`}
-            style={{
-              border: `1px solid ${card.tone}`,
-              backgroundColor: 'rgba(255,255,255,0.3)',
-              borderRadius: 8,
-              padding: 10,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 4,
-              minHeight: 80
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: '0.75rem', color: '#260000', fontWeight: 700 }}>{card.title}</div>
-              {card.icon || null}
-            </div>
-            <div style={{ fontSize: '1rem', fontWeight: 700, color: card.tone }}>{card.value}</div>
-            {card.description && (
-              <div style={{ fontSize: '0.7rem', color: '#444' }}>{card.description}</div>
-            )}
-          </div>
-        ))}
-      </div>
-    );
-  };
-
   const renderActiveUniverse = () => {
     if (!activeUniverse) {
       return (
@@ -1166,8 +1079,12 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#260000' }}>Sync telemetry</div>
-          {renderSyncTelemetry(activeUniverse)}
+          <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#260000' }}>Connection Stats</div>
+          <ConnectionStats 
+            universe={activeUniverse} 
+            syncStatus={syncStatusFor(activeUniverse.slug)} 
+            isSlim={isSlim}
+          />
         </div>
                           </div>
     );
@@ -1238,105 +1155,6 @@ const renderUniversesList = () => (
   </div>
 );
 
-const renderAuthSection = () => (
-  <div
-                                  style={{
-      backgroundColor: '#979090',
-      borderRadius: 8,
-      padding: 16,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 12
-    }}
-  >
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <Settings size={18} />
-      <div style={{ fontWeight: 700 }}>Accounts & Access</div>
-    </div>
-
-    <div
-                                  style={{
-        border: `1px solid ${statusBadge.tone}`,
-        borderRadius: 6,
-        padding: '10px 12px',
-        backgroundColor: 'rgba(255,255,255,0.35)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 6
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Shield size={14} color={statusBadge.tone} />
-        <span style={{ fontWeight: 600 }}>{statusBadge.label}</span>
-                              </div>
-      <div style={{ fontSize: '0.75rem', color: '#260000' }}>
-        {hasApp ? 'GitHub App ready for auto-sync' : 'Install GitHub App for auto-sync'}
-        {hasApp && hasOAuth ? ' • ' : ''}
-        {hasOAuth ? 'OAuth available for browsing' : 'Connect OAuth to browse repositories'}
-                          </div>
-      <div style={{ fontSize: '0.72rem', color: '#260000' }}>Data auth method: {dataAuthMethod || 'none'}</div>
-                        </div>
-
-    <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isSlim ? '1fr' : '1fr 1fr' }}>
-      <div
-                                style={{
-                                  border: '1px solid #260000',
-          borderRadius: 8,
-          backgroundColor: '#bdb5b5',
-          padding: 12,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 8
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontWeight: 600 }}>GitHub OAuth</div>
-          {hasOAuth ? (
-            <span style={{ fontSize: '0.7rem', color: STATUS_COLORS.success, fontWeight: 700 }}>Connected</span>
-          ) : (
-            <span style={{ fontSize: '0.7rem', color: '#555' }}>Not connected</span>
-          )}
-        </div>
-        <div style={{ fontSize: '0.75rem', color: '#555' }}>Browse and manage repositories</div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button onClick={handleGitHubAuth} style={buttonStyle(isConnecting ? 'disabled' : 'solid')} disabled={isConnecting}>
-            <Github size={14} /> {hasOAuth ? 'Reconnect' : 'Connect'}
-                              </button>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', color: '#260000' }}>
-            <input type="checkbox" checked={allowOAuthBackup} onChange={(e) => setAllowOAuthBackup(e.target.checked)} />
-            Allow OAuth as backup
-          </label>
-        </div>
-      </div>
-
-      <div
-                                  style={{
-                                    border: '1px solid #260000',
-          borderRadius: 8,
-          backgroundColor: '#bdb5b5',
-          padding: 12,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 8
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontWeight: 600 }}>GitHub App</div>
-          {hasApp ? (
-            <span style={{ fontSize: '0.7rem', color: STATUS_COLORS.success, fontWeight: 700 }}>Installed</span>
-          ) : (
-            <span style={{ fontSize: '0.7rem', color: '#555' }}>Not installed</span>
-          )}
-        </div>
-        <div style={{ fontSize: '0.75rem', color: '#555' }}>Enables secure auto-sync with Git</div>
-        <button onClick={handleGitHubApp} style={buttonStyle(isConnecting ? 'disabled' : 'solid')} disabled={isConnecting}>
-          <Settings size={14} /> {hasApp ? 'Manage' : 'Install App'}
-        </button>
-      </div>
-    </div>
-  </div>
-);
-
 const variantStyles = variant === 'modal'
   ? {
       background: 'rgba(12, 0, 0, 0.9)',
@@ -1356,8 +1174,8 @@ const deviceMessage = (() => {
   if (!deviceInfo.gitOnlyMode) {
     return {
       type: 'success',
-      title: 'Full Desktop Experience',
-      message: 'All storage options available, including local files and Git sync.'
+      title: 'All Storage Options Available',
+      message: 'Connect to Git repositories, local files, or use browser cache.'
     };
   }
   if (deviceInfo.isMobile) {
@@ -1468,9 +1286,50 @@ return (
         </div>
       )}
 
-    {renderUniversesList()}
-    {renderActiveUniverse()}
-    {renderAuthSection()}
+    <UniversesList
+      universes={serviceState.universes}
+      activeUniverseSlug={serviceState.activeUniverseSlug}
+      syncStatusMap={syncTelemetry}
+      onCreateUniverse={handleCreateUniverse}
+      onSwitchUniverse={handleSwitchUniverse}
+      onDeleteUniverse={handleDeleteUniverse}
+      isSlim={isSlim}
+    />
+
+    <RepositoriesSection
+      repositories={[]} 
+      onBrowseRepositories={() => setShowRepositoryManager(true)}
+      onRefresh={refreshState}
+      isRefreshing={loading}
+    />
+
+    <SourcesSection
+      sources={serviceState.universes.flatMap(u => u.raw?.sources || []).filter((src, idx, arr) => 
+        arr.findIndex(s => s.user === src.user && s.repo === src.repo) === idx
+      )}
+      discoveryMap={discoveryMap}
+      onDiscover={handleDiscover}
+      onDetach={(source) => {
+        const universe = serviceState.universes.find(u => 
+          (u.raw?.sources || []).some(s => s.user === source.user && s.repo === source.repo)
+        );
+        if (universe) handleDetachRepo(universe, source);
+      }}
+      onLinkDiscovered={handleLinkDiscovered}
+    />
+
+    <AuthSection
+      statusBadge={statusBadge}
+      hasApp={hasApp}
+      hasOAuth={hasOAuth}
+      dataAuthMethod={dataAuthMethod}
+      isConnecting={isConnecting}
+      allowOAuthBackup={allowOAuthBackup}
+      onSetAllowOAuthBackup={setAllowOAuthBackup}
+      onGitHubAuth={handleGitHubAuth}
+      onGitHubApp={handleGitHubApp}
+      isSlim={isSlim}
+    />
 
       {showRepositoryManager && (
       <div

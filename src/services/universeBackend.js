@@ -665,9 +665,11 @@ class UniverseBackend {
     console.log(`[UniverseBackend] Updating universe ${slug}:`, updates);
     const result = universeManager.updateUniverse(slug, updates);
     
+    // Get universe for potential use below
+    const universe = universeManager.getUniverse(slug);
+    
     // If Git repo was enabled or linked repo was updated, ensure sync engine is set up
     if (updates.gitRepo) {
-      const universe = universeManager.getUniverse(slug);
       if (universe?.gitRepo?.enabled && universe?.gitRepo?.linkedRepo) {
         console.log(`[UniverseBackend] Git repo updated for ${slug}, ensuring sync engine is set up`);
         setTimeout(() => {
