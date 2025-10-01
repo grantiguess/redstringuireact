@@ -1,5 +1,5 @@
 import React from 'react';
-import { Github, ExternalLink, RefreshCw } from 'lucide-react';
+import { Github, ExternalLink, RefreshCw, Trash2, Link as LinkIcon } from 'lucide-react';
 import SectionCard from './shared/SectionCard.jsx';
 
 function buttonStyle(variant = 'outline') {
@@ -29,28 +29,25 @@ function buttonStyle(variant = 'outline') {
 }
 
 /**
- * RepositoriesSection - Shows Redstring-affiliated repositories
- * These are repos specifically set up for Redstring data storage
+ * RepositoriesSection - Shows your managed repositories
+ * Add repos from GitHub that you want to use with Redstring
  */
 const RepositoriesSection = ({
   repositories = [],
   onBrowseRepositories,
+  onRemoveRepository,
+  onLinkToUniverse,
   onRefresh,
   isRefreshing = false
 }) => {
-  // Filter for Redstring-specific repos (those with .redstring marker or known pattern)
-  const redstringRepos = repositories.filter(repo => 
-    repo.isRedstringRepo || repo.hasRedstringData
-  );
-
-  if (redstringRepos.length === 0) {
+  if (repositories.length === 0) {
     return (
       <SectionCard 
         title="Repositories" 
-        subtitle="Redstring-affiliated repositories"
+        subtitle="Your curated list of repositories"
         actions={
           <button onClick={onBrowseRepositories} style={buttonStyle('solid')}>
-            <Github size={14} /> Browse Repositories
+            <Github size={14} /> Add Repositories
           </button>
         }
       >
@@ -64,7 +61,7 @@ const RepositoriesSection = ({
             fontSize: '0.8rem'
           }}
         >
-          No Redstring repositories found. Browse your GitHub repositories to discover or create Redstring data stores.
+          No repositories in your list. Click "Add Repositories" to browse your GitHub repos and add them here.
         </div>
       </SectionCard>
     );
@@ -73,26 +70,16 @@ const RepositoriesSection = ({
   return (
     <SectionCard 
       title="Repositories" 
-      subtitle={`${redstringRepos.length} Redstring ${redstringRepos.length === 1 ? 'repository' : 'repositories'}`}
+      subtitle={`${repositories.length} ${repositories.length === 1 ? 'repository' : 'repositories'} in your list`}
       actions={
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button 
-            onClick={onRefresh} 
-            style={buttonStyle(isRefreshing ? 'disabled' : 'outline')}
-            disabled={isRefreshing}
-          >
-            <RefreshCw size={14} /> {isRefreshing ? 'Refreshing...' : 'Refresh'}
-          </button>
-          <button onClick={onBrowseRepositories} style={buttonStyle('solid')}>
-            <Github size={14} /> Browse
-          </button>
-        </div>
+        <button onClick={onBrowseRepositories} style={buttonStyle('solid')}>
+          <Github size={14} /> Add More
+        </button>
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {redstringRepos.map((repo) => {
-          const universes = repo.universes || [];
-          const repoFullName = `${repo.owner}/${repo.name}`;
+        {repositories.map((repo) => {
+          const repoFullName = `${repo.owner?.login || repo.owner}/${repo.name}`;
 
           return (
             <div
@@ -103,24 +90,24 @@ const RepositoriesSection = ({
                 padding: 12,
                 backgroundColor: '#bdb5b5',
                 display: 'flex',
-                flexDirection: 'column',
-                gap: 10
+                justifyContent: 'space-between',
+                alignItems: 'center'
               }}
             >
-              {/* Repo Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Github size={18} />
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{repoFullName}</div>
-                    {repo.description && (
-                      <div style={{ fontSize: '0.72rem', color: '#555' }}>{repo.description}</div>
-                    )}
-                  </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+                <Github size={18} />
+                <div>
+                  <div style={{ fontWeight: 600 }}>{repoFullName}</div>
+                  {repo.description && (
+                    <div style={{ fontSize: '0.72rem', color: '#555' }}>{repo.description}</div>
+                  )}
                 </div>
-                {repo.htmlUrl && (
+              </div>
+              
+              <div style={{ display: 'flex', gap: 6 }}>
+                {repo.html_url && (
                   <a
-                    href={repo.htmlUrl}
+                    href={repo.html_url}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
@@ -128,55 +115,16 @@ const RepositoriesSection = ({
                       textDecoration: 'none'
                     }}
                   >
-                    <ExternalLink size={14} /> View
+                    <ExternalLink size={14} />
                   </a>
                 )}
+                <button 
+                  onClick={() => onRemoveRepository && onRemoveRepository(repo)} 
+                  style={{...buttonStyle('outline'), color: '#d32f2f', borderColor: '#d32f2f'}}
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
-
-              {/* Universes in this repo */}
-              {universes.length > 0 ? (
-                <div>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#260000', marginBottom: 6 }}>
-                    Universes in this repository ({universes.length})
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {universes.map((universe) => (
-                      <div
-                        key={universe.slug || universe.path}
-                        style={{
-                          padding: 8,
-                          backgroundColor: '#cfc6c6',
-                          borderRadius: 6,
-                          border: '1px solid #979090',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center'
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>
-                            {universe.name || universe.slug || 'Unnamed'}
-                          </div>
-                          {universe.path && (
-                            <div style={{ fontSize: '0.68rem', color: '#555' }}>
-                              {universe.path}
-                            </div>
-                          )}
-                        </div>
-                        {universe.isLinked && (
-                          <span style={{ fontSize: '0.7rem', color: '#2e7d32', fontWeight: 600 }}>
-                            Linked
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div style={{ fontSize: '0.75rem', color: '#555', fontStyle: 'italic' }}>
-                  No universes discovered yet
-                </div>
-              )}
             </div>
           );
         })}

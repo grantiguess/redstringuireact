@@ -13,6 +13,7 @@ import { GitSyncEngine } from './gitSyncEngine.js';
 import { persistentAuth } from './persistentAuth.js';
 import { SemanticProviderFactory } from './gitNativeProvider.js';
 import startupCoordinator from './startupCoordinator.js';
+import { exportToRedstring, importFromRedstring, downloadRedstringFile } from '../formats/redstringFormat.js';
 
 class UniverseBackend {
   constructor() {
@@ -73,6 +74,40 @@ class UniverseBackend {
 
       console.log('[UniverseBackend] Skipping auto-setup of ALL existing universes to avoid hanging...');
       // await this.autoSetupExistingUniverses(); // DISABLED - can hang during initialization
+
+      // CRITICAL: Load active universe data into store
+      const activeUniverse = universeManager.getActiveUniverse();
+      if (activeUniverse) {
+        console.log(`[UniverseBackend] Loading active universe into store: ${activeUniverse.name || activeUniverse.slug}`);
+        try {
+          // Try to load (will fall back to browser storage if Git fails due to auth)
+          const storeState = await universeManager.loadUniverseData(activeUniverse);
+          if (storeState && this.storeOperations?.loadUniverseFromFile) {
+            const success = this.storeOperations.loadUniverseFromFile(storeState);
+            if (success) {
+              const loadedState = this.storeOperations.getState();
+              const nodeCount = loadedState?.nodePrototypes ? (loadedState.nodePrototypes instanceof Map ? loadedState.nodePrototypes.size : Object.keys(loadedState.nodePrototypes).length) : 0;
+              const graphCount = loadedState?.graphs ? (loadedState.graphs instanceof Map ? loadedState.graphs.size : Object.keys(loadedState.graphs).length) : 0;
+              
+              console.log(`[UniverseBackend] Active universe loaded: ${nodeCount} nodes, ${graphCount} graphs`);
+              
+              // Check if we loaded from cache due to missing auth
+              const authStatus = this.getAuthStatus();
+              if (!authStatus?.isAuthenticated && activeUniverse.gitRepo?.enabled) {
+                this.notifyStatus('info', `Loaded ${activeUniverse.name} from cache. Connect GitHub to sync latest.`);
+              } else {
+                this.notifyStatus('success', `Loaded ${activeUniverse.name}: ${nodeCount} nodes, ${graphCount} graphs`);
+              }
+            } else {
+              console.warn('[UniverseBackend] Failed to load active universe into store');
+            }
+          }
+        } catch (error) {
+          console.warn('[UniverseBackend] Failed to load active universe data:', error);
+        }
+      } else {
+        console.log('[UniverseBackend] No active universe to load');
+      }
 
       this.isInitialized = true;
       this.notifyStatus('info', 'Universe backend initialized');
@@ -166,9 +201,29 @@ class UniverseBackend {
   setupAuthEvents() {
     // Listen for auth changes and update status
     if (typeof window !== 'undefined') {
-      window.addEventListener('redstring:auth-token-stored', () => {
+      window.addEventListener('redstring:auth-token-stored', async () => {
         this.authStatus = persistentAuth.getAuthStatus();
         this.notifyStatus('success', 'Authentication updated');
+        
+        // CRITICAL: Reload active universe from Git now that auth is ready
+        const activeUniverse = universeManager.getActiveUniverse();
+        if (activeUniverse?.gitRepo?.enabled) {
+          console.log('[UniverseBackend] Auth connected, reloading universe from Git...');
+          try {
+            const storeState = await universeManager.loadUniverseData(activeUniverse);
+            if (storeState && this.storeOperations?.loadUniverseFromFile) {
+              this.storeOperations.loadUniverseFromFile(storeState);
+              const loadedState = this.storeOperations.getState();
+              const nodeCount = loadedState?.nodePrototypes ? (loadedState.nodePrototypes instanceof Map ? loadedState.nodePrototypes.size : Object.keys(loadedState.nodePrototypes).length) : 0;
+              console.log(`[UniverseBackend] Reloaded from Git after auth: ${nodeCount} nodes`);
+              this.notifyStatus('success', `Synced ${activeUniverse.name} from GitHub`);
+            }
+          } catch (error) {
+            console.warn('[UniverseBackend] Failed to reload from Git after auth:', error);
+          }
+        }
+        
+        // Set up sync engines
         this.autoSetupEnginesForActiveUniverse();
       });
     }
@@ -178,6 +233,13 @@ class UniverseBackend {
    * Auto-setup Git sync engines for existing universes
    */
   async autoSetupExistingUniverses() {
+    // Check if authentication is ready before attempting Git sync setup
+    const authStatus = this.getAuthStatus();
+    if (!authStatus?.isAuthenticated) {
+      console.log('[UniverseBackend] Skipping auto-setup for existing universes: authentication not ready');
+      return;
+    }
+
     const universes = universeManager.getAllUniverses();
 
     for (const universe of universes) {
@@ -185,7 +247,8 @@ class UniverseBackend {
         try {
           await this.ensureGitSyncEngine(universe.slug);
         } catch (error) {
-          console.warn(`[UniverseBackend] Failed to setup engine for ${universe.slug}:`, error);
+          // Don't block initialization if one universe fails
+          console.warn(`[UniverseBackend] Failed to setup engine for ${universe.slug}:`, error.message);
         }
       }
     }
@@ -195,12 +258,23 @@ class UniverseBackend {
    * Auto-setup engine for currently active universe
    */
   async autoSetupEnginesForActiveUniverse() {
+    // Check if authentication is ready before attempting Git sync setup
+    const authStatus = this.getAuthStatus();
+    if (!authStatus?.isAuthenticated) {
+      console.log('[UniverseBackend] Skipping auto-setup: authentication not ready');
+      return;
+    }
+
     const activeUniverse = universeManager.getActiveUniverse();
     if (activeUniverse?.gitRepo?.enabled && activeUniverse?.gitRepo?.linkedRepo) {
       try {
+        console.log('[UniverseBackend] Auto-setting up Git sync for active universe:', activeUniverse.slug);
         await this.ensureGitSyncEngine(activeUniverse.slug);
       } catch (error) {
-        console.warn(`[UniverseBackend] Failed to auto-setup engine for active universe:`, error);
+        // Don't throw - just log and continue. User can manually retry.
+        console.warn(`[UniverseBackend] Failed to auto-setup engine for active universe:`, error.message);
+        // Notify user but don't block
+        this.notifyStatus('warning', `Git sync setup skipped: ${error.message}. You can enable it manually.`);
       }
     }
   }
@@ -329,14 +403,14 @@ class UniverseBackend {
       if (app?.installationId) {
         console.log(`[UniverseBackend] Using GitHub App authentication for ${user}/${repo}`);
         
-        if (app.accessToken) {
-          // Use existing token if available
-          token = app.accessToken;
-          authMethod = 'github-app';
-          installationId = app.installationId;
-        } else {
-          // Get fresh installation token
-          console.log('[UniverseBackend] Getting fresh GitHub App installation token...');
+        // Check if cached token is still valid (expires in 1 hour, refresh if < 5 min remaining)
+        const tokenExpiresAt = app.tokenExpiresAt ? new Date(app.tokenExpiresAt) : null;
+        const now = new Date();
+        const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+        const needsRefresh = !app.accessToken || !tokenExpiresAt || tokenExpiresAt < fiveMinutesFromNow;
+        
+        if (needsRefresh) {
+          console.log('[UniverseBackend] Token missing or expiring soon, requesting fresh GitHub App installation token...');
           const { oauthFetch } = await import('./bridgeConfig.js');
           const tokenResp = await oauthFetch('/api/github/app/installation-token', {
             method: 'POST',
@@ -350,13 +424,23 @@ class UniverseBackend {
             authMethod = 'github-app';
             installationId = app.installationId;
             
-            // Update stored installation with fresh token
-            const updatedApp = { ...app, accessToken: token };
+            // Calculate expiry time (1 hour from now)
+            const expiresAt = new Date(now.getTime() + 60 * 60 * 1000);
+            
+            // Update stored installation with fresh token and expiry
+            const updatedApp = { ...app, accessToken: token, tokenExpiresAt: expiresAt.toISOString() };
             persistentAuth.storeAppInstallation(updatedApp);
-            console.log('[UniverseBackend] Fresh GitHub App token obtained and stored');
+            console.log(`[UniverseBackend] Fresh GitHub App token obtained, expires at ${expiresAt.toISOString()}`);
           } else {
-            console.warn('[UniverseBackend] Failed to get GitHub App token, falling back to OAuth');
+            const errorText = await tokenResp.text();
+            console.warn(`[UniverseBackend] Failed to get GitHub App token (${tokenResp.status}): ${errorText}`);
+            console.warn('[UniverseBackend] Falling back to OAuth');
           }
+        } else {
+          console.log(`[UniverseBackend] Using cached GitHub App token (expires ${tokenExpiresAt.toISOString()})`);
+          token = app.accessToken;
+          authMethod = 'github-app';
+          installationId = app.installationId;
         }
       }
       
@@ -378,6 +462,10 @@ class UniverseBackend {
     if (!token) {
       throw new Error('No valid authentication token available');
     }
+
+    // Debug: show token format
+    const tokenPreview = token ? `${token.substring(0, 8)}...${token.substring(token.length - 8)}` : 'none';
+    console.log(`[UniverseBackend] Token retrieved: ${tokenPreview} (length: ${token?.length || 0}, method: ${authMethod})`);
 
     const providerConfig = {
       type: 'github',
@@ -766,6 +854,99 @@ class UniverseBackend {
     }
     
     throw new Error(`No Git sync engine available for universe: ${universeSlug}`);
+  }
+
+  /**
+   * Download universe as local .redstring file
+   */
+  async downloadLocalFile(universeSlug, storeState = null) {
+    console.log(`[UniverseBackend] Downloading local file for universe: ${universeSlug}`);
+    
+    const universe = universeManager.getUniverse(universeSlug);
+    if (!universe) {
+      throw new Error(`Universe ${universeSlug} not found`);
+    }
+
+    // Get store state if not provided
+    if (!storeState) {
+      // Try to get from store operations if available
+      const { useGraphStore } = await import('../store/graphStore.jsx');
+      storeState = useGraphStore.getState();
+    }
+
+    const fileName = `${universe.name || universeSlug}.redstring`;
+    
+    try {
+      downloadRedstringFile(storeState, fileName);
+      this.notifyStatus('success', `Downloaded ${fileName}`);
+      return { success: true, fileName };
+    } catch (error) {
+      console.error(`[UniverseBackend] Failed to download ${fileName}:`, error);
+      this.notifyStatus('error', `Download failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Upload/Import universe from local .redstring file
+   */
+  async uploadLocalFile(file, targetUniverseSlug = null) {
+    console.log(`[UniverseBackend] Uploading local file: ${file.name}`);
+    
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = async (e) => {
+        try {
+          const jsonData = JSON.parse(e.target.result);
+          
+          // Get store actions
+          const { useGraphStore } = await import('../store/graphStore.jsx');
+          const storeActions = useGraphStore.getState();
+          
+          // Import the data
+          importFromRedstring(jsonData, storeActions);
+          
+          this.notifyStatus('success', `Imported ${file.name}`);
+          resolve({ success: true, fileName: file.name });
+        } catch (error) {
+          console.error(`[UniverseBackend] Failed to import ${file.name}:`, error);
+          this.notifyStatus('error', `Import failed: ${error.message}`);
+          reject(error);
+        }
+      };
+      
+      reader.onerror = () => {
+        const error = new Error('Failed to read file');
+        this.notifyStatus('error', error.message);
+        reject(error);
+      };
+      
+      reader.readAsText(file);
+    });
+  }
+
+  /**
+   * Link local file to universe (for future saves/loads)
+   */
+  async linkLocalFileToUniverse(universeSlug, filePath) {
+    console.log(`[UniverseBackend] Linking local file to universe ${universeSlug}: ${filePath}`);
+    
+    const universe = universeManager.getUniverse(universeSlug);
+    if (!universe) {
+      throw new Error(`Universe ${universeSlug} not found`);
+    }
+
+    // Update universe with local file configuration
+    await this.updateUniverse(universeSlug, {
+      localFile: {
+        enabled: true,
+        path: filePath
+      }
+    });
+
+    this.notifyStatus('success', `Linked local file to ${universe.name || universeSlug}`);
+    return { success: true, filePath };
   }
 
   /**

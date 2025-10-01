@@ -14,7 +14,9 @@ const RepositoryManager = ({
   onSelectRepository,
   currentUser,
   showCreateOption = true,
-  dropdownMode = false // New prop for dropdown mode
+  dropdownMode = false, // New prop for dropdown mode
+  onAddToList, // NEW: Function to add repo to managed list
+  managedRepositories = [] // NEW: Array of already-managed repos
 }) => {
   const [repositories, setRepositories] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -481,6 +483,8 @@ const RepositoryManager = ({
           onSelectRepository={onSelectRepository}
           onCreateRepository={showCreateOption ? handleCreateRepository : null}
           onRemoveRepository={handleRemoveRepository}
+          onAddToList={onAddToList}
+          managedRepositories={managedRepositories}
           currentUser={authStatus.userData?.login}
           isOwner={true}
           title="My Ontologies"

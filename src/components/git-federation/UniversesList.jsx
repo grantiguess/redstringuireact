@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, ChevronDown, ChevronRight, Github, Cloud, Save } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronRight, Github, Upload, Download } from 'lucide-react';
 import SectionCard from './shared/SectionCard.jsx';
-import ConnectionStats from './ConnectionStats.jsx';
 
 function buttonStyle(variant = 'outline') {
   const base = {
@@ -59,6 +58,9 @@ const UniversesList = ({
   onCreateUniverse,
   onSwitchUniverse,
   onDeleteUniverse,
+  onLinkRepo,
+  onLinkLocalFile,
+  onDownloadLocalFile,
   isSlim = false
 }) => {
   // Track which universes are expanded
@@ -153,8 +155,19 @@ const UniversesList = ({
                     <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#260000', marginBottom: 6 }}>
                       Storage
                     </div>
-                    <div style={{ fontSize: '0.72rem', color: '#555' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#555', marginBottom: 8 }}>
                       Primary: {universe.storage?.primary?.label || 'Browser cache'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button onClick={() => onLinkRepo && onLinkRepo(universe.slug)} style={buttonStyle('solid')}>
+                        <Github size={14} /> Link Repo
+                      </button>
+                      <button onClick={() => onLinkLocalFile && onLinkLocalFile(universe.slug)} style={buttonStyle('outline')}>
+                        <Upload size={14} /> Import File
+                      </button>
+                      <button onClick={() => onDownloadLocalFile && onDownloadLocalFile(universe.slug)} style={buttonStyle('outline')}>
+                        <Download size={14} /> Download
+                      </button>
                     </div>
                   </div>
 
@@ -188,19 +201,6 @@ const UniversesList = ({
                     </div>
                   )}
 
-                  {/* Connection Stats */}
-                  {isActive && (
-                    <div>
-                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#260000', marginBottom: 6 }}>
-                        Connection Stats
-                      </div>
-                      <ConnectionStats 
-                        universe={universe} 
-                        syncStatus={syncStatusMap[universe.slug]} 
-                        isSlim={isSlim}
-                      />
-                    </div>
-                  )}
                 </div>
               )}
             </div>

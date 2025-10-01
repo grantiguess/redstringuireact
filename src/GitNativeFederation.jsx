@@ -169,6 +169,14 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   const [repositoryTargetSlug, setRepositoryTargetSlug] = useState(null);
   const [discoveryMap, setDiscoveryMap] = useState({});
   const [syncTelemetry, setSyncTelemetry] = useState({});
+  const [managedRepositories, setManagedRepositories] = useState(() => {
+    try {
+      const stored = localStorage.getItem('redstring_managed_repos');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const containerRef = useRef(null);
   const [isSlim, setIsSlim] = useState(false);
@@ -682,6 +690,80 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     } catch (err) {
       console.error('[GitNativeFederation] Link discovered failed:', err);
       setError(`Failed to link discovered universe: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddToManagedList = (repo) => {
+    const repoKey = `${repo.owner.login || repo.owner}/${repo.name}`;
+    const alreadyAdded = managedRepositories.some(r => 
+      `${r.owner.login || r.owner}/${r.name}` === repoKey
+    );
+    
+    if (alreadyAdded) {
+      setSyncStatus({ type: 'warning', message: `${repoKey} is already in your list` });
+      return;
+    }
+
+    const newList = [...managedRepositories, repo];
+    setManagedRepositories(newList);
+    try {
+      localStorage.setItem('redstring_managed_repos', JSON.stringify(newList));
+      setSyncStatus({ type: 'success', message: `Added ${repoKey} to your repositories` });
+    } catch (err) {
+      console.error('[GitNativeFederation] Failed to save managed repos:', err);
+    }
+  };
+
+  const handleRemoveFromManagedList = (repo) => {
+    const repoKey = `${repo.owner.login || repo.owner}/${repo.name}`;
+    const newList = managedRepositories.filter(r => 
+      `${r.owner.login || r.owner}/${r.name}` !== repoKey
+    );
+    setManagedRepositories(newList);
+    try {
+      localStorage.setItem('redstring_managed_repos', JSON.stringify(newList));
+      setSyncStatus({ type: 'success', message: `Removed ${repoKey}` });
+    } catch (err) {
+      console.error('[GitNativeFederation] Failed to save managed repos:', err);
+    }
+  };
+
+  const handleLinkLocalFile = (slug) => {
+    console.log('[GitNativeFederation] Triggering file upload for universe:', slug);
+    
+    // Create hidden file input
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.redstring';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      try {
+        setLoading(true);
+        await gitFederationService.uploadLocalFile(file, slug);
+        setSyncStatus({ type: 'success', message: `Imported ${file.name}` });
+        await refreshState();
+      } catch (err) {
+        console.error('[GitNativeFederation] File upload failed:', err);
+        setError(`Failed to import file: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+    input.click();
+  };
+
+  const handleDownloadLocalFile = async (slug) => {
+    try {
+      setLoading(true);
+      await gitFederationService.downloadLocalFile(slug);
+      setSyncStatus({ type: 'success', message: 'File downloaded' });
+    } catch (err) {
+      console.error('[GitNativeFederation] File download failed:', err);
+      setError(`Failed to download file: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -1293,29 +1375,22 @@ return (
       onCreateUniverse={handleCreateUniverse}
       onSwitchUniverse={handleSwitchUniverse}
       onDeleteUniverse={handleDeleteUniverse}
+      onLinkRepo={handleAttachRepo}
+      onLinkLocalFile={handleLinkLocalFile}
+      onDownloadLocalFile={handleDownloadLocalFile}
       isSlim={isSlim}
     />
 
     <RepositoriesSection
-      repositories={[]} 
+      repositories={managedRepositories} 
       onBrowseRepositories={() => setShowRepositoryManager(true)}
+      onRemoveRepository={handleRemoveFromManagedList}
+      onLinkToUniverse={(repo) => {
+        setRepositoryTargetSlug(null); // Will prompt for universe selection
+        setShowRepositoryManager(true);
+      }}
       onRefresh={refreshState}
       isRefreshing={loading}
-    />
-
-    <SourcesSection
-      sources={serviceState.universes.flatMap(u => u.raw?.sources || []).filter((src, idx, arr) => 
-        arr.findIndex(s => s.user === src.user && s.repo === src.repo) === idx
-      )}
-      discoveryMap={discoveryMap}
-      onDiscover={handleDiscover}
-      onDetach={(source) => {
-        const universe = serviceState.universes.find(u => 
-          (u.raw?.sources || []).some(s => s.user === source.user && s.repo === source.repo)
-        );
-        if (universe) handleDetachRepo(universe, source);
-      }}
-      onLinkDiscovered={handleLinkDiscovered}
     />
 
     <AuthSection
@@ -1328,6 +1403,8 @@ return (
       onSetAllowOAuthBackup={setAllowOAuthBackup}
       onGitHubAuth={handleGitHubAuth}
       onGitHubApp={handleGitHubApp}
+      activeUniverse={activeUniverse}
+      syncStatus={activeUniverse ? syncStatusFor(activeUniverse.slug) : null}
       isSlim={isSlim}
     />
 
@@ -1388,7 +1465,11 @@ return (
               </button>
             </div>
             <div style={{ flex: 1, overflow: 'hidden' }}>
-            <RepositoryManager onSelectRepository={handleRepositorySelect} />
+            <RepositoryManager 
+              onSelectRepository={handleRepositorySelect}
+              onAddToList={handleAddToManagedList}
+              managedRepositories={managedRepositories}
+            />
             </div>
           </div>
         </div>

@@ -108,7 +108,7 @@ export const useBootstrapStatus = () => {
           isBootstrapped: true,
           hasError: false,
           error: null,
-          hasValidAuth: authStatus.hasValidToken,
+          hasValidAuth: authStatus.isAuthenticated,
           authMethod: authStatus.authMethod
         });
       } catch (error) {

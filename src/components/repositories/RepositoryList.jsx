@@ -17,7 +17,8 @@ import {
   ArrowUpDown,
   ExternalLink,
   Settings,
-  Trash2
+  Trash2,
+  ListPlus
 } from 'lucide-react';
 
 const RepositoryList = ({ 
@@ -25,6 +26,8 @@ const RepositoryList = ({
   onSelectRepository, 
   onCreateRepository,
   onRemoveRepository,
+  onAddToList, // NEW: Add repo to managed list
+  managedRepositories = [], // NEW: Already-managed repos
   currentUser,
   isOwner = false,
   title = "Repositories"
@@ -341,6 +344,31 @@ const RepositoryList = ({
                     >
                       <ExternalLink size={14} />
                     </a>
+                  )}
+                  
+                  {onAddToList && !managedRepositories.some(r => 
+                    `${r.owner?.login || r.owner}/${r.name}` === `${repo.owner?.login || repo.owner}/${repo.name}`
+                  ) && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAddToList(repo);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#2e7d32',
+                        cursor: 'pointer',
+                        padding: '2px',
+                        opacity: 0.7,
+                        transition: 'opacity 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.target.style.opacity = '1'}
+                      onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                      title="Add to my repositories"
+                    >
+                      <ListPlus size={14} />
+                    </button>
                   )}
                   
                   {isOwner && onRemoveRepository && (

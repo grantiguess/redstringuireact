@@ -1,5 +1,6 @@
 import React from 'react';
 import { Settings, Shield, Github } from 'lucide-react';
+import ConnectionStats from './ConnectionStats.jsx';
 
 const STATUS_COLORS = {
   success: '#2e7d32',
@@ -46,6 +47,8 @@ const AuthSection = ({
   onSetAllowOAuthBackup,
   onGitHubAuth,
   onGitHubApp,
+  activeUniverse,
+  syncStatus,
   isSlim = false
 }) => {
   return (
@@ -148,6 +151,20 @@ const AuthSection = ({
           </button>
         </div>
       </div>
+
+      {/* Global Connection Stats */}
+      {activeUniverse && (hasApp || hasOAuth) && (
+        <div>
+          <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#260000', marginBottom: 8 }}>
+            Connection Stats
+          </div>
+          <ConnectionStats 
+            universe={activeUniverse} 
+            syncStatus={syncStatus} 
+            isSlim={isSlim}
+          />
+        </div>
+      )}
     </div>
   );
 };

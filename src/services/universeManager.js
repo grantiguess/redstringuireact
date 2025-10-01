@@ -187,35 +187,25 @@ class UniverseManager {
       const authStatus = persistentAuth.getAuthStatus();
       console.log('[UniverseManager] Auth status:', authStatus);
 
-      if (!authStatus.hasValidToken) {
+      // Check for authentication - be lenient about expiry since GitHub tokens last a year
+      const hasAccessToken = !!storageWrapper.getItem('github_access_token');
+      if (!authStatus.isAuthenticated && !hasAccessToken) {
         console.log('[UniverseManager] No valid auth token, skipping Git sync setup');
         return;
+      }
+      
+      if (hasAccessToken && !authStatus.isAuthenticated) {
+        console.warn('[UniverseManager] Token appears expired but will attempt to use it (GitHub tokens typically last 1 year)');
       }
 
       console.log('[UniverseManager] Step 3: Getting active universe...');
       const activeUniverse = this.getActiveUniverse();
       console.log('[UniverseManager] Active universe:', activeUniverse?.slug || 'none');
 
+      // NOTE: Git sync engine setup is handled by universeBackend.autoSetupEnginesForActiveUniverse()
+      // This method is only responsible for initializing persistentAuth
       if (activeUniverse && activeUniverse.gitRepo?.linkedRepo && activeUniverse.gitRepo?.enabled) {
-        console.log('[UniverseManager] Step 4: Setting up background Git sync for active universe');
-        console.log('[UniverseManager] Git repo config:', activeUniverse.gitRepo);
-
-        try {
-          console.log('[UniverseManager] About to call connectUniverseToGit...');
-          const connectStartTime = Date.now();
-
-          await this.connectUniverseToGit(activeUniverse.slug, {
-            type: 'github',
-            user: activeUniverse.gitRepo.linkedRepo.split('/')[0],
-            repo: activeUniverse.gitRepo.linkedRepo.split('/')[1],
-            authMethod: authStatus.authMethod
-          });
-
-          console.log(`[UniverseManager] connectUniverseToGit completed in ${Date.now() - connectStartTime}ms`);
-          console.log('[UniverseManager] Background Git sync initialized');
-        } catch (error) {
-          console.warn('[UniverseManager] Background Git sync setup failed:', error);
-        }
+        console.log('[UniverseManager] Active universe has Git repo, universeBackend will set up sync engine');
       }
       
     } catch (error) {
@@ -784,7 +774,7 @@ class UniverseManager {
       // If we have auth, try to connect immediately
       const authStatus = persistentAuth.getAuthStatus();
       
-      if (authStatus.hasValidToken) {
+      if (authStatus.isAuthenticated) {
         await this.connectUniverseToGit(universe.slug, {
           type: 'github',
           user,
@@ -1170,14 +1160,54 @@ class UniverseManager {
       let authMethod = 'oauth';
       try {
         const app = persistentAuth.getAppInstallation?.();
-        if (app?.accessToken) {
-          token = app.accessToken;
-          authMethod = 'github-app';
+        if (app?.installationId) {
+          // Check if cached token is still valid (expires in 1 hour, refresh if < 5 min remaining)
+          const tokenExpiresAt = app.tokenExpiresAt ? new Date(app.tokenExpiresAt) : null;
+          const now = new Date();
+          const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+          const needsRefresh = !app.accessToken || !tokenExpiresAt || tokenExpiresAt < fiveMinutesFromNow;
+          
+          if (needsRefresh) {
+            // Request fresh GitHub App token
+            const { oauthFetch } = await import('./bridgeConfig.js');
+            const tokenResp = await oauthFetch('/api/github/app/installation-token', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ installation_id: app.installationId })
+            });
+            
+            if (tokenResp.ok) {
+              const tokenData = await tokenResp.json();
+              token = tokenData.token;
+              authMethod = 'github-app';
+              
+              // Calculate expiry time (1 hour from now)
+              const expiresAt = new Date(now.getTime() + 60 * 60 * 1000);
+              
+              // Update stored installation with fresh token and expiry
+              const updatedApp = { ...app, accessToken: token, tokenExpiresAt: expiresAt.toISOString() };
+              persistentAuth.storeAppInstallation(updatedApp);
+            } else {
+              // Fall back to OAuth if GitHub App token fails
+              token = await persistentAuth.getAccessToken();
+              authMethod = token ? 'oauth' : authMethod;
+            }
+          } else {
+            // Use cached token
+            token = app.accessToken;
+            authMethod = 'github-app';
+          }
         } else {
           token = await persistentAuth.getAccessToken();
           authMethod = token ? 'oauth' : authMethod;
         }
-      } catch (_) {}
+      } catch (_) {
+        // Final fallback to OAuth
+        try {
+          token = await persistentAuth.getAccessToken();
+          authMethod = token ? 'oauth' : authMethod;
+        } catch (__) {}
+      }
       if (!token) {
         this.notifyStatus('error', 'Git authentication required to access repository');
         return null;

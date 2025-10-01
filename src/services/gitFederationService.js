@@ -114,11 +114,17 @@ function buildSyncInfo(universe, syncStatus) {
   }
 
   if (!syncStatus) {
+    // Check if auth is available
+    const authStatus = persistentAuth.getAuthStatus();
+    const hasAuth = authStatus?.isAuthenticated;
+    
     return {
       state: 'standby',
-      label: 'Awaiting sync engine',
-      tone: '#ef6c00',
-      description: 'Sync engine not initialized yet. It will start automatically once activity is detected.',
+      label: hasAuth ? 'Awaiting sync engine' : 'Connect GitHub to sync',
+      tone: hasAuth ? '#ef6c00' : '#c62828',
+      description: hasAuth 
+        ? 'Sync engine not initialized yet. It will start automatically once activity is detected.'
+        : 'GitHub authentication required. Click "Connect GitHub" in Accounts & Access to enable sync.',
       engine: null,
       hasGitLink: true,
       lastSync,
@@ -497,6 +503,16 @@ export const gitFederationService = {
 
   async reloadActiveUniverse() {
     await universeBackendBridge.reloadActiveUniverse?.();
+    return this.refreshUniverses();
+  },
+
+  async downloadLocalFile(slug) {
+    await universeBackendBridge.downloadLocalFile(slug);
+    return this.refreshUniverses();
+  },
+
+  async uploadLocalFile(file, slug) {
+    await universeBackendBridge.uploadLocalFile(file, slug);
     return this.refreshUniverses();
   },
 
