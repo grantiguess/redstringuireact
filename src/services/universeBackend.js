@@ -401,8 +401,6 @@ class UniverseBackend {
       // Try GitHub App first (preferred)
       const app = persistentAuth.getAppInstallation?.();
       if (app?.installationId) {
-        console.log(`[UniverseBackend] Using GitHub App authentication for ${user}/${repo}`);
-        
         // Check if cached token is still valid (expires in 1 hour, refresh if < 5 min remaining)
         const tokenExpiresAt = app.tokenExpiresAt ? new Date(app.tokenExpiresAt) : null;
         const now = new Date();
@@ -410,7 +408,7 @@ class UniverseBackend {
         const needsRefresh = !app.accessToken || !tokenExpiresAt || tokenExpiresAt < fiveMinutesFromNow;
         
         if (needsRefresh) {
-          console.log('[UniverseBackend] Token missing or expiring soon, requesting fresh GitHub App installation token...');
+          console.log('[UniverseBackend] Refreshing GitHub App token...');
           const { oauthFetch } = await import('./bridgeConfig.js');
           const tokenResp = await oauthFetch('/api/github/app/installation-token', {
             method: 'POST',
@@ -430,14 +428,13 @@ class UniverseBackend {
             // Update stored installation with fresh token and expiry
             const updatedApp = { ...app, accessToken: token, tokenExpiresAt: expiresAt.toISOString() };
             persistentAuth.storeAppInstallation(updatedApp);
-            console.log(`[UniverseBackend] Fresh GitHub App token obtained, expires at ${expiresAt.toISOString()}`);
+            console.log('[UniverseBackend] GitHub App token refreshed');
           } else {
             const errorText = await tokenResp.text();
-            console.warn(`[UniverseBackend] Failed to get GitHub App token (${tokenResp.status}): ${errorText}`);
-            console.warn('[UniverseBackend] Falling back to OAuth');
+            console.warn(`[UniverseBackend] Failed to get GitHub App token (${tokenResp.status}), falling back to OAuth`);
           }
         } else {
-          console.log(`[UniverseBackend] Using cached GitHub App token (expires ${tokenExpiresAt.toISOString()})`);
+          // Use cached token (no log spam)
           token = app.accessToken;
           authMethod = 'github-app';
           installationId = app.installationId;
@@ -463,10 +460,6 @@ class UniverseBackend {
       throw new Error('No valid authentication token available');
     }
 
-    // Debug: show token format
-    const tokenPreview = token ? `${token.substring(0, 8)}...${token.substring(token.length - 8)}` : 'none';
-    console.log(`[UniverseBackend] Token retrieved: ${tokenPreview} (length: ${token?.length || 0}, method: ${authMethod})`);
-
     const providerConfig = {
       type: 'github',
       user,
@@ -480,7 +473,6 @@ class UniverseBackend {
       providerConfig.installationId = installationId;
     }
 
-    console.log(`[UniverseBackend] Creating provider for ${user}/${repo} with ${authMethod} auth`);
     return SemanticProviderFactory.createProvider(providerConfig);
   }
 

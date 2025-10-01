@@ -473,32 +473,22 @@ This repository was automatically initialized by RedString UI React. You can now
     try {
       // Short-circuit if we don't have credentials yet
       if (!this.token || String(this.token).trim().length === 0) {
-        console.warn(`[GitHubSemanticProvider] No token available for ${this.user}/${this.repo}`);
         return false;
       }
-      
-      // Debug token info
-      const tokenPreview = this.token ? `${this.token.substring(0, 8)}...${this.token.substring(this.token.length - 8)}` : 'none';
-      console.log(`[GitHubSemanticProvider] Checking availability for ${this.user}/${this.repo} with token: ${tokenPreview} (method: ${this.authMethod})`);
       
       // Check rate limit before making request
       await githubRateLimiter.waitForAvailability(this.authMethod);
       
       // Check if the repository exists by accessing the repo info, not contents
       const repoUrl = `https://api.github.com/repos/${this.user}/${this.repo}`;
-      const authHeader = this.getAuthHeader();
-      const authPreview = authHeader.substring(0, 20) + '...';
-      console.log(`[GitHubSemanticProvider] Using Authorization header: ${authPreview}`);
       
       githubRateLimiter.recordRequest(this.authMethod);
       const response = await fetch(repoUrl, {
         headers: {
-          'Authorization': authHeader,
+          'Authorization': this.getAuthHeader(),
           'Accept': 'application/vnd.github.v3+json'
         }
       });
-      
-      console.log(`[GitHubSemanticProvider] Response status: ${response.status}`);
       
       if (response.ok) {
         return true; // Repository exists and is accessible
