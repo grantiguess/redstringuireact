@@ -208,15 +208,37 @@ class UniverseBackend {
         // CRITICAL: Reload active universe from Git now that auth is ready
         const activeUniverse = universeManager.getActiveUniverse();
         if (activeUniverse?.gitRepo?.enabled) {
-          console.log('[UniverseBackend] Auth connected, reloading universe from Git...');
+          console.log('[UniverseBackend] Auth connected, checking Git for latest data...');
           try {
+            // Get current store state before loading
+            const currentState = this.storeOperations?.getState();
+            const currentNodeCount = currentState?.nodePrototypes ? (currentState.nodePrototypes instanceof Map ? currentState.nodePrototypes.size : Object.keys(currentState.nodePrototypes).length) : 0;
+            const currentGraphCount = currentState?.graphs ? (currentState.graphs instanceof Map ? currentState.graphs.size : Object.keys(currentState.graphs).length) : 0;
+            
             const storeState = await universeManager.loadUniverseData(activeUniverse);
             if (storeState && this.storeOperations?.loadUniverseFromFile) {
-              this.storeOperations.loadUniverseFromFile(storeState);
-              const loadedState = this.storeOperations.getState();
-              const nodeCount = loadedState?.nodePrototypes ? (loadedState.nodePrototypes instanceof Map ? loadedState.nodePrototypes.size : Object.keys(loadedState.nodePrototypes).length) : 0;
-              console.log(`[UniverseBackend] Reloaded from Git after auth: ${nodeCount} nodes`);
-              this.notifyStatus('success', `Synced ${activeUniverse.name} from GitHub`);
+              // Count what Git has
+              const gitNodeCount = storeState?.nodePrototypes ? (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes || {}).length) : 0;
+              const gitGraphCount = storeState?.graphs ? (storeState.graphs instanceof Map ? storeState.graphs.size : Object.keys(storeState.graphs || {}).length) : 0;
+              
+              // Smart merge: don't overwrite local work with empty Git data
+              if (gitNodeCount === 0 && gitGraphCount === 0 && (currentNodeCount > 0 || currentGraphCount > 0)) {
+                console.warn(`[UniverseBackend] Git has no data, but you have ${currentNodeCount} nodes and ${currentGraphCount} graphs locally`);
+                this.notifyStatus('warning', `Using browser storage backup (${currentNodeCount} nodes). Push to Git to sync.`);
+                // Don't overwrite! User's local work is preserved
+              } else {
+                // Git has data or both are empty - safe to load
+                this.storeOperations.loadUniverseFromFile(storeState);
+                const loadedState = this.storeOperations.getState();
+                const nodeCount = loadedState?.nodePrototypes ? (loadedState.nodePrototypes instanceof Map ? loadedState.nodePrototypes.size : Object.keys(loadedState.nodePrototypes).length) : 0;
+                console.log(`[UniverseBackend] Reloaded from Git after auth: ${nodeCount} nodes`);
+                
+                if (nodeCount === 0) {
+                  this.notifyStatus('info', `Connected to GitHub. Universe is empty - create some nodes!`);
+                } else {
+                  this.notifyStatus('success', `Synced ${activeUniverse.name} from GitHub (${nodeCount} nodes)`);
+                }
+              }
             }
           } catch (error) {
             console.warn('[UniverseBackend] Failed to reload from Git after auth:', error);
