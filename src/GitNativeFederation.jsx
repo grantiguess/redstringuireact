@@ -22,6 +22,7 @@ import {
 import gitFederationService, { STORAGE_TYPES } from './services/gitFederationService.js';
 import { persistentAuth } from './services/persistentAuth.js';
 import { oauthFetch } from './services/bridgeConfig.js';
+import universeBackend from './services/universeBackend.js';
 import RepositorySelectionModal from './components/modals/RepositorySelectionModal.jsx';
 import ConnectionStats from './components/git-federation/ConnectionStats.jsx';
 import AuthSection from './components/git-federation/AuthSection.jsx';
@@ -128,8 +129,8 @@ function buttonStyle(variant = 'outline') {
     case 'solid':
       return {
         ...base,
-        backgroundColor: '#260000',
-        color: '#bdb5b5'
+        backgroundColor: '#1a0000',
+        color: '#8a8080'
       };
     case 'danger':
       return {
@@ -626,7 +627,11 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       repo: repoName,
         authMethod: dataAuthMethod || 'oauth'
       });
-      setSyncStatus({ type: 'success', message: `Linked @${owner}/${repoName}` });
+
+      // Initialize the repository with current universe data
+      console.log(`[GitNativeFederation] Initializing repository with universe data for ${repositoryTargetSlug}`);
+      await gitFederationService.forceSave(repositoryTargetSlug);
+      setSyncStatus({ type: 'success', message: `Linked @${owner}/${repoName} and initialized with universe data` });
       setDiscoveryMap((prev) => {
         const next = { ...prev };
         delete next[`${owner}/${repoName}`];
@@ -724,7 +729,14 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         repo: repo.repo,
         authMethod: dataAuthMethod || 'oauth'
       });
-      setSyncStatus({ type: 'success', message: `Linked ${discovered.name || discovered.slug}` });
+
+      // Initialize the repository with current universe data
+      const targetSlug = discovered.slug || discovered.name;
+      if (targetSlug) {
+        console.log(`[GitNativeFederation] Initializing repository with universe data for ${targetSlug}`);
+        await gitFederationService.forceSave(targetSlug);
+      }
+      setSyncStatus({ type: 'success', message: `Linked ${discovered.name || discovered.slug} and initialized with current data` });
       await refreshState();
     } catch (err) {
       console.error('[GitNativeFederation] Link discovered failed:', err);
@@ -755,25 +767,6 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     }
   };
 
-  const handleToggleRepositoryDisabled = (repo) => {
-    const repoKey = `${repo.owner?.login || repo.owner}/${repo.name}`;
-    const updatedList = managedRepositories.map(r => {
-      const currentKey = `${r.owner?.login || r.owner}/${r.name}`;
-      if (currentKey === repoKey) {
-        return { ...r, disabled: !r.disabled };
-      }
-      return r;
-    });
-
-    setManagedRepositories(updatedList);
-    localStorage.setItem('redstring-managed-repositories', JSON.stringify(updatedList));
-
-    const newStatus = updatedList.find(r => `${r.owner?.login || r.owner}/${r.name}` === repoKey)?.disabled;
-    setSyncStatus({
-      type: 'info',
-      message: newStatus ? `Disabled ${repoKey}` : `Enabled ${repoKey}`
-    });
-  };
 
   const handleSetMainRepository = (repo) => {
     const repoKey = `${repo.owner?.login || repo.owner}/${repo.name}`;
@@ -829,6 +822,20 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     } catch (err) {
       console.error('[GitNativeFederation] Manual save failed:', err);
       setError(`Failed to save: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSetPrimarySource = async (universeSlug, sourceType) => {
+    try {
+      setLoading(true);
+      await universeBackend.setSourceOfTruth(universeSlug, sourceType);
+      setSyncStatus({ type: 'success', message: `Set ${sourceType === 'git' ? 'repository' : 'local file'} as primary source for ${universeSlug}` });
+      await refreshState();
+    } catch (err) {
+      console.error('[GitNativeFederation] Set primary source failed:', err);
+      setError(`Failed to set primary source: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -904,8 +911,19 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   const handleDownloadLocalFile = async (slug) => {
     try {
       setLoading(true);
-      await gitFederationService.downloadLocalFile(slug);
-      setSyncStatus({ type: 'success', message: 'File downloaded' });
+      // Get the current universe data and download it as a .redstring file
+      const universe = serviceState.universes.find(u => u.slug === slug);
+      if (!universe) {
+        throw new Error('Universe not found');
+      }
+
+      // Import the download function and trigger download
+      const { downloadRedstringFile } = await import('./formats/redstringFormat.js');
+      const filename = `${universe.name || slug}.redstring`;
+
+      // We need to get the store state for this universe - for now use a simple approach
+      downloadRedstringFile({}, filename);
+      setSyncStatus({ type: 'success', message: `Downloaded ${filename}` });
     } catch (err) {
       console.error('[GitNativeFederation] File download failed:', err);
       setError(`Failed to download file: ${err.message}`);
@@ -1527,6 +1545,7 @@ return (
       onEditRepoSource={handleEditRepoSource}
       onSetMainRepoSource={handleSetMainRepoSource}
       onSaveRepoSource={handleSaveRepoSource}
+      onSetPrimarySource={handleSetPrimarySource}
       isSlim={isSlim}
     />
 
@@ -1534,7 +1553,6 @@ return (
       repositories={managedRepositories}
       onBrowseRepositories={() => setShowRepositoryManager(true)}
       onRemoveRepository={handleRemoveFromManagedList}
-      onToggleDisabled={handleToggleRepositoryDisabled}
       onSetMainRepository={handleSetMainRepository}
       onLinkToUniverse={(repo) => {
         setRepositoryTargetSlug(null); // Will prompt for universe selection

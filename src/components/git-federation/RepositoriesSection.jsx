@@ -1,5 +1,5 @@
 import React from 'react';
-import { Github, ExternalLink, RefreshCw, Trash2, Link as LinkIcon, EyeOff, Eye, Star } from 'lucide-react';
+import { Github, ExternalLink, RefreshCw, Trash2, Link as LinkIcon, Star } from 'lucide-react';
 import SectionCard from './shared/SectionCard.jsx';
 
 function buttonStyle(variant = 'outline') {
@@ -36,7 +36,6 @@ const RepositoriesSection = ({
   repositories = [],
   onBrowseRepositories,
   onRemoveRepository,
-  onToggleDisabled,
   onSetMainRepository,
   onLinkToUniverse,
   onRefresh,
@@ -105,7 +104,7 @@ const RepositoriesSection = ({
                     <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
                       {repoFullName}
                       {repo.isMain && (
-                        <Star size={14} style={{ color: '#ffa726', fill: '#ffa726' }} title="Main repository" />
+                        <Star size={14} style={{ color: '#cc6600', fill: '#cc6600' }} title="Main repository" />
                       )}
                     </div>
                     {repo.description && (
@@ -138,35 +137,19 @@ const RepositoriesSection = ({
                     onClick={() => onSetMainRepository(repo)}
                     style={{
                       ...buttonStyle('outline'),
-                      color: repo.isMain ? '#ffa726' : '#666',
-                      borderColor: repo.isMain ? '#ffa726' : '#666',
+                      color: repo.isMain ? '#cc6600' : '#666',
+                      borderColor: repo.isMain ? '#cc6600' : '#666',
                       fontSize: '0.7rem',
                       padding: '4px 8px'
                     }}
                     title={repo.isMain ? 'Already main repository' : 'Set as main repository'}
                     disabled={repo.isMain}
                   >
-                    <Star size={12} style={{ fill: repo.isMain ? '#ffa726' : 'none' }} />
+                    <Star size={12} style={{ fill: repo.isMain ? '#cc6600' : 'none' }} />
                     Main
                   </button>
                 )}
 
-                {onToggleDisabled && (
-                  <button
-                    onClick={() => onToggleDisabled(repo)}
-                    style={{
-                      ...buttonStyle('outline'),
-                      color: repo.disabled ? '#ef6c00' : '#666',
-                      borderColor: repo.disabled ? '#ef6c00' : '#666',
-                      fontSize: '0.7rem',
-                      padding: '4px 8px'
-                    }}
-                    title={repo.disabled ? 'Enable repository' : 'Disable repository'}
-                  >
-                    {repo.disabled ? <Eye size={12} /> : <EyeOff size={12} />}
-                    {repo.disabled ? 'Enable' : 'Disable'}
-                  </button>
-                )}
 
                 {onRemoveRepository && (
                   <button

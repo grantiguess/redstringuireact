@@ -65,6 +65,7 @@ const UniversesList = ({
   onEditRepoSource,
   onSetMainRepoSource,
   onSaveRepoSource,
+  onSetPrimarySource,
   isSlim = false
 }) => {
   // Track which universes are expanded
@@ -96,7 +97,6 @@ const UniversesList = ({
         {universes.map((universe) => {
           const isActive = universe.slug === activeUniverseSlug;
           const isExpanded = expandedUniverses.has(universe.slug);
-          const sources = (universe.raw?.sources || []).filter((src) => src.type === 'github');
 
           return (
             <div
@@ -171,145 +171,218 @@ const UniversesList = ({
                     <div style={{ fontSize: '0.72rem', color: '#555', marginBottom: 8 }}>
                       Primary: {universe.storage?.primary?.label || 'Browser cache'}
                     </div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <button onClick={() => onLinkRepo && onLinkRepo(universe.slug)} style={buttonStyle('solid')}>
-                        <Github size={14} /> Link Repo
-                      </button>
-                      <button onClick={() => onLinkLocalFile && onLinkLocalFile(universe.slug)} style={buttonStyle('outline')}>
-                        <Upload size={14} /> Import File
-                      </button>
-                      <button onClick={() => onDownloadLocalFile && onDownloadLocalFile(universe.slug)} style={buttonStyle('outline')}>
-                        <Download size={14} /> Download
-                      </button>
-                    </div>
                   </div>
 
-                  {/* Sources */}
-                  {sources.length > 0 && (
-                    <div>
-                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#260000', marginBottom: 6 }}>
-                        Repository Sources ({sources.length})
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {sources.map((source, index) => {
-                          const isMainSource = index === 0; // First source is considered main for now
-                          const syncStatus = syncStatusMap[universe.slug];
-                          const isActive = syncStatus?.isRunning || false;
-                          const hasErrors = syncStatus?.consecutiveErrors > 0;
-
-                          return (
-                            <div
-                              key={source.id}
-                              style={{
-                                padding: 8,
-                                backgroundColor: '#cfc6c6',
-                                borderRadius: 6,
-                                border: `1px solid ${hasErrors ? '#d32f2f' : isActive ? '#2e7d32' : '#979090'}`,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: 6
-                              }}
-                            >
-                              {/* Source header */}
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <Github size={14} />
-                                  <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>
-                                    @{source.user}/{source.repo}
-                                  </span>
-                                  {isMainSource && (
-                                    <Star size={12} style={{ color: '#ffa726', fill: '#ffa726' }} title="Main repository source" />
-                                  )}
-                                  <div style={{
-                                    fontSize: '0.6rem',
-                                    padding: '2px 4px',
-                                    borderRadius: 3,
-                                    backgroundColor: hasErrors ? '#ffebee' : isActive ? '#e8f5e8' : '#f5f5f5',
-                                    color: hasErrors ? '#d32f2f' : isActive ? '#2e7d32' : '#666',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 2
-                                  }}>
-                                    <Activity size={8} />
-                                    {hasErrors ? 'Error' : isActive ? 'Syncing' : 'Idle'}
-                                  </div>
-                                </div>
-
-                                <button
-                                  onClick={() => onRemoveRepoSource && onRemoveRepoSource(universe.slug, source)}
-                                  style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    color: '#d32f2f',
-                                    cursor: 'pointer',
-                                    padding: '2px',
-                                    opacity: 0.7,
-                                    transition: 'opacity 0.2s'
-                                  }}
-                                  onMouseEnter={(e) => e.target.style.opacity = '1'}
-                                  onMouseLeave={(e) => e.target.style.opacity = '0.7'}
-                                  title="Remove source"
-                                >
-                                  <X size={12} />
-                                </button>
-                              </div>
-
-                              {/* Action buttons row */}
-                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                {!isMainSource && onSetMainRepoSource && (
-                                  <button
-                                    onClick={() => onSetMainRepoSource(universe.slug, source)}
-                                    style={{
-                                      ...buttonStyle('outline'),
-                                      fontSize: '0.65rem',
-                                      padding: '2px 6px'
-                                    }}
-                                    title="Set as main source"
-                                  >
-                                    <Star size={10} />
-                                    Main
-                                  </button>
-                                )}
-
-                                {onEditRepoSource && (
-                                  <button
-                                    onClick={() => onEditRepoSource(universe.slug, source)}
-                                    style={{
-                                      ...buttonStyle('outline'),
-                                      fontSize: '0.65rem',
-                                      padding: '2px 6px'
-                                    }}
-                                    title="Edit source"
-                                  >
-                                    <Edit size={10} />
-                                    Edit
-                                  </button>
-                                )}
-
-                                {onSaveRepoSource && (
-                                  <button
-                                    onClick={() => onSaveRepoSource(universe.slug, source)}
-                                    style={{
-                                      ...buttonStyle('outline'),
-                                      fontSize: '0.65rem',
-                                      padding: '2px 6px',
-                                      color: '#2e7d32',
-                                      borderColor: '#2e7d32'
-                                    }}
-                                    title="Manual save"
-                                    disabled={isActive}
-                                  >
-                                    <Save size={10} />
-                                    Save
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                  {/* Storage Slots */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#260000' }}>
+                      Storage
                     </div>
-                  )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {/* Repository Slot */}
+                      {universe.raw?.gitRepo?.linkedRepo ? (
+                        <button
+                          onClick={() => onSetPrimarySource && onSetPrimarySource(universe.slug, 'git')}
+                          style={{
+                            padding: 8,
+                            backgroundColor: '#cfc6c6',
+                            borderRadius: 6,
+                            border: `2px solid ${universe.sourceOfTruth === 'git' ? '#2e7d32' : '#979090'}`,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 6,
+                            cursor: 'pointer',
+                            width: '100%',
+                            textAlign: 'left'
+                          }}
+                          title={universe.sourceOfTruth === 'git' ? 'Already primary' : 'Click to set as primary'}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <Github size={14} />
+                              <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>
+                                @{universe.raw.gitRepo.linkedRepo.user}/{universe.raw.gitRepo.linkedRepo.repo}
+                              </span>
+                              {universe.sourceOfTruth === 'git' && (
+                                <span style={{
+                                  fontSize: '0.6rem',
+                                  padding: '2px 4px',
+                                  borderRadius: 3,
+                                  backgroundColor: '#e8f5e8',
+                                  color: '#2e7d32'
+                                }}>
+                                  Primary
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onRemoveRepoSource && onRemoveRepoSource(universe.slug, {
+                                  user: universe.raw.gitRepo.linkedRepo.user,
+                                  repo: universe.raw.gitRepo.linkedRepo.repo
+                                });
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#d32f2f',
+                                cursor: 'pointer',
+                                padding: '2px',
+                                opacity: 0.7
+                              }}
+                              title="Remove repository"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {onSaveRepoSource && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSaveRepoSource(universe.slug);
+                                }}
+                                style={{
+                                  ...buttonStyle('outline'),
+                                  fontSize: '0.65rem',
+                                  padding: '2px 6px',
+                                  color: '#2e7d32',
+                                  borderColor: '#2e7d32'
+                                }}
+                                title="Manual save"
+                              >
+                                <Save size={10} />
+                                Save
+                              </button>
+                            )}
+                          </div>
+                        </button>
+                      ) : (
+                        <div style={{
+                          padding: 12,
+                          backgroundColor: 'transparent',
+                          borderRadius: 6,
+                          border: '2px dashed #979090',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <button
+                            onClick={() => onLinkRepo && onLinkRepo(universe.slug)}
+                            style={{
+                              ...buttonStyle('outline'),
+                              fontSize: '0.7rem',
+                              color: '#666',
+                              borderColor: '#979090'
+                            }}
+                          >
+                            <Plus size={12} />
+                            Add Repository
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Local File Slot */}
+                      {universe.raw?.localFile?.enabled ? (
+                        <button
+                          onClick={() => onSetPrimarySource && onSetPrimarySource(universe.slug, 'local')}
+                          style={{
+                            padding: 8,
+                            backgroundColor: '#cfc6c6',
+                            borderRadius: 6,
+                            border: `2px solid ${universe.sourceOfTruth === 'local' ? '#2e7d32' : '#979090'}`,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 6,
+                            cursor: 'pointer',
+                            width: '100%',
+                            textAlign: 'left'
+                          }}
+                          title={universe.sourceOfTruth === 'local' ? 'Already primary' : 'Click to set as primary'}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <Upload size={14} />
+                              <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>
+                                {universe.raw.localFile.path || `${universe.name || universe.slug}.redstring`}
+                              </span>
+                              {universe.sourceOfTruth === 'local' && (
+                                <span style={{
+                                  fontSize: '0.6rem',
+                                  padding: '2px 4px',
+                                  borderRadius: 3,
+                                  backgroundColor: '#e8f5e8',
+                                  color: '#2e7d32'
+                                }}>
+                                  Primary
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDownloadLocalFile && onDownloadLocalFile(universe.slug);
+                              }}
+                              style={{
+                                ...buttonStyle('outline'),
+                                fontSize: '0.65rem',
+                                padding: '2px 6px',
+                                color: '#2e7d32',
+                                borderColor: '#2e7d32'
+                              }}
+                              title="Download file"
+                            >
+                              <Download size={10} />
+                              Download
+                            </button>
+                          </div>
+                        </button>
+                      ) : (
+                        <div style={{
+                          padding: 12,
+                          backgroundColor: 'transparent',
+                          borderRadius: 6,
+                          border: '2px dashed #979090',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <button
+                            onClick={() => onLinkLocalFile && onLinkLocalFile(universe.slug)}
+                            style={{
+                              ...buttonStyle('outline'),
+                              fontSize: '0.7rem',
+                              color: '#666',
+                              borderColor: '#979090'
+                            }}
+                          >
+                            <Plus size={12} />
+                            Add Local File
+                          </button>
+                        </div>
+                      )}
+
+
+                      {/* Browser Storage Warning */}
+                      {(!universe.raw?.gitRepo?.linkedRepo && !universe.raw?.localFile?.enabled) && (
+                        <div style={{
+                          padding: 8,
+                          backgroundColor: '#fff3e0',
+                          borderRadius: 6,
+                          border: '1px solid #ff9800',
+                          fontSize: '0.7rem',
+                          color: '#e65100',
+                          textAlign: 'center'
+                        }}>
+                          Data stored in browser only. Link long-term storage to save your data reliably.
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
                 </div>
               )}
