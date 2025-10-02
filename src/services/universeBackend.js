@@ -21,6 +21,7 @@ class UniverseBackend {
     this.statusHandlers = new Set();
     this.isInitialized = false;
     this.authStatus = null;
+    this.loggedMergeWarning = false; // Prevent log spam from merge conflicts
 
     // Don't auto-initialize on construction to avoid circular dependencies
     // Initialization will happen on first method call
@@ -205,10 +206,22 @@ class UniverseBackend {
   setupAuthEvents() {
     // Listen for auth changes and update status
     if (typeof window !== 'undefined') {
+      let lastAuthProcessTime = 0;
+      const authDebounceDelay = 5000; // 5 second debounce to prevent rapid auth processing
+
       window.addEventListener('redstring:auth-token-stored', async () => {
+        const now = Date.now();
+
+        // Debounce auth processing to prevent infinite loops
+        if (now - lastAuthProcessTime < authDebounceDelay) {
+          console.log('[UniverseBackend] Auth event debounced - too recent');
+          return;
+        }
+        lastAuthProcessTime = now;
+
         this.authStatus = persistentAuth.getAuthStatus();
         this.notifyStatus('success', 'Authentication updated');
-        
+
         // CRITICAL: Reload active universe from Git now that auth is ready
         const activeUniverse = universeManager.getActiveUniverse();
         if (activeUniverse?.gitRepo?.enabled) {
@@ -218,17 +231,21 @@ class UniverseBackend {
             const currentState = this.storeOperations?.getState();
             const currentNodeCount = currentState?.nodePrototypes ? (currentState.nodePrototypes instanceof Map ? currentState.nodePrototypes.size : Object.keys(currentState.nodePrototypes).length) : 0;
             const currentGraphCount = currentState?.graphs ? (currentState.graphs instanceof Map ? currentState.graphs.size : Object.keys(currentState.graphs).length) : 0;
-            
+
             const storeState = await universeManager.loadUniverseData(activeUniverse);
             if (storeState && this.storeOperations?.loadUniverseFromFile) {
               // Count what Git has
               const gitNodeCount = storeState?.nodePrototypes ? (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes || {}).length) : 0;
               const gitGraphCount = storeState?.graphs ? (storeState.graphs instanceof Map ? storeState.graphs.size : Object.keys(storeState.graphs || {}).length) : 0;
-              
+
               // Smart merge: don't overwrite local work with empty Git data
               if (gitNodeCount === 0 && gitGraphCount === 0 && (currentNodeCount > 0 || currentGraphCount > 0)) {
-                console.warn(`[UniverseBackend] Git has no data, but you have ${currentNodeCount} nodes and ${currentGraphCount} graphs locally`);
-                this.notifyStatus('warning', `Using browser storage backup (${currentNodeCount} nodes). Push to Git to sync.`);
+                // Only log this warning once per session to avoid spam
+                if (!this.loggedMergeWarning) {
+                  console.warn(`[UniverseBackend] Git has no data, but you have ${currentNodeCount} nodes and ${currentGraphCount} graphs locally`);
+                  this.notifyStatus('warning', `Using browser storage backup (${currentNodeCount} nodes). Push to Git to sync.`);
+                  this.loggedMergeWarning = true;
+                }
                 // Don't overwrite! User's local work is preserved
               } else {
                 // Git has data or both are empty - safe to load
@@ -236,7 +253,7 @@ class UniverseBackend {
                 const loadedState = this.storeOperations.getState();
                 const nodeCount = loadedState?.nodePrototypes ? (loadedState.nodePrototypes instanceof Map ? loadedState.nodePrototypes.size : Object.keys(loadedState.nodePrototypes).length) : 0;
                 console.log(`[UniverseBackend] Reloaded from Git after auth: ${nodeCount} nodes`);
-                
+
                 if (nodeCount === 0) {
                   this.notifyStatus('info', `Connected to GitHub. Universe is empty - create some nodes!`);
                 } else {
@@ -965,6 +982,98 @@ class UniverseBackend {
 
     this.notifyStatus('success', `Linked local file to ${universe.name || universeSlug}`);
     return { success: true, filePath };
+  }
+
+  /**
+   * Upload and import a local .redstring file to a universe
+   */
+  async uploadLocalFile(file, targetUniverseSlug) {
+    await this.initialize();
+
+    if (!file || !file.name || !file.name.endsWith('.redstring')) {
+      throw new Error('Please select a valid .redstring file');
+    }
+
+    console.log(`[UniverseBackend] Uploading local file ${file.name} to universe ${targetUniverseSlug}`);
+
+    // Read the file content
+    const fileContent = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
+
+    // Parse and import the redstring data
+    let storeState;
+    try {
+      const parsedData = JSON.parse(fileContent);
+      storeState = importFromRedstring(parsedData);
+    } catch (error) {
+      throw new Error(`Invalid .redstring file format: ${error.message}`);
+    }
+
+    // Load the imported data into the target universe
+    if (this.storeOperations?.loadUniverseFromFile) {
+      // Switch to target universe first if needed
+      const currentActiveSlug = universeManager?.getActiveUniverse()?.slug;
+      if (currentActiveSlug !== targetUniverseSlug) {
+        await this.switchActiveUniverse(targetUniverseSlug);
+      }
+
+      // Load the imported state
+      this.storeOperations.loadUniverseFromFile(storeState);
+
+      // Enable local file storage for this universe
+      await this.linkLocalFileToUniverse(targetUniverseSlug, file.name);
+
+      // Save the updated state
+      await this.saveActiveUniverse(storeState);
+
+      const nodeCount = storeState?.nodePrototypes ?
+        (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes || {}).length) : 0;
+
+      this.notifyStatus('success', `Imported ${file.name} with ${nodeCount} nodes`);
+
+      return { success: true, nodeCount, fileName: file.name };
+    } else {
+      throw new Error('Store operations not initialized');
+    }
+  }
+
+  /**
+   * Set the source of truth for a universe (git or local)
+   */
+  async setSourceOfTruth(universeSlug, sourceType) {
+    await this.initialize();
+
+    const universe = universeManager.getUniverse(universeSlug);
+    if (!universe) {
+      throw new Error(`Universe ${universeSlug} not found`);
+    }
+
+    // Validate source type
+    if (sourceType !== 'git' && sourceType !== 'local') {
+      throw new Error('Source type must be "git" or "local"');
+    }
+
+    // Check if the requested source is available
+    if (sourceType === 'git' && !universe.raw?.gitRepo?.linkedRepo) {
+      throw new Error('Cannot set git as source of truth - no repository linked');
+    }
+
+    if (sourceType === 'local' && !universe.raw?.localFile?.enabled) {
+      throw new Error('Cannot set local as source of truth - no local file linked');
+    }
+
+    // Update the universe configuration
+    await universeManager.updateUniverse(universeSlug, {
+      sourceOfTruth: sourceType
+    });
+
+    this.notifyStatus('success', `Set ${sourceType === 'git' ? 'repository' : 'local file'} as primary source for ${universe.name || universeSlug}`);
+
+    return { success: true, sourceOfTruth: sourceType };
   }
 
   /**

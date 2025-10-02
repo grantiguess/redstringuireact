@@ -201,7 +201,7 @@ const UniversesList = ({
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <Github size={14} />
-                              <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#260000' }}>
                                 @{universe.raw.gitRepo.linkedRepo.user}/{universe.raw.gitRepo.linkedRepo.repo}
                               </span>
                               {universe.sourceOfTruth === 'git' && (
@@ -237,6 +237,61 @@ const UniversesList = ({
                               <X size={12} />
                             </button>
                           </div>
+
+                          {/* Git Status Information */}
+                          {(() => {
+                            const syncStatus = syncStatusMap[universe.slug];
+                            const fileName = `universes/${universe.slug}/${universe.slug}.redstring`;
+                            const statusText = syncStatus?.status || 'unknown';
+                            const lastSync = syncStatus?.lastSync ? formatWhen(syncStatus.lastSync) : 'Never';
+                            const hasError = syncStatus?.error;
+                            const isLoading = syncStatus?.isLoading || syncStatus?.isSyncing;
+
+                            return (
+                              <div style={{
+                                fontSize: '0.65rem',
+                                color: '#444',
+                                padding: '4px 0',
+                                borderTop: '1px solid #979090',
+                                marginTop: '4px',
+                                paddingTop: '6px'
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                                  <span style={{ fontWeight: 600, color: '#260000' }}>File:</span>
+                                  <code style={{ fontSize: '0.6rem', background: '#e0e0e0', padding: '1px 3px', borderRadius: 2 }}>
+                                    {fileName}
+                                  </code>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                                  <span style={{ fontWeight: 600, color: '#260000' }}>Status:</span>
+                                  <span style={{
+                                    color: hasError ? '#d32f2f' : isLoading ? '#ef6c00' : statusText === 'synced' ? '#2e7d32' : '#666',
+                                    fontWeight: 500
+                                  }}>
+                                    {isLoading ? '⟳ Loading...' : hasError ? '⚠ Error' : statusText}
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <span style={{ fontWeight: 600, color: '#260000' }}>Last sync:</span>
+                                  <span style={{ color: '#666' }}>{lastSync}</span>
+                                </div>
+                                {hasError && (
+                                  <div style={{
+                                    marginTop: 4,
+                                    padding: '3px 6px',
+                                    backgroundColor: '#ffebee',
+                                    borderRadius: 3,
+                                    border: '1px solid #ffcdd2'
+                                  }}>
+                                    <span style={{ color: '#c62828', fontSize: '0.6rem' }}>
+                                      {syncStatus.error}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {onSaveRepoSource && (
                               <button
@@ -305,7 +360,7 @@ const UniversesList = ({
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <Upload size={14} />
-                              <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#260000' }}>
                                 {universe.raw.localFile.path || `${universe.name || universe.slug}.redstring`}
                               </span>
                               {universe.sourceOfTruth === 'local' && (
@@ -319,6 +374,33 @@ const UniversesList = ({
                                   Primary
                                 </span>
                               )}
+                            </div>
+                          </div>
+
+                          {/* Local File Status Information */}
+                          <div style={{
+                            fontSize: '0.65rem',
+                            color: '#444',
+                            padding: '4px 0',
+                            borderTop: '1px solid #979090',
+                            marginTop: '4px',
+                            paddingTop: '6px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                              <span style={{ fontWeight: 600, color: '#260000' }}>File:</span>
+                              <code style={{ fontSize: '0.6rem', background: '#e0e0e0', padding: '1px 3px', borderRadius: 2 }}>
+                                {universe.raw.localFile.path || `${universe.name || universe.slug}.redstring`}
+                              </code>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                              <span style={{ fontWeight: 600, color: '#260000' }}>Status:</span>
+                              <span style={{ color: '#2e7d32', fontWeight: 500 }}>
+                                Ready for download
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontWeight: 600, color: '#260000' }}>Type:</span>
+                              <span style={{ color: '#666' }}>Local file export</span>
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
