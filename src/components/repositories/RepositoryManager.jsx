@@ -10,7 +10,7 @@ import RepositoryList from './RepositoryList.jsx';
 import { oauthFetch } from '../../services/bridgeConfig.js';
 import { persistentAuth } from '../../services/persistentAuth.js';
 
-const RepositoryManager = ({ 
+const RepositoryManager = ({
   onSelectRepository,
   currentUser,
   showCreateOption = true,

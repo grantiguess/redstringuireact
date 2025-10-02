@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, ChevronDown, ChevronRight, Github, Upload, Download } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, Github, Upload, Download, X, Edit, Star, Save, Activity } from 'lucide-react';
 import SectionCard from './shared/SectionCard.jsx';
 
 function buttonStyle(variant = 'outline') {
@@ -61,6 +61,10 @@ const UniversesList = ({
   onLinkRepo,
   onLinkLocalFile,
   onDownloadLocalFile,
+  onRemoveRepoSource,
+  onEditRepoSource,
+  onSetMainRepoSource,
+  onSaveRepoSource,
   isSlim = false
 }) => {
   // Track which universes are expanded
@@ -119,10 +123,19 @@ const UniversesList = ({
                     alignItems: 'center',
                     gap: 8,
                     padding: 0,
-                    flex: 1
+                    flex: 1,
+                    outline: 'none'
                   }}
+                  onMouseDown={(e) => e.preventDefault()}
                 >
-                  {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  <ChevronDown 
+                    size={16} 
+                    style={{ 
+                      transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
+                      transition: 'transform 0.2s ease',
+                      color: '#260000'
+                    }} 
+                  />
                   <div style={{ textAlign: 'left' }}>
                     <div style={{ fontWeight: 600, color: '#260000' }}>{universe.name}</div>
                     <div style={{ fontSize: '0.72rem', color: '#555' }}>
@@ -178,25 +191,122 @@ const UniversesList = ({
                         Repository Sources ({sources.length})
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {sources.map((source) => (
-                          <div
-                            key={source.id}
-                            style={{
-                              padding: 8,
-                              backgroundColor: '#cfc6c6',
-                              borderRadius: 6,
-                              border: '1px solid #979090',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 8
-                            }}
-                          >
-                            <Github size={14} />
-                            <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>
-                              @{source.user}/{source.repo}
-                            </span>
-                          </div>
-                        ))}
+                        {sources.map((source, index) => {
+                          const isMainSource = index === 0; // First source is considered main for now
+                          const syncStatus = syncStatusMap[universe.slug];
+                          const isActive = syncStatus?.isRunning || false;
+                          const hasErrors = syncStatus?.consecutiveErrors > 0;
+
+                          return (
+                            <div
+                              key={source.id}
+                              style={{
+                                padding: 8,
+                                backgroundColor: '#cfc6c6',
+                                borderRadius: 6,
+                                border: `1px solid ${hasErrors ? '#d32f2f' : isActive ? '#2e7d32' : '#979090'}`,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 6
+                              }}
+                            >
+                              {/* Source header */}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <Github size={14} />
+                                  <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>
+                                    @{source.user}/{source.repo}
+                                  </span>
+                                  {isMainSource && (
+                                    <Star size={12} style={{ color: '#ffa726', fill: '#ffa726' }} title="Main repository source" />
+                                  )}
+                                  <div style={{
+                                    fontSize: '0.6rem',
+                                    padding: '2px 4px',
+                                    borderRadius: 3,
+                                    backgroundColor: hasErrors ? '#ffebee' : isActive ? '#e8f5e8' : '#f5f5f5',
+                                    color: hasErrors ? '#d32f2f' : isActive ? '#2e7d32' : '#666',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 2
+                                  }}>
+                                    <Activity size={8} />
+                                    {hasErrors ? 'Error' : isActive ? 'Syncing' : 'Idle'}
+                                  </div>
+                                </div>
+
+                                <button
+                                  onClick={() => onRemoveRepoSource && onRemoveRepoSource(universe.slug, source)}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#d32f2f',
+                                    cursor: 'pointer',
+                                    padding: '2px',
+                                    opacity: 0.7,
+                                    transition: 'opacity 0.2s'
+                                  }}
+                                  onMouseEnter={(e) => e.target.style.opacity = '1'}
+                                  onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                                  title="Remove source"
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
+
+                              {/* Action buttons row */}
+                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                {!isMainSource && onSetMainRepoSource && (
+                                  <button
+                                    onClick={() => onSetMainRepoSource(universe.slug, source)}
+                                    style={{
+                                      ...buttonStyle('outline'),
+                                      fontSize: '0.65rem',
+                                      padding: '2px 6px'
+                                    }}
+                                    title="Set as main source"
+                                  >
+                                    <Star size={10} />
+                                    Main
+                                  </button>
+                                )}
+
+                                {onEditRepoSource && (
+                                  <button
+                                    onClick={() => onEditRepoSource(universe.slug, source)}
+                                    style={{
+                                      ...buttonStyle('outline'),
+                                      fontSize: '0.65rem',
+                                      padding: '2px 6px'
+                                    }}
+                                    title="Edit source"
+                                  >
+                                    <Edit size={10} />
+                                    Edit
+                                  </button>
+                                )}
+
+                                {onSaveRepoSource && (
+                                  <button
+                                    onClick={() => onSaveRepoSource(universe.slug, source)}
+                                    style={{
+                                      ...buttonStyle('outline'),
+                                      fontSize: '0.65rem',
+                                      padding: '2px 6px',
+                                      color: '#2e7d32',
+                                      borderColor: '#2e7d32'
+                                    }}
+                                    title="Manual save"
+                                    disabled={isActive}
+                                  >
+                                    <Save size={10} />
+                                    Save
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

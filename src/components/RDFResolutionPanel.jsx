@@ -12,7 +12,7 @@ import { semanticEnrichment, suggestExternalLinks, suggestEquivalentClasses } fr
 import { rdfValidation, validateNode } from '../services/rdfValidation.js';
 import { localSemanticQuery, semanticSearch, findRelatedEntities } from '../services/localSemanticQuery.js';
 import { automaticEnrichment, enrichNode } from '../services/automaticEnrichment.js';
-import { RotateCcw, ExternalLink, AlertTriangle, CheckCircle, Info, Loader2, RefreshCw, X, ChevronDown, ChevronRight, Globe, Database, Search, Plus, Brain, Network, Users, Building, Zap, Sparkles } from 'lucide-react';
+import { RotateCcw, ExternalLink, AlertTriangle, CheckCircle, Info, Loader2, RefreshCw, X, ChevronDown, Globe, Database, Search, Plus, Brain, Network, Users, Building, Zap, Sparkles } from 'lucide-react';
 
 const RDFResolutionPanel = ({ nodeData, onUpdate, isVisible = false, onClose }) => {
   const [resolutionState, setResolutionState] = useState('idle'); // idle, loading, resolved, error
@@ -597,8 +597,10 @@ const RDFResolutionPanel = ({ nodeData, onUpdate, isVisible = false, onClose }) 
                     border: `1px solid ${result.status === 'resolved' ? '#2E8B57' : '#FF4500'}`,
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'space-between'
+                    justifyContent: 'space-between',
+                    outline: 'none'
                   }}
+                  onMouseDown={(e) => e.preventDefault()}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     {result.status === 'resolved' ? <CheckCircle size={16} color="#2E8B57" /> : <AlertTriangle size={16} color="#FF4500" />}
@@ -609,7 +611,14 @@ const RDFResolutionPanel = ({ nodeData, onUpdate, isVisible = false, onClose }) 
                       {uri}
                     </span>
                   </div>
-                  {expandedSections.has(uri) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  <ChevronDown 
+                    size={16} 
+                    style={{ 
+                      transform: expandedSections.has(uri) ? 'rotate(0deg)' : 'rotate(-90deg)',
+                      transition: 'transform 0.2s ease',
+                      color: result.status === 'resolved' ? '#2E8B57' : '#FF4500'
+                    }} 
+                  />
                 </div>
 
                 {expandedSections.has(uri) && (

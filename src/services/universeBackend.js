@@ -190,8 +190,12 @@ class UniverseBackend {
     universeManager.onStatusChange((status) => {
       this.notifyStatus(status.type, status.status);
 
-      // Auto-setup engines when universes change
-      this.autoSetupEnginesForActiveUniverse();
+      // DISABLED: Auto-setup is causing infinite loops
+      // TODO: Need to implement proper debouncing or more specific triggers
+      // if (status.type === 'universe-switched' || status.type === 'universe-created') {
+      //   console.log('[UniverseBackend] Triggering auto-setup for meaningful status change:', status.type);
+      //   this.autoSetupEnginesForActiveUniverse();
+      // }
     });
   }
 
@@ -244,9 +248,9 @@ class UniverseBackend {
             console.warn('[UniverseBackend] Failed to reload from Git after auth:', error);
           }
         }
-        
-        // Set up sync engines
-        this.autoSetupEnginesForActiveUniverse();
+
+        // DISABLED: Set up sync engines - causing infinite loops
+        // this.autoSetupEnginesForActiveUniverse();
       });
     }
   }

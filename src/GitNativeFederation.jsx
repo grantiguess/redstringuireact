@@ -22,7 +22,7 @@ import {
 import gitFederationService, { STORAGE_TYPES } from './services/gitFederationService.js';
 import { persistentAuth } from './services/persistentAuth.js';
 import { oauthFetch } from './services/bridgeConfig.js';
-import RepositoryManager from './components/repositories/RepositoryManager.jsx';
+import RepositorySelectionModal from './components/modals/RepositorySelectionModal.jsx';
 import ConnectionStats from './components/git-federation/ConnectionStats.jsx';
 import AuthSection from './components/git-federation/AuthSection.jsx';
 import UniversesList from './components/git-federation/UniversesList.jsx';
@@ -166,6 +166,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     }
   });
   const [showRepositoryManager, setShowRepositoryManager] = useState(false);
+
   const [repositoryTargetSlug, setRepositoryTargetSlug] = useState(null);
   const [discoveryMap, setDiscoveryMap] = useState({});
   const [syncTelemetry, setSyncTelemetry] = useState({});
@@ -606,6 +607,20 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
 
     try {
       setLoading(true);
+
+      // Auto-add repository to managed list if not already there
+      const repoKey = `${owner}/${repoName}`;
+      const alreadyManaged = managedRepositories.some(r =>
+        `${r.owner?.login || r.owner}/${r.name}` === repoKey
+      );
+
+      if (!alreadyManaged) {
+        const newList = [...managedRepositories, repo];
+        setManagedRepositories(newList);
+        localStorage.setItem('redstring-managed-repositories', JSON.stringify(newList));
+        console.log(`[GitNativeFederation] Auto-added ${repoKey} to managed repositories`);
+      }
+
       await gitFederationService.attachGitRepository(repositoryTargetSlug, {
       user: owner,
       repo: repoName,
@@ -680,6 +695,30 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   const handleLinkDiscovered = async (discovered, repo) => {
     try {
       setLoading(true);
+
+      // Auto-add repository to managed list if not already there
+      const repoKey = `${repo.user}/${repo.repo}`;
+      const alreadyManaged = managedRepositories.some(r =>
+        `${r.owner?.login || r.owner}/${r.name}` === repoKey
+      );
+
+      if (!alreadyManaged) {
+        // Construct a repository object that matches the expected format
+        const repoObject = {
+          name: repo.repo,
+          owner: { login: repo.user },
+          full_name: `${repo.user}/${repo.repo}`,
+          html_url: `https://github.com/${repo.user}/${repo.repo}`,
+          private: false, // We don't know this for discovered repos
+          id: `discovered-${repo.user}-${repo.repo}` // Generate a unique ID
+        };
+
+        const newList = [...managedRepositories, repoObject];
+        setManagedRepositories(newList);
+        localStorage.setItem('redstring-managed-repositories', JSON.stringify(newList));
+        console.log(`[GitNativeFederation] Auto-added ${repoKey} to managed repositories (from discovery)`);
+      }
+
       await gitFederationService.linkDiscoveredUniverse(discovered, {
         user: repo.user,
         repo: repo.repo,
@@ -696,11 +735,11 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   };
 
   const handleAddToManagedList = (repo) => {
-    const repoKey = `${repo.owner.login || repo.owner}/${repo.name}`;
-    const alreadyAdded = managedRepositories.some(r => 
-      `${r.owner.login || r.owner}/${r.name}` === repoKey
+    const repoKey = `${repo.owner?.login || repo.owner}/${repo.name}`;
+    const alreadyAdded = managedRepositories.some(r =>
+      `${r.owner?.login || r.owner}/${r.name}` === repoKey
     );
-    
+
     if (alreadyAdded) {
       setSyncStatus({ type: 'warning', message: `${repoKey} is already in your list` });
       return;
@@ -716,15 +755,121 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     }
   };
 
-  const handleRemoveFromManagedList = (repo) => {
-    const repoKey = `${repo.owner.login || repo.owner}/${repo.name}`;
-    const newList = managedRepositories.filter(r => 
-      `${r.owner.login || r.owner}/${r.name}` !== repoKey
+  const handleToggleRepositoryDisabled = (repo) => {
+    const repoKey = `${repo.owner?.login || repo.owner}/${repo.name}`;
+    const updatedList = managedRepositories.map(r => {
+      const currentKey = `${r.owner?.login || r.owner}/${r.name}`;
+      if (currentKey === repoKey) {
+        return { ...r, disabled: !r.disabled };
+      }
+      return r;
+    });
+
+    setManagedRepositories(updatedList);
+    localStorage.setItem('redstring-managed-repositories', JSON.stringify(updatedList));
+
+    const newStatus = updatedList.find(r => `${r.owner?.login || r.owner}/${r.name}` === repoKey)?.disabled;
+    setSyncStatus({
+      type: 'info',
+      message: newStatus ? `Disabled ${repoKey}` : `Enabled ${repoKey}`
+    });
+  };
+
+  const handleSetMainRepository = (repo) => {
+    const repoKey = `${repo.owner?.login || repo.owner}/${repo.name}`;
+    const updatedList = managedRepositories.map(r => {
+      const currentKey = `${r.owner?.login || r.owner}/${r.name}`;
+      return { ...r, isMain: currentKey === repoKey };
+    });
+
+    setManagedRepositories(updatedList);
+    localStorage.setItem('redstring-managed-repositories', JSON.stringify(updatedList));
+
+    setSyncStatus({
+      type: 'success',
+      message: `Set ${repoKey} as main repository`
+    });
+  };
+
+  const handleRemoveRepoSource = async (universeSlug, source) => {
+    try {
+      setLoading(true);
+      await gitFederationService.detachGitRepository(universeSlug, {
+        user: source.user,
+        repo: source.repo
+      });
+      setSyncStatus({ type: 'success', message: `Removed @${source.user}/${source.repo} from ${universeSlug}` });
+      await refreshState();
+    } catch (err) {
+      console.error('[GitNativeFederation] Remove source failed:', err);
+      setError(`Failed to remove repository source: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditRepoSource = (universeSlug, source) => {
+    // Set the universe as target and show repository manager for swapping
+    setRepositoryTargetSlug(universeSlug);
+    setShowRepositoryManager(true);
+    setSyncStatus({ type: 'info', message: `Select new repository to replace @${source.user}/${source.repo}` });
+  };
+
+  const handleSetMainRepoSource = async (universeSlug, source) => {
+    // This would require backend support to reorder sources
+    setSyncStatus({ type: 'info', message: `Main source feature coming soon` });
+  };
+
+  const handleSaveRepoSource = async (universeSlug, source) => {
+    try {
+      setLoading(true);
+      await gitFederationService.forceSave(universeSlug);
+      setSyncStatus({ type: 'success', message: `Manual save triggered for ${universeSlug}` });
+      await refreshState();
+    } catch (err) {
+      console.error('[GitNativeFederation] Manual save failed:', err);
+      setError(`Failed to save: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRemoveFromManagedList = async (repo) => {
+    const repoKey = `${repo.owner?.login || repo.owner}/${repo.name}`;
+
+    // Check if this repo is linked to any universes and warn the user
+    const linkedUniverses = serviceState.universes.filter(universe =>
+      universe.raw?.sources?.some(source =>
+        source.type === 'github' &&
+        source.user === (repo.owner?.login || repo.owner) &&
+        source.repo === repo.name
+      )
     );
+
+    if (linkedUniverses.length > 0) {
+      const universeNames = linkedUniverses.map(u => u.name).join(', ');
+      const shouldContinue = typeof window !== 'undefined' ?
+        window.confirm(`This repository is linked to universe(s): ${universeNames}. Remove it anyway? You may need to manually detach it from those universes.`) :
+        true;
+
+      if (!shouldContinue) {
+        return;
+      }
+    }
+
+    const newList = managedRepositories.filter(r =>
+      `${r.owner?.login || r.owner}/${r.name}` !== repoKey
+    );
+
     setManagedRepositories(newList);
     try {
       localStorage.setItem('redstring_managed_repos', JSON.stringify(newList));
-      setSyncStatus({ type: 'success', message: `Removed ${repoKey}` });
+      setSyncStatus({
+        type: 'success',
+        message: linkedUniverses.length > 0 ?
+          `Removed ${repoKey} (still linked to ${linkedUniverses.length} universe(s))` :
+          `Removed ${repoKey}`
+      });
     } catch (err) {
       console.error('[GitNativeFederation] Failed to save managed repos:', err);
     }
@@ -1378,13 +1523,19 @@ return (
       onLinkRepo={handleAttachRepo}
       onLinkLocalFile={handleLinkLocalFile}
       onDownloadLocalFile={handleDownloadLocalFile}
+      onRemoveRepoSource={handleRemoveRepoSource}
+      onEditRepoSource={handleEditRepoSource}
+      onSetMainRepoSource={handleSetMainRepoSource}
+      onSaveRepoSource={handleSaveRepoSource}
       isSlim={isSlim}
     />
 
     <RepositoriesSection
-      repositories={managedRepositories} 
+      repositories={managedRepositories}
       onBrowseRepositories={() => setShowRepositoryManager(true)}
       onRemoveRepository={handleRemoveFromManagedList}
+      onToggleDisabled={handleToggleRepositoryDisabled}
+      onSetMainRepository={handleSetMainRepository}
       onLinkToUniverse={(repo) => {
         setRepositoryTargetSlug(null); // Will prompt for universe selection
         setShowRepositoryManager(true);
@@ -1408,72 +1559,16 @@ return (
       isSlim={isSlim}
     />
 
-      {showRepositoryManager && (
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          backgroundColor: 'rgba(0,0,0,0.45)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}
-        onClick={() => {
+      <RepositorySelectionModal
+        isOpen={showRepositoryManager}
+        onClose={() => {
           setShowRepositoryManager(false);
           setRepositoryTargetSlug(null);
         }}
-        >
-          <div
-            style={{
-              width: 'min(90vw, 760px)',
-              height: 'min(90vh, 600px)',
-              backgroundColor: '#bdb5b5',
-              border: '1px solid #260000',
-            borderRadius: 8,
-              display: 'flex',
-              flexDirection: 'column',
-              boxShadow: '0 12px 28px rgba(0,0,0,0.25)'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '14px 18px',
-              borderBottom: '1px solid #260000'
-            }}
-          >
-            <div style={{ fontWeight: 700 }}>Select Repository</div>
-              <button
-              onClick={() => {
-                setShowRepositoryManager(false);
-                setRepositoryTargetSlug(null);
-              }}
-                style={{
-                  border: 'none',
-                background: 'transparent',
-                  color: '#260000',
-                  fontSize: '1.2rem',
-                  cursor: 'pointer'
-                }}
-                aria-label="Close repository manager"
-              >
-                ×
-              </button>
-            </div>
-            <div style={{ flex: 1, overflow: 'hidden' }}>
-            <RepositoryManager 
-              onSelectRepository={handleRepositorySelect}
-              onAddToList={handleAddToManagedList}
-              managedRepositories={managedRepositories}
-            />
-            </div>
-          </div>
-        </div>
-      )}
+        onSelectRepository={handleRepositorySelect}
+        onAddToManagedList={handleAddToManagedList}
+        managedRepositories={managedRepositories}
+      />
 
     {(isConnecting) && (
       <div

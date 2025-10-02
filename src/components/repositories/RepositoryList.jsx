@@ -5,27 +5,35 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { 
-  GitBranch, 
-  Plus, 
-  Search, 
-  Book, 
-  Users, 
-  Lock, 
+import {
+  GitBranch,
+  Plus,
+  Search,
+  Book,
+  Users,
+  Lock,
   Unlock,
   Calendar,
   ArrowUpDown,
   ExternalLink,
   Settings,
   Trash2,
-  ListPlus
+  ListPlus,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  RefreshCw,
+  EyeOff,
+  Eye
 } from 'lucide-react';
+import { gitFederationService } from '../../services/gitFederationService.js';
 
-const RepositoryList = ({ 
-  repositories = [], 
-  onSelectRepository, 
+const RepositoryList = ({
+  repositories = [],
+  onSelectRepository,
   onCreateRepository,
   onRemoveRepository,
+  onToggleDisabled, // NEW: Toggle repo disabled status
   onAddToList, // NEW: Add repo to managed list
   managedRepositories = [], // NEW: Already-managed repos
   currentUser,
@@ -36,6 +44,8 @@ const RepositoryList = ({
   const [sortOrder, setSortOrder] = useState('desc'); // 'asc', 'desc'
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredRepos, setFilteredRepos] = useState([]);
+  const [expandedRepos, setExpandedRepos] = useState(new Set());
+  const [discoveredUniverses, setDiscoveredUniverses] = useState({});
 
   // Filter and sort repositories
   useEffect(() => {
@@ -100,6 +110,41 @@ const RepositoryList = ({
   const getSortIcon = (field) => {
     if (sortBy !== field) return <ArrowUpDown size={12} style={{ opacity: 0.5 }} />;
     return <ArrowUpDown size={12} style={{ transform: sortOrder === 'desc' ? 'rotate(180deg)' : 'none' }} />;
+  };
+
+  const toggleRepoExpansion = async (repo) => {
+    const repoKey = `${repo.owner?.login || repo.owner}/${repo.name}`;
+    const newExpanded = new Set(expandedRepos);
+
+    if (newExpanded.has(repoKey)) {
+      newExpanded.delete(repoKey);
+      setExpandedRepos(newExpanded);
+    } else {
+      newExpanded.add(repoKey);
+      setExpandedRepos(newExpanded);
+
+      // Discover universes if not already cached
+      if (!discoveredUniverses[repoKey]) {
+        try {
+          const universes = await gitFederationService.discoverUniverses({
+            user: repo.owner?.login || repo.owner,
+            repo: repo.name,
+            authMethod: 'oauth'
+          });
+
+          setDiscoveredUniverses(prev => ({
+            ...prev,
+            [repoKey]: universes || []
+          }));
+        } catch (err) {
+          console.warn('Failed to discover universes for repo:', repoKey, err);
+          setDiscoveredUniverses(prev => ({
+            ...prev,
+            [repoKey]: []
+          }));
+        }
+      }
+    }
   };
 
   return (
@@ -260,145 +305,301 @@ const RepositoryList = ({
             )}
           </div>
         ) : (
-          filteredRepos.map((repo) => (
+          filteredRepos.map((repo) => {
+            const repoKey = `${repo.owner?.login || repo.owner}/${repo.name}`;
+            const isExpanded = expandedRepos.has(repoKey);
+            const universes = discoveredUniverses[repoKey] || [];
+
+            return (
             <div
               key={repo.id || repo.full_name}
-              onClick={() => onSelectRepository && onSelectRepository(repo)}
               style={{
-                padding: '12px 16px',
                 borderBottom: '1px solid #bdb5b5',
-                cursor: onSelectRepository ? 'pointer' : 'default',
-                backgroundColor: '#979090',
-                transition: 'background-color 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                if (onSelectRepository) {
-                  e.target.style.backgroundColor = '#bdb5b5';
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.backgroundColor = '#979090';
+                backgroundColor: repo.disabled ? '#b0b0b0' : '#979090',
+                opacity: repo.disabled ? 0.6 : 1
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                    <GitBranch size={16} />
-                    <span style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
-                      {repo.name}
-                    </span>
-                    {repo.private ? (
-                      <Lock size={12} style={{ opacity: 0.6 }} />
-                    ) : (
-                      <Unlock size={12} style={{ opacity: 0.6 }} />
-                    )}
-                  </div>
-                  
-                  {repo.description && (
-                    <div style={{ 
-                      fontSize: '0.8rem', 
-                      color: '#333', 
-                      marginBottom: '6px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      {repo.description}
-                    </div>
+              {/* Main repository row */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  justifyContent: 'space-between'
+                }}
+              >
+              {/* Clickable main content area */}
+              <div
+                onClick={() => onSelectRepository && onSelectRepository(repo)}
+                style={{
+                  flex: 1,
+                  padding: '12px 16px',
+                  cursor: onSelectRepository ? 'pointer' : 'default',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  if (onSelectRepository) {
+                    e.target.style.backgroundColor = '#bdb5b5';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.backgroundColor = 'transparent';
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <GitBranch size={16} />
+                  <span style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
+                    {repo.name}
+                  </span>
+                  {repo.private ? (
+                    <Lock size={12} style={{ opacity: 0.6 }} />
+                  ) : (
+                    <Unlock size={12} style={{ opacity: 0.6 }} />
                   )}
-                  
-                  <div style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '12px',
-                    fontSize: '0.75rem',
-                    color: '#666'
-                  }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Calendar size={12} />
-                      Updated {formatDate(repo.updated_at || repo.updated)}
+
+                  {/* Universe count indicator */}
+                  {isExpanded && universes.length > 0 && (
+                    <span style={{
+                      fontSize: '0.7rem',
+                      color: '#fff',
+                      backgroundColor: '#260000',
+                      padding: '2px 6px',
+                      borderRadius: '3px'
+                    }}>
+                      {universes.length} universe{universes.length === 1 ? '' : 's'}
                     </span>
-                    {repo.owner && repo.owner.login && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Users size={12} />
-                        {repo.owner.login}
-                      </span>
-                    )}
-                  </div>
+                  )}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
-                  {repo.html_url && (
-                    <a
-                      href={repo.html_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      style={{
-                        color: '#260000',
-                        opacity: 0.7,
-                        transition: 'opacity 0.2s'
-                      }}
-                      onMouseEnter={(e) => e.target.style.opacity = '1'}
-                      onMouseLeave={(e) => e.target.style.opacity = '0.7'}
-                    >
-                      <ExternalLink size={14} />
-                    </a>
-                  )}
-                  
-                  {onAddToList && !managedRepositories.some(r => 
-                    `${r.owner?.login || r.owner}/${r.name}` === `${repo.owner?.login || repo.owner}/${repo.name}`
-                  ) && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAddToList(repo);
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#2e7d32',
-                        cursor: 'pointer',
-                        padding: '2px',
-                        opacity: 0.7,
-                        transition: 'opacity 0.2s'
-                      }}
-                      onMouseEnter={(e) => e.target.style.opacity = '1'}
-                      onMouseLeave={(e) => e.target.style.opacity = '0.7'}
-                      title="Add to my repositories"
-                    >
-                      <ListPlus size={14} />
-                    </button>
-                  )}
-                  
-                  {isOwner && onRemoveRepository && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRemoveRepository(repo);
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#d32f2f',
-                        cursor: 'pointer',
-                        padding: '2px',
-                        opacity: 0.7,
-                        transition: 'opacity 0.2s'
-                      }}
-                      onMouseEnter={(e) => e.target.style.opacity = '1'}
-                      onMouseLeave={(e) => e.target.style.opacity = '0.7'}
-                      title="Remove from list"
-                    >
-                      <Trash2 size={12} />
-                    </button>
+                {repo.description && (
+                  <div style={{
+                    fontSize: '0.8rem',
+                    color: '#333',
+                    marginBottom: '6px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {repo.description}
+                  </div>
+                )}
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  fontSize: '0.75rem',
+                  color: '#666'
+                }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Calendar size={12} />
+                    Updated {formatDate(repo.updated_at || repo.updated)}
+                  </span>
+                  {repo.owner && repo.owner.login && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Users size={12} />
+                      {repo.owner.login}
+                    </span>
                   )}
                 </div>
               </div>
+
+              {/* Action buttons area - separate from clickable content */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '12px 16px 12px 0',
+                flexShrink: 0
+              }}>
+                {/* Expand/collapse button */}
+                <button
+                  onClick={() => toggleRepoExpansion(repo)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#260000',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    opacity: 0.7,
+                    transition: 'opacity 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.target.style.opacity = '1'}
+                  onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                  title={isExpanded ? 'Hide universes' : 'Show universes'}
+                >
+                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </button>
+
+                {repo.html_url && (
+                  <a
+                    href={repo.html_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      color: '#260000',
+                      opacity: 0.7,
+                      transition: 'opacity 0.2s',
+                      textDecoration: 'none'
+                    }}
+                    onMouseEnter={(e) => e.target.style.opacity = '1'}
+                    onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                  >
+                    <ExternalLink size={14} />
+                  </a>
+                )}
+
+                {onAddToList && !managedRepositories.some(r =>
+                  `${r.owner?.login || r.owner}/${r.name}` === `${repo.owner?.login || repo.owner}/${repo.name}`
+                ) && (
+                  <button
+                    onClick={() => onAddToList(repo)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#2e7d32',
+                      cursor: 'pointer',
+                      padding: '2px',
+                      opacity: 0.7,
+                      transition: 'opacity 0.2s'
+                    }}
+                    onMouseEnter={(e) => e.target.style.opacity = '1'}
+                    onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                    title="Add to my repositories"
+                  >
+                    <ListPlus size={14} />
+                  </button>
+                )}
+
+                {isOwner && onToggleDisabled && (
+                  <button
+                    onClick={() => onToggleDisabled(repo)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: repo.disabled ? '#ef6c00' : '#666',
+                      cursor: 'pointer',
+                      padding: '2px',
+                      opacity: 0.7,
+                      transition: 'opacity 0.2s'
+                    }}
+                    onMouseEnter={(e) => e.target.style.opacity = '1'}
+                    onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                    title={repo.disabled ? 'Enable repository' : 'Disable repository'}
+                  >
+                    {repo.disabled ? <Eye size={14} /> : <EyeOff size={14} />}
+                  </button>
+                )}
+
+                {isOwner && onRemoveRepository && (
+                  <button
+                    onClick={() => onRemoveRepository(repo)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#d32f2f',
+                      cursor: 'pointer',
+                      padding: '2px',
+                      opacity: 0.7,
+                      transition: 'opacity 0.2s'
+                    }}
+                    onMouseEnter={(e) => e.target.style.opacity = '1'}
+                    onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                    title="Remove from list"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+              </div>
+
+              {/* Expandable universe section */}
+              {isExpanded && (
+                <div style={{
+                  backgroundColor: '#bdb5b5',
+                  borderTop: '1px solid #979090',
+                  padding: '12px 16px'
+                }}>
+                  {discoveredUniverses[repoKey] === undefined ? (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '0.8rem',
+                      color: '#666'
+                    }}>
+                      <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                      Scanning for universes...
+                    </div>
+                  ) : universes.length === 0 ? (
+                    <div style={{
+                      fontSize: '0.8rem',
+                      color: '#666',
+                      fontStyle: 'italic'
+                    }}>
+                      No universes found in this repository
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        color: '#260000',
+                        marginBottom: '8px'
+                      }}>
+                        Found {universes.length} universe{universes.length === 1 ? '' : 's'}:
+                      </div>
+                      {universes.map((universe, index) => (
+                        <div
+                          key={index}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '0.75rem',
+                            color: '#333',
+                            marginBottom: index < universes.length - 1 ? '4px' : '0',
+                            padding: '4px 8px',
+                            backgroundColor: '#979090',
+                            borderRadius: '4px'
+                          }}
+                        >
+                          <FileText size={12} />
+                          <span style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            flex: 1
+                          }}>
+                            {universe.name || universe.path || `Universe ${index + 1}`}
+                          </span>
+                          {universe.path && (
+                            <span style={{
+                              opacity: 0.6,
+                              fontSize: '0.65rem'
+                            }}>
+                              ({universe.path})
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          ))
+            );
+          })
         )}
       </div>
+
+      <style>
+        {`
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        `}
+      </style>
     </div>
   );
 };

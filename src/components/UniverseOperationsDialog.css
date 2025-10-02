@@ -467,7 +467,7 @@
   height: 0;
 }
 
-.toggle-slider {
+.toggle-switch-slider {
   position: absolute;
   cursor: pointer;
   top: 0;
@@ -479,7 +479,7 @@
   border-radius: 24px;
 }
 
-.toggle-slider:before {
+.toggle-switch-slider:before {
   position: absolute;
   content: "";
   height: 18px;
@@ -491,11 +491,11 @@
   border-radius: 50%;
 }
 
-input:checked + .toggle-slider {
+input:checked + .toggle-switch-slider {
   background-color: #7A0000;
 }
 
-input:checked + .toggle-slider:before {
+input:checked + .toggle-switch-slider:before {
   transform: translateX(24px);
 }
 

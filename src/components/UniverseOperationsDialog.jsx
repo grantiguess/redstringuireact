@@ -482,7 +482,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
                     checked={universe.localFile.enabled}
                     onChange={(e) => handleToggleStorageSlot(universeSlug, 'local', e.target.checked)}
                   />
-                  <span className="toggle-slider"></span>
+                  <span className="toggle-switch-slider"></span>
                 </label>
               </div>
               {universe.localFile.enabled && (
@@ -524,7 +524,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
                     checked={universe.gitRepo.enabled}
                     onChange={(e) => handleToggleStorageSlot(universeSlug, 'git', e.target.checked)}
                   />
-                  <span className="toggle-slider"></span>
+                  <span className="toggle-switch-slider"></span>
                 </label>
               </div>
               {universe.gitRepo.enabled && (
@@ -550,7 +550,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
                     checked={universe.browserStorage.enabled}
                     onChange={(e) => handleToggleStorageSlot(universeSlug, 'browser', e.target.checked)}
                   />
-                  <span className="toggle-slider"></span>
+                  <span className="toggle-switch-slider"></span>
                 </label>
               </div>
             </div>
