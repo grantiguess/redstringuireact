@@ -9,9 +9,9 @@
 
 // Defer universeManager import to avoid circular dependencies
 let universeManager = null;
-import { GitSyncEngine } from './gitSyncEngine.js';
-import { persistentAuth } from './persistentAuth.js';
-import { SemanticProviderFactory } from './gitNativeProvider.js';
+import { GitSyncEngine } from '../backend/sync/index.js';
+import { persistentAuth } from '../backend/auth/index.js';
+import { SemanticProviderFactory } from '../backend/git/index.js';
 import startupCoordinator from './startupCoordinator.js';
 import { exportToRedstring, importFromRedstring, downloadRedstringFile } from '../formats/redstringFormat.js';
 
@@ -22,6 +22,7 @@ class UniverseBackend {
     this.isInitialized = false;
     this.authStatus = null;
     this.loggedMergeWarning = false; // Prevent log spam from merge conflicts
+    this.fileHandles = new Map(); // slug -> FileSystemFileHandle (session-scoped)
 
     // Git operation tracking for dashboard
     this.gitOperationStatus = new Map(); // universeSlug -> detailed status
@@ -50,7 +51,7 @@ class UniverseBackend {
       // Load universeManager first to avoid circular dependencies
       if (!universeManager) {
         console.log('[UniverseBackend] Loading universeManager...');
-        const module = await import('./universeManager.js');
+        const module = await import('../backend/universes/index.js');
         universeManager = module.default || module.universeManager;
         console.log('[UniverseBackend] UniverseManager loaded successfully');
       }
@@ -994,6 +995,78 @@ class UniverseBackend {
       
       reader.readAsText(file);
     });
+  }
+
+  /**
+   * Store a File System Access API handle for a universe (session-only)
+   */
+  async setFileHandle(universeSlug, fileHandle) {
+    if (!fileHandle) {
+      throw new Error('No file handle provided');
+    }
+    this.fileHandles.set(universeSlug, fileHandle);
+    const universe = universeManager.getUniverse(universeSlug);
+    await this.updateUniverse(universeSlug, {
+      localFile: {
+        ...(universe?.localFile || {}),
+        enabled: true,
+        path: fileHandle.name,
+        hadFileHandle: true,
+        unavailableReason: null
+      }
+    });
+    this.notifyStatus('success', `Linked file handle for ${universe?.name || universeSlug}`);
+    return { success: true, fileName: fileHandle.name };
+  }
+
+  /**
+   * Prompt user to select a file handle and store it (pick or saveAs)
+   */
+  async setupLocalFileHandle(universeSlug, options = {}) {
+    const mode = options?.mode === 'saveAs' ? 'saveAs' : 'pick';
+    const universe = universeManager.getUniverse(universeSlug);
+    let handle;
+    if (mode === 'pick') {
+      const [picked] = await window.showOpenFilePicker({
+        types: [{ description: 'RedString Files', accept: { 'application/json': ['.redstring'] } }],
+        multiple: false
+      });
+      handle = picked;
+    } else {
+      handle = await window.showSaveFilePicker({
+        suggestedName: universe?.localFile?.path || `${universe?.name || universeSlug}.redstring`,
+        types: [{ description: 'RedString Files', accept: { 'application/json': ['.redstring'] } }]
+      });
+    }
+    return this.setFileHandle(universeSlug, handle);
+  }
+
+  /**
+   * Save current universe store state to the previously linked file handle
+   */
+  async saveToLinkedLocalFile(universeSlug, storeState = null) {
+    const handle = this.fileHandles.get(universeSlug);
+    if (!handle) {
+      throw new Error('No linked local file. Pick a file first.');
+    }
+    if (!storeState && this.storeOperations?.getState) {
+      storeState = this.storeOperations.getState();
+    }
+    if (!storeState) {
+      throw new Error('No store state available to save');
+    }
+    const redstringData = exportToRedstring(storeState);
+    const jsonString = JSON.stringify(redstringData, null, 2);
+    const writable = await handle.createWritable();
+    try {
+      await writable.write(new Blob([jsonString], { type: 'application/json' }));
+      await writable.close();
+    } catch (e) {
+      try { await writable.close(); } catch (_) {}
+      throw e;
+    }
+    this.notifyStatus('success', `Saved to ${handle.name}`);
+    return { success: true, fileName: handle.name };
   }
 
   /**

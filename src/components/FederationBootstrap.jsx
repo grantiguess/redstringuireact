@@ -67,9 +67,8 @@ const FederationBootstrap = ({ children }) => {
             console.warn('[FederationBootstrap] Background service setup failed (non-critical):', serviceError);
             // Don't fail bootstrap for service setup issues
           }
-        } else {
-          console.log('[FederationBootstrap] No valid auth token, skipping Git services setup');
-        }
+        // Note: We no longer gate Git services on auth here; persistentAuth initializes first
+        // and services initialize regardless. This avoids a dead branch and ensures background wiring.
 
         // 6. Bootstrap complete
         setIsBootstrapped(true);

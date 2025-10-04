@@ -27,17 +27,9 @@ import {
   QrCode
 } from 'lucide-react';
 // Ensure SOURCE_OF_TRUTH is available to this component
-import { SOURCE_OF_TRUTH } from '../services/universeManager.js';
-// Lazy import UniverseManager to avoid circular init during federation tab load
-let __um = null;
-const getUniverseManager = async () => {
-  if (!__um) {
-    const mod = await import('../services/universeManager.js');
-    __um = mod.default || mod.universeManager;
-  }
-  return __um;
-};
-// SOURCE_OF_TRUTH values not used outside universeManager calls here; fetch from manager when needed
+import universeBackendBridge from '../services/universeBackendBridge.js';
+// SOURCE_OF_TRUTH values for UI selection
+const SOURCE_OF_TRUTH = { GIT: 'git', LOCAL: 'local', BROWSER: 'browser' };
 import useGraphStore from "../store/graphStore.jsx";
 import { 
   getCurrentDeviceConfig, 
@@ -68,16 +60,12 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
   useEffect(() => {
     if (isOpen) {
       refreshUniverses();
-      
-      // Subscribe to universe manager status updates
-      let unsubscribe = () => {};
-      (async () => {
-        const um = await getUniverseManager();
-        unsubscribe = um.onStatusChange((statusUpdate) => {
-          setStatus(statusUpdate);
-          setTimeout(() => setStatus(null), 3000);
-        });
-      })();
+
+      // Subscribe to backend status updates
+      const unsubscribe = universeBackendBridge.onStatusChange((statusUpdate) => {
+        setStatus(statusUpdate);
+        setTimeout(() => setStatus(null), 3000);
+      });
 
       // Listen for device configuration changes
       const handleDeviceConfigChange = (event) => {
@@ -87,15 +75,23 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
       window.addEventListener('redstring:device-config-ready', handleDeviceConfigChange);
 
       return () => {
-        unsubscribe();
+        if (typeof unsubscribe === 'function') unsubscribe();
         window.removeEventListener('redstring:device-config-ready', handleDeviceConfigChange);
       };
     }
   }, [isOpen]);
 
   const refreshUniverses = async () => {
-    setUniverses((await getUniverseManager()).getAllUniverses());
-    setActiveUniverse((await getUniverseManager()).getActiveUniverse());
+    try {
+      const [all, active] = await Promise.all([
+        universeBackendBridge.getAllUniverses(),
+        universeBackendBridge.getActiveUniverse()
+      ]);
+      setUniverses(all || []);
+      setActiveUniverse(active || null);
+    } catch (e) {
+      setStatus({ type: 'error', status: e.message });
+    }
   };
 
   const handleSwitchUniverse = async (slug) => {
@@ -103,8 +99,8 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
     
     setIsLoading(true);
     try {
-      const result = await (await getUniverseManager()).switchActiveUniverse(slug, { saveCurrent: true });
-      if (result.storeState) {
+      const result = await universeBackendBridge.switchActiveUniverse(slug, { saveCurrent: true });
+      if (result?.storeState) {
         loadUniverseFromFile(result.storeState);
       }
       refreshUniverses();
@@ -120,7 +116,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
     
     setIsLoading(true);
     try {
-      (await getUniverseManager()).createUniverse(newUniverseName.trim());
+      await universeBackendBridge.createUniverse(newUniverseName.trim());
       setNewUniverseName('');
       refreshUniverses();
     } catch (error) {
@@ -132,7 +128,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
 
   const handleDeleteUniverse = async (slug) => {
     try {
-      (await getUniverseManager()).deleteUniverse(slug);
+      await universeBackendBridge.deleteUniverse(slug);
       refreshUniverses();
       setShowDeleteConfirm(null);
     } catch (error) {
@@ -143,7 +139,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
   const handleSaveUniverse = async () => {
     setIsLoading(true);
     try {
-      await (await getUniverseManager()).saveActiveUniverse();
+      await universeBackendBridge.saveActiveUniverse();
     } catch (error) {
       setStatus({ type: 'error', status: error.message });
     } finally {
@@ -161,29 +157,25 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
       return;
     }
 
-    const universe = (await getUniverseManager()).getUniverse(universeSlug);
+    const universe = universes.find(u => u.slug === universeSlug);
     if (!universe) return;
 
     setIsLoading(true);
     try {
       if (operationType === 'pick') {
-        // Let user pick a new file for this universe
-        await (await getUniverseManager()).setupFileHandle(universeSlug);
-        refreshUniverses();
-      } else if (operationType === 'save') {
-        // Save current data to a new file for this universe
-        const fileHandle = await window.showSaveFilePicker({
-          suggestedName: universe.localFile.path,
-          types: [{ description: 'RedString Files', accept: { 'application/json': ['.redstring'] } }]
+        // Import a chosen .redstring file into this universe
+        const [handle] = await window.showOpenFilePicker({
+          types: [{ description: 'RedString Files', accept: { 'application/json': ['.redstring'] } }],
+          multiple: false
         });
-        
-        (await getUniverseManager()).setFileHandle(universeSlug, fileHandle);
-        
-        // Save current data to the new file
-        if (universeSlug === activeUniverse?.slug) {
-          await (await getUniverseManager()).saveActiveUniverse();
-        }
+        const file = await handle.getFile();
+        await universeBackendBridge.uploadLocalFile(file, universeSlug);
         refreshUniverses();
+        setStatus({ type: 'success', status: `Imported ${file.name}` });
+      } else if (operationType === 'save') {
+        // Download current data as a .redstring file
+        await universeBackendBridge.downloadLocalFile(universeSlug);
+        setStatus({ type: 'success', status: 'Downloaded universe file' });
       }
     } catch (error) {
       if (error.name !== 'AbortError') {
@@ -220,24 +212,19 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
   // Generate QR code for universe sharing (mobile-friendly)
   const handleGenerateQR = (universe) => {
     if (universe.gitRepo?.linkedRepo) {
-      const gitUrl = `https://github.com/${universe.gitRepo.linkedRepo}`;
+      const linked = typeof universe.gitRepo.linkedRepo === 'string'
+        ? universe.gitRepo.linkedRepo
+        : `${universe.gitRepo.linkedRepo.user}/${universe.gitRepo.linkedRepo.repo}`;
+      const gitUrl = `https://github.com/${linked}`;
       const shareUrl = `${window.location.origin}?import=${encodeURIComponent(gitUrl)}`;
-      
-      // Simple QR code generation (would need proper QR library in production)
-      setStatus({ 
-        type: 'info', 
-        status: `Share URL: ${shareUrl}` 
-      });
+      setStatus({ type: 'info', status: `Share URL: ${shareUrl}` });
     } else {
-      setStatus({ 
-        type: 'error', 
-        status: 'Universe must be connected to Git repository to generate sharing link' 
-      });
+      setStatus({ type: 'error', status: 'Universe must be connected to Git repository to generate sharing link' });
     }
   };
 
   const handleUpdateSourceOfTruth = async (universeSlug, newSourceOfTruth) => {
-    (await getUniverseManager()).updateUniverse(universeSlug, { sourceOfTruth: newSourceOfTruth });
+    await universeBackendBridge.updateUniverse(universeSlug, { sourceOfTruth: newSourceOfTruth });
     refreshUniverses();
   };
 
@@ -279,7 +266,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
       updates.browserStorage = { ...universe.browserStorage, enabled };
     }
 
-    (await getUniverseManager()).updateUniverse(universeSlug, updates);
+    await universeBackendBridge.updateUniverse(universeSlug, updates);
     refreshUniverses();
   };
 
@@ -578,7 +565,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
             {operation === 'create' && 'Create New Universe'}
             {operation.startsWith('edit-') && (() => {
               const id = operation.replace('edit-', '');
-              const name = (__um && __um.getUniverse(id)?.name) || 'Unknown';
+              const name = (universes.find(u => u.slug === id)?.name) || 'Unknown';
               return `Edit Universe: ${name}`;
             })()}
           </div>
