@@ -217,10 +217,64 @@ export class PersistentAuth {
    * Attempt auto-connect using stored GitHub App installation
    */
   async attemptAppAutoConnect() {
-    const appInstallation = this.getAppInstallation();
+    let appInstallation = this.getAppInstallation();
     if (!appInstallation) {
-      console.log('[PersistentAuth] No GitHub App installation found');
-      return false;
+      console.log('[PersistentAuth] No stored GitHub App installation found; attempting discovery...');
+      try {
+        // Ask backend for installations associated with this app
+        const listResp = await oauthFetch('/api/github/app/installations');
+        if (listResp && listResp.ok) {
+          const installations = await listResp.json();
+          if (Array.isArray(installations) && installations.length > 0) {
+            // Prefer most recent (server already sorts), otherwise first
+            const selected = installations[0] || installations.find(Boolean);
+            const installationId = selected?.id || selected?.installation?.id;
+            if (installationId) {
+              // Obtain a fresh installation token
+              const tokenResp = await oauthFetch('/api/github/app/installation-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ installation_id: installationId })
+              });
+
+              if (tokenResp.ok) {
+                const tokenData = await tokenResp.json();
+                const accessToken = tokenData?.token;
+
+                // Optionally fetch installation details (repos/account)
+                let repositories = [];
+                let userData = {};
+                try {
+                  const instResp = await oauthFetch(`/api/github/app/installation/${installationId}`);
+                  if (instResp.ok) {
+                    const instData = await instResp.json();
+                    repositories = Array.isArray(instData?.repositories) ? instData.repositories : [];
+                    userData = instData?.account || {};
+                  }
+                } catch (_) {}
+
+                // Store and proceed as connected
+                this.storeAppInstallation({
+                  installationId,
+                  accessToken,
+                  repositories,
+                  userData
+                });
+
+                appInstallation = this.getAppInstallation();
+                console.log('[PersistentAuth] Discovered and stored GitHub App installation:', installationId);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[PersistentAuth] Installation discovery failed:', e?.message || e);
+      }
+
+      if (!appInstallation) {
+        // Still nothing; require explicit install
+        return false;
+      }
     }
 
     console.log('[PersistentAuth] Found stored GitHub App installation:', {

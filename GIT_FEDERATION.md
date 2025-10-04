@@ -1,0 +1,177 @@
+# Git Federation in Redstring (Single-Source Guide)
+
+Status: Authoritative overview of the current system
+
+This guide explains how Redstring’s Git-first federation works today: how universes are stored, how syncing operates, how UI flows map to services, and what repo structures are expected.
+
+## Core Concepts
+
+- **Universe**: A Redstring workspace. In Git mode it lives under `universes/<slug>/<file>.redstring`.
+- **Source of Truth**: Which storage defines what appears on screen. Options: `git` (default), `local` file, or `browser` fallback.
+- **Storage Slots** per universe:
+  - Git repository (remote JSON files via provider API)
+  - Local `.redstring` file (File System Access API)
+  - Browser storage (IndexedDB fallback, mobile-first)
+
+## Repository Layout
+
+- Primary file path used by sync: `universes/<slug>/<fileBaseName>.redstring`
+  - Defaults: folder `universes/<slug>`, file `<slug>.redstring` unless configured otherwise
+  - Created automatically if missing when reading in Git mode
+
+Optional (not required by the current engine):
+- You may keep sharded mirrors (e.g., `universe/nodes/*.json`) for human PR ergonomics. The engine reads/writes the canonical JSON `.redstring` file.
+
+## Architecture and Services
+
+- `src/services/universeManager.js` (UniverseManager)
+  - Orchestrates universes, switching, saving, loading
+  - Knows source-of-truth per universe and chooses load path: Git → Local → Browser
+  - Can read Git directly without a registered engine when needed
+
+- `src/services/gitSyncEngine.js` (GitSyncEngine)
+  - Background sync to Git provider with batching and rate-limit aware commits
+  - Writes raw JSON snapshots to `universes/<slug>/<file>.redstring`
+  - Conflict handling, backoff, and a force-commit path for user-invoked saves
+  - Modes: `git` (default) or `local` source-of-truth for merge decisions
+
+- `src/services/gitNativeProvider.js` (SemanticProvider + GitHub provider)
+  - Uniform provider interface with raw read/write methods
+  - Current implementation targets GitHub REST API with OAuth or GitHub App tokens
+  - Handles base64 encoding, SHA-based updates, and 409 conflict retry
+
+- `src/services/gitFederationService.js`
+  - UI bridge for listing universes, attaching repos, and toggling storage slots
+  - Computes per-universe status and exposes helpers used by federation UI
+
+- UI Surfaces
+  - `src/GitNativeFederation.jsx`: Federated storage panel (connect Git, manage universes, inspect sync)
+  - `src/components/UniverseOperationsDialog.jsx`: Centralized universe management, source-of-truth selection, storage toggles
+
+## Source of Truth Behavior
+
+The GitSyncEngine merges based on the selected source-of-truth:
+- `git` mode (default): If Git has content, Git wins. If Git empty and local has content, keep local and sync on next commit.
+- `local` mode: Local is authoritative; Git is a backup target.
+- Browser fallback is used for mobile or when neither Git nor Local can serve content.
+
+Note: The engine writes a single canonical JSON `.redstring` file. It does not currently shard or maintain multiple mirrors.
+
+## Authentication
+
+- Preferred: GitHub App installation tokens when available (automatic refresh; reduced rate limits)
+- Fallback: OAuth token stored locally via `persistentAuth`
+- Provider is checked for availability before Git reads; the UI surfaces errors when auth is missing
+
+### Auth Auto-Connect and Installation Discovery
+
+- `src/services/persistentAuth.js`
+  - On startup (`initialize()`), triggers `attemptAutoConnect()` in the background.
+  - GitHub App path: if no stored installation, it now queries the backend for existing installations (`GET /api/github/app/installations`), selects the most recent, fetches an installation token (`POST /api/github/app/installation-token`), pulls installation details (`GET /api/github/app/installation/:id`), stores them, and emits connected events. This fixes the “already installed then click back” loop.
+  - OAuth path: validates existing tokens via backend validation (`POST /api/github/oauth/validate`), stores/extends expiry, and emits events.
+  - Emits window events consumed across the app: `redstring:auth-token-stored` and `redstring:auth-connected`.
+
+- `src/services/oauthAutoConnect.js`
+  - Session-scoped auto-connect service (optional/secondary) with similar logic. If no auth at all, it can trigger the OAuth flow by redirecting to GitHub after fetching the client id from `GET /api/github/oauth/client-id`.
+
+- `src/components/FederationBootstrap.jsx`
+  - Runs at app startup, calls `persistentAuth.initialize()`, initializes background sync, and wires `SaveCoordinator` to the current universe/sync engine.
+
+### Backend Endpoints (oauth-server.js)
+
+- OAuth: `GET /api/github/oauth/client-id`, `POST /api/github/oauth/token`, `POST /api/github/oauth/validate`, `DELETE /api/github/oauth/revoke`.
+- GitHub App: `GET /api/github/app/installations`, `GET /api/github/app/installation/:installation_id`, `POST /api/github/app/installation-token`, `GET /api/github/app/info`.
+
+### Storage Keys and Events (for debugging)
+
+- Local/session storage keys:
+  - `github_access_token`, `github_token_expiry`, `github_user_data`
+  - `github_app_installation_id`, `github_app_access_token`, `github_app_repositories`, `github_app_user_data`, `github_app_last_updated`
+  - Session: `oauth_autoconnect_attempted`, `github_oauth_pending`, `github_oauth_state`
+- Window events to watch: `redstring:auth-token-stored`, `redstring:auth-connected`
+- Common symptoms:
+  - Already-installed GitHub App but UI asks to reinstall → installation discovery should auto-connect on load.
+  - 401 while listing repos → token invalid; `persistentAuth` will clear and re-auth.
+  - Rate-limit/info spam in sync → circuit breaker active in `gitSyncEngine`.
+
+## Sync Model
+
+- Real-time local updates are recorded in memory; commits are batched on an interval (20–30s depending on auth method)
+- Intelligent debouncing during drag operations reduces churn
+- Circuit breaker prevents API spam; error backoff after repeated failures
+- Force save path allows immediate overwrite with exponential backoff for 409 conflicts
+
+## Typical Flows
+
+1) Connect a Git repository
+   - From the federation panel, attach a repo to a universe
+   - Set source of truth to `git` to drive the UI from the remote file
+
+2) Load a universe from Git URL
+   - Use the Universe Operations dialog’s Git flow
+   - If the target file is missing, the manager seeds a new empty universe file remotely
+
+3) Edit and persist
+   - UI edits are immediate; background sync writes JSON to Git
+   - You can also trigger a force save from UI if needed
+
+4) Switch universes
+   - Switching swaps active datasets; each universe retains its own storage configuration
+
+## Conflict and Rate Limits
+
+- 409 conflicts are retried with fresh SHAs and small exponential backoff
+- Minimum intervals between commits, plus batching, reduce provider rate pressure
+- Circuit breaker opens when too many API calls occur; resumes after cooldown
+
+## File Names and Paths
+
+- Folder and filename are configurable per universe: `gitRepo.universeFolder`, `gitRepo.universeFile`
+- Defaults are computed from the universe slug
+- The engine sanitizes `fileBaseName` to avoid encoding issues
+
+## Provider Notes (GitHub Today)
+
+- REST API for file contents is used, not the native Git protocol
+- Auth header differs for GitHub App vs OAuth tokens
+- Read/write endpoints are wrapped with retry and basic error reporting
+
+## Backward Compatibility
+
+- Local `.redstring` files continue to work; users can set local as source of truth
+- Browser storage enables mobile use without the File System Access API
+- Sharded mirrors are optional and not required by the current sync engine
+
+## Guidance for Repos
+
+- Keep universes under `universes/<slug>/` with one canonical JSON file
+- Use branches and PRs normally; reviewers can diff the JSON
+- If you need human-friendly merges, you may introduce sharded mirrors in a parallel structure, but Redstring’s sync currently interacts with the canonical JSON file only
+
+## Where to Look in Code
+
+- Universe orchestration: `src/services/universeManager.js`
+- Sync engine: `src/services/gitSyncEngine.js`
+- Git provider abstraction + GitHub implementation: `src/services/gitNativeProvider.js`
+- Federation UI service: `src/services/gitFederationService.js`
+- UI: `src/GitNativeFederation.jsx`, `src/components/UniverseOperationsDialog.jsx`
+
+## Universe Coordination
+
+- `src/services/universeManager.js` is currently the orchestration layer for:
+  - Managing universes (create/delete/rename, active universe, storage slots, source-of-truth)
+  - Loading/saving data via Git, local files, or browser storage
+  - Registering and exposing `GitSyncEngine` instances per universe
+- `src/services/universeBackend.js` is a façade used by UI components, but it delegates extensively to `universeManager` for the operations above. Removing `universeManager` without consolidation would break:
+  - Active universe switching, data loading piped into the store, file-handle flows
+  - Engine registration and lifecycle wiring
+  - Git discovery/link flows
+- Consolidation path: migrate `universeManager` responsibilities into `universeBackend` (single backend surface), update imports in UI (`UniverseOperationsDialog`, `FederationBootstrap`, etc.), and decouple `GitSyncEngine` from requiring a manager reference.
+
+## Roadmap Highlights
+
+- Additional providers (GitLab/Gitea) using the same provider interface
+- Optional sharded files maintained by the engine for lower-conflict PRs
+- Richer semantic diffs in PR templates and CI validation
+
+

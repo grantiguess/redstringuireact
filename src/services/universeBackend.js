@@ -23,6 +23,17 @@ class UniverseBackend {
     this.authStatus = null;
     this.loggedMergeWarning = false; // Prevent log spam from merge conflicts
 
+    // Git operation tracking for dashboard
+    this.gitOperationStatus = new Map(); // universeSlug -> detailed status
+    this.globalGitStatus = {
+      isConnected: false,
+      lastConnection: null,
+      totalUniverses: 0,
+      syncedUniverses: 0,
+      pendingOperations: 0,
+      lastGlobalSync: null
+    };
+
     // Don't auto-initialize on construction to avoid circular dependencies
     // Initialization will happen on first method call
   }
@@ -861,34 +872,58 @@ class UniverseBackend {
     }
     
     console.log(`[UniverseBackend] Force saving universe ${universeSlug}`);
-    
-    // Ensure Git sync engine exists
-    let engine = this.gitSyncEngines.get(universeSlug);
-    if (!engine) {
-      try {
-        console.log(`[UniverseBackend] No engine found for ${universeSlug}, creating one for force save`);
-        engine = await this.ensureGitSyncEngine(universeSlug);
-      } catch (error) {
-        console.error(`[UniverseBackend] Failed to create engine for force save:`, error);
-        // Fallback to regular save through universe manager
-        console.log(`[UniverseBackend] Falling back to universe manager save`);
-        return await this.saveActiveUniverse(storeState);
+
+    // Track operation start
+    this.trackGitOperationStart(universeSlug, 'force-save', {
+      isConnected: !!this.authStatus?.isAuthenticated,
+      hasUnsavedChanges: true
+    });
+
+    try {
+      // Ensure Git sync engine exists
+      let engine = this.gitSyncEngines.get(universeSlug);
+      if (!engine) {
+        try {
+          console.log(`[UniverseBackend] No engine found for ${universeSlug}, creating one for force save`);
+          engine = await this.ensureGitSyncEngine(universeSlug);
+        } catch (error) {
+          console.error(`[UniverseBackend] Failed to create engine for force save:`, error);
+          // Track failure and fallback
+          this.trackGitOperationComplete(universeSlug, 'force-save', false, {
+            error: `Engine creation failed: ${error.message}`,
+            fallbackUsed: true
+          });
+          // Fallback to regular save through universe manager
+          console.log(`[UniverseBackend] Falling back to universe manager save`);
+          return await this.saveActiveUniverse(storeState);
+        }
       }
-    }
-    
-    if (engine) {
-      try {
+
+      if (engine) {
         const result = await engine.forceCommit(storeState);
+
+        // Track successful completion
+        this.trackGitOperationComplete(universeSlug, 'force-save', true, {
+          commitHash: result?.commitHash,
+          bytesWritten: result?.bytesWritten,
+          fileName: `universes/${universeSlug}/${universeSlug}.redstring`
+        });
+
         this.notifyStatus('success', `Force save completed for ${universeSlug}`);
         return result;
-      } catch (error) {
-        console.error(`[UniverseBackend] Force save failed for ${universeSlug}:`, error);
-        this.notifyStatus('error', `Force save failed: ${error.message}`);
-        throw error;
       }
+
+      throw new Error(`No Git sync engine available for universe: ${universeSlug}`);
+    } catch (error) {
+      // Track failure
+      this.trackGitOperationComplete(universeSlug, 'force-save', false, {
+        error: error.message
+      });
+
+      console.error(`[UniverseBackend] Force save failed for ${universeSlug}:`, error);
+      this.notifyStatus('error', `Force save failed: ${error.message}`);
+      throw error;
     }
-    
-    throw new Error(`No Git sync engine available for universe: ${universeSlug}`);
   }
 
   /**
@@ -1074,6 +1109,137 @@ class UniverseBackend {
     this.notifyStatus('success', `Set ${sourceType === 'git' ? 'repository' : 'local file'} as primary source for ${universe.name || universeSlug}`);
 
     return { success: true, sourceOfTruth: sourceType };
+  }
+
+  /**
+   * Update git operation status for a universe
+   */
+  updateGitOperationStatus(universeSlug, status) {
+    const timestamp = Date.now();
+    const existingStatus = this.gitOperationStatus.get(universeSlug) || {};
+
+    const newStatus = {
+      ...existingStatus,
+      ...status,
+      lastUpdated: timestamp,
+      universeSlug
+    };
+
+    this.gitOperationStatus.set(universeSlug, newStatus);
+
+    // Update global status
+    this.updateGlobalGitStatus();
+
+    // Notify status handlers
+    this.notifyGitStatus(universeSlug, newStatus);
+  }
+
+  /**
+   * Update global git status summary
+   */
+  updateGlobalGitStatus() {
+    const allStatuses = Array.from(this.gitOperationStatus.values());
+    const connectedUniverses = allStatuses.filter(s => s.isConnected);
+    const syncedUniverses = allStatuses.filter(s => s.isSynced && !s.hasUnsavedChanges);
+    const pendingOps = allStatuses.filter(s => s.isOperationInProgress).length;
+
+    this.globalGitStatus = {
+      ...this.globalGitStatus,
+      isConnected: this.authStatus?.isAuthenticated || false,
+      totalUniverses: allStatuses.length,
+      syncedUniverses: syncedUniverses.length,
+      pendingOperations: pendingOps,
+      lastGlobalSync: Math.max(...allStatuses.map(s => s.lastSyncTime || 0), 0) || null
+    };
+  }
+
+  /**
+   * Get comprehensive git status for dashboard
+   */
+  getGitStatusDashboard() {
+    return {
+      global: this.globalGitStatus,
+      universes: Object.fromEntries(this.gitOperationStatus),
+      timestamp: Date.now()
+    };
+  }
+
+  /**
+   * Get git status for a specific universe
+   */
+  getUniverseGitStatus(universeSlug) {
+    return this.gitOperationStatus.get(universeSlug) || {
+      universeSlug,
+      isConnected: false,
+      isSynced: false,
+      isOperationInProgress: false,
+      hasUnsavedChanges: true,
+      lastSyncTime: null,
+      lastSaveAttempt: null,
+      currentOperation: null,
+      error: null,
+      fileName: `universes/${universeSlug}/${universeSlug}.redstring`,
+      commitCount: 0,
+      lastCommitHash: null
+    };
+  }
+
+  /**
+   * Track start of git operation
+   */
+  trackGitOperationStart(universeSlug, operation, details = {}) {
+    console.log(`[UniverseBackend] Starting ${operation} for ${universeSlug}`);
+    this.updateGitOperationStatus(universeSlug, {
+      isOperationInProgress: true,
+      currentOperation: operation,
+      operationStartTime: Date.now(),
+      lastSaveAttempt: Date.now(),
+      error: null,
+      ...details
+    });
+  }
+
+  /**
+   * Track completion of git operation
+   */
+  trackGitOperationComplete(universeSlug, operation, success, details = {}) {
+    const timestamp = Date.now();
+    const status = this.getUniverseGitStatus(universeSlug);
+    const duration = status.operationStartTime ? timestamp - status.operationStartTime : null;
+
+    console.log(`[UniverseBackend] ${success ? 'Completed' : 'Failed'} ${operation} for ${universeSlug} ${duration ? `in ${duration}ms` : ''}`);
+
+    this.updateGitOperationStatus(universeSlug, {
+      isOperationInProgress: false,
+      currentOperation: null,
+      operationStartTime: null,
+      lastSyncTime: success ? timestamp : status.lastSyncTime,
+      isSynced: success,
+      hasUnsavedChanges: !success,
+      error: success ? null : details.error,
+      commitCount: success ? (status.commitCount || 0) + 1 : status.commitCount,
+      lastCommitHash: details.commitHash || status.lastCommitHash,
+      operationDuration: duration,
+      ...details
+    });
+  }
+
+  /**
+   * Event system for git status updates
+   */
+  notifyGitStatus(universeSlug, status) {
+    this.statusHandlers.forEach(handler => {
+      try {
+        handler({
+          type: 'git-status',
+          universeSlug,
+          status,
+          global: this.globalGitStatus
+        });
+      } catch (error) {
+        console.warn('[UniverseBackend] Git status handler error:', error);
+      }
+    });
   }
 
   /**

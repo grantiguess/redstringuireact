@@ -121,3 +121,7 @@ The application uses a microservices architecture with:
 - **Main Server:** Serves static files and proxies OAuth requests
 - **OAuth Server:** Handles GitHub OAuth flow
 - **Frontend:** React application for semantic data management
+
+## Git Federation
+
+See `GIT_FEDERATION.md` for a single-source overview of how Git-first universes, syncing, and provider auth work in the current system.

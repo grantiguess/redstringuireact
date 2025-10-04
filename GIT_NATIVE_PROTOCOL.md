@@ -1,5 +1,7 @@
 # The Git-Native Semantic Web Protocol
 
+Note: This document contains earlier conceptual framing. For the current, single-source guide to how the system actually works today (files, services, UI flows), see `GIT_FEDERATION.md`.
+
 ## Executive Summary
 
 This protocol addresses the distributed knowledge systems challenge by implementing **real-time responsiveness**, **true decentralization**, and **distributed resilience** through hot-swappable Git provider plugins and rapid auto-commit architecture.

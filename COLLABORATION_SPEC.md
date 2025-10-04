@@ -1,5 +1,7 @@
 # Redstring Collaboration & Federation Spec (Git‑First)
 
+Note: This draft spec described intended behavior. For the up-to-date implementation guide of Git federation as it exists now, see `GIT_FEDERATION.md`.
+
 Status: Draft
 
 This spec describes a Git‑first, decentralized collaboration model for Redstring that:
