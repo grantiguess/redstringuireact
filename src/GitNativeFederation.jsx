@@ -194,8 +194,6 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
 
   const containerRef = useRef(null);
   const [isSlim, setIsSlim] = useState(false);
-  const [autosaveStatus, setAutosaveStatus] = useState(null);
-  const saveCoordinatorRef = useRef(null);
 
   const deviceInfo = useMemo(() => detectDeviceInfo(), []);
   const autosaveRef = useRef({ cooldownUntil: 0, triggerAt: 0 });
@@ -283,35 +281,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     };
   }, [refreshAuth]);
 
-  // Monitor SaveCoordinator/GitAutosavePolicy to reflect batch size in UI (unsaved when batch > 0)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const mod = await import('./services/SaveCoordinator.js');
-        saveCoordinatorRef.current = mod.default || mod.saveCoordinator || null;
-      } catch {
-        // ignore – autosave status optional
-      }
-    })();
-
-    const interval = setInterval(() => {
-      try {
-        const sc = saveCoordinatorRef.current;
-        if (sc && typeof sc.getStatus === 'function') {
-          const status = sc.getStatus();
-          if (!cancelled) setAutosaveStatus(status?.gitAutosavePolicy || null);
-        }
-      } catch {
-        // ignore
-      }
-    }, 500);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, []);
+  // Removed autosave batch-size polling; rely on engine flags for UI state
 
   // Lightweight autosave fallback: if unsaved changes persist for 20s, save once; 60s cooldown
   useEffect(() => {
@@ -1880,7 +1850,6 @@ return (
           let displayDesc = '';
 
           const pendingCommits = Number(engine?.pendingCommits || 0);
-          const batchSize = Number(autosaveStatus?.currentBatchSize || 0);
 
           if (engine?.isInErrorBackoff || engine?.isHealthy === false) {
             displayState = 'error';
@@ -1895,10 +1864,10 @@ return (
             displayLabel = 'Sync paused';
             displayTone = '#ef6c00';
             displayDesc = 'Resume to save changes.';
-          } else if (engine?.hasChanges || batchSize > 0) {
+          } else if (engine?.hasChanges) {
             displayState = 'unsaved';
             displayLabel = 'Unsaved changes';
-            displayTone = '#ef6c00';
+            displayTone = '#b85e00';
           } else if (base?.state && base?.label) {
             // Fallback to mapped state
             displayState = base.state;
@@ -1975,7 +1944,7 @@ return (
               <Save size={14} /> Save now
             </button>
           )}
-          {lastTime && displayState !== 'saving' && (
+          {lastTime && displayState !== 'saving' && displayState !== 'unsaved' && (
             <div style={{ 
               fontSize: '0.7rem', 
               color: '#666',
