@@ -7385,7 +7385,7 @@ function NodeCanvas() {
               fontFamily: "'EmOne', sans-serif"
             }}>
               <div style={{ fontSize: '16px', color: '#260000', opacity: 0.7 }}>
-                No Thing Open
+                Open a New Thing
               </div>
               <button
                 onClick={() => storeActions.createNewGraph({ name: 'New Thing' })}
