@@ -419,10 +419,34 @@ class UniverseBackend {
         throw new Error(`Failed to create provider for universe ${universeSlug}`);
       }
       
-      // Test provider availability
-      const isAvailable = await provider.isAvailable();
+      // Test provider availability with retry logic for transient network errors
+      let isAvailable = false;
+      let lastError = null;
+      
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          isAvailable = await provider.isAvailable();
+          if (isAvailable) break;
+          
+          // If not available but no error, wait and retry
+          if (attempt < 3) {
+            console.log(`[UniverseBackend] Provider check attempt ${attempt} returned false, retrying...`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          }
+        } catch (error) {
+          lastError = error;
+          // Network errors are often transient, retry
+          if (error.message?.includes('network') || error.message?.includes('fetch') || attempt < 3) {
+            console.log(`[UniverseBackend] Provider check attempt ${attempt} failed (${error.message}), retrying...`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            continue;
+          }
+          throw error;
+        }
+      }
+      
       if (!isAvailable) {
-        throw new Error(`Provider for ${universeSlug} is not available - check authentication and repository access`);
+        throw new Error(`Provider for ${universeSlug} is not available after 3 attempts - check authentication and repository access${lastError ? `: ${lastError.message}` : ''}`);
       }
       
       console.log(`[UniverseBackend] Provider created and validated for ${universeSlug}`);
@@ -1251,13 +1275,26 @@ class UniverseBackend {
       throw new Error(`Universe ${universeSlug} not found`);
     }
 
+    console.log('[UniverseBackend] setSourceOfTruth - universe structure:', {
+      hasRaw: !!universe.raw,
+      hasGitRepo: !!universe.gitRepo,
+      hasRawGitRepo: !!universe.raw?.gitRepo,
+      rawGitRepoEnabled: universe.raw?.gitRepo?.enabled,
+      gitRepoEnabled: universe.gitRepo?.enabled,
+      hasLinkedRepo: !!universe.gitRepo?.linkedRepo,
+      hasRawLinkedRepo: !!universe.raw?.gitRepo?.linkedRepo,
+      linkedRepo: universe.gitRepo?.linkedRepo,
+      rawLinkedRepo: universe.raw?.gitRepo?.linkedRepo
+    });
+
     // Validate source type
     if (sourceType !== 'git' && sourceType !== 'local') {
       throw new Error('Source type must be "git" or "local"');
     }
 
-    // Check if the requested source is available
-    if (sourceType === 'git' && !universe.raw?.gitRepo?.linkedRepo) {
+    // Check if the requested source is available - check both universe and universe.raw
+    const hasGitRepo = universe.gitRepo?.linkedRepo || universe.raw?.gitRepo?.linkedRepo;
+    if (sourceType === 'git' && !hasGitRepo) {
       throw new Error('Cannot set git as source of truth - no repository linked');
     }
 

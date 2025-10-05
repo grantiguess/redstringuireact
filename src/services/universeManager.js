@@ -1234,7 +1234,30 @@ class UniverseManager {
         return null;
       }
 
-      const folder = universe?.gitRepo?.universeFolder || `universes/${universe.slug}`;
+      // Fix potential path mismatch: if universeFolder contains 'universe' but slug is different, use slug-based path
+      let folder = universe?.gitRepo?.universeFolder || `universes/${universe.slug}`;
+      let pathWasCorrected = false;
+      
+      // Migration fix: if folder is "universes/universe" but slug is not "universe", update to correct path
+      if (folder === 'universes/universe' && universe.slug !== 'universe') {
+        console.log(`[UniverseManager] Fixing stale universeFolder path for ${universe.slug}: ${folder} → universes/${universe.slug}`);
+        folder = `universes/${universe.slug}`;
+        pathWasCorrected = true;
+        
+        // Persist the corrected path
+        try {
+          this.updateUniverse(universe.slug, {
+            gitRepo: {
+              ...universe.gitRepo,
+              universeFolder: folder
+            }
+          });
+          console.log(`[UniverseManager] Persisted corrected path for ${universe.slug}`);
+        } catch (updateError) {
+          console.warn(`[UniverseManager] Failed to persist corrected path:`, updateError);
+        }
+      }
+      
       const fileName = universe?.gitRepo?.universeFile || `${universe.slug}.redstring`;
       const filePath = `${folder}/${fileName}`;
 

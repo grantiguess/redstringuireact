@@ -1,73 +1,54 @@
 import React, { useState, useEffect } from 'react';
 import { HEADER_HEIGHT } from './constants';
-import saveCoordinator from './services/SaveCoordinator';
+import { gitFederationService } from './services/gitFederationService';
 
 const SaveStatusDisplay = () => {
-  const [statusText, setStatusText] = useState('Saved');
-  const [isSaving, setIsSaving] = useState(false);
+  const [statusText, setStatusText] = useState('Loading...');
 
   useEffect(() => {
-    // Subscribe to status changes
-    const unsubscribe = saveCoordinator.onStatusChange((status) => {
-      if (status.type === 'success') {
-        setStatusText('Saved');
-        setIsSaving(false);
-      } else if (status.type === 'error') {
-        setStatusText('Error');
-        setIsSaving(false);
-      } else if (status.type === 'info' && status.message.includes('saving')) {
-        setStatusText('Saving...');
-        setIsSaving(true);
-      }
-    });
+    let cancelled = false;
 
-    // Poll status every second to update display
-    const pollInterval = setInterval(() => {
-      const status = saveCoordinator.getStatus();
-      
-      if (!status.isEnabled) {
-        setStatusText('Autosave disabled');
-        setIsSaving(false);
-        return;
-      }
-      
-      if (status.isSaving) {
-        setStatusText('Saving...');
-        setIsSaving(true);
-      } else if (status.pendingChanges > 0) {
-        setStatusText(`${status.pendingChanges} pending`);
-        setIsSaving(false);
-      } else if (!status.isSaving && status.pendingChanges === 0) {
-        // Check if git autosave policy has information
-        const gitPolicy = status.gitAutosavePolicy;
-        if (gitPolicy && gitPolicy.lastCommitTime) {
-          const secondsAgo = Math.floor((Date.now() - gitPolicy.lastCommitTime) / 1000);
-          if (secondsAgo < 10) {
-            setStatusText('Synced');
-          } else if (secondsAgo < 60) {
-            setStatusText(`${secondsAgo}s ago`);
-          } else {
-            setStatusText('Saved');
-          }
+    // Poll sync status every second (same as GitNativeFederation)
+    const pollInterval = setInterval(async () => {
+      if (cancelled) return;
+
+      try {
+        const state = await gitFederationService.getState();
+        if (cancelled) return;
+
+        const activeUniverse = state.universes.find(u => u.slug === state.activeUniverseSlug);
+        if (!activeUniverse) {
+          setStatusText('No universe');
+          return;
+        }
+
+        // Simplified sync status - just show Saving/Saved/Error states
+        const syncStatus = state.syncStatuses?.[activeUniverse.slug];
+        const engine = syncStatus || activeUniverse.sync?.engine || {};
+        const pendingCommits = Number(engine?.pendingCommits || 0);
+
+        if (engine?.isInErrorBackoff || engine?.isHealthy === false) {
+          setStatusText('Error');
+        } else if (engine?.isPaused) {
+          setStatusText('Paused');
+        } else if (engine?.isRunning || pendingCommits > 0 || engine?.hasChanges) {
+          setStatusText('Saving...');
         } else {
           setStatusText('Saved');
         }
-        setIsSaving(false);
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('[SaveStatusDisplay] Failed to get sync status:', error);
+          setStatusText('Unknown');
+        }
       }
     }, 1000);
 
-    // Initial status check
-    const status = saveCoordinator.getStatus();
-    if (status.isSaving) {
-      setStatusText('Saving...');
-      setIsSaving(true);
-    } else if (status.pendingChanges > 0) {
-      setStatusText(`${status.pendingChanges} pending`);
-      setIsSaving(false);
-    }
+    // Initial load
+    pollInterval;
 
     return () => {
-      unsubscribe();
+      cancelled = true;
       clearInterval(pollInterval);
     };
   }, []);

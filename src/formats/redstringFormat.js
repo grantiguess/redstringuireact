@@ -405,6 +405,10 @@ export const exportToRedstring = (storeState, userDomain = null) => {
       "redstring:definingNodeIds": graph.definingNodeIds || [],
       "redstring:edgeIds": graph.edgeIds || [],
       
+      // Viewport state for this graph
+      "redstring:panOffset": graph.panOffset || { x: 0, y: 0 },
+      "redstring:zoomLevel": typeof graph.zoomLevel === 'number' ? graph.zoomLevel : 1.0,
+      
       // Spatial instances collection
       "redstring:instances": spatialInstances,
       
@@ -941,6 +945,25 @@ export const importFromRedstring = (redstringData, storeActions) => {
         const cleanEdgeIds = edgeIds.filter((value) => value !== undefined && value !== null && value !== '');
         if (cleanEdgeIds.length > 0) {
           graphShape.edgeIds = cleanEdgeIds;
+        }
+
+        // Extract viewport state for this graph
+        if (graph['@type'] === 'redstring:SpatialGraph') {
+          // New semantic format
+          if (graph['redstring:panOffset']) {
+            graphShape.panOffset = graph['redstring:panOffset'];
+          }
+          if (graph['redstring:zoomLevel'] !== undefined) {
+            graphShape.zoomLevel = graph['redstring:zoomLevel'];
+          }
+        } else {
+          // Legacy format
+          if (graph.panOffset) {
+            graphShape.panOffset = graph.panOffset;
+          }
+          if (graph.zoomLevel !== undefined) {
+            graphShape.zoomLevel = graph.zoomLevel;
+          }
         }
 
         graphsMap.set(id, graphShape);

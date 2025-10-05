@@ -243,15 +243,26 @@ class SaveCoordinator {
       clearTimeout(this.saveTimers.get(priorityName));
     }
 
+    console.log(`[SaveCoordinator] Scheduling saves for ${priorityName} priority:`, {
+      immediateGit,
+      localDelay: priority.localDelay,
+      gitDelay: priority.gitDelay,
+      willScheduleGit: immediateGit || priority.gitDelay !== priority.localDelay
+    });
+
     // Schedule local save
     const localTimer = setTimeout(() => {
       this.executeLocalSave(priorityName);
     }, priority.localDelay);
 
-    // Schedule git save (if different timing)
+    // Always schedule git save - GitSyncEngine will handle its own rate limiting
     if (immediateGit) {
+      console.log(`[SaveCoordinator] Scheduling IMMEDIATE git save for ${priorityName}`);
       setTimeout(() => this.executeGitSave(priorityName), 0);
-    } else if (priority.gitDelay !== priority.localDelay) {
+    } else {
+      // Always schedule git save, even if delays are equal
+      // GitSyncEngine has its own batching/rate limiting (3s intervals)
+      console.log(`[SaveCoordinator] Scheduling git save for ${priorityName} (delay: ${priority.gitDelay}ms)`);
       setTimeout(() => {
         this.executeGitSave(priorityName);
       }, priority.gitDelay);
@@ -430,11 +441,17 @@ class SaveCoordinator {
   // Generate hash for change detection
   generateStateHash(state) {
     try {
-      // Extract only content-related state, excluding viewport
+      // Include viewport state (rounded to prevent tiny changes from spamming)
       const contentState = {
         graphs: state.graphs ? Array.from(state.graphs.entries()).map(([id, graph]) => {
-          const { panOffset, zoomLevel, ...content } = graph;
-          return [id, content];
+          const { panOffset, zoomLevel, ...content } = graph || {};
+          // Round viewport values to prevent micro-changes from triggering saves
+          const view = {
+            x: Math.round(((panOffset?.x ?? 0) + Number.EPSILON) * 100) / 100,
+            y: Math.round(((panOffset?.y ?? 0) + Number.EPSILON) * 100) / 100,
+            zoom: typeof zoomLevel === 'number' ? Math.round((zoomLevel + Number.EPSILON) * 10000) / 10000 : 1
+          };
+          return [id, { ...content, __view: view }];
         }) : [],
         nodePrototypes: state.nodePrototypes ? Array.from(state.nodePrototypes.entries()) : [],
         edges: state.edges ? Array.from(state.edges.entries()) : []
