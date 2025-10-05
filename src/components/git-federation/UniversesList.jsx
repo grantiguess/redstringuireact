@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Trash2, ChevronDown, Github, Upload, Download, X, Edit, Star, Save, Activity } from 'lucide-react';
 import SectionCard from './shared/SectionCard.jsx';
 
@@ -66,21 +66,48 @@ const UniversesList = ({
   onSetMainRepoSource,
   onSaveRepoSource,
   onSetPrimarySource,
+  onLoadFromLocal,
+  onLoadFromRepo,
   isSlim = false
 }) => {
-  // Track which universes are expanded
-  const [expandedUniverses, setExpandedUniverses] = useState(new Set([activeUniverseSlug]));
+  // No collapsing - active universe is always expanded, others show compact view
+  const [showLoadMenu, setShowLoadMenu] = useState(false);
+  const loadMenuRef = useRef(null);
 
-  const toggleExpand = (slug) => {
-    setExpandedUniverses((prev) => {
-      const next = new Set(prev);
-      if (next.has(slug)) {
-        next.delete(slug);
-      } else {
-        next.add(slug);
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (loadMenuRef.current && !loadMenuRef.current.contains(event.target)) {
+        setShowLoadMenu(false);
       }
-      return next;
-    });
+    };
+
+    if (showLoadMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showLoadMenu]);
+
+  const handleLoadFromLocalClick = () => {
+    setShowLoadMenu(false);
+    // Trigger file picker to load a .redstring file
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.redstring';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (file && onLoadFromLocal) {
+        onLoadFromLocal(file);
+      }
+    };
+    input.click();
+  };
+
+  const handleLoadFromRepoClick = () => {
+    setShowLoadMenu(false);
+    if (onLoadFromRepo) {
+      onLoadFromRepo();
+    }
   };
 
   return (
@@ -88,15 +115,84 @@ const UniversesList = ({
       title="Universes"
       subtitle="Manage your knowledge spaces"
       actions={
-        <button onClick={onCreateUniverse} style={buttonStyle('solid')}>
-          <Plus size={14} /> New
-        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <div ref={loadMenuRef} style={{ position: 'relative' }}>
+            <button 
+              onClick={() => setShowLoadMenu(!showLoadMenu)}
+              style={buttonStyle('outline')}
+            >
+              <Upload size={14} /> Load <ChevronDown size={12} />
+            </button>
+            {showLoadMenu && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: 4,
+                backgroundColor: '#ffffff',
+                border: '1px solid #260000',
+                borderRadius: 6,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                zIndex: 1000,
+                minWidth: 150
+              }}>
+                <button
+                  onClick={handleLoadFromLocalClick}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    border: 'none',
+                    background: 'none',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    color: '#260000',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <Download size={14} /> From Local File
+                </button>
+                <button
+                  onClick={handleLoadFromRepoClick}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    border: 'none',
+                    background: 'none',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    color: '#260000',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <Github size={14} /> From Repository
+                </button>
+              </div>
+            )}
+          </div>
+          <button onClick={onCreateUniverse} style={buttonStyle('solid')}>
+            <Plus size={14} /> New
+          </button>
+        </div>
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {universes.map((universe) => {
           const isActive = universe.slug === activeUniverseSlug;
-          const isExpanded = expandedUniverses.has(universe.slug);
+          const nodeCount = universe.nodeCount || universe.raw?.nodeCount || 0;
+          const connectionCount = universe.connectionCount || universe.raw?.connectionCount || 0;
+          const graphCount = universe.graphCount || universe.raw?.graphCount || 0;
 
           return (
             <div
@@ -113,36 +209,28 @@ const UniversesList = ({
             >
               {/* Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <button
-                  onClick={() => toggleExpand(universe.slug)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: 0,
-                    flex: 1,
-                    outline: 'none'
-                  }}
-                  onMouseDown={(e) => e.preventDefault()}
-                >
-                  <ChevronDown 
-                    size={16} 
-                    style={{ 
-                      transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
-                      transition: 'transform 0.2s ease',
-                      color: '#260000'
-                    }} 
-                  />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
                   <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontWeight: 600, color: '#260000' }}>{universe.name}</div>
-                    <div style={{ fontSize: '0.72rem', color: '#555' }}>
-                      Created {formatWhen(universe.createdAt)} · Updated {formatWhen(universe.updatedAt)}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontWeight: 600, color: '#260000' }}>{universe.name}</span>
+                      {isActive && (
+                        <span style={{
+                          fontSize: '0.6rem',
+                          padding: '2px 6px',
+                          borderRadius: 10,
+                          backgroundColor: '#7A0000',
+                          color: '#ffffff',
+                          fontWeight: 700
+                        }}>
+                          ACTIVE
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: '#555', marginTop: 2 }}>
+                      {nodeCount} things · {connectionCount} connections · {graphCount} webs
                     </div>
                   </div>
-                </button>
+                </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {!isActive && (
                     <button onClick={() => onSwitchUniverse(universe.slug)} style={buttonStyle('outline')}>
@@ -160,19 +248,9 @@ const UniversesList = ({
                 </div>
               </div>
 
-              {/* Expanded Content */}
-              {isExpanded && (
+              {/* Expanded Content - Only for Active Universe */}
+              {isActive && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingLeft: 24 }}>
-                  {/* Storage Info */}
-                  <div>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#260000', marginBottom: 6 }}>
-                      Storage
-                    </div>
-                    <div style={{ fontSize: '0.72rem', color: '#555', marginBottom: 8 }}>
-                      Primary: {universe.storage?.primary?.label || 'Browser cache'}
-                    </div>
-                  </div>
-
                   {/* Storage Slots */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#260000' }}>
@@ -182,21 +260,18 @@ const UniversesList = ({
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {/* Repository Slot */}
                       {universe.raw?.gitRepo?.linkedRepo ? (
-                        <button
-                          onClick={() => onSetPrimarySource && onSetPrimarySource(universe.slug, 'git')}
+                        <div
                           style={{
                             padding: 8,
                             backgroundColor: '#cfc6c6',
                             borderRadius: 6,
-                            border: `2px solid ${universe.sourceOfTruth === 'git' ? '#2e7d32' : '#979090'}`,
+                            border: `2px solid ${universe.sourceOfTruth === 'git' ? '#7A0000' : '#979090'}`,
                             display: 'flex',
                             flexDirection: 'column',
                             gap: 6,
-                            cursor: 'pointer',
-                            width: '100%',
-                            textAlign: 'left'
+                            maxWidth: '100%',
+                            overflow: 'hidden'
                           }}
-                          title={universe.sourceOfTruth === 'git' ? 'Already primary' : 'Click to set as primary'}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -209,10 +284,10 @@ const UniversesList = ({
                                   fontSize: '0.6rem',
                                   padding: '2px 4px',
                                   borderRadius: 3,
-                                  backgroundColor: '#e8f5e8',
-                                  color: '#2e7d32'
+                                  backgroundColor: 'rgba(122,0,0,0.1)',
+                                  color: '#7A0000'
                                 }}>
-                                  Primary
+                                  Source of Truth
                                 </span>
                               )}
                             </div>
@@ -265,7 +340,7 @@ const UniversesList = ({
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
                                   <span style={{ fontWeight: 600, color: '#260000' }}>Status:</span>
                                   <span style={{
-                                    color: hasError ? '#d32f2f' : isLoading ? '#ef6c00' : statusText === 'synced' ? '#2e7d32' : '#666',
+                                    color: hasError ? '#d32f2f' : isLoading ? '#ef6c00' : statusText === 'synced' ? '#7A0000' : '#666',
                                     fontWeight: 500
                                   }}>
                                     {isLoading ? '⟳ Loading...' : hasError ? '⚠ Error' : statusText}
@@ -293,6 +368,25 @@ const UniversesList = ({
                           })()}
 
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {universe.sourceOfTruth !== 'git' && universe.raw?.gitRepo?.linkedRepo && onSetPrimarySource && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSetPrimarySource(universe.slug, 'git');
+                                }}
+                                style={{
+                                  ...buttonStyle('outline'),
+                                  fontSize: '0.65rem',
+                                  padding: '2px 6px',
+                                  color: '#7A0000',
+                                  borderColor: '#7A0000'
+                                }}
+                                title="Set as source of truth"
+                              >
+                                <Star size={10} />
+                                Set as Source of Truth
+                              </button>
+                            )}
                             {onSaveRepoSource && (
                               <button
                                 onClick={(e) => {
@@ -303,8 +397,8 @@ const UniversesList = ({
                                   ...buttonStyle('outline'),
                                   fontSize: '0.65rem',
                                   padding: '2px 6px',
-                                  color: '#2e7d32',
-                                  borderColor: '#2e7d32'
+                                  color: '#7A0000',
+                                  borderColor: '#7A0000'
                                 }}
                                 title="Manual save"
                               >
@@ -313,7 +407,7 @@ const UniversesList = ({
                               </button>
                             )}
                           </div>
-                        </button>
+                        </div>
                       ) : (
                         <div style={{
                           padding: 12,
@@ -340,44 +434,57 @@ const UniversesList = ({
                       )}
 
                       {/* Local File Slot */}
-                      {universe.raw?.localFile?.enabled ? (
-                        <button
-                          onClick={() => onSetPrimarySource && onSetPrimarySource(universe.slug, 'local')}
+                      {universe.raw?.localFile?.fileHandle ? (
+                        <div
                           style={{
                             padding: 8,
                             backgroundColor: '#cfc6c6',
                             borderRadius: 6,
-                            border: `2px solid ${universe.sourceOfTruth === 'local' ? '#2e7d32' : '#979090'}`,
+                            border: `2px solid ${universe.sourceOfTruth === 'local' ? '#7A0000' : '#979090'}`,
                             display: 'flex',
                             flexDirection: 'column',
                             gap: 6,
-                            cursor: 'pointer',
-                            width: '100%',
-                            textAlign: 'left'
+                            maxWidth: '100%',
+                            overflow: 'hidden'
                           }}
-                          title={universe.sourceOfTruth === 'local' ? 'Already primary' : 'Click to set as primary'}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <Upload size={14} />
+                              <Save size={14} />
                               <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#260000' }}>
-                                {universe.raw.localFile.path || `${universe.name || universe.slug}.redstring`}
+                                Local File
                               </span>
                               {universe.sourceOfTruth === 'local' && (
                                 <span style={{
                                   fontSize: '0.6rem',
                                   padding: '2px 4px',
                                   borderRadius: 3,
-                                  backgroundColor: '#e8f5e8',
-                                  color: '#2e7d32'
+                                  backgroundColor: 'rgba(122,0,0,0.1)',
+                                  color: '#7A0000'
                                 }}>
-                                  Primary
+                                  Source of Truth
                                 </span>
                               )}
                             </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDownloadLocalFile && onDownloadLocalFile(universe.slug);
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#7A0000',
+                                cursor: 'pointer',
+                                padding: '2px',
+                                opacity: 0.7
+                              }}
+                              title="Download/export local file"
+                            >
+                              <Download size={12} />
+                            </button>
                           </div>
 
-                          {/* Local File Status Information */}
                           <div style={{
                             fontSize: '0.65rem',
                             color: '#444',
@@ -388,41 +495,37 @@ const UniversesList = ({
                           }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
                               <span style={{ fontWeight: 600, color: '#260000' }}>File:</span>
-                              <code style={{ fontSize: '0.6rem', background: '#e0e0e0', padding: '1px 3px', borderRadius: 2 }}>
-                                {universe.raw.localFile.path || `${universe.name || universe.slug}.redstring`}
-                              </code>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-                              <span style={{ fontWeight: 600, color: '#260000' }}>Status:</span>
-                              <span style={{ color: '#2e7d32', fontWeight: 500 }}>
-                                Ready for download
+                              <span style={{ fontSize: '0.65rem' }}>
+                                {universe.raw.localFile?.fileName || `${universe.slug}.redstring`}
                               </span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <span style={{ fontWeight: 600, color: '#260000' }}>Type:</span>
-                              <span style={{ color: '#666' }}>Local file export</span>
+                              <span style={{ fontWeight: 600, color: '#260000' }}>Last saved:</span>
+                              <span style={{ color: '#666' }}>
+                                {universe.raw.localFile?.lastSaved ? formatWhen(universe.raw.localFile.lastSaved) : 'Never'}
+                              </span>
                             </div>
                           </div>
+
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onDownloadLocalFile && onDownloadLocalFile(universe.slug);
-                              }}
-                              style={{
-                                ...buttonStyle('outline'),
-                                fontSize: '0.65rem',
-                                padding: '2px 6px',
-                                color: '#2e7d32',
-                                borderColor: '#2e7d32'
-                              }}
-                              title="Download file"
-                            >
-                              <Download size={10} />
-                              Download
-                            </button>
+                            {universe.sourceOfTruth !== 'local' && universe.raw?.localFile?.fileHandle && onSetPrimarySource && (
+                              <button
+                                onClick={() => onSetPrimarySource(universe.slug, 'local')}
+                                style={{
+                                  ...buttonStyle('outline'),
+                                  fontSize: '0.65rem',
+                                  padding: '2px 6px',
+                                  color: '#7A0000',
+                                  borderColor: '#7A0000'
+                                }}
+                                title="Set as source of truth"
+                              >
+                                <Star size={10} />
+                                Set as Source of Truth
+                              </button>
+                            )}
                           </div>
-                        </button>
+                        </div>
                       ) : (
                         <div style={{
                           padding: 12,
@@ -448,19 +551,19 @@ const UniversesList = ({
                         </div>
                       )}
 
-
                       {/* Browser Storage Warning */}
                       {(!universe.raw?.gitRepo?.linkedRepo && !universe.raw?.localFile?.enabled) && (
                         <div style={{
                           padding: 8,
-                          backgroundColor: '#fff3e0',
+                          backgroundColor: 'rgba(122,0,0,0.08)',
                           borderRadius: 6,
-                          border: '1px solid #ff9800',
+                          border: '1px solid #7A0000',
                           fontSize: '0.7rem',
-                          color: '#e65100',
-                          textAlign: 'center'
+                          color: '#7A0000',
+                          textAlign: 'center',
+                          fontWeight: 500
                         }}>
-                          Data stored in browser only. Link long-term storage to save your data reliably.
+                          ⚠ Data stored in browser only. Link long-term storage to save your data reliably.
                         </div>
                       )}
                     </div>

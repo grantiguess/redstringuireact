@@ -1465,15 +1465,16 @@ const LeftSemanticDiscoveryView = ({ storeActions, nodePrototypesMap, openRightP
 
           {/* Loading indicator for regular search */}
           {isSearching && !expandingNodeId && discoveredConcepts.length === 0 && (
-            <div className="semantic-search-loading" style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+            <div className="semantic-search-loading" style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', padding: '20px' }}>
               <div style={{
-                width: '40px',
-                height: '40px',
-                border: '4px solid #bdb5b5',
-                borderTop: '4px solid #8B0000',
+                width: '32px',
+                height: '32px',
+                border: '3px solid #bdb5b5',
+                borderTop: '3px solid #7A0000',
                 borderRadius: '50%',
                 animation: 'spin 1s linear infinite',
-                marginBottom: '16px'
+                marginBottom: '12px',
+                flexShrink: 0
               }} />
               <div style={{ 
                 fontSize: '12px', 

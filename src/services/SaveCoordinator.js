@@ -16,31 +16,31 @@
 import { exportToRedstring } from '../formats/redstringFormat.js';
 import { gitAutosavePolicy } from './GitAutosavePolicy.js';
 
-// Save priority levels and their timing
+// Save priority levels - SIMPLIFIED: Everything saves every 3 seconds
 const SAVE_PRIORITIES = {
   IMMEDIATE: {
     name: 'immediate',
     localDelay: 0,        // Save to local immediately
-    gitDelay: 1000,       // Commit to git after 1s
-    description: 'Critical prototype changes'
+    gitDelay: 0,          // Queue immediately, git engine will batch at 3s interval
+    description: 'All changes'
   },
   HIGH: {
     name: 'high', 
-    localDelay: 2000,     // Save to local after 2s
-    gitDelay: 5000,       // Commit to git after 5s  
-    description: 'Node placement, connections'
+    localDelay: 0,
+    gitDelay: 0,
+    description: 'All changes'
   },
   NORMAL: {
     name: 'normal',
-    localDelay: 5000,     // Save to local after 5s
-    gitDelay: 15000,      // Commit to git after 15s
-    description: 'Position updates while dragging'
+    localDelay: 0,
+    gitDelay: 0,
+    description: 'All changes'
   },
   LOW: {
     name: 'low',
-    localDelay: 10000,    // Save to local after 10s
-    gitDelay: 60000,      // Commit to git after 60s (1 minute)
-    description: 'Viewport changes, UI state'
+    localDelay: 0,
+    gitDelay: 0,
+    description: 'All changes'
   }
 };
 
@@ -67,9 +67,9 @@ class SaveCoordinator {
     this.isDragging = false;
     this.dragStartTime = 0;
     
-    // Rate limiting for GitHub
+    // Rate limiting for GitHub - SIMPLE: Let GitSyncEngine handle the 3s interval
     this.lastGitCommitTime = 0;
-    this.minGitInterval = 5000; // Minimum 5 seconds between git commits
+    this.minGitInterval = 0; // No rate limiting here - GitSyncEngine handles it
     this.maxPendingChanges = 50; // Prevent memory buildup
     
     // Status tracking
@@ -279,6 +279,21 @@ class SaveCoordinator {
       const pendingChange = this.pendingChanges.get(priorityName);
       if (!pendingChange) return;
 
+      // Check if fileStorage has a save method available
+      if (typeof this.fileStorage?.saveToFile !== 'function') {
+        // No local save method - skip silently (Git-only mode or fileStorage not fully initialized)
+        return;
+      }
+
+      // Check if there's an active universe with a local file handle
+      if (this.universeManager) {
+        const activeUniverse = this.universeManager.getActiveUniverse();
+        if (!activeUniverse?.raw?.localFile?.fileHandle) {
+          // No file handle - skip silently (universe not set up for local file saves)
+          return;
+        }
+      }
+
       console.log(`[SaveCoordinator] Executing local save for ${priorityName} priority`);
       this.isSaving = true;
       
@@ -290,8 +305,11 @@ class SaveCoordinator {
       });
 
     } catch (error) {
-      console.error('[SaveCoordinator] Local save failed:', error);
-      this.notifyStatus('error', `Local save failed: ${error.message}`);
+      // Only log errors if it's not a "no save method" error
+      if (!error.message?.includes('No save method available')) {
+        console.error('[SaveCoordinator] Local save failed:', error);
+        this.notifyStatus('error', `Local save failed: ${error.message}`);
+      }
     } finally {
       this.isSaving = false;
     }

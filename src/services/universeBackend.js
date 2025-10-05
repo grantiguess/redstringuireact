@@ -20,6 +20,8 @@ class UniverseBackend {
     this.gitSyncEngines = new Map(); // slug -> GitSyncEngine
     this.statusHandlers = new Set();
     this.isInitialized = false;
+    this.initializationPromise = null;
+    this.autoSetupScheduled = false;
     this.authStatus = null;
     this.loggedMergeWarning = false; // Prevent log spam from merge conflicts
     this.fileHandles = new Map(); // slug -> FileSystemFileHandle (session-scoped)
@@ -43,8 +45,25 @@ class UniverseBackend {
    * Initialize the backend service
    */
   async initialize() {
-    if (this.isInitialized) return;
+    if (this.isInitialized) {
+      console.log('[UniverseBackend] Backend already initialized, skipping...');
+      return;
+    }
 
+    if (this.initializationPromise) {
+      console.log('[UniverseBackend] Initialization already in progress, waiting...');
+      return this.initializationPromise;
+    }
+
+    this.initializationPromise = this._doInitialize();
+    try {
+      await this.initializationPromise;
+    } finally {
+      this.initializationPromise = null;
+    }
+  }
+
+  async _doInitialize() {
     console.log('[UniverseBackend] Initializing backend service...');
 
     try {
@@ -126,6 +145,19 @@ class UniverseBackend {
       this.notifyStatus('info', 'Universe backend initialized');
 
       console.log('[UniverseBackend] Backend service initialized successfully');
+
+      // After successful init, attempt to auto-setup sync engine for the active universe (non-blocking)
+      // Only do this once, avoid duplicate engine creation
+      if (!this.autoSetupScheduled) {
+        this.autoSetupScheduled = true;
+        try {
+          setTimeout(() => {
+            this.autoSetupEnginesForActiveUniverse().catch(err => {
+              console.warn('[UniverseBackend] Auto-setup for active universe failed:', err?.message || err);
+            });
+          }, 150);
+        } catch (_) {}
+      }
     } catch (error) {
       console.error('[UniverseBackend] Failed to initialize backend:', error);
       this.notifyStatus('error', `Backend initialization failed: ${error.message}`);
@@ -420,6 +452,24 @@ class UniverseBackend {
       engine.start();
       console.log(`[UniverseBackend] Git sync engine started for universe: ${universeSlug}`);
       this.notifyStatus('success', `Git sync enabled for ${universe.name || universeSlug}`);
+      
+      // Initialize SaveCoordinator with the Git sync engine for autosave
+      try {
+        const { saveCoordinator } = await import('../backend/sync/index.js');
+        if (saveCoordinator && !saveCoordinator.isEnabled) {
+          // Import fileStorage for local saves
+          const fileStorage = await import('../store/fileStorage.js');
+          saveCoordinator.initialize(fileStorage, engine, universeManager);
+          console.log(`[UniverseBackend] SaveCoordinator initialized for autosave on ${universeSlug}`);
+        } else if (saveCoordinator && saveCoordinator.gitSyncEngine !== engine) {
+          // Update the engine reference if SaveCoordinator was already initialized with a different engine
+          saveCoordinator.gitSyncEngine = engine;
+          console.log(`[UniverseBackend] SaveCoordinator updated with new engine for ${universeSlug}`);
+        }
+      } catch (saveCoordError) {
+        console.warn(`[UniverseBackend] Failed to initialize SaveCoordinator:`, saveCoordError);
+        // Non-fatal - manual saves will still work
+      }
     } catch (startError) {
       console.error(`[UniverseBackend] Failed to start engine for ${universeSlug}:`, startError);
       this.notifyStatus('error', `Failed to start Git sync: ${startError.message}`);
@@ -702,9 +752,7 @@ class UniverseBackend {
         console.warn('[UniverseBackend] universeManager not loaded yet, returning empty array');
         return [];
       }
-      console.log('[UniverseBackend] Getting universes from universeManager...');
       const universes = universeManager.getAllUniverses();
-      console.log('[UniverseBackend] Retrieved universes:', universes.length);
       return universes;
     } catch (error) {
       console.error('[UniverseBackend] getAllUniverses failed with error:', error);
@@ -923,6 +971,49 @@ class UniverseBackend {
 
       console.error(`[UniverseBackend] Force save failed for ${universeSlug}:`, error);
       this.notifyStatus('error', `Force save failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Reload universe from its source of truth
+   */
+  async reloadUniverse(universeSlug) {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    
+    console.log(`[UniverseBackend] Reloading universe: ${universeSlug}`);
+    
+    const universe = universeManager.getUniverse(universeSlug);
+    if (!universe) {
+      throw new Error(`Universe ${universeSlug} not found`);
+    }
+    
+    // Determine the source of truth
+    const sourceOfTruth = universe.sourceOfTruth || 'browser';
+    console.log(`[UniverseBackend] Reloading from source of truth: ${sourceOfTruth}`);
+    
+    try {
+      // Use universeManager's loadUniverseData method which handles all sources
+      const data = await universeManager.loadUniverseData(universe);
+      
+      if (data && this.storeOperations?.loadState) {
+        console.log(`[UniverseBackend] Loading universe data into store:`, {
+          nodeCount: data.nodePrototypes ? (data.nodePrototypes instanceof Map ? data.nodePrototypes.size : Object.keys(data.nodePrototypes).length) : 0,
+          graphCount: data.graphs ? (data.graphs instanceof Map ? data.graphs.size : Object.keys(data.graphs).length) : 0
+        });
+        await this.storeOperations.loadState(data);
+        console.log(`[UniverseBackend] Universe reloaded successfully from ${sourceOfTruth}`);
+        this.notifyStatus('success', `Universe reloaded from ${sourceOfTruth}`);
+        return { success: true, source: sourceOfTruth };
+      } else {
+        console.warn(`[UniverseBackend] No data found or store operations not available`);
+        return { success: false, source: sourceOfTruth };
+      }
+    } catch (error) {
+      console.error(`[UniverseBackend] Failed to reload universe:`, error);
+      this.notifyStatus('error', `Failed to reload universe: ${error.message}`);
       throw error;
     }
   }
@@ -1170,7 +1261,7 @@ class UniverseBackend {
       throw new Error('Cannot set git as source of truth - no repository linked');
     }
 
-    if (sourceType === 'local' && !universe.raw?.localFile?.enabled) {
+    if (sourceType === 'local' && !universe.raw?.localFile?.fileHandle) {
       throw new Error('Cannot set local as source of truth - no local file linked');
     }
 

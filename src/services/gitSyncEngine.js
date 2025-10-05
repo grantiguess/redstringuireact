@@ -27,7 +27,10 @@ class GitSyncEngine {
     this.pendingCommits = []; // Queue of pending changes
     // Optimized auto-save settings based on authentication method
     this.isGitHubApp = provider.authMethod === 'github-app';
-    this.commitInterval = this.isGitHubApp ? 20000 : 30000; // 20s for GitHub App, 30s for OAuth (rate limit friendly)
+    // Aggressive timing: GitHub App = 3s, OAuth = 5s
+    // GitHub App limit: 5000 req/hr (83/min) - 3s = 20/min ✓
+    // OAuth limit: 5000 req/hr (83/min) - 5s = 12/min ✓
+    this.commitInterval = this.isGitHubApp ? 3000 : 5000;
     this.autoSaveEnabled = this.isGitHubApp; // Enable optimized auto-save for GitHub App
     
     this.isRunning = false;
@@ -38,10 +41,10 @@ class GitSyncEngine {
     this.isCommitInProgress = false; // Prevent overlapping commits
     this.isPaused = false; // Allow external pausing of operations
     
-    // Rate limiting and debouncing - optimized for GitHub free plan
-    this.minCommitInterval = this.isGitHubApp ? 10000 : 15000; // 10s for GitHub App, 15s for OAuth
+    // Rate limiting and debouncing - aggressive but safe for GitHub API
+    this.minCommitInterval = this.isGitHubApp ? 2000 : 3000; // Min 2-3s between commits
     this.debounceTimeout = null; // For debouncing rapid updates
-    this.debounceDelay = 2000; // 2 second debounce for continuous operations
+    this.debounceDelay = 1000; // 1 second debounce for continuous operations (faster response)
     this.isDragging = false; // Track if we're in a dragging operation
     this.dragStartTime = 0; // Track when dragging started
     
@@ -780,7 +783,7 @@ class GitSyncEngine {
    */
   getStatus() {
     return {
-      isRunning: this.isRunning,
+      isRunning: this.isCommitInProgress, // TRUE means actively committing, not just background loop running
       isPaused: this.isPaused,
       pendingCommits: this.pendingCommits.length,
       lastCommitTime: this.lastCommitTime,

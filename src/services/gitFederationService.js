@@ -151,39 +151,25 @@ function buildSyncInfo(universe, syncStatus) {
   } = syncStatus;
 
   let state = 'idle';
-  let label = 'Up to date';
+  let label = 'All changes saved';
   let tone = '#2e7d32';
-  let description = 'No pending changes.';
+  let description = '';
 
-  if (isInErrorBackoff) {
-    state = 'recovering';
-    label = 'Recovering from errors';
+  if (isInErrorBackoff || !isHealthy) {
+    state = 'error';
+    label = 'Unable to save changes';
     tone = '#c62828';
-    description = consecutiveErrors
-      ? `${consecutiveErrors} consecutive errors – automatic recovery in progress.`
-      : 'Automatic recovery in progress.';
-  } else if (!isHealthy) {
-    state = 'degraded';
-    label = 'Sync needs attention';
-    tone = '#ef6c00';
-    description = 'Sync engine reported degraded health. Check logs or retry a save.';
-  } else if (isRunning) {
-    state = 'syncing';
-    label = pendingCommits > 0
-      ? `Syncing ${pendingCommits} change${pendingCommits === 1 ? '' : 's'}`
-      : 'Syncing now';
-    tone = '#2e7d32';
-    description = 'Git sync engine is actively pushing updates.';
-  } else if (pendingCommits > 0) {
-    state = 'pending';
-    label = `${pendingCommits} change${pendingCommits === 1 ? '' : 's'} queued`;
-    tone = '#ef6c00';
-    description = 'Waiting for the next commit window to push changes.';
+    description = 'Please check your connection and try again.';
+  } else if (isRunning || pendingCommits > 0) {
+    state = 'saving';
+    label = 'Saving...';
+    tone = '#666';
+    description = '';
   } else if (isPaused) {
     state = 'paused';
     label = 'Sync paused';
     tone = '#ef6c00';
-    description = 'Sync engine paused. Resume to push outstanding changes.';
+    description = 'Resume to save changes.';
   }
 
   return {
@@ -267,9 +253,10 @@ async function buildSyncStatusMap(universes) {
 }
 
 async function loadBackendState() {
-  const [universes = [], activeUniverse] = await Promise.all([
+  const [universes = [], activeUniverse, gitDashboard] = await Promise.all([
     universeBackendBridge.getAllUniverses(),
-    universeBackendBridge.getActiveUniverse()
+    universeBackendBridge.getActiveUniverse(),
+    universeBackendBridge.getGitStatusDashboard?.()
   ]);
 
   const syncStatusMap = await buildSyncStatusMap(universes);
@@ -279,7 +266,8 @@ async function loadBackendState() {
     universes: universes.map(universe => mapUniverse(universe, activeSlug, syncStatusMap)),
     activeUniverseSlug: activeSlug,
     activeUniverse: activeSlug ? universes.find(u => u.slug === activeSlug) : null,
-    syncStatuses: syncStatusMap
+    syncStatuses: syncStatusMap,
+    gitDashboard: gitDashboard || null
   };
 }
 
@@ -451,16 +439,29 @@ export const gitFederationService = {
     };
 
     const linkedRepo = normalizeRepository(universe.raw.gitRepo?.linkedRepo);
-    if (linkedRepo && linkedRepo.user.toLowerCase() === repo.user.toLowerCase() && linkedRepo.repo.toLowerCase() === repo.repo.toLowerCase()) {
+    const wasLinkedRepo = linkedRepo && linkedRepo.user.toLowerCase() === repo.user.toLowerCase() && linkedRepo.repo.toLowerCase() === repo.repo.toLowerCase();
+    
+    if (wasLinkedRepo) {
       payload.gitRepo = {
         ...universe.raw.gitRepo,
         enabled: false,
         linkedRepo: null
       };
-      payload.sourceOfTruth = universe.raw.localFile?.enabled ? 'local' : 'browser';
+      payload.sourceOfTruth = universe.raw.localFile?.fileHandle ? 'local' : 'browser';
     }
 
     await universeBackendBridge.updateUniverse(slug, payload);
+    
+    // If this was the active linked repo, reload the universe from the new source of truth
+    if (wasLinkedRepo) {
+      console.log(`[GitFederationService] Reloading universe ${slug} from new source: ${payload.sourceOfTruth}`);
+      try {
+        await universeBackendBridge.reloadUniverse(slug);
+      } catch (error) {
+        console.warn(`[GitFederationService] Failed to reload universe after detach:`, error);
+      }
+    }
+    
     return this.refreshUniverses();
   },
 

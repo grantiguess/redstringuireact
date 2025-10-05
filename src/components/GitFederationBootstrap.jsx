@@ -105,6 +105,12 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
           case 'getSyncStatus':
             result = backend.getSyncStatus(payload.universeSlug);
             break;
+          case 'getUniverseGitStatus':
+            result = backend.getUniverseGitStatus(payload.universeSlug);
+            break;
+          case 'getGitStatusDashboard':
+            result = backend.getGitStatusDashboard();
+            break;
           case 'switchActiveUniverse':
             result = await backend.switchActiveUniverse(payload.slug, payload.options);
             break;
@@ -128,6 +134,15 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
             break;
           case 'saveActiveUniverse':
             result = await backend.saveActiveUniverse(payload.storeState);
+            break;
+          case 'reloadUniverse':
+            result = await backend.reloadUniverse(payload.universeSlug);
+            break;
+          case 'uploadLocalFile':
+            result = await backend.uploadLocalFile(payload.file, payload.targetUniverseSlug);
+            break;
+          case 'downloadLocalFile':
+            result = await backend.downloadLocalFile(payload.universeSlug, payload.storeState);
             break;
           default:
             throw new Error(`Unknown command: ${command}`);

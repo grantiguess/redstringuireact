@@ -23,7 +23,9 @@ import gitFederationService, { STORAGE_TYPES } from './services/gitFederationSer
 import { persistentAuth } from './services/persistentAuth.js';
 import { oauthFetch } from './services/bridgeConfig.js';
 import universeBackend from './services/universeBackend.js';
+import universeBackendBridge from './services/universeBackendBridge.js';
 import RepositorySelectionModal from './components/modals/RepositorySelectionModal.jsx';
+import Modal from './components/shared/Modal.jsx';
 import ConnectionStats from './components/git-federation/ConnectionStats.jsx';
 import AuthSection from './components/git-federation/AuthSection.jsx';
 import UniversesList from './components/git-federation/UniversesList.jsx';
@@ -167,6 +169,16 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     }
   });
   const [showRepositoryManager, setShowRepositoryManager] = useState(false);
+  const [showConnectionStats, setShowConnectionStats] = useState(() => {
+    try {
+      return localStorage.getItem('redstring_show_connection_stats') !== 'false';
+    } catch {
+      return false; // Collapsed by default
+    }
+  });
+  const [showUniverseFileSelector, setShowUniverseFileSelector] = useState(false);
+  const [pendingRepoAttachment, setPendingRepoAttachment] = useState(null);
+  const [discoveredUniverseFiles, setDiscoveredUniverseFiles] = useState([]);
 
   const [repositoryTargetSlug, setRepositoryTargetSlug] = useState(null);
   const [discoveryMap, setDiscoveryMap] = useState({});
@@ -212,8 +224,13 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   useEffect(() => {
     // CRITICAL: Don't block UI rendering on backend initialization
     // Load state asynchronously and allow component to render immediately
-    setInitializing(false); // Render immediately
-    refreshState(); // Load state in background
+    (async () => {
+      try {
+        await refreshState();
+      } finally {
+        setInitializing(false);
+      }
+    })();
 
     const handleAuthConnected = async () => {
       try {
@@ -229,8 +246,19 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
 
     window.addEventListener('redstring:auth-connected', handleAuthConnected);
 
+    // Poll sync status every 1 second to keep UI updated (fast commits need fast UI updates)
+    const pollInterval = setInterval(async () => {
+      try {
+        const universes = await gitFederationService.refreshUniverses();
+        setSyncTelemetry(universes.syncStatuses || {});
+      } catch (err) {
+        // Silent fail - don't spam console
+      }
+    }, 1000);
+
     return () => {
       window.removeEventListener('redstring:auth-connected', handleAuthConnected);
+      clearInterval(pollInterval);
     };
   }, [refreshState]);
 
@@ -536,6 +564,48 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     }
   };
 
+  const handleLoadFromLocal = async (file) => {
+    try {
+      setLoading(true);
+      const fileName = file.name.replace('.redstring', '');
+      
+      // Read the file content
+      const text = await file.text();
+      const storeState = JSON.parse(text);
+      
+      // Create a new universe with this data
+      const universeName = typeof window !== 'undefined' ? 
+        window.prompt('Name for this universe:', fileName) : fileName;
+      
+      if (!universeName || !universeName.trim()) {
+        setLoading(false);
+        return;
+      }
+      
+      // Create the universe first
+      await gitFederationService.createUniverse(universeName.trim(), {
+        enableGit: false,
+        enableLocal: true
+      });
+      
+      // Load the file data into it via uploadLocalFile (file first, then target slug)
+      await universeBackendBridge.uploadLocalFile(file, universeName.trim());
+      
+      setSyncStatus({ type: 'success', message: `Universe "${universeName}" loaded from file` });
+      await refreshState();
+    } catch (err) {
+      console.error('[GitNativeFederation] Load from local failed:', err);
+      setError(`Failed to load universe from file: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLoadFromRepo = () => {
+    // Trigger the repository connection flow which will discover universe files
+    setShowRepositoryManager(true);
+  };
+
   const handleSwitchUniverse = async (slug) => {
     if (slug === serviceState.activeUniverseSlug) return;
     try {
@@ -622,9 +692,49 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         console.log(`[GitNativeFederation] Auto-added ${repoKey} to managed repositories`);
       }
 
+      // Discover existing universe files in the repository
+      console.log(`[GitNativeFederation] Discovering universe files in ${repoKey}...`);
+      const discovered = await gitFederationService.discoverUniverses({
+        user: owner,
+        repo: repoName,
+        authMethod: dataAuthMethod || 'oauth'
+      });
+
+      console.log(`[GitNativeFederation] Discovered ${discovered.length} universe files`);
+
+      // If universe files exist, show selection dialog
+      if (discovered.length > 0) {
+        setPendingRepoAttachment({
+          repo,
+          owner,
+          repoName,
+          universeSlug: repositoryTargetSlug
+        });
+        setDiscoveredUniverseFiles(discovered);
+        setShowRepositoryManager(false);
+        setShowUniverseFileSelector(true);
+        setLoading(false);
+        return;
+      }
+
+      // No existing files, proceed with creating new
+      await handleAttachRepoCreateNew(owner, repoName, repo);
+    } catch (err) {
+      console.error('[GitNativeFederation] Repository selection failed:', err);
+      setError(`Failed to process repository: ${err.message}`);
+      setLoading(false);
+      setRepositoryTargetSlug(null);
+      setShowRepositoryManager(false);
+    }
+  };
+
+  const handleAttachRepoCreateNew = async (owner, repoName, repo) => {
+    try {
+      setLoading(true);
+
       await gitFederationService.attachGitRepository(repositoryTargetSlug, {
-      user: owner,
-      repo: repoName,
+        user: owner,
+        repo: repoName,
         authMethod: dataAuthMethod || 'oauth'
       });
 
@@ -645,6 +755,72 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       setLoading(false);
       setRepositoryTargetSlug(null);
       setShowRepositoryManager(false);
+      setPendingRepoAttachment(null);
+      setShowUniverseFileSelector(false);
+    }
+  };
+
+  const handleUniverseFileSelection = async (selectedFile) => {
+    if (!pendingRepoAttachment) return;
+
+    const { owner, repoName, repo, universeSlug } = pendingRepoAttachment;
+
+    try {
+      setLoading(true);
+      setShowUniverseFileSelector(false);
+
+      if (selectedFile === 'CREATE_NEW') {
+        // Create new file with current universe data
+        await handleAttachRepoCreateNew(owner, repoName, repo);
+      } else {
+        // Check for name mismatch between local universe and repo file
+        const localUniverse = serviceState.universes.find(u => u.slug === universeSlug);
+        const repoFileSlug = selectedFile.slug || selectedFile.name;
+        let renameLocal = false;
+        
+        if (localUniverse && repoFileSlug && localUniverse.slug !== repoFileSlug) {
+          // Name mismatch - ask user what to do
+          const choice = typeof window !== 'undefined' ? window.confirm(
+            `Name mismatch detected!\n\n` +
+            `Local universe: "${localUniverse.name}" (${localUniverse.slug})\n` +
+            `Repo file: "${selectedFile.name}" (${repoFileSlug})\n\n` +
+            `Click OK to rename LOCAL universe to match repo file.\n` +
+            `Click Cancel to keep local name (repo file will sync to match).`
+          ) : true;
+
+          renameLocal = choice;
+
+          if (renameLocal) {
+            console.log(`[GitNativeFederation] Will rename local universe to match repo: ${repoFileSlug}`);
+            setSyncStatus({ type: 'info', message: `Will rename local universe to "${selectedFile.name}"...` });
+          } else {
+            console.log(`[GitNativeFederation] Keeping local name, repo will sync to: ${localUniverse.slug}`);
+            setSyncStatus({ type: 'info', message: `Keeping local name "${localUniverse.name}"...` });
+          }
+        }
+
+        // Link to existing file and load its data
+        console.log(`[GitNativeFederation] Linking to existing file:`, selectedFile);
+        await gitFederationService.linkDiscoveredUniverse(selectedFile, {
+          user: owner,
+          repo: repoName,
+          authMethod: dataAuthMethod || 'oauth'
+        });
+
+        // If renaming local to match repo, the linkDiscoveredUniverse should handle loading the repo data
+        // If keeping local name, the next save will push local data to repo with local name
+        
+        setSyncStatus({ type: 'success', message: `Linked to universe: ${renameLocal ? selectedFile.name : localUniverse?.name}` });
+        await refreshState();
+      }
+    } catch (err) {
+      console.error('[GitNativeFederation] Universe file selection failed:', err);
+      setError(`Failed to link universe file: ${err.message}`);
+    } finally {
+      setLoading(false);
+      setRepositoryTargetSlug(null);
+      setPendingRepoAttachment(null);
+      setDiscoveredUniverseFiles([]);
     }
   };
 
@@ -1323,14 +1499,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           {renderSources(activeUniverse)}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#260000' }}>Connection Stats</div>
-          <ConnectionStats 
-            universe={activeUniverse} 
-            syncStatus={syncStatusFor(activeUniverse.slug)} 
-            isSlim={isSlim}
-          />
-        </div>
+        {/* Status and Connection Stats moved to dedicated section below Accounts & Access */}
                           </div>
     );
   };
@@ -1415,14 +1584,8 @@ const variantStyles = variant === 'modal'
       height: '100%'
     };
 
-const deviceMessage = (() => {
-  if (!deviceInfo.gitOnlyMode) {
-    return {
-      type: 'success',
-      title: 'All Storage Options Available',
-      message: 'Connect to Git repositories, local files, or use browser cache.'
-    };
-  }
+// Device message only shown if there are limitations
+const deviceMessage = deviceInfo.gitOnlyMode ? (() => {
   if (deviceInfo.isMobile) {
     return {
       type: 'info',
@@ -1442,7 +1605,7 @@ const deviceMessage = (() => {
     title: 'Git-Only Mode Active',
     message: 'Local file APIs are unavailable, so we sync directly with Git.'
   };
-})();
+})() : null;
 
 return (
   <div
@@ -1466,23 +1629,25 @@ return (
                               </div>
                             )}
 
-    <div
-                                    style={{
-        borderRadius: 8,
-        border: '1px solid #260000',
-        backgroundColor: '#bdb5b5',
-        padding: 14,
-                                      display: 'flex',
-        alignItems: 'center',
-        gap: 12
-      }}
-    >
-      {deviceMessage.type === 'info' ? <Info size={18} /> : <CheckCircle size={18} color={STATUS_COLORS.success} />}
-      <div>
-        <div style={{ fontWeight: 700 }}>{deviceMessage.title}</div>
-        <div style={{ fontSize: '0.78rem', color: '#333' }}>{deviceMessage.message}</div>
-                                      </div>
-                                      </div>
+    {deviceMessage && (
+      <div
+        style={{
+          borderRadius: 8,
+          border: '1px solid #260000',
+          backgroundColor: '#bdb5b5',
+          padding: 14,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12
+        }}
+      >
+        <Info size={18} />
+        <div>
+          <div style={{ fontWeight: 700 }}>{deviceMessage.title}</div>
+          <div style={{ fontSize: '0.78rem', color: '#333' }}>{deviceMessage.message}</div>
+        </div>
+      </div>
+    )}
 
     {syncStatus && (
       <div
@@ -1546,6 +1711,8 @@ return (
       onSetMainRepoSource={handleSetMainRepoSource}
       onSaveRepoSource={handleSaveRepoSource}
       onSetPrimarySource={handleSetPrimarySource}
+      onLoadFromLocal={handleLoadFromLocal}
+      onLoadFromRepo={handleLoadFromRepo}
       isSlim={isSlim}
     />
 
@@ -1577,6 +1744,106 @@ return (
       isSlim={isSlim}
     />
 
+    {activeUniverse && (
+      <div
+        style={{
+          backgroundColor: '#979090',
+          borderRadius: 8,
+          padding: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <GitBranch size={18} />
+          <div style={{ fontWeight: 700 }}>Status & Sync</div>
+        </div>
+
+        <div
+          style={{
+            border: '1px solid #979090',
+            borderRadius: 8,
+            backgroundColor: 'rgba(255,255,255,0.35)',
+            padding: '12px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+            {activeUniverse.sync?.state === 'saving' && (
+              <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite', color: '#666', flexShrink: 0 }} />
+            )}
+            {activeUniverse.sync?.state === 'error' && (
+              <AlertCircle size={16} style={{ color: '#c62828', flexShrink: 0 }} />
+            )}
+            {activeUniverse.sync?.state === 'idle' && (
+              <CheckCircle size={16} style={{ color: '#2e7d32', flexShrink: 0 }} />
+            )}
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.9rem', fontWeight: 600, color: activeUniverse.sync?.tone || '#260000' }}>
+                {activeUniverse.sync?.label || 'All changes saved'}
+              </div>
+              {activeUniverse.sync?.description && (
+                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: 2 }}>{activeUniverse.sync.description}</div>
+              )}
+            </div>
+          </div>
+          
+          {activeUniverse.sync?.lastCommitTime && activeUniverse.sync?.state !== 'saving' && (
+            <div style={{ 
+              fontSize: '0.7rem', 
+              color: '#666',
+              whiteSpace: 'nowrap',
+              flexShrink: 0
+            }}>
+              {formatWhen(activeUniverse.sync.lastCommitTime)}
+            </div>
+          )}
+        </div>
+
+        <div 
+          style={{ 
+            fontSize: '0.82rem', 
+            fontWeight: 600, 
+            color: '#260000',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            cursor: 'pointer',
+            userSelect: 'none'
+          }}
+          onClick={() => {
+            const newValue = !showConnectionStats;
+            setShowConnectionStats(newValue);
+            try {
+              localStorage.setItem('redstring_show_connection_stats', newValue.toString());
+            } catch (e) {
+              console.warn('Failed to save connection stats visibility:', e);
+            }
+          }}
+        >
+          <ChevronRight 
+            size={16} 
+            style={{ 
+              transition: 'transform 0.2s ease',
+              transform: showConnectionStats ? 'rotate(90deg)' : 'rotate(0deg)'
+            }} 
+          />
+          Connection Stats (Advanced)
+        </div>
+        {showConnectionStats && (
+          <ConnectionStats
+            universe={activeUniverse}
+            syncStatus={syncStatusFor(activeUniverse.slug)}
+            isSlim={isSlim}
+          />
+        )}
+      </div>
+    )}
+
       <RepositorySelectionModal
         isOpen={showRepositoryManager}
         onClose={() => {
@@ -1588,34 +1855,184 @@ return (
         managedRepositories={managedRepositories}
       />
 
-    {(isConnecting) && (
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundColor: 'rgba(0,0,0,0.3)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 999
+      {/* Universe File Selection Modal */}
+      <Modal
+        isOpen={showUniverseFileSelector}
+        onClose={() => {
+          setShowUniverseFileSelector(false);
+          setPendingRepoAttachment(null);
+          setDiscoveredUniverseFiles([]);
         }}
+        title="Choose Universe File"
+        size="medium"
       >
-        <div
-          style={{
-            backgroundColor: '#ffffff',
-            borderRadius: 8,
-            padding: '16px 20px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            fontSize: '0.9rem',
-            color: '#260000'
-          }}
-        >
-          <RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} />
-          {isConnecting ? 'Connecting...' : 'Working...'}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ margin: 0, fontSize: '0.9rem', color: '#666' }}>
+            This repository contains existing universe files. Choose one to sync with, or create a new file.
+          </p>
+
+          {/* Create New Option */}
+          <button
+            onClick={() => handleUniverseFileSelection('CREATE_NEW')}
+            style={{
+              ...buttonStyle('solid'),
+              width: '100%',
+              padding: 16,
+              justifyContent: 'flex-start',
+              backgroundColor: '#7A0000',
+              color: '#ffffff',
+              border: '2px solid #7A0000'
+            }}
+          >
+            <Plus size={18} />
+            <div style={{ textAlign: 'left', flex: 1 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>Create New Universe File</div>
+              <div style={{ fontSize: '0.75rem', opacity: 0.9 }}>
+                Save current universe as a new file in this repository
+              </div>
+            </div>
+          </button>
+
+          {/* Existing Files */}
+          {discoveredUniverseFiles.length > 0 && (
+            <>
+              <div style={{ 
+                fontSize: '0.85rem', 
+                fontWeight: 600, 
+                color: '#260000',
+                marginTop: 8,
+                paddingBottom: 8,
+                borderBottom: '1px solid #e0e0e0'
+              }}>
+                Or link to existing file:
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {discoveredUniverseFiles.map((file, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleUniverseFileSelection(file)}
+                    style={{
+                      ...buttonStyle('outline'),
+                      width: '100%',
+                      padding: 14,
+                      justifyContent: 'flex-start',
+                      border: '2px solid #979090',
+                      backgroundColor: '#f9f9f9',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = '#f0f0f0';
+                      e.currentTarget.style.borderColor = '#7A0000';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = '#f9f9f9';
+                      e.currentTarget.style.borderColor = '#979090';
+                    }}
+                  >
+                    <GitBranch size={18} style={{ flexShrink: 0 }} />
+                    <div style={{ textAlign: 'left', flex: 1 }}>
+                      <div style={{ fontWeight: 700, marginBottom: 6, color: '#260000', fontSize: '0.9rem' }}>
+                        {file.name || file.slug || 'Unnamed Universe'}
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: 4 }}>
+                        📁 {file.path || file.location || 'Unknown path'}
+                      </div>
+                      {/* Stats Section */}
+                      <div style={{ 
+                        display: 'flex', 
+                        gap: 12, 
+                        fontSize: '0.7rem', 
+                        color: '#7A0000',
+                        marginTop: 6,
+                        paddingTop: 6,
+                        borderTop: '1px solid #e0e0e0'
+                      }}>
+                        {file.nodeCount !== undefined && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontWeight: 600 }}>{file.nodeCount}</span> things
+                          </span>
+                        )}
+                        {file.connectionCount !== undefined && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontWeight: 600 }}>{file.connectionCount}</span> connections
+                          </span>
+                        )}
+                        {file.graphCount !== undefined && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontWeight: 600 }}>{file.graphCount}</span> webs
+                          </span>
+                        )}
+                      </div>
+                      {file.lastModified && (
+                        <div style={{ fontSize: '0.65rem', color: '#999', marginTop: 4 }}>
+                          Last updated: {file.lastModified}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button
+              onClick={() => {
+                setShowUniverseFileSelector(false);
+                setPendingRepoAttachment(null);
+                setDiscoveredUniverseFiles([]);
+                setShowRepositoryManager(true);
+              }}
+              style={buttonStyle('outline')}
+            >
+              ← Back to Repositories
+            </button>
           </div>
         </div>
+      </Modal>
+
+    {(initializing || isConnecting || loading) && (
+      <>
+        <style>
+          {`
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}
+        </style>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 999
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: 8,
+              padding: '20px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 12,
+              fontSize: '0.95rem',
+              color: '#260000',
+              fontWeight: 600,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+            }}
+          >
+            <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+            <span>{initializing ? 'Initializing universe backend...' : isConnecting ? 'Connecting...' : 'Working...'}</span>
+          </div>
+        </div>
+      </>
       )}
     </div>
   );

@@ -925,6 +925,41 @@ function NodeCanvas() {
   useEffect(() => {
     const tryUniverseRestore = async () => {
       try {
+        // Wait for backend to finish loading if it's in progress
+        // Check if backend has already loaded data
+        const currentState = useGraphStore.getState();
+        const hasBackendLoadedData = currentState.nodePrototypes && 
+          (currentState.nodePrototypes instanceof Map ? currentState.nodePrototypes.size > 0 : Object.keys(currentState.nodePrototypes).length > 0);
+        
+        if (hasBackendLoadedData) {
+          console.log('[NodeCanvas] Backend already loaded universe data, skipping old fileStorage restore');
+          // Backend has loaded data, don't try old restore path
+          return;
+        }
+
+        // Wait a moment for backend to load if universe-backend-ready event hasn't fired yet
+        if (typeof window !== 'undefined' && !window._universeBackendReady) {
+          console.log('[NodeCanvas] Waiting for universe backend to finish loading...');
+          await new Promise((resolve) => {
+            const timeout = setTimeout(resolve, 2000); // Max wait 2 seconds
+            const handler = () => {
+              clearTimeout(timeout);
+              window.removeEventListener('universe-backend-ready', handler);
+              resolve();
+            };
+            window.addEventListener('universe-backend-ready', handler);
+          });
+        }
+
+        // Check again after waiting
+        const stateAfterWait = useGraphStore.getState();
+        const hasDataAfterWait = stateAfterWait.nodePrototypes && 
+          (stateAfterWait.nodePrototypes instanceof Map ? stateAfterWait.nodePrototypes.size > 0 : Object.keys(stateAfterWait.nodePrototypes).length > 0);
+        
+        if (hasDataAfterWait) {
+          console.log('[NodeCanvas] Backend loaded universe data while waiting, skipping old restore');
+          return;
+        }
         
         const result = await storeActions.restoreFromSession();
         
@@ -948,10 +983,15 @@ function NodeCanvas() {
             
           }
         } else {
-          // No universe file found - set error state
-          const message = result?.message || 'No universe file found. Please create a new universe or open an existing one.';
+          // No universe file found - only show error if backend didn't load anything
+          const finalState = useGraphStore.getState();
+          const hasAnyData = finalState.nodePrototypes && 
+            (finalState.nodePrototypes instanceof Map ? finalState.nodePrototypes.size > 0 : Object.keys(finalState.nodePrototypes).length > 0);
           
-          storeActions.setUniverseError(message);
+          if (!hasAnyData) {
+            const message = result?.message || 'No universe file found. Please create a new universe or open an existing one.';
+            storeActions.setUniverseError(message);
+          }
         }
       } catch (error) {
         
@@ -7242,18 +7282,26 @@ function NodeCanvas() {
         >
           {isUniverseLoading ? (
             // Show loading state while checking for universe file
-            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '12px' }}>
               {/* Circular loading spinner */}
               <div
                 style={{
-                  width: '40px',
-                  height: '40px',
-                  border: '4px solid #260000', // Canvas color
-                  borderTop: '4px solid #260000', // Maroon color matching header
+                  width: '36px',
+                  height: '36px',
+                  border: '3px solid #bdb5b5',
+                  borderTop: '3px solid #7A0000',
                   borderRadius: '50%',
                   animation: 'spin 1s linear infinite'
                 }}
               />
+              <div style={{
+                fontFamily: "'EmOne', sans-serif",
+                fontSize: '13px',
+                color: '#260000',
+                fontWeight: 600
+              }}>
+                Loading universe...
+              </div>
               <style>
                 {`
                   @keyframes spin {
@@ -7318,8 +7366,45 @@ function NodeCanvas() {
               )}
             </div>
           ) : !activeGraphId ? ( // Check local state
-            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
-              No Thing selected. Open or create a thing from the left panel.
+            <div style={{ 
+              height: '100%', 
+              display: 'flex', 
+              flexDirection: 'column',
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              gap: '24px',
+              fontFamily: "'EmOne', sans-serif"
+            }}>
+              <div style={{ fontSize: '16px', color: '#260000', opacity: 0.7 }}>
+                No Thing Open
+              </div>
+              <button
+                onClick={() => storeActions.createNewGraph({ name: 'New Thing' })}
+                style={{
+                  width: '120px',
+                  height: '120px',
+                  backgroundColor: 'transparent',
+                  border: '3px dotted #260000',
+                  borderRadius: '16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s ease',
+                  outline: 'none'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(38, 0, 0, 0.05)';
+                  e.currentTarget.style.borderWidth = '4px';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.borderWidth = '3px';
+                }}
+                title="Create New Thing"
+              >
+                <Plus size={48} strokeWidth={2} color="#260000" />
+              </button>
             </div>
           ) : (
             <svg

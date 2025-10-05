@@ -220,6 +220,14 @@ class UniverseBackendBridge {
     return this.sendCommand('getSyncStatus', { universeSlug });
   }
 
+  getUniverseGitStatus(universeSlug) {
+    return this.sendCommand('getUniverseGitStatus', { universeSlug });
+  }
+
+  getGitStatusDashboard() {
+    return this.sendCommand('getGitStatusDashboard');
+  }
+
   switchActiveUniverse(slug, options) {
     return this.sendCommand('switchActiveUniverse', { slug, options });
   }
@@ -259,6 +267,10 @@ class UniverseBackendBridge {
   uploadLocalFile(file, targetUniverseSlug) {
     return this.sendCommand('uploadLocalFile', { file, targetUniverseSlug });
   }
+
+  reloadUniverse(universeSlug) {
+    return this.sendCommand('reloadUniverse', { universeSlug });
+  }
 }
 
 const bridgeInstance = new UniverseBackendBridge();
@@ -270,6 +282,8 @@ const universeBackendBridge = {
   getActiveUniverse: () => bridgeInstance.getActiveUniverse(),
   getAuthStatus: () => bridgeInstance.getAuthStatus(),
   getSyncStatus: (universeSlug) => bridgeInstance.getSyncStatus(universeSlug),
+  getUniverseGitStatus: (universeSlug) => bridgeInstance.getUniverseGitStatus(universeSlug),
+  getGitStatusDashboard: () => bridgeInstance.getGitStatusDashboard(),
   switchActiveUniverse: (slug, options) => bridgeInstance.switchActiveUniverse(slug, options),
   createUniverse: (name, options) => bridgeInstance.createUniverse(name, options),
   deleteUniverse: (slug) => bridgeInstance.deleteUniverse(slug),
@@ -279,7 +293,8 @@ const universeBackendBridge = {
   forceSave: (universeSlug, storeState) => bridgeInstance.forceSave(universeSlug, storeState),
   saveActiveUniverse: (storeState) => bridgeInstance.saveActiveUniverse(storeState),
   downloadLocalFile: (universeSlug, storeState) => bridgeInstance.downloadLocalFile(universeSlug, storeState),
-  uploadLocalFile: (file, targetUniverseSlug) => bridgeInstance.uploadLocalFile(file, targetUniverseSlug)
+  uploadLocalFile: (file, targetUniverseSlug) => bridgeInstance.uploadLocalFile(file, targetUniverseSlug),
+  reloadUniverse: (universeSlug) => bridgeInstance.reloadUniverse(universeSlug)
 };
 
 export default universeBackendBridge;

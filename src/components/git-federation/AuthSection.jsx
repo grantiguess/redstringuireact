@@ -1,6 +1,5 @@
 import React from 'react';
 import { Settings, Shield, Github } from 'lucide-react';
-import ConnectionStats from './ConnectionStats.jsx';
 
 const STATUS_COLORS = {
   success: '#2e7d32',
@@ -152,19 +151,7 @@ const AuthSection = ({
         </div>
       </div>
 
-      {/* Global Connection Stats */}
-      {activeUniverse && (hasApp || hasOAuth) && (
-        <div>
-          <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#260000', marginBottom: 8 }}>
-            Connection Stats
-          </div>
-          <ConnectionStats 
-            universe={activeUniverse} 
-            syncStatus={syncStatus} 
-            isSlim={isSlim}
-          />
-        </div>
-      )}
+      {/* Connection Stats moved to parent panel (GitNativeFederation) as its own section */}
     </div>
   );
 };
