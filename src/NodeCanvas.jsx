@@ -1313,6 +1313,26 @@ function NodeCanvas() {
 
   // Hover state for grid when mode is 'hover'
 
+  /**
+   * Transforms client/screen coordinates to canvas coordinates.
+   * Accounts for: container offset, pan, zoom, and canvas coordinate system offset.
+   * This is the fundamental coordinate transformation used throughout the app.
+   * 
+   * @param {number} clientX - X coordinate in client/screen space
+   * @param {number} clientY - Y coordinate in client/screen space
+   * @returns {{ x: number, y: number }} - Coordinates in canvas space
+   */
+  const clientToCanvasCoordinates = useCallback((clientX, clientY) => {
+    if (!containerRef.current) return { x: 0, y: 0 };
+    
+    const rect = containerRef.current.getBoundingClientRect();
+    
+    // Transform: (client - container offset - pan) / zoom + canvas offset
+    const x = (clientX - rect.left - panOffset.x) / zoomLevel + canvasSize.offsetX;
+    const y = (clientY - rect.top - panOffset.y) / zoomLevel + canvasSize.offsetY;
+    
+    return { x, y };
+  }, [panOffset, zoomLevel, canvasSize]);
 
   // --- Grid Snapping Helpers ---
   const snapToGrid = (mouseX, mouseY, nodeWidth, nodeHeight) => {
@@ -2399,12 +2419,9 @@ function NodeCanvas() {
 
         const offset = monitor.getClientOffset();
         if (!offset || !containerRef.current) return;
-        
-        const rect = containerRef.current.getBoundingClientRect();
 
-        // Convert drop position to canvas SVG coordinates
-        const x = (offset.x - rect.left - panOffset.x) / zoomLevel;
-        const y = (offset.y - rect.top - panOffset.y) / zoomLevel;
+        // Convert drop position to canvas coordinates
+        const { x, y } = clientToCanvasCoordinates(offset.x, offset.y);
 
         // Handle semantic concepts that need materialization
         if (item.needsMaterialization && item.conceptData) {
@@ -2586,7 +2603,7 @@ function NodeCanvas() {
 
         storeActions.addNodeInstance(activeGraphId, prototypeId, position);
     },
-  }), [activeGraphId, panOffset, zoomLevel, nodePrototypesMap, storeActions]);
+  }), [activeGraphId, clientToCanvasCoordinates, nodePrototypesMap, storeActions, gridMode, snapToGridAnimated]);
 
   const setCanvasAreaRef = useCallback(node => {
       containerRef.current = node;
@@ -3515,6 +3532,7 @@ function NodeCanvas() {
     const boundedY = Math.min(Math.max(y, canvasSize.offsetY), canvasSize.offsetY + canvasSize.height);
     return { x: boundedX, y: boundedY };
   };
+
   // Fast line-rectangle intersection for edge culling
   const lineIntersectsRect = (x1, y1, x2, y2, rect) => {
     // Cohen–Sutherland-like quick reject/accept
@@ -8077,9 +8095,9 @@ function NodeCanvas() {
                              
                                                          // Smart label placement based on routing style
                             if (enableAutoRouting && routingStyle === 'manhattan') {
-                              // Always try cached placement first to prevent flicker
+                              // Always try cached placement first to prevent flicker (except during dragging)
                               const cached = placedLabelsRef.current.get(edge.id);
-                              if (cached && cached.position) {
+                              if (cached && cached.position && !draggingNodeInfo) {
                                 const stabilized = stabilizeLabelPosition(edge.id, cached.position.x, cached.position.y, cached.position.angle || 0);
                                 midX = stabilized.x;
                                 midY = stabilized.y;
@@ -8120,9 +8138,9 @@ function NodeCanvas() {
                                  }
                               }
                                                          } else if (enableAutoRouting && routingStyle === 'clean') {
-                              // Always try cached placement first to prevent flicker
+                              // Always try cached placement first to prevent flicker (except during dragging)
                               const cached = placedLabelsRef.current.get(edge.id);
-                              if (cached && cached.position) {
+                              if (cached && cached.position && !draggingNodeInfo) {
                                 const stabilized = stabilizeLabelPosition(edge.id, cached.position.x, cached.position.y, cached.position.angle || 0);
                                 midX = stabilized.x;
                                 midY = stabilized.y;
@@ -8155,9 +8173,9 @@ function NodeCanvas() {
                                  }
                                }
                                                          } else {
-                              // Straight line: reuse cached placement when available to prevent flicker
+                              // Straight line: reuse cached placement when available to prevent flicker (except during dragging)
                               const cached = placedLabelsRef.current.get(edge.id);
-                              if (cached && cached.position) {
+                              if (cached && cached.position && !draggingNodeInfo) {
                                 const stabilized = stabilizeLabelPosition(edge.id, cached.position.x, cached.position.y, cached.position.angle || Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI));
                                 midX = stabilized.x;
                                 midY = stabilized.y;

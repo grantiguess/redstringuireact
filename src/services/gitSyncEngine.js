@@ -405,7 +405,7 @@ class GitSyncEngine {
    * Update local state instantly (user operations)
    * Now with intelligent rate limiting and debouncing
    */
-  updateState(storeState) {
+  updateState(storeState, force = false) {
     // Store the current state for background persistence
     this.localState.set('current', storeState);
     
@@ -413,8 +413,8 @@ class GitSyncEngine {
     const currentHash = this.generateStateHash(storeState);
     const hasChanges = this.lastCommittedHash !== currentHash;
     
-    if (!hasChanges) {
-      return; // No changes, nothing to do
+    if (!hasChanges && !force) {
+      return; // No changes, nothing to do (unless forced by SaveCoordinator)
     }
     
     // Detect if this might be a dragging operation

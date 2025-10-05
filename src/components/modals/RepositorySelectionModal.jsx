@@ -26,7 +26,10 @@ const RepositorySelectionModal = ({
   onClose,
   onSelectRepository,
   onAddToManagedList,
-  managedRepositories = []
+  managedRepositories = [],
+  intent = null,
+  onImportDiscovered,
+  onSyncDiscovered
 }) => {
   const [repositories, setRepositories] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -37,6 +40,30 @@ const RepositorySelectionModal = ({
   const [authStatus, setAuthStatus] = useState(persistentAuth.getAuthStatus());
   const [expandedRepos, setExpandedRepos] = useState(new Set());
   const [discoveredUniverses, setDiscoveredUniverses] = useState({});
+
+  const modalTitle = intent === 'import'
+    ? 'Import From Repository'
+    : intent === 'attach'
+      ? 'Attach Repository'
+      : 'Add Repositories';
+
+  const selectLabel = intent === 'import'
+    ? 'Import'
+    : intent === 'attach'
+      ? 'Attach'
+      : 'Select';
+
+  const addLabel = intent === 'import'
+    ? 'Add & Import'
+    : intent === 'attach'
+      ? 'Add & Attach'
+      : 'Add';
+
+  const intentMessage = intent === 'import'
+    ? 'Pick a repository to import an existing universe as a brand-new copy. The app will scan for universe files before loading.'
+    : intent === 'attach'
+      ? 'Choose the repository you want to sync with your current universe. You can create a new file or sync with an existing one.'
+      : null;
 
   useEffect(() => {
     if (isOpen && authStatus.isAuthenticated) {
@@ -210,7 +237,7 @@ const RepositorySelectionModal = ({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Add Repositories" size="slim">
+    <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="slim">
       {/* Compact search */}
       <div style={{
         padding: '12px',
@@ -303,6 +330,21 @@ const RepositorySelectionModal = ({
           </div>
         </div>
       </div>
+
+      {intentMessage && (
+        <div
+          style={{
+            padding: '10px 12px',
+            backgroundColor: intent === 'import' ? 'rgba(21,101,192,0.12)' : 'rgba(38,0,0,0.08)',
+            borderBottom: '1px solid #979090',
+            color: '#260000',
+            fontSize: '0.78rem',
+            lineHeight: 1.4
+          }}
+        >
+          {intentMessage}
+        </div>
+      )}
 
       {/* Error display */}
       {error && (
@@ -492,7 +534,7 @@ const RepositorySelectionModal = ({
                       }}
                       title="Select repository"
                     >
-                      Select
+                      {selectLabel}
                     </button>
                   )}
 
@@ -522,7 +564,7 @@ const RepositorySelectionModal = ({
                       title="Add to your repository list"
                     >
                       <Plus size={10} />
-                      Add
+                      {addLabel}
                     </button>
                   )}
                 </div>
@@ -583,42 +625,105 @@ const RepositorySelectionModal = ({
                       No universes found in this repository
                     </div>
                   ) : (
-                    <div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <div style={{
                         fontSize: '0.7rem',
                         fontWeight: 600,
-                        color: '#260000',
-                        marginBottom: '4px'
+                        color: '#260000'
                       }}>
                         Found {universes.length} universe{universes.length === 1 ? '' : 's'}:
                       </div>
-                      {universes.map((universe, index) => (
-                        <div
-                          key={index}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontSize: '0.65rem',
-                            color: '#333',
-                            marginBottom: index < universes.length - 1 ? '2px' : '0'
-                          }}
-                        >
-                          <FileText size={8} />
-                          <span style={{
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap'
-                          }}>
-                            {universe.name || universe.path || `Universe ${index + 1}`}
-                          </span>
-                          {universe.path && (
-                            <span style={{ opacity: 0.6 }}>
-                              ({universe.path})
-                            </span>
-                          )}
-                        </div>
-                      ))}
+                      {universes.map((universe, index) => {
+                        const displayName = universe.name || universe.slug || universe.fileName || `Universe ${index + 1}`;
+                        const repoInfo = {
+                          user: repo.owner?.login || repo.owner,
+                          repo: repo.name
+                        };
+
+                        return (
+                          <div
+                            key={`${repo.id}-${universe.path || universe.slug || index}`}
+                            style={{
+                              border: '1px solid #808080',
+                              borderRadius: 6,
+                              padding: '8px 10px',
+                              backgroundColor: '#cfc6c6',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 6
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <FileText size={10} />
+                              <div
+                                style={{
+                                  fontWeight: 600,
+                                  fontSize: '0.72rem',
+                                  color: '#260000',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                {displayName}
+                              </div>
+                            </div>
+                            {universe.path && (
+                              <div style={{ fontSize: '0.65rem', color: '#555' }}>{universe.path}</div>
+                            )}
+                            <div style={{ fontSize: '0.62rem', color: '#7A0000', display: 'flex', gap: 10 }}>
+                              {universe.nodeCount !== undefined && (
+                                <span>{universe.nodeCount} nodes</span>
+                              )}
+                              {universe.connectionCount !== undefined && (
+                                <span>{universe.connectionCount} connections</span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              {(onImportDiscovered && (intent === 'import' || intent === null)) && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onImportDiscovered(universe, repoInfo);
+                                  }}
+                                  style={{
+                                    background: 'none',
+                                    border: '1px solid #1565c0',
+                                    color: '#1565c0',
+                                    padding: '4px 8px',
+                                    borderRadius: 4,
+                                    fontSize: '0.68rem',
+                                    cursor: 'pointer',
+                                    fontWeight: 600
+                                  }}
+                                >
+                                  Import Copy
+                                </button>
+                              )}
+                              {(onSyncDiscovered && (intent === 'attach' || intent === null)) && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSyncDiscovered(universe, repoInfo);
+                                  }}
+                                  style={{
+                                    backgroundColor: '#7A0000',
+                                    color: '#fff',
+                                    border: '1px solid #7A0000',
+                                    padding: '4px 8px',
+                                    borderRadius: 4,
+                                    fontSize: '0.68rem',
+                                    cursor: 'pointer',
+                                    fontWeight: 600
+                                  }}
+                                >
+                                  Sync to Universe
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

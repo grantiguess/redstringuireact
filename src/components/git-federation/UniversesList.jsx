@@ -176,7 +176,7 @@ const UniversesList = ({
                   onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
-                  <Github size={14} /> From Repository
+                  <Github size={14} /> Import From Repository
                 </button>
               </div>
             )}

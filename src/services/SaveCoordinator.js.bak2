@@ -26,7 +26,6 @@ class SaveCoordinator {
     
     // SIMPLIFIED: Single state tracking
     this.lastSaveHash = null;
-    this.pendingHash = null;  // Hash of changes waiting to be saved
     this.lastState = null;
     this.lastChangeContext = {};
     this.saveTimer = null; // Single timer for all changes
@@ -80,25 +79,21 @@ class SaveCoordinator {
     }
 
     try {
-      // Skip intermediate drag updates - only save on drag completion
-      if (changeContext.isDragging === true || changeContext.phase === 'move') {
-        console.log('[SaveCoordinator] Skipping intermediate drag update (phase: move)');
-        return;
-      }
-
       const stateHash = this.generateStateHash(newState);
       
-      // Skip if no actual changes (compared to both saved and pending)
-      if (this.lastSaveHash === stateHash || this.pendingHash === stateHash) {
+      // Skip if no actual changes
+      if (this.lastSaveHash === stateHash) {
         return;
       }
 
       console.log('[SaveCoordinator] State change detected:', changeContext.type || 'unknown', 'hash:', stateHash.substring(0, 8));
 
-      // Store the latest state and pending hash
+      // Store the latest state
       this.lastState = newState;
       this.lastChangeContext = changeContext;
-      this.pendingHash = stateHash;  // Track what hash we're about to save
+      
+      // Update hash immediately to prevent duplicate detections during rapid changes
+      this.lastSaveHash = stateHash;
 
       // Notify Git autosave policy of the change
       gitAutosavePolicy.onEditActivity();
@@ -149,15 +144,12 @@ class SaveCoordinator {
       // Save to Git if available
       if (this.gitSyncEngine && this.gitSyncEngine.isHealthy()) {
         console.log('[SaveCoordinator] Queuing git save');
-        this.gitSyncEngine.updateState(state, true); // force = true to bypass Git's duplicate check
+        this.gitSyncEngine.updateState(state);
         console.log('[SaveCoordinator] Git save queued, pending commits:', this.gitSyncEngine.pendingCommits?.length);
       }
 
-      // Update save hash after successful save
-      if (this.pendingHash) {
-        this.lastSaveHash = this.pendingHash;
-        this.pendingHash = null;
-      }
+      // Update save hash
+      this.lastSaveHash = this.generateStateHash(state);
       this.notifyStatus('success', 'Save completed');
 
     } catch (error) {
@@ -206,16 +198,14 @@ class SaveCoordinator {
       // Include viewport state (rounded to prevent tiny changes from spamming)
       const contentState = {
         graphs: state.graphs ? Array.from(state.graphs.entries()).map(([id, graph]) => {
-          const { panOffset, zoomLevel, instances, ...rest } = graph || {};
+          const { panOffset, zoomLevel, ...content } = graph || {};
           // Round viewport values to prevent micro-changes from triggering saves
           const view = {
             x: Math.round(((panOffset?.x ?? 0) + Number.EPSILON) * 100) / 100,
             y: Math.round(((panOffset?.y ?? 0) + Number.EPSILON) * 100) / 100,
             zoom: typeof zoomLevel === 'number' ? Math.round((zoomLevel + Number.EPSILON) * 10000) / 10000 : 1
           };
-          // Convert instances Map to array for proper serialization
-          const instancesArray = instances ? Array.from(instances.entries()) : [];
-          return [id, { ...rest, instances: instancesArray, __view: view }];
+          return [id, { ...content, __view: view }];
         }) : [],
         nodePrototypes: state.nodePrototypes ? Array.from(state.nodePrototypes.entries()) : [],
         edges: state.edges ? Array.from(state.edges.entries()) : []
@@ -258,7 +248,7 @@ class SaveCoordinator {
     return {
       isEnabled: this.isEnabled,
       isSaving: this.isSaving,
-      hasPendingSave: this.saveTimer !== null || this.pendingHash !== null,
+      hasPendingSave: this.saveTimer !== null,
       lastError: this.lastError,
       gitAutosavePolicy: gitAutosavePolicy.getStatus()
     };
