@@ -555,8 +555,15 @@ app.delete('/api/github/oauth/revoke', async (req, res) => {
   }
 });
 
-// Serve static files from the dist directory
-app.use(express.static(distPath));
+// Serve static files from the dist directory with proper MIME types
+app.use(express.static(distPath, {
+  setHeaders: (res, filePath) => {
+    // Ensure JavaScript modules have correct MIME type
+    if (filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    }
+  }
+}));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -701,8 +708,25 @@ app.get('/github/app/callback', (req, res) => {
   res.redirect(redirectUrl);
 });
 
-// Handle client-side routing - serve index.html for all non-API routes
-app.get('*', (req, res) => {
+// Handle client-side routing - serve index.html ONLY for non-asset, non-API routes
+app.get('*', (req, res, next) => {
+  // Don't serve index.html for static assets (they should be handled by express.static above)
+  const isAssetRequest = req.path.startsWith('/assets/') || 
+                         req.path.endsWith('.js') || 
+                         req.path.endsWith('.css') || 
+                         req.path.endsWith('.map') ||
+                         req.path.endsWith('.svg') ||
+                         req.path.endsWith('.png') ||
+                         req.path.endsWith('.jpg') ||
+                         req.path.endsWith('.ico');
+  
+  if (isAssetRequest) {
+    // If we get here, the file doesn't exist - return 404
+    logger.warn(`Asset not found: ${req.path}`);
+    return res.status(404).send('Asset not found');
+  }
+  
+  // Serve index.html for client-side routing
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
