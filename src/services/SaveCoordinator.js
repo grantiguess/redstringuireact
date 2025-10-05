@@ -149,7 +149,7 @@ class SaveCoordinator {
       // Save to Git if available
       if (this.gitSyncEngine && this.gitSyncEngine.isHealthy()) {
         console.log('[SaveCoordinator] Queuing git save');
-        this.gitSyncEngine.updateState(state, true); // force = true to bypass Git's duplicate check
+        this.gitSyncEngine.updateState(state); // rely on engine change detection to prevent redundant commits
         console.log('[SaveCoordinator] Git save queued, pending commits:', this.gitSyncEngine.pendingCommits?.length);
       }
 
@@ -203,19 +203,13 @@ class SaveCoordinator {
   // Generate hash for change detection
   generateStateHash(state) {
     try {
-      // Include viewport state (rounded to prevent tiny changes from spamming)
+      // Exclude viewport state entirely so viewport-only changes don't trigger saves
       const contentState = {
         graphs: state.graphs ? Array.from(state.graphs.entries()).map(([id, graph]) => {
           const { panOffset, zoomLevel, instances, ...rest } = graph || {};
-          // Round viewport values to prevent micro-changes from triggering saves
-          const view = {
-            x: Math.round(((panOffset?.x ?? 0) + Number.EPSILON) * 100) / 100,
-            y: Math.round(((panOffset?.y ?? 0) + Number.EPSILON) * 100) / 100,
-            zoom: typeof zoomLevel === 'number' ? Math.round((zoomLevel + Number.EPSILON) * 10000) / 10000 : 1
-          };
           // Convert instances Map to array for proper serialization
           const instancesArray = instances ? Array.from(instances.entries()) : [];
-          return [id, { ...rest, instances: instancesArray, __view: view }];
+          return [id, { ...rest, instances: instancesArray }];
         }) : [],
         nodePrototypes: state.nodePrototypes ? Array.from(state.nodePrototypes.entries()) : [],
         edges: state.edges ? Array.from(state.edges.entries()) : []
