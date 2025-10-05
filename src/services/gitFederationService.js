@@ -150,6 +150,8 @@ function buildSyncInfo(universe, syncStatus) {
     lastErrorTime = null
   } = syncStatus;
 
+  const hasChanges = !!syncStatus.hasChanges;
+
   let state = 'idle';
   let label = 'All changes saved';
   let tone = '#2e7d32';
@@ -170,6 +172,11 @@ function buildSyncInfo(universe, syncStatus) {
     label = 'Sync paused';
     tone = '#ef6c00';
     description = 'Resume to save changes.';
+  } else if (hasChanges) {
+    state = 'unsaved';
+    label = 'Unsaved changes';
+    tone = '#ef6c00';
+    description = '';
   }
 
   return {
@@ -181,6 +188,8 @@ function buildSyncInfo(universe, syncStatus) {
     hasGitLink: true,
     lastSync,
     pendingCommits,
+    hasChanges,
+    hasUnsavedChanges: hasChanges || pendingCommits > 0,
     isRunning,
     isHealthy,
     isInBackoff: isInErrorBackoff,

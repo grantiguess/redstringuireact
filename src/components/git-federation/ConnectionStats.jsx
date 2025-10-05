@@ -60,6 +60,16 @@ const ConnectionStats = ({ universe, syncStatus, isSlim = false }) => {
     icon: sync.pendingCommits > 0 ? <RefreshCw size={14} /> : <Save size={14} />
   });
 
+  // Explicit unsaved-changes indicator (includes engine.hasChanges or pending commits)
+  const unsaved = !!(sync.hasUnsavedChanges || engine.hasChanges || (sync.pendingCommits > 0));
+  cards.push({
+    title: 'Unsaved Changes',
+    value: unsaved ? 'Yes' : 'No',
+    tone: unsaved ? STATUS_COLORS.warning : STATUS_COLORS.success,
+    description: unsaved ? 'There are edits not yet committed to Git.' : 'All changes are persisted.',
+    icon: unsaved ? <RefreshCw size={14} /> : <CheckCircle size={14} />
+  });
+
   cards.push({
     title: 'Engine Health',
     value: sync.isHealthy === false ? 'Degraded' : (sync.isHealthy === true ? 'Healthy' : 'Unknown'),

@@ -98,7 +98,8 @@ const Modal = ({
             flex: 1,
             overflow: 'hidden',
             display: 'flex',
-            flexDirection: 'column'
+            flexDirection: 'column',
+            padding: 16
           }}
         >
           {children}

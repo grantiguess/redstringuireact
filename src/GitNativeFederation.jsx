@@ -196,6 +196,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   const [isSlim, setIsSlim] = useState(false);
 
   const deviceInfo = useMemo(() => detectDeviceInfo(), []);
+  const autosaveRef = useRef({ cooldownUntil: 0, triggerAt: 0 });
 
   const refreshState = useCallback(async () => {
     try {
@@ -279,6 +280,49 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       persistentAuth.off('appInstallationCleared', listener);
     };
   }, [refreshAuth]);
+
+  // Lightweight autosave fallback: if unsaved changes persist for 20s, save once; 60s cooldown
+  useEffect(() => {
+    if (!serviceState.activeUniverseSlug) return undefined;
+    const active = serviceState.universes.find(u => u.slug === serviceState.activeUniverseSlug);
+    const hasUnsaved = !!(active?.sync?.hasUnsavedChanges);
+
+    if (!hasUnsaved) {
+      autosaveRef.current.triggerAt = 0;
+      return undefined;
+    }
+
+    const now = Date.now();
+    if (now < autosaveRef.current.cooldownUntil) {
+      return undefined;
+    }
+
+    if (!autosaveRef.current.triggerAt) {
+      autosaveRef.current.triggerAt = now + 20000; // 20s persistence window
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        // Double-check still unsaved before saving
+        const fresh = await gitFederationService.refreshUniverses();
+        const latest = fresh.universes.find(u => u.slug === fresh.activeUniverseSlug);
+        if (latest?.sync?.hasUnsavedChanges) {
+          setLoading(true);
+          await gitFederationService.forceSave(latest.slug);
+          setSyncStatus({ type: 'success', message: 'Autosaved changes to Git' });
+          await refreshState();
+        }
+      } catch (e) {
+        // Silent; error banner handled elsewhere if needed
+      } finally {
+        setLoading(false);
+        autosaveRef.current.cooldownUntil = Date.now() + 60000; // 60s cooldown
+        autosaveRef.current.triggerAt = 0;
+      }
+    }, Math.max(0, autosaveRef.current.triggerAt - now));
+
+    return () => clearTimeout(timer);
+  }, [serviceState.activeUniverseSlug, serviceState.universes, refreshState]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -677,6 +721,8 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     }
 
     try {
+      // Close repo modal immediately for snappy UX
+      setShowRepositoryManager(false);
       setLoading(true);
 
       // Auto-add repository to managed list if not already there
@@ -711,7 +757,6 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           universeSlug: repositoryTargetSlug
         });
         setDiscoveredUniverseFiles(discovered);
-        setShowRepositoryManager(false);
         setShowUniverseFileSelector(true);
         setLoading(false);
         return;
@@ -1760,6 +1805,42 @@ return (
           <div style={{ fontWeight: 700 }}>Status & Sync</div>
         </div>
 
+        {(() => {
+          const engine = activeUniverse ? (syncStatusFor(activeUniverse.slug) || activeUniverse.sync?.engine || {}) : {};
+          const base = activeUniverse?.sync || {};
+          let displayState = 'idle';
+          let displayLabel = 'All changes saved';
+          let displayTone = '#2e7d32';
+          let displayDesc = '';
+
+          if (engine?.isInErrorBackoff || engine?.isHealthy === false) {
+            displayState = 'error';
+            displayLabel = 'Unable to save changes';
+            displayTone = '#c62828';
+          } else if (engine?.isRunning || (engine?.pendingCommits || 0) > 0) {
+            displayState = 'saving';
+            displayLabel = 'Saving...';
+            displayTone = '#666';
+          } else if (engine?.isPaused) {
+            displayState = 'paused';
+            displayLabel = 'Sync paused';
+            displayTone = '#ef6c00';
+            displayDesc = 'Resume to save changes.';
+          } else if (engine?.hasChanges) {
+            displayState = 'unsaved';
+            displayLabel = 'Unsaved changes';
+            displayTone = '#ef6c00';
+          } else if (base?.state && base?.label) {
+            // Fallback to mapped state
+            displayState = base.state;
+            displayLabel = base.label;
+            displayTone = base.tone || displayTone;
+            displayDesc = base.description || '';
+          }
+
+          const lastTime = engine?.lastCommitTime || base?.lastCommitTime;
+
+          return (
         <div
           style={{
             border: '1px solid #979090',
@@ -1773,36 +1854,48 @@ return (
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
-            {activeUniverse.sync?.state === 'saving' && (
+            {displayState === 'saving' && (
               <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite', color: '#666', flexShrink: 0 }} />
             )}
-            {activeUniverse.sync?.state === 'error' && (
+            {displayState === 'error' && (
               <AlertCircle size={16} style={{ color: '#c62828', flexShrink: 0 }} />
             )}
-            {activeUniverse.sync?.state === 'idle' && (
+            {displayState === 'unsaved' && (
+              <AlertCircle size={16} style={{ color: '#ef6c00', flexShrink: 0 }} />
+            )}
+            {displayState === 'idle' && (
               <CheckCircle size={16} style={{ color: '#2e7d32', flexShrink: 0 }} />
             )}
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '0.9rem', fontWeight: 600, color: activeUniverse.sync?.tone || '#260000' }}>
-                {activeUniverse.sync?.label || 'All changes saved'}
+              <div style={{ fontSize: '0.9rem', fontWeight: 600, color: displayTone || '#260000' }}>
+                {displayLabel}
               </div>
-              {activeUniverse.sync?.description && (
-                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: 2 }}>{activeUniverse.sync.description}</div>
+              {displayDesc && (
+                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: 2 }}>{displayDesc}</div>
               )}
             </div>
           </div>
-          
-          {activeUniverse.sync?.lastCommitTime && activeUniverse.sync?.state !== 'saving' && (
+          {displayState === 'unsaved' && (
+            <button
+              onClick={() => handleForceSave(activeUniverse.slug)}
+              style={{ ...buttonStyle('solid'), flexShrink: 0 }}
+            >
+              <Save size={14} /> Save now
+            </button>
+          )}
+          {lastTime && displayState !== 'saving' && (
             <div style={{ 
               fontSize: '0.7rem', 
               color: '#666',
               whiteSpace: 'nowrap',
               flexShrink: 0
             }}>
-              {formatWhen(activeUniverse.sync.lastCommitTime)}
+              {formatWhen(lastTime)}
             </div>
           )}
         </div>
+          );
+        })()}
 
         <div 
           style={{ 
