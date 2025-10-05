@@ -113,7 +113,12 @@ class SaveCoordinator {
 
   // Main entry point for state changes
   onStateChange(newState, changeContext = {}) {
-    if (!this.isEnabled || !newState) return;
+    if (!this.isEnabled || !newState) {
+      if (!this.isEnabled) {
+        console.log('[SaveCoordinator] State change ignored - not enabled');
+      }
+      return;
+    }
 
     try {
       const stateHash = this.generateStateHash(newState);
@@ -122,6 +127,8 @@ class SaveCoordinator {
       if (this.lastSaveHash === stateHash) {
         return;
       }
+
+      console.log('[SaveCoordinator] State change detected:', changeContext.type || 'unknown', 'hash:', stateHash.substring(0, 8));
 
       const priority = this.determinePriority(newState, changeContext);
       const now = Date.now();
@@ -353,7 +360,9 @@ class SaveCoordinator {
       this.isSaving = true;
       
       // Use GitSyncEngine's updateState method for background processing
+      console.log('[SaveCoordinator] Calling gitSyncEngine.updateState...');
       this.gitSyncEngine.updateState(pendingChange.state);
+      console.log('[SaveCoordinator] gitSyncEngine.updateState called, pending commits:', this.gitSyncEngine.pendingCommits?.length);
       this.lastGitCommitTime = now;
       
       // Remove processed change

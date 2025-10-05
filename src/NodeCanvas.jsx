@@ -66,6 +66,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useViewportBounds } from './hooks/useViewportBounds';
 import Panel from './Panel'; // This is now used for both sides
 import TypeList from './TypeList'; // Re-add TypeList component
+import SaveStatusDisplay from './SaveStatusDisplay'; // Import the save status display
 import NodeSelectionGrid from './NodeSelectionGrid'; // Import the new node selection grid
 import UnifiedSelector from './UnifiedSelector'; // Import the new unified selector
 import OrbitOverlay from './components/OrbitOverlay.jsx';
@@ -9312,6 +9313,9 @@ function NodeCanvas() {
         setSelectedNodes={setSelectedInstanceIds}
         selectedNodes={selectedInstanceIds}
       />
+
+      {/* SaveStatusDisplay Component */}
+      <SaveStatusDisplay />
 
       {/* NodeControlPanel Component - with animation */}
       {(nodeControlPanelShouldShow || nodeControlPanelVisible) && (
