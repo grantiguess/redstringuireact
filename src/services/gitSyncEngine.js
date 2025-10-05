@@ -375,9 +375,14 @@ class GitSyncEngine {
     // Extract only content-related state, excluding viewport state
     const contentState = {
       graphs: Array.from(storeState.graphs.entries()).map(([id, graph]) => {
-        // Exclude viewport state from graphs
-        const { panOffset, zoomLevel, ...contentGraph } = graph;
-        return [id, contentGraph];
+        // Include viewport state at end-of-scroll (store writes occur only after scroll settles)
+        const { panOffset, zoomLevel, ...contentGraph } = graph || {};
+        const view = {
+          x: Math.round(((panOffset?.x ?? 0) + Number.EPSILON) * 100) / 100,
+          y: Math.round(((panOffset?.y ?? 0) + Number.EPSILON) * 100) / 100,
+          zoom: typeof zoomLevel === 'number' ? Math.round((zoomLevel + Number.EPSILON) * 10000) / 10000 : 1
+        };
+        return [id, { ...contentGraph, __view: view }];
       }),
       nodePrototypes: Array.from(storeState.nodePrototypes.entries()),
       edges: Array.from(storeState.edges.entries())

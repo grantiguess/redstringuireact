@@ -1051,12 +1051,46 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   const handleSetPrimarySource = async (universeSlug, sourceType) => {
     try {
       setLoading(true);
+
+      // Re-validate current state to avoid stale UI actions
+      const state = await gitFederationService.refreshUniverses();
+      const universe = state.universes.find(u => u.slug === universeSlug);
+      if (!universe) throw new Error(`Universe not found: ${universeSlug}`);
+
+      if (sourceType === 'git') {
+        const linked = !!(universe.raw?.gitRepo?.linkedRepo);
+        if (!linked) {
+          setSyncStatus({ type: 'info', message: 'Link a repository first to make Git primary' });
+          setRepositoryTargetSlug(universeSlug);
+          setShowRepositoryManager(true);
+          return;
+        }
+      } else if (sourceType === 'local') {
+        const hasHandle = !!(universe.raw?.localFile?.fileHandle);
+        if (!hasHandle) {
+          setSyncStatus({ type: 'info', message: 'Pick a local file first to make Local primary' });
+          // Trigger file picker to link local file
+          handleLinkLocalFile(universeSlug);
+          return;
+        }
+      }
+
       await universeBackend.setSourceOfTruth(universeSlug, sourceType);
       setSyncStatus({ type: 'success', message: `Set ${sourceType === 'git' ? 'repository' : 'local file'} as primary source for ${universeSlug}` });
       await refreshState();
     } catch (err) {
       console.error('[GitNativeFederation] Set primary source failed:', err);
-      setError(`Failed to set primary source: ${err.message}`);
+      const msg = (err && err.message) ? err.message : String(err);
+      if (msg.includes('no repository linked') && sourceType === 'git') {
+        setSyncStatus({ type: 'warning', message: 'No repository linked. Choose a repo to use Git as primary.' });
+        setRepositoryTargetSlug(universeSlug);
+        setShowRepositoryManager(true);
+      } else if (msg.includes('no local file linked') && sourceType === 'local') {
+        setSyncStatus({ type: 'warning', message: 'No local file linked. Pick a file to use Local as primary.' });
+        handleLinkLocalFile(universeSlug);
+      } else {
+        setError(`Failed to set primary source: ${msg}`);
+      }
     } finally {
       setLoading(false);
     }
