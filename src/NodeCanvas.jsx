@@ -1854,6 +1854,8 @@ function NodeCanvas() {
 
   const onCarouselClose = useCallback(() => {
     // Use the same logic as the back button for a smooth transition
+    // Mark that this closure was initiated by a click-away so we can avoid reopening PieMenu
+    carouselClosedByClickAwayRef.current = true;
     setSelectedNodeIdForPieMenu(null);
     setIsTransitioningPieMenu(true);
   }, []);
@@ -1956,11 +1958,15 @@ function NodeCanvas() {
     setCarouselAnimationState('hidden');
     setIsTransitioningPieMenu(false); // Now safe to end transition
     
-    // Now show the regular pie menu for the node that was in the carousel
-    if (nodeIdToShowPieMenu) {
-      
-      setSelectedInstanceIds(new Set([nodeIdToShowPieMenu])); // Restore selection
-      setSelectedNodeIdForPieMenu(nodeIdToShowPieMenu);
+    // Restore the pie menu unless the carousel was closed by a click-away
+    if (!carouselClosedByClickAwayRef.current) {
+      if (nodeIdToShowPieMenu) {
+        setSelectedInstanceIds(new Set([nodeIdToShowPieMenu])); // Restore selection
+        setSelectedNodeIdForPieMenu(nodeIdToShowPieMenu);
+      }
+    } else {
+      // Reset the flag so subsequent opens behave normally
+      carouselClosedByClickAwayRef.current = false;
     }
     
     // Clear the protection flags after animations complete
@@ -1979,6 +1985,8 @@ function NodeCanvas() {
   
   // Ref to track carousel exit process to prevent cleanup interference
   const carouselExitInProgressRef = useRef(false);
+  // Track whether the carousel was closed by click-away to suppress pie menu reopen
+  const carouselClosedByClickAwayRef = useRef(false);
   // --- Graph Change Cleanup ---
   useEffect(() => {
     // This effect runs whenever the active graph changes.

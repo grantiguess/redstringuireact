@@ -194,6 +194,8 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
 
   const containerRef = useRef(null);
   const [isSlim, setIsSlim] = useState(false);
+  const [autosaveStatus, setAutosaveStatus] = useState(null);
+  const saveCoordinatorRef = useRef(null);
 
   const deviceInfo = useMemo(() => detectDeviceInfo(), []);
   const autosaveRef = useRef({ cooldownUntil: 0, triggerAt: 0 });
@@ -280,6 +282,36 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       persistentAuth.off('appInstallationCleared', listener);
     };
   }, [refreshAuth]);
+
+  // Monitor SaveCoordinator/GitAutosavePolicy to reflect batch size in UI (unsaved when batch > 0)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const mod = await import('./services/SaveCoordinator.js');
+        saveCoordinatorRef.current = mod.default || mod.saveCoordinator || null;
+      } catch {
+        // ignore – autosave status optional
+      }
+    })();
+
+    const interval = setInterval(() => {
+      try {
+        const sc = saveCoordinatorRef.current;
+        if (sc && typeof sc.getStatus === 'function') {
+          const status = sc.getStatus();
+          if (!cancelled) setAutosaveStatus(status?.gitAutosavePolicy || null);
+        }
+      } catch {
+        // ignore
+      }
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Lightweight autosave fallback: if unsaved changes persist for 20s, save once; 60s cooldown
   useEffect(() => {
@@ -1847,11 +1879,14 @@ return (
           let displayTone = '#2e7d32';
           let displayDesc = '';
 
+          const pendingCommits = Number(engine?.pendingCommits || 0);
+          const batchSize = Number(autosaveStatus?.currentBatchSize || 0);
+
           if (engine?.isInErrorBackoff || engine?.isHealthy === false) {
             displayState = 'error';
             displayLabel = 'Unable to save changes';
             displayTone = '#c62828';
-          } else if (engine?.isRunning || (engine?.pendingCommits || 0) > 0) {
+          } else if (engine?.isRunning || pendingCommits > 0) {
             displayState = 'saving';
             displayLabel = 'Saving...';
             displayTone = '#666';
@@ -1860,7 +1895,7 @@ return (
             displayLabel = 'Sync paused';
             displayTone = '#ef6c00';
             displayDesc = 'Resume to save changes.';
-          } else if (engine?.hasChanges) {
+          } else if (engine?.hasChanges || batchSize > 0) {
             displayState = 'unsaved';
             displayLabel = 'Unsaved changes';
             displayTone = '#ef6c00';
@@ -1873,6 +1908,24 @@ return (
           }
 
           const lastTime = engine?.lastCommitTime || base?.lastCommitTime;
+          const elapsedText = (() => {
+            try {
+              if (!lastTime) return null;
+              const ts = typeof lastTime === 'string' ? new Date(lastTime).getTime() : lastTime;
+              const diff = Date.now() - ts;
+              if (!Number.isFinite(diff) || diff < 0) return null;
+              if (diff < 60000) return `${Math.max(1, Math.floor(diff / 1000))}s`;
+              if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
+              if (diff < 43200000) { // < 12h
+                const h = Math.floor(diff / 3600000);
+                const m = Math.floor((diff % 3600000) / 60000);
+                return `${h}h ${m}m`;
+              }
+              return '12h+';
+            } catch {
+              return null;
+            }
+          })();
 
           return (
         <div
@@ -1904,8 +1957,13 @@ return (
               <div style={{ fontSize: '0.9rem', fontWeight: 600, color: displayTone || '#260000' }}>
                 {displayLabel}
               </div>
-              {displayDesc && (
-                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: 2 }}>{displayDesc}</div>
+              {(displayDesc || elapsedText) && (
+                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: 2 }}>
+                  {displayDesc}
+                  {elapsedText && (
+                    <span style={{ marginLeft: displayDesc ? 8 : 0 }}>Last save {elapsedText} ago</span>
+                  )}
+                </div>
               )}
             </div>
           </div>
