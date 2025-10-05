@@ -22,17 +22,24 @@ const SaveStatusDisplay = () => {
           return;
         }
 
-        // Simplified sync status - just show Saving/Saved/Error states
+        // Simple status: distinguish between actively saving vs waiting
         const syncStatus = state.syncStatuses?.[activeUniverse.slug];
         const engine = syncStatus || activeUniverse.sync?.engine || {};
         const pendingCommits = Number(engine?.pendingCommits || 0);
+        const isCommitting = engine?.isRunning || false;
+        const hasUnsavedChanges = engine?.hasChanges || false;
 
+        // Priority order: Error > Paused > Actively Saving > Not Saved > Saved
         if (engine?.isInErrorBackoff || engine?.isHealthy === false) {
           setStatusText('Error');
         } else if (engine?.isPaused) {
           setStatusText('Paused');
-        } else if (engine?.isRunning || pendingCommits > 0 || engine?.hasChanges) {
+        } else if (isCommitting) {
+          // Actively committing to Git
           setStatusText('Saving...');
+        } else if (pendingCommits > 0 || hasUnsavedChanges) {
+          // Has pending changes but not actively saving yet
+          setStatusText('Not Saved');
         } else {
           setStatusText('Saved');
         }

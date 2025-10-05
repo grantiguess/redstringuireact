@@ -570,8 +570,38 @@ class GitSyncEngine {
       // Track API call for circuit breaker
       this.recentApiCalls.push(Date.now());
       
-      // Save latest snapshot to a fixed path
-      await this.provider.writeFileRaw(this.getLatestPath(), jsonString);
+      // Save latest snapshot to a fixed path with retry logic for network errors
+      let writeSuccess = false;
+      let lastWriteError = null;
+      
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await this.provider.writeFileRaw(this.getLatestPath(), jsonString);
+          writeSuccess = true;
+          break;
+        } catch (writeError) {
+          lastWriteError = writeError;
+          
+          // Check if this is a transient network error
+          const isNetworkError = writeError.message?.includes('network') || 
+                                 writeError.message?.includes('fetch') ||
+                                 writeError.message?.includes('NETWORK_CHANGED');
+          
+          if (isNetworkError && attempt < 3) {
+            console.log(`[GitSyncEngine] Network error on commit attempt ${attempt}, retrying...`);
+            // Wait with exponential backoff: 1s, 2s
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            continue;
+          }
+          
+          // Non-network error or last attempt, throw it
+          throw writeError;
+        }
+      }
+      
+      if (!writeSuccess) {
+        throw lastWriteError || new Error('Write failed after retries');
+      }
       
       // Skip backup writes for rate limit efficiency - main file is sufficient
       // await this.provider.writeFileRaw(this.getBackupPath(), jsonString);
