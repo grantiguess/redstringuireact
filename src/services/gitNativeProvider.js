@@ -606,6 +606,36 @@ This repository was automatically initialized by RedString UI React. You can now
       if (!response.ok) {
         const text = await response.text();
         
+        // Handle 401 authentication errors - token expired or invalid
+        if (response.status === 401) {
+          console.error('[GitHubSemanticProvider] 401 Authentication failed - token expired or revoked');
+          
+          // Emit event to trigger re-authentication
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('redstring:auth-expired', {
+              detail: { 
+                error: '401 Bad credentials',
+                authMethod: this.authMethod,
+                message: 'GitHub authentication expired. Please re-connect.'
+              }
+            }));
+          }
+          
+          // Try to clear the invalid token
+          try {
+            const { persistentAuth } = await import('./persistentAuth.js');
+            if (this.authMethod === 'github-app') {
+              persistentAuth.clearAppInstallation?.();
+            } else {
+              persistentAuth.clearTokens?.();
+            }
+          } catch (error) {
+            console.warn('[GitHubSemanticProvider] Failed to clear invalid tokens:', error);
+          }
+          
+          throw new Error(`GitHub authentication failed (401). Please reconnect in the Git Federation panel.`);
+        }
+        
         // Handle 409 conflict with MUCH more aggressive backoff
         if (response.status === 409) {
           console.log(`[GitHubSemanticProvider] 409 conflict for ${path}, using AGGRESSIVE backoff...`);

@@ -8,10 +8,12 @@ This guide explains how Redstring’s Git-first federation works today: how univ
 
 - **Universe**: A Redstring workspace. In Git mode it lives under `universes/<slug>/<file>.redstring`.
 - **Source of Truth**: Which storage defines what appears on screen. Options: `git` (default), `local` file, or `browser` fallback.
-- **Storage Slots** per universe:
-  - Git repository (remote JSON files via provider API)
-  - Local `.redstring` file (File System Access API)
-  - Browser storage (IndexedDB fallback, mobile-first)
+- **Two-Slot Storage System** per universe:
+  - **Primary Slot**: Authoritative source of truth (determined by `sourceOfTruth` field)
+  - **Secondary Slot**: Backup/sync target that receives copies
+  - Available slots: Git repository, Local `.redstring` file, Browser storage (IndexedDB)
+  - **IMPORTANT**: Adding a second storage slot preserves the existing `sourceOfTruth` to prevent data loss
+  - Users can explicitly promote secondary → primary via UI or `setPrimaryStorage()` API
 
 ## Repository Layout
 
@@ -167,6 +169,31 @@ Note: The engine writes a single canonical JSON `.redstring` file. It does not c
   - Engine registration and lifecycle wiring
   - Git discovery/link flows
 - Consolidation path: migrate `universeManager` responsibilities into `universeBackend` (single backend surface), update imports in UI (`UniverseOperationsDialog`, `FederationBootstrap`, etc.), and decouple `GitSyncEngine` from requiring a manager reference.
+
+## Two-Slot Storage System Implementation
+
+### Fix for Local File Preservation (2025-01)
+
+**Problem**: When attaching a Git repository to an existing local-file-only universe, the system was forcibly changing `sourceOfTruth` to `'git'`, causing Git to overwrite local file data.
+
+**Solution**: Modified `gitFederationService.attachGitRepository()` to **preserve** existing `sourceOfTruth`:
+
+```javascript
+// Before (BROKEN - caused data loss):
+sourceOfTruth: 'git'  // Hardcoded, overwrote user's preference
+
+// After (FIXED - preserves user's workflow):
+const preservedSourceOfTruth = universe.raw.sourceOfTruth || 
+  (universe.raw.localFile?.enabled ? 'local' : 'git');
+```
+
+**Benefits**:
+- Local-only workflows can add Git as backup without data loss
+- Git-only workflows can add local cache without confusion
+- User must explicitly promote secondary → primary (safe by default)
+- Supports flexible hybrid workflows (local primary + Git backup, or vice versa)
+
+**See Also**: `TWO_SLOT_STORAGE_FIX.md` for detailed explanation and testing checklist.
 
 ## Roadmap Highlights
 

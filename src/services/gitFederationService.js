@@ -384,6 +384,19 @@ export const gitFederationService = {
     return this.refreshUniverses();
   },
 
+  /**
+   * Attach Git repository to an existing universe
+   * 
+   * IMPORTANT: This implements the 2-SLOT STORAGE SYSTEM
+   * - Universes can have BOTH local file AND Git storage simultaneously
+   * - sourceOfTruth determines which is PRIMARY (authoritative)
+   * - The other slot serves as BACKUP/SECONDARY storage
+   * 
+   * This function preserves the existing sourceOfTruth to avoid data loss:
+   * - If universe has local file enabled → keeps 'local' as primary, Git becomes backup
+   * - If universe has no sourceOfTruth set → defaults to 'git'
+   * - User can explicitly change primary via setPrimaryStorage()
+   */
   async attachGitRepository(slug, repoConfig) {
     const state = await this.refreshUniverses();
     const universe = state.universes.find(u => u.slug === slug);
@@ -404,6 +417,12 @@ export const gitFederationService = {
       authMethod: repoConfig.authMethod || 'oauth'
     };
 
+    // CRITICAL: Respect existing sourceOfTruth to support 2-slot system
+    // Only default to 'git' if there's no existing sourceOfTruth preference
+    // This allows local-file-only universes to add Git as backup without losing local data
+    const preservedSourceOfTruth = universe.raw.sourceOfTruth || 
+      (universe.raw.localFile?.enabled ? 'local' : 'git');
+
     await universeBackendBridge.updateUniverse(slug, {
       gitRepo: {
         ...universe.raw.gitRepo,
@@ -412,7 +431,7 @@ export const gitFederationService = {
         universeFolder: repoConfig.universeFolder || universe.raw.gitRepo?.universeFolder || `universes/${slug}`,
         universeFile: repoConfig.universeFile || universe.raw.gitRepo?.universeFile || `${slug}.redstring`
       },
-      sourceOfTruth: 'git'
+      sourceOfTruth: preservedSourceOfTruth
     });
 
     await universeBackendBridge.updateUniverse(slug, {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, ChevronDown, Github, Upload, Download, X, Edit, Star, Save, Activity } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, Github, Upload, Download, X, Edit, Star, Save, Activity, Link, FileText } from 'lucide-react';
 import SectionCard from './shared/SectionCard.jsx';
 
 function buttonStyle(variant = 'outline') {
@@ -72,7 +72,9 @@ const UniversesList = ({
 }) => {
   // No collapsing - active universe is always expanded, others show compact view
   const [showLoadMenu, setShowLoadMenu] = useState(false);
+  const [showLocalFileMenu, setShowLocalFileMenu] = useState(null); // Track which universe's menu is open
   const loadMenuRef = useRef(null);
+  const localFileMenuRef = useRef(null);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -80,13 +82,16 @@ const UniversesList = ({
       if (loadMenuRef.current && !loadMenuRef.current.contains(event.target)) {
         setShowLoadMenu(false);
       }
+      if (localFileMenuRef.current && !localFileMenuRef.current.contains(event.target)) {
+        setShowLocalFileMenu(null);
+      }
     };
 
-    if (showLoadMenu) {
+    if (showLoadMenu || showLocalFileMenu) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [showLoadMenu]);
+  }, [showLoadMenu, showLocalFileMenu]);
 
   const handleLoadFromLocalClick = () => {
     setShowLoadMenu(false);
@@ -368,25 +373,40 @@ const UniversesList = ({
                           })()}
 
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                            {universe.sourceOfTruth !== 'git' && universe.raw?.gitRepo?.linkedRepo && onSetPrimarySource && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onSetPrimarySource(universe.slug, 'git');
-                                }}
-                                style={{
-                                  ...buttonStyle('outline'),
-                                  fontSize: '0.65rem',
-                                  padding: '2px 6px',
-                                  color: '#7A0000',
-                                  borderColor: '#7A0000'
-                                }}
-                                title="Set as source of truth"
-                              >
-                                <Star size={10} />
-                                Set as Source of Truth
-                              </button>
-                            )}
+                            {(() => {
+                              const isSourceOfTruth = universe.sourceOfTruth === 'git';
+                              const hasOtherStorage = !!(universe.raw?.localFile?.fileHandle);
+                              const canToggle = hasOtherStorage; // Can only toggle if there's another storage option
+                              
+                              return onSetPrimarySource && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (canToggle) {
+                                      onSetPrimarySource(universe.slug, 'git');
+                                    }
+                                  }}
+                                  style={{
+                                    fontSize: '0.65rem',
+                                    padding: '2px 6px',
+                                    borderRadius: 6,
+                                    cursor: canToggle ? 'pointer' : 'default',
+                                    fontWeight: 600,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    border: isSourceOfTruth ? '1px solid #7A0000' : '1px solid #7A0000',
+                                    backgroundColor: isSourceOfTruth ? '#7A0000' : 'transparent',
+                                    color: isSourceOfTruth ? '#bdb5b5' : '#7A0000',
+                                    opacity: canToggle ? 1 : 0.7
+                                  }}
+                                  title={!canToggle ? 'Only storage option (must remain source of truth)' : isSourceOfTruth ? 'Currently source of truth' : 'Click to make source of truth'}
+                                >
+                                  <Star size={10} fill={isSourceOfTruth ? '#bdb5b5' : 'none'} />
+                                  {isSourceOfTruth ? 'Source of Truth' : 'Not Source of Truth'}
+                                </button>
+                              );
+                            })()}
                             {onSaveRepoSource && (
                               <button
                                 onClick={(e) => {
@@ -508,36 +528,58 @@ const UniversesList = ({
                           </div>
 
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                            {universe.sourceOfTruth !== 'local' && universe.raw?.localFile?.fileHandle && onSetPrimarySource && (
-                              <button
-                                onClick={() => onSetPrimarySource(universe.slug, 'local')}
-                                style={{
-                                  ...buttonStyle('outline'),
-                                  fontSize: '0.65rem',
-                                  padding: '2px 6px',
-                                  color: '#7A0000',
-                                  borderColor: '#7A0000'
-                                }}
-                                title="Set as source of truth"
-                              >
-                                <Star size={10} />
-                                Set as Source of Truth
-                              </button>
-                            )}
+                            {(() => {
+                              const isSourceOfTruth = universe.sourceOfTruth === 'local';
+                              const hasOtherStorage = !!(universe.raw?.gitRepo?.linkedRepo);
+                              const canToggle = hasOtherStorage; // Can only toggle if there's another storage option
+                              
+                              return onSetPrimarySource && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (canToggle) {
+                                      onSetPrimarySource(universe.slug, 'local');
+                                    }
+                                  }}
+                                  style={{
+                                    fontSize: '0.65rem',
+                                    padding: '2px 6px',
+                                    borderRadius: 6,
+                                    cursor: canToggle ? 'pointer' : 'default',
+                                    fontWeight: 600,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    border: isSourceOfTruth ? '1px solid #7A0000' : '1px solid #7A0000',
+                                    backgroundColor: isSourceOfTruth ? '#7A0000' : 'transparent',
+                                    color: isSourceOfTruth ? '#bdb5b5' : '#7A0000',
+                                    opacity: canToggle ? 1 : 0.7
+                                  }}
+                                  title={!canToggle ? 'Only storage option (must remain source of truth)' : isSourceOfTruth ? 'Currently source of truth' : 'Click to make source of truth'}
+                                >
+                                  <Star size={10} fill={isSourceOfTruth ? '#bdb5b5' : 'none'} />
+                                  {isSourceOfTruth ? 'Source of Truth' : 'Not Source of Truth'}
+                                </button>
+                              );
+                            })()}
                           </div>
                         </div>
                       ) : (
-                        <div style={{
-                          padding: 12,
-                          backgroundColor: 'transparent',
-                          borderRadius: 6,
-                          border: '2px dashed #979090',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}>
+                        <div 
+                          ref={showLocalFileMenu === universe.slug ? localFileMenuRef : null}
+                          style={{
+                            padding: 12,
+                            backgroundColor: 'transparent',
+                            borderRadius: 6,
+                            border: '2px dashed #979090',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            position: 'relative'
+                          }}
+                        >
                           <button
-                            onClick={() => onLinkLocalFile && onLinkLocalFile(universe.slug)}
+                            onClick={() => setShowLocalFileMenu(showLocalFileMenu === universe.slug ? null : universe.slug)}
                             style={{
                               ...buttonStyle('outline'),
                               fontSize: '0.7rem',
@@ -547,7 +589,81 @@ const UniversesList = ({
                           >
                             <Plus size={12} />
                             Add Local File
+                            <ChevronDown size={10} />
                           </button>
+                          
+                          {showLocalFileMenu === universe.slug && (
+                            <div style={{
+                              position: 'absolute',
+                              top: '100%',
+                              left: '50%',
+                              transform: 'translateX(-50%)',
+                              marginTop: 4,
+                              backgroundColor: '#ffffff',
+                              border: '1px solid #260000',
+                              borderRadius: 6,
+                              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                              zIndex: 1000,
+                              minWidth: 160
+                            }}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowLocalFileMenu(null);
+                                  // Create new file - this will trigger save dialog
+                                  if (onDownloadLocalFile) {
+                                    onDownloadLocalFile(universe.slug);
+                                  }
+                                }}
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  border: 'none',
+                                  background: 'none',
+                                  textAlign: 'left',
+                                  cursor: 'pointer',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  color: '#260000',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                              >
+                                <FileText size={12} /> Create New File
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowLocalFileMenu(null);
+                                  // Link existing file - trigger file picker
+                                  if (onLinkLocalFile) {
+                                    onLinkLocalFile(universe.slug);
+                                  }
+                                }}
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  border: 'none',
+                                  background: 'none',
+                                  textAlign: 'left',
+                                  cursor: 'pointer',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  color: '#260000',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                              >
+                                <Link size={12} /> Link Existing File
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
 

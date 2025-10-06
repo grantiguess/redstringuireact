@@ -250,6 +250,27 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
 
     window.addEventListener('redstring:auth-connected', handleAuthConnected);
 
+    // Handle authentication expiration (401 errors)
+    const handleAuthExpired = async (event) => {
+      try {
+        const detail = event.detail || {};
+        console.warn('[GitNativeFederation] Authentication expired:', detail);
+        
+        // Clear any stale state
+        await refreshAuth();
+        
+        // Show prominent error message
+        setError(detail.message || 'GitHub authentication expired. Please reconnect below.');
+        
+        // Clear any success status
+        setSyncStatus(null);
+      } catch (err) {
+        console.warn('[GitNativeFederation] Auth expired handler failed:', err);
+      }
+    };
+
+    window.addEventListener('redstring:auth-expired', handleAuthExpired);
+
     // Poll sync status every 1 second to keep UI updated (fast commits need fast UI updates)
     const pollInterval = setInterval(async () => {
       try {
@@ -262,9 +283,10 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
 
     return () => {
       window.removeEventListener('redstring:auth-connected', handleAuthConnected);
+      window.removeEventListener('redstring:auth-expired', handleAuthExpired);
       clearInterval(pollInterval);
     };
-  }, [refreshState]);
+  }, [refreshState, refreshAuth]);
 
   useEffect(() => {
     const listener = () => refreshAuth();
