@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { HEADER_HEIGHT } from './constants';
 import { gitFederationService } from './services/gitFederationService';
+import saveCoordinator from './services/SaveCoordinator';
 
 const SaveStatusDisplay = () => {
   const [statusText, setStatusText] = useState('Loading...');
@@ -28,6 +29,9 @@ const SaveStatusDisplay = () => {
         const pendingCommits = Number(engine?.pendingCommits || 0);
         const isCommitting = engine?.isRunning || false;
         const hasUnsavedChanges = engine?.hasChanges || false;
+        
+        // Check SaveCoordinator for immediate dirty flag (includes drag operations)
+        const coordinatorHasUnsaved = saveCoordinator.hasUnsavedChanges();
 
         // Priority order: Error > Paused > Actively Saving > Not Saved > Saved
         if (engine?.isInErrorBackoff || engine?.isHealthy === false) {
@@ -37,8 +41,8 @@ const SaveStatusDisplay = () => {
         } else if (isCommitting) {
           // Actively committing to Git
           setStatusText('Saving...');
-        } else if (pendingCommits > 0 || hasUnsavedChanges) {
-          // Has pending changes but not actively saving yet
+        } else if (coordinatorHasUnsaved || pendingCommits > 0 || hasUnsavedChanges) {
+          // Has pending changes (including during drag operations)
           setStatusText('Not Saved');
         } else {
           setStatusText('Saved');

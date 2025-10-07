@@ -541,8 +541,9 @@ export const gitFederationService = {
   },
 
   async uploadLocalFile(file, slug) {
-    await universeBackendBridge.uploadLocalFile(file, slug);
-    return this.refreshUniverses();
+    const result = await universeBackendBridge.uploadLocalFile(file, slug);
+    await this.refreshUniverses();
+    return result; // Return the upload result so caller can check needsFileHandle flag
   },
 
   getOAuthRedirectUri() {

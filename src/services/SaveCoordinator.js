@@ -80,30 +80,47 @@ class SaveCoordinator {
     }
 
     try {
-      // Skip intermediate drag updates - only save on drag completion
-      if (changeContext.isDragging === true || changeContext.phase === 'move') {
-        console.log('[SaveCoordinator] Skipping intermediate drag update (phase: move)');
-        return;
-      }
-
+      // ALWAYS calculate hash to detect changes immediately
       const stateHash = this.generateStateHash(newState);
       
-      // Skip if no actual changes (compared to both saved and pending)
-      if (this.lastSaveHash === stateHash || this.pendingHash === stateHash) {
-        return;
+      // Check if this is a real change
+      const hasRealChange = stateHash !== this.lastSaveHash && stateHash !== this.pendingHash;
+      
+      if (!hasRealChange) {
+        return; // No changes, nothing to do
+      }
+
+      // Set dirty flag IMMEDIATELY (even during drags) for UI feedback
+      this.isDirty = true;
+      
+      // During drag operations, track the hash but don't schedule saves yet
+      if (changeContext.isDragging === true || changeContext.phase === 'move') {
+        console.log('[SaveCoordinator] Drag in progress - marking dirty but deferring save (phase: move)');
+        this.dragPendingHash = stateHash;
+        this.lastState = newState; // Store state for later save
+        this.lastChangeContext = changeContext;
+        return; // Don't schedule save during drag
+      }
+
+      // If we were dragging and now stopped, use the pending hash
+      if (this.dragPendingHash) {
+        console.log('[SaveCoordinator] Drag ended, processing pending changes');
+        this.pendingHash = this.dragPendingHash;
+        this.dragPendingHash = null;
+      } else {
+        this.pendingHash = stateHash;
       }
 
       console.log('[SaveCoordinator] State change detected:', changeContext.type || 'unknown', 'hash:', stateHash.substring(0, 8));
 
-      // Store the latest state and pending hash
+      // Store the latest state
       this.lastState = newState;
       this.lastChangeContext = changeContext;
-      this.pendingHash = stateHash;  // Track what hash we're about to save
 
       // Notify Git autosave policy of the change
       gitAutosavePolicy.onEditActivity();
 
-      // SIMPLIFIED: Just schedule a debounced save (all changes batched together)
+      // Schedule a debounced save (all changes batched together)
       this.scheduleSave();
 
     } catch (error) {
@@ -158,6 +175,9 @@ class SaveCoordinator {
         this.lastSaveHash = this.pendingHash;
         this.pendingHash = null;
       }
+      // Clear dirty flag after successful save
+      this.isDirty = false;
+      this.dragPendingHash = null;
       this.notifyStatus('success', 'Save completed');
 
     } catch (error) {
@@ -276,6 +296,11 @@ class SaveCoordinator {
       console.log('[SaveCoordinator] Disabled');
       this.notifyStatus('info', 'Save coordination disabled');
     }
+  }
+
+  // Check if there are unsaved changes (for immediate UI feedback)
+  hasUnsavedChanges() {
+    return this.isDirty || this.pendingHash !== null || this.dragPendingHash !== null;
   }
 
   // Cleanup

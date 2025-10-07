@@ -24,7 +24,8 @@ import {
   AlertCircle,
   GitBranch,
   Link,
-  QrCode
+  QrCode,
+  RefreshCw
 } from 'lucide-react';
 // Ensure SOURCE_OF_TRUTH is available to this component
 import universeBackendBridge from '../services/universeBackendBridge.js';
@@ -461,7 +462,14 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
                 <div className="slot-info">
                   <HardDrive size={16} />
                   <span>Local File</span>
-                  <div className="slot-path">{universe.localFile.path}</div>
+                  <div className="slot-path">
+                    {universe.localFile.path}
+                    {universe.localFile.fileHandleStatus === 'needs_reconnect' && (
+                      <span style={{ color: '#ef6c00', marginLeft: '8px', fontSize: '0.75rem' }}>
+                        (Disconnected)
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <label className="toggle-switch">
                   <input
@@ -472,7 +480,36 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
                   <span className="toggle-switch-slider"></span>
                 </label>
               </div>
-              {universe.localFile.enabled && (
+              {universe.localFile.enabled && universe.localFile.fileHandleStatus === 'needs_reconnect' && (
+                <div style={{
+                  padding: '8px',
+                  backgroundColor: '#fff3e0',
+                  border: '1px solid #ef6c00',
+                  borderRadius: '4px',
+                  marginTop: '8px',
+                  fontSize: '0.75rem',
+                  color: '#e65100'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                    <AlertCircle size={14} />
+                    <span style={{ fontWeight: 600 }}>File connection lost</span>
+                  </div>
+                  {universe.localFile.reconnectMessage && (
+                    <div style={{ marginBottom: '8px', color: '#666' }}>
+                      {universe.localFile.reconnectMessage}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => handleLocalFileOperation(universeSlug, 'pick')}
+                    className="action-button secondary small"
+                    style={{ backgroundColor: '#ef6c00', color: 'white', border: 'none' }}
+                  >
+                    <RefreshCw size={14} />
+                    Reconnect File
+                  </button>
+                </div>
+              )}
+              {universe.localFile.enabled && universe.localFile.fileHandleStatus !== 'needs_reconnect' && (
                 <div className="slot-actions">
                   <button
                     onClick={() => handleLocalFileOperation(universeSlug, 'pick')}

@@ -14,6 +14,12 @@ import { persistentAuth } from '../backend/auth/index.js';
 import { SemanticProviderFactory } from '../backend/git/index.js';
 import startupCoordinator from './startupCoordinator.js';
 import { exportToRedstring, importFromRedstring, downloadRedstringFile } from '../formats/redstringFormat.js';
+import {
+  storeFileHandleMetadata,
+  getFileHandleMetadata,
+  touchFileHandle,
+  removeFileHandleMetadata
+} from './fileHandlePersistence.js';
 
 class UniverseBackend {
   constructor() {
@@ -719,13 +725,15 @@ class UniverseBackend {
       this.notifyStatus('info', `Switched to empty universe: ${slug}`);
     }
 
-    // Ensure engine is set up for the new active universe (but don't block on it)
-    setTimeout(() => {
-      this.ensureGitSyncEngine(slug).catch(error => {
-        console.warn(`[UniverseBackend] Failed to setup engine after universe switch:`, error);
-        this.notifyStatus('warning', `Git sync engine setup failed for ${slug}`);
-      });
-    }, 100);
+    // Ensure engine is set up for the new active universe if Git is enabled (but don't block on it)
+    const switchedUniverse = universeManager.getUniverse(slug);
+    if (switchedUniverse?.gitRepo?.enabled && switchedUniverse?.gitRepo?.linkedRepo) {
+      setTimeout(() => {
+        this.ensureGitSyncEngine(slug).catch(error => {
+          console.warn(`[UniverseBackend] Failed to setup engine after universe switch:`, error);
+        });
+      }, 100);
+    }
 
     return result;
   }
@@ -1113,13 +1121,26 @@ class UniverseBackend {
   }
 
   /**
-   * Store a File System Access API handle for a universe (session-only)
+   * Store a File System Access API handle for a universe
+   * Now persists to IndexedDB for reconnection across sessions
    */
   async setFileHandle(universeSlug, fileHandle) {
     if (!fileHandle) {
       throw new Error('No file handle provided');
     }
     this.fileHandles.set(universeSlug, fileHandle);
+    
+    // Store file handle metadata in IndexedDB for persistence
+    try {
+      await storeFileHandleMetadata(universeSlug, fileHandle, {
+        universeSlug,
+        lastAccessed: Date.now()
+      });
+      console.log(`[UniverseBackend] Stored file handle metadata for ${universeSlug}`);
+    } catch (error) {
+      console.warn(`[UniverseBackend] Failed to store file handle metadata:`, error);
+    }
+    
     const universe = universeManager.getUniverse(universeSlug);
     await this.updateUniverse(universeSlug, {
       localFile: {
@@ -1127,6 +1148,7 @@ class UniverseBackend {
         enabled: true,
         path: fileHandle.name,
         hadFileHandle: true,
+        fileHandleStatus: 'connected',
         unavailableReason: null
       }
     });
@@ -1140,6 +1162,11 @@ class UniverseBackend {
   async setupLocalFileHandle(universeSlug, options = {}) {
     const mode = options?.mode === 'saveAs' ? 'saveAs' : 'pick';
     const universe = universeManager.getUniverse(universeSlug);
+    
+    // Get metadata to suggest the last known file name
+    const metadata = await getFileHandleMetadata(universeSlug);
+    const suggestedName = metadata?.fileName || universe?.localFile?.path || `${universe?.name || universeSlug}.redstring`;
+    
     let handle;
     if (mode === 'pick') {
       const [picked] = await window.showOpenFilePicker({
@@ -1149,7 +1176,7 @@ class UniverseBackend {
       handle = picked;
     } else {
       handle = await window.showSaveFilePicker({
-        suggestedName: universe?.localFile?.path || `${universe?.name || universeSlug}.redstring`,
+        suggestedName,
         types: [{ description: 'RedString Files', accept: { 'application/json': ['.redstring'] } }]
       });
     }
@@ -1176,6 +1203,13 @@ class UniverseBackend {
     try {
       await writable.write(new Blob([jsonString], { type: 'application/json' }));
       await writable.close();
+      
+      // Update last accessed time in persistence
+      try {
+        await touchFileHandle(universeSlug);
+      } catch (error) {
+        console.warn('[UniverseBackend] Failed to touch file handle after save:', error);
+      }
     } catch (e) {
       try { await writable.close(); } catch (_) {}
       throw e;
@@ -1250,15 +1284,16 @@ class UniverseBackend {
       // Enable local file storage for this universe
       await this.linkLocalFileToUniverse(targetUniverseSlug, file.name);
 
-      // Save the updated state
-      await this.saveActiveUniverse(storeState);
-
       const nodeCount = storeState?.nodePrototypes ?
         (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes || {}).length) : 0;
 
-      this.notifyStatus('success', `Imported ${file.name} with ${nodeCount} nodes`);
+      // Note: File input gives us a one-time File object, not a persistent FileSystemFileHandle
+      // User needs to use "Pick File" or "Save As" to establish persistent file connection for auto-save
+      console.log(`[UniverseBackend] File imported. To enable auto-save, use "Pick File" to establish persistent connection.`);
+      
+      this.notifyStatus('success', `Imported ${file.name} with ${nodeCount} nodes. Use "Pick File" to enable auto-save.`);
 
-      return { success: true, nodeCount, fileName: file.name };
+      return { success: true, nodeCount, fileName: file.name, needsFileHandle: true };
     } else {
       throw new Error('Store operations not initialized');
     }

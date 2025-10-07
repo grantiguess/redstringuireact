@@ -1440,30 +1440,119 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     performRemoval();
   };
 
-  const handleLinkLocalFile = (slug) => {
-    console.log('[GitNativeFederation] Triggering file upload for universe:', slug);
+  const handleLinkLocalFile = async (slug) => {
+    console.log('[GitNativeFederation] Linking local file for universe:', slug);
     
-    // Create hidden file input
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.redstring';
-    input.onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
+    try {
+      setLoading(true);
       
-      try {
-        setLoading(true);
-        await gitFederationService.uploadLocalFile(file, slug);
-        setSyncStatus({ type: 'success', message: `Imported ${file.name}` });
-        await refreshState();
-      } catch (err) {
-        console.error('[GitNativeFederation] File upload failed:', err);
-        setError(`Failed to import file: ${err.message}`);
-      } finally {
-        setLoading(false);
+      // Use File System Access API to get persistent file handle
+      const [fileHandle] = await window.showOpenFilePicker({
+        types: [{ description: 'RedString Files', accept: { 'application/json': ['.redstring'] } }],
+        multiple: false
+      });
+      
+      // Read the file
+      const file = await fileHandle.getFile();
+      const fileContent = await file.text();
+      
+      // Validate file is not empty
+      if (!fileContent || fileContent.trim() === '') {
+        throw new Error('The selected file is empty (0 bytes). Please choose a valid .redstring file or create a new one.');
       }
-    };
-    input.click();
+      
+      // Parse and import the data
+      const { importFromRedstring } = await import('./formats/redstringFormat.js');
+      let parsedData;
+      try {
+        parsedData = JSON.parse(fileContent);
+      } catch (parseError) {
+        throw new Error(`Invalid JSON in file: ${parseError.message}. The file may be corrupted or not a valid .redstring file.`);
+      }
+      
+      // Validate it's a redstring file
+      if (!parsedData || typeof parsedData !== 'object') {
+        throw new Error('File does not contain valid redstring data.');
+      }
+      
+      const storeState = importFromRedstring(parsedData);
+      
+      // Load into store
+      const { useGraphStore } = await import('./store/graphStore.jsx');
+      const storeActions = useGraphStore.getState();
+      storeActions.loadUniverseFromFile(storeState);
+      
+      // Store the file handle immediately (we already have it!)
+      await universeBackend.setFileHandle(slug, fileHandle);
+      
+      // Link the file to universe
+      await universeBackend.linkLocalFileToUniverse(slug, file.name);
+      
+      // Switch to the universe
+      await gitFederationService.switchUniverse(slug);
+      
+      const nodeCount = storeState?.nodePrototypes ?
+        (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes || {}).length) : 0;
+      
+      setSyncStatus({ type: 'success', message: `Linked ${file.name} with ${nodeCount} nodes` });
+      await refreshState();
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('[GitNativeFederation] Link local file failed:', err);
+        setError(`Failed to link file: ${err.message}`);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateLocalFile = async (slug) => {
+    try {
+      setLoading(true);
+      console.log('[GitNativeFederation] Creating new local file for universe:', slug);
+      
+      const universe = serviceState.universes.find(u => u.slug === slug);
+      if (!universe) {
+        throw new Error('Universe not found');
+      }
+
+      // Get current store state
+      const { useGraphStore } = await import('./store/graphStore.jsx');
+      const storeState = useGraphStore.getState();
+      
+      // Export to redstring format
+      const { exportToRedstring } = await import('./formats/redstringFormat.js');
+      const redstringData = exportToRedstring(storeState);
+      const jsonString = JSON.stringify(redstringData, null, 2);
+      
+      // Prompt user to save file
+      const suggestedName = `${universe.name || slug}.redstring`;
+      const fileHandle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{
+          description: 'RedString Universe Files',
+          accept: { 'application/json': ['.redstring'] }
+        }]
+      });
+      
+      // Write data to file
+      const writable = await fileHandle.createWritable();
+      await writable.write(jsonString);
+      await writable.close();
+      
+      // Store the file handle and link to universe
+      await universeBackend.setFileHandle(slug, fileHandle);
+      
+      setSyncStatus({ type: 'success', message: `Created and linked ${fileHandle.name}` });
+      await refreshState();
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('[GitNativeFederation] Create local file failed:', err);
+        setError(`Failed to create local file: ${err.message}`);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDownloadLocalFile = async (slug) => {
@@ -1558,6 +1647,36 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   const handleGitHubApp = async () => {
     try {
       setIsConnecting(true);
+      
+      // Check if app is already installed
+      if (hasApp && serviceState.githubAppInstallation?.installationId) {
+        // App is already installed - go to settings/manage instead of install
+        const installationId = serviceState.githubAppInstallation.installationId;
+        console.log('[GitNativeFederation] App already installed, redirecting to management page');
+        
+        // Try to get installation details to redirect to specific installation
+        try {
+          const resp = await oauthFetch(`/api/github/app/installation/${installationId}`);
+          if (resp.ok) {
+            const data = await resp.json();
+            const accountLogin = data?.account?.login;
+            if (accountLogin) {
+              // Redirect to specific installation settings
+              const url = `https://github.com/settings/installations/${installationId}`;
+              window.location.href = url;
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn('[GitNativeFederation] Could not fetch installation details:', e);
+        }
+        
+        // Fallback: redirect to general installations page
+        window.location.href = 'https://github.com/settings/installations';
+        return;
+      }
+      
+      // App not installed - proceed with installation flow
       let appName = 'redstring-semantic-sync';
       try {
         const resp = await oauthFetch('/api/github/app/info');
@@ -2110,6 +2229,7 @@ return (
       onDeleteUniverse={handleDeleteUniverse}
       onLinkRepo={handleAttachRepo}
       onLinkLocalFile={handleLinkLocalFile}
+      onCreateLocalFile={handleCreateLocalFile}
       onDownloadLocalFile={handleDownloadLocalFile}
       onRemoveRepoSource={handleRemoveRepoSource}
       onEditRepoSource={handleEditRepoSource}

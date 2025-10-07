@@ -60,6 +60,7 @@ const UniversesList = ({
   onDeleteUniverse,
   onLinkRepo,
   onLinkLocalFile,
+  onCreateLocalFile,
   onDownloadLocalFile,
   onRemoveRepoSource,
   onEditRepoSource,
@@ -610,9 +611,9 @@ const UniversesList = ({
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setShowLocalFileMenu(null);
-                                  // Create new file - this will trigger save dialog
-                                  if (onDownloadLocalFile) {
-                                    onDownloadLocalFile(universe.slug);
+                                  // Create new file - this will trigger save dialog and link file handle
+                                  if (onCreateLocalFile) {
+                                    onCreateLocalFile(universe.slug);
                                   }
                                 }}
                                 style={{

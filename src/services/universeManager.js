@@ -17,6 +17,15 @@ import { persistentAuth } from '../services/persistentAuth.js';
 import { SemanticProviderFactory } from './gitNativeProvider.js';
 import { oauthFetch } from './bridgeConfig.js';
 import { storageWrapper } from '../utils/storageWrapper.js';
+import {
+  storeFileHandleMetadata,
+  getFileHandleMetadata,
+  getAllFileHandleMetadata,
+  attemptRestoreFileHandle,
+  verifyFileHandleAccess,
+  removeFileHandleMetadata,
+  touchFileHandle
+} from './fileHandlePersistence.js';
 
 // NO GRAPH STORE IMPORT - This creates circular dependency
 // Store operations will be injected from outside when needed
@@ -70,6 +79,11 @@ class UniverseManager {
     setTimeout(() => {
       this.initializeDeviceConfig();
     }, 100);
+
+    // Attempt to restore file handles from persistence after a brief delay
+    setTimeout(() => {
+      this.restoreFileHandles();
+    }, 200);
   }
 
   // Set store operations from outside to avoid circular dependencies
@@ -1645,6 +1659,13 @@ class UniverseManager {
     const writable = await fileHandle.createWritable();
     await writable.write(jsonString);
     await writable.close();
+    
+    // Update last accessed time in persistence
+    try {
+      await touchFileHandle(universe.slug);
+    } catch (error) {
+      console.warn('[UniverseManager] Failed to touch file handle after save:', error);
+    }
   }
 
   // Save to browser storage with size limits
@@ -1764,8 +1785,19 @@ class UniverseManager {
   }
 
   // Set file handle for universe
-  setFileHandle(slug, fileHandle) {
+  async setFileHandle(slug, fileHandle) {
     this.fileHandles.set(slug, fileHandle);
+
+    // Store file handle metadata in IndexedDB for persistence
+    try {
+      await storeFileHandleMetadata(slug, fileHandle, {
+        universeSlug: slug,
+        lastAccessed: Date.now()
+      });
+      console.log(`[UniverseManager] Stored file handle metadata for ${slug}`);
+    } catch (error) {
+      console.warn(`[UniverseManager] Failed to store file handle metadata:`, error);
+    }
 
     // Also update the universe configuration
     const universe = this.getUniverse(slug);
@@ -1776,7 +1808,8 @@ class UniverseManager {
           enabled: true,
           path: fileHandle.name || universe.localFile.path,
           hadFileHandle: true,
-          lastFilePath: fileHandle.name || universe.localFile.path
+          lastFilePath: fileHandle.name || universe.localFile.path,
+          fileHandleStatus: 'connected'
         }
       });
     }
@@ -1788,13 +1821,20 @@ class UniverseManager {
   // Setup file handle for universe (user picks file)
   async setupFileHandle(slug) {
     try {
+      // Get metadata to suggest the last known file name
+      const metadata = await getFileHandleMetadata(slug);
+      const universe = this.getUniverse(slug);
+      const suggestedName = metadata?.fileName || universe?.localFile?.lastFilePath || `${slug}.redstring`;
+
       const [fileHandle] = await window.showOpenFilePicker({
         types: [{ description: 'RedString Files', accept: { 'application/json': ['.redstring'] } }],
         multiple: false
       });
       
-      this.setFileHandle(slug, fileHandle);
-      this.notifyStatus('success', `Linked local file: ${fileHandle.name}`);
+      await this.setFileHandle(slug, fileHandle);
+      
+      const wasReconnecting = metadata?.fileName && !this.fileHandles.has(slug);
+      this.notifyStatus('success', `${wasReconnecting ? 'Reconnected' : 'Linked'} local file: ${fileHandle.name}`);
       return fileHandle;
     } catch (error) {
       if (error.name !== 'AbortError') {
@@ -1802,6 +1842,99 @@ class UniverseManager {
         throw error;
       }
     }
+  }
+
+  // Restore file handles from persistent storage
+  async restoreFileHandles() {
+    try {
+      console.log('[UniverseManager] Attempting to restore file handles from persistence...');
+      
+      const allMetadata = await getAllFileHandleMetadata();
+      
+      if (allMetadata.length === 0) {
+        console.log('[UniverseManager] No file handle metadata found');
+        return;
+      }
+
+      console.log(`[UniverseManager] Found ${allMetadata.length} file handle metadata entries`);
+
+      for (const metadata of allMetadata) {
+        const { universeSlug } = metadata;
+        
+        // Skip if we already have a valid handle in the session
+        const existingHandle = this.fileHandles.get(universeSlug);
+        if (existingHandle) {
+          const isValid = await verifyFileHandleAccess(existingHandle);
+          if (isValid) {
+            console.log(`[UniverseManager] File handle for ${universeSlug} already valid in session`);
+            continue;
+          }
+        }
+
+        // Attempt to restore
+        const result = await attemptRestoreFileHandle(universeSlug, existingHandle);
+        
+        if (result.success && result.handle) {
+          this.fileHandles.set(universeSlug, result.handle);
+          console.log(`[UniverseManager] Successfully restored file handle for ${universeSlug}`);
+          
+          // Update universe config to reflect restored state
+          const universe = this.getUniverse(universeSlug);
+          if (universe) {
+            this.updateUniverse(universeSlug, {
+              localFile: {
+                ...universe.localFile,
+                fileHandleStatus: 'connected',
+                lastAccessed: Date.now()
+              }
+            });
+          }
+        } else if (result.needsReconnect) {
+          console.log(`[UniverseManager] File handle for ${universeSlug} needs reconnection: ${result.message}`);
+          
+          // Mark in universe config that reconnection is needed
+          const universe = this.getUniverse(universeSlug);
+          if (universe) {
+            this.updateUniverse(universeSlug, {
+              localFile: {
+                ...universe.localFile,
+                fileHandleStatus: 'needs_reconnect',
+                reconnectMessage: result.message
+              }
+            });
+          }
+        }
+      }
+      
+      console.log('[UniverseManager] File handle restoration complete');
+    } catch (error) {
+      console.error('[UniverseManager] Failed to restore file handles:', error);
+    }
+  }
+
+  // Remove file handle for a universe
+  async removeFileHandle(slug) {
+    this.fileHandles.delete(slug);
+    
+    try {
+      await removeFileHandleMetadata(slug);
+      console.log(`[UniverseManager] Removed file handle for ${slug}`);
+    } catch (error) {
+      console.warn(`[UniverseManager] Failed to remove file handle metadata:`, error);
+    }
+
+    const universe = this.getUniverse(slug);
+    if (universe) {
+      this.updateUniverse(slug, {
+        localFile: {
+          ...universe.localFile,
+          enabled: false,
+          fileHandleStatus: 'disconnected'
+        }
+      });
+    }
+
+    this.saveToStorage();
   }
 
   // Set Git sync engine for universe with STRICT singleton protection
