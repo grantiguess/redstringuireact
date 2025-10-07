@@ -5,6 +5,18 @@ RedString is a semantic knowledge graph application that allows users to create,
 
 ## Recent Enhancements (Latest)
 
+### Format Versioning System (2025-01)
+- **Comprehensive Versioning**: Implemented versioning system for `.redstring` file format to protect user data during updates
+- **Automatic Migration**: Files from older versions (v1.0.0, v2.0.0-semantic) are automatically migrated to current version (v3.0.0)
+- **Version Validation**: Files are validated before import with clear error messages for incompatible versions
+- **User Feedback**: Migration progress is shown to users with clear status messages
+- **Developer Documentation**: Complete guide in `REDSTRING_FORMAT_VERSIONING.md` for maintaining and extending the system
+- **Key Files**:
+  - `src/formats/redstringFormat.js`: Version constants, validation, and migration logic
+  - `src/GitNativeFederation.jsx`: UI integration with validation messages
+  - `GIT_FEDERATION.md`: User-facing documentation
+  - `REDSTRING_FORMAT_VERSIONING.md`: Developer guide and API reference
+
 ### Enhanced Semantic Search System
 - **Comprehensive DBpedia Search**: Implemented `comprehensiveDBpediaSearch()` function that explores all DBpedia relationships for an entity, including:
   - Main entity properties and metadata

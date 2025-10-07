@@ -195,6 +195,132 @@ const preservedSourceOfTruth = universe.raw.sourceOfTruth ||
 
 **See Also**: `TWO_SLOT_STORAGE_FIX.md` for detailed explanation and testing checklist.
 
+## Recent Fixes
+
+### Local File Import Fix (2025-01)
+
+**Problem**: When loading a local `.redstring` file, the system would crash with error: `TypeError: Cannot read properties of undefined (reading 'getState')`.
+
+**Root Cause**: `graphStore.jsx` exports `useGraphStore` as a default export, but several files were attempting to use named import syntax:
+```javascript
+// BROKEN - Named import from default export
+const { useGraphStore } = await import('./store/graphStore.jsx');
+```
+
+**Solution**: Fixed all dynamic imports to use correct default export syntax:
+```javascript
+// FIXED - Proper default import
+const useGraphStore = (await import('./store/graphStore.jsx')).default;
+```
+
+**Files Updated**:
+- `src/GitNativeFederation.jsx` (2 instances)
+- `src/services/universeBackend.js` (2 instances)
+
+**Impact**: Local file loading and universe import flows now work correctly.
+
+### Data Loss on File Link Fix (2025-01)
+
+**Problem**: When linking a local file to the current universe, the file would parse successfully but the universe would show 0 nodes instead of the actual data.
+
+**Root Cause**: Unnecessary `switchUniverse()` call was reloading empty state AFTER file data was loaded, wiping it out. Since we're linking a file to the *current* universe, switching is both unnecessary and destructive.
+
+**Solution**: Removed the `switchUniverse()` call entirely and load data directly:
+```javascript
+// FIXED: Load directly without switching (we're already in the target universe)
+const storeState = importFromRedstring(parsedData);
+console.log('[GitNativeFederation] Parsed file data:', { nodeCount: ... });
+
+const useGraphStore = (await import('./store/graphStore.jsx')).default;
+const storeActions = useGraphStore.getState();
+storeActions.loadUniverseFromFile(storeState);  // Load directly
+
+await universeBackend.setFileHandle(slug, fileHandle);
+await universeBackend.linkLocalFileToUniverse(slug, file.name);
+// No switch needed - we're already here!
+```
+
+**Files Updated**:
+- `src/GitNativeFederation.jsx` (lines 1478-1497)
+
+**Impact**: File data now loads correctly into the current universe without being wiped out.
+
+**Note**: Added console logging to track the data flow for debugging.
+
+### File Name Mismatch Handling (2025-01)
+
+**Enhancement**: Added name reconciliation flow when linking local files with names that don't match the target universe.
+
+**Implementation**: Similar to the Git repository file selection flow (lines 1018-1040), when a user links a local file with a mismatched name, the system now:
+1. Detects name mismatch between file and universe
+2. Shows warning dialog explaining the mismatch
+3. Allows user to confirm or cancel
+4. Proceeds with linking only after explicit confirmation
+
+**Code Changes**: `src/GitNativeFederation.jsx` (lines 1512-1555)
+
+**Benefits**:
+- Prevents accidental data replacement from wrong files
+- Makes naming conflicts explicit and user-controlled
+- Consistent UX with Git repository sync flow
+- Users understand when file name ≠ universe name
+
+### Format Versioning System (2025-01)
+
+**Problem**: Risk of data loss during format updates, no way to handle incompatible file versions, and no migration path for older files.
+
+**Solution**: Implemented comprehensive versioning and migration system for `.redstring` files.
+
+**Implementation**:
+
+1. **Version Metadata** - Every exported file now includes:
+   ```json
+   {
+     "format": "redstring-v3.0.0",
+     "metadata": {
+       "version": "3.0.0",
+       "formatHistory": { ... }
+     }
+   }
+   ```
+
+2. **Validation** - Before importing, files are validated:
+   - Check version is within supported range (1.0.0 to 3.0.0)
+   - Detect if migration is needed
+   - Provide clear error messages for incompatible versions
+
+3. **Automatic Migration** - Files from older versions are automatically migrated:
+   - v1.0.0 → v2.0.0-semantic → v3.0.0
+   - Migration metadata is preserved
+   - Users see progress messages during migration
+
+4. **User Feedback**:
+   - "Migrating file from format 2.0.0 to 3.0.0..."
+   - "File migrated from format 2.0.0 to 3.0.0"
+   - Clear errors for incompatible versions
+
+**Code Changes**:
+- `src/formats/redstringFormat.js`:
+  - Added `CURRENT_FORMAT_VERSION`, `MIN_SUPPORTED_VERSION`, `VERSION_HISTORY` constants
+  - Added `parseVersion()`, `compareVersions()` helper functions
+  - Added `validateFormatVersion()` for validation
+  - Added `migrateFormat()` for automatic migration
+  - Updated `exportToRedstring()` to include version metadata
+  - Updated `importFromRedstring()` to validate and migrate
+- `src/GitNativeFederation.jsx`:
+  - Updated `handleLinkLocalFile()` to validate before importing (lines 1488-1536)
+  - Added migration progress messages
+  - Added helpful error messages for version mismatches
+
+**Benefits**: 
+- User data is protected during updates
+- Old files can be automatically migrated
+- Clear feedback about version compatibility
+- Foundation for future format evolution
+- Peace of mind for production releases
+
+**Documentation**: See `REDSTRING_FORMAT_VERSIONING.md` for complete developer guide and API reference.
+
 ## Roadmap Highlights
 
 - Additional providers (GitLab/Gitea) using the same provider interface

@@ -1,10 +1,206 @@
 /**
  * Redstring Native Format Handler
  * Handles import/export of .redstring files with JSON-LD context
+ * 
+ * VERSION HISTORY:
+ * - v3.0.0: Added versioning system, validation, and migration support
+ * - v2.0.0-semantic: Semantic web integration with JSON-LD
+ * - v1.0.0: Legacy format
  */
 
 import { v4 as uuidv4 } from 'uuid';
 import uriGenerator from '../services/uriGenerator.js';
+
+// Current format version
+export const CURRENT_FORMAT_VERSION = '3.0.0';
+
+// Minimum supported version (older versions must be migrated)
+export const MIN_SUPPORTED_VERSION = '1.0.0';
+
+// Version history and breaking changes
+export const VERSION_HISTORY = {
+  '3.0.0': {
+    date: '2025-01',
+    changes: [
+      'Added comprehensive versioning system',
+      'Added validation and migration support',
+      'Added format compatibility checks'
+    ],
+    breaking: false
+  },
+  '2.0.0-semantic': {
+    date: '2024-12',
+    changes: [
+      'Added JSON-LD semantic web integration',
+      'Separated storage into prototypeSpace and spatialGraphs',
+      'Added RDF schema compliance'
+    ],
+    breaking: false // Backwards compatible via legacy section
+  },
+  '1.0.0': {
+    date: '2024-01',
+    changes: [
+      'Initial format'
+    ],
+    breaking: false
+  }
+};
+
+/**
+ * Parse version string to comparable format
+ */
+const parseVersion = (versionString) => {
+  if (!versionString || typeof versionString !== 'string') {
+    return null;
+  }
+  
+  // Handle semantic versions like "2.0.0-semantic"
+  const cleanVersion = versionString.split('-')[0];
+  const parts = cleanVersion.split('.').map(Number);
+  
+  if (parts.length !== 3 || parts.some(isNaN)) {
+    return null;
+  }
+  
+  return {
+    major: parts[0],
+    minor: parts[1],
+    patch: parts[2],
+    original: versionString
+  };
+};
+
+/**
+ * Compare two version strings
+ * Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2, null if invalid
+ */
+const compareVersions = (v1, v2) => {
+  const parsed1 = parseVersion(v1);
+  const parsed2 = parseVersion(v2);
+  
+  if (!parsed1 || !parsed2) return null;
+  
+  if (parsed1.major !== parsed2.major) {
+    return parsed1.major < parsed2.major ? -1 : 1;
+  }
+  if (parsed1.minor !== parsed2.minor) {
+    return parsed1.minor < parsed2.minor ? -1 : 1;
+  }
+  if (parsed1.patch !== parsed2.patch) {
+    return parsed1.patch < parsed2.patch ? -1 : 1;
+  }
+  
+  return 0;
+};
+
+/**
+ * Validate file format version and check compatibility
+ */
+export const validateFormatVersion = (redstringData) => {
+  let fileVersion = redstringData?.format || redstringData?.metadata?.version || '1.0.0';
+  
+  // Strip "redstring-v" prefix if present (e.g., "redstring-v2.0.0-semantic" -> "2.0.0-semantic")
+  if (typeof fileVersion === 'string' && fileVersion.startsWith('redstring-v')) {
+    fileVersion = fileVersion.replace('redstring-v', '');
+  }
+  
+  // Parse versions
+  const fileParsed = parseVersion(fileVersion);
+  const minParsed = parseVersion(MIN_SUPPORTED_VERSION);
+  const currentParsed = parseVersion(CURRENT_FORMAT_VERSION);
+  
+  if (!fileParsed) {
+    return {
+      valid: false,
+      version: fileVersion,
+      error: `Invalid version format: ${fileVersion}`,
+      needsMigration: false
+    };
+  }
+  
+  // Check if version is too old
+  const compareToMin = compareVersions(fileVersion, MIN_SUPPORTED_VERSION);
+  if (compareToMin === -1) {
+    return {
+      valid: false,
+      version: fileVersion,
+      error: `File version ${fileVersion} is too old. Minimum supported version is ${MIN_SUPPORTED_VERSION}.`,
+      needsMigration: false,
+      tooOld: true
+    };
+  }
+  
+  // Check if version is from the future
+  const compareToCurrent = compareVersions(fileVersion, CURRENT_FORMAT_VERSION);
+  if (compareToCurrent === 1) {
+    return {
+      valid: false,
+      version: fileVersion,
+      error: `File version ${fileVersion} is newer than the current app version ${CURRENT_FORMAT_VERSION}. Please update Redstring.`,
+      needsMigration: false,
+      tooNew: true
+    };
+  }
+  
+  // Check if migration is needed
+  const needsMigration = compareToCurrent === -1;
+  
+  return {
+    valid: true,
+    version: fileVersion,
+    currentVersion: CURRENT_FORMAT_VERSION,
+    needsMigration,
+    canAutoMigrate: needsMigration // Currently all older versions can auto-migrate
+  };
+};
+
+/**
+ * Migrate data from older format versions to current version
+ */
+export const migrateFormat = (redstringData, fromVersion, toVersion = CURRENT_FORMAT_VERSION) => {
+  console.log(`[Format Migration] Migrating from ${fromVersion} to ${toVersion}`);
+  
+  let migrated = { ...redstringData };
+  const migrations = [];
+  
+  // Migration from v1.0.0 -> v2.0.0-semantic
+  const compareV1 = compareVersions(fromVersion, '1.0.0');
+  const compareV2 = compareVersions(fromVersion, '2.0.0');
+  
+  if (compareV1 === 0 || (compareV1 === 1 && compareV2 === -1)) {
+    // File is v1.x, needs migration to v2
+    console.log('[Format Migration] Applying v1 -> v2 migration');
+    migrations.push('v1_to_v2');
+    
+    // v2 migration is handled by the existing import logic
+    // which checks for prototypeSpace vs legacy format
+    // Just ensure the format field is updated
+    migrated.format = 'redstring-v2.0.0-semantic';
+  }
+  
+  // Migration from v2.0.0-semantic -> v3.0.0
+  if (compareVersions(fromVersion, '3.0.0') === -1) {
+    console.log('[Format Migration] Applying v2 -> v3 migration');
+    migrations.push('v2_to_v3');
+    
+    // Add new version metadata
+    if (!migrated.metadata) {
+      migrated.metadata = {};
+    }
+    
+    migrated.metadata.version = CURRENT_FORMAT_VERSION;
+    migrated.metadata.migrated = true;
+    migrated.metadata.originalVersion = fromVersion;
+    migrated.metadata.migrationDate = new Date().toISOString();
+    migrated.metadata.migrationsApplied = migrations;
+    
+    // Update format string
+    migrated.format = `redstring-v${CURRENT_FORMAT_VERSION}`;
+  }
+  
+  console.log(`[Format Migration] Applied ${migrations.length} migrations:`, migrations);
+  return migrated;
+};
 
 // Enhanced JSON-LD Context for Redstring with Full RDF Schema Support
 export const REDSTRING_CONTEXT = {
@@ -662,8 +858,9 @@ export const exportToRedstring = (storeState, userDomain = null) => {
   return {
     "@context": context,
     "@type": "redstring:CognitiveSpace",
-    "format": "redstring-v2.0.0-semantic",
+    "format": `redstring-v${CURRENT_FORMAT_VERSION}`,
     "metadata": {
+      "version": CURRENT_FORMAT_VERSION,
       "created": new Date().toISOString(),
       "modified": new Date().toISOString(),
       "title": (activeGraphId && graphs.get(activeGraphId)?.name) || "Untitled Space",
@@ -672,7 +869,8 @@ export const exportToRedstring = (storeState, userDomain = null) => {
       "userURIs": userURIs,
       "semanticWebCompliant": true,
       "rdfSchemaVersion": "1.1",
-      "owlVersion": "2.0"
+      "owlVersion": "2.0",
+      "formatHistory": VERSION_HISTORY[CURRENT_FORMAT_VERSION]
     },
     
     // Separated Storage Architecture
@@ -748,30 +946,48 @@ export const exportToRedstring = (storeState, userDomain = null) => {
  */
 export const importFromRedstring = (redstringData, storeActions) => {
   try {
-    // Handle both new separated storage format and legacy format
+    // Step 1: Validate format version
+    const validation = validateFormatVersion(redstringData);
+    
+    console.log('[Import] Format validation:', validation);
+    
+    if (!validation.valid) {
+      throw new Error(validation.error);
+    }
+    
+    // Step 2: Apply migrations if needed
+    let processedData = redstringData;
+    
+    if (validation.needsMigration && validation.canAutoMigrate) {
+      console.log(`[Import] Auto-migrating from ${validation.version} to ${validation.currentVersion}`);
+      processedData = migrateFormat(redstringData, validation.version, validation.currentVersion);
+      console.log('[Import] Migration complete');
+    }
+    
+    // Step 3: Handle both new separated storage format and legacy format
     let graphsObj = {};
     let nodesObj = {};
     let edgesObj = {};
     let userInterface = {};
     
-    if (redstringData.prototypeSpace && redstringData.spatialGraphs) {
-      // New separated storage format (v2.0.0-semantic)
-      nodesObj = redstringData.prototypeSpace.prototypes || {};
-      graphsObj = redstringData.spatialGraphs.graphs || {};
-      edgesObj = redstringData.relationships?.edges || {};
-      userInterface = redstringData.userInterface || {};
-    } else if (redstringData.legacy) {
+    if (processedData.prototypeSpace && processedData.spatialGraphs) {
+      // New separated storage format (v2.0.0-semantic and v3.0.0)
+      nodesObj = processedData.prototypeSpace.prototypes || {};
+      graphsObj = processedData.spatialGraphs.graphs || {};
+      edgesObj = processedData.relationships?.edges || {};
+      userInterface = processedData.userInterface || {};
+    } else if (processedData.legacy) {
       // Fallback to legacy section if available
-      graphsObj = redstringData.legacy.graphs || {};
-      nodesObj = redstringData.legacy.nodePrototypes || {};
-      edgesObj = redstringData.legacy.edges || {};
-      userInterface = redstringData.userInterface || {};
+      graphsObj = processedData.legacy.graphs || {};
+      nodesObj = processedData.legacy.nodePrototypes || {};
+      edgesObj = processedData.legacy.edges || {};
+      userInterface = processedData.userInterface || {};
     } else {
       // Legacy format (v1.0.0)
-      graphsObj = redstringData.graphs || {};
-      nodesObj = redstringData.nodePrototypes || {};
-      edgesObj = redstringData.edges || {};
-      userInterface = redstringData.userInterface || {};
+      graphsObj = processedData.graphs || {};
+      nodesObj = processedData.nodePrototypes || {};
+      edgesObj = processedData.edges || {};
+      userInterface = processedData.userInterface || {};
     }
 
     //console.log('[DEBUG] Importing edges:', edgesObj);
@@ -1280,7 +1496,13 @@ export const importFromRedstring = (redstringData, storeActions) => {
     
     return {
       storeState,
-      errors: [] // For now, no error handling
+      errors: [], // For now, no error handling
+      version: {
+        imported: validation.version,
+        current: CURRENT_FORMAT_VERSION,
+        migrated: validation.needsMigration,
+        migratedTo: validation.needsMigration ? CURRENT_FORMAT_VERSION : null
+      }
     };
   } catch (error) {
     console.error('[importFromRedstring] Critical error during import:', error);

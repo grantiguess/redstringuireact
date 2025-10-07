@@ -1452,17 +1452,41 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         multiple: false
       });
       
+      console.log('[GitNativeFederation] File handle obtained:', fileHandle.name);
+      
+      // Request permission to read if needed
+      const permissionStatus = await fileHandle.queryPermission({ mode: 'read' });
+      console.log('[GitNativeFederation] File permission status:', permissionStatus);
+      
+      if (permissionStatus === 'prompt') {
+        const granted = await fileHandle.requestPermission({ mode: 'read' });
+        console.log('[GitNativeFederation] Permission requested, granted:', granted);
+        if (granted !== 'granted') {
+          throw new Error('File read permission denied. Please allow file access to continue.');
+        }
+      } else if (permissionStatus === 'denied') {
+        throw new Error('File read permission denied. Please reset file permissions in your browser settings and try again.');
+      }
+      
       // Read the file
       const file = await fileHandle.getFile();
+      console.log('[GitNativeFederation] File object obtained:', { 
+        name: file.name, 
+        size: file.size, 
+        type: file.type,
+        lastModified: new Date(file.lastModified).toISOString()
+      });
+      
       const fileContent = await file.text();
+      console.log('[GitNativeFederation] File content read, length:', fileContent.length);
       
       // Validate file is not empty
       if (!fileContent || fileContent.trim() === '') {
-        throw new Error('The selected file is empty (0 bytes). Please choose a valid .redstring file or create a new one.');
+        throw new Error(`The selected file "${file.name}" is empty (${file.size} bytes). The file may be corrupted or not saved properly. Please check the file and try again.`);
       }
       
-      // Parse and import the data
-      const { importFromRedstring } = await import('./formats/redstringFormat.js');
+      // Parse and validate the data
+      const { importFromRedstring, validateFormatVersion } = await import('./formats/redstringFormat.js');
       let parsedData;
       try {
         parsedData = JSON.parse(fileContent);
@@ -1475,27 +1499,126 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         throw new Error('File does not contain valid redstring data.');
       }
       
-      const storeState = importFromRedstring(parsedData);
+      // Validate format version before importing
+      const validation = validateFormatVersion(parsedData);
+      console.log('[GitNativeFederation] Format validation:', validation);
       
-      // Load into store
-      const { useGraphStore } = await import('./store/graphStore.jsx');
-      const storeActions = useGraphStore.getState();
-      storeActions.loadUniverseFromFile(storeState);
+      if (!validation.valid) {
+        // Show a more helpful error for version mismatch
+        if (validation.tooNew) {
+          throw new Error(`This file was created with a newer version of Redstring (${validation.version}). Please update your app to open this file.`);
+        } else if (validation.tooOld) {
+          throw new Error(`This file format is too old (${validation.version}) and cannot be opened. Minimum supported version is ${validation.currentVersion}.`);
+        } else {
+          throw new Error(validation.error);
+        }
+      }
       
-      // Store the file handle immediately (we already have it!)
-      await universeBackend.setFileHandle(slug, fileHandle);
+      // Show migration notice if needed
+      if (validation.needsMigration) {
+        console.log(`[GitNativeFederation] File will be auto-migrated from ${validation.version} to ${validation.currentVersion}`);
+        setSyncStatus({ 
+          type: 'info',
+          message: `Migrating file from format ${validation.version} to ${validation.currentVersion}...` 
+        });
+      }
       
-      // Link the file to universe
-      await universeBackend.linkLocalFileToUniverse(slug, file.name);
+      const importResult = importFromRedstring(parsedData);
+      const storeState = importResult.storeState;
       
-      // Switch to the universe
-      await gitFederationService.switchUniverse(slug);
-      
+      // Show successful migration message
+      if (importResult.version?.migrated) {
+        console.log(`[GitNativeFederation] File successfully migrated from ${importResult.version.imported} to ${importResult.version.current}`);
+        setSyncStatus({
+          type: 'success',
+          message: `File migrated from format ${importResult.version.imported} to ${importResult.version.current}`
+        });
+      }
       const nodeCount = storeState?.nodePrototypes ?
         (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes || {}).length) : 0;
       
-      setSyncStatus({ type: 'success', message: `Linked ${file.name} with ${nodeCount} nodes` });
+      console.log('[GitNativeFederation] Parsed file data:', {
+        hasNodePrototypes: !!storeState?.nodePrototypes,
+        nodeCount,
+        fileName: file.name
+      });
+      
+      // Check if file name matches universe name (like we do for Git repos)
+      const fileBaseName = file.name.replace('.redstring', '');
+      const universe = serviceState.universes.find(u => u.slug === slug);
+      const universeNameMismatch = universe && fileBaseName !== slug && fileBaseName !== universe.name;
+      
+      if (universeNameMismatch) {
+        setLoading(false);
+        setConfirmDialog({
+          title: 'File Name Mismatch',
+          message: `The file name "${file.name}" doesn't match universe "${universe.name}".`,
+          details: `Choose "Link Anyway" to link this file to universe "${universe.name}".\n\nData from the file will replace current universe data.`,
+          variant: 'warning',
+          confirmLabel: 'Link Anyway',
+          cancelLabel: 'Cancel',
+          onConfirm: async () => {
+            try {
+              setLoading(true);
+              console.log(`[GitNativeFederation] User confirmed linking mismatched file ${file.name} to ${universe.name}`);
+              
+              // Load data into store IMMEDIATELY (we're already in the target universe)
+              const useGraphStore = (await import('./store/graphStore.jsx')).default;
+              const storeActions = useGraphStore.getState();
+              console.log('[GitNativeFederation] Loading data into store...');
+              storeActions.loadUniverseFromFile(storeState);
+              console.log('[GitNativeFederation] Data loaded into store');
+              
+              // Store the file handle
+              await universeBackend.setFileHandle(slug, fileHandle);
+              
+              // Link the file to universe (but DON'T switch - we're already here!)
+              await universeBackend.linkLocalFileToUniverse(slug, file.name);
+              
+              setSyncStatus({ type: 'success', message: `Linked ${file.name} with ${nodeCount} nodes` });
+              await refreshState();
+            } catch (err) {
+              console.error('[GitNativeFederation] Failed to link after confirmation:', err);
+              setError(`Failed to link file: ${err.message}`);
+            } finally {
+              setLoading(false);
+            }
+          }
+        });
+        return; // Exit early, wait for user confirmation
+      }
+      
+      // No name mismatch, proceed directly
+      const useGraphStore = (await import('./store/graphStore.jsx')).default;
+      const storeActions = useGraphStore.getState();
+      console.log('[GitNativeFederation] Loading data into store...');
+      storeActions.loadUniverseFromFile(storeState);
+      console.log('[GitNativeFederation] Data loaded into store');
+      
+      // Store the file handle
+      await universeBackend.setFileHandle(slug, fileHandle);
+      console.log('[GitNativeFederation] File handle stored');
+      
+      // Link the file to universe (but DON'T switch - we're already here!)
+      await universeBackend.linkLocalFileToUniverse(slug, file.name);
+      console.log('[GitNativeFederation] File linked to universe');
+      
+      // Refresh state to update UI
       await refreshState();
+      console.log('[GitNativeFederation] State refreshed after linking file');
+      
+      // Check if the universe now shows the linked file
+      const updatedState = await gitFederationService.getState();
+      const updatedUniverse = updatedState.universes.find(u => u.slug === slug);
+      console.log('[GitNativeFederation] Updated universe after link:', {
+        slug: updatedUniverse?.slug,
+        hasLocalFile: !!updatedUniverse?.raw?.localFile,
+        localFileEnabled: updatedUniverse?.raw?.localFile?.enabled,
+        localFilePath: updatedUniverse?.raw?.localFile?.path,
+        hadFileHandle: updatedUniverse?.raw?.localFile?.hadFileHandle
+      });
+      
+      setSyncStatus({ type: 'success', message: `Linked ${file.name} with ${nodeCount} nodes` });
     } catch (err) {
       if (err.name !== 'AbortError') {
         console.error('[GitNativeFederation] Link local file failed:', err);
@@ -1517,7 +1640,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       }
 
       // Get current store state
-      const { useGraphStore } = await import('./store/graphStore.jsx');
+      const useGraphStore = (await import('./store/graphStore.jsx')).default;
       const storeState = useGraphStore.getState();
       
       // Export to redstring format
@@ -1782,6 +1905,73 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     );
   };
 
+  const renderLocalFile = (universe) => {
+    const localFile = universe.raw?.localFile;
+    const hasLocalFile = localFile?.enabled && localFile?.path;
+
+    if (!hasLocalFile) {
+      return (
+        <div
+          style={{
+            padding: 12,
+            border: '1px dashed #979090',
+            borderRadius: 6,
+            backgroundColor: '#bdb5b5',
+            color: '#555',
+            fontSize: '0.8rem'
+          }}
+        >
+          No local file linked yet. Link or create one to enable local storage.
+        </div>
+      );
+    }
+
+    return (
+      <div
+        style={{
+          border: '1px solid #260000',
+          borderRadius: 8,
+          padding: 12,
+          backgroundColor: '#bdb5b5',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Save size={18} />
+            <div>
+              <div style={{ fontWeight: 600 }}>{localFile.path}</div>
+              <div style={{ fontSize: '0.72rem', color: '#555' }}>
+                Local .redstring file {localFile.hadFileHandle ? '(handle stored)' : '(handle not cached)'}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={() => handleLinkLocalFile(universe.slug)}
+              style={buttonStyle('outline')}
+            >
+              Relink File
+            </button>
+            <button
+              onClick={() => handleDownloadLocalFile(universe.slug)}
+              style={buttonStyle('outline')}
+            >
+              Download
+            </button>
+          </div>
+        </div>
+        {localFile.unavailableReason && (
+          <div style={{ fontSize: '0.72rem', color: '#7A0000', fontStyle: 'italic' }}>
+            ⚠️ {localFile.unavailableReason}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderSources = (universe) => {
     const sources = (universe.raw?.sources || []).filter((src) => src.type === 'github');
     if (sources.length === 0) {
@@ -1999,6 +2189,21 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           )}
           {activeUniverse.hasBrowserFallback && <BrowserFallbackNote />}
                             </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            color: '#260000',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 8,
+            alignItems: 'center'
+          }}>
+            <span>Local file</span>
+          </div>
+          {renderLocalFile(activeUniverse)}
+        </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{

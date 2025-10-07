@@ -1064,7 +1064,7 @@ class UniverseBackend {
     // Get store state if not provided
     if (!storeState) {
       // Try to get from store operations if available
-      const { useGraphStore } = await import('../store/graphStore.jsx');
+      const useGraphStore = (await import('../store/graphStore.jsx')).default;
       storeState = useGraphStore.getState();
     }
 
@@ -1095,7 +1095,7 @@ class UniverseBackend {
           const jsonData = JSON.parse(e.target.result);
           
           // Get store actions
-          const { useGraphStore } = await import('../store/graphStore.jsx');
+          const useGraphStore = (await import('../store/graphStore.jsx')).default;
           const storeActions = useGraphStore.getState();
           
           // Import the data
