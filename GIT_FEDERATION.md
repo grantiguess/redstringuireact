@@ -366,6 +366,18 @@ When you save, the system saves to **ALL enabled storage locations** to keep the
 
 **Impact**: Users can work entirely with local files, or enable Git for collaboration, or use both. Storage options are additive, not exclusive. Git federation is a feature you opt into, not a requirement.
 
+### File Handle Synchronization Fix (2025-01)
+
+**Problem**: File handles were being stored in `universeBackend.fileHandles` but `universeManager.loadFromLocalFile()` was looking in `universeManager.fileHandles` - two separate Maps! This caused "No file handle available" errors on universe refresh/reload.
+
+**Solution**: When storing a file handle, now store it in BOTH `universeBackend.fileHandles` AND `universeManager.fileHandles` so both services can access it.
+
+**Code Changes**: `src/services/universeBackend.js` (line 1199)
+- Added `universeManager.fileHandles.set(universeSlug, fileHandle);` to `setFileHandle()` method
+- File handles now accessible to both backend and manager
+
+**Impact**: Local file data now persists correctly across universe switches and page refreshes. The UI correctly shows linked local files after refresh.
+
 ## Roadmap Highlights
 
 - Additional providers (GitLab/Gitea) using the same provider interface

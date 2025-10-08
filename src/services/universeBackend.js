@@ -1195,6 +1195,9 @@ class UniverseBackend {
     }
     this.fileHandles.set(universeSlug, fileHandle);
     
+    // CRITICAL: Also store in universeManager so it can access it when loading!
+    universeManager.fileHandles.set(universeSlug, fileHandle);
+    
     // Store file handle metadata in IndexedDB for persistence
     try {
       await storeFileHandleMetadata(universeSlug, fileHandle, {
