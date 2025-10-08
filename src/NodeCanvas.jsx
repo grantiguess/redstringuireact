@@ -9552,14 +9552,14 @@ function NodeCanvas() {
             console.log('[NodeCanvas] Using existing GitHub connections for Git-based universe');
             
             try {
-              // Import universe manager to try loading Git universe
-              const { default: universeManager } = await import('./services/universeManager.js');
+              // Import universe backend to try loading Git universe
+              const { default: universeBackend } = await import('./services/universeBackend.js');
               
               // Try to load from the active universe
-              const activeUniverse = universeManager.getActiveUniverse();
+              const activeUniverse = universeBackend.getActiveUniverse();
               if (activeUniverse && activeUniverse.gitRepo && activeUniverse.gitRepo.enabled) {
                 console.log('[NodeCanvas] Found existing Git universe, attempting to load:', activeUniverse.slug);
-                const storeState = await universeManager.loadUniverseData(activeUniverse);
+                const storeState = await universeBackend.loadUniverseData(activeUniverse);
                 if (storeState) {
                   storeActions.loadUniverseFromFile(storeState);
                   console.log('[NodeCanvas] ✅ Successfully restored Git-based universe from:', activeUniverse.slug);

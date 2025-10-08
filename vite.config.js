@@ -11,7 +11,7 @@ export default defineConfig({
         manualChunks: {
           // Separate the store and services into different chunks to avoid circular dependencies
           store: ['./src/store/graphStore.jsx', './src/store/fileStorage.js'],
-          services: ['./src/services/universeManager.js', './src/services/orbitResolver.js']
+          services: ['./src/services/universeBackend.js', './src/services/orbitResolver.js']
         }
       }
     }
