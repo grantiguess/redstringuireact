@@ -1575,6 +1575,15 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
               // Link the file to universe (but DON'T switch - we're already here!)
               await universeBackend.linkLocalFileToUniverse(slug, file.name);
               
+              // Save the data to persistent storage (browser storage as fallback if no Git)
+              try {
+                await gitFederationService.forceSave(slug);
+                console.log('[GitNativeFederation] Data saved to persistent storage');
+              } catch (saveErr) {
+                console.warn('[GitNativeFederation] Failed to save after linking:', saveErr);
+                // Non-fatal - data is still in memory
+              }
+              
               setSyncStatus({ type: 'success', message: `Linked ${file.name} with ${nodeCount} nodes` });
               await refreshState();
             } catch (err) {
@@ -1602,6 +1611,15 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       // Link the file to universe (but DON'T switch - we're already here!)
       await universeBackend.linkLocalFileToUniverse(slug, file.name);
       console.log('[GitNativeFederation] File linked to universe');
+      
+      // Save the data to persistent storage (browser storage as fallback if no Git)
+      try {
+        await gitFederationService.forceSave(slug);
+        console.log('[GitNativeFederation] Data saved to persistent storage');
+      } catch (saveErr) {
+        console.warn('[GitNativeFederation] Failed to save after linking:', saveErr);
+        // Non-fatal - data is still in memory
+      }
       
       // Refresh state to update UI
       await refreshState();

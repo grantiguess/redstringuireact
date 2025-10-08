@@ -455,7 +455,7 @@ const UniversesList = ({
                       )}
 
                       {/* Local File Slot */}
-                      {universe.raw?.localFile?.fileHandle ? (
+                      {universe.raw?.localFile?.enabled && universe.raw?.localFile?.hadFileHandle ? (
                         <div
                           style={{
                             padding: 8,
@@ -517,7 +517,7 @@ const UniversesList = ({
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
                               <span style={{ fontWeight: 600, color: '#260000' }}>File:</span>
                               <span style={{ fontSize: '0.65rem' }}>
-                                {universe.raw.localFile?.fileName || `${universe.slug}.redstring`}
+                                {universe.raw.localFile?.path || universe.raw.localFile?.lastFilePath || `${universe.slug}.redstring`}
                               </span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>

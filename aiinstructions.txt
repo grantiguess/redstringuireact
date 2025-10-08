@@ -5,6 +5,21 @@ RedString is a semantic knowledge graph application that allows users to create,
 
 ## Recent Enhancements (Latest)
 
+### Local-First Storage Architecture (2025-01)
+- **Critical Architectural Change**: Rewrote `forceSave` to support multi-storage sync instead of Git-centric priority system
+- **Multi-Storage Sync**: When saving, system saves to ALL enabled storage locations to keep them in sync:
+  - Local file (if linked and has handle)
+  - Git repository (if linked and authenticated)
+  - Browser storage (always, as cache)
+- **Source of Truth**: Only matters when LOADING data (to resolve conflicts), not when SAVING
+- **Git Opt-In**: Git only activates when user explicitly links a repository - no automatic creation
+- **Independent Local Storage**: Local `.redstring` files work completely independently without Git interference
+- **User Privacy**: GitHub cannot access data unless user explicitly enables Git federation
+- **Resilience**: If one storage method fails, others still succeed
+- **Key Changes**: `src/services/universeBackend.js` (lines 932-1073) - Complete rewrite of `forceSave` method
+- **Philosophy**: Storage options are additive, not exclusive. Git federation is a feature you opt into.
+- **Documentation**: `GIT_FEDERATION.md` - Local-First Storage Architecture section
+
 ### Format Versioning System (2025-01)
 - **Comprehensive Versioning**: Implemented versioning system for `.redstring` file format to protect user data during updates
 - **Automatic Migration**: Files from older versions (v1.0.0, v2.0.0-semantic) are automatically migrated to current version (v3.0.0)

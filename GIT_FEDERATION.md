@@ -321,6 +321,51 @@ await universeBackend.linkLocalFileToUniverse(slug, file.name);
 
 **Documentation**: See `REDSTRING_FORMAT_VERSIONING.md` for complete developer guide and API reference.
 
+### Local-First Storage Architecture (2025-01)
+
+**Problem**: The system was too Git-centric, always trying to create Git engines even when Git wasn't enabled. This made local file storage feel like a fallback rather than a first-class feature.
+
+**Solution**: Completely rewrote the `forceSave` method in `universeBackend.js` to support **multi-storage sync** with local-first design.
+
+**New Multi-Storage Sync System**:
+
+When you save, the system saves to **ALL enabled storage locations** to keep them in sync:
+
+1. **Local File Storage** (if enabled and has file handle)
+   - Saves directly to the linked `.redstring` file
+   - Works completely independently of Git
+   - First-class storage option
+
+2. **Git Repository** (if linked and authenticated)
+   - Saves to GitHub/Gitea repository
+   - Enabled when user explicitly links a repo
+   - Requires authentication
+   - Opt-in, not required
+
+3. **Browser Storage** (always enabled)
+   - Universal fallback/cache for all universes
+   - Always saves as backup
+   - Available offline
+
+**Source of Truth**: Only matters when **LOADING** data. If you have both local file and Git enabled, "source of truth" determines which one to trust when they differ. When **SAVING**, both get updated to stay in sync.
+
+**Code Changes**: `src/services/universeBackend.js` (lines 932-1073)
+- Removed automatic Git engine creation
+- Saves to all enabled storage locations concurrently
+- Added detailed logging for each storage method
+- Returns detailed results showing what was saved where
+- Git only activates when explicitly linked
+
+**Benefits**:
+- Local file storage works independently without Git
+- Multiple storage locations stay in sync automatically
+- Git cannot access data unless explicitly enabled
+- Clear separation between storage methods
+- GitHub only has access when user explicitly links it
+- Resilient: if one storage fails, others still succeed
+
+**Impact**: Users can work entirely with local files, or enable Git for collaboration, or use both. Storage options are additive, not exclusive. Git federation is a feature you opt into, not a requirement.
+
 ## Roadmap Highlights
 
 - Additional providers (GitLab/Gitea) using the same provider interface

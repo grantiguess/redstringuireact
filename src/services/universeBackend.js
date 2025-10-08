@@ -954,55 +954,120 @@ class UniverseBackend {
     
     console.log(`[UniverseBackend] Force saving universe ${universeSlug}`);
 
-    // Track operation start
-    this.trackGitOperationStart(universeSlug, 'force-save', {
-      isConnected: !!this.authStatus?.isAuthenticated,
-      hasUnsavedChanges: true
+    const universe = universeManager.getUniverse(universeSlug);
+    if (!universe) {
+      throw new Error(`Universe ${universeSlug} not found`);
+    }
+
+    // Check what storage is enabled (local-first approach)
+    const hasLocalFile = universe.raw?.localFile?.enabled && universe.raw?.localFile?.hadFileHandle;
+    const hasGitRepo = universe.raw?.gitRepo?.enabled && (universe.raw?.gitRepo?.linkedRepo || universe.gitRepo?.linkedRepo);
+    const sourceOfTruth = universe.sourceOfTruth || 'browser';
+
+    console.log(`[UniverseBackend] Save options for ${universeSlug}:`, {
+      sourceOfTruth,
+      hasLocalFile,
+      hasGitRepo,
+      localFilePath: universe.raw?.localFile?.path
     });
 
     try {
-      // Ensure Git sync engine exists
-      let engine = this.gitSyncEngines.get(universeSlug);
-      if (!engine) {
+      const results = {
+        localFile: null,
+        git: null,
+        browser: null
+      };
+      let hasAnySuccess = false;
+
+      // Save to local file if enabled and has handle
+      if (hasLocalFile && this.fileHandles.has(universeSlug)) {
+        console.log(`[UniverseBackend] Saving to local file`);
         try {
-          console.log(`[UniverseBackend] No engine found for ${universeSlug}, creating one for force save`);
-          engine = await this.ensureGitSyncEngine(universeSlug);
+          const result = await this.saveToLinkedLocalFile(universeSlug, storeState);
+          results.localFile = { success: true, fileName: result.fileName };
+          hasAnySuccess = true;
+          console.log(`[UniverseBackend] ✓ Local file saved: ${result.fileName}`);
         } catch (error) {
-          console.error(`[UniverseBackend] Failed to create engine for force save:`, error);
-          // Track failure and fallback
-          this.trackGitOperationComplete(universeSlug, 'force-save', false, {
-            error: `Engine creation failed: ${error.message}`,
-            fallbackUsed: true
-          });
-          // Fallback to regular save through universe manager
-          console.log(`[UniverseBackend] Falling back to universe manager save`);
-          return await this.saveActiveUniverse(storeState);
+          console.warn(`[UniverseBackend] ✗ Local file save failed:`, error);
+          results.localFile = { success: false, error: error.message };
         }
       }
 
-      if (engine) {
-        const result = await engine.forceCommit(storeState);
-
-        // Track successful completion
-        this.trackGitOperationComplete(universeSlug, 'force-save', true, {
-          commitHash: result?.commitHash,
-          bytesWritten: result?.bytesWritten,
-          fileName: `universes/${universeSlug}/${universeSlug}.redstring`
+      // Save to Git if enabled (regardless of source of truth)
+      if (hasGitRepo) {
+        console.log(`[UniverseBackend] Saving to Git repository`);
+        
+        // Track operation start for Git
+        this.trackGitOperationStart(universeSlug, 'force-save', {
+          isConnected: !!this.authStatus?.isAuthenticated,
+          hasUnsavedChanges: true
         });
 
-        this.notifyStatus('success', `Force save completed for ${universeSlug}`);
-        return result;
+        try {
+          let engine = this.gitSyncEngines.get(universeSlug);
+          if (!engine) {
+            console.log(`[UniverseBackend] Creating Git engine for ${universeSlug}`);
+            engine = await this.ensureGitSyncEngine(universeSlug);
+          }
+
+          if (engine) {
+            const result = await engine.forceCommit(storeState);
+
+            // Track successful completion
+            this.trackGitOperationComplete(universeSlug, 'force-save', true, {
+              commitHash: result?.commitHash,
+              bytesWritten: result?.bytesWritten,
+              fileName: `universes/${universeSlug}/${universeSlug}.redstring`
+            });
+
+            results.git = { success: true, commitHash: result?.commitHash };
+            hasAnySuccess = true;
+            console.log(`[UniverseBackend] ✓ Git saved: ${result?.commitHash}`);
+          }
+        } catch (error) {
+          console.warn(`[UniverseBackend] ✗ Git save failed:`, error);
+          this.trackGitOperationComplete(universeSlug, 'force-save', false, {
+            error: error.message
+          });
+          results.git = { success: false, error: error.message };
+        }
       }
 
-      throw new Error(`No Git sync engine available for universe: ${universeSlug}`);
-    } catch (error) {
-      // Track failure
-      this.trackGitOperationComplete(universeSlug, 'force-save', false, {
-        error: error.message
-      });
+      // Always save to browser storage as backup/cache
+      console.log(`[UniverseBackend] Saving to browser storage`);
+      try {
+        await this.saveActiveUniverse(storeState);
+        results.browser = { success: true };
+        hasAnySuccess = true;
+        console.log(`[UniverseBackend] ✓ Browser storage saved`);
+      } catch (error) {
+        console.warn(`[UniverseBackend] ✗ Browser storage save failed:`, error);
+        results.browser = { success: false, error: error.message };
+      }
 
-      console.error(`[UniverseBackend] Force save failed for ${universeSlug}:`, error);
-      this.notifyStatus('error', `Force save failed: ${error.message}`);
+      // Build success message
+      const savedTo = [];
+      if (results.localFile?.success) savedTo.push(`local file (${results.localFile.fileName})`);
+      if (results.git?.success) savedTo.push('Git repository');
+      if (results.browser?.success && savedTo.length === 0) savedTo.push('browser storage');
+
+      if (hasAnySuccess) {
+        const message = savedTo.length > 0 
+          ? `Saved to ${savedTo.join(' and ')}` 
+          : 'Saved successfully';
+        this.notifyStatus('success', message);
+        return { 
+          success: true, 
+          savedTo: results,
+          sourceOfTruth // For reference on which one is authoritative
+        };
+      } else {
+        throw new Error('All save methods failed');
+      }
+
+    } catch (error) {
+      console.error(`[UniverseBackend] All save methods failed for ${universeSlug}:`, error);
+      this.notifyStatus('error', `Save failed: ${error.message}`);
       throw error;
     }
   }
@@ -1229,9 +1294,10 @@ class UniverseBackend {
       throw new Error(`Universe ${universeSlug} not found`);
     }
 
-    // Update universe with local file configuration
+    // Update universe with local file configuration (preserving existing localFile properties)
     await this.updateUniverse(universeSlug, {
       localFile: {
+        ...universe.localFile, // Preserve existing properties like hadFileHandle
         enabled: true,
         path: filePath
       }
