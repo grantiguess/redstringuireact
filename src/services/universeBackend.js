@@ -7,33 +7,76 @@
  * The UI (GitNativeFederation.jsx) should ONLY display data and call these methods.
  */
 
-// Defer universeManager import to avoid circular dependencies
-let universeManager = null;
 import { GitSyncEngine } from '../backend/sync/index.js';
 import { persistentAuth } from '../backend/auth/index.js';
 import { SemanticProviderFactory } from '../backend/git/index.js';
 import startupCoordinator from './startupCoordinator.js';
 import { exportToRedstring, importFromRedstring, downloadRedstringFile } from '../formats/redstringFormat.js';
+import { v4 as uuidv4 } from 'uuid';
+import {
+  getCurrentDeviceConfig,
+  shouldUseGitOnlyMode,
+  getOptimalDeviceConfig,
+  hasCapability
+} from '../utils/deviceDetection.js';
+import { oauthFetch } from './bridgeConfig.js';
+import { storageWrapper } from '../utils/storageWrapper.js';
 import {
   storeFileHandleMetadata,
   getFileHandleMetadata,
+  getAllFileHandleMetadata,
+  attemptRestoreFileHandle,
+  verifyFileHandleAccess,
   touchFileHandle,
   removeFileHandleMetadata
 } from './fileHandlePersistence.js';
+import { discoverUniversesWithStats, createUniverseConfigFromDiscovered } from './universeDiscovery.js';
+
+// Storage keys
+const STORAGE_KEYS = {
+  UNIVERSES_LIST: 'unified_universes_list',
+  ACTIVE_UNIVERSE: 'active_universe_slug',
+  UNIVERSE_FILE_HANDLES: 'universe_file_handles'
+};
+
+// Source of truth constants
+const SOURCE_OF_TRUTH = {
+  LOCAL: 'local',
+  GIT: 'git',
+  BROWSER: 'browser'
+};
 
 class UniverseBackend {
   constructor() {
+    // Core universe state (from universeManager)
+    this.universes = new Map(); // slug -> universe config
+    this.activeUniverseSlug = null;
+
+    // File and Git engine management
+    this.fileHandles = new Map(); // slug -> FileSystemFileHandle
     this.gitSyncEngines = new Map(); // slug -> GitSyncEngine
+
+    // Status and initialization
     this.statusHandlers = new Set();
     this.isInitialized = false;
     this.initializationPromise = null;
     this.autoSetupScheduled = false;
     this.authStatus = null;
-    this.loggedMergeWarning = false; // Prevent log spam from merge conflicts
-    this.fileHandles = new Map(); // slug -> FileSystemFileHandle (session-scoped)
+    this.loggedMergeWarning = false;
+
+    // Device configuration
+    this.deviceConfig = null;
+    this.isGitOnlyMode = false;
+
+    // Process watchdog
+    this.watchdogInterval = null;
+    this.watchdogDelay = 60000;
+
+    // Store operations (injected)
+    this.storeOperations = null;
 
     // Git operation tracking for dashboard
-    this.gitOperationStatus = new Map(); // universeSlug -> detailed status
+    this.gitOperationStatus = new Map();
     this.globalGitStatus = {
       isConnected: false,
       lastConnection: null,
@@ -43,9 +86,433 @@ class UniverseBackend {
       lastGlobalSync: null
     };
 
-    // Don't auto-initialize on construction to avoid circular dependencies
-    // Initialization will happen on first method call
+    // Load universes from storage
+    this.loadFromStorage();
+
+    // Initialize device config after a brief delay
+    setTimeout(() => {
+      this.initializeDeviceConfig();
+    }, 100);
+
+    // Attempt to restore file handles
+    setTimeout(() => {
+      this.restoreFileHandles();
+    }, 200);
   }
+
+  // ========== CORE UNIVERSE MANAGEMENT METHODS (from universeManager) ==========
+
+  /**
+   * Load universes from storage
+   */
+  loadFromStorage() {
+    try {
+      const saved = storageWrapper.getItem(STORAGE_KEYS.UNIVERSES_LIST);
+      const activeSlug = storageWrapper.getItem(STORAGE_KEYS.ACTIVE_UNIVERSE);
+
+      if (saved) {
+        const universesList = JSON.parse(saved);
+        universesList.forEach(universe => {
+          this.universes.set(universe.slug, this.safeNormalizeUniverse(universe));
+        });
+      }
+
+      // Load file handles info
+      try {
+        const fileHandlesInfo = storageWrapper.getItem(STORAGE_KEYS.UNIVERSE_FILE_HANDLES);
+        if (fileHandlesInfo) {
+          const handlesData = JSON.parse(fileHandlesInfo);
+          Object.keys(handlesData).forEach(slug => {
+            const universe = this.universes.get(slug);
+            if (universe && handlesData[slug]) {
+              this.updateUniverse(slug, {
+                localFile: {
+                  ...universe.localFile,
+                  hadFileHandle: true,
+                  lastFilePath: handlesData[slug].path || universe.localFile.path
+                }
+              });
+            }
+          });
+        }
+      } catch (error) {
+        console.warn('[UniverseBackend] Failed to load file handles info:', error);
+      }
+
+      // Create default universe if none exist
+      if (this.universes.size === 0) {
+        this.createSafeDefaultUniverse();
+      }
+
+      // Set active universe
+      this.activeUniverseSlug = activeSlug && this.universes.has(activeSlug)
+        ? activeSlug
+        : this.universes.keys().next().value;
+
+      console.log('[UniverseBackend] Loaded', this.universes.size, 'universes, active:', this.activeUniverseSlug);
+    } catch (error) {
+      console.error('[UniverseBackend] Failed to load from storage:', error);
+      this.createSafeDefaultUniverse();
+    }
+  }
+
+  /**
+   * Save universes to storage
+   */
+  saveToStorage() {
+    try {
+      const universesList = Array.from(this.universes.values()).map(universe => {
+        const { localFile, ...rest } = universe;
+        return {
+          ...rest,
+          localFile: {
+            enabled: localFile.enabled,
+            path: localFile.path,
+            hadFileHandle: localFile.hadFileHandle,
+            lastFilePath: localFile.lastFilePath
+          }
+        };
+      });
+
+      storageWrapper.setItem(STORAGE_KEYS.UNIVERSES_LIST, JSON.stringify(universesList));
+      storageWrapper.setItem(STORAGE_KEYS.ACTIVE_UNIVERSE, this.activeUniverseSlug);
+
+      // Save file handles info
+      const fileHandlesInfo = {};
+      this.fileHandles.forEach((handle, slug) => {
+        fileHandlesInfo[slug] = {
+          path: handle.name || this.universes.get(slug)?.localFile?.path || `${slug}.redstring`,
+          hasHandle: true
+        };
+      });
+      storageWrapper.setItem(STORAGE_KEYS.UNIVERSE_FILE_HANDLES, JSON.stringify(fileHandlesInfo));
+
+      if (storageWrapper.shouldUseMemoryStorage()) {
+        storageWrapper.warnAboutDataLoss();
+      }
+    } catch (error) {
+      console.error('[UniverseBackend] Failed to save to storage:', error);
+    }
+  }
+
+  /**
+   * Safe universe normalization (prevents startup recursion)
+   */
+  safeNormalizeUniverse(universe) {
+    const slug = universe.slug || 'universe';
+    const providedGitRepo = universe.gitRepo || {};
+    const providedUniverseFolder = providedGitRepo.universeFolder !== undefined ? providedGitRepo.universeFolder : universe.universeFolder;
+    const providedUniverseFile = providedGitRepo.universeFile !== undefined ? providedGitRepo.universeFile : universe.universeFile;
+
+    return {
+      slug,
+      name: universe.name || 'Universe',
+      sourceOfTruth: universe.sourceOfTruth || 'local',
+      localFile: {
+        enabled: universe.localFile?.enabled ?? true,
+        path: this.sanitizeFileName(universe.localFile?.path || `${universe.name || 'Universe'}.redstring`),
+        handle: null,
+        unavailableReason: universe.localFile?.unavailableReason || null
+      },
+      gitRepo: {
+        enabled: providedGitRepo.enabled ?? false,
+        linkedRepo: providedGitRepo.linkedRepo || universe.linkedRepo || null,
+        schemaPath: providedGitRepo.schemaPath || universe.schemaPath || 'schema',
+        universeFolder: providedUniverseFolder !== undefined ? providedUniverseFolder : slug,
+        universeFile: providedUniverseFile !== undefined ? providedUniverseFile : `${slug}.redstring`,
+        priority: providedGitRepo.priority || 'secondary'
+      },
+      browserStorage: {
+        enabled: universe.browserStorage?.enabled ?? true,
+        role: universe.browserStorage?.role || 'fallback',
+        key: universe.browserStorage?.key || `universe_${slug}`
+      },
+      sources: Array.isArray(universe.sources) ? universe.sources : [],
+      created: universe.created || new Date().toISOString(),
+      lastModified: universe.lastModified || new Date().toISOString(),
+      raw: universe.raw || universe
+    };
+  }
+
+  /**
+   * Create safe default universe
+   */
+  createSafeDefaultUniverse() {
+    const defaultUniverse = {
+      slug: 'universe',
+      name: 'Universe',
+      sourceOfTruth: 'local',
+      localFile: { enabled: true, path: 'Universe.redstring' },
+      gitRepo: { enabled: false, linkedRepo: null, schemaPath: 'schema' },
+      browserStorage: { enabled: true, role: 'fallback' },
+      sources: []
+    };
+
+    this.universes.set('universe', this.safeNormalizeUniverse(defaultUniverse));
+    this.activeUniverseSlug = 'universe';
+    this.saveToStorage();
+
+    if (this.storeOperations?.loadUniverseFromFile) {
+      const emptyState = this.createEmptyState();
+      try {
+        this.storeOperations.loadUniverseFromFile(emptyState);
+        console.log('[UniverseBackend] Initialized graph store with empty state for safe default universe');
+      } catch (error) {
+        console.warn('[UniverseBackend] Failed to initialize graph store for safe default universe:', error);
+      }
+    }
+
+    console.log('[UniverseBackend] Created safe default universe during startup');
+  }
+
+  /**
+   * Sanitize file names
+   */
+  sanitizeFileName(name) {
+    return name
+      .replace(/[^a-zA-Z0-9-_\.]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .replace(/\.redstring$/, '') + '.redstring';
+  }
+
+  /**
+   * Generate unique slug
+   */
+  generateUniqueSlug(name) {
+    let baseSlug = String(name || 'universe').toLowerCase()
+      .replace(/[^a-z0-9-_]/g, '-')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .substring(0, 50) || 'universe';
+
+    const existingLower = new Set();
+    for (const key of this.universes.keys()) {
+      if (typeof key === 'string') {
+        existingLower.add(key.toLowerCase());
+      }
+    }
+
+    if (!existingLower.has(baseSlug)) {
+      return baseSlug;
+    }
+
+    let slug = baseSlug;
+    let counter = 1;
+    while (existingLower.has(slug.toLowerCase())) {
+      slug = `${baseSlug}-${counter}`;
+      counter++;
+    }
+
+    return slug;
+  }
+
+  /**
+   * Resolve universe entry (case-insensitive)
+   */
+  resolveUniverseEntry(slug) {
+    if (!slug) return null;
+    if (this.universes.has(slug)) {
+      return { key: slug, universe: this.universes.get(slug) };
+    }
+
+    const target = String(slug).toLowerCase();
+    for (const [key, value] of this.universes.entries()) {
+      if (typeof key === 'string' && key.toLowerCase() === target) {
+        return { key, universe: value };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Create empty universe state
+   */
+  createEmptyState() {
+    return {
+      graphs: new Map(),
+      nodePrototypes: new Map(),
+      edges: new Map(),
+      openGraphIds: [],
+      activeGraphId: null,
+      activeDefinitionNodeId: null,
+      expandedGraphIds: new Set(),
+      rightPanelTabs: [{ type: 'home', isActive: true }],
+      savedNodeIds: new Set(),
+      savedGraphIds: new Set(),
+      showConnectionNames: false
+    };
+  }
+
+  /**
+   * Initialize device configuration
+   */
+  initializeDeviceConfig() {
+    if (this._initializingDeviceConfig) {
+      console.warn('[UniverseBackend] Device config initialization already in progress, skipping');
+      return;
+    }
+
+    this._initializingDeviceConfig = true;
+
+    try {
+      const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const screenWidth = window.screen?.width || 1920;
+      const isMobile = /android|webos|iphone|ipod|blackberry|iemobile|opera mini/i.test(navigator.userAgent.toLowerCase());
+      const isTablet = /ipad|android(?!.*mobile)|kindle|silk|playbook|bb10/i.test(navigator.userAgent.toLowerCase()) ||
+                       (/macintosh/i.test(navigator.userAgent.toLowerCase()) && isTouch);
+      const isSmallScreen = screenWidth <= 768;
+      const isMediumScreen = screenWidth <= 1024;
+
+      const shouldUseGitOnly = isMobile || isTablet || !('showSaveFilePicker' in window) || (isTouch && isMediumScreen);
+
+      this.deviceConfig = {
+        gitOnlyMode: shouldUseGitOnly,
+        sourceOfTruth: shouldUseGitOnly ? 'git' : 'local',
+        enableLocalFileStorage: !shouldUseGitOnly && 'showSaveFilePicker' in window,
+        touchOptimizedUI: isTouch,
+        compactInterface: isMobile,
+        autoSaveFrequency: isMobile ? 2000 : 1000,
+        deviceInfo: {
+          type: isMobile ? 'mobile' : isTablet ? 'tablet' : 'desktop',
+          isMobile,
+          isTablet,
+          isTouchDevice: isTouch,
+          screenWidth,
+          supportsFileSystemAPI: 'showSaveFilePicker' in window
+        }
+      };
+
+      this.isGitOnlyMode = shouldUseGitOnly;
+      this.watchdogDelay = this.deviceConfig.autoSaveFrequency * 60;
+
+      console.log('[UniverseBackend] Device config initialized:', {
+        deviceType: this.deviceConfig.deviceInfo.type,
+        gitOnlyMode: this.isGitOnlyMode,
+        sourceOfTruth: this.deviceConfig.sourceOfTruth
+      });
+    } catch (error) {
+      console.error('[UniverseBackend] Device config initialization failed:', error);
+      this.deviceConfig = {
+        gitOnlyMode: false,
+        sourceOfTruth: 'local',
+        touchOptimizedUI: false,
+        autoSaveFrequency: 1000,
+        enableLocalFileStorage: true,
+        compactInterface: false,
+        deviceInfo: { isMobile: false, isTablet: false, type: 'desktop', isTouchDevice: false, screenWidth: 1920, supportsFileSystemAPI: true }
+      };
+      this.isGitOnlyMode = false;
+    } finally {
+      this._initializingDeviceConfig = false;
+    }
+  }
+
+  /**
+   * Initialize background sync
+   */
+  async initializeBackgroundSync() {
+    console.log('[UniverseBackend] ========== INITIALIZE BACKGROUND SYNC CALLED ==========');
+    try {
+      console.log('[UniverseBackend] Initializing background sync services...');
+
+      if (!persistentAuth.initializeCalled) {
+        console.log('[UniverseBackend] About to call persistentAuth.initialize()...');
+        await persistentAuth.initialize();
+      } else {
+        console.log('[UniverseBackend] PersistentAuth already initialized');
+      }
+
+      const authStatus = persistentAuth.getAuthStatus();
+      console.log('[UniverseBackend] Auth status:', authStatus);
+
+      const hasAccessToken = !!storageWrapper.getItem('github_access_token');
+      if (!authStatus.isAuthenticated && !hasAccessToken) {
+        console.log('[UniverseBackend] No valid auth token, skipping Git sync setup');
+        return;
+      }
+
+      const activeUniverse = this.getActiveUniverse();
+      console.log('[UniverseBackend] Active universe:', activeUniverse?.slug || 'none');
+
+      if (activeUniverse && activeUniverse.gitRepo?.linkedRepo && activeUniverse.gitRepo?.enabled) {
+        console.log('[UniverseBackend] Active universe has Git repo, will set up sync engine');
+      }
+
+    } catch (error) {
+      console.error('[UniverseBackend] Background sync initialization failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Restore file handles from persistence
+   */
+  async restoreFileHandles() {
+    try {
+      console.log('[UniverseBackend] Attempting to restore file handles from persistence...');
+
+      const allMetadata = await getAllFileHandleMetadata();
+
+      if (allMetadata.length === 0) {
+        console.log('[UniverseBackend] No file handle metadata found');
+        return;
+      }
+
+      console.log(`[UniverseBackend] Found ${allMetadata.length} file handle metadata entries`);
+
+      for (const metadata of allMetadata) {
+        const { universeSlug } = metadata;
+
+        const existingHandle = this.fileHandles.get(universeSlug);
+        if (existingHandle) {
+          const isValid = await verifyFileHandleAccess(existingHandle);
+          if (isValid) {
+            console.log(`[UniverseBackend] File handle for ${universeSlug} already valid in session`);
+            continue;
+          }
+        }
+
+        const result = await attemptRestoreFileHandle(universeSlug, existingHandle);
+
+        if (result.success && result.handle) {
+          this.fileHandles.set(universeSlug, result.handle);
+          console.log(`[UniverseBackend] Successfully restored file handle for ${universeSlug}`);
+
+          const universe = this.getUniverse(universeSlug);
+          if (universe) {
+            this.updateUniverse(universeSlug, {
+              localFile: {
+                ...universe.localFile,
+                fileHandleStatus: 'connected',
+                lastAccessed: Date.now()
+              }
+            });
+          }
+        } else if (result.needsReconnect) {
+          console.log(`[UniverseBackend] File handle for ${universeSlug} needs reconnection: ${result.message}`);
+
+          const universe = this.getUniverse(universeSlug);
+          if (universe) {
+            this.updateUniverse(universeSlug, {
+              localFile: {
+                ...universe.localFile,
+                fileHandleStatus: 'needs_reconnect',
+                reconnectMessage: result.message
+              }
+            });
+          }
+        }
+      }
+
+      console.log('[UniverseBackend] File handle restoration complete');
+    } catch (error) {
+      console.error('[UniverseBackend] Failed to restore file handles:', error);
+    }
+  }
+
+  // ========== END CORE UNIVERSE MANAGEMENT METHODS ==========
 
   /**
    * Initialize the backend service
@@ -73,14 +540,6 @@ class UniverseBackend {
     console.log('[UniverseBackend] Initializing backend service...');
 
     try {
-      // Load universeManager first to avoid circular dependencies
-      if (!universeManager) {
-        console.log('[UniverseBackend] Loading universeManager...');
-        const module = await import('../backend/universes/index.js');
-        universeManager = module.default || module.universeManager;
-        console.log('[UniverseBackend] UniverseManager loaded successfully');
-      }
-
       console.log('[UniverseBackend] Getting authentication status...');
       this.authStatus = persistentAuth.getAuthStatus();
 
@@ -88,17 +547,15 @@ class UniverseBackend {
       await this.setupStoreOperations();
 
       console.log('[UniverseBackend] Setting up event listeners...');
-      this.setupUniverseManagerEvents();
       this.setupAuthEvents();
 
       console.log('[UniverseBackend] Initializing background sync (auth + active universe)...');
-      console.log('[UniverseBackend] About to call universeManager.initializeBackgroundSync()...');
       const syncStartTime = Date.now();
 
       // Add timeout to prevent hanging
       try {
         await Promise.race([
-          universeManager.initializeBackgroundSync(),
+          this.initializeBackgroundSync(),
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error('Background sync timeout after 8s')), 8000)
           )
@@ -114,21 +571,21 @@ class UniverseBackend {
       // await this.autoSetupExistingUniverses(); // DISABLED - can hang during initialization
 
       // CRITICAL: Load active universe data into store
-      const activeUniverse = universeManager.getActiveUniverse();
+      const activeUniverse = this.getActiveUniverse();
       if (activeUniverse) {
         console.log(`[UniverseBackend] Loading active universe into store: ${activeUniverse.name || activeUniverse.slug}`);
         try {
           // Try to load (will fall back to browser storage if Git fails due to auth)
-          const storeState = await universeManager.loadUniverseData(activeUniverse);
+          const storeState = await this.loadUniverseData(activeUniverse);
           if (storeState && this.storeOperations?.loadUniverseFromFile) {
             const success = this.storeOperations.loadUniverseFromFile(storeState);
             if (success) {
               const loadedState = this.storeOperations.getState();
               const nodeCount = loadedState?.nodePrototypes ? (loadedState.nodePrototypes instanceof Map ? loadedState.nodePrototypes.size : Object.keys(loadedState.nodePrototypes).length) : 0;
               const graphCount = loadedState?.graphs ? (loadedState.graphs instanceof Map ? loadedState.graphs.size : Object.keys(loadedState.graphs).length) : 0;
-              
+
               console.log(`[UniverseBackend] Active universe loaded: ${nodeCount} nodes, ${graphCount} graphs`);
-              
+
               // Check if we loaded from cache due to missing auth
               const authStatus = this.getAuthStatus();
               if (!authStatus?.isAuthenticated && activeUniverse.gitRepo?.enabled) {
@@ -172,7 +629,7 @@ class UniverseBackend {
   }
 
   /**
-   * Set up store operations for universeManager to avoid circular dependencies
+   * Set up store operations to avoid circular dependencies
    */
   async setupStoreOperations() {
     let retryCount = 0;
@@ -200,7 +657,7 @@ class UniverseBackend {
                 hasGraphs: storeState?.graphs ? (storeState.graphs instanceof Map ? storeState.graphs.size : Object.keys(storeState.graphs).length) : 0,
                 hasNodes: storeState?.nodePrototypes ? (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes).length) : 0
               });
-              
+
               store.loadUniverseFromFile(storeState);
               console.log('[UniverseBackend] Successfully loaded universe data into store');
               return true;
@@ -212,8 +669,7 @@ class UniverseBackend {
           }
         };
 
-        universeManager.setStoreOperations(this.storeOperations);
-        console.log('[UniverseBackend] Store operations set up successfully for universeManager and backend');
+        console.log('[UniverseBackend] Store operations set up successfully for backend');
         return; // Success, exit retry loop
         
       } catch (error) {
@@ -232,22 +688,6 @@ class UniverseBackend {
         await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
       }
     }
-  }
-
-  /**
-   * Set up UniverseManager event listeners
-   */
-  setupUniverseManagerEvents() {
-    universeManager.onStatusChange((status) => {
-      this.notifyStatus(status.type, status.status);
-
-      // DISABLED: Auto-setup is causing infinite loops
-      // TODO: Need to implement proper debouncing or more specific triggers
-      // if (status.type === 'universe-switched' || status.type === 'universe-created') {
-      //   console.log('[UniverseBackend] Triggering auto-setup for meaningful status change:', status.type);
-      //   this.autoSetupEnginesForActiveUniverse();
-      // }
-    });
   }
 
   /**
@@ -273,7 +713,7 @@ class UniverseBackend {
         this.notifyStatus('success', 'Authentication updated');
 
         // CRITICAL: Reload active universe from Git now that auth is ready
-        const activeUniverse = universeManager.getActiveUniverse();
+        const activeUniverse = this.getActiveUniverse();
         if (activeUniverse?.gitRepo?.enabled) {
           console.log('[UniverseBackend] Auth connected, checking Git for latest data...');
           try {
@@ -282,7 +722,7 @@ class UniverseBackend {
             const currentNodeCount = currentState?.nodePrototypes ? (currentState.nodePrototypes instanceof Map ? currentState.nodePrototypes.size : Object.keys(currentState.nodePrototypes).length) : 0;
             const currentGraphCount = currentState?.graphs ? (currentState.graphs instanceof Map ? currentState.graphs.size : Object.keys(currentState.graphs).length) : 0;
 
-            const storeState = await universeManager.loadUniverseData(activeUniverse);
+            const storeState = await this.loadUniverseData(activeUniverse);
             if (storeState && this.storeOperations?.loadUniverseFromFile) {
               // Count what Git has
               const gitNodeCount = storeState?.nodePrototypes ? (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes || {}).length) : 0;
@@ -333,7 +773,7 @@ class UniverseBackend {
       return;
     }
 
-    const universes = universeManager.getAllUniverses();
+    const universes = this.getAllUniverses();
 
     for (const universe of universes) {
       if (universe.gitRepo?.enabled && universe.gitRepo?.linkedRepo) {
@@ -358,7 +798,7 @@ class UniverseBackend {
       return;
     }
 
-    const activeUniverse = universeManager.getActiveUniverse();
+    const activeUniverse = this.getActiveUniverse();
     if (activeUniverse?.gitRepo?.enabled && activeUniverse?.gitRepo?.linkedRepo) {
       try {
         console.log('[UniverseBackend] Auto-setting up Git sync for active universe:', activeUniverse.slug);
@@ -390,15 +830,7 @@ class UniverseBackend {
       }
     }
 
-    // Check if UniverseManager already has one
-    const existingEngine = universeManager.getGitSyncEngine(universeSlug);
-    if (existingEngine && existingEngine.provider) {
-      console.log(`[UniverseBackend] Adopting existing engine from UniverseManager for ${universeSlug}`);
-      this.gitSyncEngines.set(universeSlug, existingEngine);
-      return existingEngine;
-    }
-
-    const universe = universeManager.getUniverse(universeSlug);
+    const universe = this.getUniverse(universeSlug);
     if (!universe) {
       throw new Error(`Universe ${universeSlug} not found`);
     }
@@ -465,7 +897,8 @@ class UniverseBackend {
     // Create and configure engine
     const sourceOfTruth = universe.sourceOfTruth || 'git';
     const fileName = universe.gitRepo.universeFile || `${universeSlug}.redstring`;
-    const engine = new GitSyncEngine(provider, sourceOfTruth, universeSlug, fileName, universeManager);
+    const universeFolder = universe.gitRepo.universeFolder || universeSlug;
+    const engine = new GitSyncEngine(provider, sourceOfTruth, universeSlug, fileName, this, universeFolder);
 
     // Set up event handlers
     engine.onStatusChange((status) => {
@@ -475,7 +908,6 @@ class UniverseBackend {
 
     // Register engine
     this.gitSyncEngines.set(universeSlug, engine);
-    universeManager.setGitSyncEngine(universeSlug, engine);
 
     // Start engine
     try {
@@ -489,7 +921,7 @@ class UniverseBackend {
         if (saveCoordinator && !saveCoordinator.isEnabled) {
           // Import fileStorage for local saves
           const fileStorage = await import('../store/fileStorage.js');
-          saveCoordinator.initialize(fileStorage, engine, universeManager);
+          saveCoordinator.initialize(fileStorage, engine, this);
           console.log(`[UniverseBackend] SaveCoordinator initialized for autosave on ${universeSlug}`);
         } else if (saveCoordinator && saveCoordinator.gitSyncEngine !== engine) {
           // Update the engine reference if SaveCoordinator was already initialized with a different engine
@@ -612,13 +1044,6 @@ class UniverseBackend {
   }
 
   /**
-   * Get Git sync engine for a universe
-   */
-  getGitSyncEngine(universeSlug) {
-    return this.gitSyncEngines.get(universeSlug);
-  }
-
-  /**
    * Stop and remove Git sync engine for a universe
    */
   async removeGitSyncEngine(universeSlug) {
@@ -631,13 +1056,212 @@ class UniverseBackend {
   }
 
   /**
+   * Set Git sync engine for universe with STRICT singleton protection
+   */
+  setGitSyncEngine(slug, gitSyncEngine) {
+    // Check if we already have an engine for this universe
+    const existingEngine = this.gitSyncEngines.get(slug);
+    // If it's the same engine instance, do nothing to avoid log spam
+    if (existingEngine && existingEngine === gitSyncEngine) {
+      return true;
+    }
+    if (existingEngine && existingEngine !== gitSyncEngine) {
+      // STRICT: Never allow replacement during startup to prevent loops
+      console.warn(`[UniverseBackend] STRICTLY REJECTING duplicate engine for ${slug} - one already exists`);
+      gitSyncEngine.stop(); // Stop the duplicate engine immediately
+      return false;
+    }
+
+    this.gitSyncEngines.set(slug, gitSyncEngine);
+    console.log(`[UniverseBackend] Git sync engine registered for universe: ${slug}`);
+    return true;
+  }
+
+  /**
+   * Get Git sync engine for universe
+   */
+  getGitSyncEngine(slug) {
+    return this.gitSyncEngines.get(slug);
+  }
+
+  /**
+   * Get file handle for universe
+   */
+  getFileHandle(slug) {
+    return this.fileHandles.get(slug);
+  }
+
+  /**
+   * Ensure GitHub App access token (with refresh)
+   */
+  async ensureGitHubAppAccessToken(forceRefresh = false) {
+    if (!persistentAuth?.getAppInstallation) {
+      return null;
+    }
+
+    const installation = persistentAuth.getAppInstallation();
+    if (!installation?.installationId) {
+      return null;
+    }
+
+    const { installationId } = installation;
+    let token = installation.accessToken || null;
+    const lastUpdated = installation.lastUpdated || 0;
+    const TOKEN_STALE_AFTER_MS = 45 * 60 * 1000; // refresh 15 minutes before expiry
+    const tokenStale = forceRefresh || !token || (Date.now() - lastUpdated) > TOKEN_STALE_AFTER_MS;
+
+    if (!tokenStale && token) {
+      return { token, installationId };
+    }
+
+    try {
+      const response = await oauthFetch('/api/github/app/installation-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installation_id: installationId })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`status ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      token = data?.token || null;
+
+      if (token) {
+        const updated = {
+          ...installation,
+          accessToken: token,
+          lastUpdated: Date.now()
+        };
+        try {
+          persistentAuth.storeAppInstallation(updated);
+        } catch (error) {
+          console.warn('[UniverseBackend] Failed to persist refreshed GitHub App token:', error);
+        }
+        return { token, installationId };
+      }
+    } catch (error) {
+      console.warn('[UniverseBackend] GitHub App token refresh failed:', error);
+    }
+
+    return token ? { token, installationId } : null;
+  }
+
+  /**
+   * Ensure OAuth access token (with refresh)
+   */
+  async ensureOAuthAccessToken(forceRefresh = false) {
+    if (!persistentAuth?.getAccessToken) {
+      return null;
+    }
+
+    try {
+      if (forceRefresh && typeof persistentAuth.refreshAccessToken === 'function') {
+        await persistentAuth.refreshAccessToken();
+      }
+
+      let token = await persistentAuth.getAccessToken();
+      if (!token && typeof persistentAuth.refreshAccessToken === 'function') {
+        await persistentAuth.refreshAccessToken();
+        token = await persistentAuth.getAccessToken();
+      }
+      return token || null;
+    } catch (error) {
+      console.warn('[UniverseBackend] OAuth token retrieval failed:', error);
+      return null;
+    }
+  }
+
+  /**
    * Discover universes in a repository
    */
   async discoverUniversesInRepository(repoConfig) {
     if (!this.isInitialized) {
       await this.initialize();
     }
-    return universeManager.discoverUniversesInRepository(repoConfig);
+
+    try {
+      console.log(`[UniverseBackend] Discovering universes in ${repoConfig.user}/${repoConfig.repo}...`);
+
+      const resolveDiscoveryAuth = async (preferredMethod = null) => {
+        if (!preferredMethod || preferredMethod === 'github-app') {
+          const appToken = await this.ensureGitHubAppAccessToken(preferredMethod === 'github-app');
+          if (appToken?.token) {
+            return { token: appToken.token, authMethod: 'github-app', installationId: appToken.installationId };
+          }
+        }
+        const oauthToken = await this.ensureOAuthAccessToken(false);
+        if (oauthToken) {
+          return { token: oauthToken, authMethod: 'oauth' };
+        }
+        return { token: null, authMethod: null };
+      };
+
+      const refreshDiscoveryAuth = async (currentContext) => {
+        if (!currentContext) return null;
+        if (currentContext.authMethod === 'github-app') {
+          const refreshed = await this.ensureGitHubAppAccessToken(true);
+          if (refreshed?.token) {
+            return { token: refreshed.token, authMethod: 'github-app', installationId: refreshed.installationId };
+          }
+          const fallback = await this.ensureOAuthAccessToken(true);
+          if (fallback) {
+            return { token: fallback, authMethod: 'oauth' };
+          }
+          return null;
+        }
+        const refreshedOAuth = await this.ensureOAuthAccessToken(true);
+        return refreshedOAuth ? { token: refreshedOAuth, authMethod: 'oauth' } : null;
+      };
+
+      const authContext = await resolveDiscoveryAuth(repoConfig.authMethod || null);
+      if (!authContext?.token) {
+        throw new Error('Authentication required to discover universes');
+      }
+
+      const providerBaseConfig = {
+        type: repoConfig.type || 'github',
+        user: repoConfig.user,
+        repo: repoConfig.repo,
+        semanticPath: repoConfig.semanticPath || 'schema'
+      };
+
+      const runDiscovery = async (context, allowRetry = true) => {
+        const providerConfig = { ...providerBaseConfig, token: context.token, authMethod: context.authMethod || 'oauth' };
+        if (context.installationId) {
+          providerConfig.installationId = context.installationId;
+        }
+        const provider = SemanticProviderFactory.createProvider(providerConfig);
+        try {
+          return await discoverUniversesWithStats(provider);
+        } catch (error) {
+          const message = error?.message || '';
+          const isAuthError = message.includes('401') || message.toLowerCase().includes('unauthorized');
+          if (allowRetry && isAuthError) {
+            const refreshedContext = await refreshDiscoveryAuth(context);
+            if (refreshedContext?.token && refreshedContext.token !== context.token) {
+              console.log('[UniverseBackend] Retrying universe discovery with refreshed credentials');
+              return runDiscovery(refreshedContext, false);
+            }
+          }
+          throw error;
+        }
+      };
+
+      const { universes: discovered, stats } = await runDiscovery(authContext, true);
+      console.log(`[UniverseBackend] Discovered ${discovered.length} universes in repository`);
+      this.notifyStatus('info', `Discovery: ${discovered.length} found • scanned ${stats.scannedDirs} dirs • ${stats.valid} valid • ${stats.invalid} invalid`);
+
+      if (discovered.length === 0) {
+        this.notifyStatus('info', `No universes found in ${repoConfig.user}/${repoConfig.repo}`);
+      }
+      return discovered;
+    } catch (error) {
+      console.error('[UniverseBackend] Universe discovery failed:', error);
+      throw error;
+    }
   }
 
   /**
@@ -647,16 +1271,59 @@ class UniverseBackend {
     if (!this.isInitialized) {
       await this.initialize();
     }
-    const slug = await universeManager.linkToDiscoveredUniverse(discoveredUniverse, repoConfig);
 
-    // Auto-setup Git sync engine for the new universe
     try {
-      await this.ensureGitSyncEngine(slug);
-    } catch (error) {
-      console.warn(`[UniverseBackend] Failed to setup engine for new universe ${slug}:`, error);
-    }
+      console.log(`[UniverseBackend] Linking to discovered universe: ${discoveredUniverse.name}`);
+      const universeConfig = createUniverseConfigFromDiscovered(discoveredUniverse, repoConfig);
 
-    return slug;
+      const existingEntry = this.resolveUniverseEntry(universeConfig.slug);
+      if (existingEntry) {
+        const { key, universe: existing } = existingEntry;
+        const updated = {
+          ...existing,
+          ...universeConfig,
+          metadata: {
+            ...existing.metadata,
+            ...universeConfig.metadata,
+            relinked: new Date().toISOString()
+          }
+        };
+        this.universes.set(key, this.safeNormalizeUniverse(updated));
+        this.notifyStatus('info', `Updated universe link: ${universeConfig.name}`);
+
+        // Remove old engine and create new one with updated config
+        if (this.gitSyncEngines.has(key)) {
+          console.log(`[UniverseBackend] Removing old Git sync engine for relinked universe: ${key}`);
+          await this.removeGitSyncEngine(key);
+        }
+
+        // Ensure Git sync engine is set up for the updated universe
+        try {
+          await this.ensureGitSyncEngine(key);
+        } catch (error) {
+          console.warn(`[UniverseBackend] Failed to setup engine for updated universe ${key}:`, error);
+        }
+
+        return key;
+      }
+
+      const slug = universeConfig.slug;
+      this.universes.set(slug, this.safeNormalizeUniverse(universeConfig));
+      this.saveToStorage();
+      this.notifyStatus('success', `Linked universe: ${universeConfig.name}`);
+
+      // Auto-setup Git sync engine
+      try {
+        await this.ensureGitSyncEngine(slug);
+      } catch (error) {
+        console.warn(`[UniverseBackend] Failed to setup engine for new universe ${slug}:`, error);
+      }
+
+      return slug;
+    } catch (error) {
+      console.error('[UniverseBackend] Failed to link discovered universe:', error);
+      throw error;
+    }
   }
 
   /**
@@ -666,9 +1333,60 @@ class UniverseBackend {
     if (!this.isInitialized) {
       await this.initialize();
     }
-    
+
     console.log(`[UniverseBackend] Switching to universe: ${slug}`);
-    const result = await universeManager.switchActiveUniverse(slug, options);
+
+    const resolved = this.resolveUniverseEntry(slug);
+    if (!resolved) {
+      throw new Error(`Universe not found: ${slug}`);
+    }
+    const { key, universe } = resolved;
+
+    if (this.activeUniverseSlug === key) {
+      return { universe, storeState: null }; // Already active
+    }
+
+    // Save current universe before switching (unless explicitly disabled)
+    if (options.saveCurrent !== false && this.activeUniverseSlug) {
+      try {
+        await this.saveActiveUniverse();
+        console.log('[UniverseBackend] Saved current universe before switching');
+      } catch (error) {
+        console.warn('[UniverseBackend] Failed to save current universe before switch:', error);
+      }
+    }
+
+    this.activeUniverseSlug = key;
+    this.saveToStorage();
+
+    this.notifyStatus('info', `Switched to universe: ${universe.name}`);
+
+    // Load the universe data based on source of truth
+    let storeState;
+    try {
+      storeState = await this.loadUniverseData(universe);
+
+      // Update universe metadata with current node count after loading
+      if (storeState && storeState.nodePrototypes) {
+        const nodeCount = storeState.nodePrototypes instanceof Map
+          ? storeState.nodePrototypes.size
+          : Object.keys(storeState.nodePrototypes || {}).length;
+
+        this.updateUniverse(key, {
+          metadata: {
+            ...universe.metadata,
+            nodeCount,
+            lastOpened: new Date().toISOString()
+          }
+        });
+      }
+    } catch (error) {
+      console.error('[UniverseBackend] Failed to load universe data:', error);
+      this.notifyStatus('error', `Failed to load universe: ${error.message}`);
+      throw error;
+    }
+
+    const result = { universe, storeState };
 
     // CRITICAL: Load the new universe data into the graph store
     if (result?.storeState) {
@@ -726,7 +1444,7 @@ class UniverseBackend {
     }
 
     // Ensure engine is set up for the new active universe if Git is enabled (but don't block on it)
-    const switchedUniverse = universeManager.getUniverse(slug);
+    const switchedUniverse = this.getUniverse(slug);
     if (switchedUniverse?.gitRepo?.enabled && switchedUniverse?.gitRepo?.linkedRepo) {
       setTimeout(() => {
         this.ensureGitSyncEngine(slug).catch(error => {
@@ -757,14 +1475,367 @@ class UniverseBackend {
       hasNodes: storeState?.nodePrototypes ? (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes).length) : 0
     });
     
+    // Implementation is below - calling the full saveActiveUniverse implementation
+    return this.saveActiveUniverseInternal(storeState);
+  }
+
+  /**
+   * Internal save implementation
+   */
+  async saveActiveUniverseInternal(storeState) {
+    let universe = this.getActiveUniverse();
+    if (!universe) {
+      throw new Error('No active universe to save');
+    }
+
+    // Get store state if not provided
+    if (!storeState) {
+      if (this.storeOperations?.getState) {
+        storeState = this.storeOperations.getState();
+      } else {
+        throw new Error('No store state provided and store operations not available');
+      }
+    }
+
+    // Export data asynchronously to prevent UI blocking
+    const redstringData = await new Promise((resolve) => {
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(() => {
+          resolve(exportToRedstring(storeState));
+        });
+      } else {
+        setTimeout(() => {
+          resolve(exportToRedstring(storeState));
+        }, 0);
+      }
+    });
+
+    const results = [];
+    const errors = [];
+
+    // Save to Git if enabled and sync engine is available
+    if (universe.gitRepo.enabled && this.gitSyncEngines.has(universe.slug)) {
+      try {
+        await this.saveToGit(universe, redstringData);
+        results.push('git');
+      } catch (error) {
+        console.error('[UniverseBackend] Git save failed:', error);
+        errors.push(`Git: ${error.message}`);
+      }
+    }
+
+    // Save to browser storage if enabled (always try as fallback)
+    if (universe.browserStorage.enabled || results.length === 0) {
+      try {
+        await this.saveToBrowserStorage(universe, redstringData);
+        results.push('browser');
+      } catch (error) {
+        console.error('[UniverseBackend] Browser storage save failed:', error);
+        errors.push(`Browser: ${error.message}`);
+      }
+    }
+
+    if (results.length > 0) {
+      if (errors.length > 0) {
+        this.notifyStatus('warning', `Saved to: ${results.join(', ')} (${errors.length} failed)`);
+      } else {
+        this.notifyStatus('success', `Saved to: ${results.join(', ')}`);
+      }
+    } else {
+      this.notifyStatus('error', `All save methods failed: ${errors.join('; ')}`);
+      throw new Error(`All save methods failed: ${errors.join('; ')}`);
+    }
+
+    return results;
+  }
+
+  /**
+   * Save to Git repository
+   */
+  async saveToGit(universe, redstringData) {
+    const gitSyncEngine = this.gitSyncEngines.get(universe.slug);
+    if (!gitSyncEngine) {
+      throw new Error('Git sync engine not configured for this universe');
+    }
+
+    console.log('[UniverseBackend] Saving to Git via existing sync engine (no restart)');
+
     try {
-      const result = await universeManager.saveActiveUniverse(storeState);
-      this.notifyStatus('success', 'Universe saved successfully');
-      return result;
+      // Use the GitSyncEngine's existing export logic
+      if (this.storeOperations?.getState) {
+        const storeState = this.storeOperations.getState();
+        // Force commit through the existing GitSyncEngine which handles SHA conflicts properly
+        await gitSyncEngine.forceCommit(storeState);
+      } else {
+        throw new Error('Store operations not available for Git sync');
+      }
     } catch (error) {
-      console.error('[UniverseBackend] Failed to save active universe:', error);
-      this.notifyStatus('error', `Save failed: ${error.message}`);
+      // If force commit fails with 409, try conflict resolution
+      if (error.message && error.message.includes('409')) {
+        console.log('[UniverseBackend] 409 conflict detected, attempting resolution');
+
+        if (universe.sourceOfTruth === 'git') {
+          // Git is source of truth, try to reload from Git first
+          try {
+            const gitData = await gitSyncEngine.loadFromGit();
+            if (gitData) {
+              const { storeState: newState } = importFromRedstring(gitData);
+              if (this.storeOperations?.loadUniverseFromFile) {
+                this.storeOperations.loadUniverseFromFile(newState);
+              }
+
+              this.notifyStatus('info', 'Loaded latest changes from Git repository');
+              return; // Successfully resolved by loading Git data
+            }
+          } catch (loadError) {
+            console.warn('[UniverseBackend] Could not load from Git for conflict resolution:', loadError);
+          }
+        }
+
+        // If Git load failed or local is source of truth, wait and retry
+        console.log('[UniverseBackend] Waiting 2 seconds before retry...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        try {
+          if (this.storeOperations?.getState) {
+            const storeState = this.storeOperations.getState();
+            await gitSyncEngine.forceCommit(storeState);
+            this.notifyStatus('success', 'Conflict resolved with retry');
+          } else {
+            throw new Error('Store operations not available for retry');
+          }
+        } catch (retryError) {
+          throw new Error(`Persistent 409 conflict: ${retryError.message}`);
+        }
+      } else {
+        throw error; // Re-throw non-409 errors
+      }
+    }
+  }
+
+  /**
+   * Save to local file
+   */
+  async saveToLocalFile(universe, redstringData) {
+    let fileHandle = this.fileHandles.get(universe.slug);
+
+    if (!fileHandle) {
+      // If no file handle but local storage is enabled, auto-prompt to set one up
+      if (universe.localFile.enabled && typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
+        try {
+          console.log('[UniverseBackend] No file handle for local save, prompting user to select file location');
+
+          const suggestedName = universe.localFile.lastFilePath || universe.localFile.path;
+          const hadPreviousHandle = universe.localFile.hadFileHandle;
+
+          const message = hadPreviousHandle
+            ? `Re-establish file connection for ${universe.name} (previously: ${suggestedName})`
+            : `Set up local file for ${universe.name}`;
+
+          this.notifyStatus('info', message);
+
+          fileHandle = await window.showSaveFilePicker({
+            suggestedName: suggestedName,
+            types: [{ description: 'RedString Files', accept: { 'application/json': ['.redstring'] } }]
+          });
+
+          // Store the file handle
+          this.setFileHandle(universe.slug, fileHandle);
+          this.notifyStatus('success', `Local file ${hadPreviousHandle ? 're-' : ''}connected: ${fileHandle.name}`);
+
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            throw new Error('Local file setup cancelled by user');
+          } else {
+            throw new Error(`Failed to set up local file: ${error.message}`);
+          }
+        }
+      } else if (universe.localFile.enabled) {
+        throw new Error('No local file selected. Use the Universe Manager to pick a file location.');
+      } else {
+        throw new Error('Local file storage not enabled for this universe');
+      }
+    }
+
+    const jsonString = JSON.stringify(redstringData, null, 2);
+    const writable = await fileHandle.createWritable();
+    await writable.write(jsonString);
+    await writable.close();
+
+    // Update last accessed time in persistence
+    try {
+      await touchFileHandle(universe.slug);
+    } catch (error) {
+      console.warn('[UniverseBackend] Failed to touch file handle after save:', error);
+    }
+  }
+
+  /**
+   * Save to browser storage with size limits
+   */
+  async saveToBrowserStorage(universe, redstringData) {
+    try {
+      const db = await this.openBrowserDB();
+
+      // Check storage quota before saving
+      if ('storage' in navigator && 'estimate' in navigator.storage) {
+        const estimate = await navigator.storage.estimate();
+        const dataSize = JSON.stringify(redstringData).length;
+        const availableSpace = estimate.quota - estimate.usage;
+
+        if (dataSize > availableSpace) {
+          // Try to clean up old data first
+          await this.cleanupBrowserStorage(db);
+
+          // Check again
+          const newEstimate = await navigator.storage.estimate();
+          const newAvailableSpace = newEstimate.quota - newEstimate.usage;
+
+          if (dataSize > newAvailableSpace) {
+            throw new Error(`Data too large for browser storage: ${Math.round(dataSize/1024)}KB needed, ${Math.round(newAvailableSpace/1024)}KB available`);
+          }
+        }
+      }
+
+      const tx = db.transaction(['universes'], 'readwrite');
+      const store = tx.objectStore('universes');
+
+      store.put({
+        id: universe.browserStorage.key,
+        data: redstringData,
+        savedAt: Date.now()
+      });
+
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+
+      db.close();
+    } catch (error) {
+      console.error('[UniverseBackend] Browser storage save failed:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Clean up old browser storage data
+   */
+  async cleanupBrowserStorage(db) {
+    try {
+      const tx = db.transaction(['universes'], 'readwrite');
+      const store = tx.objectStore('universes');
+      const request = store.getAll();
+
+      const allData = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+
+      // Sort by savedAt and keep only the 3 most recent
+      allData.sort((a, b) => b.savedAt - a.savedAt);
+      const toDelete = allData.slice(3);
+
+      if (toDelete.length > 0) {
+        const deleteTx = db.transaction(['universes'], 'readwrite');
+        const deleteStore = deleteTx.objectStore('universes');
+
+        toDelete.forEach(item => {
+          deleteStore.delete(item.id);
+        });
+
+        await new Promise((resolve, reject) => {
+          deleteTx.oncomplete = () => resolve();
+          deleteTx.onerror = () => reject(deleteTx.error);
+        });
+
+        console.log(`[UniverseBackend] Cleaned up ${toDelete.length} old browser storage entries`);
+      }
+    } catch (error) {
+      console.warn('[UniverseBackend] Browser storage cleanup failed:', error);
+    }
+  }
+
+  /**
+   * Open browser storage database
+   */
+  openBrowserDB() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open('RedstringUniverses', 1);
+
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains('universes')) {
+          db.createObjectStore('universes', { keyPath: 'id' });
+        }
+      };
+
+      request.onsuccess = (event) => resolve(event.target.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Set file handle for a universe
+   */
+  async setFileHandle(slug, fileHandle) {
+    this.fileHandles.set(slug, fileHandle);
+
+    // Store file handle metadata in IndexedDB for persistence
+    try {
+      await storeFileHandleMetadata(slug, fileHandle, {
+        universeSlug: slug,
+        lastAccessed: Date.now()
+      });
+      console.log(`[UniverseBackend] Stored file handle metadata for ${slug}`);
+    } catch (error) {
+      console.warn(`[UniverseBackend] Failed to store file handle metadata:`, error);
+    }
+
+    // Also update the universe configuration
+    const universe = this.getUniverse(slug);
+    if (universe) {
+      this.updateUniverse(slug, {
+        localFile: {
+          ...universe.localFile,
+          enabled: true,
+          path: fileHandle.name || universe.localFile.path,
+          hadFileHandle: true,
+          lastFilePath: fileHandle.name || universe.localFile.path,
+          fileHandleStatus: 'connected'
+        }
+      });
+    }
+
+    // Persist file handle information to storage
+    this.saveToStorage();
+  }
+
+  /**
+   * Setup file handle for universe (user picks file)
+   */
+  async setupFileHandle(slug) {
+    try {
+      // Get metadata to suggest the last known file name
+      const metadata = await getFileHandleMetadata(slug);
+      const universe = this.getUniverse(slug);
+      const suggestedName = metadata?.fileName || universe?.localFile?.lastFilePath || `${slug}.redstring`;
+
+      const [fileHandle] = await window.showOpenFilePicker({
+        types: [{ description: 'RedString Files', accept: { 'application/json': ['.redstring'] } }],
+        multiple: false
+      });
+
+      await this.setFileHandle(slug, fileHandle);
+
+      const wasReconnecting = metadata?.fileName && !this.fileHandles.has(slug);
+      this.notifyStatus('success', `${wasReconnecting ? 'Reconnected' : 'Linked'} local file: ${fileHandle.name}`);
+      return fileHandle;
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        this.notifyStatus('error', `Failed to setup file handle: ${error.message}`);
+        throw error;
+      }
     }
   }
 
@@ -772,36 +1843,330 @@ class UniverseBackend {
    * Reload active universe
    */
   async reloadActiveUniverse() {
-    return universeManager.reloadActiveUniverse();
+    try {
+      const universe = this.getActiveUniverse();
+      if (!universe) return false;
+
+      console.log('[UniverseBackend] Reloading active universe:', universe.name);
+
+      let storeState = null;
+      let loadMethod = 'unknown';
+
+      try {
+        storeState = await this.loadUniverseData(universe);
+        loadMethod = universe.sourceOfTruth;
+      } catch (primaryError) {
+        console.warn('[UniverseBackend] Primary load failed:', primaryError);
+      }
+
+      if (storeState) {
+        if (this.storeOperations?.loadUniverseFromFile) {
+          this.storeOperations.loadUniverseFromFile(storeState);
+        }
+
+        this.notifyStatus('success', `Reloaded universe from ${loadMethod}`);
+        return true;
+      }
+
+      this.notifyStatus('warning', 'Could not reload universe from any source');
+      return false;
+    } catch (error) {
+      console.error('[UniverseBackend] Failed to reload active universe:', error);
+      this.notifyStatus('error', `Reload failed: ${error.message}`);
+      return false;
+    }
   }
 
   /**
    * Get all universes
    */
   getAllUniverses() {
-    try {
-      if (!universeManager) {
-        console.warn('[UniverseBackend] universeManager not loaded yet, returning empty array');
-        return [];
-      }
-      const universes = universeManager.getAllUniverses();
-      return universes;
-    } catch (error) {
-      console.error('[UniverseBackend] getAllUniverses failed with error:', error);
-      console.error('[UniverseBackend] Error stack:', error.stack);
-      console.warn('[UniverseBackend] Returning empty array as fallback');
-      return [];
-    }
+    return Array.from(this.universes.values());
   }
 
   /**
    * Get active universe
    */
   getActiveUniverse() {
+    const resolved = this.resolveUniverseEntry(this.activeUniverseSlug);
+    return resolved ? resolved.universe : null;
+  }
+
+  /**
+   * Get universe by slug
+   */
+  getUniverse(slug) {
+    const resolved = this.resolveUniverseEntry(slug);
+    return resolved ? resolved.universe : null;
+  }
+
+  /**
+   * Load universe data based on source of truth priority
+   */
+  async loadUniverseData(universe) {
+    const { sourceOfTruth } = universe;
+
+    // Try primary source first
+    if (sourceOfTruth === SOURCE_OF_TRUTH.GIT && universe.gitRepo.enabled) {
+      try {
+        const gitData = await this.loadFromGit(universe);
+        if (gitData) return gitData;
+      } catch (error) {
+        console.warn('[UniverseBackend] Git load failed, trying fallback:', error);
+        // Direct-read fallback when engine isn't configured yet
+        try {
+          const directGitData = await this.loadFromGitDirect(universe);
+          if (directGitData) return directGitData;
+        } catch (fallbackError) {
+          console.warn('[UniverseBackend] Direct Git fallback failed:', fallbackError);
+        }
+      }
+    }
+
+    if (sourceOfTruth === SOURCE_OF_TRUTH.LOCAL && universe.localFile.enabled) {
+      try {
+        const localData = await this.loadFromLocalFile(universe);
+        if (localData) return localData;
+      } catch (error) {
+        console.warn('[UniverseBackend] Local file load failed, trying fallback:', error);
+      }
+    }
+
+    // Try fallback sources
+    if (sourceOfTruth !== SOURCE_OF_TRUTH.LOCAL && universe.localFile.enabled) {
+      try {
+        const localData = await this.loadFromLocalFile(universe);
+        if (localData) return localData;
+      } catch (error) {
+        console.warn('[UniverseBackend] Local fallback failed:', error);
+      }
+    }
+
+    if (sourceOfTruth !== SOURCE_OF_TRUTH.GIT && universe.gitRepo.enabled) {
+      try {
+        const gitData = await this.loadFromGit(universe);
+        if (gitData) return gitData;
+      } catch (error) {
+        console.warn('[UniverseBackend] Git fallback failed:', error);
+      }
+    }
+
+    // Browser storage fallback for mobile
+    if (universe.browserStorage.enabled) {
+      try {
+        const browserData = await this.loadFromBrowserStorage(universe);
+        if (browserData) return browserData;
+      } catch (error) {
+        console.warn('[UniverseBackend] Browser storage fallback failed:', error);
+      }
+    }
+
+    // Return empty state if nothing works
+    console.warn('[UniverseBackend] All load methods failed, creating empty state');
+    return this.createEmptyState();
+  }
+
+  /**
+   * Load from Git repository
+   */
+  async loadFromGit(universe) {
+    const gitSyncEngine = this.gitSyncEngines.get(universe.slug);
+    if (!gitSyncEngine) {
+      // Try a provider-backed direct read before giving up
+      const direct = await this.loadFromGitDirect(universe);
+      if (direct) return direct;
+      throw new Error('Git sync engine not configured for this universe');
+    }
+
+    const redstringData = await gitSyncEngine.loadFromGit();
+    if (!redstringData) return null;
+
+    const { storeState } = importFromRedstring(redstringData);
+    return storeState;
+  }
+
+  /**
+   * Direct Git read without requiring a registered GitSyncEngine
+   */
+  async loadFromGitDirect(universe) {
     try {
-      return universeManager.getActiveUniverse();
+      const linked = universe?.gitRepo?.linkedRepo;
+      if (!linked) return null;
+
+      let user, repo;
+      if (typeof linked === 'string') {
+        const parts = linked.split('/');
+        user = parts[0];
+        repo = parts[1];
+      } else if (linked && typeof linked === 'object') {
+        user = linked.user;
+        repo = linked.repo;
+      }
+      if (!user || !repo) return null;
+
+      // Prefer GitHub App installation token when available; fall back to OAuth
+      let token;
+      let authMethod = 'oauth';
+      try {
+        const app = persistentAuth.getAppInstallation?.();
+        if (app?.installationId) {
+          const tokenExpiresAt = app.tokenExpiresAt ? new Date(app.tokenExpiresAt) : null;
+          const now = new Date();
+          const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+          const needsRefresh = !app.accessToken || !tokenExpiresAt || tokenExpiresAt < fiveMinutesFromNow;
+
+          if (needsRefresh) {
+            const tokenResp = await oauthFetch('/api/github/app/installation-token', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ installation_id: app.installationId })
+            });
+
+            if (tokenResp.ok) {
+              const tokenData = await tokenResp.json();
+              token = tokenData.token;
+              authMethod = 'github-app';
+
+              const expiresAt = new Date(now.getTime() + 60 * 60 * 1000);
+              const updatedApp = { ...app, accessToken: token, tokenExpiresAt: expiresAt.toISOString() };
+              persistentAuth.storeAppInstallation(updatedApp);
+            } else {
+              token = await persistentAuth.getAccessToken();
+              authMethod = token ? 'oauth' : authMethod;
+            }
+          } else {
+            token = app.accessToken;
+            authMethod = 'github-app';
+          }
+        } else {
+          token = await persistentAuth.getAccessToken();
+          authMethod = token ? 'oauth' : authMethod;
+        }
+      } catch (_) {
+        try {
+          token = await persistentAuth.getAccessToken();
+          authMethod = token ? 'oauth' : authMethod;
+        } catch (__) {}
+      }
+      if (!token) {
+        this.notifyStatus('error', 'Git authentication required to access repository');
+        return null;
+      }
+
+      const provider = SemanticProviderFactory.createProvider({
+        type: 'github',
+        user,
+        repo,
+        token,
+        authMethod,
+        semanticPath: universe?.gitRepo?.schemaPath || 'schema'
+      });
+
+      try {
+        const ok = await provider.isAvailable();
+        if (!ok) {
+          console.warn('[UniverseBackend] Provider unavailable or unauthorized; skipping direct Git access');
+          return null;
+        }
+      } catch (e) {
+        console.warn('[UniverseBackend] Provider availability check failed; skipping direct Git access:', e?.message || e);
+        return null;
+      }
+
+      // universeFolder is just the folder name (e.g., "default"), not the full path
+      const universeFolder = universe?.gitRepo?.universeFolder || universe.slug;
+      const fileName = universe?.gitRepo?.universeFile || `${universe.slug}.redstring`;
+
+      // Construct full path: universes/{folder}/{file}
+      const filePath = `universes/${universeFolder}/${fileName}`;
+
+      let content;
+      try {
+        content = await provider.readFileRaw(filePath);
+      } catch (readError) {
+        content = null;
+      }
+
+      if (!content || typeof content !== 'string' || content.trim() === '') {
+        try {
+          const initialStoreState = this.createEmptyState();
+          const initialRedstring = await new Promise((resolve) => {
+            if (typeof requestIdleCallback !== 'undefined') {
+              requestIdleCallback(() => resolve(exportToRedstring(initialStoreState)));
+            } else {
+              setTimeout(() => resolve(exportToRedstring(initialStoreState)), 0);
+            }
+          });
+          await provider.writeFileRaw(filePath, JSON.stringify(initialRedstring, null, 2));
+          this.notifyStatus('success', `Created new universe file at ${filePath}`);
+          const { storeState } = importFromRedstring(initialRedstring);
+          return storeState;
+        } catch (createErr) {
+          console.warn('[UniverseBackend] Failed to create initial universe file on Git:', createErr);
+          return null;
+        }
+      }
+
+      let redstringData;
+      try {
+        redstringData = JSON.parse(content);
+      } catch (e) {
+        console.warn('[UniverseBackend] Direct Git read parse failed:', e.message);
+        return null;
+      }
+
+      const { storeState } = importFromRedstring(redstringData);
+      return storeState;
     } catch (error) {
-      console.warn('[UniverseBackend] getActiveUniverse failed:', error);
+      console.warn('[UniverseBackend] Direct Git read failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Load from local file
+   */
+  async loadFromLocalFile(universe) {
+    const fileHandle = this.fileHandles.get(universe.slug);
+    if (!fileHandle) {
+      throw new Error('No file handle available for this universe');
+    }
+
+    const file = await fileHandle.getFile();
+    const text = await file.text();
+
+    if (!text || text.trim() === '') {
+      return null;
+    }
+
+    const redstringData = JSON.parse(text);
+    const { storeState } = importFromRedstring(redstringData);
+    return storeState;
+  }
+
+  /**
+   * Load from browser storage
+   */
+  async loadFromBrowserStorage(universe) {
+    try {
+      const db = await this.openBrowserDB();
+      const tx = db.transaction(['universes'], 'readonly');
+      const store = tx.objectStore('universes');
+      const req = store.get(universe.browserStorage.key);
+
+      const result = await new Promise((resolve, reject) => {
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+
+      db.close();
+
+      if (!result) return null;
+
+      const { storeState } = importFromRedstring(result.data);
+      return storeState;
+    } catch (error) {
+      console.error('[UniverseBackend] Browser storage load failed:', error);
       return null;
     }
   }
@@ -822,24 +2187,47 @@ class UniverseBackend {
       console.warn('[UniverseBackend] Initialization failed, continuing anyway:', error);
     }
 
-    console.log('[UniverseBackend] Creating universe via universeManager...');
-    const universe = universeManager.createUniverse(name, options);
+    console.log('[UniverseBackend] Creating universe via direct implementation...');
+
+    const slug = this.generateUniqueSlug(name);
+    const safeName = (typeof name === 'string' && name.trim().length > 0) ? name : slug;
+    const universe = this.safeNormalizeUniverse({
+      slug,
+      name: safeName,
+      sourceOfTruth: options.sourceOfTruth || (this.isGitOnlyMode ? SOURCE_OF_TRUTH.GIT : SOURCE_OF_TRUTH.LOCAL),
+      localFile: {
+        enabled: options.enableLocal ?? true,
+        path: this.sanitizeFileName(safeName)
+      },
+      gitRepo: {
+        enabled: options.enableGit ?? false,
+        linkedRepo: options.linkedRepo || null,
+        schemaPath: options.schemaPath || 'schema'
+      }
+    });
+
+    this.universes.set(slug, universe);
+    this.saveToStorage();
+
     console.log('[UniverseBackend] Universe created:', universe.slug);
 
     // Set as active universe and ensure store is updated
     try {
       console.log('[UniverseBackend] Setting new universe as active...');
-      universeManager.setActiveUniverse(universe.slug);
+      this.activeUniverseSlug = slug;
+      this.saveToStorage();
 
       // Ensure the graph store is properly initialized with empty state
       if (this.storeOperations?.loadUniverseFromFile) {
-        const emptyState = universeManager.createEmptyState();
+        const emptyState = this.createEmptyState();
         this.storeOperations.loadUniverseFromFile(emptyState);
         console.log('[UniverseBackend] Graph store initialized with empty state for new active universe');
       }
     } catch (error) {
       console.warn('[UniverseBackend] Failed to activate new universe:', error);
     }
+
+    this.notifyStatus('success', `Created universe: ${name}`);
 
     // Auto-setup engine if Git is enabled
     if (universe.gitRepo?.enabled && universe.gitRepo?.linkedRepo) {
@@ -862,11 +2250,31 @@ class UniverseBackend {
     if (!this.isInitialized) {
       this.initialize();
     }
+
+    if (this.universes.size <= 1) {
+      throw new Error('Cannot delete the last universe');
+    }
+
+    const resolved = this.resolveUniverseEntry(slug);
+    if (!resolved) {
+      throw new Error(`Universe not found: ${slug}`);
+    }
+    const { key, universe } = resolved;
+
     // Remove engine first
     this.removeGitSyncEngine(slug);
 
-    // Delete from manager
-    universeManager.deleteUniverse(slug);
+    // Delete from universes
+    this.universes.delete(key);
+    this.fileHandles.delete(key);
+
+    // If we deleted the active universe, switch to another one
+    if (this.activeUniverseSlug === key) {
+      this.activeUniverseSlug = this.universes.keys().next().value;
+    }
+
+    this.saveToStorage();
+    this.notifyStatus('info', `Deleted universe: ${universe.name}`);
   }
 
   /**
@@ -876,16 +2284,34 @@ class UniverseBackend {
     if (!this.isInitialized) {
       await this.initialize();
     }
-    
+
     console.log(`[UniverseBackend] Updating universe ${slug}:`, updates);
-    const result = universeManager.updateUniverse(slug, updates);
-    
+
+    const resolved = this.resolveUniverseEntry(slug);
+    if (!resolved) {
+      throw new Error(`Universe not found: ${slug}`);
+    }
+    const { key, universe } = resolved;
+
+    const updated = {
+      ...universe,
+      ...updates,
+      lastModified: new Date().toISOString()
+    };
+
+    this.universes.set(key, this.safeNormalizeUniverse(updated));
+    this.saveToStorage();
+
+    this.notifyStatus('info', `Updated universe: ${universe.name}`);
+
+    const result = updated;
+
     // Get universe for potential use below
-    const universe = universeManager.getUniverse(slug);
+    const updatedUniverse = this.getUniverse(slug);
     
     // If Git repo was enabled or linked repo was updated, ensure sync engine is set up
     if (updates.gitRepo) {
-      if (universe?.gitRepo?.enabled && universe?.gitRepo?.linkedRepo) {
+      if (updatedUniverse?.gitRepo?.enabled && updatedUniverse?.gitRepo?.linkedRepo) {
         console.log(`[UniverseBackend] Git repo updated for ${slug}, ensuring sync engine is set up`);
         setTimeout(() => {
           this.ensureGitSyncEngine(slug).catch(error => {
@@ -899,10 +2325,10 @@ class UniverseBackend {
         this.removeGitSyncEngine(slug);
       }
     }
-    
+
     // If sources were updated, notify about the change
     if (updates.sources) {
-      this.notifyStatus('info', `Data sources updated for universe: ${universe?.name || slug}`);
+      this.notifyStatus('info', `Data sources updated for universe: ${updatedUniverse?.name || slug}`);
     }
     
     return result;
@@ -954,7 +2380,7 @@ class UniverseBackend {
     
     console.log(`[UniverseBackend] Force saving universe ${universeSlug}`);
 
-    const universe = universeManager.getUniverse(universeSlug);
+    const universe = this.getUniverse(universeSlug);
     if (!universe) {
       throw new Error(`Universe ${universeSlug} not found`);
     }
@@ -1081,19 +2507,19 @@ class UniverseBackend {
     }
     
     console.log(`[UniverseBackend] Reloading universe: ${universeSlug}`);
-    
-    const universe = universeManager.getUniverse(universeSlug);
+
+    const universe = this.getUniverse(universeSlug);
     if (!universe) {
       throw new Error(`Universe ${universeSlug} not found`);
     }
-    
+
     // Determine the source of truth
     const sourceOfTruth = universe.sourceOfTruth || 'browser';
     console.log(`[UniverseBackend] Reloading from source of truth: ${sourceOfTruth}`);
-    
+
     try {
-      // Use universeManager's loadUniverseData method which handles all sources
-      const data = await universeManager.loadUniverseData(universe);
+      // Use loadUniverseData method which handles all sources
+      const data = await this.loadUniverseData(universe);
       
       if (data && this.storeOperations?.loadState) {
         console.log(`[UniverseBackend] Loading universe data into store:`, {
@@ -1120,8 +2546,8 @@ class UniverseBackend {
    */
   async downloadLocalFile(universeSlug, storeState = null) {
     console.log(`[UniverseBackend] Downloading local file for universe: ${universeSlug}`);
-    
-    const universe = universeManager.getUniverse(universeSlug);
+
+    const universe = this.getUniverse(universeSlug);
     if (!universe) {
       throw new Error(`Universe ${universeSlug} not found`);
     }
@@ -1194,10 +2620,7 @@ class UniverseBackend {
       throw new Error('No file handle provided');
     }
     this.fileHandles.set(universeSlug, fileHandle);
-    
-    // CRITICAL: Also store in universeManager so it can access it when loading!
-    universeManager.fileHandles.set(universeSlug, fileHandle);
-    
+
     // Store file handle metadata in IndexedDB for persistence
     try {
       await storeFileHandleMetadata(universeSlug, fileHandle, {
@@ -1208,8 +2631,8 @@ class UniverseBackend {
     } catch (error) {
       console.warn(`[UniverseBackend] Failed to store file handle metadata:`, error);
     }
-    
-    const universe = universeManager.getUniverse(universeSlug);
+
+    const universe = this.getUniverse(universeSlug);
     await this.updateUniverse(universeSlug, {
       localFile: {
         ...(universe?.localFile || {}),
@@ -1229,7 +2652,7 @@ class UniverseBackend {
    */
   async setupLocalFileHandle(universeSlug, options = {}) {
     const mode = options?.mode === 'saveAs' ? 'saveAs' : 'pick';
-    const universe = universeManager.getUniverse(universeSlug);
+    const universe = this.getUniverse(universeSlug);
     
     // Get metadata to suggest the last known file name
     const metadata = await getFileHandleMetadata(universeSlug);
@@ -1291,8 +2714,8 @@ class UniverseBackend {
    */
   async linkLocalFileToUniverse(universeSlug, filePath) {
     console.log(`[UniverseBackend] Linking local file to universe ${universeSlug}: ${filePath}`);
-    
-    const universe = universeManager.getUniverse(universeSlug);
+
+    const universe = this.getUniverse(universeSlug);
     if (!universe) {
       throw new Error(`Universe ${universeSlug} not found`);
     }
@@ -1342,7 +2765,7 @@ class UniverseBackend {
     // Load the imported data into the target universe
     if (this.storeOperations?.loadUniverseFromFile) {
       // Switch to target universe first if needed
-      const currentActiveSlug = universeManager?.getActiveUniverse()?.slug;
+      const currentActiveSlug = this.getActiveUniverse()?.slug;
       if (currentActiveSlug !== targetUniverseSlug) {
         await this.switchActiveUniverse(targetUniverseSlug);
       }
@@ -1374,7 +2797,7 @@ class UniverseBackend {
   async setSourceOfTruth(universeSlug, sourceType) {
     await this.initialize();
 
-    const universe = universeManager.getUniverse(universeSlug);
+    const universe = this.getUniverse(universeSlug);
     if (!universe) {
       throw new Error(`Universe ${universeSlug} not found`);
     }
@@ -1407,7 +2830,7 @@ class UniverseBackend {
     }
 
     // Update the universe configuration
-    await universeManager.updateUniverse(universeSlug, {
+    await this.updateUniverse(universeSlug, {
       sourceOfTruth: sourceType
     });
 

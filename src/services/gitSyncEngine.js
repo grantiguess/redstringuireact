@@ -12,10 +12,12 @@ const SOURCE_OF_TRUTH = {
 };
 
 class GitSyncEngine {
-  constructor(provider, sourceOfTruth = SOURCE_OF_TRUTH.GIT, universeSlug = 'default', fileBaseName = 'universe', universeManager = null) {
+  constructor(provider, sourceOfTruth = SOURCE_OF_TRUTH.GIT, universeSlug = 'default', fileBaseName = 'universe', universeManager = null, universeFolder = null) {
     this.provider = provider;
     this.sourceOfTruth = sourceOfTruth; // Configurable source of truth
     this.universeSlug = (universeSlug || 'default').trim() || 'default';
+    // Universe folder in the repo (e.g., "default") - defaults to slug if not provided
+    this.universeFolder = universeFolder || this.universeSlug;
     // Sanitize file base name to prevent URL encoding issues
     this.fileBaseName = (fileBaseName || 'universe')
       .replace(/\.redstring$/i, '')
@@ -111,7 +113,7 @@ class GitSyncEngine {
   }
 
   getLatestPath() {
-    return `universes/${this.universeSlug}/${this.fileBaseName}.redstring`;
+    return `universes/${this.universeFolder}/${this.fileBaseName}.redstring`;
   }
 
   // Backup paths removed for rate limit efficiency

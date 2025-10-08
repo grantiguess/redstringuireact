@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from 'react';
 import { persistentAuth } from '../services/persistentAuth.js';
-import universeManager from '../services/universeManager.js';
+import { universeBackend } from '../backend/universes/index.js';
 
 const FederationBootstrap = ({ children }) => {
   const [isBootstrapped, setIsBootstrapped] = useState(false);
@@ -30,10 +30,10 @@ const FederationBootstrap = ({ children }) => {
         console.log('[FederationBootstrap] ===== Setting up background services =====');
 
         try {
-          // 3. Initialize UniverseManager background connections
-          console.log('[FederationBootstrap] ===== About to call universeManager.initializeBackgroundSync() =====');
-          await universeManager.initializeBackgroundSync();
-          console.log('[FederationBootstrap] ===== universeManager.initializeBackgroundSync() completed =====');
+          // 3. Initialize UniverseBackend background connections
+          console.log('[FederationBootstrap] ===== About to call universeBackend.initializeBackgroundSync() =====');
+          await universeBackend.initializeBackgroundSync();
+          console.log('[FederationBootstrap] ===== universeBackend.initializeBackgroundSync() completed =====');
 
           // 4. Initialize SaveCoordinator
           const saveCoordinatorModule = await import('../services/SaveCoordinator.js');
@@ -42,22 +42,22 @@ const FederationBootstrap = ({ children }) => {
           const fileStorageModule = await import('../store/fileStorage.js');
 
           // Get active universe's git sync engine if available
-          const activeUniverse = universeManager.getActiveUniverse();
-          const gitSyncEngine = activeUniverse ? universeManager.getGitSyncEngine(activeUniverse.slug) : null;
+          const activeUniverse = universeBackend.getActiveUniverse();
+          const gitSyncEngine = activeUniverse ? universeBackend.getGitSyncEngine(activeUniverse.slug) : null;
 
           if (saveCoordinator && fileStorageModule) {
-            saveCoordinator.initialize(fileStorageModule, gitSyncEngine, universeManager);
+            saveCoordinator.initialize(fileStorageModule, gitSyncEngine, universeBackend);
             console.log('[FederationBootstrap] SaveCoordinator initialized in background');
           }
             
             // 5. Set up universe change listeners to update SaveCoordinator
-            universeManager.onStatusChange((status) => {
+            universeBackend.onStatusChange((status) => {
               if (status.type === 'universe_switched' && saveCoordinator) {
-                const newUniverse = universeManager.getActiveUniverse();
-                const newGitSyncEngine = newUniverse ? universeManager.getGitSyncEngine(newUniverse.slug) : null;
-                
+                const newUniverse = universeBackend.getActiveUniverse();
+                const newGitSyncEngine = newUniverse ? universeBackend.getGitSyncEngine(newUniverse.slug) : null;
+
                 if (newGitSyncEngine !== saveCoordinator.gitSyncEngine) {
-                  saveCoordinator.initialize(fileStorageModule, newGitSyncEngine, universeManager);
+                  saveCoordinator.initialize(fileStorageModule, newGitSyncEngine, universeBackend);
                   console.log('[FederationBootstrap] SaveCoordinator updated for universe switch');
                 }
               }

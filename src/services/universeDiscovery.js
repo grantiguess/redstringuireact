@@ -498,12 +498,14 @@ export const createUniverseConfigFromDiscovered = (discoveredUniverse, repoConfi
 };
 
 /**
- * Extract schema path from universe file path
+ * Extract universe folder name from universe file path
+ * For path "universes/default/default.redstring", returns "default"
  * @param {string} filePath - Full path to universe file
- * @returns {string} Schema path (directory containing the file)
+ * @returns {string} Universe folder name (just the folder, not full path)
  */
 const extractSchemaPath = (filePath) => {
   const parts = filePath.split('/');
   parts.pop(); // Remove filename
-  return parts.join('/') || 'schema';
+  // Get just the last folder name, not the full path
+  return parts[parts.length - 1] || 'default';
 };

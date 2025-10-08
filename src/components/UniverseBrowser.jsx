@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { universeManager } from '../services/universeManager.js';
+import { universeBackend } from '../backend/universes/index.js';
 
 const UniverseBrowser = ({ isOpen, onClose, onUniverseLinked }) => {
   const [repositories, setRepositories] = useState([]);
@@ -25,7 +25,7 @@ const UniverseBrowser = ({ isOpen, onClose, onUniverseLinked }) => {
     setError(null);
 
     try {
-      const available = await universeManager.getAvailableRepositoryUniverses();
+      const available = await universeBackend.getAvailableRepositoryUniverses();
       setRepositories(available);
     } catch (err) {
       console.error('[UniverseBrowser] Failed to load repository universes:', err);
@@ -40,7 +40,7 @@ const UniverseBrowser = ({ isOpen, onClose, onUniverseLinked }) => {
     setError(null);
 
     try {
-      const universeSlug = await universeManager.linkToDiscoveredUniverse(discoveredUniverse, repoConfig);
+      const universeSlug = await universeBackend.linkToDiscoveredUniverse(discoveredUniverse, repoConfig);
 
       // Notify parent component
       if (onUniverseLinked) {
