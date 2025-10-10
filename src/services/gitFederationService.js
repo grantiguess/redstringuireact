@@ -528,8 +528,8 @@ export const gitFederationService = {
     return this.getState();
   },
 
-  async forceSave(slug) {
-    await universeBackendBridge.forceSave(slug);
+  async forceSave(slug, options) {
+    await universeBackendBridge.forceSave(slug, undefined, options);
     return this.refreshUniverses();
   },
 

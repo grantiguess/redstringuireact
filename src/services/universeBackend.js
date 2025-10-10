@@ -2455,11 +2455,11 @@ class UniverseBackend {
   /**
    * Force save for a universe
    */
-  async forceSave(universeSlug, storeState) {
+  async forceSave(universeSlug, storeState, options = {}) {
     if (!this.isInitialized) {
       await this.initialize();
     }
-    
+
     // Use active universe if no slug provided
     if (!universeSlug) {
       const activeUniverse = this.getActiveUniverse();
@@ -2487,6 +2487,7 @@ class UniverseBackend {
 
     // Check what storage is enabled (local-first approach)
     const hasLocalFile = universe.raw?.localFile?.enabled && universe.raw?.localFile?.hadFileHandle;
+    const skipGit = options?.skipGit === true;
     const hasGitRepo = universe.raw?.gitRepo?.enabled && (universe.raw?.gitRepo?.linkedRepo || universe.gitRepo?.linkedRepo);
     const sourceOfTruth = universe.sourceOfTruth || 'browser';
 
@@ -2520,9 +2521,9 @@ class UniverseBackend {
       }
 
       // Save to Git if enabled (regardless of source of truth)
-      if (hasGitRepo) {
+      if (hasGitRepo && !skipGit) {
         console.log(`[UniverseBackend] Saving to Git repository`);
-        
+
         // Track operation start for Git
         this.trackGitOperationStart(universeSlug, 'force-save', {
           isConnected: !!this.authStatus?.isAuthenticated,
@@ -2557,6 +2558,8 @@ class UniverseBackend {
           });
           results.git = { success: false, error: error.message };
         }
+      } else if (hasGitRepo && skipGit) {
+        console.log('[UniverseBackend] Skipping Git save (skipGit flag set)');
       }
 
       // Always save to browser storage as backup/cache

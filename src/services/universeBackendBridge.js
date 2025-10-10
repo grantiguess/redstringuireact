@@ -252,8 +252,8 @@ class UniverseBackendBridge {
     return this.sendCommand('linkToDiscoveredUniverse', { discoveredUniverse, repoConfig });
   }
 
-  forceSave(universeSlug, storeState) {
-    return this.sendCommand('forceSave', { universeSlug, storeState });
+  forceSave(universeSlug, storeState, options) {
+    return this.sendCommand('forceSave', { universeSlug, storeState, options });
   }
 
   saveActiveUniverse(storeState) {
@@ -298,7 +298,7 @@ const universeBackendBridge = {
   updateUniverse: (slug, updates) => bridgeInstance.updateUniverse(slug, updates),
   discoverUniversesInRepository: (repoConfig) => bridgeInstance.discoverUniversesInRepository(repoConfig),
   linkToDiscoveredUniverse: (discoveredUniverse, repoConfig) => bridgeInstance.linkToDiscoveredUniverse(discoveredUniverse, repoConfig),
-  forceSave: (universeSlug, storeState) => bridgeInstance.forceSave(universeSlug, storeState),
+  forceSave: (universeSlug, storeState, options) => bridgeInstance.forceSave(universeSlug, storeState, options),
   saveActiveUniverse: (storeState) => bridgeInstance.saveActiveUniverse(storeState),
   downloadLocalFile: (universeSlug, storeState) => bridgeInstance.downloadLocalFile(universeSlug, storeState),
   downloadGitUniverse: (universeSlug) => bridgeInstance.downloadGitUniverse(universeSlug),

@@ -130,7 +130,7 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
             result = await backend.linkToDiscoveredUniverse(payload.discoveredUniverse, payload.repoConfig);
             break;
           case 'forceSave':
-            result = await backend.forceSave(payload.universeSlug, payload.storeState);
+            result = await backend.forceSave(payload.universeSlug, payload.storeState, payload.options);
             break;
           case 'saveActiveUniverse':
             result = await backend.saveActiveUniverse(payload.storeState);

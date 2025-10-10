@@ -1614,7 +1614,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
               
               // Save the data to persistent storage (browser storage as fallback if no Git)
               try {
-                await gitFederationService.forceSave(slug);
+                await gitFederationService.forceSave(slug, { skipGit: true });
                 console.log('[GitNativeFederation] Data saved to persistent storage');
               } catch (saveErr) {
                 console.warn('[GitNativeFederation] Failed to save after linking:', saveErr);
@@ -1651,7 +1651,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       
       // Save the data to persistent storage (browser storage as fallback if no Git)
       try {
-        await gitFederationService.forceSave(slug);
+        await gitFederationService.forceSave(slug, { skipGit: true });
         console.log('[GitNativeFederation] Data saved to persistent storage');
       } catch (saveErr) {
         console.warn('[GitNativeFederation] Failed to save after linking:', saveErr);
