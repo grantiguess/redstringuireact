@@ -6,22 +6,6 @@
  */
 
 import { oauthFetch } from './bridgeConfig.js';
-import { storageWrapper } from '../utils/storageWrapper.js';
-
-// Token storage keys
-const STORAGE_KEYS = {
-  ACCESS_TOKEN: 'github_access_token',
-  REFRESH_TOKEN: 'github_refresh_token',
-  TOKEN_EXPIRY: 'github_token_expiry',
-  USER_DATA: 'github_user_data',
-  AUTH_METHOD: 'github_auth_method',
-  // GitHub App Installation keys
-  APP_INSTALLATION_ID: 'github_app_installation_id',
-  APP_ACCESS_TOKEN: 'github_app_access_token',
-  APP_REPOSITORIES: 'github_app_repositories',
-  APP_USER_DATA: 'github_app_user_data',
-  APP_LAST_UPDATED: 'github_app_last_updated'
-};
 
 // Token refresh buffer - refresh 5 minutes before expiry
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -38,31 +22,128 @@ export class PersistentAuth {
     this.eventListeners = new Map();
     this.initializeCalled = false;
     this.autoConnectAttempted = false; // Track per instance, not session
+    this.oauthCache = null;
+    this.githubAppCache = null;
+    this.authStateLoaded = false;
+    this.authStateLoadingPromise = null;
+    this.readyPromise = null;
 
-    // Check what auth data we have
-    const hasOAuthTokens = this.hasValidTokens();
-    const hasAppInstallation = this.hasAppInstallation();
-    console.log('[PersistentAuth] Constructor auth check:', { hasOAuthTokens, hasAppInstallation });
+    this.readyPromise = this.ensureAuthStateLoaded().catch(error => {
+      console.warn('[PersistentAuth] Initial auth state load failed:', error);
+    }).then(() => {
+      const hasOAuthTokens = this.hasValidTokens();
+      const hasAppInstallation = this.hasAppInstallation();
+      console.log('[PersistentAuth] Constructor auth check:', { hasOAuthTokens, hasAppInstallation });
 
-    // Start health monitoring if we have OAuth tokens
-    if (hasOAuthTokens) {
-      console.log('[PersistentAuth] Constructor: Valid OAuth tokens found, starting health monitoring');
-      this.startHealthMonitoring();
-    } else {
-      console.log('[PersistentAuth] Constructor: No valid OAuth tokens found');
+      if (hasOAuthTokens) {
+        console.log('[PersistentAuth] Constructor: Valid OAuth tokens found, starting health monitoring');
+        this.startHealthMonitoring();
+      } else {
+        console.log('[PersistentAuth] Constructor: No valid OAuth tokens found');
+      }
+
+      if (hasOAuthTokens || hasAppInstallation) {
+        console.log('[PersistentAuth] Constructor: Stored auth data found, will attempt auto-connect');
+        setTimeout(() => {
+          if (!this.initializeCalled) {
+            console.log('[PersistentAuth] Constructor: Auto-triggering initialize() because it wasn\'t called');
+            this.initialize().catch(error => {
+              console.error('[PersistentAuth] Constructor auto-initialize failed:', error);
+            });
+          }
+        }, 1000);
+      }
+    });
+  }
+
+  async ensureAuthStateLoaded(force = false) {
+    if (this.authStateLoaded && !force) {
+      return;
+    }
+    if (this.authStateLoadingPromise) {
+      return this.authStateLoadingPromise;
     }
 
-    // If we have any stored auth data, trigger auto-connect after a brief delay
-    if (hasOAuthTokens || hasAppInstallation) {
-      console.log('[PersistentAuth] Constructor: Stored auth data found, will attempt auto-connect');
-      setTimeout(() => {
-        if (!this.initializeCalled) {
-          console.log('[PersistentAuth] Constructor: Auto-triggering initialize() because it wasn\'t called');
-          this.initialize().catch(error => {
-            console.error('[PersistentAuth] Constructor auto-initialize failed:', error);
-          });
+    this.authStateLoadingPromise = (async () => {
+      try {
+        const response = await oauthFetch('/api/github/auth/state?includeTokens=true');
+        if (!response.ok) {
+          const text = await response.text().catch(() => '');
+          throw new Error(`Failed to load auth state (${response.status} ${text})`);
         }
-      }, 1000);
+        const state = await response.json();
+        this.applyAuthStateFromServer(state);
+        this.authStateLoaded = true;
+      } catch (error) {
+        console.warn('[PersistentAuth] ensureAuthStateLoaded failed:', error);
+        throw error;
+      } finally {
+        this.authStateLoadingPromise = null;
+      }
+    })();
+
+    return this.authStateLoadingPromise;
+  }
+
+  applyAuthStateFromServer(state = {}) {
+    const prevOAuthToken = this.oauthCache?.accessToken || null;
+    const prevAppInstallation = this.githubAppCache?.installationId || null;
+
+    const oauthState = state?.oauth;
+    if (oauthState?.hasToken && oauthState.accessToken) {
+      const expiresAtNumeric = oauthState.expiresAt != null ? Number(oauthState.expiresAt) : null;
+      this.oauthCache = {
+        accessToken: oauthState.accessToken,
+        refreshToken: oauthState.refreshToken || null,
+        scope: oauthState.scope || null,
+        tokenType: oauthState.tokenType || 'bearer',
+        expiresAt: Number.isFinite(expiresAtNumeric) ? expiresAtNumeric : null,
+        user: oauthState.user || null,
+        storedAt: oauthState.storedAt || Date.now()
+      };
+    } else {
+      this.oauthCache = null;
+    }
+
+    const appState = state?.githubApp;
+    if (appState?.isInstalled && appState.installationId) {
+      const expiresAtNumeric = appState.tokenExpiresAt != null ? Number(appState.tokenExpiresAt) : null;
+      const repositories = Array.isArray(appState.repositories) ? appState.repositories : [];
+      this.githubAppCache = {
+        installationId: appState.installationId,
+        accessToken: appState.accessToken || null,
+        tokenExpiresAt: Number.isFinite(expiresAtNumeric) ? expiresAtNumeric : null,
+        repositories,
+        userData: appState.account || null,
+        permissions: appState.permissions || null,
+        lastUpdated: appState.storedAt || Date.now()
+      };
+    } else {
+      this.githubAppCache = null;
+    }
+
+    if (this.oauthCache?.accessToken && !prevOAuthToken) {
+      const tokenData = {
+        access_token: this.oauthCache.accessToken,
+        refresh_token: this.oauthCache.refreshToken,
+        scope: this.oauthCache.scope,
+        token_type: this.oauthCache.tokenType
+      };
+      this.emit('tokenStored', { tokenData, userData: this.oauthCache.user });
+      this.dispatchAuthEvent('oauth', { user: this.oauthCache.user?.login || null });
+      this.dispatchConnectedEvent('oauth', { autoConnected: true });
+    }
+
+    if (this.githubAppCache?.installationId && !prevAppInstallation) {
+      this.emit('appInstallationStored', this.githubAppCache);
+      this.dispatchAuthEvent('github-app', {
+        installationId: this.githubAppCache.installationId,
+        repositoryCount: this.githubAppCache.repositories.length
+      });
+      this.dispatchConnectedEvent('github-app', {
+        installationId: this.githubAppCache.installationId,
+        repositoryCount: this.githubAppCache.repositories.length
+      });
     }
   }
 
@@ -73,6 +154,10 @@ export class PersistentAuth {
   async initialize() {
     console.log('[PersistentAuth] ===== INITIALIZE CALLED =====');
     this.initializeCalled = true;
+
+     await this.ensureAuthStateLoaded().catch(error => {
+      console.warn('[PersistentAuth] initialize: auth state load failed', error);
+    });
 
     // Check what auth data we have
     const hasOAuthTokens = this.hasValidTokens();
@@ -101,44 +186,14 @@ export class PersistentAuth {
    * Attempt auto-connection using stored authentication data
    */
   async attemptAutoConnect() {
-    // Debug: Log all storage keys that start with 'github'
-    console.log('[PersistentAuth] Debug: Checking stored auth data...');
-    try {
-      const storageStatus = storageWrapper.getStorageStatus();
-      console.log('[PersistentAuth] Storage status:', storageStatus);
+    await this.ensureAuthStateLoaded().catch(() => {});
 
-      // Check specific auth keys
-      const authKeys = [
-        'github_access_token',
-        'github_refresh_token',
-        'github_token_expiry',
-        'github_user_data',
-        'github_app_installation_id',
-        'github_app_access_token',
-        'allow_oauth_backup'
-      ];
-
-      const authData = {};
-      authKeys.forEach(key => {
-        const value = storageWrapper.getItem(key);
-        authData[key] = value ? 'present' : 'missing';
-      });
-      console.log('[PersistentAuth] Auth data present:', authData);
-
-      // Check session storage too
-      try {
-        const sessionAuthData = {
-          'oauth_autoconnect_attempted': sessionStorage.getItem('oauth_autoconnect_attempted'),
-          'github_oauth_pending': sessionStorage.getItem('github_oauth_pending'),
-          'github_oauth_state': sessionStorage.getItem('github_oauth_state')
-        };
-        console.log('[PersistentAuth] Session storage:', sessionAuthData);
-      } catch (e) {
-        console.log('[PersistentAuth] Session storage access failed:', e);
-      }
-    } catch (e) {
-      console.warn('[PersistentAuth] Debug check failed:', e);
-    }
+    console.log('[PersistentAuth] Debug: Auth cache snapshot:', {
+      oauthToken: this.oauthCache?.accessToken ? 'present' : 'missing',
+      oauthUser: this.oauthCache?.user?.login || null,
+      githubAppInstallation: this.githubAppCache?.installationId || null,
+      githubAppToken: this.githubAppCache?.accessToken ? 'present' : 'missing'
+    });
 
     // Only attempt auto-connect once per instance to be respectful to GitHub API
     if (this.autoConnectAttempted) {
@@ -217,6 +272,7 @@ export class PersistentAuth {
    * Attempt auto-connect using stored GitHub App installation
    */
   async attemptAppAutoConnect() {
+    await this.ensureAuthStateLoaded().catch(() => {});
     let appInstallation = this.getAppInstallation();
     if (!appInstallation) {
       console.log('[PersistentAuth] No stored GitHub App installation found; attempting discovery...');
@@ -254,7 +310,7 @@ export class PersistentAuth {
                 } catch (_) {}
 
                 // Store and proceed as connected
-                this.storeAppInstallation({
+                await this.storeAppInstallation({
                   installationId,
                   accessToken,
                   repositories,
@@ -315,7 +371,7 @@ export class PersistentAuth {
         lastUpdated: Date.now()
       };
 
-      this.storeAppInstallation(updatedInstallation);
+      await this.storeAppInstallation(updatedInstallation);
       console.log('[PersistentAuth] GitHub App token refreshed successfully');
 
       // Verify the token works by making a test request
@@ -330,7 +386,7 @@ export class PersistentAuth {
     } catch (error) {
       console.error('[PersistentAuth] GitHub App auto-connect failed:', error);
       // Clear invalid app installation
-      this.clearAppInstallation();
+      await this.clearAppInstallation();
       return false;
     }
   }
@@ -344,7 +400,7 @@ export class PersistentAuth {
       return false;
     }
 
-    const accessToken = storageWrapper.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    const accessToken = await this.getAccessToken();
     const userData = this.getUserData();
     console.log('[PersistentAuth] Found stored OAuth tokens:', {
       hasAccessToken: !!accessToken,
@@ -368,7 +424,7 @@ export class PersistentAuth {
     } catch (error) {
       console.error('[PersistentAuth] OAuth auto-connect failed:', error);
       // Clear invalid tokens
-      this.clearTokens();
+      await this.clearTokens();
       return false;
     }
   }
@@ -423,56 +479,108 @@ export class PersistentAuth {
     }
   }
 
+  async persistOAuthCache() {
+    if (!this.oauthCache?.accessToken) {
+      return;
+    }
+
+    const payload = {
+      access_token: this.oauthCache.accessToken,
+      refresh_token: this.oauthCache.refreshToken || null,
+      scope: this.oauthCache.scope || null,
+      token_type: this.oauthCache.tokenType || 'bearer',
+      expires_at: this.oauthCache.expiresAt
+        ? new Date(this.oauthCache.expiresAt).toISOString()
+        : null,
+      user: this.oauthCache.user || null
+    };
+
+    const response = await oauthFetch('/api/github/auth/oauth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`Failed to persist OAuth cache (${response.status} ${text})`);
+    }
+  }
+
   /**
    * Store OAuth tokens securely
    */
-  storeTokens(tokenData, userData = null) {
-    const { access_token, refresh_token, expires_in, token_type } = tokenData;
-    
-    try {
-      // Store in session for immediate use
-      storageWrapper.setItem(STORAGE_KEYS.ACCESS_TOKEN, access_token);
-      
-      // GitHub tokens don't usually have refresh tokens or expiry
-      // But we'll store them if provided for future compatibility
-      if (refresh_token) {
-        storageWrapper.setItem(STORAGE_KEYS.REFRESH_TOKEN, refresh_token);
-      }
-      
-      // For GitHub, tokens don't expire by default
-      // We'll set a very long expiry time or none at all
-      const expiryTime = expires_in ? 
-        Date.now() + (expires_in * 1000) : 
-        Date.now() + (365 * 24 * 60 * 60 * 1000); // Default 1 year for GitHub
-      
-      storageWrapper.setItem(STORAGE_KEYS.TOKEN_EXPIRY, expiryTime.toString());
-      storageWrapper.setItem(STORAGE_KEYS.AUTH_METHOD, 'oauth');
-      
-      // Store user data if provided
-      if (userData) {
-        storageWrapper.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userData));
-      }
-      
-      console.log('[PersistentAuth] Tokens stored successfully', {
-        hasAccessToken: !!access_token,
-        hasRefreshToken: !!refresh_token,
-        expiresIn: expires_in,
-        expiryTime: new Date(expiryTime).toISOString(),
-        note: 'GitHub tokens typically do not expire'
-      });
-      
-      // Start health monitoring
-      this.startHealthMonitoring();
-      
-      this.emit('tokenStored', { tokenData, userData });
-      this.dispatchAuthEvent('oauth', { user: userData?.login || null });
-      this.dispatchConnectedEvent('oauth', { user: userData?.login || null });
-      
-      return true;
-    } catch (error) {
-      console.error('[PersistentAuth] Failed to store tokens:', error);
+  async storeTokens(tokenData, userData = null) {
+    const {
+      access_token,
+      refresh_token,
+      expires_in,
+      token_type,
+      scope,
+      expires_at
+    } = tokenData || {};
+
+    if (!access_token) {
+      console.error('[PersistentAuth] Cannot store tokens without access_token');
       return false;
     }
+
+    const computedExpiry = expires_at
+      ? new Date(expires_at).getTime()
+      : (expires_in
+        ? Date.now() + (expires_in * 1000)
+        : Date.now() + (365 * 24 * 60 * 60 * 1000));
+
+    const payload = {
+      access_token,
+      refresh_token: refresh_token || null,
+      scope: scope || null,
+      token_type: token_type || 'bearer',
+      expires_at: new Date(computedExpiry).toISOString(),
+      user: userData || null
+    };
+
+    try {
+      const response = await oauthFetch('/api/github/auth/oauth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(`Vault persistence failed (${response.status} ${text})`);
+      }
+    } catch (error) {
+      console.error('[PersistentAuth] Failed to persist tokens to secure store:', error);
+      throw error;
+    }
+
+    this.oauthCache = {
+      accessToken: access_token,
+      refreshToken: refresh_token || null,
+      scope: scope || null,
+      tokenType: token_type || 'bearer',
+      expiresAt: computedExpiry,
+      user: userData || null,
+      storedAt: Date.now()
+    };
+
+    console.log('[PersistentAuth] Tokens stored successfully', {
+      hasAccessToken: true,
+      hasRefreshToken: !!refresh_token,
+      expiresIn: expires_in,
+      expiryTime: new Date(computedExpiry).toISOString(),
+      note: 'GitHub tokens typically do not expire'
+    });
+
+    this.startHealthMonitoring();
+
+    this.emit('tokenStored', { tokenData, userData });
+    this.dispatchAuthEvent('oauth', { user: userData?.login || null });
+    this.dispatchConnectedEvent('oauth', { user: userData?.login || null });
+
+    return true;
   }
 
   /**
@@ -480,18 +588,16 @@ export class PersistentAuth {
    */
   async getAccessToken() {
     try {
-      // Always read the token first
-      const token = storageWrapper.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+      await this.ensureAuthStateLoaded().catch(() => {});
+      const token = this.oauthCache?.accessToken || null;
       if (!token) {
-        // No token present; do not trigger validation/refresh loop
         return null;
       }
-      // Check if we need to validate/refresh
       if (this.shouldRefreshToken()) {
         console.log('[PersistentAuth] Token needs validation/refresh');
         await this.refreshAccessToken();
       }
-      return storageWrapper.getItem(STORAGE_KEYS.ACCESS_TOKEN) || null;
+      return this.oauthCache?.accessToken || null;
     } catch (error) {
       console.error('[PersistentAuth] Failed to get access token:', error);
       this.emit('authError', error);
@@ -503,11 +609,13 @@ export class PersistentAuth {
    * Check if we have valid tokens
    */
   hasValidTokens() {
-    const accessToken = storageWrapper.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-    const expiryTime = parseInt(storageWrapper.getItem(STORAGE_KEYS.TOKEN_EXPIRY) || '0');
+    const accessToken = this.oauthCache?.accessToken || null;
+    const expiryTime = this.oauthCache?.expiresAt || null;
     const now = Date.now();
     
-    return !!(accessToken && expiryTime > now);
+    if (!accessToken) return false;
+    if (!expiryTime) return true;
+    return expiryTime > now;
   }
 
   /**
@@ -517,10 +625,11 @@ export class PersistentAuth {
   shouldRefreshToken() {
     // GitHub tokens don't expire by default, so we focus on validation
     // We only "refresh" (re-validate) if the token is very old or we've had recent failures
-    const expiryTime = parseInt(storageWrapper.getItem(STORAGE_KEYS.TOKEN_EXPIRY) || '0');
+    const expiryTime = this.oauthCache?.expiresAt || null;
+    if (!expiryTime) {
+      return false;
+    }
     const now = Date.now();
-    
-    // Only consider refresh if token is approaching our artificial expiry
     const refreshTime = expiryTime - REFRESH_BUFFER_MS;
     return now >= refreshTime;
   }
@@ -553,7 +662,8 @@ export class PersistentAuth {
   async performTokenValidation() {
     try {
       // Check if we have a token before attempting validation
-      const accessToken = storageWrapper.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+      await this.ensureAuthStateLoaded().catch(() => {});
+      const accessToken = this.oauthCache?.accessToken || null;
       if (!accessToken || accessToken.trim().length === 0) {
         console.log('[PersistentAuth] No token to validate, skipping validation');
         throw new Error('No token available for validation');
@@ -566,7 +676,17 @@ export class PersistentAuth {
       if (isValid) {
         // Token is still valid, extend its life
         const newExpiryTime = Date.now() + (365 * 24 * 60 * 60 * 1000); // Another year
-        storageWrapper.setItem(STORAGE_KEYS.TOKEN_EXPIRY, newExpiryTime.toString());
+        this.oauthCache = {
+          ...this.oauthCache,
+          expiresAt: newExpiryTime,
+          storedAt: Date.now()
+        };
+
+        try {
+          await this.persistOAuthCache();
+        } catch (persistError) {
+          console.warn('[PersistentAuth] Failed to persist refreshed token metadata:', persistError);
+        }
         
         console.log('[PersistentAuth] Token validation successful, extended expiry');
         this.emit('tokenValidated', { 
@@ -582,7 +702,7 @@ export class PersistentAuth {
       console.error('[PersistentAuth] Token validation failed:', error);
       
       // Clear invalid tokens and trigger re-authentication
-      this.clearTokens();
+      await this.clearTokens();
       this.emit('authExpired', error);
       this.emit('reAuthRequired', { reason: error.message });
       
@@ -594,10 +714,10 @@ export class PersistentAuth {
    * Test if current tokens are valid by making a test request
    */
   async testTokenValidity() {
-    const accessToken = storageWrapper.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    const accessToken = this.oauthCache?.accessToken || null;
     
     if (!accessToken) {
-      console.log('[PersistentAuth] No access token found in session storage');
+      console.log('[PersistentAuth] No access token available for validation');
       return false;
     }
 
@@ -693,35 +813,31 @@ export class PersistentAuth {
   /**
    * Clear all stored tokens
    */
-  clearTokens() {
+  async clearTokens() {
     try {
-      storageWrapper.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
-      storageWrapper.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
-      storageWrapper.removeItem(STORAGE_KEYS.TOKEN_EXPIRY);
-      storageWrapper.removeItem(STORAGE_KEYS.USER_DATA);
-      storageWrapper.removeItem(STORAGE_KEYS.AUTH_METHOD);
-      
-      this.stopHealthMonitoring();
-      
-      console.log('[PersistentAuth] Tokens cleared');
-      this.emit('tokensCleared');
-      this.dispatchAuthEvent('oauth', { hasTokens: false });
+      await oauthFetch('/api/github/auth/oauth', { method: 'DELETE' });
     } catch (error) {
-      console.error('[PersistentAuth] Failed to clear tokens:', error);
+      console.warn('[PersistentAuth] Failed to clear tokens in secure store:', error);
     }
+
+    this.oauthCache = null;
+    try {
+      this.stopHealthMonitoring();
+    } catch (error) {
+      console.warn('[PersistentAuth] Failed to stop health monitoring:', error);
+    }
+
+    console.log('[PersistentAuth] Tokens cleared');
+    this.emit('tokensCleared');
+    this.dispatchAuthEvent('oauth', { hasTokens: false });
+    return true;
   }
 
   /**
    * Get stored user data
    */
   getUserData() {
-    try {
-      const userData = storageWrapper.getItem(STORAGE_KEYS.USER_DATA);
-      return userData ? JSON.parse(userData) : null;
-    } catch (error) {
-      console.error('[PersistentAuth] Failed to get user data:', error);
-      return null;
-    }
+    return this.oauthCache?.user || null;
   }
 
   /**
@@ -730,14 +846,14 @@ export class PersistentAuth {
   getAuthStatus() {
     const hasTokens = this.hasValidTokens();
     const needsRefresh = this.shouldRefreshToken();
-    const expiryTime = parseInt(storageWrapper.getItem(STORAGE_KEYS.TOKEN_EXPIRY) || '0');
+    const expiryTime = this.oauthCache?.expiresAt || null;
     
     return {
       isAuthenticated: hasTokens,
       needsRefresh,
-      expiryTime: expiryTime > 0 ? new Date(expiryTime) : null,
-      timeToExpiry: expiryTime > 0 ? Math.max(0, expiryTime - Date.now()) : 0,
-      authMethod: storageWrapper.getItem(STORAGE_KEYS.AUTH_METHOD),
+      expiryTime: expiryTime ? new Date(expiryTime) : null,
+      timeToExpiry: expiryTime ? Math.max(0, expiryTime - Date.now()) : 0,
+      authMethod: hasTokens ? 'oauth' : null,
       userData: this.getUserData(),
       isRefreshing: this.isRefreshing
     };
@@ -777,70 +893,78 @@ export class PersistentAuth {
   /**
    * Store GitHub App installation data
    */
-  storeAppInstallation(installationData) {
-    const { installationId, accessToken, repositories, userData } = installationData;
+  async storeAppInstallation(installationData = {}) {
+    const {
+      installationId,
+      accessToken = null,
+      repositories = [],
+      userData = {},
+      permissions = null,
+      tokenExpiresAt = null,
+      lastUpdated = Date.now()
+    } = installationData;
     
+    if (!installationId) {
+      throw new Error('installationId is required');
+    }
+
     try {
-      // Store app installation data with storageWrapper to respect debug settings
-      storageWrapper.setItem(STORAGE_KEYS.APP_INSTALLATION_ID, installationId);
-      storageWrapper.setItem(STORAGE_KEYS.APP_ACCESS_TOKEN, accessToken);
-      storageWrapper.setItem(STORAGE_KEYS.APP_REPOSITORIES, JSON.stringify(repositories || []));
-      storageWrapper.setItem(STORAGE_KEYS.APP_USER_DATA, JSON.stringify(userData || {}));
-      storageWrapper.setItem(STORAGE_KEYS.APP_LAST_UPDATED, Date.now().toString());
-      
-      console.log('[PersistentAuth] GitHub App installation stored successfully');
-      this.emit('appInstallationStored', installationData);
-      this.dispatchAuthEvent('github-app', { installationId, repositoryCount: repositories?.length || 0 });
-      this.dispatchConnectedEvent('github-app', { installationId, repositoryCount: repositories?.length || 0 });
+      const response = await oauthFetch('/api/github/auth/github-app', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          installationId,
+          accessToken,
+          repositories,
+          account: userData || null,
+          permissions,
+          tokenExpiresAt: tokenExpiresAt
+            ? new Date(tokenExpiresAt).toISOString()
+            : null
+        })
+      });
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(`Failed to persist GitHub App installation (${response.status} ${text})`);
+      }
     } catch (error) {
       console.error('[PersistentAuth] Failed to store GitHub App installation:', error);
       this.emit('authError', error);
+      throw error;
     }
+
+    const expiresNumeric = tokenExpiresAt != null ? Number(tokenExpiresAt) : null;
+    this.githubAppCache = {
+      installationId,
+      accessToken,
+      repositories: Array.isArray(repositories) ? repositories : [],
+      userData: userData || {},
+      permissions,
+      tokenExpiresAt: Number.isFinite(expiresNumeric) ? expiresNumeric : null,
+      lastUpdated: lastUpdated || Date.now()
+    };
+    
+    console.log('[PersistentAuth] GitHub App installation stored successfully');
+    this.emit('appInstallationStored', this.githubAppCache);
+    this.dispatchAuthEvent('github-app', {
+      installationId,
+      repositoryCount: this.githubAppCache.repositories.length
+    });
+    this.dispatchConnectedEvent('github-app', {
+      installationId,
+      repositoryCount: this.githubAppCache.repositories.length
+    });
   }
 
   /**
    * Get stored GitHub App installation data
    */
   getAppInstallation() {
-    try {
-      const installationId = storageWrapper.getItem(STORAGE_KEYS.APP_INSTALLATION_ID);
-      const accessToken = storageWrapper.getItem(STORAGE_KEYS.APP_ACCESS_TOKEN);
-      const repositories = storageWrapper.getItem(STORAGE_KEYS.APP_REPOSITORIES);
-      const userData = storageWrapper.getItem(STORAGE_KEYS.APP_USER_DATA);
-      const lastUpdated = storageWrapper.getItem(STORAGE_KEYS.APP_LAST_UPDATED);
-      
-      if (!installationId || !accessToken) {
-        const fallback = storageWrapper.getItem('github_app_installation');
-        if (!fallback) {
-          return null;
-        }
-
-        try {
-          const parsed = JSON.parse(fallback);
-          if (parsed?.installationId && parsed?.accessToken) {
-            this.storeAppInstallation(parsed);
-            storageWrapper.removeItem('github_app_installation');
-            return parsed;
-          }
-        } catch (error) {
-          console.warn('[PersistentAuth] Failed to parse legacy app installation storage:', error);
-        }
-
-        storageWrapper.removeItem('github_app_installation');
-        return null;
-      }
-      
-      return {
-        installationId,
-        accessToken,
-        repositories: repositories ? JSON.parse(repositories) : [],
-        userData: userData ? JSON.parse(userData) : {},
-        lastUpdated: lastUpdated ? parseInt(lastUpdated) : Date.now()
-      };
-    } catch (error) {
-      console.error('[PersistentAuth] Failed to get GitHub App installation:', error);
-      return null;
+    if (!this.authStateLoaded && !this.authStateLoadingPromise) {
+      this.ensureAuthStateLoaded().catch(() => {});
     }
+    return this.githubAppCache;
   }
 
   /**
@@ -848,26 +972,23 @@ export class PersistentAuth {
    */
   hasAppInstallation() {
     const installation = this.getAppInstallation();
-    return !!(installation?.installationId && installation?.accessToken);
+    return !!(installation?.installationId);
   }
 
   /**
    * Clear GitHub App installation data
    */
-  clearAppInstallation() {
+  async clearAppInstallation() {
     try {
-      storageWrapper.removeItem(STORAGE_KEYS.APP_INSTALLATION_ID);
-      storageWrapper.removeItem(STORAGE_KEYS.APP_ACCESS_TOKEN);
-      storageWrapper.removeItem(STORAGE_KEYS.APP_REPOSITORIES);
-      storageWrapper.removeItem(STORAGE_KEYS.APP_USER_DATA);
-      storageWrapper.removeItem(STORAGE_KEYS.APP_LAST_UPDATED);
-      
-      console.log('[PersistentAuth] GitHub App installation cleared');
-      this.emit('appInstallationCleared');
-      this.dispatchAuthEvent('github-app', { hasInstallation: false });
+      await oauthFetch('/api/github/auth/github-app', { method: 'DELETE' });
     } catch (error) {
-      console.error('[PersistentAuth] Failed to clear GitHub App installation:', error);
+      console.warn('[PersistentAuth] Failed to clear GitHub App installation in secure store:', error);
     }
+
+    this.githubAppCache = null;
+    console.log('[PersistentAuth] GitHub App installation cleared');
+    this.emit('appInstallationCleared');
+    this.dispatchAuthEvent('github-app', { hasInstallation: false });
   }
 
   /**

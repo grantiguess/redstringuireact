@@ -3,7 +3,7 @@
  * Fixes authentication and hanging request issues in cloud deployments
  */
 
-import { storageWrapper } from '../utils/storageWrapper.js';
+import { persistentAuth } from './persistentAuth.js';
 
 export class GitHubAPIWrapper {
   constructor() {
@@ -24,13 +24,14 @@ export class GitHubAPIWrapper {
 
     try {
       // Ensure we have proper auth headers
+      const authHeaders = await this.getAuthHeaders();
       const finalOptions = {
         ...options,
         signal: controller.signal,
         headers: {
           'Accept': 'application/vnd.github.v3+json',
           'Content-Type': 'application/json',
-          ...this.getAuthHeaders(),
+          ...authHeaders,
           ...options.headers
         }
       };
@@ -43,7 +44,7 @@ export class GitHubAPIWrapper {
       // Check for authentication issues
       if (response.status === 401) {
         console.error('[GitHubAPIWrapper] Authentication failed - token may be invalid');
-        this.handleAuthError();
+        await this.handleAuthError();
         throw new Error('GitHub authentication failed - please re-authenticate');
       }
 
@@ -125,15 +126,31 @@ export class GitHubAPIWrapper {
   /**
    * Get authentication headers
    */
-  getAuthHeaders() {
-    const accessToken = storageWrapper.getItem('github_access_token');
-    const appToken = storageWrapper.getItem('github_app_access_token');
-
-    if (appToken) {
-      console.log('[GitHubAPIWrapper] Using GitHub App token');
-      return { 'Authorization': `Bearer ${appToken}` };
+  async getAuthHeaders() {
+    if (persistentAuth.readyPromise) {
+      await persistentAuth.readyPromise.catch(() => {});
     }
 
+    let appInstallation = persistentAuth.getAppInstallation();
+    if (appInstallation?.installationId) {
+      const expiresAt = appInstallation.tokenExpiresAt || null;
+      const tokenStillValid = !expiresAt || expiresAt > Date.now() + (2 * 60 * 1000);
+      if (!tokenStillValid) {
+        try {
+          await persistentAuth.attemptAppAutoConnect();
+          appInstallation = persistentAuth.getAppInstallation();
+        } catch (error) {
+          console.warn('[GitHubAPIWrapper] Failed to refresh GitHub App token:', error);
+        }
+      }
+
+      if (appInstallation?.accessToken) {
+        console.log('[GitHubAPIWrapper] Using GitHub App token');
+        return { 'Authorization': `Bearer ${appInstallation.accessToken}` };
+      }
+    }
+
+    const accessToken = await persistentAuth.getAccessToken();
     if (accessToken) {
       console.log('[GitHubAPIWrapper] Using OAuth token');
       return { 'Authorization': `Bearer ${accessToken}` };
@@ -146,14 +163,20 @@ export class GitHubAPIWrapper {
   /**
    * Handle authentication errors
    */
-  handleAuthError() {
+  async handleAuthError() {
     console.log('[GitHubAPIWrapper] Clearing invalid tokens...');
 
-    // Clear potentially invalid tokens
-    storageWrapper.removeItem('github_access_token');
-    storageWrapper.removeItem('github_app_access_token');
-    storageWrapper.removeItem('github_user_data');
-    storageWrapper.removeItem('github_token_expiry');
+    try {
+      await persistentAuth.clearTokens();
+    } catch (error) {
+      console.warn('[GitHubAPIWrapper] Failed to clear OAuth tokens:', error);
+    }
+
+    try {
+      await persistentAuth.clearAppInstallation();
+    } catch (error) {
+      console.warn('[GitHubAPIWrapper] Failed to clear GitHub App installation:', error);
+    }
 
     // Dispatch event to notify other components
     if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
@@ -167,9 +190,7 @@ export class GitHubAPIWrapper {
    * Check if authentication is available
    */
   hasValidAuth() {
-    const accessToken = storageWrapper.getItem('github_access_token');
-    const appToken = storageWrapper.getItem('github_app_access_token');
-    return !!(accessToken || appToken);
+    return persistentAuth.hasValidTokens() || persistentAuth.hasAppInstallation();
   }
 
   /**

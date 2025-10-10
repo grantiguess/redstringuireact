@@ -527,7 +527,7 @@ class UniverseBackend {
       const authStatus = persistentAuth.getAuthStatus();
       console.log('[UniverseBackend] Auth status:', authStatus);
 
-      const hasAccessToken = !!storageWrapper.getItem('github_access_token');
+      const hasAccessToken = persistentAuth.hasValidTokens();
       if (!authStatus.isAuthenticated && !hasAccessToken) {
         console.log('[UniverseBackend] No valid auth token, skipping Git sync setup');
         return;
@@ -1094,7 +1094,7 @@ class UniverseBackend {
             
             // Update stored installation with fresh token and expiry
             const updatedApp = { ...app, accessToken: token, tokenExpiresAt: expiresAt.toISOString() };
-            persistentAuth.storeAppInstallation(updatedApp);
+            await persistentAuth.storeAppInstallation(updatedApp);
             console.log('[UniverseBackend] GitHub App token refreshed');
           } else {
             const errorText = await tokenResp.text();
@@ -1236,7 +1236,7 @@ class UniverseBackend {
           lastUpdated: Date.now()
         };
         try {
-          persistentAuth.storeAppInstallation(updated);
+          await persistentAuth.storeAppInstallation(updated);
         } catch (error) {
           console.warn('[UniverseBackend] Failed to persist refreshed GitHub App token:', error);
         }
@@ -2129,7 +2129,7 @@ class UniverseBackend {
 
               const expiresAt = new Date(now.getTime() + 60 * 60 * 1000);
               const updatedApp = { ...app, accessToken: token, tokenExpiresAt: expiresAt.toISOString() };
-              persistentAuth.storeAppInstallation(updatedApp);
+              await persistentAuth.storeAppInstallation(updatedApp);
             } else {
               token = await persistentAuth.getAccessToken();
               authMethod = token ? 'oauth' : authMethod;

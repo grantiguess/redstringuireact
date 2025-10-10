@@ -80,6 +80,14 @@ class OAuthAutoConnect {
       return;
     }
 
+    if (persistentAuth.readyPromise) {
+      try {
+        await persistentAuth.readyPromise;
+      } catch (error) {
+        console.warn('[OAuthAutoConnect] Failed to preload auth state:', error);
+      }
+    }
+
     this.isAttempting = true;
     this.markAutoConnectAttempted();
 
@@ -126,6 +134,13 @@ class OAuthAutoConnect {
    * Attempt auto-connect using stored GitHub App installation
    */
   async attemptAppAutoConnect() {
+    if (persistentAuth.readyPromise) {
+      try {
+        await persistentAuth.readyPromise;
+      } catch (error) {
+        console.warn('[OAuthAutoConnect] Failed to preload auth state for app auto-connect:', error);
+      }
+    }
     const appInstallation = persistentAuth.getAppInstallation();
     if (!appInstallation) {
       console.log('[OAuthAutoConnect] No GitHub App installation found');
@@ -161,7 +176,7 @@ class OAuthAutoConnect {
         lastUpdated: Date.now()
       };
 
-      persistentAuth.storeAppInstallation(updatedInstallation);
+      await persistentAuth.storeAppInstallation(updatedInstallation);
       console.log('[OAuthAutoConnect] GitHub App token refreshed successfully');
 
       // Verify the token works by making a test request
@@ -176,7 +191,7 @@ class OAuthAutoConnect {
     } catch (error) {
       console.error('[OAuthAutoConnect] GitHub App auto-connect failed:', error);
       // Clear invalid app installation
-      persistentAuth.clearAppInstallation();
+      await persistentAuth.clearAppInstallation();
       return false;
     }
   }
@@ -185,6 +200,13 @@ class OAuthAutoConnect {
    * Attempt auto-connect using stored OAuth tokens
    */
   async attemptOAuthAutoConnect() {
+    if (persistentAuth.readyPromise) {
+      try {
+        await persistentAuth.readyPromise;
+      } catch (error) {
+        console.warn('[OAuthAutoConnect] Failed to preload auth state for OAuth auto-connect:', error);
+      }
+    }
     if (!persistentAuth.hasValidTokens()) {
       console.log('[OAuthAutoConnect] No valid OAuth tokens found');
       return false;
@@ -211,7 +233,7 @@ class OAuthAutoConnect {
     } catch (error) {
       console.error('[OAuthAutoConnect] OAuth auto-connect failed:', error);
       // Clear invalid tokens
-      persistentAuth.clearTokens();
+      await persistentAuth.clearTokens();
       return false;
     }
   }

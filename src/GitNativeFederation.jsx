@@ -543,7 +543,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           throw new Error('GitHub App token response missing token');
         }
 
-        persistentAuth.storeAppInstallation({
+        await persistentAuth.storeAppInstallation({
           installationId,
           accessToken: token,
           repositories: tokenData.repositories || [],

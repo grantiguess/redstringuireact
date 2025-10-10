@@ -105,6 +105,106 @@ app.post('/api/github/oauth/token', async (req, res) => {
   }
 });
 
+// Secure auth state proxies
+app.get('/api/github/auth/state', async (req, res) => {
+  try {
+    const response = await fetch(`${oauthBaseUrl}${req.originalUrl}`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    logger.error('OAuth proxy error (auth state):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
+app.get('/api/github/auth/oauth/token', async (req, res) => {
+  try {
+    const response = await fetch(`${oauthBaseUrl}${req.originalUrl}`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    logger.error('OAuth proxy error (oauth token get):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
+app.post('/api/github/auth/oauth', async (req, res) => {
+  try {
+    const response = await fetch(`${oauthBaseUrl}${req.originalUrl}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    logger.error('OAuth proxy error (oauth token store):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
+app.delete('/api/github/auth/oauth', async (req, res) => {
+  try {
+    const response = await fetch(`${oauthBaseUrl}${req.originalUrl}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    logger.error('OAuth proxy error (oauth token clear):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
+app.get('/api/github/auth/github-app', async (req, res) => {
+  try {
+    const response = await fetch(`${oauthBaseUrl}${req.originalUrl}`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    logger.error('OAuth proxy error (github app get):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
+app.post('/api/github/auth/github-app', async (req, res) => {
+  try {
+    const response = await fetch(`${oauthBaseUrl}${req.originalUrl}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    logger.error('OAuth proxy error (github app store):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
+app.delete('/api/github/auth/github-app', async (req, res) => {
+  try {
+    const response = await fetch(`${oauthBaseUrl}${req.originalUrl}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    logger.error('OAuth proxy error (github app clear):', error);
+    res.status(500).json({ error: 'OAuth service unavailable' });
+  }
+});
+
 // =============================================================================
 // GitHub Integration Callbacks - Explicit, Purpose-Specific Routes
 // =============================================================================
@@ -736,5 +836,4 @@ app.listen(PORT, () => {
 });
 
 export default app;
-
 

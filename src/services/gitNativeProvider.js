@@ -625,9 +625,13 @@ This repository was automatically initialized by RedString UI React. You can now
           try {
             const { persistentAuth } = await import('./persistentAuth.js');
             if (this.authMethod === 'github-app') {
-              persistentAuth.clearAppInstallation?.();
+              if (typeof persistentAuth.clearAppInstallation === 'function') {
+                await persistentAuth.clearAppInstallation();
+              }
             } else {
-              persistentAuth.clearTokens?.();
+              if (typeof persistentAuth.clearTokens === 'function') {
+                await persistentAuth.clearTokens();
+              }
             }
           } catch (error) {
             console.warn('[GitHubSemanticProvider] Failed to clear invalid tokens:', error);

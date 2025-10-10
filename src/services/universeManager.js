@@ -201,17 +201,14 @@ class UniverseManager {
       const authStatus = persistentAuth.getAuthStatus();
       console.log('[UniverseManager] Auth status:', authStatus);
 
-      // Check for authentication - be lenient about expiry since GitHub tokens last a year
-      const hasAccessToken = !!storageWrapper.getItem('github_access_token');
-      if (!authStatus.isAuthenticated && !hasAccessToken) {
+      // Check for authentication across OAuth and GitHub App
+      const hasOAuthToken = persistentAuth.hasValidTokens();
+      const hasAppInstallation = persistentAuth.hasAppInstallation();
+      if (!hasOAuthToken && !hasAppInstallation) {
         console.log('[UniverseManager] No valid auth token, skipping Git sync setup');
         return;
       }
       
-      if (hasAccessToken && !authStatus.isAuthenticated) {
-        console.warn('[UniverseManager] Token appears expired but will attempt to use it (GitHub tokens typically last 1 year)');
-      }
-
       console.log('[UniverseManager] Step 3: Getting active universe...');
       const activeUniverse = this.getActiveUniverse();
       console.log('[UniverseManager] Active universe:', activeUniverse?.slug || 'none');
@@ -584,7 +581,7 @@ class UniverseManager {
           lastUpdated: Date.now()
         };
         try {
-          persistentAuth.storeAppInstallation(updated);
+          await persistentAuth.storeAppInstallation(updated);
         } catch (error) {
           console.warn('[UniverseManager] Failed to persist refreshed GitHub App token:', error);
         }
@@ -1200,7 +1197,7 @@ class UniverseManager {
               
               // Update stored installation with fresh token and expiry
               const updatedApp = { ...app, accessToken: token, tokenExpiresAt: expiresAt.toISOString() };
-              persistentAuth.storeAppInstallation(updatedApp);
+              await persistentAuth.storeAppInstallation(updatedApp);
             } else {
               // Fall back to OAuth if GitHub App token fails
               token = await persistentAuth.getAccessToken();

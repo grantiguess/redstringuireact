@@ -9,6 +9,7 @@ import cors from 'cors';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
+import tokenVault from './src/services/server/tokenVault.js';
 
 // Load environment variables
 dotenv.config();
@@ -504,11 +505,50 @@ app.post('/api/github/oauth/token', async (req, res) => {
       });
     }
 
+    // Fetch user profile for context and auditing
+    let userData = null;
+    try {
+      const userResponse = await fetch('https://api.github.com/user', {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'Authorization': `Bearer ${tokenData.access_token}`,
+          'User-Agent': 'Redstring-OAuth-Server/1.0'
+        }
+      });
+      if (userResponse.ok) {
+        userData = await userResponse.json();
+      } else {
+        const text = await userResponse.text().catch(() => '');
+        logger.warn('[OAuth] Failed to fetch GitHub user profile:', userResponse.status, text);
+      }
+    } catch (profileError) {
+      logger.warn('[OAuth] User profile fetch error:', profileError.message);
+    }
+
+    const expiresAt = tokenData.expires_in
+      ? Date.now() + (tokenData.expires_in * 1000)
+      : Date.now() + (365 * 24 * 60 * 60 * 1000);
+
+    try {
+      tokenVault.setOAuthCredentials({
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token || null,
+        scope: tokenData.scope || null,
+        tokenType: tokenData.token_type || 'bearer',
+        expiresAt,
+        user: userData
+      });
+    } catch (vaultError) {
+      logger.warn('[OAuth] Failed to persist OAuth credentials:', vaultError.message);
+    }
+
     // Return token data to frontend (validated)
     res.json({
       access_token: tokenData.access_token,
       token_type: tokenData.token_type || 'bearer',
       scope: tokenData.scope,
+      expires_at: new Date(expiresAt).toISOString(),
+      user: userData,
       service: 'oauth-server'
     });
     
@@ -523,6 +563,234 @@ app.post('/api/github/oauth/token', async (req, res) => {
       error: error.message,
       service: 'oauth-server',
       timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Secure token state endpoints
+app.get('/api/github/auth/state', (req, res) => {
+  try {
+    const includeTokens = (() => {
+      const raw = (req.query?.includeTokens || '').toString().toLowerCase();
+      return raw === 'true' || raw === '1' || raw === 'yes';
+    })();
+
+    const oauthCredentials = tokenVault.getOAuthCredentials();
+    const githubAppCredentials = tokenVault.getGitHubAppInstallation();
+
+    const response = {
+      service: 'oauth-server',
+      oauth: oauthCredentials ? {
+        hasToken: true,
+        scope: oauthCredentials.scope || null,
+        tokenType: oauthCredentials.tokenType || 'bearer',
+        expiresAt: oauthCredentials.expiresAt || null,
+        storedAt: oauthCredentials.storedAt || null,
+        user: oauthCredentials.user || null
+      } : { hasToken: false },
+      githubApp: githubAppCredentials ? {
+        isInstalled: true,
+        installationId: githubAppCredentials.installationId || null,
+        tokenExpiresAt: githubAppCredentials.tokenExpiresAt || null,
+        storedAt: githubAppCredentials.storedAt || null,
+        account: githubAppCredentials.account || null,
+        permissions: githubAppCredentials.permissions || null,
+        repositories: Array.isArray(githubAppCredentials.repositories)
+          ? githubAppCredentials.repositories
+          : []
+      } : { isInstalled: false }
+    };
+
+    if (includeTokens && oauthCredentials?.accessToken) {
+      response.oauth.accessToken = oauthCredentials.accessToken;
+      response.oauth.refreshToken = oauthCredentials.refreshToken || null;
+    }
+
+    if (includeTokens && githubAppCredentials?.accessToken) {
+      response.githubApp.accessToken = githubAppCredentials.accessToken;
+    }
+
+    res.json(response);
+  } catch (error) {
+    logger.error('[OAuth] Auth state retrieval failed:', error);
+    res.status(500).json({
+      error: error.message,
+      service: 'oauth-server'
+    });
+  }
+});
+
+app.get('/api/github/auth/oauth/token', (req, res) => {
+  try {
+    const credentials = tokenVault.getOAuthCredentials();
+    if (!credentials?.accessToken) {
+      return res.status(404).json({
+        error: 'No OAuth token stored',
+        service: 'oauth-server'
+      });
+    }
+    res.json({
+      access_token: credentials.accessToken,
+      refresh_token: credentials.refreshToken || null,
+      scope: credentials.scope || null,
+      token_type: credentials.tokenType || 'bearer',
+      expires_at: credentials.expiresAt ? new Date(credentials.expiresAt).toISOString() : null,
+      user: credentials.user || null,
+      stored_at: credentials.storedAt ? new Date(credentials.storedAt).toISOString() : null,
+      service: 'oauth-server'
+    });
+  } catch (error) {
+    logger.error('[OAuth] OAuth token retrieval failed:', error);
+    res.status(500).json({
+      error: error.message,
+      service: 'oauth-server'
+    });
+  }
+});
+
+app.post('/api/github/auth/oauth', (req, res) => {
+  try {
+    const {
+      access_token,
+      refresh_token,
+      scope = null,
+      token_type = 'bearer',
+      expires_at = null,
+      user = null
+    } = req.body || {};
+
+    if (!access_token || typeof access_token !== 'string' || access_token.trim().length === 0) {
+      return res.status(400).json({
+        error: 'Missing access_token',
+        service: 'oauth-server'
+      });
+    }
+
+    const expiresAtTs = expires_at
+      ? new Date(expires_at).getTime()
+      : Date.now() + (365 * 24 * 60 * 60 * 1000);
+
+    const stored = tokenVault.setOAuthCredentials({
+      accessToken: access_token,
+      refreshToken: refresh_token || null,
+      scope,
+      tokenType: token_type || 'bearer',
+      expiresAt: expiresAtTs,
+      user
+    });
+
+    res.json({
+      stored: true,
+      expires_at: stored.expiresAt ? new Date(stored.expiresAt).toISOString() : null,
+      service: 'oauth-server'
+    });
+  } catch (error) {
+    logger.error('[OAuth] Failed to persist OAuth credentials:', error);
+    res.status(500).json({
+      error: error.message,
+      service: 'oauth-server'
+    });
+  }
+});
+
+app.delete('/api/github/auth/oauth', (req, res) => {
+  try {
+    tokenVault.clearOAuthCredentials();
+    res.json({
+      cleared: true,
+      service: 'oauth-server'
+    });
+  } catch (error) {
+    logger.error('[OAuth] Failed to clear OAuth credentials:', error);
+    res.status(500).json({
+      error: error.message,
+      service: 'oauth-server'
+    });
+  }
+});
+
+app.get('/api/github/auth/github-app', (req, res) => {
+  try {
+    const credentials = tokenVault.getGitHubAppInstallation();
+    if (!credentials) {
+      return res.status(404).json({
+        error: 'No GitHub App installation stored',
+        service: 'oauth-server'
+      });
+    }
+    res.json({
+      installationId: credentials.installationId || null,
+      accessToken: credentials.accessToken || null,
+      tokenExpiresAt: credentials.tokenExpiresAt ? new Date(credentials.tokenExpiresAt).toISOString() : null,
+      repositories: Array.isArray(credentials.repositories) ? credentials.repositories : [],
+      account: credentials.account || null,
+      permissions: credentials.permissions || null,
+      stored_at: credentials.storedAt ? new Date(credentials.storedAt).toISOString() : null,
+      service: 'oauth-server'
+    });
+  } catch (error) {
+    logger.error('[OAuth] GitHub App credentials retrieval failed:', error);
+    res.status(500).json({
+      error: error.message,
+      service: 'oauth-server'
+    });
+  }
+});
+
+app.post('/api/github/auth/github-app', (req, res) => {
+  try {
+    const {
+      installationId,
+      accessToken = null,
+      tokenExpiresAt = null,
+      repositories = [],
+      account = null,
+      permissions = null
+    } = req.body || {};
+
+    if (!installationId) {
+      return res.status(400).json({
+        error: 'installationId is required',
+        service: 'oauth-server'
+      });
+    }
+
+    const stored = tokenVault.setGitHubAppInstallation({
+      installationId,
+      accessToken,
+      tokenExpiresAt: tokenExpiresAt ? new Date(tokenExpiresAt).getTime() : null,
+      repositories,
+      account,
+      permissions
+    });
+
+    res.json({
+      stored: true,
+      tokenExpiresAt: stored.tokenExpiresAt ? new Date(stored.tokenExpiresAt).toISOString() : null,
+      repositoryCount: Array.isArray(stored.repositories) ? stored.repositories.length : 0,
+      service: 'oauth-server'
+    });
+  } catch (error) {
+    logger.error('[OAuth] Failed to persist GitHub App installation:', error);
+    res.status(500).json({
+      error: error.message,
+      service: 'oauth-server'
+    });
+  }
+});
+
+app.delete('/api/github/auth/github-app', (req, res) => {
+  try {
+    tokenVault.clearGitHubAppInstallation();
+    res.json({
+      cleared: true,
+      service: 'oauth-server'
+    });
+  } catch (error) {
+    logger.error('[OAuth] Failed to clear GitHub App credentials:', error);
+    res.status(500).json({
+      error: error.message,
+      service: 'oauth-server'
     });
   }
 });
@@ -719,10 +987,71 @@ app.post('/api/github/app/installation-token', async (req, res) => {
     const tokenData = await tokenResponse.json();
     logger.info('[GitHubApp] Installation token generated successfully');
 
+    let account = null;
+    try {
+      const installationInfoResponse = await fetch(`https://api.github.com/app/installations/${installation_id}`, {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'Authorization': `Bearer ${appJWT}`,
+          'User-Agent': 'Redstring-GitHubApp-Server/1.0'
+        }
+      });
+      if (installationInfoResponse.ok) {
+        const installationInfo = await installationInfoResponse.json();
+        account = installationInfo?.account || null;
+      } else {
+        const text = await installationInfoResponse.text().catch(() => '');
+        logger.warn('[GitHubApp] Failed to fetch installation info:', installationInfoResponse.status, text);
+      }
+    } catch (infoError) {
+      logger.warn('[GitHubApp] Installation info fetch error:', infoError.message);
+    }
+
+    let repositories = [];
+    try {
+      const reposResponse = await fetch('https://api.github.com/installation/repositories', {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'Authorization': `Bearer ${tokenData.token}`,
+          'User-Agent': 'Redstring-GitHubApp-Server/1.0'
+        }
+      });
+      if (reposResponse.ok) {
+        const repoData = await reposResponse.json();
+        if (Array.isArray(repoData?.repositories)) {
+          repositories = repoData.repositories;
+        }
+      } else {
+        const text = await reposResponse.text().catch(() => '');
+        logger.warn('[GitHubApp] Failed to fetch installation repositories:', reposResponse.status, text);
+      }
+    } catch (repoError) {
+      logger.warn('[GitHubApp] Installation repositories fetch error:', repoError.message);
+    }
+
+    const tokenExpiresAtTs = tokenData.expires_at
+      ? new Date(tokenData.expires_at).getTime()
+      : null;
+
+    try {
+      tokenVault.setGitHubAppInstallation({
+        installationId: installation_id,
+        accessToken: tokenData.token,
+        tokenExpiresAt: tokenExpiresAtTs,
+        repositories,
+        account,
+        permissions: tokenData.permissions || null
+      });
+    } catch (vaultError) {
+      logger.warn('[GitHubApp] Failed to persist GitHub App credentials:', vaultError.message);
+    }
+
     res.json({
       token: tokenData.token,
       expires_at: tokenData.expires_at,
       permissions: tokenData.permissions,
+      account,
+      repositories,
       service: 'oauth-server'
     });
 
