@@ -200,6 +200,7 @@ const UniversesList = ({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {universes.map((universe) => {
           const isActive = universe.slug === activeUniverseSlug;
+          const resolvedSource = universe.sourceOfTruth || universe.raw?.sourceOfTruth || universe.storage?.primary?.type || null;
           const nodeCount = universe.nodeCount || universe.raw?.nodeCount || 0;
           const connectionCount = universe.connectionCount || universe.raw?.connectionCount || 0;
           const graphCount = universe.graphCount || universe.raw?.graphCount || 0;
@@ -275,7 +276,7 @@ const UniversesList = ({
                             padding: 8,
                             backgroundColor: '#cfc6c6',
                             borderRadius: 6,
-                            border: `2px solid ${universe.sourceOfTruth === 'git' ? '#7A0000' : '#979090'}`,
+                            border: `2px solid ${resolvedSource === 'git' ? '#7A0000' : '#979090'}`,
                             display: 'flex',
                             flexDirection: 'column',
                             gap: 6,
@@ -289,7 +290,7 @@ const UniversesList = ({
                               <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#260000' }}>
                                 @{universe.raw.gitRepo.linkedRepo.user}/{universe.raw.gitRepo.linkedRepo.repo}
                               </span>
-                              {universe.sourceOfTruth === 'git' && (
+                              {resolvedSource === 'git' && (
                                 <span style={{
                                   fontSize: '0.6rem',
                                   padding: '2px 4px',
@@ -402,7 +403,7 @@ const UniversesList = ({
 
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {(() => {
-                              const isSourceOfTruth = universe.sourceOfTruth === 'git';
+                              const isSourceOfTruth = resolvedSource === 'git';
                               const hasOtherStorage = !!(universe.raw?.localFile?.enabled);
                               const canToggle = hasOtherStorage;
                               
@@ -488,7 +489,7 @@ const UniversesList = ({
                             padding: 8,
                             backgroundColor: '#cfc6c6',
                             borderRadius: 6,
-                            border: `2px solid ${universe.sourceOfTruth === 'local' ? '#7A0000' : '#979090'}`,
+                            border: `2px solid ${resolvedSource === 'local' ? '#7A0000' : '#979090'}`,
                             display: 'flex',
                             flexDirection: 'column',
                             gap: 6,
@@ -513,7 +514,7 @@ const UniversesList = ({
                                     <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#260000' }}>
                                       Local File
                                     </span>
-                                    {universe.sourceOfTruth === 'local' && (
+                                    {resolvedSource === 'local' && (
                                       <span style={{
                                         fontSize: '0.6rem',
                                         padding: '2px 4px',
@@ -591,7 +592,7 @@ const UniversesList = ({
 
                                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                                   {(() => {
-                                    const isSourceOfTruth = universe.sourceOfTruth === 'local';
+                                    const isSourceOfTruth = resolvedSource === 'local';
                                     const hasOtherStorage = !!(universe.raw?.gitRepo?.linkedRepo);
                                     const canToggle = hasOtherStorage;
 

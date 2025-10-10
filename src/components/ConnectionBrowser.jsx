@@ -31,6 +31,16 @@ const RDFTriplet = ({
   const confidencePercent = showConfidence ? Math.round(connection.confidence * 100) : null;
   const confidenceColor = confidencePercent >= 80 ? '#4CAF50' :
                           confidencePercent >= 60 ? '#FF9800' : '#F44336';
+
+  // Source badge info
+  const sourceInfo = {
+    wikidata: { label: 'W', color: '#006699', title: 'Wikidata' },
+    dbpedia: { label: 'D', color: '#FF6600', title: 'DBpedia' },
+    wikipedia: { label: 'W', color: '#000000', title: 'Wikipedia' },
+    semantic_web: { label: 'SW', color: '#8B0000', title: 'Semantic Web' }
+  };
+  const source = connection?.source?.toLowerCase() || '';
+  const sourceBadge = sourceInfo[source] || { label: 'S', color: '#666', title: 'Semantic' };
   
   // Determine connection directionality
   const isNondirectional = connection?.type === 'native' && connection?.directionality === 'nondirectional';
@@ -103,24 +113,50 @@ const RDFTriplet = ({
       }}
       title={connection?.description || `${subject} → ${predicate} → ${object}`}
     >
-      {/* Confidence Badge */}
-      {showConfidence && (
-        <div style={{
-          position: 'absolute',
-          top: '-8px',
-          right: '-8px',
-          background: confidenceColor,
-          color: 'white',
-          borderRadius: '12px',
-          padding: '2px 6px',
-          fontSize: '10px',
-          fontWeight: 'bold',
-          zIndex: 10,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
-        }}>
-          {confidencePercent}%
-        </div>
-      )}
+      {/* Top-right badges */}
+      <div style={{
+        position: 'absolute',
+        top: '-8px',
+        right: '-8px',
+        display: 'flex',
+        gap: '4px',
+        alignItems: 'center',
+        zIndex: 10
+      }}>
+        {/* Source Badge (always show for semantic) */}
+        {connection?.type === 'semantic' && (
+          <div
+            title={sourceBadge.title}
+            style={{
+              background: sourceBadge.color,
+              color: 'white',
+              borderRadius: '10px',
+              padding: '2px 5px',
+              fontSize: '9px',
+              fontWeight: 'bold',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              border: '1px solid rgba(255,255,255,0.3)'
+            }}
+          >
+            {sourceBadge.label}
+          </div>
+        )}
+
+        {/* Confidence Badge */}
+        {showConfidence && (
+          <div style={{
+            background: confidenceColor,
+            color: 'white',
+            borderRadius: '12px',
+            padding: '2px 6px',
+            fontSize: '10px',
+            fontWeight: 'bold',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+          }}>
+            {confidencePercent}%
+          </div>
+        )}
+      </div>
       <div className="triplet-flow">
         {/* Subject Node */}
         <div 
@@ -287,6 +323,8 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection, isUltraSlim = fa
   const [isDebouncing, setIsDebouncing] = useState(false); // NEW: Track debounce state
   const [error, setError] = useState(null);
   const [containerWidth, setContainerWidth] = useState(400); // Default width
+  const [searchFilter, setSearchFilter] = useState(''); // NEW: Search filter
+  const [minConfidence, setMinConfidence] = useState(0); // NEW: Confidence filter (0-100)
   const connectionListRef = useRef(null);
 
   const { activeGraphId, nodePrototypes, graphs, edges } = useGraphStore();
@@ -538,22 +576,47 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection, isUltraSlim = fa
     loadNativeConnections();
   }, [nodeData?.id, graphs, edges, nodePrototypes, activeGraphId]);
   
-  // Filter connections based on scope
+  // Filter connections based on scope AND search/confidence filters
   const filteredConnections = useMemo(() => {
+    let connections = [];
+
     switch (connectionScope) {
       case 'graph':
         // Show only native connections that are in the current active graph
-        return nativeConnections.filter(conn => conn.inCurrentGraph);
+        connections = nativeConnections.filter(conn => conn.inCurrentGraph);
+        break;
       case 'universe':
         // Show all native connections across all graphs
-        return nativeConnections;
+        connections = nativeConnections;
+        break;
       case 'semantic':
         // Show semantic web connections
-        return semanticConnections;
+        connections = semanticConnections;
+        break;
       default:
-        return [];
+        connections = [];
     }
-  }, [connectionScope, nativeConnections, semanticConnections]);
+
+    // Apply search filter (searches in predicate, subject, object)
+    if (searchFilter.trim()) {
+      const search = searchFilter.toLowerCase();
+      connections = connections.filter(conn =>
+        (conn.predicate?.toLowerCase() || '').includes(search) ||
+        (conn.subject?.toLowerCase() || '').includes(search) ||
+        (conn.object?.toLowerCase() || '').includes(search) ||
+        (conn.description?.toLowerCase() || '').includes(search)
+      );
+    }
+
+    // Apply confidence filter (only for semantic connections)
+    if (connectionScope === 'semantic' && minConfidence > 0) {
+      connections = connections.filter(conn =>
+        (conn.confidence || 0) * 100 >= minConfidence
+      );
+    }
+
+    return connections;
+  }, [connectionScope, nativeConnections, semanticConnections, searchFilter, minConfidence]);
   
   // Get appropriate color for nodes based on existing prototypes
   const getNodeColor = (nodeName) => {
@@ -610,6 +673,75 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection, isUltraSlim = fa
           )
         }
       />
+
+      {/* Search & Filter Bar (only for semantic web) */}
+      {connectionScope === 'semantic' && !isLoading && semanticConnections.length > 0 && (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          padding: '8px',
+          backgroundColor: 'rgba(139, 0, 0, 0.05)',
+          borderRadius: '6px',
+          marginTop: '8px'
+        }}>
+          {/* Search Input */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Search size={14} color="#8B0000" />
+            <input
+              type="text"
+              placeholder="Search connections, relationships..."
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              style={{
+                flex: 1,
+                padding: '6px 8px',
+                border: '1px solid #8B0000',
+                borderRadius: '4px',
+                fontSize: '13px',
+                fontFamily: "'EmOne', sans-serif"
+              }}
+            />
+            {searchFilter && (
+              <button
+                onClick={() => setSearchFilter('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#8B0000',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+                title="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Confidence Filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+            <span style={{ color: '#666', whiteSpace: 'nowrap' }}>Min confidence:</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              value={minConfidence}
+              onChange={(e) => setMinConfidence(Number(e.target.value))}
+              style={{ flex: 1 }}
+            />
+            <span style={{
+              color: '#8B0000',
+              fontWeight: 'bold',
+              minWidth: '40px',
+              textAlign: 'right'
+            }}>
+              {minConfidence}%
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Connection List */}
       <div className="connection-list" ref={connectionListRef}>

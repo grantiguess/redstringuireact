@@ -249,18 +249,20 @@ const PanelContentWrapper = ({
     
     const { subject, predicate, object, subjectColor, objectColor } = connection;
     
-    // Find or create subject node prototype
+    // Find or create subject node prototype (REUSE if exists!)
     let subjectPrototypeId = null;
     for (const [id, prototype] of nodePrototypes.entries()) {
       if (prototype.name.toLowerCase() === subject.toLowerCase()) {
         subjectPrototypeId = id;
+        console.log(`[PanelContentWrapper] ✓ Found existing PROTOTYPE for subject: "${subject}" (${id})`);
         break;
       }
     }
-    
+
     // If subject node doesn't exist, create it
     if (!subjectPrototypeId) {
       subjectPrototypeId = `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      console.log(`[PanelContentWrapper] → Creating NEW prototype for subject: "${subject}" (${subjectPrototypeId})`);
       storeActions.addNodePrototype({
         id: subjectPrototypeId,
         name: subject,
@@ -269,19 +271,21 @@ const PanelContentWrapper = ({
         definitionGraphIds: []
       });
     }
-    
-    // Find or create object node prototype
+
+    // Find or create object node prototype (REUSE if exists!)
     let objectPrototypeId = null;
     for (const [id, prototype] of nodePrototypes.entries()) {
       if (prototype.name.toLowerCase() === object.toLowerCase()) {
         objectPrototypeId = id;
+        console.log(`[PanelContentWrapper] ✓ Found existing PROTOTYPE for object: "${object}" (${id})`);
         break;
       }
     }
-    
+
     // If object node doesn't exist, create it
     if (!objectPrototypeId) {
       objectPrototypeId = `node-${Date.now() + 1}-${Math.random().toString(36).substr(2, 9)}`;
+      console.log(`[PanelContentWrapper] → Creating NEW prototype for object: "${object}" (${objectPrototypeId})`);
       storeActions.addNodePrototype({
         id: objectPrototypeId,
         name: object,
@@ -296,34 +300,39 @@ const PanelContentWrapper = ({
     if (currentGraph) {
       let subjectInstanceId = null;
       let objectInstanceId = null;
-      
-      // Check if subject instance already exists in current graph
+
+      // Check if instances already exist in current graph
+      // IMPORTANT: Only create NEW instances if the prototype isn't already in this graph
       for (const [instanceId, instance] of currentGraph.instances.entries()) {
         if (instance.prototypeId === subjectPrototypeId) {
           subjectInstanceId = instanceId;
+          console.log(`[PanelContentWrapper] Found existing subject instance: ${subject} (${instanceId})`);
         }
         if (instance.prototypeId === objectPrototypeId) {
           objectInstanceId = instanceId;
+          console.log(`[PanelContentWrapper] Found existing object instance: ${object} (${instanceId})`);
         }
       }
-      
-      // Create subject instance if it doesn't exist
+
+      // Only create subject instance if it doesn't exist in current graph
       if (!subjectInstanceId) {
         subjectInstanceId = `instance-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        storeActions.addNodeInstance(activeGraphId, subjectPrototypeId, { 
-          x: 100, 
-          y: 100, 
-          scale: 1 
+        console.log(`[PanelContentWrapper] Creating NEW subject instance: ${subject} (${subjectInstanceId})`);
+        storeActions.addNodeInstance(activeGraphId, subjectPrototypeId, {
+          x: 100,
+          y: 100,
+          scale: 1
         }, subjectInstanceId);
       }
-      
-      // Create object instance if it doesn't exist
+
+      // Only create object instance if it doesn't exist in current graph
       if (!objectInstanceId) {
         objectInstanceId = `instance-${Date.now() + 1}-${Math.random().toString(36).substr(2, 9)}`;
-        storeActions.addNodeInstance(activeGraphId, objectPrototypeId, { 
-          x: 300, 
-          y: 100, 
-          scale: 1 
+        console.log(`[PanelContentWrapper] Creating NEW object instance: ${object} (${objectInstanceId})`);
+        storeActions.addNodeInstance(activeGraphId, objectPrototypeId, {
+          x: 300,
+          y: 100,
+          scale: 1
         }, objectInstanceId);
       }
       
@@ -335,8 +344,12 @@ const PanelContentWrapper = ({
           const e = edgesMap.get(eid);
           return e && e.sourceId === subjectInstanceId && e.destinationId === objectInstanceId && e.label === predicate;
         });
-        if (!hasDuplicate) {
+
+        if (hasDuplicate) {
+          console.log(`[PanelContentWrapper] ⚠ Edge already exists: "${subject}" → "${predicate}" → "${object}" - SKIPPED`);
+        } else {
           const edgeId = `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          console.log(`[PanelContentWrapper] ➕ Creating edge: "${subject}" → "${predicate}" → "${object}" (${edgeId})`);
           storeActions.addEdge(activeGraphId, {
             id: edgeId,
             sourceId: subjectInstanceId,
