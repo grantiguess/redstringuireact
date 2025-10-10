@@ -69,72 +69,10 @@ const pickDisplayName = (candidateName, fallbackName) => {
  */
 export const discoverUniversesInRepo = async (provider) => {
   try {
-    console.log('[UniverseDiscovery] Scanning repository for .redstring universe files in standard locations (root, universes/, universe/)...');
-
-    const universes = [];
-
-    // Check for universes in standard locations
-    const universePaths = [
-      'universes',
-      'universe',
-      '',  // root level
-    ];
-
-    for (const basePath of universePaths) {
-      try {
-        const contents = await provider.listDirectoryContents(basePath);
-
-        // Look for .redstring files
-        const redstringFiles = contents.filter(item =>
-          item.name.endsWith('.redstring') && item.type === 'file'
-        );
-
-        // Look for universe directories
-        const universeDirs = contents.filter(item =>
-          item.type === 'dir' && (
-            item.name.startsWith('universe') ||
-            item.name === 'default' ||
-            item.name === 'main'
-          )
-        );
-
-        // Process .redstring files at this level
-        for (const file of redstringFiles) {
-          const universeInfo = await analyzeUniverseFile(provider, `${basePath}/${file.name}`.replace(/^\//, ''));
-          if (universeInfo) {
-            universes.push({
-              ...universeInfo,
-              path: `${basePath}/${file.name}`.replace(/^\//, ''),
-              location: basePath || 'root',
-              type: 'file'
-            });
-          }
-        }
-
-        // Process universe directories
-        for (const dir of universeDirs) {
-          const dirPath = `${basePath}/${dir.name}`.replace(/^\//, '');
-          const dirUniverses = await scanUniverseDirectory(provider, dirPath);
-          universes.push(...dirUniverses.map(u => ({
-            ...u,
-            location: dirPath,
-            type: 'directory'
-          })));
-        }
-
-      } catch (error) {
-        // Directory might not exist during discovery - this is expected
-        if (error.message && error.message.includes('404')) {
-          console.log(`[UniverseDiscovery] Directory '${basePath || 'root'}' not found (expected during repository scanning)`);
-        } else {
-          console.log(`[UniverseDiscovery] Path '${basePath}' not accessible: ${error.message}`);
-        }
-      }
-    }
-
-    console.log(`[UniverseDiscovery] Discovery complete: Found ${universes.length} valid universe files in repository`);
+    console.log('[UniverseDiscovery] Recursively scanning repository for .redstring universe files...');
+    const { universes } = await traverseRepositoryForUniverses(provider, { collectStats: false });
+    console.log(`[UniverseDiscovery] Discovery complete: Found ${universes.length} universe files`);
     return universes;
-
   } catch (error) {
     console.error('[UniverseDiscovery] Failed to discover universes:', error);
     return [];
@@ -147,158 +85,76 @@ export const discoverUniversesInRepo = async (provider) => {
  * @returns {{ universes: Array, stats: { scannedDirs: number, candidates: number, valid: number, invalid: number } }}
  */
 export const discoverUniversesWithStats = async (provider) => {
-  const stats = { scannedDirs: 0, candidates: 0, valid: 0, invalid: 0 };
-  const universes = [];
   try {
-    console.log('[UniverseDiscovery] Scanning repository for .redstring universe files with detailed statistics...');
+    console.log('[UniverseDiscovery] Recursively scanning repository for .redstring universe files with detailed statistics...');
+    const { universes, stats } = await traverseRepositoryForUniverses(provider, { collectStats: true });
+    console.log(`[UniverseDiscovery] Discovery complete: Found ${universes.length} valid universes from ${stats.candidates} candidates across ${stats.scannedDirs} directories`);
+    return { universes, stats };
+  } catch (error) {
+    console.error('[UniverseDiscovery] Failed to discover universes:', error);
+    return { universes: [], stats: { scannedDirs: 0, candidates: 0, valid: 0, invalid: 0 } };
+  }
+};
 
-    const universePaths = [
-      'universes',
-      'universe',
-      '',
-    ];
+async function traverseRepositoryForUniverses(provider, { collectStats = false } = {}) {
+  const stats = collectStats ? { scannedDirs: 0, candidates: 0, valid: 0, invalid: 0 } : null;
+  const universes = [];
+  const queue = [''];
+  const visited = new Set();
 
-    for (const basePath of universePaths) {
-      try {
-        const contents = await provider.listDirectoryContents(basePath);
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const visitKey = current || '.';
+    if (visited.has(visitKey)) {
+      continue;
+    }
+    visited.add(visitKey);
+
+    try {
+      const contents = await provider.listDirectoryContents(current);
+      if (stats) {
         stats.scannedDirs += 1;
+      }
 
-        const redstringFiles = contents.filter(item =>
-          item.name.endsWith('.redstring') && item.type === 'file'
-        );
-        stats.candidates += redstringFiles.length;
-
-        const universeDirs = contents.filter(item =>
-          item.type === 'dir' && (
-            item.name.startsWith('universe') ||
-            item.name === 'default' ||
-            item.name === 'main'
-          )
-        );
-
-        for (const file of redstringFiles) {
-          const universeInfo = await analyzeUniverseFile(provider, `${basePath}/${file.name}`.replace(/^\//, ''));
+      for (const item of contents) {
+        if (item.type === 'file' && item.name.endsWith('.redstring')) {
+          if (stats) {
+            stats.candidates += 1;
+          }
+          const filePath = current ? `${current}/${item.name}` : item.name;
+          const universeInfo = await analyzeUniverseFile(provider, filePath);
           if (universeInfo) {
             universes.push({
               ...universeInfo,
-              path: `${basePath}/${file.name}`.replace(/^\//, ''),
-              location: basePath || 'root',
+              path: filePath,
+              location: current || 'root',
               type: 'file'
             });
-            stats.valid += 1;
-          } else {
+            if (stats) {
+              stats.valid += 1;
+            }
+          } else if (stats) {
             stats.invalid += 1;
           }
-        }
-
-        for (const dir of universeDirs) {
-          const dirPath = `${basePath}/${dir.name}`.replace(/^\//, '');
-          const { universes: dirUniverses, stats: dirStats } = await scanUniverseDirectoryWithStats(provider, dirPath);
-          universes.push(...dirUniverses.map(u => ({
-            ...u,
-            location: dirPath,
-            type: 'directory'
-          })));
-          stats.candidates += dirStats.candidates;
-          stats.valid += dirStats.valid;
-          stats.invalid += dirStats.invalid;
-          stats.scannedDirs += dirStats.scannedDirs;
-        }
-
-      } catch (error) {
-        // Directory might not exist during discovery - this is expected
-        if (error.message && error.message.includes('404')) {
-          console.log(`[UniverseDiscovery] Directory '${basePath || 'root'}' not found (expected during repository scanning)`);
-        } else {
-          console.log(`[UniverseDiscovery] Path '${basePath}' not accessible: ${error.message}`);
+        } else if (item.type === 'dir') {
+          const nextPath = current ? `${current}/${item.name}` : item.name;
+          queue.push(nextPath);
         }
       }
-    }
-
-    console.log(`[UniverseDiscovery] Discovery complete: Found ${universes.length} valid universes from ${stats.candidates} candidates across ${stats.scannedDirs} directories`);
-    return { universes, stats };
-
-  } catch (error) {
-    console.error('[UniverseDiscovery] Failed to discover universes:', error);
-    return { universes: [], stats };
-  }
-};
-
-/**
- * Scan a specific directory for universe files with stats
- */
-const scanUniverseDirectoryWithStats = async (provider, dirPath) => {
-  const stats = { scannedDirs: 1, candidates: 0, valid: 0, invalid: 0 };
-  try {
-    const contents = await provider.listDirectoryContents(dirPath);
-    const universes = [];
-
-    const redstringFiles = contents.filter(item =>
-      item.name.endsWith('.redstring') && item.type === 'file'
-    );
-    stats.candidates += redstringFiles.length;
-
-    for (const file of redstringFiles) {
-      const filePath = `${dirPath}/${file.name}`;
-      const universeInfo = await analyzeUniverseFile(provider, filePath);
-      if (universeInfo) {
-        universes.push({
-          ...universeInfo,
-          path: filePath
-        });
-        stats.valid += 1;
+    } catch (error) {
+      if (error?.message?.includes('404')) {
+        console.log(`[UniverseDiscovery] Directory '${current || 'root'}' not found (expected during repository scanning)`);
       } else {
-        stats.invalid += 1;
+        console.warn(`[UniverseDiscovery] Failed to scan directory ${current || 'root'}: ${error?.message || error}`);
       }
     }
-
-    return { universes, stats };
-  } catch (error) {
-    if (error.message && error.message.includes('404')) {
-      console.log(`[UniverseDiscovery] Directory '${dirPath}' not found (expected during repository scanning)`);
-    } else {
-      console.error(`[UniverseDiscovery] Failed to scan directory ${dirPath}: ${error.message}`);
-    }
-    return { universes: [], stats };
   }
-};
 
-/**
- * Scan a specific directory for universe files
- * @param {Object} provider - Git provider instance
- * @param {string} dirPath - Directory path to scan
- * @returns {Array} Array of universe objects in this directory
- */
-const scanUniverseDirectory = async (provider, dirPath) => {
-  try {
-    const contents = await provider.listDirectoryContents(dirPath);
-    const universes = [];
-
-    const redstringFiles = contents.filter(item =>
-      item.name.endsWith('.redstring') && item.type === 'file'
-    );
-
-    for (const file of redstringFiles) {
-      const filePath = `${dirPath}/${file.name}`;
-      const universeInfo = await analyzeUniverseFile(provider, filePath);
-      if (universeInfo) {
-        universes.push({
-          ...universeInfo,
-          path: filePath
-        });
-      }
-    }
-
-    return universes;
-  } catch (error) {
-    if (error.message && error.message.includes('404')) {
-      console.log(`[UniverseDiscovery] Directory '${dirPath}' not found (expected during repository scanning)`);
-    } else {
-      console.error(`[UniverseDiscovery] Failed to scan directory ${dirPath}: ${error.message}`);
-    }
-    return [];
-  }
-};
+  return {
+    universes,
+    stats: stats || { scannedDirs: 0, candidates: 0, valid: universes.length, invalid: 0 }
+  };
+}
 
 /**
  * Analyze a universe file to extract metadata

@@ -2470,6 +2470,8 @@ return (
       onLinkLocalFile={handleLinkLocalFile}
       onCreateLocalFile={handleCreateLocalFile}
       onDownloadLocalFile={handleDownloadLocalFile}
+      onDownloadRepoFile={handleDownloadRepoFile}
+      onRemoveLocalFile={handleRemoveLocalFile}
       onRemoveRepoSource={handleRemoveRepoSource}
       onEditRepoSource={handleEditRepoSource}
       onSetMainRepoSource={handleSetMainRepoSource}
