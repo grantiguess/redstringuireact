@@ -673,16 +673,31 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           try {
             setLoading(true);
             
-            // Create the universe first
-            await gitFederationService.createUniverse(universeName, {
+            // Create the universe first and get the resulting slug
+            const creationResult = await gitFederationService.createUniverse(universeName, {
               enableGit: false,
               enableLocal: true
             });
-            
+
+            const createdSlug = creationResult?.createdUniverse?.slug ||
+              (creationResult?.universes || []).find(u => u.name === creationResult?.createdUniverse?.name)?.slug ||
+              (creationResult?.universes || []).find(u => u.name === universeName)?.slug;
+
+            if (!createdSlug) {
+              throw new Error('Unable to determine universe slug after creation');
+            }
+
             // Load the file data into it via uploadLocalFile (file first, then target slug)
-            await universeBackendBridge.uploadLocalFile(file, universeName);
-            
-            setSyncStatus({ type: 'success', message: `Universe "${universeName}" loaded from file` });
+            const uploadResult = await universeBackendBridge.uploadLocalFile(file, createdSlug);
+
+            if (uploadResult?.needsFileHandle) {
+              setSyncStatus({
+                type: 'warning',
+                message: 'Imported data is in memory. Link a local file to enable auto-save.'
+              });
+            } else {
+              setSyncStatus({ type: 'success', message: `Universe "${universeName}" loaded from file` });
+            }
             await refreshState();
           } catch (err) {
             console.error('[GitNativeFederation] Load from local failed:', err);
@@ -1353,40 +1368,61 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       const universe = state.universes.find(u => u.slug === universeSlug);
       if (!universe) throw new Error(`Universe not found: ${universeSlug}`);
 
-      if (sourceType === 'git') {
-        const linked = !!(universe.raw?.gitRepo?.linkedRepo);
-        if (!linked) {
-          setSyncStatus({ type: 'info', message: 'Link a repository first to make Git primary' });
-          setRepositoryTargetSlug(universeSlug);
-          setShowRepositoryManager(true);
-          return;
-        }
-      } else if (sourceType === 'local') {
-        const hasHandle = !!(universe.raw?.localFile?.fileHandle);
-        if (!hasHandle) {
-          setSyncStatus({ type: 'info', message: 'Pick a local file first to make Local primary' });
-          // Trigger file picker to link local file
-          handleLinkLocalFile(universeSlug);
-          return;
-        }
+      if (universe.sourceOfTruth === sourceType) {
+        setLoading(false);
+        return;
       }
 
-      await universeBackend.setSourceOfTruth(universeSlug, sourceType);
-      setSyncStatus({ type: 'success', message: `Set ${sourceType === 'git' ? 'repository' : 'local file'} as primary source for ${universeSlug}` });
-      await refreshState();
-    } catch (err) {
-      console.error('[GitNativeFederation] Set primary source failed:', err);
-      const msg = (err && err.message) ? err.message : String(err);
-      if (msg.includes('no repository linked') && sourceType === 'git') {
-        setSyncStatus({ type: 'warning', message: 'No repository linked. Choose a repo to use Git as primary.' });
+      const isGitTarget = sourceType === 'git';
+      const hasGitLink = !!(universe.raw?.gitRepo?.linkedRepo);
+      const hasLocalSlot = !!(universe.raw?.localFile?.enabled);
+      const hasLocalHandle = !!(universe.raw?.localFile?.hadFileHandle);
+
+      if (isGitTarget && !hasGitLink) {
+        setSyncStatus({ type: 'info', message: 'Link a repository first to make Git primary' });
         setRepositoryTargetSlug(universeSlug);
         setShowRepositoryManager(true);
-      } else if (msg.includes('no local file linked') && sourceType === 'local') {
-        setSyncStatus({ type: 'warning', message: 'No local file linked. Pick a file to use Local as primary.' });
-        handleLinkLocalFile(universeSlug);
-      } else {
-        setError(`Failed to set primary source: ${msg}`);
+        return;
       }
+
+      if (!isGitTarget && !hasLocalSlot) {
+        setSyncStatus({ type: 'info', message: 'Create or link a local file first to make Local primary' });
+        handleLinkLocalFile(universeSlug);
+        return;
+      }
+
+      const confirmDetails = isGitTarget
+        ? 'The current universe state will be overwritten by the latest Git data during the next sync.'
+        : hasLocalHandle
+          ? 'Future saves will target your linked local file. Unsaved Git changes will remain as backups.'
+          : 'Future saves will target the in-memory local slot. Link a persistent file to enable auto-save.';
+
+      const nextLabel = isGitTarget ? 'Git repository' : 'Local file';
+
+      setConfirmDialog({
+        title: `Set ${nextLabel} as Source of Truth`,
+        message: `Switching the source of truth to ${nextLabel.toLowerCase()} will change where saves and loads come from.`,
+        details: confirmDetails,
+        variant: 'warning',
+        confirmLabel: `Switch to ${nextLabel}`,
+        cancelLabel: 'Cancel',
+        onConfirm: async () => {
+          try {
+            setLoading(true);
+            await universeBackend.setSourceOfTruth(universeSlug, sourceType);
+            setSyncStatus({ type: 'success', message: `Primary storage set to ${nextLabel.toLowerCase()}` });
+            await refreshState();
+          } catch (err) {
+            console.error('[GitNativeFederation] Set primary source failed:', err);
+            setError(`Failed to set primary source: ${err?.message || err}`);
+          } finally {
+            setLoading(false);
+          }
+        }
+      });
+    } catch (err) {
+      console.error('[GitNativeFederation] Set primary source failed:', err);
+      setError(`Failed to set primary source: ${err?.message || err}`);
     } finally {
       setLoading(false);
     }
@@ -1448,8 +1484,9 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       
       // Use File System Access API to get persistent file handle
       const [fileHandle] = await window.showOpenFilePicker({
-        types: [{ description: 'RedString Files', accept: { 'application/json': ['.redstring'] } }],
-        multiple: false
+        types: [{ description: 'RedString / JSON Files', accept: { 'application/json': ['.redstring', '.json'] } }],
+        multiple: false,
+        excludeAcceptAllOption: false
       });
       
       console.log('[GitNativeFederation] File handle obtained:', fileHandle.name);
@@ -1672,8 +1709,9 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         suggestedName,
         types: [{
           description: 'RedString Universe Files',
-          accept: { 'application/json': ['.redstring'] }
-        }]
+          accept: { 'application/json': ['.redstring', '.json'] }
+        }],
+        excludeAcceptAllOption: false
       });
       
       // Write data to file

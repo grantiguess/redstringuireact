@@ -321,13 +321,16 @@ export const gitFederationService = {
     const state = await loadBackendState();
     const uniqueName = await ensureUniverseName(name, state.universes, null);
 
-    await universeBackendBridge.createUniverse(uniqueName, {
+    const createdUniverse = await universeBackendBridge.createUniverse(uniqueName, {
       enableGit: options.enableGit ?? false,
       enableLocal: options.enableLocal ?? true,
       sourceOfTruth: options.sourceOfTruth
     });
-
-    return this.refreshUniverses();
+    const nextState = await this.refreshUniverses();
+    return {
+      ...nextState,
+      createdUniverse
+    };
   },
 
   async deleteUniverse(slug) {

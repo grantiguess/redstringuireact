@@ -170,6 +170,7 @@ class UniverseBackend {
             path: localFile.path,
             hadFileHandle: localFile.hadFileHandle,
             lastFilePath: localFile.lastFilePath,
+            lastSaved: localFile.lastSaved,
             fileHandleStatus: localFile.fileHandleStatus,
             unavailableReason: localFile.unavailableReason
           }
@@ -225,6 +226,10 @@ class UniverseBackend {
       path: sanitizedLocalPath,
       hadFileHandle: incomingLocalFile?.hadFileHandle ?? false,
       lastFilePath: incomingLocalFile?.lastFilePath || sanitizedLocalPath,
+      lastSaved: incomingLocalFile?.lastSaved
+        ?? rest?.localFile?.lastSaved
+        ?? incomingRaw?.localFile?.lastSaved
+        ?? null,
       fileHandleStatus: incomingLocalFile?.fileHandleStatus || null,
       unavailableReason: incomingLocalFile?.unavailableReason || null
     };
@@ -2851,6 +2856,21 @@ class UniverseBackend {
       try { await writable.close(); } catch (_) {}
       throw e;
     }
+
+    const universe = this.getUniverse(universeSlug);
+    if (universe) {
+      await this.updateUniverse(universeSlug, {
+        localFile: {
+          ...universe.localFile,
+          hadFileHandle: true,
+          lastFilePath: handle.name || universe.localFile.lastFilePath,
+          lastSaved: new Date().toISOString(),
+          fileHandleStatus: 'connected',
+          unavailableReason: null
+        }
+      });
+    }
+
     this.notifyStatus('success', `Saved to ${handle.name}`);
     return { success: true, fileName: handle.name };
   }
@@ -2871,7 +2891,9 @@ class UniverseBackend {
       localFile: {
         ...universe.localFile, // Preserve existing properties like hadFileHandle
         enabled: true,
-        path: filePath
+        path: filePath,
+        lastFilePath: filePath,
+        lastSaved: universe.localFile?.lastSaved || null
       }
     });
 
@@ -2906,6 +2928,7 @@ class UniverseBackend {
         ...universe.localFile,
         enabled: false,
         hadFileHandle: false,
+        lastSaved: null,
         fileHandleStatus: 'disconnected',
         unavailableReason: 'Local file unlinked'
       }
@@ -2931,8 +2954,12 @@ class UniverseBackend {
   async uploadLocalFile(file, targetUniverseSlug) {
     await this.initialize();
 
-    if (!file || !file.name || !file.name.endsWith('.redstring')) {
-      throw new Error('Please select a valid .redstring file');
+    if (!file || !file.name) {
+      throw new Error('Please select a file to import');
+    }
+
+    if (!file.name.endsWith('.redstring')) {
+      console.warn(`[UniverseBackend] Importing non-.redstring file: ${file.name}`);
     }
 
     console.log(`[UniverseBackend] Uploading local file ${file.name} to universe ${targetUniverseSlug}`);
@@ -2967,6 +2994,17 @@ class UniverseBackend {
 
       // Enable local file storage for this universe
       await this.linkLocalFileToUniverse(targetUniverseSlug, file.name);
+
+      const updatedUniverse = this.getUniverse(targetUniverseSlug);
+      if (updatedUniverse) {
+        await this.updateUniverse(targetUniverseSlug, {
+          localFile: {
+            ...updatedUniverse.localFile,
+            lastSaved: new Date().toISOString(),
+            hadFileHandle: updatedUniverse.localFile?.hadFileHandle ?? false
+          }
+        });
+      }
 
       const nodeCount = storeState?.nodePrototypes ?
         (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes || {}).length) : 0;
@@ -3017,8 +3055,9 @@ class UniverseBackend {
       throw new Error('Cannot set git as source of truth - no repository linked');
     }
 
-    if (sourceType === 'local' && !universe.raw?.localFile?.fileHandle) {
-      throw new Error('Cannot set local as source of truth - no local file linked');
+    const localConfig = universe.raw?.localFile || universe.localFile || {};
+    if (sourceType === 'local' && !localConfig.enabled) {
+      throw new Error('Cannot set local as source of truth - local storage slot is disabled');
     }
 
     // Update the universe configuration
@@ -3027,6 +3066,10 @@ class UniverseBackend {
     });
 
     this.notifyStatus('success', `Set ${sourceType === 'git' ? 'repository' : 'local file'} as primary source for ${universe.name || universeSlug}`);
+
+    if (sourceType === 'local' && !localConfig.hadFileHandle) {
+      this.notifyStatus('warning', 'Local file is primary but no persistent file handle is linked. Use "Pick File" to enable auto-save.');
+    }
 
     return { success: true, sourceOfTruth: sourceType };
   }

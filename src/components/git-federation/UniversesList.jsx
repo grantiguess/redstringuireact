@@ -15,7 +15,9 @@ function buttonStyle(variant = 'outline') {
     display: 'flex',
     alignItems: 'center',
     gap: 6,
-    transition: 'all 0.15s'
+    transition: 'all 0.15s',
+    outline: 'none',
+    boxShadow: 'none'
   };
 
   switch (variant) {
@@ -401,8 +403,8 @@ const UniversesList = ({
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {(() => {
                               const isSourceOfTruth = universe.sourceOfTruth === 'git';
-                              const hasOtherStorage = !!(universe.raw?.localFile?.fileHandle);
-                              const canToggle = hasOtherStorage; // Can only toggle if there's another storage option
+                              const hasOtherStorage = !!(universe.raw?.localFile?.enabled);
+                              const canToggle = hasOtherStorage;
                               
                               return onSetPrimarySource && (
                                 <button
@@ -480,7 +482,7 @@ const UniversesList = ({
                       )}
 
                       {/* Local File Slot */}
-                      {universe.raw?.localFile?.enabled && universe.raw?.localFile?.hadFileHandle ? (
+                      {universe.raw?.localFile?.enabled ? (
                         <div
                           style={{
                             padding: 8,
@@ -494,124 +496,138 @@ const UniversesList = ({
                             overflow: 'hidden'
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <Save size={14} />
-                              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#260000' }}>
-                                Local File
-                              </span>
-                              {universe.sourceOfTruth === 'local' && (
-                                <span style={{
-                                  fontSize: '0.6rem',
-                                  padding: '2px 4px',
-                                  borderRadius: 3,
-                                  backgroundColor: 'rgba(122,0,0,0.1)',
-                                  color: '#7A0000'
+                          {(() => {
+                            const localFile = universe.raw?.localFile || {};
+                            const lastSavedLabel = localFile.lastSaved
+                              ? formatWhen(localFile.lastSaved)
+                              : localFile.hadFileHandle
+                                ? 'Never'
+                                : 'Not linked yet';
+                            const lastSavedColor = localFile.hadFileHandle ? '#666' : '#7A0000';
+
+                            return (
+                              <>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <Save size={14} />
+                                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#260000' }}>
+                                      Local File
+                                    </span>
+                                    {universe.sourceOfTruth === 'local' && (
+                                      <span style={{
+                                        fontSize: '0.6rem',
+                                        padding: '2px 4px',
+                                        borderRadius: 3,
+                                        backgroundColor: 'rgba(122,0,0,0.1)',
+                                        color: '#7A0000'
+                                      }}>
+                                        Source of Truth
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    {onDownloadLocalFile && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onDownloadLocalFile(universe.slug);
+                                        }}
+                                        style={{
+                                          background: 'none',
+                                          border: 'none',
+                                          color: '#7A0000',
+                                          cursor: 'pointer',
+                                          padding: '2px',
+                                          opacity: 0.7
+                                        }}
+                                        title="Download/export local file"
+                                      >
+                                        <Download size={12} />
+                                      </button>
+                                    )}
+                                    {onRemoveLocalFile && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onRemoveLocalFile(universe.slug);
+                                        }}
+                                        style={{
+                                          background: 'none',
+                                          border: 'none',
+                                          color: '#d32f2f',
+                                          cursor: 'pointer',
+                                          padding: '2px',
+                                          opacity: 0.7
+                                        }}
+                                        title="Unlink local file"
+                                      >
+                                        <X size={12} />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div style={{
+                                  fontSize: '0.65rem',
+                                  color: '#444',
+                                  padding: '4px 0',
+                                  borderTop: '1px solid #979090',
+                                  marginTop: '4px',
+                                  paddingTop: '6px'
                                 }}>
-                                  Source of Truth
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          {onDownloadLocalFile && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onDownloadLocalFile(universe.slug);
-                              }}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                color: '#7A0000',
-                                cursor: 'pointer',
-                                padding: '2px',
-                                opacity: 0.7
-                              }}
-                              title="Download/export local file"
-                            >
-                              <Download size={12} />
-                            </button>
-                          )}
-                          {onRemoveLocalFile && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onRemoveLocalFile(universe.slug);
-                              }}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                color: '#d32f2f',
-                                cursor: 'pointer',
-                                padding: '2px',
-                                opacity: 0.7
-                              }}
-                              title="Unlink local file"
-                            >
-                              <X size={12} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                                    <span style={{ fontWeight: 600, color: '#260000' }}>File:</span>
+                                    <span style={{ fontSize: '0.65rem' }}>
+                                      {localFile.path || localFile.lastFilePath || `${universe.slug}.redstring`}
+                                    </span>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <span style={{ fontWeight: 600, color: '#260000' }}>Last saved:</span>
+                                    <span style={{ color: lastSavedColor }}>
+                                      {lastSavedLabel}
+                                    </span>
+                                  </div>
+                                </div>
 
-                      <div style={{
-                        fontSize: '0.65rem',
-                            color: '#444',
-                            padding: '4px 0',
-                            borderTop: '1px solid #979090',
-                            marginTop: '4px',
-                            paddingTop: '6px'
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-                              <span style={{ fontWeight: 600, color: '#260000' }}>File:</span>
-                              <span style={{ fontSize: '0.65rem' }}>
-                                {universe.raw.localFile?.path || universe.raw.localFile?.lastFilePath || `${universe.slug}.redstring`}
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <span style={{ fontWeight: 600, color: '#260000' }}>Last saved:</span>
-                              <span style={{ color: '#666' }}>
-                                {universe.raw.localFile?.lastSaved ? formatWhen(universe.raw.localFile.lastSaved) : 'Never'}
-                              </span>
-                            </div>
-                          </div>
+                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                  {(() => {
+                                    const isSourceOfTruth = universe.sourceOfTruth === 'local';
+                                    const hasOtherStorage = !!(universe.raw?.gitRepo?.linkedRepo);
+                                    const canToggle = hasOtherStorage;
 
-                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                            {(() => {
-                              const isSourceOfTruth = universe.sourceOfTruth === 'local';
-                              const hasOtherStorage = !!(universe.raw?.gitRepo?.linkedRepo);
-                              const canToggle = hasOtherStorage; // Can only toggle if there's another storage option
-                              
-                              return onSetPrimarySource && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (canToggle) {
-                                      onSetPrimarySource(universe.slug, 'local');
-                                    }
-                                  }}
-                                  style={{
-                                    fontSize: '0.65rem',
-                                    padding: '2px 6px',
-                                    borderRadius: 6,
-                                    cursor: canToggle ? 'pointer' : 'default',
-                                    fontWeight: 600,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 4,
-                                    border: isSourceOfTruth ? '1px solid #7A0000' : '1px solid #7A0000',
-                                    backgroundColor: isSourceOfTruth ? '#7A0000' : 'transparent',
-                                    color: isSourceOfTruth ? '#bdb5b5' : '#7A0000',
-                                    opacity: canToggle ? 1 : 0.7
-                                  }}
-                                  title={!canToggle ? 'Only storage option (must remain source of truth)' : isSourceOfTruth ? 'Currently source of truth' : 'Click to make source of truth'}
-                                >
-                                  <Star size={10} fill={isSourceOfTruth ? '#bdb5b5' : 'none'} />
-                                  {isSourceOfTruth ? 'Source of Truth' : 'Not Source of Truth'}
-                                </button>
-                              );
-                            })()}
-                          </div>
+                                    return onSetPrimarySource && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (canToggle) {
+                                            onSetPrimarySource(universe.slug, 'local');
+                                          }
+                                        }}
+                                        style={{
+                                          fontSize: '0.65rem',
+                                          padding: '2px 6px',
+                                          borderRadius: 6,
+                                          cursor: canToggle ? 'pointer' : 'default',
+                                          fontWeight: 600,
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: 4,
+                                          border: '1px solid #7A0000',
+                                          backgroundColor: isSourceOfTruth ? '#7A0000' : 'transparent',
+                                          color: isSourceOfTruth ? '#bdb5b5' : '#7A0000',
+                                          opacity: canToggle ? 1 : 0.7
+                                        }}
+                                        title={!canToggle ? 'Only storage option (must remain source of truth)' : isSourceOfTruth ? 'Currently source of truth' : 'Click to make source of truth'}
+                                      >
+                                        <Star size={10} fill={isSourceOfTruth ? '#bdb5b5' : 'none'} />
+                                        {isSourceOfTruth ? 'Source of Truth' : 'Not Source of Truth'}
+                                      </button>
+                                    );
+                                  })()}
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
                       ) : (
                         <div 
