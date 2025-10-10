@@ -201,6 +201,15 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   const deviceInfo = useMemo(() => detectDeviceInfo(), []);
   const autosaveRef = useRef({ cooldownUntil: 0, triggerAt: 0 });
 
+  const refreshAuth = useCallback(async () => {
+    try {
+      const auth = await gitFederationService.refreshAuth();
+      setServiceState((prev) => ({ ...prev, ...auth }));
+    } catch (err) {
+      console.warn('[GitNativeFederation] Auth refresh failed:', err);
+    }
+  }, []);
+
   const refreshState = useCallback(async () => {
     try {
       setLoading(true);
@@ -213,15 +222,6 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       setError('Unable to load Git federation state – please retry.');
     } finally {
       setLoading(false);
-    }
-  }, []);
-
-  const refreshAuth = useCallback(async () => {
-    try {
-      const auth = await gitFederationService.refreshAuth();
-      setServiceState((prev) => ({ ...prev, ...auth }));
-    } catch (err) {
-      console.warn('[GitNativeFederation] Auth refresh failed:', err);
     }
   }, []);
 
@@ -309,6 +309,10 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   // Removed autosave batch-size polling; rely on engine flags for UI state
 
   // Lightweight autosave fallback: if unsaved changes persist for 20s, save once; 60s cooldown
+  const hasOAuth = !!serviceState.authStatus?.isAuthenticated;
+  const hasApp = !!serviceState.githubAppInstallation?.accessToken;
+  const dataAuthMethod = hasApp ? 'github-app' : hasOAuth ? 'oauth' : null;
+
   useEffect(() => {
     if (!serviceState.activeUniverseSlug) return undefined;
     const active = serviceState.universes.find(u => u.slug === serviceState.activeUniverseSlug);
@@ -611,10 +615,6 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     (user, repo) => discoveryMap[`${user}/${repo}`] || { items: [], loading: false },
     [discoveryMap]
   );
-
-  const hasOAuth = !!serviceState.authStatus?.isAuthenticated;
-  const hasApp = !!serviceState.githubAppInstallation?.accessToken;
-  const dataAuthMethod = hasApp ? 'github-app' : hasOAuth ? 'oauth' : null;
 
   const statusBadge = useMemo(() => {
     if (hasOAuth && hasApp) return { label: 'Fully Connected', tone: STATUS_COLORS.success };

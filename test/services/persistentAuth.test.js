@@ -1,9 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { PersistentAuth } from '../../src/services/persistentAuth.js';
-import { oauthFetch } from '../../src/services/bridgeConfig.js';
+
+const mockOAuthFetch = vi.fn(async () => ({
+  ok: true,
+  json: async () => ({
+    oauth: { hasToken: false },
+    githubApp: { isInstalled: false },
+    service: 'oauth-server'
+  }),
+  text: async () => ''
+}));
 
 vi.mock('../../src/services/bridgeConfig.js', () => ({
-  oauthFetch: vi.fn()
+  oauthFetch: mockOAuthFetch
 }));
 
 const createFetchResponse = (overrides = {}) => ({
@@ -12,6 +20,8 @@ const createFetchResponse = (overrides = {}) => ({
   text: async () => '',
   ...overrides
 });
+
+const { PersistentAuth } = await import('../../src/services/persistentAuth.js');
 
 describe('PersistentAuth (secure storage)', () => {
   let persistentAuth;
@@ -33,7 +43,7 @@ describe('PersistentAuth (secure storage)', () => {
       clear: vi.fn()
     };
 
-    oauthFetch.mockImplementation(async (url, options = {}) => {
+    mockOAuthFetch.mockImplementation(async (url, options = {}) => {
       if (url.includes('/api/github/auth/state')) {
         return createFetchResponse({
           json: async () => ({
@@ -62,6 +72,12 @@ describe('PersistentAuth (secure storage)', () => {
         });
       }
 
+      if (url.includes('/api/github/oauth/validate')) {
+        return createFetchResponse({
+          json: async () => ({ valid: true })
+        });
+      }
+
       return createFetchResponse();
     });
 
@@ -84,7 +100,7 @@ describe('PersistentAuth (secure storage)', () => {
 
     await persistentAuth.storeTokens(tokenData);
 
-    expect(oauthFetch).toHaveBeenCalledWith('/api/github/auth/oauth', expect.objectContaining({
+    expect(mockOAuthFetch).toHaveBeenCalledWith('/api/github/auth/oauth', expect.objectContaining({
       method: 'POST'
     }));
 
@@ -96,7 +112,7 @@ describe('PersistentAuth (secure storage)', () => {
     await persistentAuth.storeTokens({ access_token: 'secure_token_456', token_type: 'bearer' });
     await persistentAuth.clearTokens();
 
-    expect(oauthFetch).toHaveBeenCalledWith('/api/github/auth/oauth', expect.objectContaining({
+    expect(mockOAuthFetch).toHaveBeenCalledWith('/api/github/auth/oauth', expect.objectContaining({
       method: 'DELETE'
     }));
 
@@ -105,7 +121,7 @@ describe('PersistentAuth (secure storage)', () => {
   });
 
   it('hydrates from secure vault state on initialization', async () => {
-    oauthFetch.mockImplementationOnce(async () => createFetchResponse({
+    mockOAuthFetch.mockImplementationOnce(async () => createFetchResponse({
       json: async () => ({
         oauth: {
           hasToken: true,

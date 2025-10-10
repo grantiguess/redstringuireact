@@ -9426,6 +9426,16 @@ function NodeCanvas() {
           onExitAnimationComplete={onCarouselExitAnimationComplete}
           relativeMoveRequest={carouselRelativeMoveRequest}
           onRelativeMoveHandled={() => setCarouselRelativeMoveRequest(null)}
+          currentDimension={currentAbstractionDimension}
+          availableDimensions={abstractionDimensions}
+          onDimensionChange={handleAbstractionDimensionChange}
+          onAddDimension={handleAddAbstractionDimension}
+          onDeleteDimension={handleDeleteAbstractionDimension}
+          onExpandDimension={handleExpandAbstractionDimension}
+          onOpenInPanel={() => {
+            // Open the abstraction control panel when user wants to open in panel
+            setAbstractionControlPanelVisible(true);
+          }}
         />
       )}
       

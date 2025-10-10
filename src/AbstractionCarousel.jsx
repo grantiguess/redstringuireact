@@ -401,6 +401,13 @@ const AbstractionCarousel = ({
       console.log('[AbstractionCarousel] No existing chain found, created default single-node chain');
     }
     
+    console.log('[AbstractionCarousel] Final chain setup:', {
+      chainNodeIds,
+      chainOwnerNodeId,
+      currentDimension,
+      nodePrototypesMapSize: nodePrototypesMap.size
+    });
+    
     const chain = [];
     const thingNode = nodePrototypesMap.get(thingNodeId);
     
@@ -467,11 +474,24 @@ const AbstractionCarousel = ({
 
 
     // Pre-calculate base dimensions for each node
-    return chain.map(item => {
+    const finalChain = chain.map(item => {
       const nodeForDimensions = item.type === 'current' ? selectedNode : item;
       const baseDimensions = getNodeDimensions(nodeForDimensions, false, null);
       return { ...item, baseDimensions };
     });
+    
+    console.log('[AbstractionCarousel] Final chain with dimensions:', {
+      chainLength: finalChain.length,
+      chainItems: finalChain.map(item => ({
+        id: item.id,
+        name: item.name,
+        level: item.level,
+        type: item.type,
+        hasBaseDimensions: !!item.baseDimensions
+      }))
+    });
+    
+    return finalChain;
   }, [selectedNode, currentDimension, nodePrototypesMap, thingNodeId]);
   
   // Calculate physics bounds based on chain, excluding non-reachable nodes
@@ -944,6 +964,20 @@ const AbstractionCarousel = ({
 
   const carouselPosition = getCarouselPosition();
   const stackOffset = getStackOffset();
+  
+  console.log('[AbstractionCarousel] Render state:', {
+    isVisible,
+    selectedNodeId: selectedNode?.id,
+    carouselPosition,
+    stackOffset,
+    abstractionChainLength: abstractionChainWithDims.length,
+    physicsState: {
+      realPosition: physicsState.realPosition,
+      targetPosition: physicsState.targetPosition,
+      velocity: physicsState.velocity,
+      isSnapping: physicsState.isSnapping
+    }
+  });
 
   // Compute hint placement levels and positions
   const reachableChainLevels = useMemo(() => {
@@ -1011,6 +1045,21 @@ const AbstractionCarousel = ({
       }}
       onMouseDown={(e) => e.preventDefault()}
     >
+      {/* Debug indicator - temporary visual aid */}
+      {debugMode && (
+        <div style={{
+          position: 'absolute',
+          left: '-10px',
+          top: '-10px',
+          width: '20px',
+          height: '20px',
+          backgroundColor: 'red',
+          borderRadius: '50%',
+          zIndex: 1001,
+          pointerEvents: 'none'
+        }} />
+      )}
+      
       {/* SVG Container for the abstraction nodes */}
       <svg
         style={{
@@ -1054,22 +1103,34 @@ const AbstractionCarousel = ({
         </defs>
 
         {/* Render all abstraction levels in a vertical stack */}
-        {[...abstractionChainWithDims]
-          .sort((a, b) => {
-            const distA = Math.abs(a.level - physicsState.realPosition);
-            const distB = Math.abs(b.level - physicsState.realPosition);
+        {(() => {
+          console.log('[AbstractionCarousel] Rendering nodes:', {
+            totalNodes: abstractionChainWithDims.length,
+            physicsPosition: physicsState.realPosition,
+            nodes: abstractionChainWithDims.map(item => ({
+              id: item.id,
+              name: item.name,
+              level: item.level,
+              type: item.type
+            }))
+          });
+          
+          return [...abstractionChainWithDims]
+            .sort((a, b) => {
+              const distA = Math.abs(a.level - physicsState.realPosition);
+              const distB = Math.abs(b.level - physicsState.realPosition);
 
-            // Centered node (closest to scroll position) always renders on top
-            const isACenter = distA < 0.5;
-            const isBCenter = distB < 0.5;
-            
-            if (isACenter && !isBCenter) return 1; // A is center, B is not - A on top
-            if (isBCenter && !isACenter) return -1; // B is center, A is not - B on top
-            
-            // If both are center or neither are center, sort by distance - closer nodes render on top
-            return distA - distB;
-          })
-          .map((item, index) => {
+              // Centered node (closest to scroll position) always renders on top
+              const isACenter = distA < 0.5;
+              const isBCenter = distB < 0.5;
+              
+              if (isACenter && !isBCenter) return 1; // A is center, B is not - A on top
+              if (isBCenter && !isACenter) return -1; // B is center, A is not - B on top
+              
+              // If both are center or neither are center, sort by distance - closer nodes render on top
+              return distA - distB;
+            })
+            .map((item, index) => {
           const nodeDimensions = item.baseDimensions; // Use pre-calculated dimensions
           const isCurrent = item.type === 'current';
           const distanceFromMain = Math.abs(item.level - physicsState.realPosition);
@@ -1328,7 +1389,8 @@ const AbstractionCarousel = ({
               </g>
             </g>
           );
-        })}
+        });
+        })()}
       </svg>
 
       {/* Static hint overlays: fade-in on open, fade-out on first scroll */}

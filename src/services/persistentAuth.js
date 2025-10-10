@@ -155,7 +155,7 @@ export class PersistentAuth {
     console.log('[PersistentAuth] ===== INITIALIZE CALLED =====');
     this.initializeCalled = true;
 
-     await this.ensureAuthStateLoaded().catch(error => {
+    await this.ensureAuthStateLoaded().catch(error => {
       console.warn('[PersistentAuth] initialize: auth state load failed', error);
     });
 
@@ -847,13 +847,14 @@ export class PersistentAuth {
     const hasTokens = this.hasValidTokens();
     const needsRefresh = this.shouldRefreshToken();
     const expiryTime = this.oauthCache?.expiresAt || null;
+    const hasApp = this.hasAppInstallation();
     
     return {
       isAuthenticated: hasTokens,
       needsRefresh,
       expiryTime: expiryTime ? new Date(expiryTime) : null,
       timeToExpiry: expiryTime ? Math.max(0, expiryTime - Date.now()) : 0,
-      authMethod: hasTokens ? 'oauth' : null,
+      authMethod: hasTokens ? 'oauth' : (hasApp ? 'github-app' : null),
       userData: this.getUserData(),
       isRefreshing: this.isRefreshing
     };
