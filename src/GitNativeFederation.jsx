@@ -1699,22 +1699,38 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   const handleDownloadLocalFile = async (slug) => {
     try {
       setLoading(true);
-      // Get the current universe data and download it as a .redstring file
-      const universe = serviceState.universes.find(u => u.slug === slug);
-      if (!universe) {
-        throw new Error('Universe not found');
-      }
-
-      // Import the download function and trigger download
-      const { downloadRedstringFile } = await import('./formats/redstringFormat.js');
-      const filename = `${universe.name || slug}.redstring`;
-
-      // We need to get the store state for this universe - for now use a simple approach
-      downloadRedstringFile({}, filename);
-      setSyncStatus({ type: 'success', message: `Downloaded ${filename}` });
+      await gitFederationService.downloadLocalFile(slug);
+      setSyncStatus({ type: 'success', message: 'Local universe downloaded' });
     } catch (err) {
       console.error('[GitNativeFederation] File download failed:', err);
       setError(`Failed to download file: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDownloadRepoFile = async (slug) => {
+    try {
+      setLoading(true);
+      await gitFederationService.downloadGitUniverse(slug);
+      setSyncStatus({ type: 'success', message: 'Downloaded universe from Git repository' });
+    } catch (err) {
+      console.error('[GitNativeFederation] Git download failed:', err);
+      setError(`Failed to download from repository: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRemoveLocalFile = async (slug) => {
+    try {
+      setLoading(true);
+      await gitFederationService.removeLocalFile(slug);
+      setSyncStatus({ type: 'info', message: 'Local file link removed' });
+      await refreshState();
+    } catch (err) {
+      console.error('[GitNativeFederation] Remove local file failed:', err);
+      setError(`Failed to unlink local file: ${err.message}`);
     } finally {
       setLoading(false);
     }

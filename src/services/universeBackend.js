@@ -169,7 +169,9 @@ class UniverseBackend {
             enabled: localFile.enabled,
             path: localFile.path,
             hadFileHandle: localFile.hadFileHandle,
-            lastFilePath: localFile.lastFilePath
+            lastFilePath: localFile.lastFilePath,
+            fileHandleStatus: localFile.fileHandleStatus,
+            unavailableReason: localFile.unavailableReason
           }
         };
       });
@@ -198,39 +200,132 @@ class UniverseBackend {
   /**
    * Safe universe normalization (prevents startup recursion)
    */
-  safeNormalizeUniverse(universe) {
-    const slug = universe.slug || 'universe';
-    const providedGitRepo = universe.gitRepo || {};
-    const providedUniverseFolder = providedGitRepo.universeFolder !== undefined ? providedGitRepo.universeFolder : universe.universeFolder;
-    const providedUniverseFile = providedGitRepo.universeFile !== undefined ? providedGitRepo.universeFile : universe.universeFile;
+  safeNormalizeUniverse(universe = {}) {
+    const {
+      raw: incomingRaw,
+      localFile: incomingLocalFile = {},
+      gitRepo: incomingGitRepo = {},
+      browserStorage: incomingBrowserStorage = {},
+      metadata: incomingMetadata = {},
+      sources: incomingSources,
+      created: createdAt,
+      lastModified: lastModifiedAt,
+      ...rest
+    } = universe || {};
+
+    const slug = rest.slug || universe.slug || 'universe';
+    const name = rest.name || universe.name || 'Universe';
+
+    const sanitizedLocalPath = this.sanitizeFileName(
+      incomingLocalFile?.path || `${name}.redstring`
+    );
+
+    const normalizedLocalFile = {
+      enabled: incomingLocalFile?.enabled ?? true,
+      path: sanitizedLocalPath,
+      hadFileHandle: incomingLocalFile?.hadFileHandle ?? false,
+      lastFilePath: incomingLocalFile?.lastFilePath || sanitizedLocalPath,
+      fileHandleStatus: incomingLocalFile?.fileHandleStatus || null,
+      unavailableReason: incomingLocalFile?.unavailableReason || null
+    };
+
+    const resolvedGitRepo = typeof incomingGitRepo === 'object' && incomingGitRepo !== null
+      ? incomingGitRepo
+      : {};
+
+    const normalizedGitRepo = {
+      ...resolvedGitRepo,
+      enabled: resolvedGitRepo.enabled ?? false,
+      linkedRepo: resolvedGitRepo.linkedRepo || rest.linkedRepo || null,
+      schemaPath: resolvedGitRepo.schemaPath || rest.schemaPath || 'schema',
+      universeFolder: resolvedGitRepo.universeFolder !== undefined
+        ? resolvedGitRepo.universeFolder
+        : rest.universeFolder !== undefined
+          ? rest.universeFolder
+          : slug,
+      universeFile: resolvedGitRepo.universeFile !== undefined
+        ? resolvedGitRepo.universeFile
+        : rest.universeFile !== undefined
+          ? rest.universeFile
+          : `${slug}.redstring`,
+      priority: resolvedGitRepo.priority || 'secondary'
+    };
+
+    const resolvedBrowserStorage = typeof incomingBrowserStorage === 'object' && incomingBrowserStorage !== null
+      ? incomingBrowserStorage
+      : {};
+
+    const normalizedBrowserStorage = {
+      ...resolvedBrowserStorage,
+      enabled: resolvedBrowserStorage.enabled ?? true,
+      role: resolvedBrowserStorage.role || 'fallback',
+      key: resolvedBrowserStorage.key || `universe_${slug}`
+    };
+
+    const resolvedMetadata = typeof incomingMetadata === 'object' && incomingMetadata !== null
+      ? incomingMetadata
+      : {};
+
+    const created = createdAt || resolvedMetadata.created || (incomingRaw?.created) || new Date().toISOString();
+    const lastModified = lastModifiedAt || resolvedMetadata.lastModified || (incomingRaw?.lastModified) || created;
+
+    const normalizedMetadata = {
+      ...resolvedMetadata,
+      created,
+      lastModified
+    };
+
+    const rawBase = (typeof incomingRaw === 'object' && incomingRaw !== null)
+      ? incomingRaw
+      : {};
+
+    const mergedRaw = {
+      ...rawBase,
+      ...rest,
+      localFile: {
+        ...(rawBase.localFile || {}),
+        ...incomingLocalFile,
+        ...normalizedLocalFile
+      },
+      gitRepo: {
+        ...(rawBase.gitRepo || {}),
+        ...resolvedGitRepo,
+        ...normalizedGitRepo
+      },
+      browserStorage: {
+        ...(rawBase.browserStorage || {}),
+        ...resolvedBrowserStorage,
+        ...normalizedBrowserStorage
+      },
+      metadata: {
+        ...(rawBase.metadata || {}),
+        ...resolvedMetadata,
+        ...normalizedMetadata
+      }
+    };
+    delete mergedRaw.raw;
+
+    const sources = Array.isArray(incomingSources)
+      ? incomingSources
+      : Array.isArray(rawBase.sources)
+        ? rawBase.sources
+        : [];
+    mergedRaw.sources = sources;
+    mergedRaw.created = created;
+    mergedRaw.lastModified = lastModified;
 
     return {
       slug,
-      name: universe.name || 'Universe',
-      sourceOfTruth: universe.sourceOfTruth || 'local',
-      localFile: {
-        enabled: universe.localFile?.enabled ?? true,
-        path: this.sanitizeFileName(universe.localFile?.path || `${universe.name || 'Universe'}.redstring`),
-        handle: null,
-        unavailableReason: universe.localFile?.unavailableReason || null
-      },
-      gitRepo: {
-        enabled: providedGitRepo.enabled ?? false,
-        linkedRepo: providedGitRepo.linkedRepo || universe.linkedRepo || null,
-        schemaPath: providedGitRepo.schemaPath || universe.schemaPath || 'schema',
-        universeFolder: providedUniverseFolder !== undefined ? providedUniverseFolder : slug,
-        universeFile: providedUniverseFile !== undefined ? providedUniverseFile : `${slug}.redstring`,
-        priority: providedGitRepo.priority || 'secondary'
-      },
-      browserStorage: {
-        enabled: universe.browserStorage?.enabled ?? true,
-        role: universe.browserStorage?.role || 'fallback',
-        key: universe.browserStorage?.key || `universe_${slug}`
-      },
-      sources: Array.isArray(universe.sources) ? universe.sources : [],
-      created: universe.created || new Date().toISOString(),
-      lastModified: universe.lastModified || new Date().toISOString(),
-      raw: universe.raw || universe
+      name,
+      sourceOfTruth: rest.sourceOfTruth || rawBase.sourceOfTruth || 'local',
+      localFile: normalizedLocalFile,
+      gitRepo: normalizedGitRepo,
+      browserStorage: normalizedBrowserStorage,
+      metadata: normalizedMetadata,
+      sources,
+      created,
+      lastModified,
+      raw: mergedRaw
     };
   }
 
@@ -2573,6 +2668,57 @@ class UniverseBackend {
   }
 
   /**
+   * Download universe data directly from linked Git repository
+   */
+  async downloadGitUniverse(universeSlug) {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    const universe = this.getUniverse(universeSlug);
+    if (!universe) {
+      throw new Error(`Universe ${universeSlug} not found`);
+    }
+
+    if (!universe.gitRepo?.enabled || !universe.gitRepo?.linkedRepo) {
+      throw new Error('No linked Git repository available for this universe');
+    }
+
+    const fileName = universe.gitRepo?.universeFile || `${universeSlug}.redstring`;
+    let storeState = null;
+
+    try {
+      storeState = await this.loadFromGitDirect(universe);
+    } catch (error) {
+      console.warn('[UniverseBackend] Direct Git download failed, attempting via sync engine:', error);
+    }
+
+    if (!storeState) {
+      try {
+        await this.ensureGitSyncEngine(universeSlug);
+        storeState = await this.loadFromGit(universe);
+      } catch (error) {
+        console.error('[UniverseBackend] Unable to load universe from Git sync engine:', error);
+        throw new Error(`Failed to load data from Git repository: ${error.message}`);
+      }
+    }
+
+    if (!storeState) {
+      throw new Error('Git repository did not return any universe data');
+    }
+
+    try {
+      downloadRedstringFile(storeState, fileName);
+      this.notifyStatus('success', `Downloaded ${fileName} from Git`);
+      return { success: true, fileName };
+    } catch (error) {
+      console.error(`[UniverseBackend] Failed to download ${fileName} from Git:`, error);
+      this.notifyStatus('error', `Download failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
    * Upload/Import universe from local .redstring file
    */
   async uploadLocalFile(file, targetUniverseSlug = null) {
@@ -2731,6 +2877,52 @@ class UniverseBackend {
 
     this.notifyStatus('success', `Linked local file to ${universe.name || universeSlug}`);
     return { success: true, filePath };
+  }
+
+  /**
+   * Remove linked local file from a universe
+   */
+  async removeLocalFileLink(universeSlug) {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    const universe = this.getUniverse(universeSlug);
+    if (!universe) {
+      throw new Error(`Universe ${universeSlug} not found`);
+    }
+
+    this.fileHandles.delete(universeSlug);
+
+    try {
+      await removeFileHandleMetadata(universeSlug);
+      console.log(`[UniverseBackend] Removed file handle metadata for ${universeSlug}`);
+    } catch (error) {
+      console.warn(`[UniverseBackend] Failed to remove file handle metadata:`, error);
+    }
+
+    const updates = {
+      localFile: {
+        ...universe.localFile,
+        enabled: false,
+        hadFileHandle: false,
+        fileHandleStatus: 'disconnected',
+        unavailableReason: 'Local file unlinked'
+      }
+    };
+
+    if (universe.sourceOfTruth === SOURCE_OF_TRUTH.LOCAL) {
+      if (universe.gitRepo?.enabled && universe.gitRepo?.linkedRepo) {
+        updates.sourceOfTruth = SOURCE_OF_TRUTH.GIT;
+      } else {
+        updates.sourceOfTruth = SOURCE_OF_TRUTH.BROWSER;
+      }
+    }
+
+    await this.updateUniverse(universeSlug, updates);
+    this.saveToStorage();
+    this.notifyStatus('info', `Unlinked local file from ${universe.name || universeSlug}`);
+    return { success: true };
   }
 
   /**

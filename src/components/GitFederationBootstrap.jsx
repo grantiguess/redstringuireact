@@ -144,6 +144,12 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
           case 'downloadLocalFile':
             result = await backend.downloadLocalFile(payload.universeSlug, payload.storeState);
             break;
+          case 'downloadGitUniverse':
+            result = await backend.downloadGitUniverse(payload.universeSlug);
+            break;
+          case 'removeLocalFileLink':
+            result = await backend.removeLocalFileLink(payload.universeSlug);
+            break;
           default:
             throw new Error(`Unknown command: ${command}`);
         }

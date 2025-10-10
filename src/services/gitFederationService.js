@@ -540,6 +540,16 @@ export const gitFederationService = {
     return this.refreshUniverses();
   },
 
+  async downloadGitUniverse(slug) {
+    await universeBackendBridge.downloadGitUniverse(slug);
+    return this.refreshUniverses();
+  },
+
+  async removeLocalFile(slug) {
+    await universeBackendBridge.removeLocalFileLink(slug);
+    return this.refreshUniverses();
+  },
+
   async uploadLocalFile(file, slug) {
     const result = await universeBackendBridge.uploadLocalFile(file, slug);
     await this.refreshUniverses();

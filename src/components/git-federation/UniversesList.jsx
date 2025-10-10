@@ -62,6 +62,8 @@ const UniversesList = ({
   onLinkLocalFile,
   onCreateLocalFile,
   onDownloadLocalFile,
+  onDownloadRepoFile,
+  onRemoveLocalFile,
   onRemoveRepoSource,
   onEditRepoSource,
   onSetMainRepoSource,
@@ -293,35 +295,58 @@ const UniversesList = ({
                                   backgroundColor: 'rgba(122,0,0,0.1)',
                                   color: '#7A0000'
                                 }}>
-                                  Source of Truth
-                                </span>
-                              )}
-                            </div>
+                              Source of Truth
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {onDownloadRepoFile && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onRemoveRepoSource && onRemoveRepoSource(universe.slug, {
-                                  user: universe.raw.gitRepo.linkedRepo.user,
-                                  repo: universe.raw.gitRepo.linkedRepo.repo
-                                });
+                                onDownloadRepoFile(universe.slug);
                               }}
                               style={{
                                 background: 'none',
                                 border: 'none',
-                                color: '#d32f2f',
+                                color: '#7A0000',
                                 cursor: 'pointer',
                                 padding: '2px',
                                 opacity: 0.7
                               }}
-                              title="Remove repository"
+                              title="Download latest from Git repository"
                             >
-                              <X size={12} />
+                              <Download size={12} />
                             </button>
-                          </div>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onRemoveRepoSource && universe.raw.gitRepo?.linkedRepo) {
+                                onRemoveRepoSource(universe.slug, {
+                                  user: universe.raw.gitRepo.linkedRepo.user,
+                                  repo: universe.raw.gitRepo.linkedRepo.repo
+                                });
+                              }
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#d32f2f',
+                              cursor: 'pointer',
+                              padding: '2px',
+                              opacity: 0.7
+                            }}
+                            title="Remove repository"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      </div>
 
-                          {/* Git Status Information */}
-                          {(() => {
-                            const syncStatus = syncStatusMap[universe.slug];
+                      {/* Git Status Information */}
+                      {(() => {
+                        const syncStatus = syncStatusMap[universe.slug];
                             const fileName = `universes/${universe.slug}/${universe.slug}.redstring`;
                             const statusText = syncStatus?.status || 'unknown';
                             const lastSync = syncStatus?.lastSync ? formatWhen(syncStatus.lastSync) : 'Never';
@@ -484,13 +509,15 @@ const UniversesList = ({
                                   color: '#7A0000'
                                 }}>
                                   Source of Truth
-                                </span>
-                              )}
-                            </div>
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {onDownloadLocalFile && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onDownloadLocalFile && onDownloadLocalFile(universe.slug);
+                                onDownloadLocalFile(universe.slug);
                               }}
                               style={{
                                 background: 'none',
@@ -504,10 +531,31 @@ const UniversesList = ({
                             >
                               <Download size={12} />
                             </button>
-                          </div>
+                          )}
+                          {onRemoveLocalFile && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onRemoveLocalFile(universe.slug);
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#d32f2f',
+                                cursor: 'pointer',
+                                padding: '2px',
+                                opacity: 0.7
+                              }}
+                              title="Unlink local file"
+                            >
+                              <X size={12} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
 
-                          <div style={{
-                            fontSize: '0.65rem',
+                      <div style={{
+                        fontSize: '0.65rem',
                             color: '#444',
                             padding: '4px 0',
                             borderTop: '1px solid #979090',
