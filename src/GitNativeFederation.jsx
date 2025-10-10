@@ -334,9 +334,16 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         const fresh = await gitFederationService.refreshUniverses();
         const latest = fresh.universes.find(u => u.slug === fresh.activeUniverseSlug);
         if (latest?.sync?.hasUnsavedChanges) {
+          const hasGitRepo = !!(latest.raw?.gitRepo?.enabled && latest.raw?.gitRepo?.linkedRepo);
+          const hasGitAuth = !!(serviceState?.authStatus?.isAuthenticated || hasOAuth || hasApp);
           setLoading(true);
-          await gitFederationService.forceSave(latest.slug);
-          setSyncStatus({ type: 'success', message: 'Autosaved changes to Git' });
+          await gitFederationService.forceSave(latest.slug, hasGitRepo && hasGitAuth ? undefined : { skipGit: true });
+          setSyncStatus({
+            type: hasGitRepo && hasGitAuth ? 'success' : 'info',
+            message: hasGitRepo && hasGitAuth
+              ? 'Autosaved changes to Git'
+              : 'Autosaved local changes. Connect GitHub to sync remote repository.'
+          });
           await refreshState();
         }
       } catch (e) {
@@ -349,7 +356,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     }, Math.max(0, autosaveRef.current.triggerAt - now));
 
     return () => clearTimeout(timer);
-  }, [serviceState.activeUniverseSlug, serviceState.universes, refreshState]);
+  }, [serviceState.activeUniverseSlug, serviceState.universes, serviceState.authStatus, hasOAuth, hasApp, refreshState]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -944,8 +951,26 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
 
       // Initialize the repository with current universe data
       console.log(`[GitNativeFederation] Initializing repository with universe data for ${targetSlug}`);
-      await gitFederationService.forceSave(targetSlug);
-      setSyncStatus({ type: 'success', message: `Linked @${owner}/${repoName} and initialized with universe data` });
+      const hasGitAuth = !!(serviceState?.authStatus?.isAuthenticated || hasOAuth || hasApp);
+
+      try {
+        await gitFederationService.forceSave(targetSlug, hasGitAuth ? undefined : { skipGit: true });
+        if (hasGitAuth) {
+          setSyncStatus({ type: 'success', message: `Linked @${owner}/${repoName} and initialized with universe data` });
+        } else {
+          setSyncStatus({
+            type: 'info',
+            message: `Linked @${owner}/${repoName}. Connect GitHub to sync this universe.`
+          });
+        }
+      } catch (commitErr) {
+        console.warn('[GitNativeFederation] Initial Git save failed:', commitErr);
+        setSyncStatus({
+          type: 'warning',
+          message: `Linked @${owner}/${repoName}, but initial save failed: ${commitErr.message}.`
+        });
+      }
+
       setDiscoveryMap((prev) => {
         const next = { ...prev };
         delete next[`${owner}/${repoName}`];
