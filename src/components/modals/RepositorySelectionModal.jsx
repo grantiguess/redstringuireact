@@ -40,6 +40,11 @@ const RepositorySelectionModal = ({
   const [authStatus, setAuthStatus] = useState(persistentAuth.getAuthStatus());
   const [expandedRepos, setExpandedRepos] = useState(new Set());
   const [discoveredUniverses, setDiscoveredUniverses] = useState({});
+  const [showCreateRepo, setShowCreateRepo] = useState(false);
+  const [newRepoName, setNewRepoName] = useState('');
+  const [newRepoPrivate, setNewRepoPrivate] = useState(true);
+  const [creatingRepo, setCreatingRepo] = useState(false);
+  const [createRepoError, setCreateRepoError] = useState(null);
 
   const modalTitle = intent === 'import'
     ? 'Import From Repository'
@@ -109,6 +114,62 @@ const RepositorySelectionModal = ({
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateRepository = async () => {
+    const trimmedName = newRepoName.trim();
+    if (!trimmedName) {
+      setCreateRepoError('Repository name is required.');
+      return;
+    }
+
+    try {
+      setCreatingRepo(true);
+      setCreateRepoError(null);
+
+      let token = await persistentAuth.getAccessToken();
+      if (!token) {
+        throw new Error('No access token available. Please sign in again.');
+      }
+
+      const response = await fetch('https://api.github.com/user/repos', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: trimmedName,
+          private: newRepoPrivate,
+          auto_init: true
+        })
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        const message = errorBody?.message || `Failed to create repository (status ${response.status})`;
+        throw new Error(message);
+      }
+
+      const createdRepo = await response.json();
+
+      setRepositories((prev) => [createdRepo, ...prev]);
+      onAddToManagedList?.({
+        owner: createdRepo.owner?.login || createdRepo.owner?.name || createdRepo.owner,
+        name: createdRepo.name,
+        private: createdRepo.private
+      });
+
+      setShowCreateRepo(false);
+      setNewRepoName('');
+      setNewRepoPrivate(true);
+    } catch (err) {
+      console.error('Failed to create repository:', err);
+      setCreateRepoError(err.message || 'Repository creation failed.');
+    } finally {
+      setCreatingRepo(false);
     }
   };
 
@@ -327,8 +388,108 @@ const RepositorySelectionModal = ({
                 animation: loading ? 'spin 1s linear infinite' : 'none'
               }} />
             </button>
+            <button
+              onClick={() => {
+                setShowCreateRepo(prev => !prev);
+                setCreateRepoError(null);
+              }}
+              style={{
+                background: 'none',
+                border: '1px solid #260000',
+                color: '#260000',
+                padding: '2px 6px',
+                borderRadius: '3px',
+                cursor: 'pointer',
+                fontSize: '0.7rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              <Plus size={10} />
+              New Repo
+            </button>
           </div>
         </div>
+
+        {showCreateRepo && (
+          <div style={{
+            marginTop: '10px',
+            padding: '10px',
+            border: '1px solid #979090',
+            borderRadius: '6px',
+            backgroundColor: '#cfc6c6',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px'
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '0.7rem', fontWeight: 600, color: '#260000' }}>
+                Repository Name
+              </label>
+              <input
+                type="text"
+                value={newRepoName}
+                onChange={(e) => setNewRepoName(e.target.value)}
+                placeholder="my-new-repo"
+                style={{
+                  padding: '6px 8px',
+                  border: '1px solid #979090',
+                  borderRadius: '4px',
+                  fontSize: '0.75rem',
+                  backgroundColor: '#bdb5b5',
+                  color: '#260000'
+                }}
+              />
+            </div>
+
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '0.7rem',
+              color: '#260000'
+            }}>
+              <input
+                type="checkbox"
+                checked={newRepoPrivate}
+                onChange={(e) => setNewRepoPrivate(e.target.checked)}
+              />
+              Private repository
+            </label>
+
+            {createRepoError && (
+              <div style={{
+                fontSize: '0.7rem',
+                color: '#7A0000',
+                backgroundColor: 'rgba(122,0,0,0.1)',
+                padding: '6px 8px',
+                borderRadius: '4px'
+              }}>
+                {createRepoError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                onClick={handleCreateRepository}
+                disabled={creatingRepo}
+                style={{
+                  background: '#260000',
+                  color: '#bdb5b5',
+                  border: '1px solid #260000',
+                  padding: '4px 10px',
+                  borderRadius: '4px',
+                  fontSize: '0.7rem',
+                  cursor: creatingRepo ? 'not-allowed' : 'pointer',
+                  opacity: creatingRepo ? 0.6 : 1
+                }}
+              >
+                {creatingRepo ? 'Creating…' : 'Create Repository'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {intentMessage && (

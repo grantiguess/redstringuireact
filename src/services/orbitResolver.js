@@ -4,9 +4,10 @@ import { findRelatedConcepts } from './semanticWebQuery.js';
 
 // Lazy import helper to avoid circular dependency
 let _useGraphStore = null;
-const getGraphStore = () => {
+const getGraphStore = async () => {
   if (!_useGraphStore) {
-    _useGraphStore = require('../store/graphStore.jsx').default;
+    const module = await import('../store/graphStore.jsx');
+    _useGraphStore = module.default;
   }
   return _useGraphStore;
 };
@@ -41,9 +42,10 @@ export async function fetchOrbitCandidatesForPrototype(prototype, options = {}) 
 
   try {
     console.log(`🔍 Fetching real orbit data for "${prototype.name}"`);
-    
+
     // Real data fetching - comment out for mock mode
-    const graphStore = getGraphStore().getState();
+    const useGraphStore = await getGraphStore();
+    const graphStore = useGraphStore.getState();
     const federation = new KnowledgeFederation(graphStore);
 
     const seed = prototype.name;

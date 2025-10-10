@@ -67,9 +67,70 @@ const pickDisplayName = (candidateName, fallbackName) => {
  * @param {Object} provider - Git provider instance
  * @returns {Array} Array of discovered universe objects
  */
+const EXCLUDED_DIR_PATTERNS = [
+  'node_modules',
+  '.git',
+  '.github',
+  '.gitlab',
+  'vendor',
+  'dist',
+  'build',
+  '.next',
+  '.cache',
+  'target',
+  '__tests__',
+  '__mocks__'
+];
+
+const shouldSkipDirectory = (path) => {
+  const lowerPath = path.toLowerCase();
+
+  if (!path) return false;
+
+  if (lowerPath.includes('/backups') || lowerPath.endsWith('/backups')) {
+    return true;
+  }
+
+  const parts = path.split('/').filter(Boolean);
+  const depth = parts.length;
+  const name = parts[parts.length - 1]?.toLowerCase() || '';
+
+  if (name.startsWith('.')) {
+    return true;
+  }
+
+  if (EXCLUDED_DIR_PATTERNS.some(pattern => lowerPath.includes(pattern))) {
+    return true;
+  }
+
+  if (depth > 3) {
+    return true;
+  }
+
+  if (depth === 1) {
+    if (['universes', 'universe', 'schema'].includes(name)) {
+      return false;
+    }
+    if (name.startsWith('universe-')) {
+      return false;
+    }
+    return true;
+  }
+
+  if (parts[0]?.toLowerCase() === 'universes') {
+    return false;
+  }
+
+  if (parts[0]?.toLowerCase().startsWith('universe')) {
+    return depth > 2;
+  }
+
+  return true;
+};
+
 export const discoverUniversesInRepo = async (provider) => {
   try {
-    console.log('[UniverseDiscovery] Recursively scanning repository for .redstring universe files...');
+    console.log('[UniverseDiscovery] Targeted scan for .redstring universe files...');
     const { universes } = await traverseRepositoryForUniverses(provider, { collectStats: false });
     console.log(`[UniverseDiscovery] Discovery complete: Found ${universes.length} universe files`);
     return universes;
@@ -79,14 +140,9 @@ export const discoverUniversesInRepo = async (provider) => {
   }
 };
 
-/**
- * Discover universes in a repository with basic statistics
- * @param {Object} provider - Git provider instance
- * @returns {{ universes: Array, stats: { scannedDirs: number, candidates: number, valid: number, invalid: number } }}
- */
 export const discoverUniversesWithStats = async (provider) => {
   try {
-    console.log('[UniverseDiscovery] Recursively scanning repository for .redstring universe files with detailed statistics...');
+    console.log('[UniverseDiscovery] Targeted scan for .redstring universe files with detailed statistics...');
     const { universes, stats } = await traverseRepositoryForUniverses(provider, { collectStats: true });
     console.log(`[UniverseDiscovery] Discovery complete: Found ${universes.length} valid universes from ${stats.candidates} candidates across ${stats.scannedDirs} directories`);
     return { universes, stats };
@@ -138,7 +194,9 @@ async function traverseRepositoryForUniverses(provider, { collectStats = false }
           }
         } else if (item.type === 'dir') {
           const nextPath = current ? `${current}/${item.name}` : item.name;
-          queue.push(nextPath);
+          if (!shouldSkipDirectory(nextPath)) {
+            queue.push(nextPath);
+          }
         }
       }
     } catch (error) {
