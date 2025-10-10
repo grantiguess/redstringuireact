@@ -1109,6 +1109,69 @@ async function findCategoryConcepts(entityName, options = {}) {
 }
 
 /**
+ * Discover all properties for a DBpedia entity
+ * @param {string} entityName - Entity name to discover properties for
+ * @param {Object} options - Discovery options
+ * @returns {Promise<Array>} Array of properties
+ */
+export async function discoverDBpediaProperties(entityName, options = {}) {
+  const { timeout = 10000, limit = 100, specificProperties = false } = options;
+
+  if (!entityName || typeof entityName !== 'string' || entityName.trim() === '') {
+    console.warn('[SemanticWebQuery] Invalid entityName for DBpedia properties:', entityName);
+    return [];
+  }
+
+  const sanitizedEntityName = entityName.trim();
+  const resourceUri = `http://dbpedia.org/resource/${sanitizedEntityName.replace(/\s+/g, '_')}`;
+
+  const query = `
+    SELECT DISTINCT ?property ?value ?valueLabel WHERE {
+      <${resourceUri}> ?property ?value .
+      OPTIONAL { ?value rdfs:label ?valueLabel . FILTER(LANG(?valueLabel) = "en") }
+    } LIMIT ${limit}
+  `;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    const response = await fetch('https://dbpedia.org/sparql', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/sparql-results+json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'RedString-SemanticWeb/1.0'
+      },
+      body: `query=${encodeURIComponent(query)}`,
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const data = await response.json();
+
+    if (data.results?.bindings) {
+      return data.results.bindings.map(binding => ({
+        property: binding.property?.value,
+        value: binding.value?.value,
+        valueLabel: binding.valueLabel?.value
+      }));
+    }
+
+    return [];
+
+  } catch (error) {
+    console.warn('[SemanticWebQuery] DBpedia properties discovery failed:', error);
+    return [];
+  }
+}
+
+/**
  * Find related entities through DBpedia properties
  * @param {string} entityName - Entity name to search for
  * @param {Object} options - Search options
@@ -1116,7 +1179,7 @@ async function findCategoryConcepts(entityName, options = {}) {
  */
 export async function findRelatedThroughDBpediaProperties(entityName, options = {}) {
   const { timeout = 15000, limit = 20 } = options;
-  
+
   // Validate input to prevent malformed queries
   if (!entityName || typeof entityName !== 'string' || entityName.trim() === '') {
     console.warn('[SemanticWebQuery] Invalid entityName for property-based search:', entityName);
@@ -1124,12 +1187,12 @@ export async function findRelatedThroughDBpediaProperties(entityName, options = 
   }
 
   const sanitizedEntityName = entityName.trim();
-  
+
   try {
     // Get all available properties for the entity
-    const allProperties = await discoverDBpediaProperties(sanitizedEntityName, { 
-      limit: 100, 
-      specificProperties: false 
+    const allProperties = await discoverDBpediaProperties(sanitizedEntityName, {
+      limit: 100,
+      specificProperties: false
     });
     
     if (!allProperties || allProperties.length === 0) {

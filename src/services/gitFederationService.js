@@ -215,6 +215,7 @@ function mapUniverse(universe, activeSlug, syncStatusMap = {}) {
   return {
     slug: universe.slug,
     name: universe.name || universe.slug,
+    sourceOfTruth: universe.sourceOfTruth,
     createdAt: universe.metadata?.created || universe.created || null,
     updatedAt: universe.metadata?.lastModified || universe.lastModified || null,
     lastOpenedAt: universe.metadata?.lastOpened || null,

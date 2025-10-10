@@ -67,70 +67,9 @@ const pickDisplayName = (candidateName, fallbackName) => {
  * @param {Object} provider - Git provider instance
  * @returns {Array} Array of discovered universe objects
  */
-const EXCLUDED_DIR_PATTERNS = [
-  'node_modules',
-  '.git',
-  '.github',
-  '.gitlab',
-  'vendor',
-  'dist',
-  'build',
-  '.next',
-  '.cache',
-  'target',
-  '__tests__',
-  '__mocks__'
-];
-
-const shouldSkipDirectory = (path) => {
-  const lowerPath = path.toLowerCase();
-
-  if (!path) return false;
-
-  if (lowerPath.includes('/backups') || lowerPath.endsWith('/backups')) {
-    return true;
-  }
-
-  const parts = path.split('/').filter(Boolean);
-  const depth = parts.length;
-  const name = parts[parts.length - 1]?.toLowerCase() || '';
-
-  if (name.startsWith('.')) {
-    return true;
-  }
-
-  if (EXCLUDED_DIR_PATTERNS.some(pattern => lowerPath.includes(pattern))) {
-    return true;
-  }
-
-  if (depth > 3) {
-    return true;
-  }
-
-  if (depth === 1) {
-    if (['universes', 'universe', 'schema'].includes(name)) {
-      return false;
-    }
-    if (name.startsWith('universe-')) {
-      return false;
-    }
-    return true;
-  }
-
-  if (parts[0]?.toLowerCase() === 'universes') {
-    return false;
-  }
-
-  if (parts[0]?.toLowerCase().startsWith('universe')) {
-    return depth > 2;
-  }
-
-  return true;
-};
-
 export const discoverUniversesInRepo = async (provider) => {
   try {
-    console.log('[UniverseDiscovery] Targeted scan for .redstring universe files...');
+    console.log('[UniverseDiscovery] Scanning repository for .redstring universe files inside the "universes" folder...');
     const { universes } = await traverseRepositoryForUniverses(provider, { collectStats: false });
     console.log(`[UniverseDiscovery] Discovery complete: Found ${universes.length} universe files`);
     return universes;
@@ -155,62 +94,50 @@ export const discoverUniversesWithStats = async (provider) => {
 async function traverseRepositoryForUniverses(provider, { collectStats = false } = {}) {
   const stats = collectStats ? { scannedDirs: 0, candidates: 0, valid: 0, invalid: 0 } : null;
   const universes = [];
-  const queue = [''];
-  const visited = new Set();
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-    const visitKey = current || '.';
-    if (visited.has(visitKey)) {
-      continue;
-    }
-    visited.add(visitKey);
+  const rootsToCheck = ['universes'];
 
+  for (const root of rootsToCheck) {
     try {
-      const contents = await provider.listDirectoryContents(current);
-      if (stats) {
-        stats.scannedDirs += 1;
-      }
+      const entries = await provider.listDirectoryContents(root);
+      if (stats) stats.scannedDirs += 1;
 
-      for (const item of contents) {
-        if (item.type === 'file' && item.name.endsWith('.redstring')) {
-          if (stats) {
-            stats.candidates += 1;
-          }
-          const filePath = current ? `${current}/${item.name}` : item.name;
+      for (const entry of entries) {
+        if (entry.type !== 'file' || !entry.name.endsWith('.redstring')) continue;
+
+        const filePath = `${root}/${entry.name}`;
+        if (stats) stats.candidates += 1;
+
+        try {
           const universeInfo = await analyzeUniverseFile(provider, filePath);
           if (universeInfo) {
             universes.push({
               ...universeInfo,
               path: filePath,
-              location: current || 'root',
+              location: root,
               type: 'file'
             });
-            if (stats) {
-              stats.valid += 1;
-            }
+            if (stats) stats.valid += 1;
           } else if (stats) {
             stats.invalid += 1;
           }
-        } else if (item.type === 'dir') {
-          const nextPath = current ? `${current}/${item.name}` : item.name;
-          if (!shouldSkipDirectory(nextPath)) {
-            queue.push(nextPath);
-          }
+        } catch (error) {
+          console.warn(`[UniverseDiscovery] Failed to analyze ${filePath}: ${error.message}`);
+          if (stats) stats.invalid += 1;
         }
       }
     } catch (error) {
       if (error?.message?.includes('404')) {
-        console.log(`[UniverseDiscovery] Directory '${current || 'root'}' not found (expected during repository scanning)`);
+        console.log(`[UniverseDiscovery] Directory '${root}' not found (expected if repository has not been initialized)`);
       } else {
-        console.warn(`[UniverseDiscovery] Failed to scan directory ${current || 'root'}: ${error?.message || error}`);
+        console.warn(`[UniverseDiscovery] Failed to list directory ${root}: ${error?.message || error}`);
       }
     }
   }
 
   return {
     universes,
-    stats: stats || { scannedDirs: 0, candidates: 0, valid: universes.length, invalid: 0 }
+    stats: stats || { scannedDirs: rootsToCheck.length, candidates: universes.length, valid: universes.length, invalid: 0 }
   };
 }
 

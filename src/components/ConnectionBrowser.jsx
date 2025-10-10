@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowRight, Plus, CircleDot, RefreshCw } from 'lucide-react';
+import { ArrowRight, Plus, CircleDot, RefreshCw, List, Network, Sparkles } from 'lucide-react';
 import useGraphStore from '../store/graphStore';
-import { knowledgeFederation } from '../services/knowledgeFederation';
+import { discoverConnections } from '../services/semanticDiscovery.js';
 import { fastEnrichFromSemanticWeb } from '../services/semanticWebQuery.js';
 import Dropdown from './Dropdown.jsx';
 import './ConnectionBrowser.css';
@@ -25,6 +25,12 @@ const RDFTriplet = ({
 }) => {
   const defaultColor = '#8B0000'; // Default maroon for semantic connections
   const canvasColor = '#bdb5b5'; // Canvas background color for text fill - matches NodeCanvas exactly
+
+  // Show confidence badge for semantic connections
+  const showConfidence = connection?.type === 'semantic' && connection?.confidence;
+  const confidencePercent = showConfidence ? Math.round(connection.confidence * 100) : null;
+  const confidenceColor = confidencePercent >= 80 ? '#4CAF50' :
+                          confidencePercent >= 60 ? '#FF9800' : '#F44336';
   
   // Determine connection directionality
   const isNondirectional = connection?.type === 'native' && connection?.directionality === 'nondirectional';
@@ -83,8 +89,8 @@ const RDFTriplet = ({
   const dynamicFontSize = Math.max(minFontSize, Math.min(maxFontSize, baseFontSize * dynamicScaleFactor));
 
   return (
-    <div 
-      className="rdf-triplet" 
+    <div
+      className="rdf-triplet"
       onClick={() => {
         // Only semantic web connections can be materialized
         if (connection?.type === 'semantic' && onMaterialize) {
@@ -92,9 +98,29 @@ const RDFTriplet = ({
         }
       }}
       style={{
-        cursor: connection?.type === 'semantic' ? 'pointer' : 'default'
+        cursor: connection?.type === 'semantic' ? 'pointer' : 'default',
+        position: 'relative'
       }}
+      title={connection?.description || `${subject} → ${predicate} → ${object}`}
     >
+      {/* Confidence Badge */}
+      {showConfidence && (
+        <div style={{
+          position: 'absolute',
+          top: '-8px',
+          right: '-8px',
+          background: confidenceColor,
+          color: 'white',
+          borderRadius: '12px',
+          padding: '2px 6px',
+          fontSize: '10px',
+          fontWeight: 'bold',
+          zIndex: 10,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+        }}>
+          {confidencePercent}%
+        </div>
+      )}
       <div className="triplet-flow">
         {/* Subject Node */}
         <div 
@@ -258,6 +284,7 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection, isUltraSlim = fa
   const [semanticConnections, setSemanticConnections] = useState([]);
   const [nativeConnections, setNativeConnections] = useState([]);
   const [isLoadingSemanticWeb, setIsLoadingSemanticWeb] = useState(false);
+  const [isDebouncing, setIsDebouncing] = useState(false); // NEW: Track debounce state
   const [error, setError] = useState(null);
   const [containerWidth, setContainerWidth] = useState(400); // Default width
   const connectionListRef = useRef(null);
@@ -294,115 +321,111 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection, isUltraSlim = fa
     };
   }, []);
 
-  // Load semantic web connections from federated knowledge system
+  // Load semantic web connections from new discovery system (with debouncing!)
   useEffect(() => {
     if (!nodeData?.name || nodeData.name.trim() === '') {
       console.log('[ConnectionBrowser] No valid node name, skipping semantic web connection load');
+      setSemanticConnections([]);
+      setIsDebouncing(false);
       return;
     }
-    
-    const loadSemanticConnections = async () => {
-      setIsLoadingSemanticWeb(true);
-      setError(null);
-      
-      try {
-        console.log(`[ConnectionBrowser] Loading semantic web connections for: "${nodeData.name}"`);
-        
-        // Use fast enrichment for immediate results
-        const enrichmentResults = await fastEnrichFromSemanticWeb(nodeData.name, {
-          timeout: 15000 // Use fast 15 second timeout
+
+    // Show debouncing indicator immediately
+    setIsDebouncing(true);
+
+    // Debounce the query - wait 800ms after user stops typing
+    const debounceTimer = setTimeout(() => {
+      setIsDebouncing(false); // Done debouncing, now loading
+
+      const loadSemanticConnections = async () => {
+        setIsLoadingSemanticWeb(true);
+        setError(null);
+
+        try {
+          console.log(`[ConnectionBrowser] Discovering connections for: "${nodeData.name}"`);
+
+          // Use new property-path discovery system (FAST!)
+          const discoveryResults = await discoverConnections(nodeData.name, {
+            timeout: 12000, // 12 seconds (faster than old system)
+            limit: 25,
+            minConfidence: 0.5,
+            sources: ['dbpedia', 'wikidata']
+          });
+
+        // Convert discovery results to connection format with CLEAR LABELS
+        const federatedConnections = discoveryResults.connections.map((conn, index) => ({
+          id: `disc-${index}`,
+          subject: conn.source,
+          predicate: conn.relation, // This is the key! "developer", "genre", etc.
+          object: conn.target,
+          confidence: conn.confidence,
+          source: conn.provider,
+          type: 'semantic',
+          description: conn.description,
+          relationUri: conn.relationUri,
+          targetUri: conn.targetUri
+        }));
+
+        console.log(`[ConnectionBrowser] Discovered ${federatedConnections.length} connections with labels:`);
+        federatedConnections.forEach(conn => {
+          console.log(`  ${conn.subject} → ${conn.predicate} → ${conn.object} (${(conn.confidence * 100).toFixed(0)}%)`);
         });
-        
-        // Convert enrichment results to connection format
-        const federatedConnections = [];
-        
-        // Add main entity connections if found
-        if (enrichmentResults.sources.wikidata?.found) {
-          federatedConnections.push({
-            id: 'fed-wikidata',
-            subject: nodeData.name,
-            predicate: 'found in',
-            object: 'Wikidata',
-            confidence: 0.9,
-            source: 'wikidata',
-            type: 'semantic'
+
+        setSemanticConnections(federatedConnections);
+
+      } catch (err) {
+        console.error('[ConnectionBrowser] Discovery failed, falling back to enrichment:', err);
+
+        // Fallback to old system if new one fails
+        try {
+          const enrichmentResults = await fastEnrichFromSemanticWeb(nodeData.name, {
+            timeout: 10000
           });
-        }
-        
-        if (enrichmentResults.sources.dbpedia?.found) {
-          federatedConnections.push({
-            id: 'fed-dbpedia',
-            subject: nodeData.name,
-            predicate: 'found in',
-            object: 'DBpedia',
-            confidence: 0.9,
-            source: 'dbpedia',
-            type: 'semantic'
-          });
-        }
-        
-        if (enrichmentResults.sources.wikipedia?.found) {
-          federatedConnections.push({
-            id: 'fed-wikipedia',
-            subject: nodeData.name,
-            predicate: 'found in',
-            object: 'Wikipedia',
-            confidence: 0.8,
-            source: 'wikipedia',
-            type: 'semantic'
-          });
-        }
-        
-        // Add external links as connections
-        if (enrichmentResults.suggestions?.externalLinks) {
-          enrichmentResults.suggestions.externalLinks.forEach((link, index) => {
-            federatedConnections.push({
-              id: `fed-link-${index}`,
+
+          const fallbackConnections = [];
+
+          if (enrichmentResults.sources.wikidata?.found) {
+            fallbackConnections.push({
+              id: 'fb-wikidata',
               subject: nodeData.name,
-              predicate: 'external link',
-              object: link.split('/').pop() || link,
-              confidence: 0.7,
-              source: 'semantic_web',
+              predicate: 'found in',
+              object: 'Wikidata',
+              confidence: 0.9,
+              source: 'wikidata',
               type: 'semantic'
             });
-          });
-        }
-        
-        setSemanticConnections(federatedConnections);
-        console.log(`[ConnectionBrowser] Loaded ${federatedConnections.length} semantic web connections`);
-        
-      } catch (err) {
-        console.error('[ConnectionBrowser] Failed to load semantic web connections:', err);
-        setError(err.message);
-        
-        // Fallback to mock data on error
-        const mockConnections = [
-          {
-            id: '1',
-            subject: nodeData?.name || 'Node',
-            predicate: 'instance of',
-            object: 'company',
-            confidence: 0.9,
-            source: 'wikidata',
-            type: 'semantic'
-          },
-          {
-            id: '2', 
-            subject: nodeData?.name || 'Node',
-            predicate: 'headquartered in',
-            object: 'California',
-            confidence: 0.85,
-            source: 'dbpedia',
-            type: 'semantic'
           }
-        ];
-        setSemanticConnections(mockConnections);
+
+          if (enrichmentResults.sources.dbpedia?.found) {
+            fallbackConnections.push({
+              id: 'fb-dbpedia',
+              subject: nodeData.name,
+              predicate: 'found in',
+              object: 'DBpedia',
+              confidence: 0.9,
+              source: 'dbpedia',
+              type: 'semantic'
+            });
+          }
+
+          setSemanticConnections(fallbackConnections);
+        } catch (fallbackErr) {
+          console.error('[ConnectionBrowser] Fallback also failed:', fallbackErr);
+          setError('Unable to load connections from semantic web');
+          setSemanticConnections([]);
+        }
       } finally {
         setIsLoadingSemanticWeb(false);
       }
     };
-    
-    loadSemanticConnections();
+
+      loadSemanticConnections();
+    }, 800); // Wait 800ms after user stops typing
+
+    // Cleanup: cancel the timeout if nodeData.name changes again
+    return () => {
+      clearTimeout(debounceTimer);
+    };
   }, [nodeData?.name]);
 
   // Load native Redstring connections for this node
@@ -563,7 +586,7 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection, isUltraSlim = fa
   }
   
   // Determine loading state based on current scope
-  const isLoading = connectionScope === 'semantic' ? isLoadingSemanticWeb : false;
+  const isLoading = connectionScope === 'semantic' ? (isLoadingSemanticWeb || isDebouncing) : false;
 
   return (
     <div className="connection-browser">
@@ -610,7 +633,9 @@ const ConnectionBrowser = ({ nodeData, onMaterializeConnection, isUltraSlim = fa
           <div className="connection-loading">
             <RefreshCw size={20} className="spin" />
             <span>
-              {connectionScope === 'semantic'
+              {isDebouncing
+                ? 'Waiting for input to stabilize...'
+                : connectionScope === 'semantic'
                 ? 'Loading connections from semantic web...'
                 : 'Loading connections...'
               }

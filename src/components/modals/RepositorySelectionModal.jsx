@@ -65,10 +65,12 @@ const RepositorySelectionModal = ({
       : 'Add';
 
   const intentMessage = intent === 'import'
-    ? 'Pick a repository to import an existing universe as a brand-new copy. The app will scan for universe files before loading.'
+    ? 'Pick a repository to import an existing universe. Only files inside the universes/ folder will be listed.'
     : intent === 'attach'
-      ? 'Choose the repository you want to sync with your current universe. You can create a new file or sync with an existing one.'
-      : null;
+      ? 'Choose the repository you want to sync with this universe. Only files inside the universes/ folder will be listed.'
+      : intent === 'create'
+        ? 'Create a repository or choose an existing one. When attaching, make sure your universe lives in the universes/ folder.'
+        : null;
 
   useEffect(() => {
     if (isOpen && authStatus.isAuthenticated) {
