@@ -212,6 +212,14 @@ function mapUniverse(universe, activeSlug, syncStatusMap = {}) {
   const primarySlot = slots.find(slot => slot.type === primaryType) || slots[0] || null;
   const browserSlot = slots.find(slot => slot.type === STORAGE_TYPES.BROWSER) || null;
 
+  if (!primarySlot) {
+    console.warn('[gitFederationService] mapUniverse: No primary slot resolved', {
+      slug: universe.slug,
+      sourceOfTruth: universe.sourceOfTruth,
+      availableSlots: slots.map(s => s.type)
+    });
+  }
+
   return {
     slug: universe.slug,
     name: universe.name || universe.slug,
@@ -362,6 +370,14 @@ export const gitFederationService = {
       throw new Error(`Universe not found: ${slug}`);
     }
 
+    console.log('[gitFederationService] setPrimaryStorage requested:', {
+      slug,
+      type,
+      extra,
+      currentSourceOfTruth: universe.raw?.sourceOfTruth,
+      availableSlots: universe.storage
+    });
+
     const payload = {};
 
     if (type === STORAGE_TYPES.GIT) {
@@ -384,7 +400,10 @@ export const gitFederationService = {
       payload.browserStorage = { ...universe.raw.browserStorage, enabled: true };
     }
 
+    console.log('[gitFederationService] setPrimaryStorage payload:', payload);
+
     await universeBackendBridge.updateUniverse(slug, payload);
+    console.log('[gitFederationService] setPrimaryStorage update sent');
     return this.refreshUniverses();
   },
 

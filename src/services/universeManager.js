@@ -23,6 +23,8 @@ import {
   getAllFileHandleMetadata,
   attemptRestoreFileHandle,
   verifyFileHandleAccess,
+  checkFileHandlePermission,
+  requestFileHandlePermission,
   removeFileHandleMetadata,
   touchFileHandle
 } from './fileHandlePersistence.js';
@@ -1652,16 +1654,47 @@ class UniverseManager {
       }
     }
     
+    const ensurePermission = async () => {
+      const permission = await checkFileHandlePermission(fileHandle);
+      if (permission === 'granted') return;
+      const granted = await requestFileHandlePermission(fileHandle);
+      if (granted !== 'granted') {
+        throw new Error('Permission denied for local file access');
+      }
+    };
+
+    const isPermissionError = (error) => {
+      if (!error) return false;
+      const name = String(error.name || '');
+      const message = String(error.message || '').toLowerCase();
+      return name === 'NotAllowedError' ||
+        name === 'SecurityError' ||
+        message.includes('permission') ||
+        message.includes('denied');
+    };
+
     const jsonString = JSON.stringify(redstringData, null, 2);
-    const writable = await fileHandle.createWritable();
-    await writable.write(jsonString);
-    await writable.close();
-    
-    // Update last accessed time in persistence
+    let writable;
     try {
-      await touchFileHandle(universe.slug);
+      await ensurePermission();
+      writable = await fileHandle.createWritable();
+      await writable.write(jsonString);
+      await writable.close();
+      
+      try {
+        await touchFileHandle(universe.slug, fileHandle);
+      } catch (error) {
+        console.warn('[UniverseManager] Failed to touch file handle after save:', error);
+      }
     } catch (error) {
-      console.warn('[UniverseManager] Failed to touch file handle after save:', error);
+      try { await writable?.close(); } catch (_) {}
+
+      if (isPermissionError(error)) {
+        this.notifyStatus('warning', 'Reauthorize local file access to continue saving this universe');
+        throw new Error('Local file access was denied');
+      }
+
+      throw error;
     }
   }
 

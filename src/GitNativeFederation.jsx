@@ -214,6 +214,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     try {
       setLoading(true);
       const next = await gitFederationService.getState();
+      console.log('[GitNativeFederation] Refreshed federation state:', next);
       setServiceState(next);
       setSyncTelemetry(next.syncStatuses || {});
       setError(null); // Clear any previous errors on success
@@ -770,6 +771,11 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   const handleSetPrimarySlot = async (slug, slot) => {
     try {
       setLoading(true);
+      console.log('[GitNativeFederation] Requesting primary storage change:', {
+        slug,
+        slotType: slot?.type,
+        storage: slot
+      });
       await gitFederationService.setPrimaryStorage(slug, slot.type);
       setSyncStatus({ type: 'success', message: `${STORAGE_LABELS[slot.type]} promoted to primary` });
       await refreshState();

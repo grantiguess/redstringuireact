@@ -590,6 +590,44 @@ const UniversesList = ({
                                   </div>
                                 </div>
 
+                                {localFile.fileHandleStatus === 'needs_reconnect' && (
+                                  <div
+                                    style={{
+                                      marginTop: 6,
+                                      padding: '6px 8px',
+                                      borderRadius: 6,
+                                      backgroundColor: 'rgba(122,0,0,0.12)',
+                                      border: '1px solid rgba(122,0,0,0.4)',
+                                      color: '#5a0000',
+                                      fontSize: '0.65rem',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      gap: 8,
+                                      flexWrap: 'wrap'
+                                    }}
+                                  >
+                                    <span>Reconnect this file to continue saving locally.</span>
+                                    {onLinkLocalFile && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onLinkLocalFile(universe.slug);
+                                        }}
+                                        style={{
+                                          ...buttonStyle('outline'),
+                                          fontSize: '0.62rem',
+                                          padding: '2px 6px',
+                                          borderColor: '#7A0000',
+                                          color: '#7A0000'
+                                        }}
+                                      >
+                                        Reconnect
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+
                                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                                   {(() => {
                                     const isSourceOfTruth = resolvedSource === 'local';

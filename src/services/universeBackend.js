@@ -27,6 +27,8 @@ import {
   getAllFileHandleMetadata,
   attemptRestoreFileHandle,
   verifyFileHandleAccess,
+  checkFileHandlePermission,
+  requestFileHandlePermission,
   touchFileHandle,
   removeFileHandleMetadata
 } from './fileHandlePersistence.js';
@@ -318,6 +320,7 @@ class UniverseBackend {
     mergedRaw.sources = sources;
     mergedRaw.created = created;
     mergedRaw.lastModified = lastModified;
+    mergedRaw.sourceOfTruth = rest.sourceOfTruth || rawBase.sourceOfTruth || 'local';
 
     return {
       slug,
@@ -1757,16 +1760,47 @@ class UniverseBackend {
       }
     }
 
-    const jsonString = JSON.stringify(redstringData, null, 2);
-    const writable = await fileHandle.createWritable();
-    await writable.write(jsonString);
-    await writable.close();
+    const ensurePermission = async () => {
+      const permission = await checkFileHandlePermission(fileHandle);
+      if (permission === 'granted') return;
+      const granted = await requestFileHandlePermission(fileHandle);
+      if (granted !== 'granted') {
+        throw new Error('Permission denied for local file access');
+      }
+    };
 
-    // Update last accessed time in persistence
+    const isPermissionError = (error) => {
+      if (!error) return false;
+      const name = String(error.name || '');
+      const message = String(error.message || '').toLowerCase();
+      return name === 'NotAllowedError' ||
+        name === 'SecurityError' ||
+        message.includes('permission') ||
+        message.includes('denied');
+    };
+
+    const jsonString = JSON.stringify(redstringData, null, 2);
+    let writable;
     try {
-      await touchFileHandle(universe.slug);
+      await ensurePermission();
+      writable = await fileHandle.createWritable();
+      await writable.write(jsonString);
+      await writable.close();
+
+      try {
+        await touchFileHandle(universe.slug, fileHandle);
+      } catch (error) {
+        console.warn('[UniverseBackend] Failed to touch file handle after save:', error);
+      }
     } catch (error) {
-      console.warn('[UniverseBackend] Failed to touch file handle after save:', error);
+      try { await writable?.close(); } catch (_) {}
+
+      if (isPermissionError(error)) {
+        this.notifyStatus('warning', 'Reauthorize local file access to continue saving this universe');
+        throw new Error('Local file access was denied');
+      }
+
+      throw error;
     }
   }
 
@@ -2480,13 +2514,16 @@ class UniverseBackend {
     
     console.log(`[UniverseBackend] Force saving universe ${universeSlug}`);
 
-    const universe = this.getUniverse(universeSlug);
+    let universe = this.getUniverse(universeSlug);
     if (!universe) {
       throw new Error(`Universe ${universeSlug} not found`);
     }
 
     // Check what storage is enabled (local-first approach)
-    const hasLocalFile = universe.raw?.localFile?.enabled && universe.raw?.localFile?.hadFileHandle;
+    let localConfig = universe.localFile || universe.raw?.localFile || {};
+    let hasLocalHandle = this.fileHandles.has(universeSlug);
+    let hasLocalFileEnabled = localConfig?.enabled !== false;
+    let hasLocalFile = hasLocalFileEnabled && hasLocalHandle;
     const skipGit = options?.skipGit === true;
     const hasGitRepo = universe.raw?.gitRepo?.enabled && (universe.raw?.gitRepo?.linkedRepo || universe.gitRepo?.linkedRepo);
     const sourceOfTruth = universe.sourceOfTruth || 'browser';
@@ -2497,6 +2534,28 @@ class UniverseBackend {
       hasGitRepo,
       localFilePath: universe.raw?.localFile?.path
     });
+
+    if (hasLocalFileEnabled && !hasLocalHandle && localConfig?.hadFileHandle) {
+      console.warn(`[UniverseBackend] Local file handle missing for ${universeSlug}; marking as needs reconnection`);
+      try {
+        await this.updateUniverse(universeSlug, {
+          localFile: {
+            ...localConfig,
+            hadFileHandle: false,
+            fileHandleStatus: 'needs_reconnect',
+            unavailableReason: 'Reauthorize file access to continue saving locally.'
+          }
+        });
+        this.notifyStatus('warning', 'Reconnect local file to continue saving changes locally');
+      } catch (updateError) {
+        console.warn('[UniverseBackend] Failed to mark local file for reconnection:', updateError);
+      }
+      universe = this.getUniverse(universeSlug) || universe;
+      localConfig = universe.localFile || universe.raw?.localFile || {};
+      hasLocalHandle = this.fileHandles.has(universeSlug);
+      hasLocalFileEnabled = localConfig?.enabled !== false;
+      hasLocalFile = hasLocalFileEnabled && hasLocalHandle;
+    }
 
     try {
       const results = {
@@ -2518,6 +2577,11 @@ class UniverseBackend {
           console.warn(`[UniverseBackend] ✗ Local file save failed:`, error);
           results.localFile = { success: false, error: error.message };
         }
+      } else if (hasLocalFileEnabled) {
+        results.localFile = {
+          success: false,
+          error: 'file_handle_missing'
+        };
       }
 
       // Save to Git if enabled (regardless of source of truth)
@@ -2830,7 +2894,7 @@ class UniverseBackend {
 
   /**
    * Save current universe store state to the previously linked file handle
-   */
+  */
   async saveToLinkedLocalFile(universeSlug, storeState = null) {
     const handle = this.fileHandles.get(universeSlug);
     if (!handle) {
@@ -2844,20 +2908,59 @@ class UniverseBackend {
     }
     const redstringData = exportToRedstring(storeState);
     const jsonString = JSON.stringify(redstringData, null, 2);
-    const writable = await handle.createWritable();
+
+    const ensurePermission = async () => {
+      const permission = await checkFileHandlePermission(handle);
+      if (permission === 'granted') return;
+      const granted = await requestFileHandlePermission(handle);
+      if (granted !== 'granted') {
+        throw new Error('Permission denied for local file access');
+      }
+    };
+
+    const isPermissionError = (error) => {
+      if (!error) return false;
+      const name = String(error.name || '');
+      const message = String(error.message || '').toLowerCase();
+      return name === 'NotAllowedError' ||
+        name === 'SecurityError' ||
+        message.includes('permission') ||
+        message.includes('denied');
+    };
+
+    let writable;
     try {
+      await ensurePermission();
+      writable = await handle.createWritable();
       await writable.write(new Blob([jsonString], { type: 'application/json' }));
       await writable.close();
       
       // Update last accessed time in persistence
       try {
-        await touchFileHandle(universeSlug);
+        await touchFileHandle(universeSlug, handle);
       } catch (error) {
         console.warn('[UniverseBackend] Failed to touch file handle after save:', error);
       }
-    } catch (e) {
-      try { await writable.close(); } catch (_) {}
-      throw e;
+    } catch (error) {
+      try { await writable?.close(); } catch (_) {}
+
+      if (isPermissionError(error)) {
+        console.warn('[UniverseBackend] Local file permission denied during save, flagging reconnect requirement');
+        const universe = this.getUniverse(universeSlug);
+        if (universe) {
+          await this.updateUniverse(universeSlug, {
+            localFile: {
+              ...universe.localFile,
+              hadFileHandle: false,
+              fileHandleStatus: 'needs_reconnect',
+              unavailableReason: 'Permission denied. Reconnect the local file to continue saving.'
+            }
+          });
+        }
+        this.notifyStatus('warning', 'Reauthorize local file access to continue saving this universe');
+      }
+
+      throw error;
     }
 
     const universe = this.getUniverse(universeSlug);

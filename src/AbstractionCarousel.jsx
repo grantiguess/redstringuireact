@@ -636,17 +636,27 @@ const AbstractionCarousel = ({
     const containerRect = containerRef.current.getBoundingClientRect();
     const nodeDimensions = getNodeDimensions(selectedNode, false, null);
     
-    // Get the center of the original node's screen coordinates, relative to the canvas container
-    const nodeScreenX = Math.round(selectedNode.x * zoomLevel + panOffset.x);
-    const nodeScreenY = Math.round(selectedNode.y * zoomLevel + panOffset.y);
-    const nodeCenterX = nodeScreenX + Math.round((nodeDimensions.currentWidth * zoomLevel) / 2);
-    const nodeCenterY = nodeScreenY + Math.round((nodeDimensions.currentHeight * zoomLevel) / 2);
+    // Calculate node center in canvas coordinates
+    const nodeCenterX = selectedNode.x + nodeDimensions.currentWidth / 2;
+    const nodeCenterY = selectedNode.y + nodeDimensions.currentHeight / 2;
     
-    // Adjust for the container's position relative to the viewport
-    return { 
-      x: nodeCenterX + containerRect.left, 
-      y: nodeCenterY + containerRect.top 
-    };
+    // Convert canvas coordinates to screen coordinates (same as PieMenu)
+    const screenX = nodeCenterX * zoomLevel + panOffset.x + containerRect.left;
+    const screenY = nodeCenterY * zoomLevel + panOffset.y + containerRect.top;
+    
+    const finalPosition = { x: screenX, y: screenY };
+    
+    console.log('[AbstractionCarousel] Position calculation:', {
+      selectedNode: { x: selectedNode.x, y: selectedNode.y },
+      nodeDimensions: { currentWidth: nodeDimensions.currentWidth, currentHeight: nodeDimensions.currentHeight },
+      nodeCenter: { x: nodeCenterX, y: nodeCenterY },
+      zoomLevel,
+      panOffset,
+      containerRect: { left: containerRect.left, top: containerRect.top },
+      finalPosition
+    });
+    
+    return finalPosition;
   }, [selectedNode, panOffset, zoomLevel, containerRef]);
 
   // Calculate the stack offset using real position and dynamic offsets

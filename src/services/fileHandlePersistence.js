@@ -7,7 +7,7 @@
  */
 
 const DB_NAME = 'RedstringFileHandles';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'fileHandles';
 
 /**
@@ -37,27 +37,26 @@ const openDB = () => {
  * Store file handle metadata for a universe
  * Note: We cannot store the actual FileSystemFileHandle, only metadata about it
  */
-export const storeFileHandleMetadata = async (universeSlug, fileHandle, additionalMetadata = {}) => {
+export const storeFileHandleMetadata = async (universeSlug, fileHandle = null, additionalMetadata = {}) => {
   try {
     const db = await openDB();
-    
-    const metadata = {
+    const record = {
       universeSlug,
-      fileName: fileHandle.name,
-      // Store the kind (file or directory) and name
-      kind: fileHandle.kind || 'file',
-      lastAccessed: Date.now(),
+      fileName: fileHandle?.name ?? additionalMetadata.fileName ?? null,
+      kind: fileHandle?.kind ?? additionalMetadata.kind ?? 'file',
+      handle: fileHandle ?? additionalMetadata.handle ?? null,
+      lastAccessed: additionalMetadata.lastAccessed ?? Date.now(),
       ...additionalMetadata
     };
     
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([STORE_NAME], 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
-      const request = store.put(metadata);
+      const request = store.put(record);
       
       request.onsuccess = () => {
-        console.log(`[FileHandlePersistence] Stored metadata for ${universeSlug}: ${fileHandle.name}`);
-        resolve(metadata);
+        console.log(`[FileHandlePersistence] Stored metadata for ${universeSlug}: ${record.fileName || 'unnamed'}`);
+        resolve(record);
       };
       request.onerror = () => reject(request.error);
       
@@ -245,9 +244,7 @@ export const attemptRestoreFileHandle = async (universeSlug, sessionHandle = nul
       }
     }
     
-    // Check if we have stored metadata
     const metadata = await getFileHandleMetadata(universeSlug);
-    
     if (!metadata) {
       return {
         success: false,
@@ -256,12 +253,32 @@ export const attemptRestoreFileHandle = async (universeSlug, sessionHandle = nul
       };
     }
     
+    if (metadata.handle) {
+      const isValid = await verifyFileHandleAccess(metadata.handle);
+      if (isValid) {
+        await storeFileHandleMetadata(universeSlug, metadata.handle, {
+          ...metadata,
+          lastAccessed: Date.now()
+        });
+        return {
+          success: true,
+          handle: metadata.handle,
+          metadata,
+          needsReconnect: false
+        };
+      }
+    }
+    
+    const message = metadata.fileName
+      ? `File connection lost. Please reconnect to: ${metadata.fileName}`
+      : 'File connection lost. Please reconnect the local file.';
+    
     // We have metadata but no valid handle - user needs to reconnect
     return {
       success: false,
       metadata,
       needsReconnect: true,
-      message: `File connection lost. Please reconnect to: ${metadata.fileName}`
+      message
     };
     
   } catch (error) {
@@ -277,22 +294,18 @@ export const attemptRestoreFileHandle = async (universeSlug, sessionHandle = nul
 /**
  * Update the last accessed time for a file handle
  */
-export const touchFileHandle = async (universeSlug) => {
+export const touchFileHandle = async (universeSlug, fileHandle = null) => {
   try {
     const metadata = await getFileHandleMetadata(universeSlug);
     if (metadata) {
-      const db = await openDB();
-      return new Promise((resolve, reject) => {
-        const transaction = db.transaction([STORE_NAME], 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        const updated = { ...metadata, lastAccessed: Date.now() };
-        const request = store.put(updated);
-        
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-        
-        transaction.oncomplete = () => db.close();
-      });
+      await storeFileHandleMetadata(
+        universeSlug,
+        fileHandle || metadata.handle || null,
+        {
+          ...metadata,
+          lastAccessed: Date.now()
+        }
+      );
     }
   } catch (error) {
     console.warn('[FileHandlePersistence] Failed to touch file handle:', error);
@@ -337,4 +350,3 @@ export default {
   touchFileHandle,
   clearAllFileHandleMetadata
 };
-
