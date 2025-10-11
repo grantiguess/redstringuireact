@@ -2349,32 +2349,32 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
             gap: 8
           }}
         >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Github size={18} />
               <div>
-                <div style={{ fontWeight: 600 }}>@{source.user}/{source.repo}</div>
+                <div style={{ fontWeight: 600 }}>github.com/{source.user}/{source.repo}</div>
                 <div style={{ fontSize: '0.72rem', color: '#555' }}>
-                  Linked {new Date(source.addedAt).toLocaleDateString()}
-                  </div>
+                  GitHub repository · Linked {new Date(source.addedAt).toLocaleDateString()}
                 </div>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
-                    <button 
+              <button 
                 onClick={() => handleDiscover(source)}
                 style={buttonStyle(discovery.loading ? 'disabled' : 'outline')}
                 disabled={discovery.loading}
               >
                 {discovery.loading ? 'Scanning…' : 'Discover universes'}
-                    </button>
-                  <button 
+              </button>
+              <button 
                 onClick={() => handleDetachRepo(universe, source)}
                 style={buttonStyle('danger')}
               >
                 Remove
-                  </button>
-        </div>
-      </div>
+              </button>
+            </div>
+          </div>
 
           {discovery.error && (
             <div style={{ fontSize: '0.72rem', color: '#7A0000' }}>{discovery.error}</div>
