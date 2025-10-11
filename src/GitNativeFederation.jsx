@@ -33,6 +33,7 @@ import universeBackendBridge from './services/universeBackendBridge.js';
 import RepositorySelectionModal from './components/modals/RepositorySelectionModal.jsx';
 import Modal from './components/shared/Modal.jsx';
 import ConfirmDialog from './components/shared/ConfirmDialog.jsx';
+import LocalFileConflictDialog from './components/shared/LocalFileConflictDialog.jsx';
 import ConnectionStats from './components/git-federation/ConnectionStats.jsx';
 import AuthSection from './components/git-federation/AuthSection.jsx';
 import UniversesList from './components/git-federation/UniversesList.jsx';
@@ -91,6 +92,37 @@ function formatWhen(value) {
   } catch {
     return value;
   }
+}
+
+function computeStoreMetrics(storeState) {
+  if (!storeState) {
+    return { nodeCount: null, edgeCount: null };
+  }
+
+  const resolveCount = (value) => {
+    if (value instanceof Map || value instanceof Set) return value.size;
+    if (Array.isArray(value)) return value.length;
+    if (value && typeof value === 'object') return Object.keys(value).length;
+    return null;
+  };
+
+  const nodeCount = resolveCount(storeState.nodePrototypes);
+  let edgeCount = resolveCount(storeState.edges);
+
+  if (edgeCount === null && storeState.graphs) {
+    const graphs = storeState.graphs instanceof Map
+      ? Array.from(storeState.graphs.values())
+      : Object.values(storeState.graphs || {});
+    edgeCount = graphs.reduce((total, graph) => {
+      const edgeIds = Array.isArray(graph?.edgeIds) ? graph.edgeIds : [];
+      return total + edgeIds.length;
+    }, 0);
+  }
+
+  return {
+    nodeCount,
+    edgeCount
+  };
 }
 
 function BrowserFallbackNote() {
@@ -200,12 +232,23 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   });
   const [repositoryIntent, setRepositoryIntent] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
+  const [conflictDialog, setConflictDialog] = useState(null);
 
   const containerRef = useRef(null);
   const [isSlim, setIsSlim] = useState(false);
+  const pendingLocalLinkRef = useRef(null);
+  const graphStoreModuleRef = useRef(null);
 
   const deviceInfo = useMemo(() => detectDeviceInfo(), []);
   const autosaveRef = useRef({ cooldownUntil: 0, triggerAt: 0 });
+
+  const loadGraphStore = useCallback(async () => {
+    if (!graphStoreModuleRef.current) {
+      const module = await import('./store/graphStore.jsx');
+      graphStoreModuleRef.current = module.default;
+    }
+    return graphStoreModuleRef.current;
+  }, []);
 
   const refreshAuth = useCallback(async () => {
     try {
@@ -1513,72 +1556,299 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     performRemoval();
   };
 
-  const handleLinkLocalFile = async (slug) => {
-    gfLog('[GitNativeFederation] Linking local file for universe:', slug);
-    
+  const gatherExistingLocalMetadata = async (slug, universe, existingHandle, importFromRedstring) => {
+    const localInfo = universe?.raw?.localFile || {};
+    const metadata = {
+      fileName: localInfo.path || `${slug}.redstring`,
+      nodeCount: null,
+      edgeCount: null,
+      fileSize: null,
+      lastSaved: localInfo.lastSaved || null,
+      fileModified: null,
+      permission: 'unknown',
+      hadHandle: !!existingHandle
+    };
+
+    if (existingHandle && typeof existingHandle.queryPermission === 'function') {
+      try {
+        let permission = await existingHandle.queryPermission({ mode: 'read' });
+        if (permission === 'prompt' && typeof existingHandle.requestPermission === 'function') {
+          permission = await existingHandle.requestPermission({ mode: 'read' });
+        }
+        metadata.permission = permission;
+        if (permission === 'granted') {
+          const existingFile = await existingHandle.getFile();
+          metadata.fileSize = existingFile.size;
+          metadata.fileModified = existingFile.lastModified;
+
+          if (serviceState.activeUniverseSlug === slug) {
+            try {
+              const useGraphStore = await loadGraphStore();
+              const storeState = useGraphStore.getState();
+              const metrics = computeStoreMetrics(storeState);
+              metadata.nodeCount = metrics.nodeCount;
+              metadata.edgeCount = metrics.edgeCount;
+            } catch (error) {
+              gfWarn('[GitNativeFederation] Failed to read in-memory metrics for existing file:', error);
+            }
+          } else if (importFromRedstring) {
+            try {
+              const fileText = await existingFile.text();
+              const parsed = JSON.parse(fileText);
+              const imported = importFromRedstring(parsed);
+              const metrics = computeStoreMetrics(imported.storeState);
+              metadata.nodeCount = metrics.nodeCount;
+              metadata.edgeCount = metrics.edgeCount;
+            } catch (error) {
+              gfWarn('[GitNativeFederation] Failed to parse existing local file for metrics:', error);
+            }
+          }
+        }
+      } catch (error) {
+        gfWarn('[GitNativeFederation] Unable to inspect existing local file handle:', error);
+      }
+    }
+
+    if ((metadata.nodeCount === null || metadata.edgeCount === null) && serviceState.activeUniverseSlug === slug) {
+      try {
+        const useGraphStore = await loadGraphStore();
+        const storeState = useGraphStore.getState();
+        const metrics = computeStoreMetrics(storeState);
+        if (metadata.nodeCount === null) metadata.nodeCount = metrics.nodeCount;
+        if (metadata.edgeCount === null) metadata.edgeCount = metrics.edgeCount;
+      } catch (error) {
+        gfWarn('[GitNativeFederation] Failed to use active store for existing metrics:', error);
+      }
+    }
+
+    if (metadata.nodeCount === null && typeof universe.nodeCount === 'number' && !Number.isNaN(universe.nodeCount)) {
+      metadata.nodeCount = universe.nodeCount;
+    }
+    const edgeCountFromMeta = universe.raw?.metadata?.edgeCount;
+    if (metadata.edgeCount === null && typeof edgeCountFromMeta === 'number' && !Number.isNaN(edgeCountFromMeta)) {
+      metadata.edgeCount = edgeCountFromMeta;
+    }
+
+    return metadata;
+  };
+
+  const detectLocalFileConflict = async (payload) => {
+    const { slug, fileHandle, file, metrics, importHelpers } = payload;
+    const universe = serviceState.universes.find(u => u.slug === slug);
+    if (!universe) {
+      gfWarn('[GitNativeFederation] No universe found while detecting local conflict:', slug);
+      return null;
+    }
+
+    const existingLocal = universe.raw?.localFile || {};
+    const hasExistingLocal = existingLocal.enabled && (existingLocal.hadFileHandle || existingLocal.path);
+    if (!hasExistingLocal) {
+      return null;
+    }
+
+    if (!existingLocal.hadFileHandle && !existingLocal.lastSaved && !existingLocal.path) {
+      return null;
+    }
+
+    const existingHandle = universeBackend.getFileHandle(slug);
+    let isSameEntry = false;
+    if (existingHandle && typeof existingHandle.isSameEntry === 'function') {
+      try {
+        isSameEntry = await existingHandle.isSameEntry(fileHandle);
+      } catch (error) {
+        gfWarn('[GitNativeFederation] Failed to compare existing and incoming handles:', error);
+      }
+    }
+
+    const existingMetadata = await gatherExistingLocalMetadata(
+      slug,
+      universe,
+      existingHandle,
+      importHelpers?.importFromRedstring
+    );
+
+    const comparableNodeCounts = typeof metrics.nodeCount === 'number' && typeof existingMetadata.nodeCount === 'number';
+    const comparableEdgeCounts = typeof metrics.edgeCount === 'number' && typeof existingMetadata.edgeCount === 'number';
+    const countsMatch = comparableNodeCounts &&
+      metrics.nodeCount === existingMetadata.nodeCount &&
+      (!comparableEdgeCounts || metrics.edgeCount === existingMetadata.edgeCount);
+
+    const nameMatches = [existingLocal.path, existingLocal.lastFilePath]
+      .filter(Boolean)
+      .some(name => name === file.name);
+
+    if (isSameEntry) {
+      return null;
+    }
+
+    if (!existingHandle && nameMatches && (countsMatch || (!comparableNodeCounts && !comparableEdgeCounts))) {
+      return null;
+    }
+
+    return {
+      universeName: universe.name,
+      existing: {
+        ...existingMetadata,
+        label: 'Keep Existing File',
+        role: 'Current auto-save target'
+      },
+      incoming: {
+        fileName: file.name,
+        nodeCount: metrics.nodeCount,
+        edgeCount: metrics.edgeCount,
+        fileSize: typeof file.size === 'number' ? file.size : null,
+        lastSaved: null,
+        fileModified: file.lastModified || null,
+        label: 'Use Linked File',
+        role: 'Newly selected file'
+      },
+      existingLocal,
+      reason: isSameEntry ? 'same-file' : 'different-file'
+    };
+  };
+
+  const applyIncomingLocalFile = async (payload) => {
+    const { slug, fileHandle, file, storeState, metrics } = payload;
+
     try {
       setLoading(true);
-      
-      // Use File System Access API to get persistent file handle
+
+      const useGraphStore = await loadGraphStore();
+      const storeActions = useGraphStore.getState();
+      gfLog('[GitNativeFederation] Loading linked file data into store...');
+      storeActions.loadUniverseFromFile(storeState);
+
+      await universeBackend.setFileHandle(slug, fileHandle);
+      await universeBackend.linkLocalFileToUniverse(slug, file.name);
+
+      try {
+        await gitFederationService.forceSave(slug, { skipGit: true });
+        gfLog('[GitNativeFederation] Saved linked file data to persistent storage');
+      } catch (saveErr) {
+        gfWarn('[GitNativeFederation] Failed to save after linking new file:', saveErr);
+      }
+
+      await refreshState();
+
+      const nodeCountLabel = typeof metrics.nodeCount === 'number'
+        ? ` • ${metrics.nodeCount} node${metrics.nodeCount === 1 ? '' : 's'}`
+        : '';
+      setSyncStatus({
+        type: 'success',
+        message: `Linked ${file.name}${nodeCountLabel}`
+      });
+    } catch (error) {
+      gfError('[GitNativeFederation] Failed to finalize local file link:', error);
+      setError(`Failed to link file: ${error.message}`);
+    } finally {
+      setLoading(false);
+      pendingLocalLinkRef.current = null;
+    }
+  };
+
+  const processParsedLocalFile = async (payload) => {
+    const conflictDetails = await detectLocalFileConflict(payload);
+    if (conflictDetails) {
+      pendingLocalLinkRef.current = payload;
+      setConflictDialog(conflictDetails);
+      return;
+    }
+    await applyIncomingLocalFile(payload);
+  };
+
+  const handleResolveLocalConflict = async (choice) => {
+    const payload = pendingLocalLinkRef.current;
+    const dialogData = conflictDialog;
+    setConflictDialog(null);
+
+    if (!payload) {
+      return;
+    }
+
+    if (choice === 'existing') {
+      pendingLocalLinkRef.current = null;
+      const existingLabel = dialogData?.existing?.fileName || 'existing local file';
+      setSyncStatus({
+        type: 'info',
+        message: `Continuing with ${existingLabel}`
+      });
+      return;
+    }
+
+    await applyIncomingLocalFile(payload);
+  };
+
+  const handleCancelLocalConflict = () => {
+    pendingLocalLinkRef.current = null;
+    setConflictDialog(null);
+    setSyncStatus({ type: 'info', message: 'Local file link cancelled' });
+  };
+
+  const handleLinkLocalFile = async (slug) => {
+    gfLog('[GitNativeFederation] Linking local file for universe:', slug);
+
+    let payload = null;
+
+    try {
+      setLoading(true);
+
       const [fileHandle] = await window.showOpenFilePicker({
         types: [{ description: 'RedString / JSON Files', accept: { 'application/json': ['.redstring', '.json'] } }],
         multiple: false,
         excludeAcceptAllOption: false
       });
-      
+
       gfLog('[GitNativeFederation] File handle obtained:', fileHandle.name);
-      
-      // Request permission to read if needed
-      const permissionStatus = await fileHandle.queryPermission({ mode: 'read' });
-      gfLog('[GitNativeFederation] File permission status:', permissionStatus);
-      
-      if (permissionStatus === 'prompt') {
-        const granted = await fileHandle.requestPermission({ mode: 'read' });
-        gfLog('[GitNativeFederation] Permission requested, granted:', granted);
-        if (granted !== 'granted') {
-          throw new Error('File read permission denied. Please allow file access to continue.');
+
+      let permissionStatus = 'granted';
+      if (typeof fileHandle.queryPermission === 'function') {
+        permissionStatus = await fileHandle.queryPermission({ mode: 'read' });
+        gfLog('[GitNativeFederation] File permission status:', permissionStatus);
+
+        if (permissionStatus === 'prompt' && typeof fileHandle.requestPermission === 'function') {
+          const granted = await fileHandle.requestPermission({ mode: 'read' });
+          gfLog('[GitNativeFederation] Permission requested, granted:', granted);
+          permissionStatus = granted;
         }
-      } else if (permissionStatus === 'denied') {
-        throw new Error('File read permission denied. Please reset file permissions in your browser settings and try again.');
       }
-      
-      // Read the file
+
+      if (permissionStatus !== 'granted') {
+        throw new Error('File read permission denied. Please allow file access to continue.');
+      }
+
       const file = await fileHandle.getFile();
-      gfLog('[GitNativeFederation] File object obtained:', { 
-        name: file.name, 
-        size: file.size, 
+      gfLog('[GitNativeFederation] File object obtained:', {
+        name: file.name,
+        size: file.size,
         type: file.type,
         lastModified: new Date(file.lastModified).toISOString()
       });
-      
+
       const fileContent = await file.text();
       gfLog('[GitNativeFederation] File content read, length:', fileContent.length);
-      
-      // Validate file is not empty
+
       if (!fileContent || fileContent.trim() === '') {
         throw new Error(`The selected file "${file.name}" is empty (${file.size} bytes). The file may be corrupted or not saved properly. Please check the file and try again.`);
       }
-      
-      // Parse and validate the data
-      const { importFromRedstring, validateFormatVersion } = await import('./formats/redstringFormat.js');
+
+      const formatModule = await import('./formats/redstringFormat.js');
+      const { importFromRedstring, validateFormatVersion } = formatModule;
+
       let parsedData;
       try {
         parsedData = JSON.parse(fileContent);
       } catch (parseError) {
         throw new Error(`Invalid JSON in file: ${parseError.message}. The file may be corrupted or not a valid .redstring file.`);
       }
-      
-      // Validate it's a redstring file
+
       if (!parsedData || typeof parsedData !== 'object') {
         throw new Error('File does not contain valid redstring data.');
       }
-      
-      // Validate format version before importing
+
       const validation = validateFormatVersion(parsedData);
       gfLog('[GitNativeFederation] Format validation:', validation);
-      
+
       if (!validation.valid) {
-        // Show a more helpful error for version mismatch
         if (validation.tooNew) {
           throw new Error(`This file was created with a newer version of Redstring (${validation.version}). Please update your app to open this file.`);
         } else if (validation.tooOld) {
@@ -1587,20 +1857,19 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           throw new Error(validation.error);
         }
       }
-      
-      // Show migration notice if needed
+
       if (validation.needsMigration) {
         gfLog(`[GitNativeFederation] File will be auto-migrated from ${validation.version} to ${validation.currentVersion}`);
-        setSyncStatus({ 
+        setSyncStatus({
           type: 'info',
-          message: `Migrating file from format ${validation.version} to ${validation.currentVersion}...` 
+          message: `Migrating file from format ${validation.version} to ${validation.currentVersion}...`
         });
       }
-      
+
       const importResult = importFromRedstring(parsedData);
       const storeState = importResult.storeState;
-      
-      // Show successful migration message
+      const metrics = computeStoreMetrics(storeState);
+
       if (importResult.version?.migrated) {
         gfLog(`[GitNativeFederation] File successfully migrated from ${importResult.version.imported} to ${importResult.version.current}`);
         setSyncStatus({
@@ -1608,117 +1877,56 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           message: `File migrated from format ${importResult.version.imported} to ${importResult.version.current}`
         });
       }
-      const nodeCount = storeState?.nodePrototypes ?
-        (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes || {}).length) : 0;
-      
+
       gfLog('[GitNativeFederation] Parsed file data:', {
         hasNodePrototypes: !!storeState?.nodePrototypes,
-        nodeCount,
+        nodeCount: typeof metrics.nodeCount === 'number' ? metrics.nodeCount : 'unknown',
+        edgeCount: typeof metrics.edgeCount === 'number' ? metrics.edgeCount : 'unknown',
         fileName: file.name
       });
-      
-      // Check if file name matches universe name (like we do for Git repos)
-      const fileBaseName = file.name.replace('.redstring', '');
+
+      payload = {
+        slug,
+        fileHandle,
+        file,
+        storeState,
+        metrics,
+        importHelpers: { importFromRedstring }
+      };
+
+      const fileBaseName = file.name.replace(/\.redstring$/i, '');
       const universe = serviceState.universes.find(u => u.slug === slug);
       const universeNameMismatch = universe && fileBaseName !== slug && fileBaseName !== universe.name;
-      
+
       if (universeNameMismatch) {
-        setLoading(false);
         setConfirmDialog({
           title: 'File Name Mismatch',
-          message: `The file name "${file.name}" doesn't match universe "${universe.name}".`,
-          details: `Choose "Link Anyway" to link this file to universe "${universe.name}".\n\nData from the file will replace current universe data.`,
+          message: `The file name "${file.name}" doesn't match universe "${universe?.name}".`,
+          details: `Choose "Link Anyway" to link this file to universe "${universe?.name}".\n\nData from the file will replace current universe data.`,
           variant: 'warning',
           confirmLabel: 'Link Anyway',
           cancelLabel: 'Cancel',
           onConfirm: async () => {
-            try {
-              setLoading(true);
-              gfLog(`[GitNativeFederation] User confirmed linking mismatched file ${file.name} to ${universe.name}`);
-              
-              // Load data into store IMMEDIATELY (we're already in the target universe)
-              const useGraphStore = (await import('./store/graphStore.jsx')).default;
-              const storeActions = useGraphStore.getState();
-              gfLog('[GitNativeFederation] Loading data into store...');
-              storeActions.loadUniverseFromFile(storeState);
-              gfLog('[GitNativeFederation] Data loaded into store');
-              
-              // Store the file handle
-              await universeBackend.setFileHandle(slug, fileHandle);
-              
-              // Link the file to universe (but DON'T switch - we're already here!)
-              await universeBackend.linkLocalFileToUniverse(slug, file.name);
-              
-              // Save the data to persistent storage (browser storage as fallback if no Git)
-              try {
-                await gitFederationService.forceSave(slug, { skipGit: true });
-                gfLog('[GitNativeFederation] Data saved to persistent storage');
-              } catch (saveErr) {
-                gfWarn('[GitNativeFederation] Failed to save after linking:', saveErr);
-                // Non-fatal - data is still in memory
-              }
-              
-              setSyncStatus({ type: 'success', message: `Linked ${file.name} with ${nodeCount} nodes` });
-              await refreshState();
-            } catch (err) {
-              gfError('[GitNativeFederation] Failed to link after confirmation:', err);
-              setError(`Failed to link file: ${err.message}`);
-            } finally {
-              setLoading(false);
-            }
+            await processParsedLocalFile(payload);
           }
         });
-        return; // Exit early, wait for user confirmation
+        return;
       }
-      
-      // No name mismatch, proceed directly
-      const useGraphStore = (await import('./store/graphStore.jsx')).default;
-      const storeActions = useGraphStore.getState();
-      gfLog('[GitNativeFederation] Loading data into store...');
-      storeActions.loadUniverseFromFile(storeState);
-      gfLog('[GitNativeFederation] Data loaded into store');
-      
-      // Store the file handle
-      await universeBackend.setFileHandle(slug, fileHandle);
-      gfLog('[GitNativeFederation] File handle stored');
-      
-      // Link the file to universe (but DON'T switch - we're already here!)
-      await universeBackend.linkLocalFileToUniverse(slug, file.name);
-      gfLog('[GitNativeFederation] File linked to universe');
-      
-      // Save the data to persistent storage (browser storage as fallback if no Git)
-      try {
-        await gitFederationService.forceSave(slug, { skipGit: true });
-        gfLog('[GitNativeFederation] Data saved to persistent storage');
-      } catch (saveErr) {
-        gfWarn('[GitNativeFederation] Failed to save after linking:', saveErr);
-        // Non-fatal - data is still in memory
-      }
-      
-      // Refresh state to update UI
-      await refreshState();
-      gfLog('[GitNativeFederation] State refreshed after linking file');
-      
-      // Check if the universe now shows the linked file
-      const updatedState = await gitFederationService.getState();
-      const updatedUniverse = updatedState.universes.find(u => u.slug === slug);
-      gfLog('[GitNativeFederation] Updated universe after link:', {
-        slug: updatedUniverse?.slug,
-        hasLocalFile: !!updatedUniverse?.raw?.localFile,
-        localFileEnabled: updatedUniverse?.raw?.localFile?.enabled,
-        localFilePath: updatedUniverse?.raw?.localFile?.path,
-        hadFileHandle: updatedUniverse?.raw?.localFile?.hadFileHandle
-      });
-      
-      setSyncStatus({ type: 'success', message: `Linked ${file.name} with ${nodeCount} nodes` });
     } catch (err) {
       if (err.name !== 'AbortError') {
         gfError('[GitNativeFederation] Link local file failed:', err);
         setError(`Failed to link file: ${err.message}`);
       }
+      payload = null;
     } finally {
       setLoading(false);
     }
+
+    if (!payload) {
+      return;
+    }
+
+    await processParsedLocalFile(payload);
   };
 
   const handleCreateLocalFile = async (slug) => {
@@ -3043,6 +3251,17 @@ return (
         isOpen={true}
         onClose={() => setConfirmDialog(null)}
         {...confirmDialog}
+      />
+    )}
+    {conflictDialog && (
+      <LocalFileConflictDialog
+        isOpen={true}
+        universeName={conflictDialog.universeName}
+        existingOption={conflictDialog.existing}
+        incomingOption={conflictDialog.incoming}
+        onChooseExisting={() => handleResolveLocalConflict('existing')}
+        onChooseIncoming={() => handleResolveLocalConflict('incoming')}
+        onCancel={handleCancelLocalConflict}
       />
     )}
     </div>

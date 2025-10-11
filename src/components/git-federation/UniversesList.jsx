@@ -290,18 +290,8 @@ const UniversesList = ({
                               <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#260000' }}>
                                 @{universe.raw.gitRepo.linkedRepo.user}/{universe.raw.gitRepo.linkedRepo.repo}
                               </span>
-                              {resolvedSource === 'git' && (
-                                <span style={{
-                                  fontSize: '0.6rem',
-                                  padding: '2px 4px',
-                                  borderRadius: 3,
-                                  backgroundColor: 'rgba(122,0,0,0.1)',
-                                  color: '#7A0000'
-                                }}>
-                              Source of Truth
-                            </span>
-                          )}
-                        </div>
+                              {/* Source-of-truth badge removed; button below handles status */}
+                            </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                           {onDownloadRepoFile && (
                             <button
@@ -514,17 +504,7 @@ const UniversesList = ({
                                     <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#260000' }}>
                                       Local File
                                     </span>
-                                    {resolvedSource === 'local' && (
-                                      <span style={{
-                                        fontSize: '0.6rem',
-                                        padding: '2px 4px',
-                                        borderRadius: 3,
-                                        backgroundColor: 'rgba(122,0,0,0.1)',
-                                        color: '#7A0000'
-                                      }}>
-                                        Source of Truth
-                                      </span>
-                                    )}
+                                    {/* Source-of-truth badge removed; button below handles status */}
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                     {onDownloadLocalFile && (
