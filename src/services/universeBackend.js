@@ -570,6 +570,7 @@ class UniverseBackend {
       }
 
       gfLog(`[UniverseBackend] Found ${allMetadata.length} file handle metadata entries`);
+      let restoredAny = false;
 
       for (const metadata of allMetadata) {
         const { universeSlug } = metadata;
@@ -588,6 +589,7 @@ class UniverseBackend {
         if (result.success && result.handle) {
           this.fileHandles.set(universeSlug, result.handle);
           gfLog(`[UniverseBackend] Successfully restored file handle for ${universeSlug}`);
+          restoredAny = true;
 
           const universe = this.getUniverse(universeSlug);
           if (universe) {
@@ -616,6 +618,9 @@ class UniverseBackend {
       }
 
       gfLog('[UniverseBackend] File handle restoration complete');
+      if (restoredAny) {
+        await this.ensureSaveCoordinator();
+      }
     } catch (error) {
       gfError('[UniverseBackend] Failed to restore file handles:', error);
     }
@@ -1024,23 +1029,7 @@ class UniverseBackend {
       gfLog(`[UniverseBackend] Git sync engine started for universe: ${universeSlug}`);
       this.notifyStatus('success', `Git sync enabled for ${universe.name || universeSlug}`);
       
-      // Initialize SaveCoordinator with the Git sync engine for autosave
-      try {
-        const { saveCoordinator } = await import('../backend/sync/index.js');
-        if (saveCoordinator && !saveCoordinator.isEnabled) {
-          // Import fileStorage for local saves
-          const fileStorage = await import('../store/fileStorage.js');
-          saveCoordinator.initialize(fileStorage, engine, this);
-          gfLog(`[UniverseBackend] SaveCoordinator initialized for autosave on ${universeSlug}`);
-        } else if (saveCoordinator && saveCoordinator.gitSyncEngine !== engine) {
-          // Update the engine reference if SaveCoordinator was already initialized with a different engine
-          saveCoordinator.gitSyncEngine = engine;
-          gfLog(`[UniverseBackend] SaveCoordinator updated with new engine for ${universeSlug}`);
-        }
-      } catch (saveCoordError) {
-        gfWarn(`[UniverseBackend] Failed to initialize SaveCoordinator:`, saveCoordError);
-        // Non-fatal - manual saves will still work
-      }
+      await this.ensureSaveCoordinator(engine);
     } catch (startError) {
       gfError(`[UniverseBackend] Failed to start engine for ${universeSlug}:`, startError);
       this.notifyStatus('error', `Failed to start Git sync: ${startError.message}`);
@@ -1048,6 +1037,38 @@ class UniverseBackend {
     }
 
     return engine;
+  }
+
+  async ensureSaveCoordinator(engine = null) {
+    try {
+      const { saveCoordinator } = await import('../backend/sync/index.js');
+      if (!saveCoordinator) {
+        return null;
+      }
+
+      const fileStorage = await import('../store/fileStorage.js');
+      const resolvedEngine = engine || saveCoordinator.gitSyncEngine || null;
+
+      if (!saveCoordinator.isEnabled) {
+        saveCoordinator.initialize(fileStorage, resolvedEngine, this);
+        gfLog('[UniverseBackend] SaveCoordinator initialized', {
+          hasGitEngine: !!resolvedEngine
+        });
+      } else {
+        saveCoordinator.fileStorage = fileStorage;
+        saveCoordinator.universeManager = this;
+        saveCoordinator.setGitSyncEngine(resolvedEngine);
+
+        gfLog('[UniverseBackend] SaveCoordinator dependencies refreshed', {
+          hasGitEngine: !!resolvedEngine
+        });
+      }
+
+      return saveCoordinator;
+    } catch (error) {
+      gfWarn('[UniverseBackend] ensureSaveCoordinator failed:', error);
+      return null;
+    }
   }
 
   /**
@@ -1624,20 +1645,22 @@ class UniverseBackend {
     const {
       skipGit = false,
       skipLocal = false,
-      skipBrowser = false
+      skipBrowser = false,
+      suppressNotification = false
     } = options || {};
 
     gfLog('[UniverseBackend] saveActiveUniverseInternal options:', {
       skipGit,
       skipLocal,
-      skipBrowser
+      skipBrowser,
+      suppressNotification
     });
 
     if (!skipLocal) {
       if (universe.localFile.enabled && this.fileHandles.has(universe.slug)) {
         try {
           gfLog('[UniverseBackend] Saving to linked local file (autosave)');
-          await this.saveToLinkedLocalFile(universe.slug, storeState, { suppressNotification: true });
+          await this.saveToLinkedLocalFile(universe.slug, storeState, { suppressNotification });
           results.push('local');
         } catch (error) {
           gfWarn('[UniverseBackend] Local file save failed during autosave:', error);
@@ -1681,11 +1704,21 @@ class UniverseBackend {
 
     if (results.length > 0) {
       if (errors.length > 0) {
-        this.notifyStatus('warning', `Saved to: ${results.join(', ')} (${errors.length} failed)`);
-      } else {
+        if (!suppressNotification) {
+          this.notifyStatus('warning', `Saved to: ${results.join(', ')} (${errors.length} failed)`);
+        } else {
+          gfWarn('[UniverseBackend] Silent save completed with warnings', {
+            results,
+            errors
+          });
+        }
+      } else if (!suppressNotification) {
         this.notifyStatus('success', `Saved to: ${results.join(', ')}`);
+      } else {
+        gfLog('[UniverseBackend] Silent save completed successfully', { results });
       }
     } else {
+      // Always surface total failure
       this.notifyStatus('error', `All save methods failed: ${errors.join('; ')}`);
       throw new Error(`All save methods failed: ${errors.join('; ')}`);
     }
@@ -1988,6 +2021,7 @@ class UniverseBackend {
 
     // Persist file handle information to storage
     this.saveToStorage();
+    await this.ensureSaveCoordinator();
   }
 
   /**
@@ -2910,6 +2944,7 @@ class UniverseBackend {
       },
       ...(shouldPromoteLocal ? { sourceOfTruth: SOURCE_OF_TRUTH.LOCAL } : {})
     });
+    await this.ensureSaveCoordinator();
     this.notifyStatus('success', `Linked file handle for ${universe?.name || universeSlug}`);
     return { success: true, fileName: fileHandle.name };
   }

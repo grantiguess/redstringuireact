@@ -59,7 +59,7 @@ class SaveCoordinator {
   // Initialize with required dependencies
   initialize(fileStorage, gitSyncEngine, universeManager) {
     this.fileStorage = fileStorage;
-    this.gitSyncEngine = gitSyncEngine;
+    this.setGitSyncEngine(gitSyncEngine);
     this.universeManager = universeManager;
     this.isEnabled = true;
 
@@ -154,12 +154,27 @@ class SaveCoordinator {
       
       console.log('[SaveCoordinator] Executing save');
 
-      // Save to local file if available
-      if (this.fileStorage && typeof this.fileStorage.saveToFile === 'function') {
+      let localSaveHandled = false;
+
+      if (this.universeManager && typeof this.universeManager.saveActiveUniverse === 'function') {
+        try {
+          await this.universeManager.saveActiveUniverse(state, {
+            skipGit: true,
+            suppressNotification: true
+          });
+          localSaveHandled = true;
+        } catch (error) {
+          console.error('[SaveCoordinator] Universe backend save failed:', error);
+        }
+      }
+
+      // Fallback to legacy fileStorage direct save if backend path was not available
+      if (!localSaveHandled && this.fileStorage && typeof this.fileStorage.saveToFile === 'function') {
         const activeUniverse = this.universeManager?.getActiveUniverse();
         if (activeUniverse?.raw?.localFile?.fileHandle) {
-          console.log('[SaveCoordinator] Saving to local file');
+          console.log('[SaveCoordinator] Saving to local file via fallback');
           await this.fileStorage.saveToFile(state, false);
+          localSaveHandled = true;
         }
       }
 
@@ -303,6 +318,13 @@ class SaveCoordinator {
     return this.isDirty || this.pendingHash !== null || this.dragPendingHash !== null;
   }
 
+  setGitSyncEngine(gitSyncEngine) {
+    this.gitSyncEngine = gitSyncEngine;
+    if (gitAutosavePolicy) {
+      gitAutosavePolicy.gitSyncEngine = gitSyncEngine;
+    }
+  }
+
   // Cleanup
   destroy() {
     this.setEnabled(false);
@@ -314,4 +336,3 @@ class SaveCoordinator {
 // Export singleton instance
 export const saveCoordinator = new SaveCoordinator();
 export default saveCoordinator;
-
