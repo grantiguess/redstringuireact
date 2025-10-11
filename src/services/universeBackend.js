@@ -34,6 +34,12 @@ import {
 } from './fileHandlePersistence.js';
 import { discoverUniversesWithStats, createUniverseConfigFromDiscovered } from './universeDiscovery.js';
 
+const GF_TAG = '[GF-DEBUG]';
+const { log: __gfNativeLog, warn: __gfNativeWarn, error: __gfNativeError } = console;
+const gfLog = (...args) => __gfNativeLog.call(console, GF_TAG, ...args);
+const gfWarn = (...args) => __gfNativeWarn.call(console, GF_TAG, ...args);
+const gfError = (...args) => __gfNativeError.call(console, GF_TAG, ...args);
+
 // Storage keys
 const STORAGE_KEYS = {
   UNIVERSES_LIST: 'unified_universes_list',
@@ -138,7 +144,7 @@ class UniverseBackend {
           });
         }
       } catch (error) {
-        console.warn('[UniverseBackend] Failed to load file handles info:', error);
+        gfWarn('[UniverseBackend] Failed to load file handles info:', error);
       }
 
       // Create default universe if none exist
@@ -151,9 +157,9 @@ class UniverseBackend {
         ? activeSlug
         : this.universes.keys().next().value;
 
-      console.log('[UniverseBackend] Loaded', this.universes.size, 'universes, active:', this.activeUniverseSlug);
+      gfLog('[UniverseBackend] Loaded', this.universes.size, 'universes, active:', this.activeUniverseSlug);
     } catch (error) {
-      console.error('[UniverseBackend] Failed to load from storage:', error);
+      gfError('[UniverseBackend] Failed to load from storage:', error);
       this.createSafeDefaultUniverse();
     }
   }
@@ -196,7 +202,7 @@ class UniverseBackend {
         storageWrapper.warnAboutDataLoss();
       }
     } catch (error) {
-      console.error('[UniverseBackend] Failed to save to storage:', error);
+      gfError('[UniverseBackend] Failed to save to storage:', error);
     }
   }
 
@@ -359,13 +365,13 @@ class UniverseBackend {
       const emptyState = this.createEmptyState();
       try {
         this.storeOperations.loadUniverseFromFile(emptyState);
-        console.log('[UniverseBackend] Initialized graph store with empty state for safe default universe');
+        gfLog('[UniverseBackend] Initialized graph store with empty state for safe default universe');
       } catch (error) {
-        console.warn('[UniverseBackend] Failed to initialize graph store for safe default universe:', error);
+        gfWarn('[UniverseBackend] Failed to initialize graph store for safe default universe:', error);
       }
     }
 
-    console.log('[UniverseBackend] Created safe default universe during startup');
+    gfLog('[UniverseBackend] Created safe default universe during startup');
   }
 
   /**
@@ -453,7 +459,7 @@ class UniverseBackend {
    */
   initializeDeviceConfig() {
     if (this._initializingDeviceConfig) {
-      console.warn('[UniverseBackend] Device config initialization already in progress, skipping');
+      gfWarn('[UniverseBackend] Device config initialization already in progress, skipping');
       return;
     }
 
@@ -490,13 +496,13 @@ class UniverseBackend {
       this.isGitOnlyMode = shouldUseGitOnly;
       this.watchdogDelay = this.deviceConfig.autoSaveFrequency * 60;
 
-      console.log('[UniverseBackend] Device config initialized:', {
+      gfLog('[UniverseBackend] Device config initialized:', {
         deviceType: this.deviceConfig.deviceInfo.type,
         gitOnlyMode: this.isGitOnlyMode,
         sourceOfTruth: this.deviceConfig.sourceOfTruth
       });
     } catch (error) {
-      console.error('[UniverseBackend] Device config initialization failed:', error);
+      gfError('[UniverseBackend] Device config initialization failed:', error);
       this.deviceConfig = {
         gitOnlyMode: false,
         sourceOfTruth: 'local',
@@ -516,35 +522,35 @@ class UniverseBackend {
    * Initialize background sync
    */
   async initializeBackgroundSync() {
-    console.log('[UniverseBackend] ========== INITIALIZE BACKGROUND SYNC CALLED ==========');
+    gfLog('[UniverseBackend] ========== INITIALIZE BACKGROUND SYNC CALLED ==========');
     try {
-      console.log('[UniverseBackend] Initializing background sync services...');
+      gfLog('[UniverseBackend] Initializing background sync services...');
 
       if (!persistentAuth.initializeCalled) {
-        console.log('[UniverseBackend] About to call persistentAuth.initialize()...');
+        gfLog('[UniverseBackend] About to call persistentAuth.initialize()...');
         await persistentAuth.initialize();
       } else {
-        console.log('[UniverseBackend] PersistentAuth already initialized');
+        gfLog('[UniverseBackend] PersistentAuth already initialized');
       }
 
       const authStatus = persistentAuth.getAuthStatus();
-      console.log('[UniverseBackend] Auth status:', authStatus);
+      gfLog('[UniverseBackend] Auth status:', authStatus);
 
       const hasAccessToken = persistentAuth.hasValidTokens();
       if (!authStatus.isAuthenticated && !hasAccessToken) {
-        console.log('[UniverseBackend] No valid auth token, skipping Git sync setup');
+        gfLog('[UniverseBackend] No valid auth token, skipping Git sync setup');
         return;
       }
 
       const activeUniverse = this.getActiveUniverse();
-      console.log('[UniverseBackend] Active universe:', activeUniverse?.slug || 'none');
+      gfLog('[UniverseBackend] Active universe:', activeUniverse?.slug || 'none');
 
       if (activeUniverse && activeUniverse.gitRepo?.linkedRepo && activeUniverse.gitRepo?.enabled) {
-        console.log('[UniverseBackend] Active universe has Git repo, will set up sync engine');
+        gfLog('[UniverseBackend] Active universe has Git repo, will set up sync engine');
       }
 
     } catch (error) {
-      console.error('[UniverseBackend] Background sync initialization failed:', error);
+      gfError('[UniverseBackend] Background sync initialization failed:', error);
       throw error;
     }
   }
@@ -554,16 +560,16 @@ class UniverseBackend {
    */
   async restoreFileHandles() {
     try {
-      console.log('[UniverseBackend] Attempting to restore file handles from persistence...');
+      gfLog('[UniverseBackend] Attempting to restore file handles from persistence...');
 
       const allMetadata = await getAllFileHandleMetadata();
 
       if (allMetadata.length === 0) {
-        console.log('[UniverseBackend] No file handle metadata found');
+        gfLog('[UniverseBackend] No file handle metadata found');
         return;
       }
 
-      console.log(`[UniverseBackend] Found ${allMetadata.length} file handle metadata entries`);
+      gfLog(`[UniverseBackend] Found ${allMetadata.length} file handle metadata entries`);
 
       for (const metadata of allMetadata) {
         const { universeSlug } = metadata;
@@ -572,7 +578,7 @@ class UniverseBackend {
         if (existingHandle) {
           const isValid = await verifyFileHandleAccess(existingHandle);
           if (isValid) {
-            console.log(`[UniverseBackend] File handle for ${universeSlug} already valid in session`);
+            gfLog(`[UniverseBackend] File handle for ${universeSlug} already valid in session`);
             continue;
           }
         }
@@ -581,7 +587,7 @@ class UniverseBackend {
 
         if (result.success && result.handle) {
           this.fileHandles.set(universeSlug, result.handle);
-          console.log(`[UniverseBackend] Successfully restored file handle for ${universeSlug}`);
+          gfLog(`[UniverseBackend] Successfully restored file handle for ${universeSlug}`);
 
           const universe = this.getUniverse(universeSlug);
           if (universe) {
@@ -594,7 +600,7 @@ class UniverseBackend {
             });
           }
         } else if (result.needsReconnect) {
-          console.log(`[UniverseBackend] File handle for ${universeSlug} needs reconnection: ${result.message}`);
+          gfLog(`[UniverseBackend] File handle for ${universeSlug} needs reconnection: ${result.message}`);
 
           const universe = this.getUniverse(universeSlug);
           if (universe) {
@@ -609,9 +615,9 @@ class UniverseBackend {
         }
       }
 
-      console.log('[UniverseBackend] File handle restoration complete');
+      gfLog('[UniverseBackend] File handle restoration complete');
     } catch (error) {
-      console.error('[UniverseBackend] Failed to restore file handles:', error);
+      gfError('[UniverseBackend] Failed to restore file handles:', error);
     }
   }
 
@@ -622,12 +628,12 @@ class UniverseBackend {
    */
   async initialize() {
     if (this.isInitialized) {
-      console.log('[UniverseBackend] Backend already initialized, skipping...');
+      gfLog('[UniverseBackend] Backend already initialized, skipping...');
       return;
     }
 
     if (this.initializationPromise) {
-      console.log('[UniverseBackend] Initialization already in progress, waiting...');
+      gfLog('[UniverseBackend] Initialization already in progress, waiting...');
       return this.initializationPromise;
     }
 
@@ -640,19 +646,19 @@ class UniverseBackend {
   }
 
   async _doInitialize() {
-    console.log('[UniverseBackend] Initializing backend service...');
+    gfLog('[UniverseBackend] Initializing backend service...');
 
     try {
-      console.log('[UniverseBackend] Getting authentication status...');
+      gfLog('[UniverseBackend] Getting authentication status...');
       this.authStatus = persistentAuth.getAuthStatus();
 
-      console.log('[UniverseBackend] Setting up store operations...');
+      gfLog('[UniverseBackend] Setting up store operations...');
       await this.setupStoreOperations();
 
-      console.log('[UniverseBackend] Setting up event listeners...');
+      gfLog('[UniverseBackend] Setting up event listeners...');
       this.setupAuthEvents();
 
-      console.log('[UniverseBackend] Initializing background sync (auth + active universe)...');
+      gfLog('[UniverseBackend] Initializing background sync (auth + active universe)...');
       const syncStartTime = Date.now();
 
       // Add timeout to prevent hanging
@@ -664,19 +670,19 @@ class UniverseBackend {
           )
         ]);
         const syncEndTime = Date.now();
-        console.log(`[UniverseBackend] Background sync completed in ${syncEndTime - syncStartTime}ms`);
+        gfLog(`[UniverseBackend] Background sync completed in ${syncEndTime - syncStartTime}ms`);
       } catch (error) {
-        console.warn('[UniverseBackend] Background sync failed or timed out:', error.message);
-        console.log('[UniverseBackend] Continuing with backend initialization...');
+        gfWarn('[UniverseBackend] Background sync failed or timed out:', error.message);
+        gfLog('[UniverseBackend] Continuing with backend initialization...');
       }
 
-      console.log('[UniverseBackend] Skipping auto-setup of ALL existing universes to avoid hanging...');
+      gfLog('[UniverseBackend] Skipping auto-setup of ALL existing universes to avoid hanging...');
       // await this.autoSetupExistingUniverses(); // DISABLED - can hang during initialization
 
       // CRITICAL: Load active universe data into store
       const activeUniverse = this.getActiveUniverse();
       if (activeUniverse) {
-        console.log(`[UniverseBackend] Loading active universe into store: ${activeUniverse.name || activeUniverse.slug}`);
+        gfLog(`[UniverseBackend] Loading active universe into store: ${activeUniverse.name || activeUniverse.slug}`);
         try {
           // Try to load (will fall back to browser storage if Git fails due to auth)
           const storeState = await this.loadUniverseData(activeUniverse);
@@ -687,7 +693,7 @@ class UniverseBackend {
               const nodeCount = loadedState?.nodePrototypes ? (loadedState.nodePrototypes instanceof Map ? loadedState.nodePrototypes.size : Object.keys(loadedState.nodePrototypes).length) : 0;
               const graphCount = loadedState?.graphs ? (loadedState.graphs instanceof Map ? loadedState.graphs.size : Object.keys(loadedState.graphs).length) : 0;
 
-              console.log(`[UniverseBackend] Active universe loaded: ${nodeCount} nodes, ${graphCount} graphs`);
+              gfLog(`[UniverseBackend] Active universe loaded: ${nodeCount} nodes, ${graphCount} graphs`);
 
               // Check if we loaded from cache due to missing auth
               const authStatus = this.getAuthStatus();
@@ -697,20 +703,20 @@ class UniverseBackend {
                 this.notifyStatus('success', `Loaded ${activeUniverse.name}: ${nodeCount} nodes, ${graphCount} graphs`);
               }
             } else {
-              console.warn('[UniverseBackend] Failed to load active universe into store');
+              gfWarn('[UniverseBackend] Failed to load active universe into store');
             }
           }
         } catch (error) {
-          console.warn('[UniverseBackend] Failed to load active universe data:', error);
+          gfWarn('[UniverseBackend] Failed to load active universe data:', error);
         }
       } else {
-        console.log('[UniverseBackend] No active universe to load');
+        gfLog('[UniverseBackend] No active universe to load');
       }
 
       this.isInitialized = true;
       this.notifyStatus('info', 'Universe backend initialized');
 
-      console.log('[UniverseBackend] Backend service initialized successfully');
+      gfLog('[UniverseBackend] Backend service initialized successfully');
 
       // After successful init, attempt to auto-setup sync engine for the active universe (non-blocking)
       // Only do this once, avoid duplicate engine creation
@@ -719,13 +725,13 @@ class UniverseBackend {
         try {
           setTimeout(() => {
             this.autoSetupEnginesForActiveUniverse().catch(err => {
-              console.warn('[UniverseBackend] Auto-setup for active universe failed:', err?.message || err);
+              gfWarn('[UniverseBackend] Auto-setup for active universe failed:', err?.message || err);
             });
           }, 150);
         } catch (_) {}
       }
     } catch (error) {
-      console.error('[UniverseBackend] Failed to initialize backend:', error);
+      gfError('[UniverseBackend] Failed to initialize backend:', error);
       this.notifyStatus('error', `Backend initialization failed: ${error.message}`);
       throw error;
     }
@@ -754,7 +760,7 @@ class UniverseBackend {
           loadUniverseFromFile: (storeState) => {
             try {
               const store = useGraphStore.getState();
-              console.log('[UniverseBackend] Loading universe data into store:', {
+              gfLog('[UniverseBackend] Loading universe data into store:', {
                 hasStoreState: !!storeState,
                 storeStateType: typeof storeState,
                 hasGraphs: storeState?.graphs ? (storeState.graphs instanceof Map ? storeState.graphs.size : Object.keys(storeState.graphs).length) : 0,
@@ -762,25 +768,25 @@ class UniverseBackend {
               });
 
               store.loadUniverseFromFile(storeState);
-              console.log('[UniverseBackend] Successfully loaded universe data into store');
+              gfLog('[UniverseBackend] Successfully loaded universe data into store');
               return true;
             } catch (error) {
-              console.error('[UniverseBackend] Failed to load universe data into store:', error);
+              gfError('[UniverseBackend] Failed to load universe data into store:', error);
               this.notifyStatus('error', `Failed to load universe data: ${error.message}`);
               throw error;
             }
           }
         };
 
-        console.log('[UniverseBackend] Store operations set up successfully for backend');
+        gfLog('[UniverseBackend] Store operations set up successfully for backend');
         return; // Success, exit retry loop
         
       } catch (error) {
         retryCount++;
-        console.warn(`[UniverseBackend] Failed to set up store operations (attempt ${retryCount}/${maxRetries}):`, error);
+        gfWarn(`[UniverseBackend] Failed to set up store operations (attempt ${retryCount}/${maxRetries}):`, error);
         
         if (retryCount >= maxRetries) {
-          console.error('[UniverseBackend] CRITICAL: Failed to set up store operations after all retries. Universe data loading will not work properly.');
+          gfError('[UniverseBackend] CRITICAL: Failed to set up store operations after all retries. Universe data loading will not work properly.');
           this.notifyStatus('error', 'Critical system error: Store operations failed to initialize');
           // Don't throw here - let the system continue but mark as degraded
           this.storeOperations = null;
@@ -807,7 +813,7 @@ class UniverseBackend {
 
         // Debounce auth processing to prevent infinite loops
         if (now - lastAuthProcessTime < authDebounceDelay) {
-          console.log('[UniverseBackend] Auth event debounced - too recent');
+          gfLog('[UniverseBackend] Auth event debounced - too recent');
           return;
         }
         lastAuthProcessTime = now;
@@ -818,7 +824,7 @@ class UniverseBackend {
         // CRITICAL: Reload active universe from Git now that auth is ready
         const activeUniverse = this.getActiveUniverse();
         if (activeUniverse?.gitRepo?.enabled) {
-          console.log('[UniverseBackend] Auth connected, checking Git for latest data...');
+          gfLog('[UniverseBackend] Auth connected, checking Git for latest data...');
           try {
             // Get current store state before loading
             const currentState = this.storeOperations?.getState();
@@ -835,7 +841,7 @@ class UniverseBackend {
               if (gitNodeCount === 0 && gitGraphCount === 0 && (currentNodeCount > 0 || currentGraphCount > 0)) {
                 // Only log this warning once per session to avoid spam
                 if (!this.loggedMergeWarning) {
-                  console.warn(`[UniverseBackend] Git has no data, but you have ${currentNodeCount} nodes and ${currentGraphCount} graphs locally`);
+                  gfWarn(`[UniverseBackend] Git has no data, but you have ${currentNodeCount} nodes and ${currentGraphCount} graphs locally`);
                   this.notifyStatus('warning', `Using browser storage backup (${currentNodeCount} nodes). Push to Git to sync.`);
                   this.loggedMergeWarning = true;
                 }
@@ -845,7 +851,7 @@ class UniverseBackend {
                 this.storeOperations.loadUniverseFromFile(storeState);
                 const loadedState = this.storeOperations.getState();
                 const nodeCount = loadedState?.nodePrototypes ? (loadedState.nodePrototypes instanceof Map ? loadedState.nodePrototypes.size : Object.keys(loadedState.nodePrototypes).length) : 0;
-                console.log(`[UniverseBackend] Reloaded from Git after auth: ${nodeCount} nodes`);
+                gfLog(`[UniverseBackend] Reloaded from Git after auth: ${nodeCount} nodes`);
 
                 if (nodeCount === 0) {
                   this.notifyStatus('info', `Connected to GitHub. Universe is empty - create some nodes!`);
@@ -855,7 +861,7 @@ class UniverseBackend {
               }
             }
           } catch (error) {
-            console.warn('[UniverseBackend] Failed to reload from Git after auth:', error);
+            gfWarn('[UniverseBackend] Failed to reload from Git after auth:', error);
           }
         }
 
@@ -872,7 +878,7 @@ class UniverseBackend {
     // Check if authentication is ready before attempting Git sync setup
     const authStatus = this.getAuthStatus();
     if (!authStatus?.isAuthenticated) {
-      console.log('[UniverseBackend] Skipping auto-setup for existing universes: authentication not ready');
+      gfLog('[UniverseBackend] Skipping auto-setup for existing universes: authentication not ready');
       return;
     }
 
@@ -884,7 +890,7 @@ class UniverseBackend {
           await this.ensureGitSyncEngine(universe.slug);
         } catch (error) {
           // Don't block initialization if one universe fails
-          console.warn(`[UniverseBackend] Failed to setup engine for ${universe.slug}:`, error.message);
+          gfWarn(`[UniverseBackend] Failed to setup engine for ${universe.slug}:`, error.message);
         }
       }
     }
@@ -897,18 +903,18 @@ class UniverseBackend {
     // Check if authentication is ready before attempting Git sync setup
     const authStatus = this.getAuthStatus();
     if (!authStatus?.isAuthenticated) {
-      console.log('[UniverseBackend] Skipping auto-setup: authentication not ready');
+      gfLog('[UniverseBackend] Skipping auto-setup: authentication not ready');
       return;
     }
 
     const activeUniverse = this.getActiveUniverse();
     if (activeUniverse?.gitRepo?.enabled && activeUniverse?.gitRepo?.linkedRepo) {
       try {
-        console.log('[UniverseBackend] Auto-setting up Git sync for active universe:', activeUniverse.slug);
+        gfLog('[UniverseBackend] Auto-setting up Git sync for active universe:', activeUniverse.slug);
         await this.ensureGitSyncEngine(activeUniverse.slug);
       } catch (error) {
         // Don't throw - just log and continue. User can manually retry.
-        console.warn(`[UniverseBackend] Failed to auto-setup engine for active universe:`, error.message);
+        gfWarn(`[UniverseBackend] Failed to auto-setup engine for active universe:`, error.message);
         // Notify user but don't block
         this.notifyStatus('warning', `Git sync setup skipped: ${error.message}. You can enable it manually.`);
       }
@@ -919,16 +925,16 @@ class UniverseBackend {
    * Ensure a Git sync engine exists for a universe
    */
   async ensureGitSyncEngine(universeSlug) {
-    console.log(`[UniverseBackend] Ensuring Git sync engine for universe: ${universeSlug}`);
+    gfLog(`[UniverseBackend] Ensuring Git sync engine for universe: ${universeSlug}`);
     
     // Check if engine already exists and is healthy
     if (this.gitSyncEngines.has(universeSlug)) {
       const existingEngine = this.gitSyncEngines.get(universeSlug);
       if (existingEngine && existingEngine.provider) {
-        console.log(`[UniverseBackend] Using existing healthy engine for ${universeSlug}`);
+        gfLog(`[UniverseBackend] Using existing healthy engine for ${universeSlug}`);
         return existingEngine;
       } else {
-        console.log(`[UniverseBackend] Existing engine for ${universeSlug} is unhealthy, removing`);
+        gfLog(`[UniverseBackend] Existing engine for ${universeSlug} is unhealthy, removing`);
         this.gitSyncEngines.delete(universeSlug);
       }
     }
@@ -946,7 +952,7 @@ class UniverseBackend {
       throw new Error(`Universe ${universeSlug} does not have a linked repository`);
     }
 
-    console.log(`[UniverseBackend] Creating new Git sync engine for ${universeSlug}`, {
+    gfLog(`[UniverseBackend] Creating new Git sync engine for ${universeSlug}`, {
       linkedRepo: universe.gitRepo.linkedRepo,
       sourceOfTruth: universe.sourceOfTruth,
       schemaPath: universe.gitRepo.schemaPath
@@ -971,14 +977,14 @@ class UniverseBackend {
           
           // If not available but no error, wait and retry
           if (attempt < 3) {
-            console.log(`[UniverseBackend] Provider check attempt ${attempt} returned false, retrying...`);
+            gfLog(`[UniverseBackend] Provider check attempt ${attempt} returned false, retrying...`);
             await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
           }
         } catch (error) {
           lastError = error;
           // Network errors are often transient, retry
           if (error.message?.includes('network') || error.message?.includes('fetch') || attempt < 3) {
-            console.log(`[UniverseBackend] Provider check attempt ${attempt} failed (${error.message}), retrying...`);
+            gfLog(`[UniverseBackend] Provider check attempt ${attempt} failed (${error.message}), retrying...`);
             await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
             continue;
           }
@@ -990,9 +996,9 @@ class UniverseBackend {
         throw new Error(`Provider for ${universeSlug} is not available after 3 attempts - check authentication and repository access${lastError ? `: ${lastError.message}` : ''}`);
       }
       
-      console.log(`[UniverseBackend] Provider created and validated for ${universeSlug}`);
+      gfLog(`[UniverseBackend] Provider created and validated for ${universeSlug}`);
     } catch (error) {
-      console.error(`[UniverseBackend] Failed to create/validate provider for ${universeSlug}:`, error);
+      gfError(`[UniverseBackend] Failed to create/validate provider for ${universeSlug}:`, error);
       this.notifyStatus('error', `Git sync setup failed: ${error.message}`);
       throw error;
     }
@@ -1015,7 +1021,7 @@ class UniverseBackend {
     // Start engine
     try {
       engine.start();
-      console.log(`[UniverseBackend] Git sync engine started for universe: ${universeSlug}`);
+      gfLog(`[UniverseBackend] Git sync engine started for universe: ${universeSlug}`);
       this.notifyStatus('success', `Git sync enabled for ${universe.name || universeSlug}`);
       
       // Initialize SaveCoordinator with the Git sync engine for autosave
@@ -1025,18 +1031,18 @@ class UniverseBackend {
           // Import fileStorage for local saves
           const fileStorage = await import('../store/fileStorage.js');
           saveCoordinator.initialize(fileStorage, engine, this);
-          console.log(`[UniverseBackend] SaveCoordinator initialized for autosave on ${universeSlug}`);
+          gfLog(`[UniverseBackend] SaveCoordinator initialized for autosave on ${universeSlug}`);
         } else if (saveCoordinator && saveCoordinator.gitSyncEngine !== engine) {
           // Update the engine reference if SaveCoordinator was already initialized with a different engine
           saveCoordinator.gitSyncEngine = engine;
-          console.log(`[UniverseBackend] SaveCoordinator updated with new engine for ${universeSlug}`);
+          gfLog(`[UniverseBackend] SaveCoordinator updated with new engine for ${universeSlug}`);
         }
       } catch (saveCoordError) {
-        console.warn(`[UniverseBackend] Failed to initialize SaveCoordinator:`, saveCoordError);
+        gfWarn(`[UniverseBackend] Failed to initialize SaveCoordinator:`, saveCoordError);
         // Non-fatal - manual saves will still work
       }
     } catch (startError) {
-      console.error(`[UniverseBackend] Failed to start engine for ${universeSlug}:`, startError);
+      gfError(`[UniverseBackend] Failed to start engine for ${universeSlug}:`, startError);
       this.notifyStatus('error', `Failed to start Git sync: ${startError.message}`);
       throw startError;
     }
@@ -1078,7 +1084,7 @@ class UniverseBackend {
         const needsRefresh = !app.accessToken || !tokenExpiresAt || tokenExpiresAt < fiveMinutesFromNow;
         
         if (needsRefresh) {
-          console.log('[UniverseBackend] Refreshing GitHub App token...');
+          gfLog('[UniverseBackend] Refreshing GitHub App token...');
           const { oauthFetch } = await import('./bridgeConfig.js');
           const tokenResp = await oauthFetch('/api/github/app/installation-token', {
             method: 'POST',
@@ -1098,10 +1104,10 @@ class UniverseBackend {
             // Update stored installation with fresh token and expiry
             const updatedApp = { ...app, accessToken: token, tokenExpiresAt: expiresAt.toISOString() };
             await persistentAuth.storeAppInstallation(updatedApp);
-            console.log('[UniverseBackend] GitHub App token refreshed');
+            gfLog('[UniverseBackend] GitHub App token refreshed');
           } else {
             const errorText = await tokenResp.text();
-            console.warn(`[UniverseBackend] Failed to get GitHub App token (${tokenResp.status}), falling back to OAuth`);
+            gfWarn(`[UniverseBackend] Failed to get GitHub App token (${tokenResp.status}), falling back to OAuth`);
           }
         } else {
           // Use cached token (no log spam)
@@ -1113,7 +1119,7 @@ class UniverseBackend {
       
       // Fallback to OAuth if GitHub App failed
       if (!token) {
-        console.log(`[UniverseBackend] Using OAuth authentication for ${user}/${repo}`);
+        gfLog(`[UniverseBackend] Using OAuth authentication for ${user}/${repo}`);
         token = await persistentAuth.getAccessToken();
         authMethod = 'oauth';
         
@@ -1122,7 +1128,7 @@ class UniverseBackend {
         }
       }
     } catch (error) {
-      console.error('[UniverseBackend] Authentication failed:', error);
+      gfError('[UniverseBackend] Authentication failed:', error);
       throw new Error(`Authentication required for Git operations: ${error.message}`);
     }
 
@@ -1154,7 +1160,7 @@ class UniverseBackend {
     if (engine) {
       engine.stop();
       this.gitSyncEngines.delete(universeSlug);
-      console.log(`[UniverseBackend] Removed Git sync engine for universe: ${universeSlug}`);
+      gfLog(`[UniverseBackend] Removed Git sync engine for universe: ${universeSlug}`);
     }
   }
 
@@ -1170,13 +1176,13 @@ class UniverseBackend {
     }
     if (existingEngine && existingEngine !== gitSyncEngine) {
       // STRICT: Never allow replacement during startup to prevent loops
-      console.warn(`[UniverseBackend] STRICTLY REJECTING duplicate engine for ${slug} - one already exists`);
+      gfWarn(`[UniverseBackend] STRICTLY REJECTING duplicate engine for ${slug} - one already exists`);
       gitSyncEngine.stop(); // Stop the duplicate engine immediately
       return false;
     }
 
     this.gitSyncEngines.set(slug, gitSyncEngine);
-    console.log(`[UniverseBackend] Git sync engine registered for universe: ${slug}`);
+    gfLog(`[UniverseBackend] Git sync engine registered for universe: ${slug}`);
     return true;
   }
 
@@ -1241,12 +1247,12 @@ class UniverseBackend {
         try {
           await persistentAuth.storeAppInstallation(updated);
         } catch (error) {
-          console.warn('[UniverseBackend] Failed to persist refreshed GitHub App token:', error);
+          gfWarn('[UniverseBackend] Failed to persist refreshed GitHub App token:', error);
         }
         return { token, installationId };
       }
     } catch (error) {
-      console.warn('[UniverseBackend] GitHub App token refresh failed:', error);
+      gfWarn('[UniverseBackend] GitHub App token refresh failed:', error);
     }
 
     return token ? { token, installationId } : null;
@@ -1272,7 +1278,7 @@ class UniverseBackend {
       }
       return token || null;
     } catch (error) {
-      console.warn('[UniverseBackend] OAuth token retrieval failed:', error);
+      gfWarn('[UniverseBackend] OAuth token retrieval failed:', error);
       return null;
     }
   }
@@ -1286,7 +1292,7 @@ class UniverseBackend {
     }
 
     try {
-      console.log(`[UniverseBackend] Discovering universes in ${repoConfig.user}/${repoConfig.repo}...`);
+      gfLog(`[UniverseBackend] Discovering universes in ${repoConfig.user}/${repoConfig.repo}...`);
 
       const resolveDiscoveryAuth = async (preferredMethod = null) => {
         if (!preferredMethod || preferredMethod === 'github-app') {
@@ -1345,7 +1351,7 @@ class UniverseBackend {
           if (allowRetry && isAuthError) {
             const refreshedContext = await refreshDiscoveryAuth(context);
             if (refreshedContext?.token && refreshedContext.token !== context.token) {
-              console.log('[UniverseBackend] Retrying universe discovery with refreshed credentials');
+              gfLog('[UniverseBackend] Retrying universe discovery with refreshed credentials');
               return runDiscovery(refreshedContext, false);
             }
           }
@@ -1354,7 +1360,7 @@ class UniverseBackend {
       };
 
       const { universes: discovered, stats } = await runDiscovery(authContext, true);
-      console.log(`[UniverseBackend] Discovered ${discovered.length} universes in repository`);
+      gfLog(`[UniverseBackend] Discovered ${discovered.length} universes in repository`);
       this.notifyStatus('info', `Discovery: ${discovered.length} found • scanned ${stats.scannedDirs} dirs • ${stats.valid} valid • ${stats.invalid} invalid`);
 
       if (discovered.length === 0) {
@@ -1362,7 +1368,7 @@ class UniverseBackend {
       }
       return discovered;
     } catch (error) {
-      console.error('[UniverseBackend] Universe discovery failed:', error);
+      gfError('[UniverseBackend] Universe discovery failed:', error);
       throw error;
     }
   }
@@ -1376,7 +1382,7 @@ class UniverseBackend {
     }
 
     try {
-      console.log(`[UniverseBackend] Linking to discovered universe: ${discoveredUniverse.name}`);
+      gfLog(`[UniverseBackend] Linking to discovered universe: ${discoveredUniverse.name}`);
       const universeConfig = createUniverseConfigFromDiscovered(discoveredUniverse, repoConfig);
 
       const existingEntry = this.resolveUniverseEntry(universeConfig.slug);
@@ -1396,7 +1402,7 @@ class UniverseBackend {
 
         // Remove old engine and create new one with updated config
         if (this.gitSyncEngines.has(key)) {
-          console.log(`[UniverseBackend] Removing old Git sync engine for relinked universe: ${key}`);
+          gfLog(`[UniverseBackend] Removing old Git sync engine for relinked universe: ${key}`);
           await this.removeGitSyncEngine(key);
         }
 
@@ -1404,7 +1410,7 @@ class UniverseBackend {
         try {
           await this.ensureGitSyncEngine(key);
         } catch (error) {
-          console.warn(`[UniverseBackend] Failed to setup engine for updated universe ${key}:`, error);
+          gfWarn(`[UniverseBackend] Failed to setup engine for updated universe ${key}:`, error);
         }
 
         return key;
@@ -1419,12 +1425,12 @@ class UniverseBackend {
       try {
         await this.ensureGitSyncEngine(slug);
       } catch (error) {
-        console.warn(`[UniverseBackend] Failed to setup engine for new universe ${slug}:`, error);
+        gfWarn(`[UniverseBackend] Failed to setup engine for new universe ${slug}:`, error);
       }
 
       return slug;
     } catch (error) {
-      console.error('[UniverseBackend] Failed to link discovered universe:', error);
+      gfError('[UniverseBackend] Failed to link discovered universe:', error);
       throw error;
     }
   }
@@ -1437,7 +1443,7 @@ class UniverseBackend {
       await this.initialize();
     }
 
-    console.log(`[UniverseBackend] Switching to universe: ${slug}`);
+    gfLog(`[UniverseBackend] Switching to universe: ${slug}`);
 
     const resolved = this.resolveUniverseEntry(slug);
     if (!resolved) {
@@ -1453,9 +1459,9 @@ class UniverseBackend {
     if (options.saveCurrent !== false && this.activeUniverseSlug) {
       try {
         await this.saveActiveUniverse();
-        console.log('[UniverseBackend] Saved current universe before switching');
+        gfLog('[UniverseBackend] Saved current universe before switching');
       } catch (error) {
-        console.warn('[UniverseBackend] Failed to save current universe before switch:', error);
+        gfWarn('[UniverseBackend] Failed to save current universe before switch:', error);
       }
     }
 
@@ -1484,7 +1490,7 @@ class UniverseBackend {
         });
       }
     } catch (error) {
-      console.error('[UniverseBackend] Failed to load universe data:', error);
+      gfError('[UniverseBackend] Failed to load universe data:', error);
       this.notifyStatus('error', `Failed to load universe: ${error.message}`);
       throw error;
     }
@@ -1494,7 +1500,7 @@ class UniverseBackend {
     // CRITICAL: Load the new universe data into the graph store
     if (result?.storeState) {
       if (this.storeOperations?.loadUniverseFromFile) {
-        console.log('[UniverseBackend] Loading new universe data into graph store...');
+        gfLog('[UniverseBackend] Loading new universe data into graph store...');
         try {
           const success = this.storeOperations.loadUniverseFromFile(result.storeState);
           if (success) {
@@ -1503,7 +1509,7 @@ class UniverseBackend {
             const nodeCount = storeState?.nodePrototypes ? (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes).length) : 0;
             const graphCount = storeState?.graphs ? (storeState.graphs instanceof Map ? storeState.graphs.size : Object.keys(storeState.graphs).length) : 0;
             
-            console.log('[UniverseBackend] Successfully loaded universe data into graph store:', {
+            gfLog('[UniverseBackend] Successfully loaded universe data into graph store:', {
               nodeCount,
               graphCount,
               isUniverseLoaded: storeState?.isUniverseLoaded,
@@ -1520,29 +1526,29 @@ class UniverseBackend {
             throw new Error('Store loading returned false');
           }
         } catch (error) {
-          console.error('[UniverseBackend] Failed to load universe data into graph store:', error);
+          gfError('[UniverseBackend] Failed to load universe data into graph store:', error);
           this.notifyStatus('error', `Failed to load universe data: ${error.message}`);
           throw error; // Re-throw to surface the error to UI
         }
       } else {
-        console.error('[UniverseBackend] CRITICAL: Cannot load universe data - store operations not available');
+        gfError('[UniverseBackend] CRITICAL: Cannot load universe data - store operations not available');
         this.notifyStatus('error', 'Critical error: Store operations not initialized. Please refresh the page.');
         
         // Try to re-setup store operations
         try {
           await this.setupStoreOperations();
           if (this.storeOperations?.loadUniverseFromFile) {
-            console.log('[UniverseBackend] Store operations recovered, retrying data load...');
+            gfLog('[UniverseBackend] Store operations recovered, retrying data load...');
             this.storeOperations.loadUniverseFromFile(result.storeState);
             this.notifyStatus('success', `Universe switched after recovery: ${result.universe?.name || slug}`);
           }
         } catch (recoveryError) {
-          console.error('[UniverseBackend] Failed to recover store operations:', recoveryError);
+          gfError('[UniverseBackend] Failed to recover store operations:', recoveryError);
           throw new Error(`Universe data loading failed: Store operations unavailable. Please refresh the page.`);
         }
       }
     } else {
-      console.warn('[UniverseBackend] No storeState returned from universe switch - universe may be empty');
+      gfWarn('[UniverseBackend] No storeState returned from universe switch - universe may be empty');
       this.notifyStatus('info', `Switched to empty universe: ${slug}`);
     }
 
@@ -1551,7 +1557,7 @@ class UniverseBackend {
     if (switchedUniverse?.gitRepo?.enabled && switchedUniverse?.gitRepo?.linkedRepo) {
       setTimeout(() => {
         this.ensureGitSyncEngine(slug).catch(error => {
-          console.warn(`[UniverseBackend] Failed to setup engine after universe switch:`, error);
+          gfWarn(`[UniverseBackend] Failed to setup engine after universe switch:`, error);
         });
       }, 100);
     }
@@ -1562,7 +1568,7 @@ class UniverseBackend {
   /**
    * Save active universe
    */
-  async saveActiveUniverse(storeState = null) {
+  async saveActiveUniverse(storeState = null, options = {}) {
     if (!this.isInitialized) {
       await this.initialize();
     }
@@ -1572,20 +1578,20 @@ class UniverseBackend {
       storeState = this.storeOperations.getState();
     }
     
-    console.log('[UniverseBackend] Saving active universe with store state:', {
+    gfLog('[UniverseBackend] Saving active universe with store state:', {
       hasStoreState: !!storeState,
       hasGraphs: storeState?.graphs ? (storeState.graphs instanceof Map ? storeState.graphs.size : Object.keys(storeState.graphs).length) : 0,
       hasNodes: storeState?.nodePrototypes ? (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes).length) : 0
     });
     
     // Implementation is below - calling the full saveActiveUniverse implementation
-    return this.saveActiveUniverseInternal(storeState);
+    return this.saveActiveUniverseInternal(storeState, options);
   }
 
   /**
    * Internal save implementation
    */
-  async saveActiveUniverseInternal(storeState) {
+  async saveActiveUniverseInternal(storeState, options = {}) {
     let universe = this.getActiveUniverse();
     if (!universe) {
       throw new Error('No active universe to save');
@@ -1615,27 +1621,62 @@ class UniverseBackend {
 
     const results = [];
     const errors = [];
+    const {
+      skipGit = false,
+      skipLocal = false,
+      skipBrowser = false
+    } = options || {};
+
+    gfLog('[UniverseBackend] saveActiveUniverseInternal options:', {
+      skipGit,
+      skipLocal,
+      skipBrowser
+    });
+
+    if (!skipLocal) {
+      if (universe.localFile.enabled && this.fileHandles.has(universe.slug)) {
+        try {
+          gfLog('[UniverseBackend] Saving to linked local file (autosave)');
+          await this.saveToLinkedLocalFile(universe.slug, storeState, { suppressNotification: true });
+          results.push('local');
+        } catch (error) {
+          gfWarn('[UniverseBackend] Local file save failed during autosave:', error);
+          errors.push(`Local: ${error.message}`);
+        }
+      } else if (universe.localFile.enabled) {
+        gfWarn('[UniverseBackend] Local file enabled but missing handle during autosave');
+      }
+    } else {
+      gfLog('[UniverseBackend] Local file save skipped by options');
+    }
 
     // Save to Git if enabled and sync engine is available
-    if (universe.gitRepo.enabled && this.gitSyncEngines.has(universe.slug)) {
+    if (!skipGit && universe.gitRepo.enabled && this.gitSyncEngines.has(universe.slug)) {
       try {
         await this.saveToGit(universe, redstringData);
         results.push('git');
       } catch (error) {
-        console.error('[UniverseBackend] Git save failed:', error);
+        gfError('[UniverseBackend] Git save failed:', error);
         errors.push(`Git: ${error.message}`);
       }
+    } else if (skipGit && universe.gitRepo.enabled) {
+      gfLog('[UniverseBackend] Git save skipped by options');
+    } else if (universe.gitRepo.enabled && !this.gitSyncEngines.has(universe.slug)) {
+      gfLog('[UniverseBackend] Git enabled but sync engine not configured yet - skipping Git save');
+      errors.push('Git: Sync engine not ready');
     }
 
     // Save to browser storage if enabled (always try as fallback)
-    if (universe.browserStorage.enabled || results.length === 0) {
+    if (!skipBrowser && (universe.browserStorage.enabled || results.length === 0)) {
       try {
         await this.saveToBrowserStorage(universe, redstringData);
         results.push('browser');
       } catch (error) {
-        console.error('[UniverseBackend] Browser storage save failed:', error);
+        gfError('[UniverseBackend] Browser storage save failed:', error);
         errors.push(`Browser: ${error.message}`);
       }
+    } else if (skipBrowser) {
+      gfLog('[UniverseBackend] Browser save skipped by options');
     }
 
     if (results.length > 0) {
@@ -1661,7 +1702,7 @@ class UniverseBackend {
       throw new Error('Git sync engine not configured for this universe');
     }
 
-    console.log('[UniverseBackend] Saving to Git via existing sync engine (no restart)');
+    gfLog('[UniverseBackend] Saving to Git via existing sync engine (no restart)');
 
     try {
       // Use the GitSyncEngine's existing export logic
@@ -1675,7 +1716,7 @@ class UniverseBackend {
     } catch (error) {
       // If force commit fails with 409, try conflict resolution
       if (error.message && error.message.includes('409')) {
-        console.log('[UniverseBackend] 409 conflict detected, attempting resolution');
+        gfLog('[UniverseBackend] 409 conflict detected, attempting resolution');
 
         if (universe.sourceOfTruth === 'git') {
           // Git is source of truth, try to reload from Git first
@@ -1691,12 +1732,12 @@ class UniverseBackend {
               return; // Successfully resolved by loading Git data
             }
           } catch (loadError) {
-            console.warn('[UniverseBackend] Could not load from Git for conflict resolution:', loadError);
+            gfWarn('[UniverseBackend] Could not load from Git for conflict resolution:', loadError);
           }
         }
 
         // If Git load failed or local is source of truth, wait and retry
-        console.log('[UniverseBackend] Waiting 2 seconds before retry...');
+        gfLog('[UniverseBackend] Waiting 2 seconds before retry...');
         await new Promise(resolve => setTimeout(resolve, 2000));
 
         try {
@@ -1726,7 +1767,7 @@ class UniverseBackend {
       // If no file handle but local storage is enabled, auto-prompt to set one up
       if (universe.localFile.enabled && typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
         try {
-          console.log('[UniverseBackend] No file handle for local save, prompting user to select file location');
+          gfLog('[UniverseBackend] No file handle for local save, prompting user to select file location');
 
           const suggestedName = universe.localFile.lastFilePath || universe.localFile.path;
           const hadPreviousHandle = universe.localFile.hadFileHandle;
@@ -1790,7 +1831,7 @@ class UniverseBackend {
       try {
         await touchFileHandle(universe.slug, fileHandle);
       } catch (error) {
-        console.warn('[UniverseBackend] Failed to touch file handle after save:', error);
+        gfWarn('[UniverseBackend] Failed to touch file handle after save:', error);
       }
     } catch (error) {
       try { await writable?.close(); } catch (_) {}
@@ -1847,7 +1888,7 @@ class UniverseBackend {
 
       db.close();
     } catch (error) {
-      console.error('[UniverseBackend] Browser storage save failed:', error);
+      gfError('[UniverseBackend] Browser storage save failed:', error);
       throw error;
     }
   }
@@ -1883,10 +1924,10 @@ class UniverseBackend {
           deleteTx.onerror = () => reject(deleteTx.error);
         });
 
-        console.log(`[UniverseBackend] Cleaned up ${toDelete.length} old browser storage entries`);
+        gfLog(`[UniverseBackend] Cleaned up ${toDelete.length} old browser storage entries`);
       }
     } catch (error) {
-      console.warn('[UniverseBackend] Browser storage cleanup failed:', error);
+      gfWarn('[UniverseBackend] Browser storage cleanup failed:', error);
     }
   }
 
@@ -1921,14 +1962,16 @@ class UniverseBackend {
         universeSlug: slug,
         lastAccessed: Date.now()
       });
-      console.log(`[UniverseBackend] Stored file handle metadata for ${slug}`);
+      gfLog(`[UniverseBackend] Stored file handle metadata for ${slug}`);
     } catch (error) {
-      console.warn(`[UniverseBackend] Failed to store file handle metadata:`, error);
+      gfWarn(`[UniverseBackend] Failed to store file handle metadata:`, error);
     }
 
     // Also update the universe configuration
     const universe = this.getUniverse(slug);
     if (universe) {
+      const hasActiveGitLink = !!(universe.gitRepo?.enabled && universe.gitRepo?.linkedRepo);
+      const shouldPromoteLocal = !hasActiveGitLink && universe.sourceOfTruth !== SOURCE_OF_TRUTH.LOCAL;
       this.updateUniverse(slug, {
         localFile: {
           ...universe.localFile,
@@ -1936,8 +1979,10 @@ class UniverseBackend {
           path: fileHandle.name || universe.localFile.path,
           hadFileHandle: true,
           lastFilePath: fileHandle.name || universe.localFile.path,
-          fileHandleStatus: 'connected'
-        }
+          fileHandleStatus: 'connected',
+          unavailableReason: null
+        },
+        ...(shouldPromoteLocal ? { sourceOfTruth: SOURCE_OF_TRUTH.LOCAL } : {})
       });
     }
 
@@ -1981,7 +2026,7 @@ class UniverseBackend {
       const universe = this.getActiveUniverse();
       if (!universe) return false;
 
-      console.log('[UniverseBackend] Reloading active universe:', universe.name);
+      gfLog('[UniverseBackend] Reloading active universe:', universe.name);
 
       let storeState = null;
       let loadMethod = 'unknown';
@@ -1990,7 +2035,7 @@ class UniverseBackend {
         storeState = await this.loadUniverseData(universe);
         loadMethod = universe.sourceOfTruth;
       } catch (primaryError) {
-        console.warn('[UniverseBackend] Primary load failed:', primaryError);
+        gfWarn('[UniverseBackend] Primary load failed:', primaryError);
       }
 
       if (storeState) {
@@ -2005,7 +2050,7 @@ class UniverseBackend {
       this.notifyStatus('warning', 'Could not reload universe from any source');
       return false;
     } catch (error) {
-      console.error('[UniverseBackend] Failed to reload active universe:', error);
+      gfError('[UniverseBackend] Failed to reload active universe:', error);
       this.notifyStatus('error', `Reload failed: ${error.message}`);
       return false;
     }
@@ -2046,13 +2091,13 @@ class UniverseBackend {
         const gitData = await this.loadFromGit(universe);
         if (gitData) return gitData;
       } catch (error) {
-        console.warn('[UniverseBackend] Git load failed, trying fallback:', error);
+        gfWarn('[UniverseBackend] Git load failed, trying fallback:', error);
         // Direct-read fallback when engine isn't configured yet
         try {
           const directGitData = await this.loadFromGitDirect(universe);
           if (directGitData) return directGitData;
         } catch (fallbackError) {
-          console.warn('[UniverseBackend] Direct Git fallback failed:', fallbackError);
+          gfWarn('[UniverseBackend] Direct Git fallback failed:', fallbackError);
         }
       }
     }
@@ -2062,7 +2107,7 @@ class UniverseBackend {
         const localData = await this.loadFromLocalFile(universe);
         if (localData) return localData;
       } catch (error) {
-        console.warn('[UniverseBackend] Local file load failed, trying fallback:', error);
+        gfWarn('[UniverseBackend] Local file load failed, trying fallback:', error);
       }
     }
 
@@ -2072,7 +2117,7 @@ class UniverseBackend {
         const localData = await this.loadFromLocalFile(universe);
         if (localData) return localData;
       } catch (error) {
-        console.warn('[UniverseBackend] Local fallback failed:', error);
+        gfWarn('[UniverseBackend] Local fallback failed:', error);
       }
     }
 
@@ -2081,7 +2126,7 @@ class UniverseBackend {
         const gitData = await this.loadFromGit(universe);
         if (gitData) return gitData;
       } catch (error) {
-        console.warn('[UniverseBackend] Git fallback failed:', error);
+        gfWarn('[UniverseBackend] Git fallback failed:', error);
       }
     }
 
@@ -2091,12 +2136,12 @@ class UniverseBackend {
         const browserData = await this.loadFromBrowserStorage(universe);
         if (browserData) return browserData;
       } catch (error) {
-        console.warn('[UniverseBackend] Browser storage fallback failed:', error);
+        gfWarn('[UniverseBackend] Browser storage fallback failed:', error);
       }
     }
 
     // Return empty state if nothing works
-    console.warn('[UniverseBackend] All load methods failed, creating empty state');
+    gfWarn('[UniverseBackend] All load methods failed, creating empty state');
     return this.createEmptyState();
   }
 
@@ -2199,11 +2244,11 @@ class UniverseBackend {
       try {
         const ok = await provider.isAvailable();
         if (!ok) {
-          console.warn('[UniverseBackend] Provider unavailable or unauthorized; skipping direct Git access');
+          gfWarn('[UniverseBackend] Provider unavailable or unauthorized; skipping direct Git access');
           return null;
         }
       } catch (e) {
-        console.warn('[UniverseBackend] Provider availability check failed; skipping direct Git access:', e?.message || e);
+        gfWarn('[UniverseBackend] Provider availability check failed; skipping direct Git access:', e?.message || e);
         return null;
       }
 
@@ -2236,7 +2281,7 @@ class UniverseBackend {
           const { storeState } = importFromRedstring(initialRedstring);
           return storeState;
         } catch (createErr) {
-          console.warn('[UniverseBackend] Failed to create initial universe file on Git:', createErr);
+          gfWarn('[UniverseBackend] Failed to create initial universe file on Git:', createErr);
           return null;
         }
       }
@@ -2245,14 +2290,14 @@ class UniverseBackend {
       try {
         redstringData = JSON.parse(content);
       } catch (e) {
-        console.warn('[UniverseBackend] Direct Git read parse failed:', e.message);
+        gfWarn('[UniverseBackend] Direct Git read parse failed:', e.message);
         return null;
       }
 
       const { storeState } = importFromRedstring(redstringData);
       return storeState;
     } catch (error) {
-      console.warn('[UniverseBackend] Direct Git read failed:', error);
+      gfWarn('[UniverseBackend] Direct Git read failed:', error);
       return null;
     }
   }
@@ -2300,7 +2345,7 @@ class UniverseBackend {
       const { storeState } = importFromRedstring(result.data);
       return storeState;
     } catch (error) {
-      console.error('[UniverseBackend] Browser storage load failed:', error);
+      gfError('[UniverseBackend] Browser storage load failed:', error);
       return null;
     }
   }
@@ -2309,19 +2354,19 @@ class UniverseBackend {
    * Create new universe
    */
   async createUniverse(name, options = {}) {
-    console.log(`[UniverseBackend] createUniverse called with name: "${name}", options:`, options);
+    gfLog(`[UniverseBackend] createUniverse called with name: "${name}", options:`, options);
 
     try {
       if (!this.isInitialized) {
-        console.log('[UniverseBackend] Backend not initialized, initializing now...');
+        gfLog('[UniverseBackend] Backend not initialized, initializing now...');
         await this.initialize();
-        console.log('[UniverseBackend] Backend initialization completed');
+        gfLog('[UniverseBackend] Backend initialization completed');
       }
     } catch (error) {
-      console.warn('[UniverseBackend] Initialization failed, continuing anyway:', error);
+      gfWarn('[UniverseBackend] Initialization failed, continuing anyway:', error);
     }
 
-    console.log('[UniverseBackend] Creating universe via direct implementation...');
+    gfLog('[UniverseBackend] Creating universe via direct implementation...');
 
     const slug = this.generateUniqueSlug(name);
     const safeName = (typeof name === 'string' && name.trim().length > 0) ? name : slug;
@@ -2343,11 +2388,11 @@ class UniverseBackend {
     this.universes.set(slug, universe);
     this.saveToStorage();
 
-    console.log('[UniverseBackend] Universe created:', universe.slug);
+    gfLog('[UniverseBackend] Universe created:', universe.slug);
 
     // Set as active universe and ensure store is updated
     try {
-      console.log('[UniverseBackend] Setting new universe as active...');
+      gfLog('[UniverseBackend] Setting new universe as active...');
       this.activeUniverseSlug = slug;
       this.saveToStorage();
 
@@ -2355,25 +2400,25 @@ class UniverseBackend {
       if (this.storeOperations?.loadUniverseFromFile) {
         const emptyState = this.createEmptyState();
         this.storeOperations.loadUniverseFromFile(emptyState);
-        console.log('[UniverseBackend] Graph store initialized with empty state for new active universe');
+        gfLog('[UniverseBackend] Graph store initialized with empty state for new active universe');
       }
     } catch (error) {
-      console.warn('[UniverseBackend] Failed to activate new universe:', error);
+      gfWarn('[UniverseBackend] Failed to activate new universe:', error);
     }
 
     this.notifyStatus('success', `Created universe: ${name}`);
 
     // Auto-setup engine if Git is enabled
     if (universe.gitRepo?.enabled && universe.gitRepo?.linkedRepo) {
-      console.log('[UniverseBackend] Scheduling async Git sync engine setup...');
+      gfLog('[UniverseBackend] Scheduling async Git sync engine setup...');
       setTimeout(() => {
         this.ensureGitSyncEngine(universe.slug).catch(error => {
-          console.warn(`[UniverseBackend] Failed to auto-setup engine for new universe:`, error);
+          gfWarn(`[UniverseBackend] Failed to auto-setup engine for new universe:`, error);
         });
       }, 100);
     }
 
-    console.log('[UniverseBackend] createUniverse completed successfully, returning universe');
+    gfLog('[UniverseBackend] createUniverse completed successfully, returning universe');
     return universe;
   }
 
@@ -2419,7 +2464,7 @@ class UniverseBackend {
       await this.initialize();
     }
 
-    console.log(`[UniverseBackend] Updating universe ${slug}:`, updates);
+    gfLog(`[UniverseBackend] Updating universe ${slug}:`, updates);
 
     const resolved = this.resolveUniverseEntry(slug);
     if (!resolved) {
@@ -2446,16 +2491,16 @@ class UniverseBackend {
     // If Git repo was enabled or linked repo was updated, ensure sync engine is set up
     if (updates.gitRepo) {
       if (updatedUniverse?.gitRepo?.enabled && updatedUniverse?.gitRepo?.linkedRepo) {
-        console.log(`[UniverseBackend] Git repo updated for ${slug}, ensuring sync engine is set up`);
+        gfLog(`[UniverseBackend] Git repo updated for ${slug}, ensuring sync engine is set up`);
         setTimeout(() => {
           this.ensureGitSyncEngine(slug).catch(error => {
-            console.warn(`[UniverseBackend] Failed to setup engine after repo update:`, error);
+            gfWarn(`[UniverseBackend] Failed to setup engine after repo update:`, error);
             this.notifyStatus('warning', `Git sync setup failed: ${error.message}`);
           });
         }, 100);
       } else if (updates.gitRepo.enabled === false) {
         // Git was disabled, remove the engine
-        console.log(`[UniverseBackend] Git disabled for ${slug}, removing sync engine`);
+        gfLog(`[UniverseBackend] Git disabled for ${slug}, removing sync engine`);
         this.removeGitSyncEngine(slug);
       }
     }
@@ -2512,7 +2557,7 @@ class UniverseBackend {
       throw new Error('No store state available for saving');
     }
     
-    console.log(`[UniverseBackend] Force saving universe ${universeSlug}`);
+    gfLog(`[UniverseBackend] Force saving universe ${universeSlug}`);
 
     let universe = this.getUniverse(universeSlug);
     if (!universe) {
@@ -2528,7 +2573,7 @@ class UniverseBackend {
     const hasGitRepo = universe.raw?.gitRepo?.enabled && (universe.raw?.gitRepo?.linkedRepo || universe.gitRepo?.linkedRepo);
     const sourceOfTruth = universe.sourceOfTruth || 'browser';
 
-    console.log(`[UniverseBackend] Save options for ${universeSlug}:`, {
+    gfLog(`[UniverseBackend] Save options for ${universeSlug}:`, {
       sourceOfTruth,
       hasLocalFile,
       hasGitRepo,
@@ -2536,7 +2581,7 @@ class UniverseBackend {
     });
 
     if (hasLocalFileEnabled && !hasLocalHandle && localConfig?.hadFileHandle) {
-      console.warn(`[UniverseBackend] Local file handle missing for ${universeSlug}; marking as needs reconnection`);
+      gfWarn(`[UniverseBackend] Local file handle missing for ${universeSlug}; marking as needs reconnection`);
       try {
         await this.updateUniverse(universeSlug, {
           localFile: {
@@ -2548,7 +2593,7 @@ class UniverseBackend {
         });
         this.notifyStatus('warning', 'Reconnect local file to continue saving changes locally');
       } catch (updateError) {
-        console.warn('[UniverseBackend] Failed to mark local file for reconnection:', updateError);
+        gfWarn('[UniverseBackend] Failed to mark local file for reconnection:', updateError);
       }
       universe = this.getUniverse(universeSlug) || universe;
       localConfig = universe.localFile || universe.raw?.localFile || {};
@@ -2567,14 +2612,14 @@ class UniverseBackend {
 
       // Save to local file if enabled and has handle
       if (hasLocalFile && this.fileHandles.has(universeSlug)) {
-        console.log(`[UniverseBackend] Saving to local file`);
+        gfLog(`[UniverseBackend] Saving to local file`);
         try {
           const result = await this.saveToLinkedLocalFile(universeSlug, storeState);
           results.localFile = { success: true, fileName: result.fileName };
           hasAnySuccess = true;
-          console.log(`[UniverseBackend] ✓ Local file saved: ${result.fileName}`);
+          gfLog(`[UniverseBackend] ✓ Local file saved: ${result.fileName}`);
         } catch (error) {
-          console.warn(`[UniverseBackend] ✗ Local file save failed:`, error);
+          gfWarn(`[UniverseBackend] ✗ Local file save failed:`, error);
           results.localFile = { success: false, error: error.message };
         }
       } else if (hasLocalFileEnabled) {
@@ -2586,7 +2631,7 @@ class UniverseBackend {
 
       // Save to Git if enabled (regardless of source of truth)
       if (hasGitRepo && !skipGit) {
-        console.log(`[UniverseBackend] Saving to Git repository`);
+        gfLog(`[UniverseBackend] Saving to Git repository`);
 
         // Track operation start for Git
         this.trackGitOperationStart(universeSlug, 'force-save', {
@@ -2597,7 +2642,7 @@ class UniverseBackend {
         try {
           let engine = this.gitSyncEngines.get(universeSlug);
           if (!engine) {
-            console.log(`[UniverseBackend] Creating Git engine for ${universeSlug}`);
+            gfLog(`[UniverseBackend] Creating Git engine for ${universeSlug}`);
             engine = await this.ensureGitSyncEngine(universeSlug);
           }
 
@@ -2613,28 +2658,28 @@ class UniverseBackend {
 
             results.git = { success: true, commitHash: result?.commitHash };
             hasAnySuccess = true;
-            console.log(`[UniverseBackend] ✓ Git saved: ${result?.commitHash}`);
+            gfLog(`[UniverseBackend] ✓ Git saved: ${result?.commitHash}`);
           }
         } catch (error) {
-          console.warn(`[UniverseBackend] ✗ Git save failed:`, error);
+          gfWarn(`[UniverseBackend] ✗ Git save failed:`, error);
           this.trackGitOperationComplete(universeSlug, 'force-save', false, {
             error: error.message
           });
           results.git = { success: false, error: error.message };
         }
       } else if (hasGitRepo && skipGit) {
-        console.log('[UniverseBackend] Skipping Git save (skipGit flag set)');
+        gfLog('[UniverseBackend] Skipping Git save (skipGit flag set)');
       }
 
-      // Always save to browser storage as backup/cache
-      console.log(`[UniverseBackend] Saving to browser storage`);
+      // Always save to browser storage as backup/cache (skip local/git to avoid duplicate writes)
+      gfLog(`[UniverseBackend] Saving to browser storage`);
       try {
-        await this.saveActiveUniverse(storeState);
+        await this.saveActiveUniverse(storeState, { skipLocal: true, skipGit: true });
         results.browser = { success: true };
         hasAnySuccess = true;
-        console.log(`[UniverseBackend] ✓ Browser storage saved`);
+        gfLog(`[UniverseBackend] ✓ Browser storage saved`);
       } catch (error) {
-        console.warn(`[UniverseBackend] ✗ Browser storage save failed:`, error);
+        gfWarn(`[UniverseBackend] ✗ Browser storage save failed:`, error);
         results.browser = { success: false, error: error.message };
       }
 
@@ -2659,7 +2704,7 @@ class UniverseBackend {
       }
 
     } catch (error) {
-      console.error(`[UniverseBackend] All save methods failed for ${universeSlug}:`, error);
+      gfError(`[UniverseBackend] All save methods failed for ${universeSlug}:`, error);
       this.notifyStatus('error', `Save failed: ${error.message}`);
       throw error;
     }
@@ -2673,7 +2718,7 @@ class UniverseBackend {
       await this.initialize();
     }
     
-    console.log(`[UniverseBackend] Reloading universe: ${universeSlug}`);
+    gfLog(`[UniverseBackend] Reloading universe: ${universeSlug}`);
 
     const universe = this.getUniverse(universeSlug);
     if (!universe) {
@@ -2682,27 +2727,27 @@ class UniverseBackend {
 
     // Determine the source of truth
     const sourceOfTruth = universe.sourceOfTruth || 'browser';
-    console.log(`[UniverseBackend] Reloading from source of truth: ${sourceOfTruth}`);
+    gfLog(`[UniverseBackend] Reloading from source of truth: ${sourceOfTruth}`);
 
     try {
       // Use loadUniverseData method which handles all sources
       const data = await this.loadUniverseData(universe);
       
       if (data && this.storeOperations?.loadState) {
-        console.log(`[UniverseBackend] Loading universe data into store:`, {
+        gfLog(`[UniverseBackend] Loading universe data into store:`, {
           nodeCount: data.nodePrototypes ? (data.nodePrototypes instanceof Map ? data.nodePrototypes.size : Object.keys(data.nodePrototypes).length) : 0,
           graphCount: data.graphs ? (data.graphs instanceof Map ? data.graphs.size : Object.keys(data.graphs).length) : 0
         });
         await this.storeOperations.loadState(data);
-        console.log(`[UniverseBackend] Universe reloaded successfully from ${sourceOfTruth}`);
+        gfLog(`[UniverseBackend] Universe reloaded successfully from ${sourceOfTruth}`);
         this.notifyStatus('success', `Universe reloaded from ${sourceOfTruth}`);
         return { success: true, source: sourceOfTruth };
       } else {
-        console.warn(`[UniverseBackend] No data found or store operations not available`);
+        gfWarn(`[UniverseBackend] No data found or store operations not available`);
         return { success: false, source: sourceOfTruth };
       }
     } catch (error) {
-      console.error(`[UniverseBackend] Failed to reload universe:`, error);
+      gfError(`[UniverseBackend] Failed to reload universe:`, error);
       this.notifyStatus('error', `Failed to reload universe: ${error.message}`);
       throw error;
     }
@@ -2712,7 +2757,7 @@ class UniverseBackend {
    * Download universe as local .redstring file
    */
   async downloadLocalFile(universeSlug, storeState = null) {
-    console.log(`[UniverseBackend] Downloading local file for universe: ${universeSlug}`);
+    gfLog(`[UniverseBackend] Downloading local file for universe: ${universeSlug}`);
 
     const universe = this.getUniverse(universeSlug);
     if (!universe) {
@@ -2733,7 +2778,7 @@ class UniverseBackend {
       this.notifyStatus('success', `Downloaded ${fileName}`);
       return { success: true, fileName };
     } catch (error) {
-      console.error(`[UniverseBackend] Failed to download ${fileName}:`, error);
+      gfError(`[UniverseBackend] Failed to download ${fileName}:`, error);
       this.notifyStatus('error', `Download failed: ${error.message}`);
       throw error;
     }
@@ -2762,7 +2807,7 @@ class UniverseBackend {
     try {
       storeState = await this.loadFromGitDirect(universe);
     } catch (error) {
-      console.warn('[UniverseBackend] Direct Git download failed, attempting via sync engine:', error);
+      gfWarn('[UniverseBackend] Direct Git download failed, attempting via sync engine:', error);
     }
 
     if (!storeState) {
@@ -2770,7 +2815,7 @@ class UniverseBackend {
         await this.ensureGitSyncEngine(universeSlug);
         storeState = await this.loadFromGit(universe);
       } catch (error) {
-        console.error('[UniverseBackend] Unable to load universe from Git sync engine:', error);
+        gfError('[UniverseBackend] Unable to load universe from Git sync engine:', error);
         throw new Error(`Failed to load data from Git repository: ${error.message}`);
       }
     }
@@ -2784,7 +2829,7 @@ class UniverseBackend {
       this.notifyStatus('success', `Downloaded ${fileName} from Git`);
       return { success: true, fileName };
     } catch (error) {
-      console.error(`[UniverseBackend] Failed to download ${fileName} from Git:`, error);
+      gfError(`[UniverseBackend] Failed to download ${fileName} from Git:`, error);
       this.notifyStatus('error', `Download failed: ${error.message}`);
       throw error;
     }
@@ -2794,7 +2839,7 @@ class UniverseBackend {
    * Upload/Import universe from local .redstring file
    */
   async uploadLocalFile(file, targetUniverseSlug = null) {
-    console.log(`[UniverseBackend] Uploading local file: ${file.name}`);
+    gfLog(`[UniverseBackend] Uploading local file: ${file.name}`);
     
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -2813,7 +2858,7 @@ class UniverseBackend {
           this.notifyStatus('success', `Imported ${file.name}`);
           resolve({ success: true, fileName: file.name });
         } catch (error) {
-          console.error(`[UniverseBackend] Failed to import ${file.name}:`, error);
+          gfError(`[UniverseBackend] Failed to import ${file.name}:`, error);
           this.notifyStatus('error', `Import failed: ${error.message}`);
           reject(error);
         }
@@ -2845,12 +2890,15 @@ class UniverseBackend {
         universeSlug,
         lastAccessed: Date.now()
       });
-      console.log(`[UniverseBackend] Stored file handle metadata for ${universeSlug}`);
+      gfLog(`[UniverseBackend] Stored file handle metadata for ${universeSlug}`);
     } catch (error) {
-      console.warn(`[UniverseBackend] Failed to store file handle metadata:`, error);
+      gfWarn(`[UniverseBackend] Failed to store file handle metadata:`, error);
     }
 
     const universe = this.getUniverse(universeSlug);
+    const hasActiveGitLink = !!(universe?.gitRepo?.enabled && universe?.gitRepo?.linkedRepo);
+    const shouldPromoteLocal = !hasActiveGitLink && universe?.sourceOfTruth !== SOURCE_OF_TRUTH.LOCAL;
+
     await this.updateUniverse(universeSlug, {
       localFile: {
         ...(universe?.localFile || {}),
@@ -2859,7 +2907,8 @@ class UniverseBackend {
         hadFileHandle: true,
         fileHandleStatus: 'connected',
         unavailableReason: null
-      }
+      },
+      ...(shouldPromoteLocal ? { sourceOfTruth: SOURCE_OF_TRUTH.LOCAL } : {})
     });
     this.notifyStatus('success', `Linked file handle for ${universe?.name || universeSlug}`);
     return { success: true, fileName: fileHandle.name };
@@ -2895,7 +2944,10 @@ class UniverseBackend {
   /**
    * Save current universe store state to the previously linked file handle
   */
-  async saveToLinkedLocalFile(universeSlug, storeState = null) {
+  async saveToLinkedLocalFile(universeSlug, storeState = null, options = {}) {
+    const {
+      suppressNotification = false
+    } = options || {};
     const handle = this.fileHandles.get(universeSlug);
     if (!handle) {
       throw new Error('No linked local file. Pick a file first.');
@@ -2939,13 +2991,13 @@ class UniverseBackend {
       try {
         await touchFileHandle(universeSlug, handle);
       } catch (error) {
-        console.warn('[UniverseBackend] Failed to touch file handle after save:', error);
+        gfWarn('[UniverseBackend] Failed to touch file handle after save:', error);
       }
     } catch (error) {
       try { await writable?.close(); } catch (_) {}
 
       if (isPermissionError(error)) {
-        console.warn('[UniverseBackend] Local file permission denied during save, flagging reconnect requirement');
+        gfWarn('[UniverseBackend] Local file permission denied during save, flagging reconnect requirement');
         const universe = this.getUniverse(universeSlug);
         if (universe) {
           await this.updateUniverse(universeSlug, {
@@ -2977,7 +3029,11 @@ class UniverseBackend {
       });
     }
 
-    this.notifyStatus('success', `Saved to ${handle.name}`);
+    if (!suppressNotification) {
+      this.notifyStatus('success', `Saved to ${handle.name}`);
+    } else {
+      gfLog('[UniverseBackend] Local file save completed without user notification');
+    }
     return { success: true, fileName: handle.name };
   }
 
@@ -2985,7 +3041,7 @@ class UniverseBackend {
    * Link local file to universe (for future saves/loads)
    */
   async linkLocalFileToUniverse(universeSlug, filePath) {
-    console.log(`[UniverseBackend] Linking local file to universe ${universeSlug}: ${filePath}`);
+    gfLog(`[UniverseBackend] Linking local file to universe ${universeSlug}: ${filePath}`);
 
     const universe = this.getUniverse(universeSlug);
     if (!universe) {
@@ -2993,6 +3049,9 @@ class UniverseBackend {
     }
 
     // Update universe with local file configuration (preserving existing localFile properties)
+    const hasActiveGitLink = !!(universe.gitRepo?.enabled && universe.gitRepo?.linkedRepo);
+    const shouldPromoteLocal = !hasActiveGitLink && universe.sourceOfTruth !== SOURCE_OF_TRUTH.LOCAL;
+
     await this.updateUniverse(universeSlug, {
       localFile: {
         ...universe.localFile, // Preserve existing properties like hadFileHandle
@@ -3000,7 +3059,8 @@ class UniverseBackend {
         path: filePath,
         lastFilePath: filePath,
         lastSaved: universe.localFile?.lastSaved || null
-      }
+      },
+      ...(shouldPromoteLocal ? { sourceOfTruth: SOURCE_OF_TRUTH.LOCAL } : {})
     });
 
     this.notifyStatus('success', `Linked local file to ${universe.name || universeSlug}`);
@@ -3024,9 +3084,9 @@ class UniverseBackend {
 
     try {
       await removeFileHandleMetadata(universeSlug);
-      console.log(`[UniverseBackend] Removed file handle metadata for ${universeSlug}`);
+      gfLog(`[UniverseBackend] Removed file handle metadata for ${universeSlug}`);
     } catch (error) {
-      console.warn(`[UniverseBackend] Failed to remove file handle metadata:`, error);
+      gfWarn(`[UniverseBackend] Failed to remove file handle metadata:`, error);
     }
 
     const updates = {
@@ -3065,10 +3125,10 @@ class UniverseBackend {
     }
 
     if (!file.name.endsWith('.redstring')) {
-      console.warn(`[UniverseBackend] Importing non-.redstring file: ${file.name}`);
+      gfWarn(`[UniverseBackend] Importing non-.redstring file: ${file.name}`);
     }
 
-    console.log(`[UniverseBackend] Uploading local file ${file.name} to universe ${targetUniverseSlug}`);
+    gfLog(`[UniverseBackend] Uploading local file ${file.name} to universe ${targetUniverseSlug}`);
 
     // Read the file content
     const fileContent = await new Promise((resolve, reject) => {
@@ -3117,7 +3177,7 @@ class UniverseBackend {
 
       // Note: File input gives us a one-time File object, not a persistent FileSystemFileHandle
       // User needs to use "Pick File" or "Save As" to establish persistent file connection for auto-save
-      console.log(`[UniverseBackend] File imported. To enable auto-save, use "Pick File" to establish persistent connection.`);
+      gfLog(`[UniverseBackend] File imported. To enable auto-save, use "Pick File" to establish persistent connection.`);
       
       this.notifyStatus('success', `Imported ${file.name} with ${nodeCount} nodes. Use "Pick File" to enable auto-save.`);
 
@@ -3138,7 +3198,7 @@ class UniverseBackend {
       throw new Error(`Universe ${universeSlug} not found`);
     }
 
-    console.log('[UniverseBackend] setSourceOfTruth - universe structure:', {
+    gfLog('[UniverseBackend] setSourceOfTruth - universe structure:', {
       hasRaw: !!universe.raw,
       hasGitRepo: !!universe.gitRepo,
       hasRawGitRepo: !!universe.raw?.gitRepo,
@@ -3169,6 +3229,16 @@ class UniverseBackend {
     // Update the universe configuration
     await this.updateUniverse(universeSlug, {
       sourceOfTruth: sourceType
+    });
+    this.authStatus = persistentAuth.getAuthStatus();
+    const updatedUniverse = this.getUniverse(universeSlug);
+    gfLog('[UniverseBackend] Source of truth updated:', {
+      slug: universeSlug,
+      sourceType,
+      storedSource: updatedUniverse?.sourceOfTruth,
+      rawSource: updatedUniverse?.raw?.sourceOfTruth,
+      authStatus: this.authStatus,
+      timestamp: new Date().toISOString()
     });
 
     this.notifyStatus('success', `Set ${sourceType === 'git' ? 'repository' : 'local file'} as primary source for ${universe.name || universeSlug}`);
@@ -3257,7 +3327,7 @@ class UniverseBackend {
    * Track start of git operation
    */
   trackGitOperationStart(universeSlug, operation, details = {}) {
-    console.log(`[UniverseBackend] Starting ${operation} for ${universeSlug}`);
+    gfLog(`[UniverseBackend] Starting ${operation} for ${universeSlug}`);
     this.updateGitOperationStatus(universeSlug, {
       isOperationInProgress: true,
       currentOperation: operation,
@@ -3276,7 +3346,7 @@ class UniverseBackend {
     const status = this.getUniverseGitStatus(universeSlug);
     const duration = status.operationStartTime ? timestamp - status.operationStartTime : null;
 
-    console.log(`[UniverseBackend] ${success ? 'Completed' : 'Failed'} ${operation} for ${universeSlug} ${duration ? `in ${duration}ms` : ''}`);
+    gfLog(`[UniverseBackend] ${success ? 'Completed' : 'Failed'} ${operation} for ${universeSlug} ${duration ? `in ${duration}ms` : ''}`);
 
     this.updateGitOperationStatus(universeSlug, {
       isOperationInProgress: false,
@@ -3306,7 +3376,7 @@ class UniverseBackend {
           global: this.globalGitStatus
         });
       } catch (error) {
-        console.warn('[UniverseBackend] Git status handler error:', error);
+        gfWarn('[UniverseBackend] Git status handler error:', error);
       }
     });
   }
@@ -3324,7 +3394,7 @@ class UniverseBackend {
       try {
         handler({ type, status: message });
       } catch (error) {
-        console.warn('[UniverseBackend] Status handler error:', error);
+        gfWarn('[UniverseBackend] Status handler error:', error);
       }
     });
   }
@@ -3333,13 +3403,13 @@ class UniverseBackend {
    * Cleanup - stop all engines
    */
   async cleanup() {
-    console.log('[UniverseBackend] Cleaning up backend service...');
+    gfLog('[UniverseBackend] Cleaning up backend service...');
 
     for (const [slug, engine] of this.gitSyncEngines) {
       try {
         engine.stop();
       } catch (error) {
-        console.warn(`[UniverseBackend] Failed to stop engine for ${slug}:`, error);
+        gfWarn(`[UniverseBackend] Failed to stop engine for ${slug}:`, error);
       }
     }
 

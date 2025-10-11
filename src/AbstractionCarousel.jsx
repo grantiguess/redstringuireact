@@ -1161,8 +1161,9 @@ const AbstractionCarousel = ({
           // Only animate nodes within 2 levels of the center
           const shouldAnimate = distanceFromMain <= 2;
           
-          if (animationState === 'entering' && !isCurrent && shouldAnimate) {
+          if (animationState === 'entering' && shouldAnimate) {
             // Entrance animation: start from center, staggered by distance
+            // IMPORTANT: Include current node in entrance animation
             animationDelay = distanceFromMain * 40; // 40ms per level (faster)
             animationOpacity = 0;
             animationScale = 0.3;
@@ -1209,7 +1210,7 @@ const AbstractionCarousel = ({
           
           // Apply animation opacity only when we want to override (entrance animation)
           if (useAnimationOpacity) {
-            opacity = isCurrent ? opacity : animationOpacity;
+            opacity = animationOpacity; // Apply to all nodes during entrance, including current
           }
           // For exit animations, keep the natural calculated opacity so CSS can animate from it
           
@@ -1242,11 +1243,17 @@ const AbstractionCarousel = ({
 
           
           // Calculate animation transform for enter/exit
-          const animationTransform = !isCurrent && shouldAnimate && (animationState === 'entering' || animationState === 'exiting') 
+          // Include current node in entrance animation
+          const shouldApplyAnimation = shouldAnimate && (
+            (animationState === 'entering') || // All nodes animate in
+            (animationState === 'exiting' && !isCurrent) // Only non-current nodes animate out
+          );
+          
+          const animationTransform = shouldApplyAnimation
             ? `scale(${animationScale})` 
             : 'scale(1)';
           
-          const animationStyles = !isCurrent && shouldAnimate && (animationState === 'entering' || animationState === 'exiting') ? {
+          const animationStyles = shouldApplyAnimation ? {
             animation: animationState === 'entering' 
               ? `carousel-node-enter 0.2s ease-out ${animationDelay}ms both`
               : `carousel-node-exit 0.2s ease-in ${animationDelay}ms both`,
@@ -1256,7 +1263,7 @@ const AbstractionCarousel = ({
 
           // Calculate final opacity with transition
           const finalOpacity = useAnimationOpacity ? animationOpacity : opacity;
-          const opacityStyle = animationState === 'entering' && shouldAnimate && !isCurrent ? {
+          const opacityStyle = animationState === 'entering' && shouldAnimate ? {
             opacity: 1, // Start at full opacity after entrance
             animation: `carousel-opacity-transition 0.4s ease ${opacityTransitionDelay}ms forwards`,
             // Set CSS custom property for the final target opacity

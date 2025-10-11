@@ -29,6 +29,12 @@ import {
   touchFileHandle
 } from './fileHandlePersistence.js';
 
+const GF_TAG = '[GF-DEBUG]';
+const { log: __gfNativeLog, warn: __gfNativeWarn, error: __gfNativeError } = console;
+const gfLog = (...args) => __gfNativeLog.call(console, GF_TAG, ...args);
+const gfWarn = (...args) => __gfNativeWarn.call(console, GF_TAG, ...args);
+const gfError = (...args) => __gfNativeError.call(console, GF_TAG, ...args);
+
 // NO GRAPH STORE IMPORT - This creates circular dependency
 // Store operations will be injected from outside when needed
 
@@ -97,7 +103,7 @@ class UniverseManager {
   initializeDeviceConfig() {
     // Use a flag to prevent recursive initialization attempts
     if (this._initializingDeviceConfig) {
-      console.warn('[UniverseManager] Device config initialization already in progress, skipping');
+      gfWarn('[UniverseManager] Device config initialization already in progress, skipping');
       return;
     }
     
@@ -139,7 +145,7 @@ class UniverseManager {
       // Update watchdog delay based on device
       this.watchdogDelay = this.deviceConfig.autoSaveFrequency * 60;
       
-      console.log('[UniverseManager] Device config initialized directly:', {
+      gfLog('[UniverseManager] Device config initialized directly:', {
         deviceType: this.deviceConfig.deviceInfo.type,
         gitOnlyMode: this.isGitOnlyMode,
         sourceOfTruth: this.deviceConfig.sourceOfTruth,
@@ -160,11 +166,11 @@ class UniverseManager {
         window.addEventListener('redstring:device-config-ready', (event) => {
           this.deviceConfig = event.detail;
           this.isGitOnlyMode = this.deviceConfig.gitOnlyMode;
-          console.log('[UniverseManager] Device config updated from event:', this.deviceConfig);
+          gfLog('[UniverseManager] Device config updated from event:', this.deviceConfig);
         });
       }
     } catch (error) {
-      console.error('[UniverseManager] Device config initialization failed completely:', error);
+      gfError('[UniverseManager] Device config initialization failed completely:', error);
       // Ultra-safe fallback
       this.deviceConfig = { 
         gitOnlyMode: false, 
@@ -183,46 +189,46 @@ class UniverseManager {
 
   // Initialize background sync services (called at app startup)
   async initializeBackgroundSync() {
-    console.log('[UniverseManager] ========== INITIALIZE BACKGROUND SYNC CALLED ==========');
+    gfLog('[UniverseManager] ========== INITIALIZE BACKGROUND SYNC CALLED ==========');
     try {
-      console.log('[UniverseManager] Initializing background sync services...');
+      gfLog('[UniverseManager] Initializing background sync services...');
 
-      console.log('[UniverseManager] ===== Step 1: Checking persistentAuth =====');
+      gfLog('[UniverseManager] ===== Step 1: Checking persistentAuth =====');
       const authStartTime = Date.now();
 
       // Check if persistentAuth has already been initialized (avoid duplicate calls)
       if (!persistentAuth.initializeCalled) {
-        console.log('[UniverseManager] About to call persistentAuth.initialize()...');
+        gfLog('[UniverseManager] About to call persistentAuth.initialize()...');
         await persistentAuth.initialize();
-        console.log(`[UniverseManager] ===== PersistentAuth initialized in ${Date.now() - authStartTime}ms =====`);
+        gfLog(`[UniverseManager] ===== PersistentAuth initialized in ${Date.now() - authStartTime}ms =====`);
       } else {
-        console.log('[UniverseManager] ===== PersistentAuth already initialized, skipping =====');
+        gfLog('[UniverseManager] ===== PersistentAuth already initialized, skipping =====');
       }
 
-      console.log('[UniverseManager] Step 2: Getting auth status...');
+      gfLog('[UniverseManager] Step 2: Getting auth status...');
       const authStatus = persistentAuth.getAuthStatus();
-      console.log('[UniverseManager] Auth status:', authStatus);
+      gfLog('[UniverseManager] Auth status:', authStatus);
 
       // Check for authentication across OAuth and GitHub App
       const hasOAuthToken = persistentAuth.hasValidTokens();
       const hasAppInstallation = persistentAuth.hasAppInstallation();
       if (!hasOAuthToken && !hasAppInstallation) {
-        console.log('[UniverseManager] No valid auth token, skipping Git sync setup');
+        gfLog('[UniverseManager] No valid auth token, skipping Git sync setup');
         return;
       }
       
-      console.log('[UniverseManager] Step 3: Getting active universe...');
+      gfLog('[UniverseManager] Step 3: Getting active universe...');
       const activeUniverse = this.getActiveUniverse();
-      console.log('[UniverseManager] Active universe:', activeUniverse?.slug || 'none');
+      gfLog('[UniverseManager] Active universe:', activeUniverse?.slug || 'none');
 
       // NOTE: Git sync engine setup is handled by universeBackend.autoSetupEnginesForActiveUniverse()
       // This method is only responsible for initializing persistentAuth
       if (activeUniverse && activeUniverse.gitRepo?.linkedRepo && activeUniverse.gitRepo?.enabled) {
-        console.log('[UniverseManager] Active universe has Git repo, universeBackend will set up sync engine');
+        gfLog('[UniverseManager] Active universe has Git repo, universeBackend will set up sync engine');
       }
       
     } catch (error) {
-      console.error('[UniverseManager] Background sync initialization failed:', error);
+      gfError('[UniverseManager] Background sync initialization failed:', error);
       throw error;
     }
   }
@@ -238,7 +244,7 @@ class UniverseManager {
       try {
         handler({ type, status: message });
       } catch (error) {
-        console.warn('[UniverseManager] Status handler error:', error);
+        gfWarn('[UniverseManager] Status handler error:', error);
       }
     });
   }
@@ -279,7 +285,7 @@ class UniverseManager {
           });
         }
       } catch (error) {
-        console.warn('[UniverseManager] Failed to load file handles info:', error);
+        gfWarn('[UniverseManager] Failed to load file handles info:', error);
       }
       
       // Create default universe if none exist
@@ -297,9 +303,9 @@ class UniverseManager {
         this.migrateExistingFileHandle();
       }, 1000); // Delay to let FileStorage initialize
         
-      console.log('[UniverseManager] Loaded', this.universes.size, 'universes, active:', this.activeUniverseSlug);
+      gfLog('[UniverseManager] Loaded', this.universes.size, 'universes, active:', this.activeUniverseSlug);
     } catch (error) {
-      console.error('[UniverseManager] Failed to load from storage:', error);
+      gfError('[UniverseManager] Failed to load from storage:', error);
       this.createSafeDefaultUniverse();
     }
   }
@@ -384,13 +390,13 @@ class UniverseManager {
       const emptyState = this.createEmptyState();
       try {
         this.storeOperations.loadUniverseFromFile(emptyState);
-        console.log('[UniverseManager] Initialized graph store with empty state for safe default universe');
+        gfLog('[UniverseManager] Initialized graph store with empty state for safe default universe');
       } catch (error) {
-        console.warn('[UniverseManager] Failed to initialize graph store for safe default universe:', error);
+        gfWarn('[UniverseManager] Failed to initialize graph store for safe default universe:', error);
       }
     }
 
-    console.log('[UniverseManager] Created safe default universe during startup');
+    gfLog('[UniverseManager] Created safe default universe during startup');
   }
 
   // Apply device configuration to all existing universes (called after device config loads)
@@ -413,10 +419,10 @@ class UniverseManager {
       
       if (hasChanges) {
         this.saveToStorage();
-        console.log('[UniverseManager] Applied device configuration to existing universes');
+        gfLog('[UniverseManager] Applied device configuration to existing universes');
       }
     } catch (error) {
-      console.warn('[UniverseManager] Failed to apply device config to universes:', error);
+      gfWarn('[UniverseManager] Failed to apply device config to universes:', error);
     }
   }
 
@@ -428,7 +434,7 @@ class UniverseManager {
       const existingFileHandle = fileStorage.getCurrentFileHandle();
       
       if (existingFileHandle && this.activeUniverseSlug) {
-        console.log('[UniverseManager] Migrating existing file handle to active universe');
+        gfLog('[UniverseManager] Migrating existing file handle to active universe');
         
         // Set the file handle for the active universe
         this.setFileHandle(this.activeUniverseSlug, existingFileHandle);
@@ -446,7 +452,7 @@ class UniverseManager {
         }
       }
     } catch (error) {
-      console.warn('[UniverseManager] Failed to migrate existing file handle:', error);
+      gfWarn('[UniverseManager] Failed to migrate existing file handle:', error);
     }
   }
 
@@ -463,7 +469,7 @@ class UniverseManager {
         isGitOnlyMode = shouldUseGitOnlyMode();
       } catch (error) {
         // Fallback to safe defaults if device detection fails
-        console.warn('[UniverseManager] Device config not ready, using safe defaults:', error);
+        gfWarn('[UniverseManager] Device config not ready, using safe defaults:', error);
         deviceConfig = {
           sourceOfTruth: 'local',
           enableLocalFileStorage: true,
@@ -585,12 +591,12 @@ class UniverseManager {
         try {
           await persistentAuth.storeAppInstallation(updated);
         } catch (error) {
-          console.warn('[UniverseManager] Failed to persist refreshed GitHub App token:', error);
+          gfWarn('[UniverseManager] Failed to persist refreshed GitHub App token:', error);
         }
         return { token, installationId };
       }
     } catch (error) {
-      console.warn('[UniverseManager] GitHub App token refresh failed:', error);
+      gfWarn('[UniverseManager] GitHub App token refresh failed:', error);
     }
 
     return token ? { token, installationId } : null;
@@ -613,7 +619,7 @@ class UniverseManager {
       }
       return token || null;
     } catch (error) {
-      console.warn('[UniverseManager] OAuth token retrieval failed:', error);
+      gfWarn('[UniverseManager] OAuth token retrieval failed:', error);
       return null;
     }
   }
@@ -630,7 +636,7 @@ class UniverseManager {
         isGitOnlyMode = shouldUseGitOnlyMode();
       } catch (error) {
         // Fallback to safe defaults to prevent recursion
-        console.warn('[UniverseManager] Device config not ready during default universe creation, using safe defaults');
+        gfWarn('[UniverseManager] Device config not ready during default universe creation, using safe defaults');
         deviceConfig = {
           sourceOfTruth: 'local',
           enableLocalFileStorage: true,
@@ -678,9 +684,9 @@ class UniverseManager {
       const emptyState = this.createEmptyState();
       try {
         this.storeOperations.loadUniverseFromFile(emptyState);
-        console.log('[UniverseManager] Initialized graph store with empty state for default universe');
+        gfLog('[UniverseManager] Initialized graph store with empty state for default universe');
       } catch (error) {
-        console.warn('[UniverseManager] Failed to initialize graph store for default universe:', error);
+        gfWarn('[UniverseManager] Failed to initialize graph store for default universe:', error);
       }
     }
 
@@ -701,14 +707,14 @@ class UniverseManager {
       const isGitOnlyMode = this.isGitOnlyMode || shouldUseGitOnlyMode();
       
       if (isGitOnlyMode) {
-        console.warn('[UniverseManager] Git-Only mode universe has no storage - enabling browser storage as cache');
+        gfWarn('[UniverseManager] Git-Only mode universe has no storage - enabling browser storage as cache');
         return {
           ...universe,
           browserStorage: { ...universe.browserStorage, enabled: true, role: 'cache' },
           gitRepo: { ...universe.gitRepo, enabled: true, autoSetupRequired: true }
         };
       } else {
-        console.warn('[UniverseManager] Universe has no storage slots enabled, enabling browser storage as fallback');
+        gfWarn('[UniverseManager] Universe has no storage slots enabled, enabling browser storage as fallback');
         return {
           ...universe,
           browserStorage: { ...universe.browserStorage, enabled: true, role: 'fallback' }
@@ -838,7 +844,7 @@ class UniverseManager {
         storageWrapper.warnAboutDataLoss();
       }
     } catch (error) {
-      console.error('[UniverseManager] Failed to save to storage:', error);
+      gfError('[UniverseManager] Failed to save to storage:', error);
     }
   }
 
@@ -907,9 +913,9 @@ class UniverseManager {
       const emptyState = this.createEmptyState();
       try {
         this.storeOperations.loadUniverseFromFile(emptyState);
-        console.log('[UniverseManager] Initialized graph store with empty state for new universe:', slug);
+        gfLog('[UniverseManager] Initialized graph store with empty state for new universe:', slug);
       } catch (error) {
-        console.warn('[UniverseManager] Failed to initialize graph store for new universe:', error);
+        gfWarn('[UniverseManager] Failed to initialize graph store for new universe:', error);
       }
     }
 
@@ -1029,9 +1035,9 @@ class UniverseManager {
     if (options.saveCurrent !== false && this.activeUniverseSlug) {
       try {
         await this.saveActiveUniverse();
-        console.log('[UniverseManager] Saved current universe before switching');
+        gfLog('[UniverseManager] Saved current universe before switching');
       } catch (error) {
-        console.warn('[UniverseManager] Failed to save current universe before switch:', error);
+        gfWarn('[UniverseManager] Failed to save current universe before switch:', error);
       }
     }
 
@@ -1061,7 +1067,7 @@ class UniverseManager {
 
       return { universe, storeState };
     } catch (error) {
-      console.error('[UniverseManager] Failed to load universe data:', error);
+      gfError('[UniverseManager] Failed to load universe data:', error);
       this.notifyStatus('error', `Failed to load universe: ${error.message}`);
       throw error;
     }
@@ -1077,13 +1083,13 @@ class UniverseManager {
         const gitData = await this.loadFromGit(universe);
         if (gitData) return gitData;
       } catch (error) {
-        console.warn('[UniverseManager] Git load failed, trying fallback:', error);
+        gfWarn('[UniverseManager] Git load failed, trying fallback:', error);
         // Direct-read fallback when engine isn't configured yet
         try {
           const directGitData = await this.loadFromGitDirect(universe);
           if (directGitData) return directGitData;
         } catch (fallbackError) {
-          console.warn('[UniverseManager] Direct Git fallback failed:', fallbackError);
+          gfWarn('[UniverseManager] Direct Git fallback failed:', fallbackError);
         }
       }
     }
@@ -1093,7 +1099,7 @@ class UniverseManager {
         const localData = await this.loadFromLocalFile(universe);
         if (localData) return localData;
       } catch (error) {
-        console.warn('[UniverseManager] Local file load failed, trying fallback:', error);
+        gfWarn('[UniverseManager] Local file load failed, trying fallback:', error);
       }
     }
     
@@ -1103,7 +1109,7 @@ class UniverseManager {
         const localData = await this.loadFromLocalFile(universe);
         if (localData) return localData;
       } catch (error) {
-        console.warn('[UniverseManager] Local fallback failed:', error);
+        gfWarn('[UniverseManager] Local fallback failed:', error);
       }
     }
     
@@ -1112,7 +1118,7 @@ class UniverseManager {
         const gitData = await this.loadFromGit(universe);
         if (gitData) return gitData;
       } catch (error) {
-        console.warn('[UniverseManager] Git fallback failed:', error);
+        gfWarn('[UniverseManager] Git fallback failed:', error);
       }
     }
     
@@ -1122,12 +1128,12 @@ class UniverseManager {
         const browserData = await this.loadFromBrowserStorage(universe);
         if (browserData) return browserData;
       } catch (error) {
-        console.warn('[UniverseManager] Browser storage fallback failed:', error);
+        gfWarn('[UniverseManager] Browser storage fallback failed:', error);
       }
     }
     
     // Return empty state if nothing works
-    console.warn('[UniverseManager] All load methods failed, creating empty state');
+    gfWarn('[UniverseManager] All load methods failed, creating empty state');
     return this.createEmptyState();
   }
 
@@ -1239,11 +1245,11 @@ class UniverseManager {
       try {
         const ok = await provider.isAvailable();
         if (!ok) {
-          console.warn('[UniverseManager] Provider unavailable or unauthorized; skipping direct Git access');
+          gfWarn('[UniverseManager] Provider unavailable or unauthorized; skipping direct Git access');
           return null;
         }
       } catch (e) {
-        console.warn('[UniverseManager] Provider availability check failed; skipping direct Git access:', e?.message || e);
+        gfWarn('[UniverseManager] Provider availability check failed; skipping direct Git access:', e?.message || e);
         return null;
       }
 
@@ -1253,7 +1259,7 @@ class UniverseManager {
       
       // Migration fix: if folder is "universes/universe" but slug is not "universe", update to correct path
       if (folder === 'universes/universe' && universe.slug !== 'universe') {
-        console.log(`[UniverseManager] Fixing stale universeFolder path for ${universe.slug}: ${folder} → universes/${universe.slug}`);
+        gfLog(`[UniverseManager] Fixing stale universeFolder path for ${universe.slug}: ${folder} → universes/${universe.slug}`);
         folder = `universes/${universe.slug}`;
         pathWasCorrected = true;
         
@@ -1265,9 +1271,9 @@ class UniverseManager {
               universeFolder: folder
             }
           });
-          console.log(`[UniverseManager] Persisted corrected path for ${universe.slug}`);
+          gfLog(`[UniverseManager] Persisted corrected path for ${universe.slug}`);
         } catch (updateError) {
-          console.warn(`[UniverseManager] Failed to persist corrected path:`, updateError);
+          gfWarn(`[UniverseManager] Failed to persist corrected path:`, updateError);
         }
       }
       
@@ -1298,7 +1304,7 @@ class UniverseManager {
           const { storeState } = importFromRedstring(initialRedstring);
           return storeState;
         } catch (createErr) {
-          console.warn('[UniverseManager] Failed to create initial universe file on Git:', createErr);
+          gfWarn('[UniverseManager] Failed to create initial universe file on Git:', createErr);
           return null;
         }
       }
@@ -1307,14 +1313,14 @@ class UniverseManager {
       try {
         redstringData = JSON.parse(content);
       } catch (e) {
-        console.warn('[UniverseManager] Direct Git read parse failed:', e.message);
+        gfWarn('[UniverseManager] Direct Git read parse failed:', e.message);
         return null;
       }
 
       const { storeState } = importFromRedstring(redstringData);
       return storeState;
     } catch (error) {
-      console.warn('[UniverseManager] Direct Git read failed:', error);
+      gfWarn('[UniverseManager] Direct Git read failed:', error);
       return null;
     }
   }
@@ -1358,7 +1364,7 @@ class UniverseManager {
       const { storeState } = importFromRedstring(result.data);
       return storeState;
     } catch (error) {
-      console.error('[UniverseManager] Browser storage load failed:', error);
+      gfError('[UniverseManager] Browser storage load failed:', error);
       return null;
     }
   }
@@ -1369,7 +1375,7 @@ class UniverseManager {
       const universe = this.getActiveUniverse();
       if (!universe) return false;
 
-      console.log('[UniverseManager] Reloading active universe:', universe.name);
+      gfLog('[UniverseManager] Reloading active universe:', universe.name);
 
       // Try multiple reload strategies for better mobile reliability
       let storeState = null;
@@ -1380,16 +1386,16 @@ class UniverseManager {
         storeState = await this.loadUniverseData(universe);
         loadMethod = universe.sourceOfTruth;
       } catch (primaryError) {
-        console.warn('[UniverseManager] Primary load failed:', primaryError);
+        gfWarn('[UniverseManager] Primary load failed:', primaryError);
 
         // Strategy 2: Try direct Git read if we have Git repo config
         if (universe.gitRepo?.enabled && universe.gitRepo?.linkedRepo) {
           try {
             storeState = await this.loadFromGitDirect(universe);
             loadMethod = 'git-direct';
-            console.log('[UniverseManager] Direct Git fallback succeeded');
+            gfLog('[UniverseManager] Direct Git fallback succeeded');
           } catch (directError) {
-            console.warn('[UniverseManager] Direct Git fallback failed:', directError);
+            gfWarn('[UniverseManager] Direct Git fallback failed:', directError);
           }
         }
 
@@ -1398,9 +1404,9 @@ class UniverseManager {
           try {
             storeState = await this.loadFromBrowserStorage(universe);
             loadMethod = 'browser-fallback';
-            console.log('[UniverseManager] Browser storage fallback succeeded');
+            gfLog('[UniverseManager] Browser storage fallback succeeded');
           } catch (browserError) {
-            console.warn('[UniverseManager] Browser storage fallback failed:', browserError);
+            gfWarn('[UniverseManager] Browser storage fallback failed:', browserError);
           }
         }
       }
@@ -1434,7 +1440,7 @@ class UniverseManager {
       this.notifyStatus('warning', 'Could not reload universe from any source');
       return false;
     } catch (error) {
-      console.error('[UniverseManager] Failed to reload active universe:', error);
+      gfError('[UniverseManager] Failed to reload active universe:', error);
       this.notifyStatus('error', `Reload failed: ${error.message}`);
       return false;
     }
@@ -1500,11 +1506,11 @@ class UniverseManager {
         await this.saveToGit(universe, redstringData);
         results.push('git');
       } catch (error) {
-        console.error('[UniverseManager] Git save failed:', error);
+        gfError('[UniverseManager] Git save failed:', error);
         errors.push(`Git: ${error.message}`);
       }
     } else if (universe.gitRepo.enabled && !this.gitSyncEngines.has(universe.slug)) {
-      console.log('[UniverseManager] Git enabled but sync engine not configured yet - skipping Git save');
+      gfLog('[UniverseManager] Git enabled but sync engine not configured yet - skipping Git save');
       errors.push('Git: Sync engine not ready');
     }
     
@@ -1514,11 +1520,11 @@ class UniverseManager {
         await this.saveToLocalFile(universe, redstringData);
         results.push('local');
       } catch (error) {
-        console.error('[UniverseManager] Local file save failed:', error);
+        gfError('[UniverseManager] Local file save failed:', error);
         errors.push(`Local: ${error.message}`);
       }
     } else if (universe.localFile.enabled && !this.fileHandles.has(universe.slug)) {
-      console.log('[UniverseManager] Local file enabled but no file handle - skipping local save');
+      gfLog('[UniverseManager] Local file enabled but no file handle - skipping local save');
       // Don't add to errors - this is expected behavior until user sets up file
     }
     
@@ -1528,7 +1534,7 @@ class UniverseManager {
         await this.saveToBrowserStorage(universe, redstringData);
         results.push('browser');
       } catch (error) {
-        console.error('[UniverseManager] Browser storage save failed:', error);
+        gfError('[UniverseManager] Browser storage save failed:', error);
         errors.push(`Browser: ${error.message}`);
       }
     }
@@ -1556,7 +1562,7 @@ class UniverseManager {
     
     // DISABLED: Don't restart engines as it causes 409 conflicts
     // Let the force commit handle any issues with retries instead
-    console.log('[UniverseManager] Saving to Git via existing sync engine (no restart)');
+    gfLog('[UniverseManager] Saving to Git via existing sync engine (no restart)');
     
     try {
       // Use the GitSyncEngine's existing export logic instead of bypassing it
@@ -1570,7 +1576,7 @@ class UniverseManager {
     } catch (error) {
       // If force commit fails with 409, try conflict resolution
       if (error.message && error.message.includes('409')) {
-        console.log('[UniverseManager] 409 conflict detected, attempting resolution');
+        gfLog('[UniverseManager] 409 conflict detected, attempting resolution');
         
         if (universe.sourceOfTruth === 'git') {
           // Git is source of truth, try to reload from Git first
@@ -1586,12 +1592,12 @@ class UniverseManager {
               return; // Successfully resolved by loading Git data
             }
           } catch (loadError) {
-            console.warn('[UniverseManager] Could not load from Git for conflict resolution:', loadError);
+            gfWarn('[UniverseManager] Could not load from Git for conflict resolution:', loadError);
           }
         }
         
         // If Git load failed or local is source of truth, wait and retry
-        console.log('[UniverseManager] Waiting 2 seconds before retry...');
+        gfLog('[UniverseManager] Waiting 2 seconds before retry...');
         await new Promise(resolve => setTimeout(resolve, 2000));
 
         try {
@@ -1619,7 +1625,7 @@ class UniverseManager {
       // If no file handle but local storage is enabled, auto-prompt to set one up
       if (universe.localFile.enabled && typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
         try {
-          console.log('[UniverseManager] No file handle for local save, prompting user to select file location');
+          gfLog('[UniverseManager] No file handle for local save, prompting user to select file location');
 
           // Use the last known file path if available, otherwise use current path
           const suggestedName = universe.localFile.lastFilePath || universe.localFile.path;
@@ -1684,7 +1690,7 @@ class UniverseManager {
       try {
         await touchFileHandle(universe.slug, fileHandle);
       } catch (error) {
-        console.warn('[UniverseManager] Failed to touch file handle after save:', error);
+        gfWarn('[UniverseManager] Failed to touch file handle after save:', error);
       }
     } catch (error) {
       try { await writable?.close(); } catch (_) {}
@@ -1739,7 +1745,7 @@ class UniverseManager {
       
       db.close();
     } catch (error) {
-      console.error('[UniverseManager] Browser storage save failed:', error);
+      gfError('[UniverseManager] Browser storage save failed:', error);
       throw error;
     }
   }
@@ -1773,10 +1779,10 @@ class UniverseManager {
           deleteTx.onerror = () => reject(deleteTx.error);
         });
         
-        console.log(`[UniverseManager] Cleaned up ${toDelete.length} old browser storage entries`);
+        gfLog(`[UniverseManager] Cleaned up ${toDelete.length} old browser storage entries`);
       }
     } catch (error) {
-      console.warn('[UniverseManager] Browser storage cleanup failed:', error);
+      gfWarn('[UniverseManager] Browser storage cleanup failed:', error);
     }
   }
 
@@ -1824,9 +1830,9 @@ class UniverseManager {
         universeSlug: slug,
         lastAccessed: Date.now()
       });
-      console.log(`[UniverseManager] Stored file handle metadata for ${slug}`);
+      gfLog(`[UniverseManager] Stored file handle metadata for ${slug}`);
     } catch (error) {
-      console.warn(`[UniverseManager] Failed to store file handle metadata:`, error);
+      gfWarn(`[UniverseManager] Failed to store file handle metadata:`, error);
     }
 
     // Also update the universe configuration
@@ -1877,16 +1883,16 @@ class UniverseManager {
   // Restore file handles from persistent storage
   async restoreFileHandles() {
     try {
-      console.log('[UniverseManager] Attempting to restore file handles from persistence...');
+      gfLog('[UniverseManager] Attempting to restore file handles from persistence...');
       
       const allMetadata = await getAllFileHandleMetadata();
       
       if (allMetadata.length === 0) {
-        console.log('[UniverseManager] No file handle metadata found');
+        gfLog('[UniverseManager] No file handle metadata found');
         return;
       }
 
-      console.log(`[UniverseManager] Found ${allMetadata.length} file handle metadata entries`);
+      gfLog(`[UniverseManager] Found ${allMetadata.length} file handle metadata entries`);
 
       for (const metadata of allMetadata) {
         const { universeSlug } = metadata;
@@ -1896,7 +1902,7 @@ class UniverseManager {
         if (existingHandle) {
           const isValid = await verifyFileHandleAccess(existingHandle);
           if (isValid) {
-            console.log(`[UniverseManager] File handle for ${universeSlug} already valid in session`);
+            gfLog(`[UniverseManager] File handle for ${universeSlug} already valid in session`);
             continue;
           }
         }
@@ -1906,7 +1912,7 @@ class UniverseManager {
         
         if (result.success && result.handle) {
           this.fileHandles.set(universeSlug, result.handle);
-          console.log(`[UniverseManager] Successfully restored file handle for ${universeSlug}`);
+          gfLog(`[UniverseManager] Successfully restored file handle for ${universeSlug}`);
           
           // Update universe config to reflect restored state
           const universe = this.getUniverse(universeSlug);
@@ -1920,7 +1926,7 @@ class UniverseManager {
             });
           }
         } else if (result.needsReconnect) {
-          console.log(`[UniverseManager] File handle for ${universeSlug} needs reconnection: ${result.message}`);
+          gfLog(`[UniverseManager] File handle for ${universeSlug} needs reconnection: ${result.message}`);
           
           // Mark in universe config that reconnection is needed
           const universe = this.getUniverse(universeSlug);
@@ -1936,9 +1942,9 @@ class UniverseManager {
         }
       }
       
-      console.log('[UniverseManager] File handle restoration complete');
+      gfLog('[UniverseManager] File handle restoration complete');
     } catch (error) {
-      console.error('[UniverseManager] Failed to restore file handles:', error);
+      gfError('[UniverseManager] Failed to restore file handles:', error);
     }
   }
 
@@ -1948,9 +1954,9 @@ class UniverseManager {
     
     try {
       await removeFileHandleMetadata(slug);
-      console.log(`[UniverseManager] Removed file handle for ${slug}`);
+      gfLog(`[UniverseManager] Removed file handle for ${slug}`);
     } catch (error) {
-      console.warn(`[UniverseManager] Failed to remove file handle metadata:`, error);
+      gfWarn(`[UniverseManager] Failed to remove file handle metadata:`, error);
     }
 
     const universe = this.getUniverse(slug);
@@ -1977,13 +1983,13 @@ class UniverseManager {
     }
     if (existingEngine && existingEngine !== gitSyncEngine) {
       // STRICT: Never allow replacement during startup to prevent loops
-      console.warn(`[UniverseManager] STRICTLY REJECTING duplicate engine for ${slug} - one already exists`);
+      gfWarn(`[UniverseManager] STRICTLY REJECTING duplicate engine for ${slug} - one already exists`);
       gitSyncEngine.stop(); // Stop the duplicate engine immediately
       return false;
     }
     
     this.gitSyncEngines.set(slug, gitSyncEngine);
-    console.log(`[UniverseManager] Git sync engine registered for universe: ${slug}`);
+    gfLog(`[UniverseManager] Git sync engine registered for universe: ${slug}`);
     return true;
   }
 
@@ -1997,7 +2003,7 @@ class UniverseManager {
       this.checkGitSyncHealth();
     }, this.watchdogDelay);
     
-    console.log('[UniverseManager] Watchdog started');
+    gfLog('[UniverseManager] Watchdog started');
   }
 
   // Check Git sync engine health and restart if needed
@@ -2011,7 +2017,7 @@ class UniverseManager {
           
         // Only log warning if engine has been unhealthy for a while
         if (status.consecutiveErrors >= 2) {
-          console.log(`[UniverseManager] Git sync engine for ${slug} having issues (${errorDetails}), but allowing self-recovery`);
+          gfLog(`[UniverseManager] Git sync engine for ${slug} having issues (${errorDetails}), but allowing self-recovery`);
           
           // Only notify user if it's been failing for more than 3 errors
           if (status.consecutiveErrors >= 3) {
@@ -2027,7 +2033,7 @@ class UniverseManager {
     if (this.watchdogInterval) {
       clearInterval(this.watchdogInterval);
       this.watchdogInterval = null;
-      console.log('[UniverseManager] Watchdog stopped');
+      gfLog('[UniverseManager] Watchdog stopped');
     }
   }
 
@@ -2046,7 +2052,7 @@ class UniverseManager {
     const { sourceOfTruth } = universe;
 
     try {
-      console.log(`[UniverseManager] Resolving sync conflict for ${universe.slug}, source of truth: ${sourceOfTruth}`);
+      gfLog(`[UniverseManager] Resolving sync conflict for ${universe.slug}, source of truth: ${sourceOfTruth}`);
 
       if (sourceOfTruth === SOURCE_OF_TRUTH.GIT) {
         // Git is source of truth, load from Git and overwrite local
@@ -2075,7 +2081,7 @@ class UniverseManager {
 
       return false;
     } catch (error) {
-      console.error('[UniverseManager] Failed to resolve sync conflict:', error);
+      gfError('[UniverseManager] Failed to resolve sync conflict:', error);
       this.notifyStatus('error', `Conflict resolution failed: ${error.message}`);
       return false;
     }
@@ -2088,7 +2094,7 @@ class UniverseManager {
    */
   async discoverUniversesInRepository(repoConfig) {
     try {
-      console.log(`[UniverseManager] Discovering universes in ${repoConfig.user}/${repoConfig.repo}...`);
+      gfLog(`[UniverseManager] Discovering universes in ${repoConfig.user}/${repoConfig.repo}...`);
 
       const resolveDiscoveryAuth = async (preferredMethod = null) => {
         // Try GitHub App credentials first if requested or no preference
@@ -2177,7 +2183,7 @@ class UniverseManager {
           if (allowRetry && isAuthError) {
             const refreshedContext = await refreshDiscoveryAuth(context);
             if (refreshedContext?.token && refreshedContext.token !== context.token) {
-              console.log('[UniverseManager] Retrying universe discovery with refreshed credentials');
+              gfLog('[UniverseManager] Retrying universe discovery with refreshed credentials');
               return runDiscovery(refreshedContext, false);
             }
           }
@@ -2188,7 +2194,7 @@ class UniverseManager {
 
       const { universes: discovered, stats } = await runDiscovery(authContext, true);
 
-      console.log(`[UniverseManager] Discovered ${discovered.length} universes in repository`);
+      gfLog(`[UniverseManager] Discovered ${discovered.length} universes in repository`);
       this.notifyStatus('info', `Discovery: ${discovered.length} found • scanned ${stats.scannedDirs} dirs • ${stats.valid} valid • ${stats.invalid} invalid`);
 
       // If none found, just notify - don't auto-create to avoid loops
@@ -2199,7 +2205,7 @@ class UniverseManager {
       return discovered;
 
     } catch (error) {
-      console.error('[UniverseManager] Universe discovery failed:', error);
+      gfError('[UniverseManager] Universe discovery failed:', error);
       throw error;
     }
   }
@@ -2212,7 +2218,7 @@ class UniverseManager {
    */
   async linkToDiscoveredUniverse(discoveredUniverse, repoConfig) {
     try {
-      console.log(`[UniverseManager] Linking to discovered universe: ${discoveredUniverse.name}`);
+      gfLog(`[UniverseManager] Linking to discovered universe: ${discoveredUniverse.name}`);
 
       // Import discovery service dynamically
       const { createUniverseConfigFromDiscovered } = await import('./universeDiscovery.js');
@@ -2257,7 +2263,7 @@ class UniverseManager {
       return universeConfig.slug;
 
     } catch (error) {
-      console.error('[UniverseManager] Failed to link to discovered universe:', error);
+      gfError('[UniverseManager] Failed to link to discovered universe:', error);
       this.notifyStatus('error', `Failed to link universe: ${error.message}`);
       throw error;
     }
@@ -2284,7 +2290,7 @@ class UniverseManager {
               linkedUniverse: slug
             });
           } catch (error) {
-            console.warn(`[UniverseManager] Failed to discover universes in ${universe.gitRepo.linkedRepo}:`, error);
+            gfWarn(`[UniverseManager] Failed to discover universes in ${universe.gitRepo.linkedRepo}:`, error);
           }
         }
       }
@@ -2292,7 +2298,7 @@ class UniverseManager {
       return availableUniverses;
 
     } catch (error) {
-      console.error('[UniverseManager] Failed to get available repository universes:', error);
+      gfError('[UniverseManager] Failed to get available repository universes:', error);
       return [];
     }
   }

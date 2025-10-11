@@ -2,6 +2,11 @@ import universeBackendBridge from './universeBackendBridge.js';
 import { persistentAuth } from './persistentAuth.js';
 import { oauthUrl } from './bridgeConfig.js';
 import { formatUniverseNameFromRepo, buildUniqueUniverseName } from '../utils/universeNaming.js';
+const GF_TAG = '[GF-DEBUG]';
+const { log: __gfNativeLog, warn: __gfNativeWarn } = console;
+const gfLog = (...args) => __gfNativeLog.call(console, GF_TAG, ...args);
+const gfWarn = (...args) => __gfNativeWarn.call(console, GF_TAG, ...args);
+
 const STORAGE_TYPES = {
   GIT: 'git',
   LOCAL: 'local',
@@ -213,7 +218,7 @@ function mapUniverse(universe, activeSlug, syncStatusMap = {}) {
   const browserSlot = slots.find(slot => slot.type === STORAGE_TYPES.BROWSER) || null;
 
   if (!primarySlot) {
-    console.warn('[gitFederationService] mapUniverse: No primary slot resolved', {
+    gfWarn('[gitFederationService] mapUniverse: No primary slot resolved', {
       slug: universe.slug,
       sourceOfTruth: universe.sourceOfTruth,
       availableSlots: slots.map(s => s.type)
@@ -259,7 +264,7 @@ async function buildSyncStatusMap(universes) {
       const status = await universeBackendBridge.getSyncStatus(universe.slug);
       return [universe.slug, status];
     } catch (error) {
-      console.warn('[gitFederationService] Failed to load sync status for', universe.slug, error);
+      gfWarn('[gitFederationService] Failed to load sync status for', universe.slug, error);
       return [universe.slug, null];
     }
   }));
@@ -370,7 +375,7 @@ export const gitFederationService = {
       throw new Error(`Universe not found: ${slug}`);
     }
 
-    console.log('[gitFederationService] setPrimaryStorage requested:', {
+    gfLog('[gitFederationService] setPrimaryStorage requested:', {
       slug,
       type,
       extra,
@@ -400,10 +405,10 @@ export const gitFederationService = {
       payload.browserStorage = { ...universe.raw.browserStorage, enabled: true };
     }
 
-    console.log('[gitFederationService] setPrimaryStorage payload:', payload);
+    gfLog('[gitFederationService] setPrimaryStorage payload:', payload);
 
     await universeBackendBridge.updateUniverse(slug, payload);
-    console.log('[gitFederationService] setPrimaryStorage update sent');
+    gfLog('[gitFederationService] setPrimaryStorage update sent');
     return this.refreshUniverses();
   },
 
@@ -505,11 +510,11 @@ export const gitFederationService = {
     
     // If this was the active linked repo, reload the universe from the new source of truth
     if (wasLinkedRepo) {
-      console.log(`[GitFederationService] Reloading universe ${slug} from new source: ${payload.sourceOfTruth}`);
+      gfLog(`[GitFederationService] Reloading universe ${slug} from new source: ${payload.sourceOfTruth}`);
       try {
         await universeBackendBridge.reloadUniverse(slug);
       } catch (error) {
-        console.warn(`[GitFederationService] Failed to reload universe after detach:`, error);
+        gfWarn(`[GitFederationService] Failed to reload universe after detach:`, error);
       }
     }
     

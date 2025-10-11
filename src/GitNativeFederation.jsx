@@ -20,6 +20,12 @@ import {
 } from 'lucide-react';
 
 import gitFederationService, { STORAGE_TYPES } from './services/gitFederationService.js';
+
+const GF_TAG = '[GF-DEBUG]';
+const { log: __gfNativeLog, warn: __gfNativeWarn, error: __gfNativeError } = console;
+const gfLog = (...args) => __gfNativeLog.call(console, GF_TAG, ...args);
+const gfWarn = (...args) => __gfNativeWarn.call(console, GF_TAG, ...args);
+const gfError = (...args) => __gfNativeError.call(console, GF_TAG, ...args);
 import { persistentAuth } from './services/persistentAuth.js';
 import { oauthFetch } from './services/bridgeConfig.js';
 import universeBackend from './services/universeBackend.js';
@@ -206,7 +212,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       const auth = await gitFederationService.refreshAuth();
       setServiceState((prev) => ({ ...prev, ...auth }));
     } catch (err) {
-      console.warn('[GitNativeFederation] Auth refresh failed:', err);
+      gfWarn('[GitNativeFederation] Auth refresh failed:', err);
     }
   }, []);
 
@@ -214,12 +220,12 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     try {
       setLoading(true);
       const next = await gitFederationService.getState();
-      console.log('[GitNativeFederation] Refreshed federation state:', next);
+      gfLog('[GF-DEBUG] Refreshed federation state:', next);
       setServiceState(next);
       setSyncTelemetry(next.syncStatuses || {});
       setError(null); // Clear any previous errors on success
     } catch (err) {
-      console.error('[GitNativeFederation] Failed to load state:', err);
+      gfError('[GF-DEBUG] Failed to load state:', err);
       setError('Unable to load Git federation state – please retry.');
     } finally {
       setLoading(false);
@@ -245,7 +251,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         setServiceState((prev) => ({ ...prev, ...universes }));
         setSyncTelemetry(universes.syncStatuses || {});
       } catch (err) {
-        console.warn('[GitNativeFederation] Auth connected refresh failed:', err);
+        gfWarn('[GF-DEBUG] Auth connected refresh failed:', err);
       }
     };
 
@@ -255,7 +261,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     const handleAuthExpired = async (event) => {
       try {
         const detail = event.detail || {};
-        console.warn('[GitNativeFederation] Authentication expired:', detail);
+        gfWarn('[GF-DEBUG] Authentication expired:', detail);
         
         // Clear any stale state
         await refreshAuth();
@@ -266,7 +272,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         // Clear any success status
         setSyncStatus(null);
       } catch (err) {
-        console.warn('[GitNativeFederation] Auth expired handler failed:', err);
+        gfWarn('[GF-DEBUG] Auth expired handler failed:', err);
       }
     };
 
@@ -432,7 +438,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         sessionStorage.removeItem(key);
         return data;
       } catch (err) {
-        console.warn(`[GitNativeFederation] Failed to parse session data for ${key}:`, err);
+        gfWarn(`[GitNativeFederation] Failed to parse session data for ${key}:`, err);
         sessionStorage.removeItem(key);
         return null;
       }
@@ -506,7 +512,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         return true;
       } catch (err) {
         if (!cancelled) {
-          console.error('[GitNativeFederation] OAuth callback failed:', err);
+          gfError('[GF-DEBUG] OAuth callback failed:', err);
           setError(`GitHub OAuth failed: ${err.message}`);
         }
         return false;
@@ -564,7 +570,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         return true;
       } catch (err) {
         if (!cancelled) {
-          console.error('[GitNativeFederation] GitHub App callback failed:', err);
+          gfError('[GitNativeFederation] GitHub App callback failed:', err);
           setError(`GitHub App connection failed: ${err.message}`);
         }
         return false;
@@ -645,7 +651,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           setSyncStatus({ type: 'success', message: `Universe "${name}" created` });
           await refreshState();
         } catch (err) {
-          console.error('[GitNativeFederation] Create failed:', err);
+          gfError('[GitNativeFederation] Create failed:', err);
           setError(`Failed to create universe: ${err.message}`);
         } finally {
           setLoading(false);
@@ -708,7 +714,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
             }
             await refreshState();
           } catch (err) {
-            console.error('[GitNativeFederation] Load from local failed:', err);
+            gfError('[GitNativeFederation] Load from local failed:', err);
             setError(`Failed to load universe from file: ${err.message}`);
           } finally {
             setLoading(false);
@@ -716,7 +722,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         }
       });
     } catch (err) {
-      console.error('[GitNativeFederation] Load from local failed:', err);
+      gfError('[GitNativeFederation] Load from local failed:', err);
       setError(`Failed to load universe from file: ${err.message}`);
       setLoading(false);
     }
@@ -737,7 +743,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       await refreshState();
       setSyncStatus({ type: 'info', message: 'Universe switched' });
     } catch (err) {
-      console.error('[GitNativeFederation] Switch failed:', err);
+      gfError('[GitNativeFederation] Switch failed:', err);
       setError(`Failed to switch universe: ${err.message}`);
     } finally {
       setLoading(false);
@@ -759,7 +765,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           setSyncStatus({ type: 'info', message: `Universe "${name}" deleted` });
           await refreshState();
         } catch (err) {
-          console.error('[GitNativeFederation] Delete failed:', err);
+          gfError('[GitNativeFederation] Delete failed:', err);
           setError(`Failed to delete universe: ${err.message}`);
         } finally {
           setLoading(false);
@@ -771,7 +777,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   const handleSetPrimarySlot = async (slug, slot) => {
     try {
       setLoading(true);
-      console.log('[GitNativeFederation] Requesting primary storage change:', {
+      gfLog('[GitNativeFederation] Requesting primary storage change:', {
         slug,
         slotType: slot?.type,
         storage: slot
@@ -780,7 +786,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       setSyncStatus({ type: 'success', message: `${STORAGE_LABELS[slot.type]} promoted to primary` });
       await refreshState();
     } catch (err) {
-      console.error('[GitNativeFederation] Promote failed:', err);
+      gfError('[GitNativeFederation] Promote failed:', err);
       setError(`Failed to set primary storage: ${err.message}`);
     } finally {
       setLoading(false);
@@ -847,10 +853,10 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         const newList = [...managedRepositories, repo];
         setManagedRepositories(newList);
         localStorage.setItem('redstring-managed-repositories', JSON.stringify(newList));
-        console.log(`[GitNativeFederation] Auto-added ${repoKey} to managed repositories for import`);
+        gfLog(`[GitNativeFederation] Auto-added ${repoKey} to managed repositories for import`);
       }
 
-      console.log(`[GitNativeFederation] Import discovery for ${owner}/${repoName}`);
+      gfLog(`[GitNativeFederation] Import discovery for ${owner}/${repoName}`);
       const discovered = await gitFederationService.discoverUniverses({
         user: owner,
         repo: repoName,
@@ -871,7 +877,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       setDiscoveredUniverseFiles(discovered);
       setShowUniverseFileSelector(true);
     } catch (err) {
-      console.error('[GitNativeFederation] Import discovery failed:', err);
+      gfError('[GitNativeFederation] Import discovery failed:', err);
       setError(`Failed to discover universes: ${err.message}`);
     } finally {
       setLoading(false);
@@ -911,10 +917,10 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         const newList = [...managedRepositories, repo];
         setManagedRepositories(newList);
         localStorage.setItem('redstring-managed-repositories', JSON.stringify(newList));
-        console.log(`[GitNativeFederation] Auto-added ${repoKey} to managed repositories`);
+        gfLog(`[GitNativeFederation] Auto-added ${repoKey} to managed repositories`);
       }
 
-      console.log(`[GitNativeFederation] Discovering universe files in ${repoKey} for attach...`);
+      gfLog(`[GitNativeFederation] Discovering universe files in ${repoKey} for attach...`);
       const discovered = await gitFederationService.discoverUniverses({
         user: owner,
         repo: repoName,
@@ -936,7 +942,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
 
       await handleAttachRepoCreateNew(owner, repoName, repo, targetSlug);
     } catch (err) {
-      console.error('[GitNativeFederation] Repository selection failed:', err);
+      gfError('[GitNativeFederation] Repository selection failed:', err);
       setError(`Failed to process repository: ${err.message}`);
       setShowRepositoryManager(false);
     } finally {
@@ -956,7 +962,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       });
 
       // Initialize the repository with current universe data
-      console.log(`[GitNativeFederation] Initializing repository with universe data for ${targetSlug}`);
+      gfLog(`[GitNativeFederation] Initializing repository with universe data for ${targetSlug}`);
       const hasGitAuth = !!(serviceState?.authStatus?.isAuthenticated || hasOAuth || hasApp);
 
       try {
@@ -970,7 +976,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           });
         }
       } catch (commitErr) {
-        console.warn('[GitNativeFederation] Initial Git save failed:', commitErr);
+        gfWarn('[GitNativeFederation] Initial Git save failed:', commitErr);
         setSyncStatus({
           type: 'warning',
           message: `Linked @${owner}/${repoName}, but initial save failed: ${commitErr.message}.`
@@ -984,7 +990,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       });
       await refreshState();
     } catch (err) {
-      console.error('[GitNativeFederation] Attach failed:', err);
+      gfError('[GitNativeFederation] Attach failed:', err);
       setError(`Failed to link repository: ${err.message}`);
     } finally {
       setLoading(false);
@@ -1030,7 +1036,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           try {
             await gitFederationService.forceSave(importedSlug);
           } catch (err) {
-            console.warn('[GitNativeFederation] Initial sync after import failed:', err);
+            gfWarn('[GitNativeFederation] Initial sync after import failed:', err);
           }
         }
 
@@ -1071,12 +1077,12 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
             confirmLabel: 'Rename to Match',
             cancelLabel: 'Keep Local Name',
             onConfirm: async () => {
-              console.log(`[GitNativeFederation] Renaming local universe to match repo: ${repoFileSlug}`);
+              gfLog(`[GitNativeFederation] Renaming local universe to match repo: ${repoFileSlug}`);
               setSyncStatus({ type: 'info', message: `Renaming local universe to "${remoteName}" before syncing...` });
               await finalizeLinkDiscoveredUniverse();
             },
             onCancel: async () => {
-              console.log(`[GitNativeFederation] Keeping local universe name while syncing repo file ${repoFileSlug}`);
+              gfLog(`[GitNativeFederation] Keeping local universe name while syncing repo file ${repoFileSlug}`);
               setSyncStatus({ type: 'info', message: `Keeping local name "${localName}" while syncing repository file` });
               await finalizeLinkDiscoveredUniverse();
             }
@@ -1101,7 +1107,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           setSyncStatus({ type: 'success', message: `Synced repository data from "${remoteName}"` });
           await refreshState();
         } catch (err) {
-          console.error('[GitNativeFederation] Link discovered universe failed:', err);
+          gfError('[GitNativeFederation] Link discovered universe failed:', err);
           setError(`Failed to sync universe: ${err.message}`);
         }
       };
@@ -1119,7 +1125,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       preserveSelectionState = true;
       return;
     } catch (err) {
-      console.error('[GitNativeFederation] Universe file selection failed:', err);
+      gfError('[GitNativeFederation] Universe file selection failed:', err);
       setError(`Failed to process universe file: ${err.message}`);
     } finally {
       setLoading(false);
@@ -1147,7 +1153,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       });
       await refreshState();
     } catch (err) {
-      console.error('[GitNativeFederation] Detach failed:', err);
+      gfError('[GitNativeFederation] Detach failed:', err);
       setError(`Failed to detach repository: ${err.message}`);
     } finally {
       setLoading(false);
@@ -1172,7 +1178,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         [key]: { items: results, loading: false, error: null }
       }));
     } catch (err) {
-      console.error('[GitNativeFederation] Discovery failed:', err);
+      gfError('[GitNativeFederation] Discovery failed:', err);
       setDiscoveryMap((prev) => ({
         ...prev,
         [key]: { items: [], loading: false, error: err.message }
@@ -1208,7 +1214,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           const newList = [...managedRepositories, repoObject];
           setManagedRepositories(newList);
           localStorage.setItem('redstring-managed-repositories', JSON.stringify(newList));
-          console.log(`[GitNativeFederation] Auto-added ${repoKey} to managed repositories (from discovery)`);
+          gfLog(`[GitNativeFederation] Auto-added ${repoKey} to managed repositories (from discovery)`);
         }
 
         await gitFederationService.linkDiscoveredUniverse(discovered, {
@@ -1219,13 +1225,13 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
 
         const targetSlug = discovered.slug || discovered.name;
         if (targetSlug) {
-          console.log(`[GitNativeFederation] Initializing repository with universe data for ${targetSlug}`);
+          gfLog(`[GitNativeFederation] Initializing repository with universe data for ${targetSlug}`);
           await gitFederationService.forceSave(targetSlug);
         }
         setSyncStatus({ type: 'success', message: `Synced ${discovered.name || discovered.slug} with repository data` });
         await refreshState();
       } catch (err) {
-        console.error('[GitNativeFederation] Link discovered failed:', err);
+        gfError('[GitNativeFederation] Link discovered failed:', err);
         setError(`Failed to link discovered universe: ${err.message}`);
       } finally {
         setLoading(false);
@@ -1276,7 +1282,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         const newList = [...managedRepositories, repoObject];
         setManagedRepositories(newList);
         localStorage.setItem('redstring-managed-repositories', JSON.stringify(newList));
-        console.log(`[GitNativeFederation] Auto-added ${repoKey} to managed repositories for import`);
+        gfLog(`[GitNativeFederation] Auto-added ${repoKey} to managed repositories for import`);
       }
 
       const resultState = await gitFederationService.linkDiscoveredUniverse(discovered, {
@@ -1292,14 +1298,14 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         try {
           await gitFederationService.forceSave(importedSlug);
         } catch (err) {
-          console.warn('[GitNativeFederation] Initial sync after import failed:', err);
+          gfWarn('[GitNativeFederation] Initial sync after import failed:', err);
         }
       }
 
       setSyncStatus({ type: 'success', message: `Imported universe "${importedName}" from repository` });
       await refreshState();
     } catch (err) {
-      console.error('[GitNativeFederation] Import discovered failed:', err);
+      gfError('[GitNativeFederation] Import discovered failed:', err);
       setError(`Failed to import universe: ${err.message}`);
     } finally {
       setLoading(false);
@@ -1326,7 +1332,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       localStorage.setItem('redstring_managed_repos', JSON.stringify(newList));
       setSyncStatus({ type: 'success', message: `Added ${repoKey} to your repositories` });
     } catch (err) {
-      console.error('[GitNativeFederation] Failed to save managed repos:', err);
+      gfError('[GitNativeFederation] Failed to save managed repos:', err);
     }
   };
 
@@ -1357,7 +1363,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       setSyncStatus({ type: 'success', message: `Removed @${source.user}/${source.repo} from ${universeSlug}` });
       await refreshState();
     } catch (err) {
-      console.error('[GitNativeFederation] Remove source failed:', err);
+      gfError('[GitNativeFederation] Remove source failed:', err);
       setError(`Failed to remove repository source: ${err.message}`);
     } finally {
       setLoading(false);
@@ -1383,7 +1389,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       setSyncStatus({ type: 'success', message: `Manual save triggered for ${universeSlug}` });
       await refreshState();
     } catch (err) {
-      console.error('[GitNativeFederation] Manual save failed:', err);
+      gfError('[GitNativeFederation] Manual save failed:', err);
       setError(`Failed to save: ${err.message}`);
     } finally {
       setLoading(false);
@@ -1444,7 +1450,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
             setSyncStatus({ type: 'success', message: `Primary storage set to ${nextLabel.toLowerCase()}` });
             await refreshState();
           } catch (err) {
-            console.error('[GitNativeFederation] Set primary source failed:', err);
+            gfError('[GitNativeFederation] Set primary source failed:', err);
             setError(`Failed to set primary source: ${err?.message || err}`);
           } finally {
             setLoading(false);
@@ -1452,7 +1458,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         }
       });
     } catch (err) {
-      console.error('[GitNativeFederation] Set primary source failed:', err);
+      gfError('[GitNativeFederation] Set primary source failed:', err);
       setError(`Failed to set primary source: ${err?.message || err}`);
     } finally {
       setLoading(false);
@@ -1486,7 +1492,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
             `Removed ${repoKey}`
         });
       } catch (err) {
-        console.error('[GitNativeFederation] Failed to save managed repos:', err);
+        gfError('[GitNativeFederation] Failed to save managed repos:', err);
       }
     };
 
@@ -1508,7 +1514,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   };
 
   const handleLinkLocalFile = async (slug) => {
-    console.log('[GitNativeFederation] Linking local file for universe:', slug);
+    gfLog('[GitNativeFederation] Linking local file for universe:', slug);
     
     try {
       setLoading(true);
@@ -1520,15 +1526,15 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         excludeAcceptAllOption: false
       });
       
-      console.log('[GitNativeFederation] File handle obtained:', fileHandle.name);
+      gfLog('[GitNativeFederation] File handle obtained:', fileHandle.name);
       
       // Request permission to read if needed
       const permissionStatus = await fileHandle.queryPermission({ mode: 'read' });
-      console.log('[GitNativeFederation] File permission status:', permissionStatus);
+      gfLog('[GitNativeFederation] File permission status:', permissionStatus);
       
       if (permissionStatus === 'prompt') {
         const granted = await fileHandle.requestPermission({ mode: 'read' });
-        console.log('[GitNativeFederation] Permission requested, granted:', granted);
+        gfLog('[GitNativeFederation] Permission requested, granted:', granted);
         if (granted !== 'granted') {
           throw new Error('File read permission denied. Please allow file access to continue.');
         }
@@ -1538,7 +1544,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       
       // Read the file
       const file = await fileHandle.getFile();
-      console.log('[GitNativeFederation] File object obtained:', { 
+      gfLog('[GitNativeFederation] File object obtained:', { 
         name: file.name, 
         size: file.size, 
         type: file.type,
@@ -1546,7 +1552,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       });
       
       const fileContent = await file.text();
-      console.log('[GitNativeFederation] File content read, length:', fileContent.length);
+      gfLog('[GitNativeFederation] File content read, length:', fileContent.length);
       
       // Validate file is not empty
       if (!fileContent || fileContent.trim() === '') {
@@ -1569,7 +1575,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       
       // Validate format version before importing
       const validation = validateFormatVersion(parsedData);
-      console.log('[GitNativeFederation] Format validation:', validation);
+      gfLog('[GitNativeFederation] Format validation:', validation);
       
       if (!validation.valid) {
         // Show a more helpful error for version mismatch
@@ -1584,7 +1590,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       
       // Show migration notice if needed
       if (validation.needsMigration) {
-        console.log(`[GitNativeFederation] File will be auto-migrated from ${validation.version} to ${validation.currentVersion}`);
+        gfLog(`[GitNativeFederation] File will be auto-migrated from ${validation.version} to ${validation.currentVersion}`);
         setSyncStatus({ 
           type: 'info',
           message: `Migrating file from format ${validation.version} to ${validation.currentVersion}...` 
@@ -1596,7 +1602,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       
       // Show successful migration message
       if (importResult.version?.migrated) {
-        console.log(`[GitNativeFederation] File successfully migrated from ${importResult.version.imported} to ${importResult.version.current}`);
+        gfLog(`[GitNativeFederation] File successfully migrated from ${importResult.version.imported} to ${importResult.version.current}`);
         setSyncStatus({
           type: 'success',
           message: `File migrated from format ${importResult.version.imported} to ${importResult.version.current}`
@@ -1605,7 +1611,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       const nodeCount = storeState?.nodePrototypes ?
         (storeState.nodePrototypes instanceof Map ? storeState.nodePrototypes.size : Object.keys(storeState.nodePrototypes || {}).length) : 0;
       
-      console.log('[GitNativeFederation] Parsed file data:', {
+      gfLog('[GitNativeFederation] Parsed file data:', {
         hasNodePrototypes: !!storeState?.nodePrototypes,
         nodeCount,
         fileName: file.name
@@ -1628,14 +1634,14 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           onConfirm: async () => {
             try {
               setLoading(true);
-              console.log(`[GitNativeFederation] User confirmed linking mismatched file ${file.name} to ${universe.name}`);
+              gfLog(`[GitNativeFederation] User confirmed linking mismatched file ${file.name} to ${universe.name}`);
               
               // Load data into store IMMEDIATELY (we're already in the target universe)
               const useGraphStore = (await import('./store/graphStore.jsx')).default;
               const storeActions = useGraphStore.getState();
-              console.log('[GitNativeFederation] Loading data into store...');
+              gfLog('[GitNativeFederation] Loading data into store...');
               storeActions.loadUniverseFromFile(storeState);
-              console.log('[GitNativeFederation] Data loaded into store');
+              gfLog('[GitNativeFederation] Data loaded into store');
               
               // Store the file handle
               await universeBackend.setFileHandle(slug, fileHandle);
@@ -1646,16 +1652,16 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
               // Save the data to persistent storage (browser storage as fallback if no Git)
               try {
                 await gitFederationService.forceSave(slug, { skipGit: true });
-                console.log('[GitNativeFederation] Data saved to persistent storage');
+                gfLog('[GitNativeFederation] Data saved to persistent storage');
               } catch (saveErr) {
-                console.warn('[GitNativeFederation] Failed to save after linking:', saveErr);
+                gfWarn('[GitNativeFederation] Failed to save after linking:', saveErr);
                 // Non-fatal - data is still in memory
               }
               
               setSyncStatus({ type: 'success', message: `Linked ${file.name} with ${nodeCount} nodes` });
               await refreshState();
             } catch (err) {
-              console.error('[GitNativeFederation] Failed to link after confirmation:', err);
+              gfError('[GitNativeFederation] Failed to link after confirmation:', err);
               setError(`Failed to link file: ${err.message}`);
             } finally {
               setLoading(false);
@@ -1668,35 +1674,35 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       // No name mismatch, proceed directly
       const useGraphStore = (await import('./store/graphStore.jsx')).default;
       const storeActions = useGraphStore.getState();
-      console.log('[GitNativeFederation] Loading data into store...');
+      gfLog('[GitNativeFederation] Loading data into store...');
       storeActions.loadUniverseFromFile(storeState);
-      console.log('[GitNativeFederation] Data loaded into store');
+      gfLog('[GitNativeFederation] Data loaded into store');
       
       // Store the file handle
       await universeBackend.setFileHandle(slug, fileHandle);
-      console.log('[GitNativeFederation] File handle stored');
+      gfLog('[GitNativeFederation] File handle stored');
       
       // Link the file to universe (but DON'T switch - we're already here!)
       await universeBackend.linkLocalFileToUniverse(slug, file.name);
-      console.log('[GitNativeFederation] File linked to universe');
+      gfLog('[GitNativeFederation] File linked to universe');
       
       // Save the data to persistent storage (browser storage as fallback if no Git)
       try {
         await gitFederationService.forceSave(slug, { skipGit: true });
-        console.log('[GitNativeFederation] Data saved to persistent storage');
+        gfLog('[GitNativeFederation] Data saved to persistent storage');
       } catch (saveErr) {
-        console.warn('[GitNativeFederation] Failed to save after linking:', saveErr);
+        gfWarn('[GitNativeFederation] Failed to save after linking:', saveErr);
         // Non-fatal - data is still in memory
       }
       
       // Refresh state to update UI
       await refreshState();
-      console.log('[GitNativeFederation] State refreshed after linking file');
+      gfLog('[GitNativeFederation] State refreshed after linking file');
       
       // Check if the universe now shows the linked file
       const updatedState = await gitFederationService.getState();
       const updatedUniverse = updatedState.universes.find(u => u.slug === slug);
-      console.log('[GitNativeFederation] Updated universe after link:', {
+      gfLog('[GitNativeFederation] Updated universe after link:', {
         slug: updatedUniverse?.slug,
         hasLocalFile: !!updatedUniverse?.raw?.localFile,
         localFileEnabled: updatedUniverse?.raw?.localFile?.enabled,
@@ -1707,7 +1713,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       setSyncStatus({ type: 'success', message: `Linked ${file.name} with ${nodeCount} nodes` });
     } catch (err) {
       if (err.name !== 'AbortError') {
-        console.error('[GitNativeFederation] Link local file failed:', err);
+        gfError('[GitNativeFederation] Link local file failed:', err);
         setError(`Failed to link file: ${err.message}`);
       }
     } finally {
@@ -1718,7 +1724,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   const handleCreateLocalFile = async (slug) => {
     try {
       setLoading(true);
-      console.log('[GitNativeFederation] Creating new local file for universe:', slug);
+      gfLog('[GitNativeFederation] Creating new local file for universe:', slug);
       
       const universe = serviceState.universes.find(u => u.slug === slug);
       if (!universe) {
@@ -1757,7 +1763,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       await refreshState();
     } catch (err) {
       if (err.name !== 'AbortError') {
-        console.error('[GitNativeFederation] Create local file failed:', err);
+        gfError('[GitNativeFederation] Create local file failed:', err);
         setError(`Failed to create local file: ${err.message}`);
       }
     } finally {
@@ -1771,7 +1777,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       await gitFederationService.downloadLocalFile(slug);
       setSyncStatus({ type: 'success', message: 'Local universe downloaded' });
     } catch (err) {
-      console.error('[GitNativeFederation] File download failed:', err);
+      gfError('[GitNativeFederation] File download failed:', err);
       setError(`Failed to download file: ${err.message}`);
     } finally {
       setLoading(false);
@@ -1784,7 +1790,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       await gitFederationService.downloadGitUniverse(slug);
       setSyncStatus({ type: 'success', message: 'Downloaded universe from Git repository' });
     } catch (err) {
-      console.error('[GitNativeFederation] Git download failed:', err);
+      gfError('[GitNativeFederation] Git download failed:', err);
       setError(`Failed to download from repository: ${err.message}`);
     } finally {
       setLoading(false);
@@ -1798,7 +1804,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       setSyncStatus({ type: 'info', message: 'Local file link removed' });
       await refreshState();
     } catch (err) {
-      console.error('[GitNativeFederation] Remove local file failed:', err);
+      gfError('[GitNativeFederation] Remove local file failed:', err);
       setError(`Failed to unlink local file: ${err.message}`);
     } finally {
       setLoading(false);
@@ -1812,7 +1818,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       setSyncStatus({ type: 'success', message: 'Universe saved to Git' });
       await refreshState();
     } catch (err) {
-      console.error('[GitNativeFederation] Save failed:', err);
+      gfError('[GitNativeFederation] Save failed:', err);
       setError(`Save failed: ${err.message}`);
     } finally {
       setLoading(false);
@@ -1826,7 +1832,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       setSyncStatus({ type: 'info', message: 'Universe reloaded from Git' });
       await refreshState();
     } catch (err) {
-      console.error('[GitNativeFederation] Reload failed:', err);
+      gfError('[GitNativeFederation] Reload failed:', err);
       setError(`Reload failed: ${err.message}`);
     } finally {
       setLoading(false);
@@ -1864,7 +1870,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
 
       window.location.href = authUrl;
     } catch (err) {
-      console.error('[GitNativeFederation] OAuth launch failed:', err);
+      gfError('[GitNativeFederation] OAuth launch failed:', err);
       setError(`OAuth authentication failed: ${err.message}`);
       setIsConnecting(false);
     }
@@ -1878,7 +1884,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       if (hasApp && serviceState.githubAppInstallation?.installationId) {
         // App is already installed - go to settings/manage instead of install
         const installationId = serviceState.githubAppInstallation.installationId;
-        console.log('[GitNativeFederation] App already installed, redirecting to management page');
+        gfLog('[GitNativeFederation] App already installed, redirecting to management page');
         
         // Try to get installation details to redirect to specific installation
         try {
@@ -1894,7 +1900,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
             }
           }
         } catch (e) {
-          console.warn('[GitNativeFederation] Could not fetch installation details:', e);
+          gfWarn('[GitNativeFederation] Could not fetch installation details:', e);
         }
         
         // Fallback: redirect to general installations page
@@ -1919,7 +1925,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       const url = `https://github.com/apps/${appName}/installations/new?state=${stateValue}`;
       window.location.href = url;
     } catch (err) {
-      console.error('[GitNativeFederation] GitHub App launch failed:', err);
+      gfError('[GitNativeFederation] GitHub App launch failed:', err);
       setError(`GitHub App authentication failed: ${err.message}`);
       setIsConnecting(false);
     }
@@ -2727,7 +2733,7 @@ return (
             try {
               localStorage.setItem('redstring_show_connection_stats', newValue.toString());
             } catch (e) {
-              console.warn('Failed to save connection stats visibility:', e);
+              gfWarn('Failed to save connection stats visibility:', e);
             }
           }}
         >
