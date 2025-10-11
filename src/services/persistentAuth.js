@@ -13,6 +13,50 @@ const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 // Health check interval - check every 5 minutes
 const HEALTH_CHECK_INTERVAL = 5 * 60 * 1000;
 
+const LOCAL_STORAGE_KEYS = {
+  oauth: {
+    accessToken: 'github_access_token',
+    refreshToken: 'github_refresh_token',
+    scope: 'github_token_scope',
+    tokenType: 'github_token_type',
+    expiry: 'github_token_expiry',
+    user: 'github_user_data',
+    storedAt: 'github_token_stored_at'
+  },
+  app: {
+    installationId: 'github_app_installation_id',
+    accessToken: 'github_app_access_token',
+    repositories: 'github_app_repositories',
+    userData: 'github_app_user_data',
+    permissions: 'github_app_permissions',
+    lastUpdated: 'github_app_last_updated',
+    tokenExpiresAt: 'github_app_token_expires'
+  }
+};
+
+function getLocalStorageHandle() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    return window.localStorage;
+  } catch (error) {
+    console.warn('[PersistentAuth] Local storage unavailable:', error?.message || error);
+    return null;
+  }
+}
+
+function safeParseJSON(raw) {
+  if (typeof raw !== 'string' || raw.length === 0) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 export class PersistentAuth {
   constructor() {
     console.log('[PersistentAuth] Constructor called - UPDATED');
