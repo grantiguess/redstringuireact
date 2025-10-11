@@ -463,7 +463,7 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
                   <HardDrive size={16} />
                   <span>Local File</span>
                   <div className="slot-path">
-                    {universe.localFile.path}
+                    {universe.localFile.displayPath || universe.localFile.path}
                     {universe.localFile.fileHandleStatus === 'needs_reconnect' && (
                       <span style={{ color: '#ef6c00', marginLeft: '8px', fontSize: '0.75rem' }}>
                         (Disconnected)

@@ -269,8 +269,9 @@ export const attemptRestoreFileHandle = async (universeSlug, sessionHandle = nul
       }
     }
     
-    const message = metadata.fileName
-      ? `File connection lost. Please reconnect to: ${metadata.fileName}`
+    const messageLabel = metadata.displayPath || metadata.fileName;
+    const message = messageLabel
+      ? `File connection lost. Please reconnect to: ${messageLabel}`
       : 'File connection lost. Please reconnect the local file.';
     
     // We have metadata but no valid handle - user needs to reconnect

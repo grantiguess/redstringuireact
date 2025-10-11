@@ -34,7 +34,8 @@ const OptionCard = ({ option, actionLabel, onSelect, tone = 'neutral' }) => {
   const metadataRows = [];
   const headerIcon = tone === 'accent' ? <FileCode size={16} /> : <HardDrive size={16} />;
 
-  metadataRows.push({ label: 'File', value: option.fileName || 'Unknown' });
+  const displayValue = option.displayPath || option.fileName || 'Unknown';
+  metadataRows.push({ label: 'File', value: displayValue });
   metadataRows.push({ label: 'Nodes', value: formatCount(option.nodeCount) });
   metadataRows.push({ label: 'Edges', value: formatCount(option.edgeCount) });
   metadataRows.push({ label: 'File size', value: formatSize(option.fileSize) });
@@ -70,7 +71,7 @@ const OptionCard = ({ option, actionLabel, onSelect, tone = 'neutral' }) => {
           {option.label}
         </div>
         <div style={{ fontSize: '0.85rem', color: '#333', wordBreak: 'break-word' }}>
-          {option.fileName || 'Unknown file'}
+          {displayValue}
         </div>
       </div>
 
@@ -153,7 +154,9 @@ const LocalFileConflictDialog = ({
           display: 'flex',
           flexDirection: 'column',
           fontFamily: "'EmOne', sans-serif",
-          boxShadow: '0 22px 60px rgba(0,0,0,0.55)'
+          boxShadow: '0 22px 60px rgba(0,0,0,0.55)',
+          margin: '40px 0',
+          maxHeight: '90vh'
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -185,7 +188,8 @@ const LocalFileConflictDialog = ({
             padding: '24px',
             display: 'flex',
             flexDirection: 'column',
-            gap: 20
+            gap: 20,
+            overflowY: 'auto'
           }}
         >
           <div

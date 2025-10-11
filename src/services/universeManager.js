@@ -81,6 +81,8 @@ class UniverseManager {
     // Store operations injected from outside to avoid circular dependencies
     this.storeOperations = null;
 
+    this.persistentStorageRequested = false;
+
     this.loadFromStorage();
 
     // Initialize device config after a brief delay to avoid circular dependencies
@@ -278,7 +280,8 @@ class UniverseManager {
                 localFile: {
                   ...universe.localFile,
                   hadFileHandle: true, // Flag to indicate user previously set up a file handle
-                  lastFilePath: handlesData[slug].path || universe.localFile.path
+                  lastFilePath: handlesData[slug].path || universe.localFile.path,
+                  displayPath: handlesData[slug].displayPath || handlesData[slug].path || universe.localFile.displayPath
                 }
               });
             }
@@ -328,6 +331,7 @@ class UniverseManager {
       localFile: {
         enabled: universe.localFile?.enabled ?? true,
         path: this.sanitizeFileName(universe.localFile?.path || `${universe.name || 'Universe'}.redstring`),
+        displayPath: universe.localFile?.displayPath || universe.localFile?.lastFilePath || universe.localFile?.path || `${universe.name || 'Universe'}.redstring`,
         handle: null, // Will be restored separately
         unavailableReason: universe.localFile?.unavailableReason || null
       },
@@ -498,6 +502,7 @@ class UniverseManager {
           ? false 
           : (universe.localFile?.enabled ?? deviceConfig.enableLocalFileStorage),
         path: this.sanitizeFileName(universe.localFile?.path || `${universe.name || 'Universe'}.redstring`),
+        displayPath: universe.localFile?.displayPath || universe.localFile?.lastFilePath || universe.localFile?.path || `${universe.name || 'Universe'}.redstring`,
         handle: null, // Will be restored separately
         unavailableReason: isGitOnlyMode ? 'Git-Only mode active' : null
       },
@@ -820,6 +825,7 @@ class UniverseManager {
           localFile: {
             enabled: localFile.enabled,
             path: localFile.path,
+            displayPath: localFile.displayPath,
             hadFileHandle: localFile.hadFileHandle,
             lastFilePath: localFile.lastFilePath
           }
@@ -834,6 +840,7 @@ class UniverseManager {
       this.fileHandles.forEach((handle, slug) => {
         fileHandlesInfo[slug] = {
           path: handle.name || this.universes.get(slug)?.localFile?.path || `${slug}.redstring`,
+          displayPath: this.universes.get(slug)?.localFile?.displayPath || handle.name || `${slug}.redstring`,
           hasHandle: true
         };
       });
@@ -1821,14 +1828,44 @@ class UniverseManager {
   }
 
   // Set file handle for universe
-  async setFileHandle(slug, fileHandle) {
+  async setFileHandle(slug, fileHandle, options = {}) {
     this.fileHandles.set(slug, fileHandle);
+
+    let displayPath = options.displayPath || options.originalPath || null;
+    const fileName = options.fileName || fileHandle?.name || null;
+
+    if (!displayPath && fileHandle?.getFile) {
+      try {
+        const fileForPath = await fileHandle.getFile();
+        displayPath = fileForPath?.path || fileForPath?.webkitRelativePath || fileForPath?.name || fileHandle?.name || null;
+      } catch (error) {
+        gfLog('[UniverseManager] Unable to derive display path from file handle:', error);
+        displayPath = fileHandle?.name || null;
+      }
+    }
+
+    if (!displayPath) {
+      displayPath = fileHandle?.name || null;
+    }
+
+    if (typeof navigator !== 'undefined' && navigator.storage?.persist && !this.persistentStorageRequested) {
+      try {
+        const granted = await navigator.storage.persist();
+        gfLog(`[UniverseManager] Persistent storage ${granted ? 'enabled' : 'already granted'} for file handles`);
+      } catch (error) {
+        gfWarn('[UniverseManager] Failed to request persistent storage:', error);
+      } finally {
+        this.persistentStorageRequested = true;
+      }
+    }
 
     // Store file handle metadata in IndexedDB for persistence
     try {
       await storeFileHandleMetadata(slug, fileHandle, {
         universeSlug: slug,
-        lastAccessed: Date.now()
+        lastAccessed: Date.now(),
+        fileName,
+        displayPath
       });
       gfLog(`[UniverseManager] Stored file handle metadata for ${slug}`);
     } catch (error) {
@@ -1838,20 +1875,30 @@ class UniverseManager {
     // Also update the universe configuration
     const universe = this.getUniverse(slug);
     if (universe) {
-      this.updateUniverse(slug, {
+      await this.updateUniverse(slug, {
         localFile: {
           ...universe.localFile,
           enabled: true,
-          path: fileHandle.name || universe.localFile.path,
+          path: this.sanitizeFileName ? this.sanitizeFileName(fileName || universe.localFile.path || slug) : (fileName || universe.localFile.path),
+          displayPath: displayPath || universe.localFile.displayPath || fileName || universe.localFile.path,
           hadFileHandle: true,
-          lastFilePath: fileHandle.name || universe.localFile.path,
-          fileHandleStatus: 'connected'
+          lastFilePath: fileName || universe.localFile.path,
+          fileHandleStatus: 'connected',
+          unavailableReason: null
         }
       });
     }
 
     // Persist file handle information to storage
     this.saveToStorage();
+
+    if (!options.suppressNotification) {
+      const universeName = this.getUniverse(slug)?.name || slug;
+      const displayLabel = displayPath || fileName || universeName;
+      this.notifyStatus('success', `Linked local file: ${displayLabel}`);
+    }
+
+    return { success: true, fileName, displayPath };
   }
 
   // Setup file handle for universe (user picks file)

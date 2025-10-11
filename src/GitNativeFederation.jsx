@@ -125,6 +125,14 @@ function computeStoreMetrics(storeState) {
   };
 }
 
+function resolveFileDisplayPath(fileHandle, file) {
+  if (file?.path) return file.path;
+  if (file?.webkitRelativePath) return file.webkitRelativePath;
+  if (fileHandle?.name) return fileHandle.name;
+  if (file?.name) return file.name;
+  return 'Unknown.redstring';
+}
+
 function BrowserFallbackNote() {
   return (
     <div
@@ -1558,8 +1566,10 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
 
   const gatherExistingLocalMetadata = async (slug, universe, existingHandle, importFromRedstring) => {
     const localInfo = universe?.raw?.localFile || {};
+    const displayLabel = localInfo.displayPath || localInfo.lastFilePath || localInfo.path || `${slug}.redstring`;
     const metadata = {
-      fileName: localInfo.path || `${slug}.redstring`,
+      fileName: displayLabel,
+      displayPath: displayLabel,
       nodeCount: null,
       edgeCount: null,
       fileSize: null,
@@ -1673,7 +1683,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       metrics.nodeCount === existingMetadata.nodeCount &&
       (!comparableEdgeCounts || metrics.edgeCount === existingMetadata.edgeCount);
 
-    const nameMatches = [existingLocal.path, existingLocal.lastFilePath]
+    const nameMatches = [existingLocal.displayPath, existingLocal.path, existingLocal.lastFilePath]
       .filter(Boolean)
       .some(name => name === file.name);
 
@@ -1685,6 +1695,8 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       return null;
     }
 
+    const incomingDisplay = payload.displayPath || file.name;
+
     return {
       universeName: universe.name,
       existing: {
@@ -1693,7 +1705,8 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         role: 'Current auto-save target'
       },
       incoming: {
-        fileName: file.name,
+        fileName: incomingDisplay,
+        displayPath: incomingDisplay,
         nodeCount: metrics.nodeCount,
         edgeCount: metrics.edgeCount,
         fileSize: typeof file.size === 'number' ? file.size : null,
@@ -1708,7 +1721,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   };
 
   const applyIncomingLocalFile = async (payload) => {
-    const { slug, fileHandle, file, storeState, metrics } = payload;
+    const { slug, fileHandle, file, storeState, metrics, displayPath } = payload;
 
     try {
       setLoading(true);
@@ -1718,8 +1731,12 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       gfLog('[GitNativeFederation] Loading linked file data into store...');
       storeActions.loadUniverseFromFile(storeState);
 
-      await universeBackend.setFileHandle(slug, fileHandle);
-      await universeBackend.linkLocalFileToUniverse(slug, file.name);
+      await universeBackend.setFileHandle(slug, fileHandle, {
+        displayPath,
+        fileName: file.name,
+        suppressNotification: true
+      });
+      await universeBackend.linkLocalFileToUniverse(slug, file.name, { displayPath });
 
       try {
         await gitFederationService.forceSave(slug, { skipGit: true });
@@ -1735,7 +1752,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         : '';
       setSyncStatus({
         type: 'success',
-        message: `Linked ${file.name}${nodeCountLabel}`
+        message: `Linked ${displayPath || file.name}${nodeCountLabel}`
       });
     } catch (error) {
       gfError('[GitNativeFederation] Failed to finalize local file link:', error);
@@ -1885,12 +1902,15 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         fileName: file.name
       });
 
+      const displayPath = resolveFileDisplayPath(fileHandle, file);
+
       payload = {
         slug,
         fileHandle,
         file,
         storeState,
         metrics,
+        displayPath,
         importHelpers: { importFromRedstring }
       };
 
@@ -1965,8 +1985,12 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       await writable.close();
       
       // Store the file handle and link to universe
-      await universeBackend.setFileHandle(slug, fileHandle);
-      
+      await universeBackend.setFileHandle(slug, fileHandle, {
+        displayPath: fileHandle.name,
+        fileName: fileHandle.name,
+        suppressNotification: true
+      });
+
       setSyncStatus({ type: 'success', message: `Created and linked ${fileHandle.name}` });
       await refreshState();
     } catch (err) {
@@ -2259,7 +2283,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Save size={18} />
             <div>
-              <div style={{ fontWeight: 600 }}>{localFile.path}</div>
+              <div style={{ fontWeight: 600 }}>{localFile.displayPath || localFile.path}</div>
               <div style={{ fontSize: '0.72rem', color: '#555' }}>
                 Local .redstring file {localFile.hadFileHandle ? '(handle stored)' : '(handle not cached)'}
               </div>

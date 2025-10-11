@@ -94,6 +94,8 @@ class UniverseBackend {
       lastGlobalSync: null
     };
 
+    this.persistentStorageRequested = false;
+
     // Load universes from storage
     this.loadFromStorage();
 
@@ -137,7 +139,8 @@ class UniverseBackend {
                 localFile: {
                   ...universe.localFile,
                   hadFileHandle: true,
-                  lastFilePath: handlesData[slug].path || universe.localFile.path
+                  lastFilePath: handlesData[slug].path || universe.localFile.path,
+                  displayPath: handlesData[slug].displayPath || handlesData[slug].path || universe.localFile.displayPath
                 }
               });
             }
@@ -176,6 +179,7 @@ class UniverseBackend {
           localFile: {
             enabled: localFile.enabled,
             path: localFile.path,
+            displayPath: localFile.displayPath,
             hadFileHandle: localFile.hadFileHandle,
             lastFilePath: localFile.lastFilePath,
             lastSaved: localFile.lastSaved,
@@ -193,6 +197,7 @@ class UniverseBackend {
       this.fileHandles.forEach((handle, slug) => {
         fileHandlesInfo[slug] = {
           path: handle.name || this.universes.get(slug)?.localFile?.path || `${slug}.redstring`,
+          displayPath: this.universes.get(slug)?.localFile?.displayPath || handle.name || `${slug}.redstring`,
           hasHandle: true
         };
       });
@@ -232,6 +237,7 @@ class UniverseBackend {
     const normalizedLocalFile = {
       enabled: incomingLocalFile?.enabled ?? true,
       path: sanitizedLocalPath,
+      displayPath: incomingLocalFile?.displayPath || incomingLocalFile?.lastFilePath || incomingLocalFile?.path || sanitizedLocalPath,
       hadFileHandle: incomingLocalFile?.hadFileHandle ?? false,
       lastFilePath: incomingLocalFile?.lastFilePath || sanitizedLocalPath,
       lastSaved: incomingLocalFile?.lastSaved
@@ -597,6 +603,7 @@ class UniverseBackend {
               localFile: {
                 ...universe.localFile,
                 fileHandleStatus: 'connected',
+                displayPath: result.metadata?.displayPath || universe.localFile.displayPath,
                 lastAccessed: Date.now()
               }
             });
@@ -610,6 +617,7 @@ class UniverseBackend {
               localFile: {
                 ...universe.localFile,
                 fileHandleStatus: 'needs_reconnect',
+                displayPath: result.metadata?.displayPath || universe.localFile.displayPath,
                 reconnectMessage: result.message
               }
             });
@@ -1986,14 +1994,44 @@ class UniverseBackend {
   /**
    * Set file handle for a universe
    */
-  async setFileHandle(slug, fileHandle) {
+  async setFileHandle(slug, fileHandle, options = {}) {
     this.fileHandles.set(slug, fileHandle);
+
+    let displayPath = options.displayPath || options.originalPath || null;
+    const fileName = options.fileName || fileHandle?.name || null;
+
+    if (!displayPath && fileHandle?.getFile) {
+      try {
+        const fileForPath = await fileHandle.getFile();
+        displayPath = fileForPath?.path || fileForPath?.webkitRelativePath || fileForPath?.name || fileHandle?.name || null;
+      } catch (error) {
+        gfLog('[UniverseBackend] Unable to derive display path from file handle:', error);
+        displayPath = fileHandle?.name || null;
+      }
+    }
+
+    if (!displayPath) {
+      displayPath = fileHandle?.name || null;
+    }
+
+    if (typeof navigator !== 'undefined' && navigator.storage?.persist && !this.persistentStorageRequested) {
+      try {
+        const granted = await navigator.storage.persist();
+        gfLog(`[UniverseBackend] Persistent storage ${granted ? 'enabled' : 'already granted'} for file handles`);
+      } catch (error) {
+        gfWarn('[UniverseBackend] Failed to request persistent storage:', error);
+      } finally {
+        this.persistentStorageRequested = true;
+      }
+    }
 
     // Store file handle metadata in IndexedDB for persistence
     try {
       await storeFileHandleMetadata(slug, fileHandle, {
         universeSlug: slug,
-        lastAccessed: Date.now()
+        lastAccessed: Date.now(),
+        fileName,
+        displayPath
       });
       gfLog(`[UniverseBackend] Stored file handle metadata for ${slug}`);
     } catch (error) {
@@ -2005,13 +2043,14 @@ class UniverseBackend {
     if (universe) {
       const hasActiveGitLink = !!(universe.gitRepo?.enabled && universe.gitRepo?.linkedRepo);
       const shouldPromoteLocal = !hasActiveGitLink && universe.sourceOfTruth !== SOURCE_OF_TRUTH.LOCAL;
-      this.updateUniverse(slug, {
+      await this.updateUniverse(slug, {
         localFile: {
           ...universe.localFile,
           enabled: true,
-          path: fileHandle.name || universe.localFile.path,
+          path: this.sanitizeFileName(fileName || universe.localFile.path || slug),
+          displayPath: displayPath || universe.localFile.displayPath || fileName || universe.localFile.path,
           hadFileHandle: true,
-          lastFilePath: fileHandle.name || universe.localFile.path,
+          lastFilePath: fileName || universe.localFile.path,
           fileHandleStatus: 'connected',
           unavailableReason: null
         },
@@ -2022,6 +2061,14 @@ class UniverseBackend {
     // Persist file handle information to storage
     this.saveToStorage();
     await this.ensureSaveCoordinator();
+
+    if (!options.suppressNotification) {
+      const universe = this.getUniverse(slug);
+      const displayLabel = displayPath || fileName || universe?.localFile?.displayPath || universe?.localFile?.path || slug;
+      this.notifyStatus('success', `Linked local file: ${displayLabel}`);
+    }
+
+    return { success: true, fileName, displayPath };
   }
 
   /**
@@ -2909,47 +2956,6 @@ class UniverseBackend {
   }
 
   /**
-   * Store a File System Access API handle for a universe
-   * Now persists to IndexedDB for reconnection across sessions
-   */
-  async setFileHandle(universeSlug, fileHandle) {
-    if (!fileHandle) {
-      throw new Error('No file handle provided');
-    }
-    this.fileHandles.set(universeSlug, fileHandle);
-
-    // Store file handle metadata in IndexedDB for persistence
-    try {
-      await storeFileHandleMetadata(universeSlug, fileHandle, {
-        universeSlug,
-        lastAccessed: Date.now()
-      });
-      gfLog(`[UniverseBackend] Stored file handle metadata for ${universeSlug}`);
-    } catch (error) {
-      gfWarn(`[UniverseBackend] Failed to store file handle metadata:`, error);
-    }
-
-    const universe = this.getUniverse(universeSlug);
-    const hasActiveGitLink = !!(universe?.gitRepo?.enabled && universe?.gitRepo?.linkedRepo);
-    const shouldPromoteLocal = !hasActiveGitLink && universe?.sourceOfTruth !== SOURCE_OF_TRUTH.LOCAL;
-
-    await this.updateUniverse(universeSlug, {
-      localFile: {
-        ...(universe?.localFile || {}),
-        enabled: true,
-        path: fileHandle.name,
-        hadFileHandle: true,
-        fileHandleStatus: 'connected',
-        unavailableReason: null
-      },
-      ...(shouldPromoteLocal ? { sourceOfTruth: SOURCE_OF_TRUTH.LOCAL } : {})
-    });
-    await this.ensureSaveCoordinator();
-    this.notifyStatus('success', `Linked file handle for ${universe?.name || universeSlug}`);
-    return { success: true, fileName: fileHandle.name };
-  }
-
-  /**
    * Prompt user to select a file handle and store it (pick or saveAs)
    */
   async setupLocalFileHandle(universeSlug, options = {}) {
@@ -3075,7 +3081,7 @@ class UniverseBackend {
   /**
    * Link local file to universe (for future saves/loads)
    */
-  async linkLocalFileToUniverse(universeSlug, filePath) {
+  async linkLocalFileToUniverse(universeSlug, filePath, options = {}) {
     gfLog(`[UniverseBackend] Linking local file to universe ${universeSlug}: ${filePath}`);
 
     const universe = this.getUniverse(universeSlug);
@@ -3086,12 +3092,14 @@ class UniverseBackend {
     // Update universe with local file configuration (preserving existing localFile properties)
     const hasActiveGitLink = !!(universe.gitRepo?.enabled && universe.gitRepo?.linkedRepo);
     const shouldPromoteLocal = !hasActiveGitLink && universe.sourceOfTruth !== SOURCE_OF_TRUTH.LOCAL;
+    const displayPath = options.displayPath || universe.localFile?.displayPath || filePath;
 
     await this.updateUniverse(universeSlug, {
       localFile: {
         ...universe.localFile, // Preserve existing properties like hadFileHandle
         enabled: true,
         path: filePath,
+        displayPath,
         lastFilePath: filePath,
         lastSaved: universe.localFile?.lastSaved || null
       },
@@ -3129,6 +3137,8 @@ class UniverseBackend {
         ...universe.localFile,
         enabled: false,
         hadFileHandle: false,
+        displayPath: null,
+        lastFilePath: null,
         lastSaved: null,
         fileHandleStatus: 'disconnected',
         unavailableReason: 'Local file unlinked'
@@ -3194,7 +3204,9 @@ class UniverseBackend {
       this.storeOperations.loadUniverseFromFile(storeState);
 
       // Enable local file storage for this universe
-      await this.linkLocalFileToUniverse(targetUniverseSlug, file.name);
+      await this.linkLocalFileToUniverse(targetUniverseSlug, file.name, {
+        displayPath: file.path || file.name
+      });
 
       const updatedUniverse = this.getUniverse(targetUniverseSlug);
       if (updatedUniverse) {

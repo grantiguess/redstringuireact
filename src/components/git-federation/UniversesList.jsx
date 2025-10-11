@@ -559,7 +559,7 @@ const UniversesList = ({
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
                                     <span style={{ fontWeight: 600, color: '#260000' }}>File:</span>
                                     <span style={{ fontSize: '0.65rem' }}>
-                                      {localFile.path || localFile.lastFilePath || `${universe.slug}.redstring`}
+                                      {localFile.displayPath || localFile.path || localFile.lastFilePath || `${universe.slug}.redstring`}
                                     </span>
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>

@@ -65,9 +65,10 @@ function buildSlotsFromUniverse(universe, syncStatus = null) {
     slots.push({
       id: slotId(),
       type: STORAGE_TYPES.LOCAL,
-      label: universe.localFile.path || `${universe.name || universe.slug}.redstring`,
+      label: universe.localFile.displayPath || universe.localFile.path || `${universe.name || universe.slug}.redstring`,
       local: {
         path: universe.localFile.path,
+        displayPath: universe.localFile.displayPath || universe.localFile.path,
         unavailableReason: universe.localFile.unavailableReason || null,
         hadHandle: !!universe.localFile.hadFileHandle
       },
