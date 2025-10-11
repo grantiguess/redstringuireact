@@ -532,6 +532,11 @@ class UniverseBackend {
     try {
       gfLog('[UniverseBackend] Initializing background sync services...');
 
+      // Ensure auth state is fully loaded before proceeding
+      await persistentAuth.ensureAuthStateLoaded().catch(err => {
+        gfWarn('[UniverseBackend] Failed to load auth state in background sync:', err);
+      });
+
       if (!persistentAuth.initializeCalled) {
         gfLog('[UniverseBackend] About to call persistentAuth.initialize()...');
         await persistentAuth.initialize();
@@ -662,6 +667,11 @@ class UniverseBackend {
     gfLog('[UniverseBackend] Initializing backend service...');
 
     try {
+      gfLog('[UniverseBackend] Ensuring auth state is loaded...');
+      await persistentAuth.ensureAuthStateLoaded().catch(err => {
+        gfWarn('[UniverseBackend] Failed to load auth state:', err);
+      });
+
       gfLog('[UniverseBackend] Getting authentication status...');
       this.authStatus = persistentAuth.getAuthStatus();
 
@@ -2601,7 +2611,10 @@ class UniverseBackend {
     if (!this.isInitialized) {
       this.initialize();
     }
-    return this.authStatus || persistentAuth.getAuthStatus();
+    // Always read fresh auth status from persistentAuth to avoid stale cache
+    const freshStatus = persistentAuth.getAuthStatus();
+    this.authStatus = freshStatus;
+    return freshStatus;
   }
 
   /**
