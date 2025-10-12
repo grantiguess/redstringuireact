@@ -115,36 +115,68 @@ const RepositorySelectionModal = ({
       setLoading(true);
       setError(null);
 
-      // Try OAuth token first, then fall back to GitHub App token
+      // OAuth is required for UI repository browsing
+      // GitHub App is only used for backend operations
       let token = await persistentAuth.getAccessToken();
       if (!token) {
-        // Check if GitHub App is available
-        const appInstallation = persistentAuth.getAppInstallation();
-        if (appInstallation?.accessToken) {
-          token = appInstallation.accessToken;
-        } else {
-          throw new Error('No access token available. Please connect GitHub OAuth or install the GitHub App.');
-        }
+        throw new Error('GitHub OAuth required to browse repositories. Please connect OAuth in Accounts & Access.');
       }
 
       const response = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `token ${token}`,
           'Accept': 'application/vnd.github.v3+json'
         }
       });
 
       if (!response.ok) {
+        // Try to get error details from response body
+        const errorBody = await response.json().catch(() => ({}));
+        const errorMessage = errorBody?.message || errorBody?.error || '';
+
+        console.error('GitHub API error:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorBody,
+          headers: response.headers
+        });
+
         if (response.status === 401) {
+          // Try to refresh OAuth token
           try {
             await persistentAuth.refreshAccessToken?.();
             token = await persistentAuth.getAccessToken();
-            if (!token) throw new Error('Authentication expired. Please sign in again.');
+            if (!token) throw new Error('OAuth authentication expired. Please reconnect in Accounts & Access.');
+
+            // Retry the request with refreshed token
+            const retryResponse = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
+              headers: {
+                'Authorization': `token ${token}`,
+                'Accept': 'application/vnd.github.v3+json'
+              }
+            });
+
+            if (!retryResponse.ok) {
+              throw new Error('OAuth authentication expired. Please reconnect in Accounts & Access.');
+            }
+
+            const repos = await retryResponse.json();
+            setRepositories(repos);
+            return;
           } catch (e) {
-            throw new Error('Authentication expired. Please sign in again.');
+            throw new Error('OAuth authentication expired. Please reconnect in Accounts & Access.');
+          }
+        } else if (response.status === 403) {
+          // 403 could be rate limiting or insufficient permissions
+          if (errorMessage.includes('rate limit')) {
+            throw new Error('GitHub API rate limit exceeded. Please wait a few minutes and try again.');
+          } else if (errorMessage.includes('scope')) {
+            throw new Error(`Insufficient permissions. ${errorMessage}`);
+          } else {
+            throw new Error(`Access forbidden (403). ${errorMessage || 'Your token may lack necessary permissions (repo scope required).'}`);
           }
         } else {
-          throw new Error(`Failed to load repositories: ${response.status}`);
+          throw new Error(`Failed to load repositories: ${response.status}. ${errorMessage}`);
         }
       }
 
@@ -169,22 +201,16 @@ const RepositorySelectionModal = ({
       setCreatingRepo(true);
       setCreateRepoError(null);
 
-      // Try OAuth token first, then fall back to GitHub App token
+      // OAuth is required for creating repositories
       let token = await persistentAuth.getAccessToken();
       if (!token) {
-        // Check if GitHub App is available
-        const appInstallation = persistentAuth.getAppInstallation();
-        if (appInstallation?.accessToken) {
-          token = appInstallation.accessToken;
-        } else {
-          throw new Error('No access token available. Please connect GitHub OAuth or install the GitHub App.');
-        }
+        throw new Error('GitHub OAuth required to create repositories. Please connect OAuth in Accounts & Access.');
       }
 
       const response = await fetch('https://api.github.com/user/repos', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `token ${token}`,
           'Accept': 'application/vnd.github.v3+json',
           'Content-Type': 'application/json'
         },

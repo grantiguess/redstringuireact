@@ -32,6 +32,7 @@ import universeBackend from './services/universeBackend.js';
 import universeBackendBridge from './services/universeBackendBridge.js';
 import RepositorySelectionModal from './components/modals/RepositorySelectionModal.jsx';
 import UniverseLinkingModal from './components/modals/UniverseLinkingModal.jsx';
+import ConflictResolutionModal from './components/modals/ConflictResolutionModal.jsx';
 import Modal from './components/shared/Modal.jsx';
 import ConfirmDialog from './components/shared/ConfirmDialog.jsx';
 import LocalFileConflictDialog from './components/shared/LocalFileConflictDialog.jsx';
@@ -244,6 +245,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   const [repositoryIntent, setRepositoryIntent] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
   const [conflictDialog, setConflictDialog] = useState(null);
+  const [slotConflict, setSlotConflict] = useState(null);
 
   const containerRef = useRef(null);
   const [isSlim, setIsSlim] = useState(false);
@@ -671,6 +673,21 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       return next;
     });
   }, [activeUniverse?.raw?.sources]);
+
+  // Listen for slot conflict events from universeBackend
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleSlotConflict = (event) => {
+      gfLog('[GitNativeFederation] Slot conflict detected:', event.detail);
+      setSlotConflict(event.detail);
+    };
+
+    window.addEventListener('redstring:slot-conflict', handleSlotConflict);
+    return () => {
+      window.removeEventListener('redstring:slot-conflict', handleSlotConflict);
+    };
+  }, []);
 
   const discoveryFor = useCallback(
     (user, repo) => discoveryMap[`${user}/${repo}`] || { items: [], loading: false },
@@ -1848,6 +1865,38 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     pendingLocalLinkRef.current = null;
     setConflictDialog(null);
     setSyncStatus({ type: 'info', message: 'Local file link cancelled' });
+  };
+
+  const handleResolveSlotConflict = async (choice) => {
+    if (!slotConflict) return;
+
+    try {
+      gfLog(`[GitNativeFederation] Resolving slot conflict with choice: ${choice}`);
+      setSyncStatus({ type: 'info', message: `Applying ${choice} version...` });
+
+      await universeBackend.resolveConflict(slotConflict.universeSlug, choice);
+
+      setSlotConflict(null);
+      setSyncStatus({
+        type: 'success',
+        message: `Successfully applied ${choice} version`
+      });
+
+      // Refresh state to show updated universe
+      await refreshState();
+    } catch (error) {
+      gfError('[GitNativeFederation] Failed to resolve slot conflict:', error);
+      setSyncStatus({
+        type: 'error',
+        message: `Failed to apply ${choice} version: ${error.message}`
+      });
+    }
+  };
+
+  const handleCancelSlotConflict = () => {
+    gfLog('[GitNativeFederation] Slot conflict resolution cancelled');
+    setSlotConflict(null);
+    setSyncStatus({ type: 'info', message: 'Conflict resolution cancelled' });
   };
 
   const handleLinkLocalFile = async (slug) => {
@@ -3349,6 +3398,17 @@ return (
         onChooseExisting={() => handleResolveLocalConflict('existing')}
         onChooseIncoming={() => handleResolveLocalConflict('incoming')}
         onCancel={handleCancelLocalConflict}
+      />
+    )}
+    {slotConflict && (
+      <ConflictResolutionModal
+        isOpen={true}
+        onClose={handleCancelSlotConflict}
+        onSelectLocal={() => handleResolveSlotConflict('local')}
+        onSelectGit={() => handleResolveSlotConflict('git')}
+        localData={slotConflict.localData}
+        gitData={slotConflict.gitData}
+        universeName={slotConflict.universeName}
       />
     )}
     </div>

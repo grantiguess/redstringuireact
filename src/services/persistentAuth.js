@@ -792,7 +792,7 @@ export class PersistentAuth {
       try {
         const response = await fetch('https://api.github.com/user', {
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
+            'Authorization': `token ${accessToken}`,
             'Accept': 'application/vnd.github.v3+json'
           }
         });

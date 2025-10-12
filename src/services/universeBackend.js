@@ -2174,9 +2174,36 @@ class UniverseBackend {
 
   /**
    * Load universe data based on source of truth priority
+   * Now with proactive conflict detection between slots
    */
-  async loadUniverseData(universe) {
+  async loadUniverseData(universe, options = {}) {
     const { sourceOfTruth } = universe;
+    const { skipConflictDetection = false } = options;
+
+    // If both local and Git are enabled, check for conflicts
+    if (!skipConflictDetection && universe.localFile.enabled && universe.gitRepo.enabled) {
+      try {
+        const conflict = await this.detectSlotConflict(universe);
+        if (conflict) {
+          gfLog('[UniverseBackend] Slot conflict detected, notifying UI');
+          // Store conflict for UI to handle
+          this.pendingConflict = conflict;
+
+          // Emit event for UI to show conflict resolution modal
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('redstring:slot-conflict', {
+              detail: conflict
+            }));
+          }
+
+          // Return the primary source data (conflict will be resolved by user)
+          return conflict.primaryData;
+        }
+      } catch (error) {
+        gfWarn('[UniverseBackend] Conflict detection failed:', error);
+        // Continue with normal load if conflict detection fails
+      }
+    }
 
     // Try primary source first
     if (sourceOfTruth === SOURCE_OF_TRUTH.GIT && universe.gitRepo.enabled) {
@@ -2236,6 +2263,147 @@ class UniverseBackend {
     // Return empty state if nothing works
     gfWarn('[UniverseBackend] All load methods failed, creating empty state');
     return this.createEmptyState();
+  }
+
+  /**
+   * Detect conflicts between local file and Git repository slots
+   * Returns conflict data if slots have diverged, null if they match or one is missing
+   */
+  async detectSlotConflict(universe) {
+    gfLog('[UniverseBackend] Checking for slot conflicts...');
+
+    // Load data from both slots in parallel
+    const [localResult, gitResult] = await Promise.allSettled([
+      this.loadFromLocalFile(universe).catch(() => null),
+      this.loadFromGit(universe).catch(() => null)
+    ]);
+
+    const localData = localResult.status === 'fulfilled' ? localResult.value : null;
+    const gitData = gitResult.status === 'fulfilled' ? gitResult.value : null;
+
+    // If either slot is missing, no conflict
+    if (!localData || !gitData) {
+      gfLog('[UniverseBackend] No conflict - one or both slots empty');
+      return null;
+    }
+
+    // Compare data to detect divergence
+    const localInfo = this.analyzeStoreData(localData);
+    const gitInfo = this.analyzeStoreData(gitData);
+
+    // Check if data is significantly different
+    const isDifferent = (
+      localInfo.nodeCount !== gitInfo.nodeCount ||
+      localInfo.graphCount !== gitInfo.graphCount ||
+      Math.abs(localInfo.nodeCount - gitInfo.nodeCount) > 5 || // More than 5 node difference
+      Math.abs(localInfo.graphCount - gitInfo.graphCount) > 1  // More than 1 graph difference
+    );
+
+    if (!isDifferent) {
+      gfLog('[UniverseBackend] Slots match, no conflict');
+      return null;
+    }
+
+    gfLog('[UniverseBackend] Conflict detected:', {
+      local: localInfo,
+      git: gitInfo
+    });
+
+    // Build conflict object
+    const primaryData = universe.sourceOfTruth === SOURCE_OF_TRUTH.LOCAL ? localData : gitData;
+
+    return {
+      universeSlug: universe.slug,
+      universeName: universe.name || universe.slug,
+      sourceOfTruth: universe.sourceOfTruth,
+      localData: {
+        storeState: localData,
+        nodeCount: localInfo.nodeCount,
+        graphCount: localInfo.graphCount,
+        timestamp: localInfo.timestamp
+      },
+      gitData: {
+        storeState: gitData,
+        nodeCount: gitInfo.nodeCount,
+        graphCount: gitInfo.graphCount,
+        timestamp: gitInfo.timestamp
+      },
+      primaryData
+    };
+  }
+
+  /**
+   * Analyze store data to extract metadata
+   */
+  analyzeStoreData(storeState) {
+    if (!storeState) {
+      return { nodeCount: 0, graphCount: 0, timestamp: null };
+    }
+
+    const nodeCount = storeState.nodePrototypes
+      ? (storeState.nodePrototypes instanceof Map
+        ? storeState.nodePrototypes.size
+        : Object.keys(storeState.nodePrototypes || {}).length)
+      : 0;
+
+    const graphCount = storeState.graphs
+      ? (storeState.graphs instanceof Map
+        ? storeState.graphs.size
+        : Object.keys(storeState.graphs || {}).length)
+      : 0;
+
+    // Try to extract timestamp from metadata
+    const timestamp = storeState.metadata?.lastModified ||
+                     storeState.metadata?.lastSaved ||
+                     storeState.lastModified ||
+                     Date.now();
+
+    return { nodeCount, graphCount, timestamp };
+  }
+
+  /**
+   * Resolve a conflict by choosing which slot to use
+   */
+  async resolveConflict(universeSlug, chosenSource) {
+    const universe = this.universes.get(universeSlug);
+    if (!universe) {
+      throw new Error(`Universe not found: ${universeSlug}`);
+    }
+
+    const conflict = this.pendingConflict;
+    if (!conflict || conflict.universeSlug !== universeSlug) {
+      throw new Error('No pending conflict for this universe');
+    }
+
+    gfLog('[UniverseBackend] Resolving conflict, chosen source:', chosenSource);
+
+    // Get the chosen data
+    const chosenData = chosenSource === 'local'
+      ? conflict.localData.storeState
+      : conflict.gitData.storeState;
+
+    // Update source of truth if user chose the backup slot
+    if (chosenSource !== universe.sourceOfTruth) {
+      gfLog('[UniverseBackend] Updating source of truth to:', chosenSource);
+      await this.updateUniverse(universeSlug, {
+        sourceOfTruth: chosenSource
+      });
+    }
+
+    // Load chosen data into store
+    if (this.storeOperations?.loadUniverseFromFile) {
+      this.storeOperations.loadUniverseFromFile(chosenData);
+    }
+
+    // Save to both slots to sync them
+    await this.saveActiveUniverse();
+
+    // Clear pending conflict
+    this.pendingConflict = null;
+
+    this.notifyStatus('success', `Conflict resolved using ${chosenSource} data`);
+
+    return chosenData;
   }
 
   /**
