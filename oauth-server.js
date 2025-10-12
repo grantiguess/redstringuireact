@@ -511,7 +511,7 @@ app.post('/api/github/oauth/token', async (req, res) => {
       const userResponse = await fetch('https://api.github.com/user', {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
-          'Authorization': `Bearer ${tokenData.access_token}`,
+          'Authorization': `token ${tokenData.access_token}`,
           'User-Agent': 'Redstring-OAuth-Server/1.0'
         }
       });
@@ -814,7 +814,7 @@ app.post('/api/github/oauth/create-repository', async (req, res) => {
       method: 'POST',
       headers: {
         'Accept': 'application/vnd.github.v3+json',
-        'Authorization': `Bearer ${access_token}`,
+        'Authorization': `token ${access_token}`,
         'User-Agent': 'Redstring-OAuth-Server/1.0',
         'Content-Type': 'application/json'
       },
@@ -1012,7 +1012,7 @@ app.post('/api/github/app/installation-token', async (req, res) => {
       const reposResponse = await fetch('https://api.github.com/installation/repositories', {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
-          'Authorization': `Bearer ${tokenData.token}`,
+          'Authorization': `token ${tokenData.token}`,
           'User-Agent': 'Redstring-GitHubApp-Server/1.0'
         }
       });
@@ -1209,7 +1209,7 @@ app.get('/api/github/app/installation/:installation_id', async (req, res) => {
     const reposResponse = await fetch(reposUrl, {
       headers: {
         'Accept': 'application/vnd.github.v3+json',
-        'Authorization': `Bearer ${installationToken}`,
+        'Authorization': `token ${installationToken}`,
         'User-Agent': 'Redstring-GitHubApp-Server/1.0'
       }
     });
@@ -1327,7 +1327,7 @@ app.post('/api/github/app/create-repository', async (req, res) => {
       method: 'POST',
       headers: {
         'Accept': 'application/vnd.github.v3+json',
-        'Authorization': `Bearer ${installationToken}`,
+        'Authorization': `token ${installationToken}`,
         'User-Agent': 'Redstring-GitHubApp-Server/1.0',
         'Content-Type': 'application/json'
       },

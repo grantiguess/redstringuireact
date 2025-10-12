@@ -148,7 +148,7 @@ export class GitHubSemanticProvider extends SemanticProvider {
     }
 
     if (this.authMethod === 'github-app') {
-      return `Bearer ${this.token}`;
+      return `token ${this.token}`;
     }
 
     // OAuth and legacy tokens still require the historic `token` prefix

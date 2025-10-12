@@ -245,7 +245,7 @@ class OAuthAutoConnect {
     try {
       const response = await fetch('https://api.github.com/installation/repositories', {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `token ${token}`,
           'Accept': 'application/vnd.github.v3+json'
         }
       });

@@ -146,14 +146,14 @@ export class GitHubAPIWrapper {
 
       if (appInstallation?.accessToken) {
         console.log('[GitHubAPIWrapper] Using GitHub App token');
-        return { 'Authorization': `Bearer ${appInstallation.accessToken}` };
+        return { 'Authorization': `token ${appInstallation.accessToken}` };
       }
     }
 
     const accessToken = await persistentAuth.getAccessToken();
     if (accessToken) {
       console.log('[GitHubAPIWrapper] Using OAuth token');
-      return { 'Authorization': `Bearer ${accessToken}` };
+      return { 'Authorization': `token ${accessToken}` };
     }
 
     console.warn('[GitHubAPIWrapper] No authentication token available');

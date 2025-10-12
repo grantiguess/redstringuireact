@@ -547,7 +547,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         const tokenData = await resp.json();
         const userResp = await fetch('https://api.github.com/user', {
           headers: {
-            Authorization: `Bearer ${tokenData.access_token}`,
+            Authorization: `token ${tokenData.access_token}`,
             Accept: 'application/vnd.github.v3+json'
           }
         });

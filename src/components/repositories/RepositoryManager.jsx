@@ -60,7 +60,7 @@ const RepositoryManager = ({
       // Fetch user repositories from GitHub API
       let response = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `token ${token}`,
           'Accept': 'application/vnd.github.v3+json'
         }
       });
@@ -74,7 +74,7 @@ const RepositoryManager = ({
             if (!token) throw new Error('Authentication expired. Please sign in again.');
             response = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
               headers: {
-                'Authorization': `Bearer ${token}`,
+                'Authorization': `token ${token}`,
                 'Accept': 'application/vnd.github.v3+json'
               }
             });
