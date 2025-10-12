@@ -31,6 +31,7 @@ import { oauthFetch } from './services/bridgeConfig.js';
 import universeBackend from './services/universeBackend.js';
 import universeBackendBridge from './services/universeBackendBridge.js';
 import RepositorySelectionModal from './components/modals/RepositorySelectionModal.jsx';
+import UniverseLinkingModal from './components/modals/UniverseLinkingModal.jsx';
 import Modal from './components/shared/Modal.jsx';
 import ConfirmDialog from './components/shared/ConfirmDialog.jsx';
 import LocalFileConflictDialog from './components/shared/LocalFileConflictDialog.jsx';
@@ -226,6 +227,8 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   const [showUniverseFileSelector, setShowUniverseFileSelector] = useState(false);
   const [pendingRepoAttachment, setPendingRepoAttachment] = useState(null);
   const [discoveredUniverseFiles, setDiscoveredUniverseFiles] = useState([]);
+  const [showUniverseLinking, setShowUniverseLinking] = useState(false);
+  const [pendingUniverseLink, setPendingUniverseLink] = useState(null);
 
   const [repositoryTargetSlug, setRepositoryTargetSlug] = useState(null);
   const [discoveryMap, setDiscoveryMap] = useState({});
@@ -1239,74 +1242,120 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   };
 
   const handleLinkDiscovered = async (discovered, repo) => {
+    // Show universe linking modal to let user choose existing universe or create new one
+    setPendingUniverseLink({ discovered, repo });
+    setShowUniverseLinking(true);
+    setShowRepositoryManager(false);
+  };
+
+  const handleUniverseLinkingSelectExisting = async (targetSlug) => {
+    if (!pendingUniverseLink) return;
+
+    const { discovered, repo } = pendingUniverseLink;
     const repoKey = `${repo.user}/${repo.repo}`;
-    const existingUniverse = serviceState.universes.find(
-      (u) => u.slug === (discovered.slug || discovered.name)
-    );
 
-    const proceedWithLink = async () => {
-      try {
-        setLoading(true);
+    try {
+      setLoading(true);
+      setShowUniverseLinking(false);
 
-        const alreadyManaged = managedRepositories.some(r =>
-          `${r.owner?.login || r.owner}/${r.name}` === repoKey
-        );
+      // Add repo to managed list if not already there
+      const alreadyManaged = managedRepositories.some(r =>
+        `${r.owner?.login || r.owner}/${r.name}` === repoKey
+      );
 
-        if (!alreadyManaged) {
-          const repoObject = {
-            name: repo.repo,
-            owner: { login: repo.user },
-            full_name: `${repo.user}/${repo.repo}`,
-            html_url: `https://github.com/${repo.user}/${repo.repo}`,
-            private: false,
-            id: `discovered-${repo.user}-${repo.repo}`
-          };
+      if (!alreadyManaged) {
+        const repoObject = {
+          name: repo.repo,
+          owner: { login: repo.user },
+          full_name: `${repo.user}/${repo.repo}`,
+          html_url: `https://github.com/${repo.user}/${repo.repo}`,
+          private: false,
+          id: `discovered-${repo.user}-${repo.repo}`
+        };
 
-          const newList = [...managedRepositories, repoObject];
-          setManagedRepositories(newList);
-          localStorage.setItem('redstring-managed-repositories', JSON.stringify(newList));
-          gfLog(`[GitNativeFederation] Auto-added ${repoKey} to managed repositories (from discovery)`);
-        }
-
-        await gitFederationService.linkDiscoveredUniverse(discovered, {
-          user: repo.user,
-          repo: repo.repo,
-          authMethod: dataAuthMethod || 'oauth'
-        });
-
-        const targetSlug = discovered.slug || discovered.name;
-        if (targetSlug) {
-          gfLog(`[GitNativeFederation] Initializing repository with universe data for ${targetSlug}`);
-          await gitFederationService.forceSave(targetSlug);
-        }
-        setSyncStatus({ type: 'success', message: `Synced ${discovered.name || discovered.slug} with repository data` });
-        await refreshState();
-      } catch (err) {
-        gfError('[GitNativeFederation] Link discovered failed:', err);
-        setError(`Failed to link discovered universe: ${err.message}`);
-      } finally {
-        setLoading(false);
+        const newList = [...managedRepositories, repoObject];
+        setManagedRepositories(newList);
+        localStorage.setItem('redstring-managed-repositories', JSON.stringify(newList));
+        gfLog(`[GitNativeFederation] Auto-added ${repoKey} to managed repositories (from discovery)`);
       }
-    };
 
-    if (existingUniverse) {
-      const resolveCount = (value) => (typeof value === 'number' && !Number.isNaN(value) ? value : 'unknown');
-      const localNodes = resolveCount(existingUniverse.nodeCount ?? existingUniverse.stats?.nodeCount ?? existingUniverse.metadata?.nodeCount);
-      const remoteNodes = resolveCount(discovered.nodeCount ?? discovered.stats?.nodeCount ?? discovered.metadata?.nodeCount);
-
-      setConfirmDialog({
-        title: 'Replace Local Data',
-        message: `Syncing will replace local data for "${existingUniverse.name}".`,
-        details: `Local data: ${existingUniverse.name} (${localNodes} nodes)\nRemote data: ${discovered.name || discovered.slug} (${remoteNodes} nodes)`,
-        variant: 'danger',
-        confirmLabel: 'Replace My Data',
-        cancelLabel: 'Cancel',
-        onConfirm: proceedWithLink
+      // Attach the Git repository to the selected universe
+      await gitFederationService.attachGitRepository(targetSlug, {
+        user: repo.user,
+        repo: repo.repo,
+        authMethod: dataAuthMethod || 'oauth',
+        universeFolder: discovered.universeFolder || `universes/${targetSlug}`,
+        universeFile: discovered.universeFile || `${targetSlug}.redstring`
       });
-      return;
-    }
 
-    await proceedWithLink();
+      gfLog(`[GitNativeFederation] Linked repository to existing universe: ${targetSlug}`);
+      await gitFederationService.forceSave(targetSlug);
+
+      setSyncStatus({ type: 'success', message: `Linked repository to ${targetSlug}` });
+      await refreshState();
+    } catch (err) {
+      gfError('[GitNativeFederation] Link to existing universe failed:', err);
+      setError(`Failed to link repository: ${err.message}`);
+    } finally {
+      setLoading(false);
+      setPendingUniverseLink(null);
+    }
+  };
+
+  const handleUniverseLinkingCreateNew = async (universeName) => {
+    if (!pendingUniverseLink) return;
+
+    const { discovered, repo } = pendingUniverseLink;
+    const repoKey = `${repo.user}/${repo.repo}`;
+
+    try {
+      setLoading(true);
+      setShowUniverseLinking(false);
+
+      // Add repo to managed list if not already there
+      const alreadyManaged = managedRepositories.some(r =>
+        `${r.owner?.login || r.owner}/${r.name}` === repoKey
+      );
+
+      if (!alreadyManaged) {
+        const repoObject = {
+          name: repo.repo,
+          owner: { login: repo.user },
+          full_name: `${repo.user}/${repo.repo}`,
+          html_url: `https://github.com/${repo.user}/${repo.repo}`,
+          private: false,
+          id: `discovered-${repo.user}-${repo.repo}`
+        };
+
+        const newList = [...managedRepositories, repoObject];
+        setManagedRepositories(newList);
+        localStorage.setItem('redstring-managed-repositories', JSON.stringify(newList));
+        gfLog(`[GitNativeFederation] Auto-added ${repoKey} to managed repositories (from discovery)`);
+      }
+
+      // Link the discovered universe with the custom name
+      await gitFederationService.linkDiscoveredUniverse(discovered, {
+        user: repo.user,
+        repo: repo.repo,
+        authMethod: dataAuthMethod || 'oauth',
+        customName: universeName
+      });
+
+      const targetSlug = discovered.slug || discovered.name;
+      if (targetSlug) {
+        gfLog(`[GitNativeFederation] Initializing repository with universe data for ${targetSlug}`);
+        await gitFederationService.forceSave(targetSlug);
+      }
+
+      setSyncStatus({ type: 'success', message: `Created universe "${universeName}" and linked to repository` });
+      await refreshState();
+    } catch (err) {
+      gfError('[GitNativeFederation] Create and link universe failed:', err);
+      setError(`Failed to create universe: ${err.message}`);
+    } finally {
+      setLoading(false);
+      setPendingUniverseLink(null);
+    }
   };
 
   const handleImportDiscovered = async (discovered, repo) => {
@@ -3001,6 +3050,20 @@ return (
         intent={repositoryIntent}
         onImportDiscovered={(universe, repoInfo) => handleImportDiscovered(universe, repoInfo)}
         onSyncDiscovered={(universe, repoInfo) => handleLinkDiscovered(universe, repoInfo)}
+      />
+
+      {/* Universe Linking Modal */}
+      <UniverseLinkingModal
+        isOpen={showUniverseLinking}
+        onClose={() => {
+          setShowUniverseLinking(false);
+          setPendingUniverseLink(null);
+        }}
+        onSelectExisting={handleUniverseLinkingSelectExisting}
+        onCreateNew={handleUniverseLinkingCreateNew}
+        existingUniverses={serviceState.universes}
+        suggestedName={pendingUniverseLink?.discovered?.name || pendingUniverseLink?.discovered?.slug || ''}
+        repositoryName={pendingUniverseLink ? `${pendingUniverseLink.repo.user}/${pendingUniverseLink.repo.repo}` : ''}
       />
 
       {/* Universe File Selection Modal */}

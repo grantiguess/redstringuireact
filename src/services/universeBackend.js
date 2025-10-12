@@ -1027,7 +1027,9 @@ class UniverseBackend {
     }
 
     // Create and configure engine
-    const sourceOfTruth = universe.sourceOfTruth || 'git';
+    // CRITICAL: Pass actual sourceOfTruth from universe, don't default to 'git'
+    // This prevents Git from overriding local files when local is source of truth
+    const sourceOfTruth = universe.sourceOfTruth || 'local';
     const fileName = universe.gitRepo.universeFile || `${universeSlug}.redstring`;
     const universeFolder = universe.gitRepo.universeFolder || universeSlug;
     const engine = new GitSyncEngine(provider, sourceOfTruth, universeSlug, fileName, this, universeFolder);

@@ -72,6 +72,38 @@ const RepositorySelectionModal = ({
         ? 'Create a repository or choose an existing one. When attaching, make sure your universe lives in the universes/ folder.'
         : null;
 
+  // Listen for auth state changes
+  useEffect(() => {
+    const updateAuthStatus = () => {
+      const freshStatus = persistentAuth.getAuthStatus();
+      setAuthStatus(freshStatus);
+    };
+
+    // Update auth status when modal opens (in case auth loaded after component mounted)
+    if (isOpen) {
+      updateAuthStatus();
+    }
+
+    // Listen for auth events
+    const handleAuthEvent = () => {
+      updateAuthStatus();
+    };
+
+    window.addEventListener('redstring:auth-connected', handleAuthEvent);
+    window.addEventListener('redstring:auth-token-stored', handleAuthEvent);
+    persistentAuth.on('tokenStored', updateAuthStatus);
+    persistentAuth.on('tokenValidated', updateAuthStatus);
+    persistentAuth.on('appInstallationStored', updateAuthStatus);
+
+    return () => {
+      window.removeEventListener('redstring:auth-connected', handleAuthEvent);
+      window.removeEventListener('redstring:auth-token-stored', handleAuthEvent);
+      persistentAuth.off('tokenStored', updateAuthStatus);
+      persistentAuth.off('tokenValidated', updateAuthStatus);
+      persistentAuth.off('appInstallationStored', updateAuthStatus);
+    };
+  }, [isOpen]);
+
   useEffect(() => {
     if (isOpen && authStatus.isAuthenticated) {
       loadRepositories();
@@ -83,9 +115,16 @@ const RepositorySelectionModal = ({
       setLoading(true);
       setError(null);
 
+      // Try OAuth token first, then fall back to GitHub App token
       let token = await persistentAuth.getAccessToken();
       if (!token) {
-        throw new Error('No access token available');
+        // Check if GitHub App is available
+        const appInstallation = persistentAuth.getAppInstallation();
+        if (appInstallation?.accessToken) {
+          token = appInstallation.accessToken;
+        } else {
+          throw new Error('No access token available. Please connect GitHub OAuth or install the GitHub App.');
+        }
       }
 
       const response = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
@@ -130,9 +169,16 @@ const RepositorySelectionModal = ({
       setCreatingRepo(true);
       setCreateRepoError(null);
 
+      // Try OAuth token first, then fall back to GitHub App token
       let token = await persistentAuth.getAccessToken();
       if (!token) {
-        throw new Error('No access token available. Please sign in again.');
+        // Check if GitHub App is available
+        const appInstallation = persistentAuth.getAppInstallation();
+        if (appInstallation?.accessToken) {
+          token = appInstallation.accessToken;
+        } else {
+          throw new Error('No access token available. Please connect GitHub OAuth or install the GitHub App.');
+        }
       }
 
       const response = await fetch('https://api.github.com/user/repos', {

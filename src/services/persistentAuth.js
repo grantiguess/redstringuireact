@@ -892,9 +892,12 @@ export class PersistentAuth {
     const needsRefresh = this.shouldRefreshToken();
     const expiryTime = this.oauthCache?.expiresAt || null;
     const hasApp = this.hasAppInstallation();
-    
+
+    // User is authenticated if they have EITHER OAuth tokens OR GitHub App installation
+    const isAuthenticated = hasTokens || hasApp;
+
     return {
-      isAuthenticated: hasTokens,
+      isAuthenticated,
       needsRefresh,
       expiryTime: expiryTime ? new Date(expiryTime) : null,
       timeToExpiry: expiryTime ? Math.max(0, expiryTime - Date.now()) : 0,
