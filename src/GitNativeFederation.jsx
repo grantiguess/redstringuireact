@@ -2163,6 +2163,23 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     }
   };
 
+  const handleGrantLocalPermission = async (slug) => {
+    try {
+      setLoading(true);
+      await gitFederationService.requestLocalFilePermission(slug);
+      setSyncStatus({
+        type: 'success',
+        message: 'Local file access restored.'
+      });
+      await refreshState();
+    } catch (error) {
+      gfError('[GitNativeFederation] Grant local permission failed:', error);
+      setError(`Failed to restore file access: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDownloadLocalFile = async (slug) => {
     try {
       setLoading(true);
@@ -2946,6 +2963,7 @@ return (
       onSetPrimarySource={handleSetPrimarySource}
       onLoadFromLocal={handleLoadFromLocal}
       onLoadFromRepo={handleLoadFromRepo}
+      onGrantLocalPermission={handleGrantLocalPermission}
       isSlim={isSlim}
     />
 

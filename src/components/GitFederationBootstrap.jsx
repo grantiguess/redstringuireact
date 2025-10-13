@@ -150,6 +150,9 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
           case 'downloadGitUniverse':
             result = await backend.downloadGitUniverse(payload.universeSlug);
             break;
+          case 'requestLocalFilePermission':
+            result = await backend.requestLocalFilePermission(payload.universeSlug);
+            break;
           case 'removeLocalFileLink':
             result = await backend.removeLocalFileLink(payload.universeSlug);
             break;

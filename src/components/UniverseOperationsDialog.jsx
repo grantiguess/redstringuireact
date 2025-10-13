@@ -25,7 +25,8 @@ import {
   GitBranch,
   Link,
   QrCode,
-  RefreshCw
+  RefreshCw,
+  Shield
 } from 'lucide-react';
 // Ensure SOURCE_OF_TRUTH is available to this component
 import universeBackendBridge from '../services/universeBackendBridge.js';
@@ -177,6 +178,10 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
         // Download current data as a .redstring file
         await universeBackendBridge.downloadLocalFile(universeSlug);
         setStatus({ type: 'success', status: 'Downloaded universe file' });
+      } else if (operationType === 'permission') {
+        await universeBackendBridge.requestLocalFilePermission(universeSlug);
+        refreshUniverses();
+        setStatus({ type: 'success', status: 'Local file access restored' });
       }
     } catch (error) {
       if (error.name !== 'AbortError') {
@@ -469,6 +474,11 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
                         (Disconnected)
                       </span>
                     )}
+                    {universe.localFile.fileHandleStatus === 'permission_needed' && (
+                      <span style={{ color: '#b85e00', marginLeft: '8px', fontSize: '0.75rem' }}>
+                        (Permission needed)
+                      </span>
+                    )}
                   </div>
                 </div>
                 <label className="toggle-switch">
@@ -506,6 +516,35 @@ const UniverseOperationsDialog = ({ isOpen, onClose, initialOperation = null }) 
                   >
                     <RefreshCw size={14} />
                     Reconnect File
+                  </button>
+                </div>
+              )}
+              {universe.localFile.enabled && universe.localFile.fileHandleStatus === 'permission_needed' && (
+                <div style={{
+                  padding: '8px',
+                  backgroundColor: '#fff8e1',
+                  border: '1px solid #ffc107',
+                  borderRadius: '4px',
+                  marginTop: '8px',
+                  fontSize: '0.75rem',
+                  color: '#b85e00'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                    <AlertCircle size={14} />
+                    <span style={{ fontWeight: 600 }}>Permission required</span>
+                  </div>
+                  {universe.localFile.reconnectMessage && (
+                    <div style={{ marginBottom: '8px', color: '#666' }}>
+                      {universe.localFile.reconnectMessage}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => handleLocalFileOperation(universeSlug, 'permission')}
+                    className="action-button secondary small"
+                    style={{ backgroundColor: '#ffc107', color: '#4a2c00', border: 'none' }}
+                  >
+                    <Shield size={14} />
+                    Grant Access
                   </button>
                 </div>
               )}

@@ -268,6 +268,10 @@ class UniverseBackendBridge {
     return this.sendCommand('downloadGitUniverse', { universeSlug });
   }
 
+  requestLocalFilePermission(universeSlug) {
+    return this.sendCommand('requestLocalFilePermission', { universeSlug });
+  }
+
   removeLocalFileLink(universeSlug) {
     return this.sendCommand('removeLocalFileLink', { universeSlug });
   }
@@ -306,6 +310,7 @@ const universeBackendBridge = {
   saveActiveUniverse: (storeState) => bridgeInstance.saveActiveUniverse(storeState),
   downloadLocalFile: (universeSlug, storeState) => bridgeInstance.downloadLocalFile(universeSlug, storeState),
   downloadGitUniverse: (universeSlug) => bridgeInstance.downloadGitUniverse(universeSlug),
+  requestLocalFilePermission: (universeSlug) => bridgeInstance.requestLocalFilePermission(universeSlug),
   removeLocalFileLink: (universeSlug) => bridgeInstance.removeLocalFileLink(universeSlug),
   uploadLocalFile: (file, targetUniverseSlug) => bridgeInstance.uploadLocalFile(file, targetUniverseSlug),
   reloadUniverse: (universeSlug) => bridgeInstance.reloadUniverse(universeSlug)

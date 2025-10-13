@@ -607,11 +607,15 @@ class UniverseBackend {
 
           const universe = this.getUniverse(universeSlug);
           if (universe) {
+            const status = result.needsPermission ? 'permission_needed' : 'connected';
             this.updateUniverse(universeSlug, {
               localFile: {
                 ...universe.localFile,
-                fileHandleStatus: 'connected',
+                fileHandleStatus: status,
                 displayPath: result.metadata?.displayPath || universe.localFile.displayPath,
+                reconnectMessage: result.needsPermission
+                  ? (result.message || 'Grant file access permission to resume saving.')
+                  : universe.localFile.reconnectMessage,
                 lastAccessed: Date.now()
               }
             });
@@ -627,6 +631,19 @@ class UniverseBackend {
                 fileHandleStatus: 'needs_reconnect',
                 displayPath: result.metadata?.displayPath || universe.localFile.displayPath,
                 reconnectMessage: result.message
+              }
+            });
+          }
+        } else if (result.needsPermission) {
+          gfLog(`[UniverseBackend] File handle for ${universeSlug} needs permission refresh: ${result.message || 'Permission required'}`);
+          const universe = this.getUniverse(universeSlug);
+          if (universe) {
+            this.updateUniverse(universeSlug, {
+              localFile: {
+                ...universe.localFile,
+                fileHandleStatus: 'permission_needed',
+                displayPath: result.metadata?.displayPath || universe.localFile.displayPath,
+                reconnectMessage: result.message || 'Grant file access permission to resume saving.'
               }
             });
           }
@@ -3422,6 +3439,77 @@ class UniverseBackend {
   }
 
   /**
+   * Request permission for an existing local file handle without relinking
+   */
+  async requestLocalFilePermission(universeSlug) {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    let handle = this.fileHandles.get(universeSlug);
+    if (!handle) {
+      const restore = await attemptRestoreFileHandle(universeSlug);
+      if (restore?.success && restore.handle) {
+        handle = restore.handle;
+        this.fileHandles.set(universeSlug, handle);
+      }
+    }
+
+    if (!handle) {
+      throw new Error('No linked local file handle found. Reconnect the file to continue.');
+    }
+
+    let permission = await checkFileHandlePermission(handle);
+    if (permission !== 'granted') {
+      permission = await requestFileHandlePermission(handle);
+    }
+
+    if (permission !== 'granted') {
+      throw new Error('File access permission was denied.');
+    }
+
+    try {
+      await handle.getFile();
+    } catch (error) {
+      const name = String(error?.name || '');
+      if (name === 'NotFoundError') {
+        throw new Error('The linked file could not be found. Reconnect the file to continue.');
+      }
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        throw new Error('Permission was not granted for the linked file.');
+      }
+      throw error;
+    }
+
+    const metadata = await getFileHandleMetadata(universeSlug);
+    try {
+      await storeFileHandleMetadata(universeSlug, handle, {
+        ...(metadata || {}),
+        lastAccessed: Date.now()
+      });
+    } catch (error) {
+      gfWarn('[UniverseBackend] Failed to update file handle metadata after permission grant:', error);
+    }
+
+    const universe = this.getUniverse(universeSlug);
+    if (universe) {
+      await this.updateUniverse(universeSlug, {
+        localFile: {
+          ...universe.localFile,
+          hadFileHandle: true,
+          fileHandleStatus: 'connected',
+          reconnectMessage: null,
+          unavailableReason: null,
+          lastAccessed: Date.now()
+        }
+      });
+    }
+
+    this.notifyStatus('success', 'Local file access restored.');
+    return { granted: true };
+  }
+
+  /**
    * Save current universe store state to the previously linked file handle
   */
   async saveToLinkedLocalFile(universeSlug, storeState = null, options = {}) {
@@ -3483,9 +3571,10 @@ class UniverseBackend {
           await this.updateUniverse(universeSlug, {
             localFile: {
               ...universe.localFile,
-              hadFileHandle: false,
-              fileHandleStatus: 'needs_reconnect',
-              unavailableReason: 'Permission denied. Reconnect the local file to continue saving.'
+              hadFileHandle: true,
+              fileHandleStatus: 'permission_needed',
+              reconnectMessage: 'Permission denied. Grant access to continue saving.',
+              unavailableReason: 'Permission denied. Allow access to resume automatic saves.'
             }
           });
         }

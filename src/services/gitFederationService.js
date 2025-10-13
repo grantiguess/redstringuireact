@@ -574,6 +574,12 @@ export const gitFederationService = {
     return this.refreshUniverses();
   },
 
+  async requestLocalFilePermission(slug) {
+    const result = await universeBackendBridge.requestLocalFilePermission(slug);
+    await this.refreshUniverses();
+    return result;
+  },
+
   async removeLocalFile(slug) {
     await universeBackendBridge.removeLocalFileLink(slug);
     return this.refreshUniverses();

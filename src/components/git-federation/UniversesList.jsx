@@ -73,6 +73,7 @@ const UniversesList = ({
   onSetPrimarySource,
   onLoadFromLocal,
   onLoadFromRepo,
+  onGrantLocalPermission,
   isSlim = false
 }) => {
   // No collapsing - active universe is always expanded, others show compact view
@@ -603,6 +604,45 @@ const UniversesList = ({
                                         }}
                                       >
                                         Reconnect
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                                {localFile.fileHandleStatus === 'permission_needed' && (
+                                  <div
+                                    style={{
+                                      marginTop: 6,
+                                      padding: '6px 8px',
+                                      borderRadius: 6,
+                                      backgroundColor: 'rgba(237,170,0,0.14)',
+                                      border: '1px solid rgba(237,170,0,0.4)',
+                                      color: '#5a3b00',
+                                      fontSize: '0.65rem',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      gap: 8,
+                                      flexWrap: 'wrap'
+                                    }}
+                                  >
+                                    <span>
+                                      {localFile.reconnectMessage || 'Grant file access permission to resume auto-saving.'}
+                                    </span>
+                                    {onGrantLocalPermission && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onGrantLocalPermission(universe.slug);
+                                        }}
+                                        style={{
+                                          ...buttonStyle('outline'),
+                                          fontSize: '0.62rem',
+                                          padding: '2px 6px',
+                                          borderColor: '#b85e00',
+                                          color: '#b85e00'
+                                        }}
+                                      >
+                                        Grant Access
                                       </button>
                                     )}
                                   </div>

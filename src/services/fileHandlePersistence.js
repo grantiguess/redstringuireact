@@ -186,32 +186,76 @@ export const requestFileHandlePermission = async (fileHandle) => {
  * @returns {Promise<boolean>} True if handle is valid and accessible
  */
 export const verifyFileHandleAccess = async (fileHandle) => {
-  if (!fileHandle) {
-    return false;
+  if (!fileHandle || typeof fileHandle.queryPermission !== 'function') {
+    return {
+      isValid: false,
+      permission: 'denied',
+      reason: 'unavailable'
+    };
   }
-  
+
+  let permission = 'denied';
   try {
-    // First check permission
-    const permission = await checkFileHandlePermission(fileHandle);
-    
-    if (permission === 'denied') {
-      return false;
-    }
-    
-    if (permission === 'prompt') {
-      // Try to request permission
-      const granted = await requestFileHandlePermission(fileHandle);
-      if (granted !== 'granted') {
-        return false;
-      }
-    }
-    
-    // Try to actually access the file to verify it still exists
-    await fileHandle.getFile();
-    return true;
+    permission = await checkFileHandlePermission(fileHandle);
   } catch (error) {
+    console.warn('[FileHandlePersistence] Permission query failed:', error);
+    return {
+      isValid: false,
+      permission: 'denied',
+      reason: 'permission_query_failed',
+      error
+    };
+  }
+
+  if (permission === 'denied') {
+    return {
+      isValid: false,
+      permission: 'denied',
+      reason: 'permission_denied'
+    };
+  }
+
+  if (permission === 'prompt') {
+    // Treat prompt as still connected but requiring a future user gesture.
+    return {
+      isValid: true,
+      permission: 'prompt',
+      needsPermissionPrompt: true
+    };
+  }
+
+  try {
+    await fileHandle.getFile();
+    return {
+      isValid: true,
+      permission: 'granted',
+      needsPermissionPrompt: false
+    };
+  } catch (error) {
+    const name = String(error?.name || '');
+    if (name === 'NotFoundError') {
+      return {
+        isValid: false,
+        permission: 'granted',
+        reason: 'file_missing',
+        error
+      };
+    }
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+      return {
+        isValid: false,
+        permission: 'denied',
+        reason: 'permission_denied',
+        error
+      };
+    }
     console.warn('[FileHandlePersistence] File handle verification failed:', error);
-    return false;
+    return {
+      isValid: false,
+      permission: permission || 'granted',
+      reason: 'unknown_error',
+      error
+    };
   }
 };
 
@@ -226,8 +270,8 @@ export const attemptRestoreFileHandle = async (universeSlug, sessionHandle = nul
   try {
     // If we have a session handle, verify it's still valid
     if (sessionHandle) {
-      const isValid = await verifyFileHandleAccess(sessionHandle);
-      if (isValid) {
+      const access = await verifyFileHandleAccess(sessionHandle);
+      if (access?.isValid) {
         // Update last accessed time
         const metadata = await getFileHandleMetadata(universeSlug);
         if (metadata) {
@@ -238,8 +282,10 @@ export const attemptRestoreFileHandle = async (universeSlug, sessionHandle = nul
         return {
           success: true,
           handle: sessionHandle,
-          metadata: null,
-          needsReconnect: false
+          metadata: metadata ? { ...metadata, permission: access.permission } : null,
+          needsReconnect: false,
+          needsPermission: !!access.needsPermissionPrompt,
+          permission: access.permission
         };
       }
     }
@@ -254,8 +300,8 @@ export const attemptRestoreFileHandle = async (universeSlug, sessionHandle = nul
     }
     
     if (metadata.handle) {
-      const isValid = await verifyFileHandleAccess(metadata.handle);
-      if (isValid) {
+      const access = await verifyFileHandleAccess(metadata.handle);
+      if (access?.isValid) {
         await storeFileHandleMetadata(universeSlug, metadata.handle, {
           ...metadata,
           lastAccessed: Date.now()
@@ -263,8 +309,28 @@ export const attemptRestoreFileHandle = async (universeSlug, sessionHandle = nul
         return {
           success: true,
           handle: metadata.handle,
+          metadata: { ...metadata, permission: access.permission },
+          needsReconnect: false,
+          needsPermission: !!access.needsPermissionPrompt,
+          permission: access.permission
+        };
+      } else if (access?.reason === 'file_missing') {
+        return {
+          success: false,
           metadata,
-          needsReconnect: false
+          needsReconnect: true,
+          message: 'The linked file could not be found. Reconnect or choose a new file.'
+        };
+      } else if (access?.reason === 'permission_denied') {
+        return {
+          success: false,
+          metadata,
+          needsReconnect: false,
+          needsPermission: true,
+          permission: access.permission,
+          message: metadata.displayPath
+            ? `Permission needed to access ${metadata.displayPath}. Reauthorize access to continue saving.`
+            : 'Permission needed to access the linked file.'
         };
       }
     }
