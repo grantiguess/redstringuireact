@@ -2023,9 +2023,21 @@ class UniverseManager {
         // Skip if we already have a valid handle in the session
         const existingHandle = this.fileHandles.get(universeSlug);
         if (existingHandle) {
-          const isValid = await verifyFileHandleAccess(existingHandle);
-          if (isValid) {
+          const access = await verifyFileHandleAccess(existingHandle);
+          if (access?.isValid) {
             gfLog(`[UniverseManager] File handle for ${universeSlug} already valid in session`);
+            if (access.needsPermissionPrompt) {
+              const universe = this.getUniverse(universeSlug);
+              if (universe) {
+                this.updateUniverse(universeSlug, {
+                  localFile: {
+                    ...universe.localFile,
+                    fileHandleStatus: 'permission_needed',
+                    reconnectMessage: 'Grant file access permission to resume saving.'
+                  }
+                });
+              }
+            }
             continue;
           }
         }

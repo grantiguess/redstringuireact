@@ -54,6 +54,18 @@ const SOURCE_OF_TRUTH = {
   BROWSER: 'browser'
 };
 
+const LOCAL_FILE_ERROR = {
+  PERMISSION: 'LOCAL_FILE_PERMISSION',
+  MISSING: 'LOCAL_FILE_MISSING',
+  NOT_FOUND: 'LOCAL_FILE_NOT_FOUND'
+};
+
+function createLocalFileError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
 class UniverseBackend {
   constructor() {
     // Core universe state (from universeManager)
@@ -98,6 +110,7 @@ class UniverseBackend {
     this.lastAuthEngineSetup = 0;
     this.pendingPrimarySelection = new Set();
     this.secondarySyncTimestamps = new Map();
+    this.restoreHandlesPromise = null;
 
     // Load universes from storage
     this.loadFromStorage();
@@ -108,9 +121,24 @@ class UniverseBackend {
     }, 100);
 
     // Attempt to restore file handles
-    setTimeout(() => {
-      this.restoreFileHandles();
-    }, 200);
+    this.scheduleRestoreFileHandles();
+  }
+
+  scheduleRestoreFileHandles(delay = 200) {
+    if (this.restoreHandlesPromise) {
+      return;
+    }
+    this.restoreHandlesPromise = new Promise((resolve) => {
+      setTimeout(() => {
+        this.restoreFileHandles()
+          .catch(error => {
+            gfWarn('[UniverseBackend] Delayed restoreFileHandles failed:', error);
+          })
+          .finally(() => {
+            resolve();
+          });
+      }, delay);
+    });
   }
 
   // ========== CORE UNIVERSE MANAGEMENT METHODS (from universeManager) ==========
@@ -569,6 +597,135 @@ class UniverseBackend {
     }
   }
 
+  async updateLocalFileState(universeOrSlug, patch, options = {}) {
+    const slug = typeof universeOrSlug === 'string' ? universeOrSlug : universeOrSlug?.slug;
+    if (!slug) return;
+
+    const current = typeof universeOrSlug === 'object' && universeOrSlug
+      ? universeOrSlug
+      : this.getUniverse(slug);
+    if (!current) return;
+
+    const mergedLocal = {
+      ...current.localFile,
+      ...patch
+    };
+
+    const mergedRaw = {
+      ...(current.raw || {}),
+      localFile: {
+        ...(current.raw?.localFile || {}),
+        ...mergedLocal
+      }
+    };
+
+    const updatedUniverse = {
+      ...current,
+      localFile: mergedLocal,
+      raw: mergedRaw
+    };
+
+    this.universes.set(slug, this.safeNormalizeUniverse(updatedUniverse));
+    this.saveToStorage();
+
+    if (options.notify?.message) {
+      this.notifyStatus(options.notify.type || 'info', options.notify.message);
+    }
+  }
+
+  async ensureLocalFileHandle(universe, options = {}) {
+    if (!universe?.slug) {
+      return { success: false, message: 'Universe missing slug' };
+    }
+
+    const slug = universe.slug;
+    const metadataHint = options.metadata || null;
+
+    let existingHandle = this.fileHandles.get(slug);
+    if (existingHandle) {
+      const access = await verifyFileHandleAccess(existingHandle);
+      if (access?.isValid) {
+        const displayPath = metadataHint?.displayPath || metadataHint?.fileName || universe.localFile.displayPath;
+        await this.updateLocalFileState(universe, {
+          fileHandleStatus: access.needsPermissionPrompt ? 'permission_needed' : 'connected',
+          displayPath: displayPath || universe.localFile.displayPath,
+          reconnectMessage: access.needsPermissionPrompt
+            ? 'Grant file access permission to resume saving.'
+            : null,
+          unavailableReason: access.needsPermissionPrompt
+            ? 'Grant file access permission to resume saving.'
+            : null,
+          hadFileHandle: true,
+          lastAccessed: Date.now()
+        });
+
+        return {
+          success: true,
+          handle: existingHandle,
+          needsPermission: !!access.needsPermissionPrompt,
+          permission: access.permission,
+          metadata: metadataHint || null
+        };
+      }
+
+      if (access?.reason === 'file_missing') {
+        await this.updateLocalFileState(universe, {
+          hadFileHandle: false,
+          fileHandleStatus: 'needs_reconnect',
+          reconnectMessage: 'Local file not found. Reconnect the file to continue.'
+        });
+      } else if (access?.reason === 'permission_denied') {
+        await this.updateLocalFileState(universe, {
+          fileHandleStatus: 'permission_needed',
+          reconnectMessage: 'Grant file access permission to resume saving.'
+        });
+      }
+
+      this.fileHandles.delete(slug);
+    }
+
+    const restore = await attemptRestoreFileHandle(slug, existingHandle);
+    if (restore.success && restore.handle) {
+      this.fileHandles.set(slug, restore.handle);
+
+      const displayPath =
+        restore.metadata?.displayPath ||
+        restore.metadata?.fileName ||
+        metadataHint?.displayPath ||
+        universe.localFile.displayPath;
+
+      await this.updateLocalFileState(universe, {
+        fileHandleStatus: restore.needsPermission ? 'permission_needed' : 'connected',
+        displayPath: displayPath || universe.localFile.displayPath,
+        reconnectMessage: restore.needsPermission
+          ? restore.message || 'Grant file access permission to resume saving.'
+          : null,
+        unavailableReason: restore.needsPermission
+          ? restore.message || 'Grant file access permission to resume saving.'
+          : null,
+        hadFileHandle: true,
+        lastAccessed: Date.now()
+      });
+
+      return restore;
+    }
+
+    if (restore.needsPermission) {
+      await this.updateLocalFileState(universe, {
+        fileHandleStatus: 'permission_needed',
+        reconnectMessage: restore.message || 'Grant file access permission to resume saving.'
+      });
+    } else if (restore.needsReconnect) {
+      await this.updateLocalFileState(universe, {
+        fileHandleStatus: 'needs_reconnect',
+        reconnectMessage: restore.message || 'Reconnect the local file to continue.',
+        hadFileHandle: false
+      });
+    }
+
+    return restore;
+  }
+
   /**
    * Restore file handles from persistence
    */
@@ -588,65 +745,17 @@ class UniverseBackend {
 
       for (const metadata of allMetadata) {
         const { universeSlug } = metadata;
+        const universe = this.getUniverse(universeSlug);
+        if (!universe) continue;
 
-        const existingHandle = this.fileHandles.get(universeSlug);
-        if (existingHandle) {
-          const isValid = await verifyFileHandleAccess(existingHandle);
-          if (isValid) {
-            gfLog(`[UniverseBackend] File handle for ${universeSlug} already valid in session`);
-            continue;
-          }
-        }
-
-        const result = await attemptRestoreFileHandle(universeSlug, existingHandle);
-
-        if (result.success && result.handle) {
-          this.fileHandles.set(universeSlug, result.handle);
+        const result = await this.ensureLocalFileHandle(universe, { metadata });
+        if (result?.success && result.handle) {
           gfLog(`[UniverseBackend] Successfully restored file handle for ${universeSlug}`);
           restoredAny = true;
-
-          const universe = this.getUniverse(universeSlug);
-          if (universe) {
-            const status = result.needsPermission ? 'permission_needed' : 'connected';
-            this.updateUniverse(universeSlug, {
-              localFile: {
-                ...universe.localFile,
-                fileHandleStatus: status,
-                displayPath: result.metadata?.displayPath || universe.localFile.displayPath,
-                reconnectMessage: result.needsPermission
-                  ? (result.message || 'Grant file access permission to resume saving.')
-                  : universe.localFile.reconnectMessage,
-                lastAccessed: Date.now()
-              }
-            });
-          }
-        } else if (result.needsReconnect) {
+        } else if (result?.needsReconnect) {
           gfLog(`[UniverseBackend] File handle for ${universeSlug} needs reconnection: ${result.message}`);
-
-          const universe = this.getUniverse(universeSlug);
-          if (universe) {
-            this.updateUniverse(universeSlug, {
-              localFile: {
-                ...universe.localFile,
-                fileHandleStatus: 'needs_reconnect',
-                displayPath: result.metadata?.displayPath || universe.localFile.displayPath,
-                reconnectMessage: result.message
-              }
-            });
-          }
-        } else if (result.needsPermission) {
+        } else if (result?.needsPermission) {
           gfLog(`[UniverseBackend] File handle for ${universeSlug} needs permission refresh: ${result.message || 'Permission required'}`);
-          const universe = this.getUniverse(universeSlug);
-          if (universe) {
-            this.updateUniverse(universeSlug, {
-              localFile: {
-                ...universe.localFile,
-                fileHandleStatus: 'permission_needed',
-                displayPath: result.metadata?.displayPath || universe.localFile.displayPath,
-                reconnectMessage: result.message || 'Grant file access permission to resume saving.'
-              }
-            });
-          }
         }
       }
 
@@ -727,6 +836,13 @@ class UniverseBackend {
       if (activeUniverse) {
         gfLog(`[UniverseBackend] Loading active universe into store: ${activeUniverse.name || activeUniverse.slug}`);
         try {
+          if (this.restoreHandlesPromise) {
+            try {
+              await this.restoreHandlesPromise;
+            } catch (restoreError) {
+              gfWarn('[UniverseBackend] Waiting for file handle restoration failed:', restoreError);
+            }
+          }
           // Try to load (will fall back to browser storage if Git fails due to auth)
           const storeState = await this.loadUniverseData(activeUniverse);
           if (storeState && this.storeOperations?.loadUniverseFromFile) {
@@ -751,6 +867,13 @@ class UniverseBackend {
           }
         } catch (error) {
           gfWarn('[UniverseBackend] Failed to load active universe data:', error);
+          if (
+            error?.code === LOCAL_FILE_ERROR.PERMISSION ||
+            error?.code === LOCAL_FILE_ERROR.MISSING ||
+            error?.code === LOCAL_FILE_ERROR.NOT_FOUND
+          ) {
+            this.notifyStatus('warning', error.message);
+          }
         }
       } else {
         gfLog('[UniverseBackend] No active universe to load');
@@ -2205,6 +2328,14 @@ class UniverseBackend {
         loadMethod = universe.sourceOfTruth;
       } catch (primaryError) {
         gfWarn('[UniverseBackend] Primary load failed:', primaryError);
+        if (
+          primaryError?.code === LOCAL_FILE_ERROR.PERMISSION ||
+          primaryError?.code === LOCAL_FILE_ERROR.MISSING ||
+          primaryError?.code === LOCAL_FILE_ERROR.NOT_FOUND
+        ) {
+          this.notifyStatus('warning', primaryError.message);
+          return false;
+        }
       }
 
       if (storeState) {
@@ -2354,6 +2485,14 @@ class UniverseBackend {
           source: SOURCE_OF_TRUTH.LOCAL
         });
       } catch (error) {
+        if (
+          error?.code === LOCAL_FILE_ERROR.PERMISSION ||
+          error?.code === LOCAL_FILE_ERROR.MISSING ||
+          error?.code === LOCAL_FILE_ERROR.NOT_FOUND
+        ) {
+          gfWarn('[UniverseBackend] Local file load blocked by access issue:', error.message);
+          throw error;
+        }
         gfWarn('[UniverseBackend] Local file load failed, trying fallback:', error);
       }
     }
@@ -2367,7 +2506,14 @@ class UniverseBackend {
           source: SOURCE_OF_TRUTH.LOCAL
         });
       } catch (error) {
-        gfWarn('[UniverseBackend] Local fallback failed:', error);
+        if (
+          error?.code === LOCAL_FILE_ERROR.PERMISSION ||
+          error?.code === LOCAL_FILE_ERROR.NOT_FOUND
+        ) {
+          gfWarn('[UniverseBackend] Local fallback skipped due to permission requirement:', error.message);
+        } else {
+          gfWarn('[UniverseBackend] Local fallback failed:', error);
+        }
       }
     }
 
@@ -2813,21 +2959,71 @@ class UniverseBackend {
    * Load from local file
    */
   async loadFromLocalFile(universe) {
-    const fileHandle = this.fileHandles.get(universe.slug);
+    const slug = universe.slug;
+    const ensureResult = await this.ensureLocalFileHandle(universe);
+    const fileHandle = this.fileHandles.get(slug);
+
     if (!fileHandle) {
-      throw new Error('No file handle available for this universe');
+      const message = ensureResult?.message || 'Local file connection not available. Reconnect the file to continue.';
+      const code = ensureResult?.needsPermission ? LOCAL_FILE_ERROR.PERMISSION : LOCAL_FILE_ERROR.MISSING;
+      throw createLocalFileError(code, message);
     }
 
-    const file = await fileHandle.getFile();
-    const text = await file.text();
+    if (ensureResult?.needsPermission) {
+      const message = ensureResult.message || 'Grant file access permission to resume saving.';
+      throw createLocalFileError(LOCAL_FILE_ERROR.PERMISSION, message);
+    }
+
+    let file;
+    try {
+      file = await fileHandle.getFile();
+    } catch (error) {
+      const name = String(error?.name || '');
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        await this.updateLocalFileState(universe, {
+          fileHandleStatus: 'permission_needed',
+          reconnectMessage: 'Grant file access permission to resume saving.',
+          unavailableReason: 'Grant file access permission to resume saving.'
+        });
+        throw createLocalFileError(LOCAL_FILE_ERROR.PERMISSION, 'Permission denied for local file access.');
+      }
+      if (name === 'NotFoundError') {
+        await this.updateLocalFileState(universe, {
+          hadFileHandle: false,
+          fileHandleStatus: 'needs_reconnect',
+          reconnectMessage: 'Local file not found. Reconnect the file to continue.',
+          unavailableReason: 'Local file not found. Reconnect the file to continue.'
+        });
+        throw createLocalFileError(LOCAL_FILE_ERROR.NOT_FOUND, 'Local file not found. Reconnect the file to continue.');
+      }
+      throw error;
+    }
+
+    let text;
+    try {
+      text = await file.text();
+    } catch (error) {
+      gfWarn('[UniverseBackend] Failed to read local file contents:', error);
+      throw createLocalFileError(LOCAL_FILE_ERROR.MISSING, 'Failed to read the linked local file.');
+    }
 
     if (!text || text.trim() === '') {
       return null;
     }
 
-    const redstringData = JSON.parse(text);
-    const { storeState } = importFromRedstring(redstringData);
-    return storeState;
+    try {
+      const redstringData = JSON.parse(text);
+      const { storeState } = importFromRedstring(redstringData);
+      try {
+        await touchFileHandle(slug, fileHandle);
+      } catch (touchError) {
+        gfWarn('[UniverseBackend] Failed to update file handle metadata after load:', touchError);
+      }
+      return storeState;
+    } catch (error) {
+      gfWarn('[UniverseBackend] Failed to parse local file JSON:', error);
+      throw new Error(`Invalid local file format: ${error.message}`);
+    }
   }
 
   /**
@@ -3493,16 +3689,7 @@ class UniverseBackend {
 
     const universe = this.getUniverse(universeSlug);
     if (universe) {
-      await this.updateUniverse(universeSlug, {
-        localFile: {
-          ...universe.localFile,
-          hadFileHandle: true,
-          fileHandleStatus: 'connected',
-          reconnectMessage: null,
-          unavailableReason: null,
-          lastAccessed: Date.now()
-        }
-      });
+      await this.ensureLocalFileHandle(universe);
     }
 
     this.notifyStatus('success', 'Local file access restored.');
