@@ -341,7 +341,13 @@ class UniverseManager {
         enabled: providedGitRepo.enabled ?? false,
         linkedRepo: providedGitRepo.linkedRepo || universe.linkedRepo || null,
         schemaPath: providedGitRepo.schemaPath || universe.schemaPath || 'schema',
-        universeFolder: providedUniverseFolder || `universes/${slug}`,
+        universeFolder: (() => {
+          const folder = providedUniverseFolder || slug;
+          if (folder.startsWith?.('universes/')) {
+            return folder.split('/').filter(Boolean).pop() || slug;
+          }
+          return folder;
+        })(),
         universeFile: providedUniverseFile || `${slug}.redstring`,
         priority: providedGitRepo.priority || 'secondary'
       },
@@ -514,7 +520,13 @@ class UniverseManager {
           : (providedGitRepo.enabled ?? false),
         linkedRepo: providedGitRepo.linkedRepo || universe.linkedRepo || null, // Migration from old format
         schemaPath: providedGitRepo.schemaPath || universe.schemaPath || 'schema',
-        universeFolder: providedUniverseFolder || `universes/${slug}`,
+        universeFolder: (() => {
+          const folder = providedUniverseFolder || slug;
+          if (folder.startsWith?.('universes/')) {
+            return folder.split('/').filter(Boolean).pop() || slug;
+          }
+          return folder;
+        })(),
         universeFile: providedUniverseFile || `${slug}.redstring`,
         priority: providedGitRepo.priority || (isGitOnlyMode ? 'primary' : 'secondary')
       },
@@ -1260,17 +1272,16 @@ class UniverseManager {
         return null;
       }
 
-      // Fix potential path mismatch: if universeFolder contains 'universe' but slug is different, use slug-based path
-      let folder = universe?.gitRepo?.universeFolder || `universes/${universe.slug}`;
+      // Ensure universeFolder is just the folder segment (e.g., "default")
+      let folder = universe?.gitRepo?.universeFolder || universe.slug;
       let pathWasCorrected = false;
-      
-      // Migration fix: if folder is "universes/universe" but slug is not "universe", update to correct path
-      if (folder === 'universes/universe' && universe.slug !== 'universe') {
-        gfLog(`[UniverseManager] Fixing stale universeFolder path for ${universe.slug}: ${folder} → universes/${universe.slug}`);
-        folder = `universes/${universe.slug}`;
+
+      if (folder && folder.startsWith('universes/')) {
+        const stripped = folder.split('/').filter(Boolean).pop() || universe.slug;
+        gfLog(`[UniverseManager] Normalizing legacy universeFolder path for ${universe.slug}: ${folder} → ${stripped}`);
+        folder = stripped;
         pathWasCorrected = true;
-        
-        // Persist the corrected path
+
         try {
           this.updateUniverse(universe.slug, {
             gitRepo: {
@@ -1278,14 +1289,14 @@ class UniverseManager {
               universeFolder: folder
             }
           });
-          gfLog(`[UniverseManager] Persisted corrected path for ${universe.slug}`);
+          gfLog(`[UniverseManager] Persisted normalized path for ${universe.slug}`);
         } catch (updateError) {
-          gfWarn(`[UniverseManager] Failed to persist corrected path:`, updateError);
+          gfWarn('[UniverseManager] Failed to persist normalized path:', updateError);
         }
       }
-      
+
       const fileName = universe?.gitRepo?.universeFile || `${universe.slug}.redstring`;
-      const filePath = `${folder}/${fileName}`;
+      const filePath = `universes/${folder}/${fileName}`;
 
       let content;
       try {

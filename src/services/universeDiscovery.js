@@ -97,42 +97,70 @@ async function traverseRepositoryForUniverses(provider, { collectStats = false }
 
   const rootsToCheck = ['universes'];
 
-  for (const root of rootsToCheck) {
+  const shouldSkipDirectory = (segment) => {
+    if (!segment) return false;
+    const lower = segment.toLowerCase();
+    return lower === 'backups' || lower.startsWith('.');
+  };
+
+  const walkDirectory = async (directory) => {
+    if (!directory) return;
+    if (stats) stats.scannedDirs += 1;
+
+    let entries;
     try {
-      const entries = await provider.listDirectoryContents(root);
-      if (stats) stats.scannedDirs += 1;
-
-      for (const entry of entries) {
-        if (entry.type !== 'file' || !entry.name.endsWith('.redstring')) continue;
-
-        const filePath = `${root}/${entry.name}`;
-        if (stats) stats.candidates += 1;
-
-        try {
-          const universeInfo = await analyzeUniverseFile(provider, filePath);
-          if (universeInfo) {
-            universes.push({
-              ...universeInfo,
-              path: filePath,
-              location: root,
-              type: 'file'
-            });
-            if (stats) stats.valid += 1;
-          } else if (stats) {
-            stats.invalid += 1;
-          }
-        } catch (error) {
-          console.warn(`[UniverseDiscovery] Failed to analyze ${filePath}: ${error.message}`);
-          if (stats) stats.invalid += 1;
-        }
-      }
+      entries = await provider.listDirectoryContents(directory);
     } catch (error) {
       if (error?.message?.includes('404')) {
-        console.log(`[UniverseDiscovery] Directory '${root}' not found (expected if repository has not been initialized)`);
-      } else {
-        console.warn(`[UniverseDiscovery] Failed to list directory ${root}: ${error?.message || error}`);
+        console.log(`[UniverseDiscovery] Directory '${directory}' not found (expected if repository has not been initialized)`);
+        return;
+      }
+      console.warn(`[UniverseDiscovery] Failed to list directory ${directory}: ${error?.message || error}`);
+      return;
+    }
+
+    for (const entry of entries) {
+      const entryPath = `${directory}/${entry.name}`;
+
+      if (entry.type === 'dir') {
+        if (shouldSkipDirectory(entry.name)) {
+          continue;
+        }
+        await walkDirectory(entryPath);
+        continue;
+      }
+
+      if (entry.type !== 'file' || !entry.name.endsWith('.redstring')) {
+        continue;
+      }
+
+      if (stats) stats.candidates += 1;
+
+      try {
+        const universeInfo = await analyzeUniverseFile(provider, entryPath);
+        if (universeInfo) {
+          universes.push({
+            ...universeInfo,
+            path: entryPath,
+            location: directory,
+            type: 'file',
+            universeFolder: extractSchemaPath(entryPath),
+            universeFile: entryPath.split('/').pop()
+          });
+          if (stats) stats.valid += 1;
+        } else if (stats) {
+          stats.invalid += 1;
+        }
+      } catch (error) {
+        console.warn(`[UniverseDiscovery] Failed to analyze ${entryPath}: ${error.message}`);
+        if (stats) stats.invalid += 1;
       }
     }
+  };
+
+  for (const root of rootsToCheck) {
+    if (shouldSkipDirectory(root)) continue;
+    await walkDirectory(root);
   }
 
   return {
@@ -345,8 +373,13 @@ export const createUniverseConfigFromDiscovered = (discoveredUniverse, repoConfi
  * @returns {string} Universe folder name (just the folder, not full path)
  */
 const extractSchemaPath = (filePath) => {
-  const parts = filePath.split('/');
-  parts.pop(); // Remove filename
-  // Get just the last folder name, not the full path
-  return parts[parts.length - 1] || 'default';
+  const parts = (filePath || '').split('/').filter(Boolean);
+  if (parts.length <= 1) {
+    const fileBase = parts[parts.length - 1] || '';
+    return fileBase.replace(/\.redstring$/i, '') || 'default';
+  }
+  // Remove filename
+  parts.pop();
+  const folder = parts.pop();
+  return folder || 'default';
 };

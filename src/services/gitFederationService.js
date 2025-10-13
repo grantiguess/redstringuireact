@@ -457,7 +457,7 @@ export const gitFederationService = {
         ...universe.raw.gitRepo,
         enabled: true,
         linkedRepo,
-        universeFolder: repoConfig.universeFolder || universe.raw.gitRepo?.universeFolder || `universes/${slug}`,
+        universeFolder: repoConfig.universeFolder || universe.raw.gitRepo?.universeFolder || slug,
         universeFile: repoConfig.universeFile || universe.raw.gitRepo?.universeFile || `${slug}.redstring`
       },
       sourceOfTruth: preservedSourceOfTruth

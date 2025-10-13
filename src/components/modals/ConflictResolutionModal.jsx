@@ -14,7 +14,8 @@ const ConflictResolutionModal = ({
   onSelectGit,
   localData,
   gitData,
-  universeName
+  universeName,
+  requiresPrimarySelection = false
 }) => {
   if (!isOpen) return null;
 
@@ -50,6 +51,20 @@ const ConflictResolutionModal = ({
     backgroundColor: isPrimary ? color : 'transparent',
     color: isPrimary ? '#bdb5b5' : color
   });
+
+  const headerTitle = requiresPrimarySelection ? 'Select Primary Storage' : 'Data Conflict Detected';
+  const descriptionContent = requiresPrimarySelection ? (
+    <>
+      The local file and Git repository for <strong>{universeName}</strong> are available, but no primary source has been set yet. Choose which storage should become the source of truth going forward.
+    </>
+  ) : (
+    <>
+      The local file and Git repository for <strong>{universeName}</strong> have different data. Choose which version to keep:
+    </>
+  );
+
+  const localButtonLabel = requiresPrimarySelection ? 'Make Local Primary' : 'Use Local File';
+  const gitButtonLabel = requiresPrimarySelection ? 'Make Git Primary' : 'Use Git Version';
 
   return (
     <div
@@ -104,7 +119,7 @@ const ConflictResolutionModal = ({
               color: '#260000'
             }}
           >
-            Data Conflict Detected
+            {headerTitle}
           </h2>
         </div>
 
@@ -118,7 +133,7 @@ const ConflictResolutionModal = ({
               color: '#260000'
             }}
           >
-            The local file and Git repository for <strong>{universeName}</strong> have different data. Choose which version to keep:
+            {descriptionContent}
           </p>
 
           {/* Comparison Cards */}
@@ -270,7 +285,7 @@ const ConflictResolutionModal = ({
               }}
             >
               <HardDrive size={16} />
-              Use Local File
+              {localButtonLabel}
             </button>
             <button
               onClick={onSelectGit}
@@ -283,7 +298,7 @@ const ConflictResolutionModal = ({
               }}
             >
               <Github size={16} />
-              Use Git Version
+              {gitButtonLabel}
             </button>
           </div>
         </div>

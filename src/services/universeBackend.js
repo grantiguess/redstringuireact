@@ -95,6 +95,7 @@ class UniverseBackend {
     };
 
     this.persistentStorageRequested = false;
+    this.lastAuthEngineSetup = 0;
 
     // Load universes from storage
     this.loadFromStorage();
@@ -888,6 +889,22 @@ class UniverseBackend {
           }
         }
 
+        // Ensure Git sync engine is active now that auth is ready
+        if (activeUniverse?.gitRepo?.enabled && activeUniverse?.gitRepo?.linkedRepo) {
+          const now = Date.now();
+          const recentlyScheduled = now - this.lastAuthEngineSetup < authDebounceDelay;
+          if (!this.gitSyncEngines.has(activeUniverse.slug) && !recentlyScheduled) {
+            this.lastAuthEngineSetup = now;
+            setTimeout(() => {
+              gfLog('[UniverseBackend] Auth ready, ensuring Git engine for active universe');
+              this.ensureGitSyncEngine(activeUniverse.slug).catch(error => {
+                gfWarn('[UniverseBackend] Git engine setup after auth failed:', error);
+                this.notifyStatus('warning', `Git sync setup failed: ${error.message}`);
+              });
+            }, 250);
+          }
+        }
+
         // DISABLED: Set up sync engines - causing infinite loops
         // this.autoSetupEnginesForActiveUniverse();
       });
@@ -1050,6 +1067,16 @@ class UniverseBackend {
       this.notifyStatus('success', `Git sync enabled for ${universe.name || universeSlug}`);
       
       await this.ensureSaveCoordinator(engine);
+
+      try {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('redstring:git-engine-ready', {
+            detail: { slug: universeSlug }
+          }));
+        }
+      } catch (eventError) {
+        gfWarn('[UniverseBackend] Failed to dispatch git-engine-ready event:', eventError);
+      }
     } catch (startError) {
       gfError(`[UniverseBackend] Failed to start engine for ${universeSlug}:`, startError);
       this.notifyStatus('error', `Failed to start Git sync: ${startError.message}`);
@@ -2180,10 +2207,16 @@ class UniverseBackend {
     const { sourceOfTruth } = universe;
     const { skipConflictDetection = false } = options;
 
-    // If both local and Git are enabled, check for conflicts
-    if (!skipConflictDetection && universe.localFile.enabled && universe.gitRepo.enabled) {
+    const hasLocal = universe.localFile?.enabled;
+    const hasGit = universe.gitRepo?.enabled;
+    const primaryDefined = sourceOfTruth === SOURCE_OF_TRUTH.LOCAL || sourceOfTruth === SOURCE_OF_TRUTH.GIT;
+
+    // If both local and Git are enabled, check for conflicts or missing primary selection
+    if (!skipConflictDetection && hasLocal && hasGit) {
       try {
-        const conflict = await this.detectSlotConflict(universe);
+        const conflict = await this.detectSlotConflict(universe, {
+          forcePrompt: !primaryDefined
+        });
         if (conflict) {
           gfLog('[UniverseBackend] Slot conflict detected, notifying UI');
           // Store conflict for UI to handle
@@ -2269,7 +2302,8 @@ class UniverseBackend {
    * Detect conflicts between local file and Git repository slots
    * Returns conflict data if slots have diverged, null if they match or one is missing
    */
-  async detectSlotConflict(universe) {
+  async detectSlotConflict(universe, options = {}) {
+    const { forcePrompt = false } = options;
     gfLog('[UniverseBackend] Checking for slot conflicts...');
 
     // Load data from both slots in parallel
@@ -2299,7 +2333,9 @@ class UniverseBackend {
       Math.abs(localInfo.graphCount - gitInfo.graphCount) > 1  // More than 1 graph difference
     );
 
-    if (!isDifferent) {
+    const requiresPrimarySelection = forcePrompt && !isDifferent;
+
+    if (!isDifferent && !forcePrompt) {
       gfLog('[UniverseBackend] Slots match, no conflict');
       return null;
     }
@@ -2310,7 +2346,14 @@ class UniverseBackend {
     });
 
     // Build conflict object
-    const primaryData = universe.sourceOfTruth === SOURCE_OF_TRUTH.LOCAL ? localData : gitData;
+    let primaryData;
+    if (universe.sourceOfTruth === SOURCE_OF_TRUTH.LOCAL) {
+      primaryData = localData;
+    } else if (universe.sourceOfTruth === SOURCE_OF_TRUTH.GIT) {
+      primaryData = gitData;
+    } else {
+      primaryData = (gitInfo.timestamp || 0) >= (localInfo.timestamp || 0) ? gitData : localData;
+    }
 
     return {
       universeSlug: universe.slug,
@@ -2328,7 +2371,8 @@ class UniverseBackend {
         graphCount: gitInfo.graphCount,
         timestamp: gitInfo.timestamp
       },
-      primaryData
+      primaryData,
+      requiresPrimarySelection
     };
   }
 

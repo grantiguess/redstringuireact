@@ -689,6 +689,21 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleGitEngineReady = (event) => {
+      const slug = event?.detail?.slug;
+      gfLog('[GitNativeFederation] Git engine ready event received:', slug);
+      refreshState();
+    };
+
+    window.addEventListener('redstring:git-engine-ready', handleGitEngineReady);
+    return () => {
+      window.removeEventListener('redstring:git-engine-ready', handleGitEngineReady);
+    };
+  }, [refreshState]);
+
   const discoveryFor = useCallback(
     (user, repo) => discoveryMap[`${user}/${repo}`] || { items: [], loading: false },
     [discoveryMap]
@@ -1297,12 +1312,39 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       }
 
       // Attach the Git repository to the selected universe
+      const resolvePathParts = (universePath, fileName) => {
+        const parts = (universePath || '').split('/').filter(Boolean);
+        if (parts.length >= 3) {
+          return {
+            folder: parts[parts.length - 2],
+            file: parts[parts.length - 1]
+          };
+        }
+        if (fileName) {
+          return {
+            folder: (parts[parts.length - 1] || '')
+              .replace(/\.redstring$/i, '') || targetSlug,
+            file: fileName
+          };
+        }
+        return {
+          folder: targetSlug,
+          file: `${targetSlug}.redstring`
+        };
+      };
+
+      const inferredPath = discovered.path || (discovered.location && discovered.fileName
+        ? `${discovered.location}/${discovered.fileName}`
+        : null);
+      const inferredFile = discovered.fileName || (inferredPath ? inferredPath.split('/').pop() : null);
+      const { folder: resolvedFolder, file: resolvedFile } = resolvePathParts(inferredPath, inferredFile);
+
       await gitFederationService.attachGitRepository(targetSlug, {
         user: repo.user,
         repo: repo.repo,
         authMethod: dataAuthMethod || 'oauth',
-        universeFolder: discovered.universeFolder || `universes/${targetSlug}`,
-        universeFile: discovered.universeFile || `${targetSlug}.redstring`
+        universeFolder: resolvedFolder || targetSlug,
+        universeFile: resolvedFile || `${targetSlug}.redstring`
       });
 
       gfLog(`[GitNativeFederation] Linked repository to existing universe: ${targetSlug}`);
@@ -3409,6 +3451,7 @@ return (
         localData={slotConflict.localData}
         gitData={slotConflict.gitData}
         universeName={slotConflict.universeName}
+        requiresPrimarySelection={slotConflict.requiresPrimarySelection}
       />
     )}
     </div>
