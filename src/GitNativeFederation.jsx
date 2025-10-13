@@ -1120,9 +1120,9 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
 
         if (importedSlug) {
           try {
-            await gitFederationService.forceSave(importedSlug);
+            await gitFederationService.reloadActiveUniverse();
           } catch (err) {
-            gfWarn('[GitNativeFederation] Initial sync after import failed:', err);
+            gfWarn('[GitNativeFederation] Initial universe reload failed after import:', err);
           }
         }
 
@@ -2379,7 +2379,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
               )}
           </div>
         <div style={{ fontSize: '0.72rem', color: '#555' }}>
-          Last sync: {formatWhen(slot.lastSync)} · Status: {slot.status || 'unknown'}
+          Last saved: {formatWhen(slot.lastSync)} · Status: {slot.status || 'unknown'}
         </div>
         {actions.length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{actions}</div>}
         </div>
