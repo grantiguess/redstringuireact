@@ -92,8 +92,9 @@ const ConflictResolutionModal = ({
           flexDirection: 'column',
           boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
           fontFamily: "'EmOne', sans-serif",
-          maxHeight: '90vh',
-          overflow: 'hidden'
+          maxHeight: 'calc(100vh - 80px)',
+          margin: '40px 0',
+          overflow: 'visible'
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -124,10 +125,17 @@ const ConflictResolutionModal = ({
         </div>
 
         {/* Content */}
-        <div style={{ padding: '24px', overflow: 'auto', flex: 1 }}>
+        <div
+          style={{
+            padding: '32px 28px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 24
+          }}
+        >
           <p
             style={{
-              margin: '0 0 20px 0',
+              margin: 0,
               fontSize: '0.95rem',
               lineHeight: 1.6,
               color: '#260000'
@@ -137,7 +145,7 @@ const ConflictResolutionModal = ({
           </p>
 
           {/* Comparison Cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             {/* Local File Card */}
             <div
               style={{

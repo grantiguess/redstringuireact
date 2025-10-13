@@ -96,6 +96,8 @@ class UniverseBackend {
 
     this.persistentStorageRequested = false;
     this.lastAuthEngineSetup = 0;
+    this.pendingPrimarySelection = new Set();
+    this.secondarySyncTimestamps = new Map();
 
     // Load universes from storage
     this.loadFromStorage();
@@ -997,6 +999,12 @@ class UniverseBackend {
       sourceOfTruth: universe.sourceOfTruth,
       schemaPath: universe.gitRepo.schemaPath
     });
+
+    if (this.requiresPrimarySelection(universe)) {
+      gfWarn(`[UniverseBackend] Source of truth not set for ${universeSlug}. Prompting user selection before enabling sync.`);
+      await this.promptForPrimarySelection(universe);
+      throw new Error('Primary storage must be selected before enabling Git sync');
+    }
 
     // Create provider with validation
     let provider;
@@ -2221,6 +2229,13 @@ class UniverseBackend {
           gfLog('[UniverseBackend] Slot conflict detected, notifying UI');
           // Store conflict for UI to handle
           this.pendingConflict = conflict;
+          if (conflict.requiresPrimarySelection) {
+            const alreadyPrompted = this.pendingPrimarySelection.has(universe.slug);
+            this.pendingPrimarySelection.add(universe.slug);
+            if (!alreadyPrompted) {
+              this.notifyStatus('warning', `Select a primary storage for ${universe.name || universe.slug} to continue.`);
+            }
+          }
 
           // Emit event for UI to show conflict resolution modal
           if (typeof window !== 'undefined') {
@@ -2242,13 +2257,19 @@ class UniverseBackend {
     if (sourceOfTruth === SOURCE_OF_TRUTH.GIT && universe.gitRepo.enabled) {
       try {
         const gitData = await this.loadFromGit(universe);
-        if (gitData) return gitData;
+        if (gitData) return this.syncAndReturn(universe, gitData, {
+          force: sourceOfTruth === SOURCE_OF_TRUTH.GIT,
+          source: SOURCE_OF_TRUTH.GIT
+        });
       } catch (error) {
         gfWarn('[UniverseBackend] Git load failed, trying fallback:', error);
         // Direct-read fallback when engine isn't configured yet
         try {
           const directGitData = await this.loadFromGitDirect(universe);
-          if (directGitData) return directGitData;
+          if (directGitData) return this.syncAndReturn(universe, directGitData, {
+            force: sourceOfTruth === SOURCE_OF_TRUTH.GIT,
+            source: SOURCE_OF_TRUTH.GIT
+          });
         } catch (fallbackError) {
           gfWarn('[UniverseBackend] Direct Git fallback failed:', fallbackError);
         }
@@ -2258,7 +2279,10 @@ class UniverseBackend {
     if (sourceOfTruth === SOURCE_OF_TRUTH.LOCAL && universe.localFile.enabled) {
       try {
         const localData = await this.loadFromLocalFile(universe);
-        if (localData) return localData;
+        if (localData) return this.syncAndReturn(universe, localData, {
+          force: sourceOfTruth === SOURCE_OF_TRUTH.LOCAL,
+          source: SOURCE_OF_TRUTH.LOCAL
+        });
       } catch (error) {
         gfWarn('[UniverseBackend] Local file load failed, trying fallback:', error);
       }
@@ -2268,7 +2292,10 @@ class UniverseBackend {
     if (sourceOfTruth !== SOURCE_OF_TRUTH.LOCAL && universe.localFile.enabled) {
       try {
         const localData = await this.loadFromLocalFile(universe);
-        if (localData) return localData;
+        if (localData) return this.syncAndReturn(universe, localData, {
+          force: sourceOfTruth === SOURCE_OF_TRUTH.LOCAL,
+          source: SOURCE_OF_TRUTH.LOCAL
+        });
       } catch (error) {
         gfWarn('[UniverseBackend] Local fallback failed:', error);
       }
@@ -2277,7 +2304,10 @@ class UniverseBackend {
     if (sourceOfTruth !== SOURCE_OF_TRUTH.GIT && universe.gitRepo.enabled) {
       try {
         const gitData = await this.loadFromGit(universe);
-        if (gitData) return gitData;
+        if (gitData) return this.syncAndReturn(universe, gitData, {
+          source: SOURCE_OF_TRUTH.GIT,
+          throttleMs: 300000
+        });
       } catch (error) {
         gfWarn('[UniverseBackend] Git fallback failed:', error);
       }
@@ -2287,7 +2317,10 @@ class UniverseBackend {
     if (universe.browserStorage.enabled) {
       try {
         const browserData = await this.loadFromBrowserStorage(universe);
-        if (browserData) return browserData;
+        if (browserData) return this.syncAndReturn(universe, browserData, {
+          source: SOURCE_OF_TRUTH.BROWSER,
+          throttleMs: 300000
+        });
       } catch (error) {
         gfWarn('[UniverseBackend] Browser storage fallback failed:', error);
       }
@@ -2376,6 +2409,102 @@ class UniverseBackend {
     };
   }
 
+  requiresPrimarySelection(universe) {
+    if (!universe) return false;
+    const localEnabled = !!universe.localFile?.enabled;
+    const gitEnabled = !!universe.gitRepo?.enabled;
+    const source = universe.sourceOfTruth;
+    const hasValidSource = source === SOURCE_OF_TRUTH.LOCAL || source === SOURCE_OF_TRUTH.GIT;
+    return localEnabled && gitEnabled && !hasValidSource;
+  }
+
+  async promptForPrimarySelection(universe) {
+    if (!universe) return null;
+
+    try {
+      const conflict = await this.detectSlotConflict(universe, { forcePrompt: true });
+      if (conflict) {
+        this.pendingConflict = conflict;
+        const alreadyPrompted = this.pendingPrimarySelection.has(universe.slug);
+        this.pendingPrimarySelection.add(universe.slug);
+        if (!alreadyPrompted && typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('redstring:slot-conflict', {
+            detail: conflict
+          }));
+        }
+        if (!alreadyPrompted) {
+          this.notifyStatus('warning', `Select a primary storage for ${universe.name || universe.slug} to continue syncing.`);
+        }
+      }
+      return conflict;
+    } catch (error) {
+      gfWarn('[UniverseBackend] Failed to prompt for primary selection:', error);
+      return null;
+    }
+  }
+
+  getSecondarySyncState(slug) {
+    return this.secondarySyncTimestamps.get(slug) || { local: 0, browser: 0 };
+  }
+
+  setSecondarySyncState(slug, next) {
+    this.secondarySyncTimestamps.set(slug, next);
+  }
+
+  async syncSecondaryStorage(universe, storeState, options = {}) {
+    if (!universe || !storeState) return;
+
+    const slug = universe.slug;
+    const now = Date.now();
+    const {
+      force = false,
+      throttleMs = 120000, // default 2 minutes when not primary
+      source = universe.sourceOfTruth
+    } = options;
+
+    const syncState = this.getSecondarySyncState(slug);
+    let updated = false;
+    const nextState = { ...syncState };
+
+    const shouldSync = (last) => force || !last || (now - last) >= throttleMs;
+
+    if (universe.localFile?.enabled && this.fileHandles.has(slug) && source !== SOURCE_OF_TRUTH.LOCAL) {
+      if (shouldSync(syncState.local)) {
+        try {
+          await this.saveToLinkedLocalFile(slug, storeState, { suppressNotification: true });
+          nextState.local = now;
+          updated = true;
+          gfLog(`[UniverseBackend] Secondary sync: updated local file for ${slug}`);
+        } catch (error) {
+          gfWarn('[UniverseBackend] Secondary local sync failed:', error);
+        }
+      }
+    }
+
+    if (universe.browserStorage?.enabled && source !== SOURCE_OF_TRUTH.BROWSER) {
+      if (shouldSync(syncState.browser)) {
+        try {
+          const redstringData = exportToRedstring(storeState);
+          await this.saveToBrowserStorage(universe, redstringData);
+          nextState.browser = now;
+          updated = true;
+          gfLog(`[UniverseBackend] Secondary sync: updated browser cache for ${slug}`);
+        } catch (error) {
+          gfWarn('[UniverseBackend] Secondary browser sync failed:', error);
+        }
+      }
+    }
+
+    if (updated) {
+      this.setSecondarySyncState(slug, nextState);
+    }
+  }
+
+  async syncAndReturn(universe, storeState, options = {}) {
+    await this.syncSecondaryStorage(universe, storeState, options);
+    return storeState;
+  }
+
   /**
    * Analyze store data to extract metadata
    */
@@ -2443,7 +2572,10 @@ class UniverseBackend {
     await this.saveActiveUniverse();
 
     // Clear pending conflict
-    this.pendingConflict = null;
+    if (this.pendingConflict?.universeSlug === universeSlug) {
+      this.pendingConflict = null;
+    }
+    this.pendingPrimarySelection.delete(universeSlug);
 
     this.notifyStatus('success', `Conflict resolved using ${chosenSource} data`);
 
@@ -2871,6 +3003,11 @@ class UniverseBackend {
     if (!universe) {
       throw new Error(`Universe ${universeSlug} not found`);
     }
+    if (this.requiresPrimarySelection(universe)) {
+      gfWarn(`[UniverseBackend] Force save blocked - primary storage not selected for ${universeSlug}`);
+      await this.promptForPrimarySelection(universe);
+      throw new Error('Select a primary storage before saving changes');
+    }
 
     // Check what storage is enabled (local-first approach)
     let localConfig = universe.localFile || universe.raw?.localFile || {};
@@ -2998,6 +3135,15 @@ class UniverseBackend {
       if (results.browser?.success && savedTo.length === 0) savedTo.push('browser storage');
 
       if (hasAnySuccess) {
+        try {
+          await this.syncSecondaryStorage(universe, storeState, {
+            source: sourceOfTruth,
+            throttleMs: sourceOfTruth === SOURCE_OF_TRUTH.GIT ? 60000 : 180000
+          });
+        } catch (syncError) {
+          gfWarn('[UniverseBackend] Secondary sync after save failed:', syncError);
+        }
+
         const message = savedTo.length > 0 
           ? `Saved to ${savedTo.join(' and ')}` 
           : 'Saved successfully';
@@ -3520,6 +3666,11 @@ class UniverseBackend {
     if (sourceType === 'local' && !localConfig.hadFileHandle) {
       this.notifyStatus('warning', 'Local file is primary but no persistent file handle is linked. Use "Pick File" to enable auto-save.');
     }
+
+    if (this.pendingConflict?.universeSlug === universeSlug) {
+      this.pendingConflict = null;
+    }
+    this.pendingPrimarySelection.delete(universeSlug);
 
     return { success: true, sourceOfTruth: sourceType };
   }
