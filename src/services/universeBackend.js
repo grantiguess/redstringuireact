@@ -2222,10 +2222,39 @@ class UniverseBackend {
     // If both local and Git are enabled, check for conflicts or missing primary selection
     if (!skipConflictDetection && hasLocal && hasGit) {
       try {
-        const conflict = await this.detectSlotConflict(universe, {
+        let conflict = await this.detectSlotConflict(universe, {
           forcePrompt: !primaryDefined
         });
         if (conflict) {
+          const canAutoResolve = primaryDefined && !conflict.requiresPrimarySelection;
+          if (canAutoResolve) {
+            const primaryState = sourceOfTruth === SOURCE_OF_TRUTH.GIT
+              ? conflict.gitData?.storeState
+              : conflict.localData?.storeState;
+
+            if (primaryState) {
+              try {
+                gfLog('[UniverseBackend] Auto-resolving slot conflict using source of truth');
+                await this.syncSecondaryStorage(universe, primaryState, {
+                  source: sourceOfTruth,
+                  force: true,
+                  throttleMs: 0
+                });
+
+                const recheck = await this.detectSlotConflict(universe, { forcePrompt: false });
+                if (!recheck) {
+                  this.pendingConflict = null;
+                  this.pendingPrimarySelection.delete(universe.slug);
+                  gfLog('[UniverseBackend] Conflict resolved automatically');
+                  return primaryState;
+                }
+                conflict = recheck;
+              } catch (autoError) {
+                gfWarn('[UniverseBackend] Auto-resolution of slot conflict failed:', autoError);
+              }
+            }
+          }
+
           gfLog('[UniverseBackend] Slot conflict detected, notifying UI');
           // Store conflict for UI to handle
           this.pendingConflict = conflict;

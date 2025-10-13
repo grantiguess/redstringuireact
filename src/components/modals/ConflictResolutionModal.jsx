@@ -84,7 +84,7 @@ const ConflictResolutionModal = ({
     >
       <div
         style={{
-          width: 'min(95vw, 600px)',
+          width: 'min(90vw, 520px)',
           backgroundColor: '#bdb5b5',
           border: '3px solid #260000',
           borderRadius: 12,
@@ -92,8 +92,8 @@ const ConflictResolutionModal = ({
           flexDirection: 'column',
           boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
           fontFamily: "'EmOne', sans-serif",
-          maxHeight: 'calc(100vh - 80px)',
-          margin: '40px 0',
+          maxHeight: 'calc(100vh - 70px)',
+          margin: '35px 0',
           overflow: 'visible'
         }}
         onClick={(e) => e.stopPropagation()}
@@ -115,7 +115,7 @@ const ConflictResolutionModal = ({
           <h2
             style={{
               margin: 0,
-              fontSize: '1.2rem',
+              fontSize: '1.05rem',
               fontWeight: 700,
               color: '#260000'
             }}
@@ -127,17 +127,17 @@ const ConflictResolutionModal = ({
         {/* Content */}
         <div
           style={{
-            padding: '32px 28px',
+            padding: '26px 22px',
             display: 'flex',
             flexDirection: 'column',
-            gap: 24
+            gap: 20
           }}
         >
           <p
             style={{
               margin: 0,
-              fontSize: '0.95rem',
-              lineHeight: 1.6,
+              fontSize: '0.85rem',
+              lineHeight: 1.5,
               color: '#260000'
             }}
           >
@@ -145,7 +145,7 @@ const ConflictResolutionModal = ({
           </p>
 
           {/* Comparison Cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Local File Card */}
             <div
               style={{
@@ -171,18 +171,18 @@ const ConflictResolutionModal = ({
                 </span>
               </div>
               <div style={{ padding: 16 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
                     <FileText size={14} style={{ color: '#666' }} />
                     <span style={{ fontWeight: 600, color: '#260000' }}>Nodes:</span>
                     <span style={{ color: '#666' }}>{localData?.nodeCount || 0}</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
                     <FileText size={14} style={{ color: '#666' }} />
                     <span style={{ fontWeight: 600, color: '#260000' }}>Graphs:</span>
                     <span style={{ color: '#666' }}>{localData?.graphCount || 0}</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem' }}>
                     <Calendar size={14} style={{ color: '#666' }} />
                     <span style={{ fontWeight: 600, color: '#260000' }}>Last Modified:</span>
                     <span style={{ color: '#666' }}>{formatTimestamp(localData?.timestamp)}</span>
@@ -216,18 +216,18 @@ const ConflictResolutionModal = ({
                 </span>
               </div>
               <div style={{ padding: 16 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
                     <FileText size={14} style={{ color: '#666' }} />
                     <span style={{ fontWeight: 600, color: '#260000' }}>Nodes:</span>
                     <span style={{ color: '#666' }}>{gitData?.nodeCount || 0}</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
                     <FileText size={14} style={{ color: '#666' }} />
                     <span style={{ fontWeight: 600, color: '#260000' }}>Graphs:</span>
                     <span style={{ color: '#666' }}>{gitData?.graphCount || 0}</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem' }}>
                     <Calendar size={14} style={{ color: '#666' }} />
                     <span style={{ fontWeight: 600, color: '#260000' }}>Last Modified:</span>
                     <span style={{ color: '#666' }}>{formatTimestamp(gitData?.timestamp)}</span>
@@ -240,12 +240,12 @@ const ConflictResolutionModal = ({
           {/* Warning */}
           <div
             style={{
-              marginTop: 20,
-              padding: '12px 16px',
+              marginTop: 16,
+              padding: '10px 14px',
               backgroundColor: 'rgba(122, 0, 0, 0.1)',
               border: '1px solid #7A0000',
               borderRadius: 6,
-              fontSize: '0.85rem',
+              fontSize: '0.78rem',
               color: '#7A0000',
               lineHeight: 1.5
             }}
@@ -270,7 +270,9 @@ const ConflictResolutionModal = ({
             onClick={onClose}
             style={{
               ...buttonStyle(false, '#666'),
-              flexShrink: 0
+              flexShrink: 0,
+              padding: '6px 12px',
+              fontSize: '0.75rem'
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.backgroundColor = 'rgba(102, 102, 102, 0.1)';
@@ -284,7 +286,11 @@ const ConflictResolutionModal = ({
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <button
               onClick={onSelectLocal}
-              style={buttonStyle(true, '#260000')}
+              style={{
+                ...buttonStyle(true, '#260000'),
+                padding: '8px 14px',
+                fontSize: '0.78rem'
+              }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = '#1a0000';
               }}
@@ -297,7 +303,11 @@ const ConflictResolutionModal = ({
             </button>
             <button
               onClick={onSelectGit}
-              style={buttonStyle(true, '#7A0000')}
+              style={{
+                ...buttonStyle(true, '#7A0000'),
+                padding: '8px 14px',
+                fontSize: '0.78rem'
+              }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = '#5a0000';
               }}
