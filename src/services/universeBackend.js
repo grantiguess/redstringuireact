@@ -2306,7 +2306,7 @@ class UniverseBackend {
         const gitData = await this.loadFromGit(universe);
         if (gitData) return this.syncAndReturn(universe, gitData, {
           source: SOURCE_OF_TRUTH.GIT,
-          throttleMs: 300000
+          throttleMs: 0
         });
       } catch (error) {
         gfWarn('[UniverseBackend] Git fallback failed:', error);
@@ -2319,7 +2319,7 @@ class UniverseBackend {
         const browserData = await this.loadFromBrowserStorage(universe);
         if (browserData) return this.syncAndReturn(universe, browserData, {
           source: SOURCE_OF_TRUTH.BROWSER,
-          throttleMs: 300000
+          throttleMs: 0
         });
       } catch (error) {
         gfWarn('[UniverseBackend] Browser storage fallback failed:', error);
@@ -2458,7 +2458,7 @@ class UniverseBackend {
     const now = Date.now();
     const {
       force = false,
-      throttleMs = 120000, // default 2 minutes when not primary
+      throttleMs = 0,
       source = universe.sourceOfTruth
     } = options;
 
@@ -2466,7 +2466,7 @@ class UniverseBackend {
     let updated = false;
     const nextState = { ...syncState };
 
-    const shouldSync = (last) => force || !last || (now - last) >= throttleMs;
+    const shouldSync = (last) => force || throttleMs <= 0 || !last || (now - last) >= throttleMs;
 
     if (universe.localFile?.enabled && this.fileHandles.has(slug) && source !== SOURCE_OF_TRUTH.LOCAL) {
       if (shouldSync(syncState.local)) {
@@ -3138,10 +3138,23 @@ class UniverseBackend {
         try {
           await this.syncSecondaryStorage(universe, storeState, {
             source: sourceOfTruth,
-            throttleMs: sourceOfTruth === SOURCE_OF_TRUTH.GIT ? 60000 : 180000
+            throttleMs: 0
           });
         } catch (syncError) {
           gfWarn('[UniverseBackend] Secondary sync after save failed:', syncError);
+        }
+
+        try {
+          const timestamp = new Date().toISOString();
+          await this.updateUniverse(universeSlug, {
+            metadata: {
+              ...(universe.metadata || {}),
+              lastSync: timestamp,
+              lastSaved: timestamp
+            }
+          });
+        } catch (metaError) {
+          gfWarn('[UniverseBackend] Failed to update last sync metadata:', metaError);
         }
 
         const message = savedTo.length > 0 
