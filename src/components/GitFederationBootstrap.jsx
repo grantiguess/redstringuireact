@@ -141,6 +141,9 @@ export default function GitFederationBootstrap({ enableEagerInit = false }) {
           case 'uploadLocalFile':
             result = await backend.uploadLocalFile(payload.file, payload.targetUniverseSlug);
             break;
+          case 'setupLocalFileHandle':
+            result = await backend.setupLocalFileHandle(payload.universeSlug, payload.options);
+            break;
           case 'downloadLocalFile':
             result = await backend.downloadLocalFile(payload.universeSlug, payload.storeState);
             break;

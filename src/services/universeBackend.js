@@ -832,17 +832,17 @@ class UniverseBackend {
     // Listen for auth changes and update status
     if (typeof window !== 'undefined') {
       let lastAuthProcessTime = 0;
+      let authDebounceTimer = null;
       const authDebounceDelay = 5000; // 5 second debounce to prevent rapid auth processing
 
-      window.addEventListener('redstring:auth-token-stored', async () => {
-        const now = Date.now();
-
-        // Debounce auth processing to prevent infinite loops
-        if (now - lastAuthProcessTime < authDebounceDelay) {
-          gfLog('[UniverseBackend] Auth event debounced - too recent');
-          return;
+      const processAuthEvent = async (trigger = 'immediate') => {
+        if (authDebounceTimer) {
+          clearTimeout(authDebounceTimer);
+          authDebounceTimer = null;
         }
-        lastAuthProcessTime = now;
+
+        lastAuthProcessTime = Date.now();
+        gfLog(`[UniverseBackend] Processing auth event (${trigger})`);
 
         this.authStatus = persistentAuth.getAuthStatus();
         this.notifyStatus('success', 'Authentication updated');
@@ -906,9 +906,33 @@ class UniverseBackend {
             }, 250);
           }
         }
+      };
 
-        // DISABLED: Set up sync engines - causing infinite loops
-        // this.autoSetupEnginesForActiveUniverse();
+      const scheduleAuthEvent = (delayMs) => {
+        if (authDebounceTimer) {
+          clearTimeout(authDebounceTimer);
+        }
+        authDebounceTimer = setTimeout(() => {
+          processAuthEvent('deferred').catch(error => {
+            gfWarn('[UniverseBackend] Deferred auth processing failed:', error);
+          });
+        }, delayMs);
+      };
+
+      window.addEventListener('redstring:auth-token-stored', () => {
+        const now = Date.now();
+        const elapsed = now - lastAuthProcessTime;
+
+        if (elapsed < authDebounceDelay) {
+          const waitMs = authDebounceDelay - elapsed;
+          gfLog(`[UniverseBackend] Auth event debounced - scheduling in ${waitMs}ms`);
+          scheduleAuthEvent(waitMs);
+          return;
+        }
+
+        processAuthEvent('immediate').catch(error => {
+          gfWarn('[UniverseBackend] Auth processing failed:', error);
+        });
       });
     }
   }
@@ -3379,7 +3403,7 @@ class UniverseBackend {
     
     // Get metadata to suggest the last known file name
     const metadata = await getFileHandleMetadata(universeSlug);
-    const suggestedName = metadata?.fileName || universe?.localFile?.path || `${universe?.name || universeSlug}.redstring`;
+    const suggestedName = options?.suggestedName || metadata?.fileName || universe?.localFile?.path || `${universe?.name || universeSlug}.redstring`;
     
     let handle;
     if (mode === 'pick') {

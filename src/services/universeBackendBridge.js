@@ -276,6 +276,10 @@ class UniverseBackendBridge {
     return this.sendCommand('uploadLocalFile', { file, targetUniverseSlug });
   }
 
+  setupLocalFileHandle(universeSlug, options) {
+    return this.sendCommand('setupLocalFileHandle', { universeSlug, options });
+  }
+
   reloadUniverse(universeSlug) {
     return this.sendCommand('reloadUniverse', { universeSlug });
   }

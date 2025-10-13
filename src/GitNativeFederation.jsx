@@ -791,10 +791,30 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
             const uploadResult = await universeBackendBridge.uploadLocalFile(file, createdSlug);
 
             if (uploadResult?.needsFileHandle) {
-              setSyncStatus({
-                type: 'warning',
-                message: 'Imported data is in memory. Link a local file to enable auto-save.'
-              });
+              try {
+                await universeBackendBridge.setupLocalFileHandle(createdSlug, {
+                  mode: 'saveAs',
+                  suggestedName: file.name
+                });
+                await universeBackendBridge.saveActiveUniverse();
+                setSyncStatus({
+                  type: 'success',
+                  message: `Universe "${universeName}" loaded and linked to a local file`
+                });
+              } catch (handleError) {
+                if (handleError?.name === 'AbortError') {
+                  setSyncStatus({
+                    type: 'warning',
+                    message: 'Universe loaded. Link a local file to enable auto-save.'
+                  });
+                } else {
+                  gfWarn('[GitNativeFederation] Failed to establish local file handle after import:', handleError);
+                  setSyncStatus({
+                    type: 'warning',
+                    message: 'Universe loaded, but local file linking failed. Use "Pick File" to connect a file.'
+                  });
+                }
+              }
             } else {
               setSyncStatus({ type: 'success', message: `Universe "${universeName}" loaded from file` });
             }
