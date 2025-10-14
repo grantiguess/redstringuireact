@@ -77,6 +77,220 @@ function isLocalRequest(req) {
   } catch { return false; }
 }
 
+const GITHUB_USER_INSTALLATIONS_URL = 'https://api.github.com/user/installations';
+
+async function findInstallationViaOAuth(accessToken, installationId) {
+  if (!accessToken) {
+    return { ok: false, status: 0, reason: 'missing_token' };
+  }
+
+  const perPage = 100;
+  const targetId = installationId != null ? Number(installationId) : null;
+
+  if (targetId == null || Number.isNaN(targetId)) {
+    return { ok: false, status: 0, reason: 'invalid_installation_id' };
+  }
+
+  let page = 1;
+  const maxPages = 10; // Safety cap
+
+  while (page <= maxPages) {
+    const url = `${GITHUB_USER_INSTALLATIONS_URL}?per_page=${perPage}&page=${page}`;
+    let response;
+
+    try {
+      response = await fetch(url, {
+        headers: {
+          'Accept': 'application/vnd.github+json',
+          'Authorization': `token ${accessToken}`,
+          'User-Agent': 'Redstring-OAuth-Server/1.0'
+        }
+      });
+    } catch (networkError) {
+      return { ok: false, status: 0, reason: 'network_error', error: networkError };
+    }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      return {
+        ok: false,
+        status: response.status,
+        reason: 'github_error',
+        details: text
+      };
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      return {
+        ok: false,
+        status: response.status,
+        reason: 'parse_error',
+        error: parseError
+      };
+    }
+
+    const installations = Array.isArray(data?.installations) ? data.installations : [];
+    const match = installations.find((installation) => Number(installation?.id) === targetId);
+    if (match) {
+      return { ok: true, installation: match };
+    }
+
+    const linkHeader = response.headers.get('link') || '';
+    if (!/\brel="next"/.test(linkHeader) || installations.length === 0) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return { ok: true, installation: null };
+}
+
+function createVerificationRecord(result, oauthCredentials) {
+  if (!result) {
+    return null;
+  }
+
+  const oauthLogin = result.oauthUser?.login || oauthCredentials?.user?.login || null;
+  const trimmedDetails = typeof result.details === 'string'
+    ? result.details.slice(0, 2000)
+    : null;
+
+  return {
+    status: result.status,
+    reason: result.reason || null,
+    installationId: result.installation?.id ?? null,
+    installationAccount: result.installation?.account?.login ?? null,
+    targetType: result.installation?.target_type ?? null,
+    oauthLogin,
+    statusCode: result.statusCode ?? null,
+    details: trimmedDetails,
+    checkedAt: Date.now()
+  };
+}
+
+function formatVerificationForResponse(record) {
+  if (!record) {
+    return null;
+  }
+
+  const response = {
+    status: record.status || null,
+    reason: record.reason || null,
+    oauthLogin: record.oauthLogin || null,
+    installationId: record.installationId ?? null,
+    installationAccount: record.installationAccount || null,
+    targetType: record.targetType || null,
+    statusCode: record.statusCode ?? null,
+    details: record.details || null,
+    checkedAt: record.checkedAt ? new Date(record.checkedAt).toISOString() : null
+  };
+
+  Object.keys(response).forEach((key) => {
+    if (response[key] == null) {
+      delete response[key];
+    }
+  });
+
+  return response;
+}
+
+function verificationRecordsEqual(a, b) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return (
+    (a.status || null) === (b.status || null) &&
+    (a.reason || null) === (b.reason || null) &&
+    (a.installationId ?? null) === (b.installationId ?? null) &&
+    (a.installationAccount || null) === (b.installationAccount || null) &&
+    (a.targetType || null) === (b.targetType || null) &&
+    (a.oauthLogin || null) === (b.oauthLogin || null) &&
+    (a.statusCode ?? null) === (b.statusCode ?? null) &&
+    (a.details || null) === (b.details || null)
+  );
+}
+
+async function verifyInstallationWithOAuth(installationId, oauthCredentials, { enforceAccountMatch = true } = {}) {
+  if (installationId == null) {
+    return {
+      status: 'missing_installation',
+      reason: 'missing_installation_id',
+      installation: null,
+      oauthUser: oauthCredentials?.user || null
+    };
+  }
+
+  if (!oauthCredentials?.accessToken) {
+    return {
+      status: 'skipped',
+      reason: 'oauth_not_connected',
+      installation: null,
+      oauthUser: oauthCredentials?.user || null
+    };
+  }
+
+  const lookup = await findInstallationViaOAuth(oauthCredentials.accessToken, installationId);
+  const oauthUser = oauthCredentials.user || null;
+
+  if (!lookup.ok) {
+    if (lookup.status === 401) {
+      return {
+        status: 'oauth_invalid',
+        reason: 'oauth_token_invalid',
+        installation: null,
+        oauthUser,
+        statusCode: lookup.status,
+        details: lookup.details || null
+      };
+    }
+
+    return {
+      status: 'error',
+      reason: lookup.reason || 'github_request_failed',
+      installation: null,
+      oauthUser,
+      statusCode: lookup.status || null,
+      details: lookup.details || null
+    };
+  }
+
+  if (!lookup.installation) {
+    return {
+      status: 'not_found',
+      reason: 'installation_not_accessible',
+      installation: null,
+      oauthUser
+    };
+  }
+
+  const installation = lookup.installation;
+
+  if (
+    enforceAccountMatch &&
+    installation?.target_type === 'User' &&
+    oauthUser?.id &&
+    installation?.account?.id &&
+    installation.account.id !== oauthUser.id
+  ) {
+    return {
+      status: 'account_mismatch',
+      reason: 'installation_account_mismatch',
+      installation,
+      oauthUser
+    };
+  }
+
+  return {
+    status: 'verified',
+    reason: null,
+    installation,
+    oauthUser
+  };
+}
+
 // Get GitHub OAuth client ID with enhanced validation and dev/prod selection
 app.get('/api/github/oauth/client-id', (req, res) => {
   try {
@@ -568,7 +782,7 @@ app.post('/api/github/oauth/token', async (req, res) => {
 });
 
 // Secure token state endpoints
-app.get('/api/github/auth/state', (req, res) => {
+app.get('/api/github/auth/state', async (req, res) => {
   try {
     const includeTokens = (() => {
       const raw = (req.query?.includeTokens || '').toString().toLowerCase();
@@ -576,7 +790,52 @@ app.get('/api/github/auth/state', (req, res) => {
     })();
 
     const oauthCredentials = tokenVault.getOAuthCredentials();
-    const githubAppCredentials = tokenVault.getGitHubAppInstallation();
+    let githubAppCredentials = tokenVault.getGitHubAppInstallation();
+    let verificationRecordForResponse = githubAppCredentials?.verification || null;
+
+    if (githubAppCredentials?.installationId) {
+      const verificationResult = await verifyInstallationWithOAuth(
+        githubAppCredentials.installationId,
+        oauthCredentials
+      );
+      const recordCandidate = createVerificationRecord(verificationResult, oauthCredentials);
+
+      if (verificationResult.status === 'not_found' || verificationResult.status === 'account_mismatch') {
+        logger.warn('[GitHubApp] Stored installation failed verification, clearing credentials', {
+          installationId: githubAppCredentials.installationId,
+          status: verificationResult.status,
+          reason: verificationResult.reason
+        });
+        tokenVault.clearGitHubAppInstallation();
+        githubAppCredentials = null;
+        verificationRecordForResponse = recordCandidate;
+      } else if (githubAppCredentials) {
+        const nextPayload = { ...githubAppCredentials };
+        let needsUpdate = false;
+
+        if (verificationResult.installation?.account) {
+          const existingAccountId = githubAppCredentials.account?.id ?? null;
+          const nextAccountId = verificationResult.installation.account.id ?? null;
+          if (!existingAccountId || (nextAccountId && nextAccountId !== existingAccountId)) {
+            nextPayload.account = verificationResult.installation.account;
+            needsUpdate = true;
+          }
+        }
+
+        const prevVerification = githubAppCredentials.verification || null;
+        if (!verificationRecordsEqual(prevVerification, recordCandidate)) {
+          nextPayload.verification = recordCandidate;
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          githubAppCredentials = tokenVault.setGitHubAppInstallation(nextPayload);
+          verificationRecordForResponse = githubAppCredentials.verification || recordCandidate;
+        } else {
+          verificationRecordForResponse = prevVerification || recordCandidate;
+        }
+      }
+    }
 
     const response = {
       service: 'oauth-server',
@@ -600,6 +859,14 @@ app.get('/api/github/auth/state', (req, res) => {
           : []
       } : { isInstalled: false }
     };
+
+    if (githubAppCredentials) {
+      response.githubApp.verification = formatVerificationForResponse(
+        verificationRecordForResponse || githubAppCredentials.verification || null
+      );
+    } else if (verificationRecordForResponse) {
+      response.githubApp.verification = formatVerificationForResponse(verificationRecordForResponse);
+    }
 
     if (includeTokens && oauthCredentials?.accessToken) {
       response.oauth.accessToken = oauthCredentials.accessToken;
@@ -725,6 +992,7 @@ app.get('/api/github/auth/github-app', (req, res) => {
       repositories: Array.isArray(credentials.repositories) ? credentials.repositories : [],
       account: credentials.account || null,
       permissions: credentials.permissions || null,
+      verification: credentials.verification || null,
       stored_at: credentials.storedAt ? new Date(credentials.storedAt).toISOString() : null,
       service: 'oauth-server'
     });
@@ -745,7 +1013,8 @@ app.post('/api/github/auth/github-app', (req, res) => {
       tokenExpiresAt = null,
       repositories = [],
       account = null,
-      permissions = null
+      permissions = null,
+      verification = null
     } = req.body || {};
 
     if (!installationId) {
@@ -761,13 +1030,15 @@ app.post('/api/github/auth/github-app', (req, res) => {
       tokenExpiresAt: tokenExpiresAt ? new Date(tokenExpiresAt).getTime() : null,
       repositories,
       account,
-      permissions
+      permissions,
+      verification
     });
 
     res.json({
       stored: true,
       tokenExpiresAt: stored.tokenExpiresAt ? new Date(stored.tokenExpiresAt).toISOString() : null,
       repositoryCount: Array.isArray(stored.repositories) ? stored.repositories.length : 0,
+      verification: stored.verification || null,
       service: 'oauth-server'
     });
   } catch (error) {
@@ -950,6 +1221,55 @@ app.post('/api/github/app/installation-token', async (req, res) => {
       });
     }
 
+    const oauthCredentials = tokenVault.getOAuthCredentials();
+    const verificationResult = await verifyInstallationWithOAuth(installation_id, oauthCredentials);
+    let verificationRecord = createVerificationRecord(verificationResult, oauthCredentials);
+    const verificationSummary = formatVerificationForResponse(verificationRecord);
+
+    logger.debug('[GitHubApp] Installation verification result:', {
+      installation_id,
+      status: verificationResult.status,
+      reason: verificationResult.reason || null,
+      oauthLogin: verificationSummary?.oauthLogin || null
+    });
+
+    if (verificationResult.status === 'missing_installation') {
+      return res.status(400).json({
+        error: 'Invalid installation ID',
+        code: 'missing_installation',
+        verification: verificationSummary,
+        service: 'oauth-server'
+      });
+    }
+
+    if (verificationResult.status === 'account_mismatch' || verificationResult.status === 'not_found') {
+      return res.status(403).json({
+        error: 'GitHub App installation not accessible for the connected OAuth account',
+        code: verificationResult.status,
+        verification: verificationSummary,
+        service: 'oauth-server'
+      });
+    }
+
+    if (verificationResult.status === 'oauth_invalid') {
+      return res.status(401).json({
+        error: 'GitHub OAuth token is invalid or expired. Please reconnect OAuth and retry.',
+        code: 'oauth_invalid',
+        verification: verificationSummary,
+        service: 'oauth-server'
+      });
+    }
+
+    if (verificationResult.status === 'error') {
+      return res.status(502).json({
+        error: 'Failed to verify GitHub App installation via OAuth',
+        code: 'verification_failed',
+        verification: verificationSummary,
+        details: verificationResult.details || null,
+        service: 'oauth-server'
+      });
+    }
+
     logger.debug('[GitHubApp] Generating installation token for installation:', installation_id);
 
     // Generate JWT for app authentication
@@ -1033,27 +1353,58 @@ app.post('/api/github/app/installation-token', async (req, res) => {
       ? new Date(tokenData.expires_at).getTime()
       : null;
 
+    if (verificationRecord) {
+      const numericInstallationId = Number(installation_id);
+      verificationRecord = {
+        ...verificationRecord,
+        installationAccount: account?.login || verificationRecord.installationAccount || null,
+        installationId: verificationRecord.installationId ?? (Number.isFinite(numericInstallationId) ? numericInstallationId : null),
+        checkedAt: Date.now()
+      };
+    }
+
+    let storedInstallation = null;
     try {
-      tokenVault.setGitHubAppInstallation({
+      storedInstallation = tokenVault.setGitHubAppInstallation({
         installationId: installation_id,
         accessToken: tokenData.token,
         tokenExpiresAt: tokenExpiresAtTs,
         repositories,
         account,
-        permissions: tokenData.permissions || null
+        permissions: tokenData.permissions || null,
+        verification: verificationRecord || null
       });
     } catch (vaultError) {
       logger.warn('[GitHubApp] Failed to persist GitHub App credentials:', vaultError.message);
+      storedInstallation = {
+        installationId: installation_id,
+        accessToken: tokenData.token,
+        tokenExpiresAt: tokenExpiresAtTs,
+        repositories,
+        account,
+        permissions: tokenData.permissions || null,
+        verification: verificationRecord || null
+      };
     }
 
-    res.json({
+    const verificationForResponse = formatVerificationForResponse(
+      storedInstallation?.verification || verificationRecord || null
+    );
+
+    const responsePayload = {
       token: tokenData.token,
       expires_at: tokenData.expires_at,
       permissions: tokenData.permissions,
       account,
       repositories,
       service: 'oauth-server'
-    });
+    };
+
+    if (verificationForResponse) {
+      responsePayload.verification = verificationForResponse;
+    }
+
+    res.json(responsePayload);
 
   } catch (error) {
     console.error('[GitHubApp] Installation token generation failed:', error);

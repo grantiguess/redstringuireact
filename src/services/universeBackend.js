@@ -2723,8 +2723,14 @@ class UniverseBackend {
 
     const shouldSync = (last) => force || throttleMs <= 0 || !last || (now - last) >= throttleMs;
 
+    // Never propagate an empty state to secondary slots implicitly
+    const { nodeCount: srcNodeCount, graphCount: srcGraphCount } = this.analyzeStoreData(storeState);
+    const isSourceEmpty = (srcNodeCount === 0 && srcGraphCount === 0);
+
     if (universe.localFile?.enabled && this.fileHandles.has(slug) && source !== SOURCE_OF_TRUTH.LOCAL) {
-      if (shouldSync(syncState.local)) {
+      if (isSourceEmpty) {
+        gfLog('[UniverseBackend] Secondary sync skipped: source state is empty, not overwriting local file implicitly');
+      } else if (shouldSync(syncState.local)) {
         try {
           await this.saveToLinkedLocalFile(slug, storeState, { suppressNotification: true });
           nextState.local = now;
@@ -2737,7 +2743,9 @@ class UniverseBackend {
     }
 
     if (universe.browserStorage?.enabled && source !== SOURCE_OF_TRUTH.BROWSER) {
-      if (shouldSync(syncState.browser)) {
+      if (isSourceEmpty) {
+        gfLog('[UniverseBackend] Secondary sync skipped: source state is empty, not overwriting browser cache implicitly');
+      } else if (shouldSync(syncState.browser)) {
         try {
           const redstringData = exportToRedstring(storeState);
           await this.saveToBrowserStorage(universe, redstringData);

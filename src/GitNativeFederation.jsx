@@ -610,11 +610,16 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
           throw new Error('GitHub App token response missing token');
         }
 
+        const tokenExpiresAtMs = tokenData.expires_at ? Date.parse(tokenData.expires_at) : null;
+
         await persistentAuth.storeAppInstallation({
           installationId,
           accessToken: token,
           repositories: tokenData.repositories || [],
           userData: tokenData.account || {},
+          permissions: tokenData.permissions || null,
+          tokenExpiresAt: Number.isFinite(tokenExpiresAtMs) ? tokenExpiresAtMs : null,
+          verification: tokenData.verification || null,
           lastUpdated: Date.now()
         });
 

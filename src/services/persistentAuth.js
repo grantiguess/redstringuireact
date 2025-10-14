@@ -160,6 +160,7 @@ export class PersistentAuth {
         repositories,
         userData: appState.account || null,
         permissions: appState.permissions || null,
+        verification: appState.verification || null,
         lastUpdated: appState.storedAt || Date.now()
       };
     } else {
@@ -949,7 +950,8 @@ export class PersistentAuth {
       userData = {},
       permissions = null,
       tokenExpiresAt = null,
-      lastUpdated = Date.now()
+      lastUpdated = Date.now(),
+      verification = null
     } = installationData;
     
     if (!installationId) {
@@ -968,7 +970,8 @@ export class PersistentAuth {
           permissions,
           tokenExpiresAt: tokenExpiresAt
             ? new Date(tokenExpiresAt).toISOString()
-            : null
+            : null,
+          verification: verification || null
         })
       });
 
@@ -990,6 +993,7 @@ export class PersistentAuth {
       userData: userData || {},
       permissions,
       tokenExpiresAt: Number.isFinite(expiresNumeric) ? expiresNumeric : null,
+      verification: verification || null,
       lastUpdated: lastUpdated || Date.now()
     };
     
