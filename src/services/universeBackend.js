@@ -863,6 +863,8 @@ class UniverseBackend {
               }
             } else {
               gfWarn('[UniverseBackend] Failed to load active universe into store');
+              // Ensure UI is not stuck in loading state
+              this.storeOperations?.setUniverseLoaded(true, false);
             }
           }
         } catch (error) {
@@ -873,6 +875,11 @@ class UniverseBackend {
             error?.code === LOCAL_FILE_ERROR.NOT_FOUND
           ) {
             this.notifyStatus('warning', error.message);
+            // Mark universe as loaded with error so UI remains interactive
+            this.storeOperations?.setUniverseError(error.message);
+          } else {
+            // Any other failure should also release loading gate
+            this.storeOperations?.setUniverseError(error?.message || 'Failed to load universe');
           }
         }
       } else {
@@ -923,6 +930,24 @@ class UniverseBackend {
 
         this.storeOperations = {
           getState: () => useGraphStore.getState(),
+          // Mark the UI as loaded with an error so spinners stop and UI remains usable
+          setUniverseError: (message) => {
+            try {
+              const store = useGraphStore.getState();
+              if (typeof store.setUniverseError === 'function') {
+                store.setUniverseError(message);
+              }
+            } catch (_) {}
+          },
+          // Explicitly flip loading flags when we fall back to empty state
+          setUniverseLoaded: (loaded = true, hasFile = false) => {
+            try {
+              const store = useGraphStore.getState();
+              if (typeof store.setUniverseLoaded === 'function') {
+                store.setUniverseLoaded(loaded, hasFile);
+              }
+            } catch (_) {}
+          },
           loadUniverseFromFile: (storeState) => {
             try {
               const store = useGraphStore.getState();
@@ -2398,7 +2423,8 @@ class UniverseBackend {
           forcePrompt: !primaryDefined
         });
         if (conflict) {
-          const canAutoResolve = primaryDefined && !conflict.requiresPrimarySelection;
+          // Only auto-resolve when data are identical. Never auto-overwrite non-identical data.
+          const canAutoResolve = primaryDefined && conflict.areIdentical === true && conflict.riskOverwriteEmptyPrimary !== true;
           if (canAutoResolve) {
             const primaryState = sourceOfTruth === SOURCE_OF_TRUTH.GIT
               ? conflict.gitData?.storeState
@@ -2434,7 +2460,9 @@ class UniverseBackend {
             const alreadyPrompted = this.pendingPrimarySelection.has(universe.slug);
             this.pendingPrimarySelection.add(universe.slug);
             if (!alreadyPrompted) {
-              this.notifyStatus('warning', `Select a primary storage for ${universe.name || universe.slug} to continue.`);
+              const needsConsent = conflict.areIdentical !== true;
+              const extra = conflict.riskOverwriteEmptyPrimary ? ' The selected source appears empty and would overwrite existing data.' : '';
+              this.notifyStatus('warning', `${needsConsent ? 'Review required: potential overwrite.' : 'Select a primary storage'} for ${universe.name || universe.slug} to continue.${extra}`);
             }
           }
 
@@ -2604,6 +2632,15 @@ class UniverseBackend {
       primaryData = (gitInfo.timestamp || 0) >= (localInfo.timestamp || 0) ? gitData : localData;
     }
 
+    // Determine if data are identical and whether choosing an empty primary risks data loss
+    const areIdentical = !isDifferent;
+    const isLocalEmpty = localInfo.nodeCount === 0 && localInfo.graphCount === 0;
+    const isGitEmpty = gitInfo.nodeCount === 0 && gitInfo.graphCount === 0;
+    const riskOverwriteEmptyPrimary = (
+      (universe.sourceOfTruth === SOURCE_OF_TRUTH.LOCAL && isLocalEmpty && !isGitEmpty) ||
+      (universe.sourceOfTruth === SOURCE_OF_TRUTH.GIT && isGitEmpty && !isLocalEmpty)
+    );
+
     return {
       universeSlug: universe.slug,
       universeName: universe.name || universe.slug,
@@ -2621,7 +2658,9 @@ class UniverseBackend {
         timestamp: gitInfo.timestamp
       },
       primaryData,
-      requiresPrimarySelection
+      requiresPrimarySelection,
+      areIdentical,
+      riskOverwriteEmptyPrimary
     };
   }
 
@@ -3692,7 +3731,33 @@ class UniverseBackend {
       await this.ensureLocalFileHandle(universe);
     }
 
-    this.notifyStatus('success', 'Local file access restored.');
+    // Proactively reload universe data now that permission is granted
+    try {
+      if (universe) {
+        const storeState = await this.loadUniverseData(universe);
+        if (storeState && this.storeOperations?.loadUniverseFromFile) {
+          this.storeOperations.loadUniverseFromFile(storeState);
+        } else {
+          // Ensure UI becomes interactive even if no data is returned
+          this.storeOperations?.setUniverseLoaded(true, true);
+        }
+      } else {
+        this.storeOperations?.setUniverseLoaded(true, true);
+      }
+      // Signal success to user and any listeners
+      this.notifyStatus('success', 'Local file access restored. Universe loaded.');
+      if (typeof window !== 'undefined') {
+        try {
+          window.dispatchEvent(new CustomEvent('redstring:universe-reloaded', { detail: { source: 'local-permission' } }));
+        } catch (_) {}
+      }
+    } catch (error) {
+      // Do not block UI; mark as loaded with file present and surface message
+      gfWarn('[UniverseBackend] Reload after permission grant failed:', error);
+      this.storeOperations?.setUniverseLoaded(true, true);
+      this.notifyStatus('warning', `File access restored, but load failed: ${error.message}`);
+    }
+
     return { granted: true };
   }
 

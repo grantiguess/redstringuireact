@@ -7309,7 +7309,7 @@ function NodeCanvas() {
         >
           {isUniverseLoading ? (
             // Show loading state while checking for universe file
-            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '12px', pointerEvents: 'none' }}>
               {/* Circular loading spinner */}
               <div
                 style={{
