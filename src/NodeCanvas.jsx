@@ -3653,6 +3653,33 @@ function NodeCanvas() {
     
     return Math.sqrt(dx * dx + dy * dy) <= threshold;
   };
+
+  // Edge interaction handlers
+  const handleEdgeClick = useCallback((edgeId, e) => {
+    if (!activeGraphId) return;
+    
+    // Handle multi-selection with Ctrl/Cmd key
+    if ((isMac && e.metaKey) || (!isMac && e.ctrlKey)) {
+      if (selectedEdgeIds.has(edgeId)) {
+        storeActions.removeSelectedEdgeId(edgeId);
+      } else {
+        storeActions.addSelectedEdgeId(edgeId);
+      }
+    } else {
+      // Single selection - clear multiple selection and set single edge
+      storeActions.clearSelectedEdgeIds();
+      storeActions.setSelectedEdgeId(edgeId);
+    }
+  }, [activeGraphId, selectedEdgeIds, isMac, storeActions]);
+
+  const handleEdgeMouseEnter = useCallback((edgeId) => {
+    setHoveredEdgeInfo({ edgeId });
+  }, []);
+
+  const handleEdgeMouseLeave = useCallback(() => {
+    setHoveredEdgeInfo(null);
+  }, []);
+
   const handleNodeMouseDown = (nodeData, e) => { // nodeData is now a hydrated node (instance + prototype)
     e.stopPropagation();
     // Ignore right-clicks (button === 2) so context menu can handle them without locking drag
@@ -7461,6 +7488,154 @@ function NodeCanvas() {
               onMouseMove={handleMouseMove}
               // Remove pointerDown preventDefault to avoid interfering with gestures
             >
+              {/* Edges below node-groups: render behind node-group backgrounds */}
+              {isViewReady && (() => {
+                // Helper: determine which node instances are members of node-groups
+                const nodeGroupMemberIds = new Set();
+                const graphData = activeGraphId ? graphsMap.get(activeGraphId) : null;
+                if (graphData?.groups) {
+                  graphData.groups.forEach(group => {
+                    if (group.linkedNodePrototypeId) {
+                      // This is a node-group, add all its members
+                      group.memberInstanceIds.forEach(id => nodeGroupMemberIds.add(id));
+                    }
+                  });
+                }
+
+                // Helper: check if an edge should render above node-group backgrounds
+                const shouldRenderAboveNodeGroups = (edge) => {
+                  return nodeGroupMemberIds.has(edge.sourceId) || nodeGroupMemberIds.has(edge.destinationId);
+                };
+
+                // Filter edges to only those rendering below node-groups
+                const edgesBelowNodeGroups = visibleEdges.filter(e => !shouldRenderAboveNodeGroups(e));
+
+                return (
+                  <g className="edges-below-node-groups">
+                    {edgesBelowNodeGroups.map((edge, idx) => {
+                      const sourceNode = nodes.find(n => n.id === edge.sourceId);
+                      const destNode = nodes.find(n => n.id === edge.destinationId);
+
+                      if (!sourceNode || !destNode) {
+                        return null;
+                      }
+                      const sNodeDims = baseDimsById.get(sourceNode.id) || getNodeDimensions(sourceNode, false, null);
+                      const eNodeDims = baseDimsById.get(destNode.id) || getNodeDimensions(destNode, false, null);
+                      const isSNodePreviewing = previewingNodeId === sourceNode.id;
+                      const isENodePreviewing = previewingNodeId === destNode.id;
+                      const x1 = sourceNode.x + sNodeDims.currentWidth / 2;
+                      const y1 = sourceNode.y + (isSNodePreviewing ? NODE_HEIGHT / 2 : sNodeDims.currentHeight / 2);
+                      const x2 = destNode.x + eNodeDims.currentWidth / 2;
+                      const y2 = destNode.y + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
+
+                      const isHovered = hoveredEdgeInfo?.edgeId === edge.id;
+                      const isSelected = selectedEdgeId === edge.id || selectedEdgeIds.has(edge.id);
+
+                      // Get edge color - prioritize definitionNodeIds for custom types, then typeNodeId for base types
+                      let edgeColor = '#000000';
+                      let edgeName = edge.connectionName || '';
+
+                      // If edge has definitionNodeIds, use those for color/name (custom type)
+                      if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+                        // Use first definition node for color/name
+                        const defNodeId = edge.definitionNodeIds[0];
+                        const defNode = nodePrototypesMap.get(defNodeId);
+                        if (defNode) {
+                          edgeColor = defNode.color || '#000000';
+                          edgeName = defNode.name || '';
+                        }
+                      }
+                      // Else if edge has typeNodeId (base type), use that
+                      else if (edge.typeNodeId) {
+                        const typeNode = nodePrototypesMap.get(edge.typeNodeId);
+                        if (typeNode) {
+                          edgeColor = typeNode.color || '#000000';
+                          edgeName = typeNode.name || '';
+                        }
+                      }
+                      // Else fallback to edge's own color property
+                      else if (edge.color) {
+                        edgeColor = edge.color;
+                      }
+
+                      const dx = x2 - x1;
+                      const dy = y2 - y1;
+                      const mag = Math.sqrt(dx*dx + dy*dy);
+                      if (mag < 1e-6) return null;
+                      const ux = dx / mag;
+                      const uy = dy / mag;
+                      const offset = 8;
+                      const x1a = x1 + ux*offset;
+                      const y1a = y1 + uy*offset;
+                      const x2a = x2 - ux*offset;
+                      const y2a = y2 - uy*offset;
+                      const arrowsToward = edge.directionality?.arrowsToward || new Set();
+                      const labelX = (x1a + x2a) / 2;
+                      const labelY = (y1a + y2a) / 2;
+                      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+                      const thickness = isSelected ? 6 : (isHovered ? 4 : 2);
+
+                      return (
+                        <g
+                          key={`edge-below-${edge.id}-${idx}`}
+                          className={`edge ${isHovered ? 'hovered' : ''} ${isSelected ? 'selected' : ''}`}
+                          style={{ cursor: 'pointer' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEdgeClick(edge.id, e);
+                          }}
+                          onMouseEnter={() => {
+                            handleEdgeMouseEnter(edge.id);
+                          }}
+                          onMouseLeave={handleEdgeMouseLeave}
+                        >
+                          <line
+                            x1={x1a} y1={y1a}
+                            x2={x2a} y2={y2a}
+                            stroke={edgeColor}
+                            strokeWidth={thickness}
+                            vectorEffect="non-scaling-stroke"
+                          />
+                          {arrowsToward.has(edge.sourceId) && (
+                            <polygon
+                              points="0,-4 8,0 0,4"
+                              fill={edgeColor}
+                              transform={`translate(${x1a}, ${y1a}) rotate(${angle + 180})`}
+                            />
+                          )}
+                          {arrowsToward.has(edge.destinationId) && (
+                            <polygon
+                              points="0,-4 8,0 0,4"
+                              fill={edgeColor}
+                              transform={`translate(${x2a}, ${y2a}) rotate(${angle})`}
+                            />
+                          )}
+                          {(isHovered || isSelected || carouselAnimationState !== 'hidden') && edgeName && (
+                            <text
+                              x={labelX}
+                              y={labelY}
+                              textAnchor="middle"
+                              alignmentBaseline="middle"
+                              fill={edgeColor}
+                              fontSize={14}
+                              fontWeight="bold"
+                              fontFamily="'EmOne', sans-serif"
+                              pointerEvents="none"
+                              style={{
+                                userSelect: 'none'
+                              }}
+                            >
+                              {edgeName}
+                            </text>
+                          )}
+                        </g>
+                      );
+                    })}
+                  </g>
+                );
+              })()}
+
               {/* Groups layer - render group rectangles behind nodes */}
               {(() => {
                 const graphData = activeGraphId ? graphsMap.get(activeGraphId) : null;
@@ -7504,9 +7679,34 @@ function NodeCanvas() {
                       const labelText = group.name || 'Group';
                       const isGroupSelected = !!(selectedGroup && selectedGroup.id === group.id);
                       const isGroupDragging = draggingNodeInfo?.groupId === group.id;
+
+                      // Check if this is a node-group
+                      const isNodeGroup = !!group.linkedNodePrototypeId;
+                      const nodeGroupPrototype = isNodeGroup ? nodePrototypesMap.get(group.linkedNodePrototypeId) : null;
+                      const nodeGroupColor = nodeGroupPrototype?.color || strokeColor;
+
+                      // For node-groups, extend rectangle to cover the name tag area
+                      const nodeGroupRectY = isNodeGroup ? labelY - margin : rectY;
+                      const nodeGroupRectH = isNodeGroup ? (rectY + rectH) - (labelY - margin) : rectH;
+
                       return (
-                        <g key={group.id} className="group" data-group-id={group.id}>
-                          <rect x={rectX} y={rectY} width={rectW} height={rectH} rx={cornerR} ry={cornerR} fill="none" stroke={strokeColor} strokeWidth={8} vectorEffect="non-scaling-stroke" strokeDasharray={'8,6'} />
+                        <g key={group.id} className={isNodeGroup ? "node-group" : "group"} data-group-id={group.id}>
+                          {isNodeGroup ? (
+                            // Node-group: colored background rectangle, no stroke
+                            <rect
+                              x={rectX}
+                              y={nodeGroupRectY}
+                              width={rectW}
+                              height={nodeGroupRectH}
+                              rx={cornerR}
+                              ry={cornerR}
+                              fill={nodeGroupColor}
+                              stroke="none"
+                            />
+                          ) : (
+                            // Regular group: no fill, dashed stroke
+                            <rect x={rectX} y={rectY} width={rectW} height={rectH} rx={cornerR} ry={cornerR} fill="none" stroke={strokeColor} strokeWidth={8} vectorEffect="non-scaling-stroke" strokeDasharray={'8,6'} />
+                          )}
                           {/* Draggable label behaving like a node handle with inline editing */}
                           <g className="group-label" style={{ cursor: 'pointer' }}
                              onClick={(e) => {
@@ -7547,7 +7747,10 @@ function NodeCanvas() {
                              onMouseLeave={() => { clearTimeout(groupLongPressTimeout.current); }}
                           >
                             <rect x={labelX} y={labelY} width={labelWidth} height={labelHeight} rx={20} ry={20}
-                                  fill="#bdb5b5" stroke={strokeColor} strokeWidth={6} vectorEffect="non-scaling-stroke"
+                                  fill="#bdb5b5"
+                                  stroke={isNodeGroup ? "none" : strokeColor}
+                                  strokeWidth={isNodeGroup ? 0 : 6}
+                                  vectorEffect="non-scaling-stroke"
                                   style={{
                                     transform: draggingNodeInfo?.groupId === group.id ? `scale(1.08)` : 'scale(1)',
                                     transformOrigin: `${labelX + labelWidth/2}px ${labelY + labelHeight/2}px`,
@@ -7720,24 +7923,46 @@ function NodeCanvas() {
 
               {/* Debug boundaries - disabled */}
 
-              {isViewReady && (
-                <>
-              <g className="base-layer">
-                {visibleEdges.map((edge, idx) => {
-                  const sourceNode = nodes.find(n => n.id === edge.sourceId);
-                  const destNode = nodes.find(n => n.id === edge.destinationId);
+              {/* Edges above node-groups: render after node-group backgrounds */}
+              {isViewReady && (() => {
+                // Helper: determine which node instances are members of node-groups
+                const nodeGroupMemberIds = new Set();
+                const graphData = activeGraphId ? graphsMap.get(activeGraphId) : null;
+                if (graphData?.groups) {
+                  graphData.groups.forEach(group => {
+                    if (group.linkedNodePrototypeId) {
+                      // This is a node-group, add all its members
+                      group.memberInstanceIds.forEach(id => nodeGroupMemberIds.add(id));
+                    }
+                  });
+                }
 
-                  if (!sourceNode || !destNode) {
-                     return null;
-                  }
-                  const sNodeDims = baseDimsById.get(sourceNode.id) || getNodeDimensions(sourceNode, false, null);
-                  const eNodeDims = baseDimsById.get(destNode.id) || getNodeDimensions(destNode, false, null);
-                  const isSNodePreviewing = previewingNodeId === sourceNode.id;
-                  const isENodePreviewing = previewingNodeId === destNode.id;
-                  const x1 = sourceNode.x + sNodeDims.currentWidth / 2;
-                  const y1 = sourceNode.y + (isSNodePreviewing ? NODE_HEIGHT / 2 : sNodeDims.currentHeight / 2);
-                  const x2 = destNode.x + eNodeDims.currentWidth / 2;
-                  const y2 = destNode.y + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
+                // Helper: check if an edge should render above node-group backgrounds
+                const shouldRenderAboveNodeGroups = (edge) => {
+                  return nodeGroupMemberIds.has(edge.sourceId) || nodeGroupMemberIds.has(edge.destinationId);
+                };
+
+                // Filter edges to only those rendering above node-groups
+                const edgesAboveNodeGroups = visibleEdges.filter(e => shouldRenderAboveNodeGroups(e));
+
+                return (
+                  <>
+                    <g className="edges-above-node-groups">
+                      {edgesAboveNodeGroups.map((edge, idx) => {
+                      const sourceNode = nodes.find(n => n.id === edge.sourceId);
+                      const destNode = nodes.find(n => n.id === edge.destinationId);
+
+                      if (!sourceNode || !destNode) {
+                        return null;
+                      }
+                      const sNodeDims = baseDimsById.get(sourceNode.id) || getNodeDimensions(sourceNode, false, null);
+                      const eNodeDims = baseDimsById.get(destNode.id) || getNodeDimensions(destNode, false, null);
+                      const isSNodePreviewing = previewingNodeId === sourceNode.id;
+                      const isENodePreviewing = previewingNodeId === destNode.id;
+                      const x1 = sourceNode.x + sNodeDims.currentWidth / 2;
+                      const y1 = sourceNode.y + (isSNodePreviewing ? NODE_HEIGHT / 2 : sNodeDims.currentHeight / 2);
+                      const x2 = destNode.x + eNodeDims.currentWidth / 2;
+                      const y2 = destNode.y + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
 
                       const isHovered = hoveredEdgeInfo?.edgeId === edge.id;
                       const isSelected = selectedEdgeId === edge.id || selectedEdgeIds.has(edge.id);
@@ -7997,9 +8222,9 @@ function NodeCanvas() {
                         manhattanSourceSide = sSide;
                         manhattanDestSide = dSide;
                       }
-                  return (
-                        <g key={`edge-${edge.id}-${idx}`}>
-                                                 {/* Main edge line - always same thickness */}
+                      return (
+                        <g key={`edge-above-${edge.id}-${idx}`}>
+                          {/* Main edge line - always same thickness */}
                     {/* Glow effect for selected or hovered edge */}
                     {(isSelected || isHovered) && (
                       (enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) ? (
@@ -8722,8 +8947,13 @@ function NodeCanvas() {
                              );
                            })()}
                         </g>
-                  );
-                })}
+                      );
+                    })}
+                  </g>
+                  </>
+                );
+              })()}
+
                 {drawingConnectionFrom && (
                   <line
                     x1={drawingConnectionFrom.startX}
@@ -8847,7 +9077,7 @@ function NodeCanvas() {
                          );
                        })}
 
-                       {/* Render The PieMenu next (it will be visually under the active node) */} 
+                    {/* Render The PieMenu next (it will be visually under the active node) */} 
                        {isPieMenuRendered && currentPieMenuData && (
                          <PieMenu
                            node={currentPieMenuData.node}
@@ -9126,10 +9356,9 @@ function NodeCanvas() {
                            );
                          })()
                        )}
-                     </>
-                   );
-                 })()}
-              </g>
+                  </>
+                );
+              })()}
 
                {selectionRect && (
                  <rect
@@ -9164,8 +9393,6 @@ function NodeCanvas() {
                      return dims.currentHeight * 0.9;
                    })() : NODE_HEIGHT}
                  />
-                   )}
-                </>
                )}
             </svg>
           )}
