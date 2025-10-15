@@ -1791,6 +1791,7 @@ function NodeCanvas() {
   const [nodeNamePrompt, setNodeNamePrompt] = useState({ visible: false, name: '', color: null });
   const [connectionNamePrompt, setConnectionNamePrompt] = useState({ visible: false, name: '', color: null, edgeId: null });
   const [abstractionPrompt, setAbstractionPrompt] = useState({ visible: false, name: '', color: null, direction: 'above', nodeId: null, carouselLevel: null });
+  const [nodeGroupPrompt, setNodeGroupPrompt] = useState({ visible: false, name: '', color: null, groupId: null });
 
   // Add logging for abstraction prompt state changes
   useEffect(() => {
@@ -2353,46 +2354,13 @@ function NodeCanvas() {
   const handleGroupPanelConvertToNodeGroup = useCallback(() => {
     if (!activeGraphId || !selectedGroup) return;
     // Open UnifiedSelector in node-group-creation mode
-    setUnifiedSelectorState({
+    setNodeGroupPrompt({
       visible: true,
-      mode: 'node-group-creation',
-      title: 'Add a new Thing defined by this Group',
-      subtitle: 'Create a new node or link to an existing one',
-      initialName: selectedGroup.name || 'Group',
-      initialColor: selectedGroup.color || '#8B0000',
-      searchTerm: '',
-      onSubmit: (data) => {
-        // data contains { name, color } if creating new
-        // Call convertGroupToNodeGroup with createNewPrototype=true
-        storeActions.convertGroupToNodeGroup(
-          activeGraphId,
-          selectedGroup.id,
-          null, // nodePrototypeId (not used when creating new)
-          true, // createNewPrototype
-          data.name,
-          data.color
-        );
-        setUnifiedSelectorState(prev => ({ ...prev, visible: false }));
-        setGroupControlPanelShouldShow(false);
-        setSelectedGroup(null);
-      },
-      onNodeSelect: (prototype) => {
-        // User selected an existing prototype
-        storeActions.convertGroupToNodeGroup(
-          activeGraphId,
-          selectedGroup.id,
-          prototype.id, // Link to existing prototype
-          false // Don't create new
-        );
-        setUnifiedSelectorState(prev => ({ ...prev, visible: false }));
-        setGroupControlPanelShouldShow(false);
-        setSelectedGroup(null);
-      },
-      onClose: () => {
-        setUnifiedSelectorState(prev => ({ ...prev, visible: false }));
-      }
+      name: selectedGroup.name || 'Group',
+      color: selectedGroup.color || '#8B0000',
+      groupId: selectedGroup.id
     });
-  }, [activeGraphId, selectedGroup, storeActions.convertGroupToNodeGroup]);
+  }, [activeGraphId, selectedGroup]);
 
 
   // Handle abstraction control panel callbacks
@@ -9234,7 +9202,7 @@ function NodeCanvas() {
 
           {/* Single UnifiedSelector instance with dynamic props */}
           {(() => {
-            const anyVisible = nodeNamePrompt.visible || connectionNamePrompt.visible || abstractionPrompt.visible;
+            const anyVisible = nodeNamePrompt.visible || connectionNamePrompt.visible || abstractionPrompt.visible || nodeGroupPrompt.visible;
             if (!anyVisible) return null;
             if (nodeNamePrompt.visible) {
               return (
@@ -9296,6 +9264,51 @@ function NodeCanvas() {
                 />
               );
             }
+            // Node-group prompt
+            if (nodeGroupPrompt.visible) {
+              return (
+                <UnifiedSelector
+                  mode="node-group-creation"
+                  isVisible={true}
+                  leftPanelExpanded={leftPanelExpanded}
+                  rightPanelExpanded={rightPanelExpanded}
+                  onClose={() => setNodeGroupPrompt({ visible: false, name: '', color: null, groupId: null })}
+                  onSubmit={({ name, color }) => {
+                    if (name.trim() && activeGraphId && nodeGroupPrompt.groupId) {
+                      storeActions.convertGroupToNodeGroup(
+                        activeGraphId,
+                        nodeGroupPrompt.groupId,
+                        null, // nodePrototypeId (not used when creating new)
+                        true, // createNewPrototype
+                        name.trim(),
+                        color
+                      );
+                      setNodeGroupPrompt({ visible: false, name: '', color: null, groupId: null });
+                      setGroupControlPanelShouldShow(false);
+                      setSelectedGroup(null);
+                    }
+                  }}
+                  onNodeSelect={(prototype) => {
+                    if (activeGraphId && nodeGroupPrompt.groupId) {
+                      storeActions.convertGroupToNodeGroup(
+                        activeGraphId,
+                        nodeGroupPrompt.groupId,
+                        prototype.id, // Link to existing prototype
+                        false // Don't create new
+                      );
+                      setNodeGroupPrompt({ visible: false, name: '', color: null, groupId: null });
+                      setGroupControlPanelShouldShow(false);
+                      setSelectedGroup(null);
+                    }
+                  }}
+                  initialName={nodeGroupPrompt.name}
+                  initialColor={nodeGroupPrompt.color}
+                  title="Name Your Thing"
+                  subtitle="Add a new Thing that will be defined by this Group."
+                  searchTerm={nodeGroupPrompt.name}
+                />
+              );
+            }
             // Abstraction prompt
             return (
               <UnifiedSelector
@@ -9304,13 +9317,13 @@ function NodeCanvas() {
                 leftPanelExpanded={leftPanelExpanded}
                 rightPanelExpanded={rightPanelExpanded}
                 onClose={() => {
-                  
-                  
+
+
                   setAbstractionPrompt({ visible: false, name: '', color: null, direction: 'above', nodeId: null, carouselLevel: null });
                   setCarouselPieMenuStage(1);
                   setIsCarouselStageTransition(true);
                   if (abstractionCarouselNode && !selectedNodeIdForPieMenu) {
-                    
+
                     setSelectedNodeIdForPieMenu(abstractionCarouselNode.id);
                   }
                 }}

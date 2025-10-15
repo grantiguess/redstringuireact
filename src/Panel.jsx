@@ -3388,10 +3388,7 @@ const Panel = forwardRef(
 
     // Left panel view state and collapsed sections
     const [leftViewActive, setLeftViewActive] = useState('library'); // 'library', 'all', 'grid', 'federation', 'semantic', or 'ai'
-    // Now that leftViewActive is initialized, refine the padding to avoid raising AI view
-    if (side === 'left' && (leftViewActive === 'ai' || leftViewActive === 'semantic')) {
-        effectiveBottomPadding = 0;
-    }
+    // Apply consistent gap spacing across all views to prevent TypeList overlap
     const [sectionCollapsed, setSectionCollapsed] = useState({});
     const [sectionMaxHeights, setSectionMaxHeights] = useState({});
 

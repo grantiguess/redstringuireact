@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 
 import gitFederationService, { STORAGE_TYPES } from './services/gitFederationService.js';
+import { HEADER_HEIGHT } from './constants.js';
+import useGraphStore from './store/graphStore.jsx';
 
 const GF_TAG = '[GF-DEBUG]';
 const { log: __gfNativeLog, warn: __gfNativeWarn, error: __gfNativeError } = console;
@@ -225,6 +227,11 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
       return false; // Collapsed by default
     }
   });
+
+  // TypeList gap spacing - same logic as Panel.jsx
+  const typeListMode = useGraphStore((state) => state.typeListMode);
+  const isTypeListVisible = typeListMode !== 'closed';
+  const bottomSafeArea = isTypeListVisible ? HEADER_HEIGHT + 10 : 0; // footer height + small gap
   const [showUniverseFileSelector, setShowUniverseFileSelector] = useState(false);
   const [pendingRepoAttachment, setPendingRepoAttachment] = useState(null);
   const [discoveredUniverseFiles, setDiscoveredUniverseFiles] = useState([]);
@@ -2820,6 +2827,7 @@ const variantStyles = variant === 'modal'
   ? {
       background: 'rgba(12, 0, 0, 0.9)',
       padding: 20,
+      paddingBottom: 20 + bottomSafeArea, // Add TypeList gap spacing
       borderRadius: 12,
       border: '1px solid #260000',
       height: '100%',
@@ -2828,6 +2836,7 @@ const variantStyles = variant === 'modal'
   : {
       background: 'transparent',
       padding: 0,
+      paddingBottom: bottomSafeArea, // Add TypeList gap spacing for panel variant too
       height: '100%'
     };
 

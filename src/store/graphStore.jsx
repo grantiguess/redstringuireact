@@ -413,12 +413,12 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
       const graph = draft.graphs.get(graphId);
       if (!graph?.groups) {
         console.warn(`[convertGroupToNodeGroup] Graph ${graphId} not found or has no groups.`);
-        return null;
+        return;
       }
       const group = graph.groups.get(groupId);
       if (!group) {
         console.warn(`[convertGroupToNodeGroup] Group ${groupId} not found.`);
-        return null;
+        return;
       }
 
       let prototypeId = nodePrototypeId;
@@ -442,7 +442,7 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
       const prototype = draft.nodePrototypes.get(prototypeId);
       if (!prototype) {
         console.warn(`[convertGroupToNodeGroup] Node prototype ${prototypeId} not found.`);
-        return null;
+        return;
       }
 
       // Create a new definition graph from the group's members
@@ -504,8 +504,6 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
       group.color = prototype.color; // Sync color with prototype
 
       console.log(`[convertGroupToNodeGroup] Converted group ${groupId} to node-group linked to prototype ${prototypeId}, definition ${definitionIndex}`);
-
-      return { prototypeId, definitionIndex, defGraphId };
     })),
 
 
