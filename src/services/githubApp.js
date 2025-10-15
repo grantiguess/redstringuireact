@@ -6,6 +6,7 @@
  */
 
 import { Octokit } from '@octokit/rest';
+import { getOAuthBaseUrl, oauthUrl } from './bridgeConfig.js';
 
 // GitHub App configuration (loaded from environment)
 const GITHUB_APP_CONFIG = {
@@ -312,10 +313,9 @@ export class GitHubAppAuth {
    * Make server request (helper for server-side operations)
    */
   async serverRequest(path, options = {}) {
-    // This should use the same bridge/OAuth server infrastructure
-    const baseUrl = this.getServerBaseUrl();
-    const url = `${baseUrl}${path}`;
-    
+    // Use OAuth server infrastructure for GitHub App endpoints
+    const url = oauthUrl(path);
+
     return fetch(url, {
       ...options,
       headers: {
@@ -329,20 +329,7 @@ export class GitHubAppAuth {
    * Get server base URL for GitHub App operations
    */
   getServerBaseUrl() {
-    // Reuse the OAuth server infrastructure
-    if (typeof window !== 'undefined') {
-      const { protocol, hostname } = window.location;
-      
-      // Production domains
-      if (hostname === 'redstring.io' || hostname.includes('.redstring.io')) {
-        return `${protocol}//${hostname}`;
-      }
-      
-      // Development
-      return `${protocol}//${hostname}:3002`;
-    }
-    
-    return 'https://redstring-test-umk552kp4q-uc.a.run.app';
+    return getOAuthBaseUrl();
   }
 
   /**

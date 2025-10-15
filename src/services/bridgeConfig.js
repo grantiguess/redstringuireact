@@ -1,20 +1,42 @@
 // Bridge configuration helpers for building URLs and cross-device access
 
-const DEFAULT_STAGING_ORIGIN = 'https://redstring-test-umk552kp4q-uc.a.run.app';
+function readEnvValue(...keys) {
+  for (const key of keys) {
+    try {
+      if (typeof import.meta !== 'undefined' && import.meta.env && Object.prototype.hasOwnProperty.call(import.meta.env, key)) {
+        const value = import.meta.env[key];
+        if (typeof value === 'string' && value.trim().length > 0) {
+          return value.trim();
+        }
+      }
+    } catch {}
+
+    try {
+      if (typeof process !== 'undefined' && process.env && typeof process.env[key] === 'string') {
+        const value = process.env[key];
+        if (value && value.trim().length > 0) {
+          return value.trim();
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
 
 export function getBridgeBaseUrl() {
   // Allow override via environment for advanced setups
   // Vite exposes env vars prefixed with VITE_
-  try {
-    // eslint-disable-next-line no-undef
-    const envUrl = (
-      (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_BRIDGE_URL) ||
-      (typeof process !== 'undefined' && process.env && process.env.VITE_BRIDGE_URL)
-    ) || null;
-    if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
-      return envUrl.replace(/\/+$/, '');
-    }
-  } catch {}
+  const envUrl = readEnvValue(
+    'VITE_BRIDGE_URL',
+    'BRIDGE_PUBLIC_URL',
+    'PUBLIC_BRIDGE_URL',
+    'PUBLIC_BASE_URL',
+    'PUBLIC_ORIGIN',
+    'APP_PUBLIC_URL'
+  );
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, '');
+  }
 
   if (typeof window !== 'undefined' && window.location) {
     const { protocol, hostname, port } = window.location;
@@ -32,26 +54,28 @@ export function getBridgeBaseUrl() {
     return `${protocol}//${hostname}:${bridgePort}`;
   }
 
-  // Server-side or unknown: prefer staging origin in production
-  if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'production') {
-    return DEFAULT_STAGING_ORIGIN;
-  }
-
-  return 'http://localhost:3001';
+  // Server-side or unknown: prefer explicitly configured origin, otherwise fall back to localhost
+  const fallback = readEnvValue(
+    'BRIDGE_PUBLIC_FALLBACK',
+    'SERVER_BRIDGE_URL',
+    'APP_BASE_URL'
+  );
+  return (fallback || 'http://localhost:3001').replace(/\/+$/, '');
 }
 
 export function getOAuthBaseUrl() {
   // OAuth server runs on separate port for clean separation
-  try {
-    // eslint-disable-next-line no-undef
-    const envUrl = (
-      (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_OAUTH_URL) ||
-      (typeof process !== 'undefined' && process.env && process.env.VITE_OAUTH_URL)
-    ) || null;
-    if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
-      return envUrl.replace(/\/+$/, '');
-    }
-  } catch {}
+  const envUrl = readEnvValue(
+    'VITE_OAUTH_URL',
+    'OAUTH_PUBLIC_URL',
+    'PUBLIC_OAUTH_URL',
+    'PUBLIC_BASE_URL',
+    'PUBLIC_ORIGIN',
+    'APP_PUBLIC_URL'
+  );
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, '');
+  }
 
   if (typeof window !== 'undefined' && window.location) {
     const { protocol, hostname, port } = window.location;
@@ -67,12 +91,13 @@ export function getOAuthBaseUrl() {
     return `${protocol}//${hostname}:${oauthPort}`;
   }
 
-  // Server-side or unknown: prefer staging origin in production
-  if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'production') {
-    return DEFAULT_STAGING_ORIGIN;
-  }
-
-  return 'http://localhost:3003';
+  // Server-side or unknown: prefer explicitly configured origin, otherwise fall back to localhost
+  const fallback = readEnvValue(
+    'OAUTH_PUBLIC_FALLBACK',
+    'SERVER_OAUTH_URL',
+    'APP_BASE_URL'
+  );
+  return (fallback || 'http://localhost:3003').replace(/\/+$/, '');
 }
 
 export function bridgeUrl(path = '') {
@@ -170,5 +195,4 @@ export function bridgeEventSource(path) {
 export function oauthFetch(path, options) {
   return fetch(oauthUrl(path), options);
 }
-
 

@@ -79,6 +79,31 @@ function isLocalRequest(req) {
 
 const GITHUB_USER_INSTALLATIONS_URL = 'https://api.github.com/user/installations';
 
+function resolveGitHubAppIdentifiers() {
+  const ids = [];
+  const idCandidates = [
+    process.env.GITHUB_APP_ID,
+    process.env.GITHUB_APP_ID_DEV
+  ];
+  for (const value of idCandidates) {
+    if (!value) continue;
+    const numeric = Number(value);
+    if (!Number.isNaN(numeric)) {
+      ids.push(numeric);
+    }
+  }
+
+  const prodSlug = process.env.GITHUB_APP_SLUG || 'redstring-semantic-sync';
+  const devSlug = process.env.GITHUB_APP_SLUG_DEV || prodSlug;
+  const slugs = Array.from(new Set(
+    [prodSlug, devSlug]
+      .map((slug) => (slug || '').trim())
+      .filter((slug) => slug.length > 0)
+  ));
+
+  return { ids, slugs };
+}
+
 async function findInstallationViaOAuth(accessToken, installationId) {
   if (!accessToken) {
     return { ok: false, status: 0, reason: 'missing_token' };
@@ -93,6 +118,7 @@ async function findInstallationViaOAuth(accessToken, installationId) {
 
   let page = 1;
   const maxPages = 10; // Safety cap
+  let lastStatus = null;
 
   while (page <= maxPages) {
     const url = `${GITHUB_USER_INSTALLATIONS_URL}?per_page=${perPage}&page=${page}`;
@@ -101,7 +127,7 @@ async function findInstallationViaOAuth(accessToken, installationId) {
     try {
       response = await fetch(url, {
         headers: {
-          'Accept': 'application/vnd.github+json',
+          'Accept': 'application/vnd.github.v3+json',
           'Authorization': `token ${accessToken}`,
           'User-Agent': 'Redstring-OAuth-Server/1.0'
         }
@@ -109,6 +135,7 @@ async function findInstallationViaOAuth(accessToken, installationId) {
     } catch (networkError) {
       return { ok: false, status: 0, reason: 'network_error', error: networkError };
     }
+    lastStatus = response.status;
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
@@ -146,7 +173,148 @@ async function findInstallationViaOAuth(accessToken, installationId) {
     page += 1;
   }
 
-  return { ok: true, installation: null };
+  return { ok: true, installation: null, status: lastStatus };
+}
+
+async function listInstallationsViaOAuth(accessToken) {
+  if (!accessToken) {
+    return { ok: false, status: 0, reason: 'missing_token', installations: [] };
+  }
+
+  const allInstallations = [];
+  const perPage = 100;
+  let page = 1;
+  const maxPages = 10;
+
+  while (page <= maxPages) {
+    const url = `${GITHUB_USER_INSTALLATIONS_URL}?per_page=${perPage}&page=${page}`;
+    let response;
+    try {
+      response = await fetch(url, {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'Authorization': `token ${accessToken}`,
+          'User-Agent': 'Redstring-OAuth-Server/1.0'
+        }
+      });
+    } catch (networkError) {
+      return { ok: false, status: 0, reason: 'network_error', error: networkError, installations: [] };
+    }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      return {
+        ok: false,
+        status: response.status,
+        reason: 'github_error',
+        details: text,
+        installations: []
+      };
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      return {
+        ok: false,
+        status: response.status,
+        reason: 'parse_error',
+        error: parseError,
+        installations: []
+      };
+    }
+
+    const installations = Array.isArray(data?.installations) ? data.installations : [];
+    allInstallations.push(...installations);
+
+    const linkHeader = response.headers.get('link') || '';
+    if (!/\brel="next"/.test(linkHeader) || installations.length === 0) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return { ok: true, installations: allInstallations };
+}
+
+async function fetchInstallationRepositoriesViaOAuth(accessToken, installationId) {
+  if (!accessToken || !installationId) {
+    return [];
+  }
+
+  try {
+    const response = await fetch(`https://api.github.com/user/installations/${installationId}/repositories`, {
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `token ${accessToken}`,
+        'User-Agent': 'Redstring-OAuth-Server/1.0'
+      }
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      logger.warn('[GitHubApp] OAuth repository listing failed:', {
+        installationId,
+        status: response.status,
+        reason: text
+      });
+      return [];
+    }
+
+    const repoData = await response.json();
+    if (Array.isArray(repoData?.repositories)) {
+      return repoData.repositories;
+    }
+  } catch (error) {
+    logger.warn('[GitHubApp] OAuth repository listing error:', {
+      installationId,
+      error: error.message
+    });
+  }
+
+  return [];
+}
+
+async function discoverInstallationViaOAuth(accessToken) {
+  const { ids, slugs } = resolveGitHubAppIdentifiers();
+  if (!accessToken || (ids.length === 0 && slugs.length === 0)) {
+    return null;
+  }
+
+  const listResult = await listInstallationsViaOAuth(accessToken);
+  if (!listResult.ok) {
+    logger.debug('[GitHubApp] Installation discovery failed via OAuth:', {
+      status: listResult.status,
+      reason: listResult.reason || null,
+      details: listResult.details || null
+    });
+    return null;
+  }
+
+  const matches = listResult.installations || [];
+  const match = matches.find((installation) => {
+    const slug = installation?.app_slug;
+    const appId = Number(installation?.app_id);
+    const slugMatch = slug && slugs.includes(slug);
+    const idMatch = !Number.isNaN(appId) && ids.includes(appId);
+    return slugMatch || idMatch;
+  });
+
+  if (!match) {
+    return null;
+  }
+
+  const repositories = await fetchInstallationRepositoriesViaOAuth(accessToken, match.id);
+
+  return {
+    installationId: match.id,
+    account: match.account || null,
+    permissions: match.permissions || null,
+    repositories,
+    installation: match
+  };
 }
 
 function createVerificationRecord(result, oauthCredentials) {
@@ -162,12 +330,13 @@ function createVerificationRecord(result, oauthCredentials) {
   return {
     status: result.status,
     reason: result.reason || null,
-    installationId: result.installation?.id ?? null,
+    installationId: result.installation?.id ?? result.checkedInstallationId ?? null,
     installationAccount: result.installation?.account?.login ?? null,
     targetType: result.installation?.target_type ?? null,
     oauthLogin,
     statusCode: result.statusCode ?? null,
     details: trimmedDetails,
+    checkedInstallationId: result.checkedInstallationId ?? (result.installation?.id ?? null),
     checkedAt: Date.now()
   };
 }
@@ -182,6 +351,7 @@ function formatVerificationForResponse(record) {
     reason: record.reason || null,
     oauthLogin: record.oauthLogin || null,
     installationId: record.installationId ?? null,
+    checkedInstallationId: record.checkedInstallationId ?? null,
     installationAccount: record.installationAccount || null,
     targetType: record.targetType || null,
     statusCode: record.statusCode ?? null,
@@ -205,6 +375,7 @@ function verificationRecordsEqual(a, b) {
     (a.status || null) === (b.status || null) &&
     (a.reason || null) === (b.reason || null) &&
     (a.installationId ?? null) === (b.installationId ?? null) &&
+    (a.checkedInstallationId ?? null) === (b.checkedInstallationId ?? null) &&
     (a.installationAccount || null) === (b.installationAccount || null) &&
     (a.targetType || null) === (b.targetType || null) &&
     (a.oauthLogin || null) === (b.oauthLogin || null) &&
@@ -214,12 +385,15 @@ function verificationRecordsEqual(a, b) {
 }
 
 async function verifyInstallationWithOAuth(installationId, oauthCredentials, { enforceAccountMatch = true } = {}) {
-  if (installationId == null) {
+  const numericInstallationId = installationId != null ? Number(installationId) : null;
+
+  if (numericInstallationId == null || Number.isNaN(numericInstallationId)) {
     return {
       status: 'missing_installation',
       reason: 'missing_installation_id',
       installation: null,
-      oauthUser: oauthCredentials?.user || null
+      oauthUser: oauthCredentials?.user || null,
+      checkedInstallationId: null
     };
   }
 
@@ -228,11 +402,12 @@ async function verifyInstallationWithOAuth(installationId, oauthCredentials, { e
       status: 'skipped',
       reason: 'oauth_not_connected',
       installation: null,
-      oauthUser: oauthCredentials?.user || null
+      oauthUser: oauthCredentials?.user || null,
+      checkedInstallationId: numericInstallationId
     };
   }
 
-  const lookup = await findInstallationViaOAuth(oauthCredentials.accessToken, installationId);
+  const lookup = await findInstallationViaOAuth(oauthCredentials.accessToken, numericInstallationId);
   const oauthUser = oauthCredentials.user || null;
 
   if (!lookup.ok) {
@@ -243,7 +418,20 @@ async function verifyInstallationWithOAuth(installationId, oauthCredentials, { e
         installation: null,
         oauthUser,
         statusCode: lookup.status,
-        details: lookup.details || null
+        details: lookup.details || null,
+        checkedInstallationId: numericInstallationId
+      };
+    }
+
+    if (lookup.status === 404) {
+      return {
+        status: 'not_found',
+        reason: 'installation_not_found',
+        installation: null,
+        oauthUser,
+        statusCode: lookup.status,
+        details: lookup.details || null,
+        checkedInstallationId: numericInstallationId
       };
     }
 
@@ -253,16 +441,21 @@ async function verifyInstallationWithOAuth(installationId, oauthCredentials, { e
       installation: null,
       oauthUser,
       statusCode: lookup.status || null,
-      details: lookup.details || null
+      details: lookup.details || null,
+      checkedInstallationId: numericInstallationId
     };
   }
 
   if (!lookup.installation) {
+    const defaultDetail = 'GitHub did not include this installation in /user/installations for the current OAuth token. Tokens without read:org scope cannot enumerate organization installs.';
     return {
-      status: 'not_found',
-      reason: 'installation_not_accessible',
+      status: 'unverified',
+      reason: lookup.reason || 'installation_not_listed',
       installation: null,
-      oauthUser
+      oauthUser,
+      statusCode: lookup.status || null,
+      details: lookup.details || defaultDetail,
+      checkedInstallationId: numericInstallationId
     };
   }
 
@@ -279,7 +472,8 @@ async function verifyInstallationWithOAuth(installationId, oauthCredentials, { e
       status: 'account_mismatch',
       reason: 'installation_account_mismatch',
       installation,
-      oauthUser
+      oauthUser,
+      checkedInstallationId: numericInstallationId
     };
   }
 
@@ -287,7 +481,8 @@ async function verifyInstallationWithOAuth(installationId, oauthCredentials, { e
     status: 'verified',
     reason: null,
     installation,
-    oauthUser
+    oauthUser,
+    checkedInstallationId: numericInstallationId
   };
 }
 
@@ -792,6 +987,53 @@ app.get('/api/github/auth/state', async (req, res) => {
     const oauthCredentials = tokenVault.getOAuthCredentials();
     let githubAppCredentials = tokenVault.getGitHubAppInstallation();
     let verificationRecordForResponse = githubAppCredentials?.verification || null;
+
+    if (!githubAppCredentials && oauthCredentials?.accessToken) {
+      try {
+        const discovered = await discoverInstallationViaOAuth(oauthCredentials.accessToken);
+        if (discovered?.installationId) {
+          logger.info('[GitHubApp] Auto-discovered installation via OAuth token:', {
+            installationId: discovered.installationId,
+            account: discovered.account?.login || null,
+            repositoryCount: Array.isArray(discovered.repositories) ? discovered.repositories.length : 0
+          });
+
+          const verificationResult = await verifyInstallationWithOAuth(
+            discovered.installationId,
+            oauthCredentials
+          );
+          const recordCandidate = createVerificationRecord(verificationResult, oauthCredentials);
+
+          try {
+            githubAppCredentials = tokenVault.setGitHubAppInstallation({
+              installationId: discovered.installationId,
+              accessToken: null,
+              tokenExpiresAt: null,
+              repositories: Array.isArray(discovered.repositories) ? discovered.repositories : [],
+              account: discovered.account || null,
+              permissions: discovered.permissions || null,
+              verification: recordCandidate
+            });
+            verificationRecordForResponse = githubAppCredentials.verification || recordCandidate;
+          } catch (persistError) {
+            logger.warn('[GitHubApp] Failed to persist auto-discovered installation:', persistError.message);
+            githubAppCredentials = {
+              installationId: discovered.installationId,
+              accessToken: null,
+              tokenExpiresAt: null,
+              repositories: Array.isArray(discovered.repositories) ? discovered.repositories : [],
+              account: discovered.account || null,
+              permissions: discovered.permissions || null,
+              verification: recordCandidate,
+              storedAt: Date.now()
+            };
+            verificationRecordForResponse = recordCandidate;
+          }
+        }
+      } catch (discoveryError) {
+        logger.warn('[GitHubApp] OAuth installation discovery error:', discoveryError.message);
+      }
+    }
 
     if (githubAppCredentials?.installationId) {
       const verificationResult = await verifyInstallationWithOAuth(
