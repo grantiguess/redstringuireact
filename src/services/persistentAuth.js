@@ -252,11 +252,6 @@ export class PersistentAuth {
     // Check user preference for auto-connect
     const allowAutoConnect = this.getAllowAutoConnect();
     console.log('[PersistentAuth] Allow auto-connect:', allowAutoConnect);
-    if (!allowAutoConnect) {
-      console.log('[PersistentAuth] Auto-connect disabled by user preference');
-      this.markAutoConnectAttempted();
-      return;
-    }
 
     console.log('[PersistentAuth] Attempting auto-connection...');
     this.markAutoConnectAttempted();
@@ -272,6 +267,11 @@ export class PersistentAuth {
         console.log('[PersistentAuth] Dispatching auth event...');
         this.dispatchAuthEvent('github-app', { autoConnected: true });
         console.log('[PersistentAuth] Events dispatched, UI should update now');
+        return;
+      }
+
+      if (!allowAutoConnect) {
+        console.log('[PersistentAuth] OAuth auto-connect disabled by user preference');
         return;
       }
 
