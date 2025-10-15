@@ -2350,6 +2350,49 @@ function NodeCanvas() {
     }
   }, [activeGraphId, selectedGroup, storeActions.updateGroup]);
 
+  const handleGroupPanelConvertToNodeGroup = useCallback(() => {
+    if (!activeGraphId || !selectedGroup) return;
+    // Open UnifiedSelector in node-group-creation mode
+    setUnifiedSelectorState({
+      visible: true,
+      mode: 'node-group-creation',
+      title: 'Add a new Thing defined by this Group',
+      subtitle: 'Create a new node or link to an existing one',
+      initialName: selectedGroup.name || 'Group',
+      initialColor: selectedGroup.color || '#8B0000',
+      searchTerm: '',
+      onSubmit: (data) => {
+        // data contains { name, color } if creating new
+        // Call convertGroupToNodeGroup with createNewPrototype=true
+        storeActions.convertGroupToNodeGroup(
+          activeGraphId,
+          selectedGroup.id,
+          null, // nodePrototypeId (not used when creating new)
+          true, // createNewPrototype
+          data.name,
+          data.color
+        );
+        setUnifiedSelectorState(prev => ({ ...prev, visible: false }));
+        setGroupControlPanelShouldShow(false);
+        setSelectedGroup(null);
+      },
+      onNodeSelect: (prototype) => {
+        // User selected an existing prototype
+        storeActions.convertGroupToNodeGroup(
+          activeGraphId,
+          selectedGroup.id,
+          prototype.id, // Link to existing prototype
+          false // Don't create new
+        );
+        setUnifiedSelectorState(prev => ({ ...prev, visible: false }));
+        setGroupControlPanelShouldShow(false);
+        setSelectedGroup(null);
+      },
+      onClose: () => {
+        setUnifiedSelectorState(prev => ({ ...prev, visible: false }));
+      }
+    });
+  }, [activeGraphId, selectedGroup, storeActions.convertGroupToNodeGroup]);
 
 
   // Handle abstraction control panel callbacks
@@ -9369,6 +9412,7 @@ function NodeCanvas() {
           onUngroup={handleGroupPanelUngroup}
           onGroupEdit={handleGroupPanelEdit}
           onGroupColor={handleGroupPanelColor}
+          onConvertToNodeGroup={handleGroupPanelConvertToNodeGroup}
         />
       )}
 

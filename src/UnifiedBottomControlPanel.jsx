@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Trash2, Plus, ArrowUpFromDot, ArrowRight, ChevronLeft, ChevronRight, PackageOpen, Layers, Edit3, Bookmark, Palette, MoreHorizontal, Group, Ungroup } from 'lucide-react';
+import { Trash2, Plus, ArrowUpFromDot, ArrowRight, ChevronLeft, ChevronRight, PackageOpen, Layers, Edit3, Bookmark, Palette, MoreHorizontal, Group, Ungroup, SquarePlus } from 'lucide-react';
 import UniversalNodeRenderer from './UniversalNodeRenderer';
 import { RENDERER_PRESETS } from './UniversalNodeRenderer.presets';
 import useGraphStore from "./store/graphStore.jsx";
@@ -82,6 +82,7 @@ const UnifiedBottomControlPanel = ({
   onUngroup,
   onGroupEdit,
   onGroupColor,
+  onConvertToNodeGroup,
 
   // Pie menu button handlers
   onDelete,
@@ -345,11 +346,12 @@ const UnifiedBottomControlPanel = ({
                 <div className="piemenu-button" onClick={onMore || onDelete} title="More"><MoreHorizontal size={18} /></div>
               </>
             ) : isGroup ? (
-              // Group mode: Show group actions (ungroup, edit, color)
+              // Group mode: Show group actions (ungroup, edit, color, convert to node-group)
               <>
                 <div className="piemenu-button" onClick={onUngroup} title="Ungroup"><Ungroup size={18} /></div>
                 <div className="piemenu-button" onClick={onGroupEdit} title="Edit Name"><Edit3 size={18} /></div>
                 <div className="piemenu-button" onClick={onGroupColor} title="Change Color"><Palette size={18} /></div>
+                <div className="piemenu-button" onClick={onConvertToNodeGroup} title="Convert to Thing-Group"><SquarePlus size={18} /></div>
               </>
             ) : isAbstraction ? (
               // Abstraction mode: Show abstraction actions (add, up with dot, right, edit)

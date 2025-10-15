@@ -408,6 +408,106 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
       graph.groups.delete(groupId);
     })),
 
+    // Convert a regular group to a node-group (linked to a node prototype definition)
+    convertGroupToNodeGroup: (graphId, groupId, nodePrototypeId, createNewPrototype = false, newPrototypeName = '', newPrototypeColor = '#8B0000') => set(produce((draft) => {
+      const graph = draft.graphs.get(graphId);
+      if (!graph?.groups) {
+        console.warn(`[convertGroupToNodeGroup] Graph ${graphId} not found or has no groups.`);
+        return null;
+      }
+      const group = graph.groups.get(groupId);
+      if (!group) {
+        console.warn(`[convertGroupToNodeGroup] Group ${groupId} not found.`);
+        return null;
+      }
+
+      let prototypeId = nodePrototypeId;
+      let definitionIndex = 0;
+
+      // Create new prototype if requested
+      if (createNewPrototype) {
+        prototypeId = uuidv4();
+        const newPrototype = {
+          id: prototypeId,
+          name: newPrototypeName || group.name || 'Untitled',
+          description: '',
+          picture: '',
+          color: newPrototypeColor || group.color || '#8B0000',
+          definitionGraphIds: [],
+          createdAt: new Date().toISOString()
+        };
+        draft.nodePrototypes.set(prototypeId, newPrototype);
+      }
+
+      const prototype = draft.nodePrototypes.get(prototypeId);
+      if (!prototype) {
+        console.warn(`[convertGroupToNodeGroup] Node prototype ${prototypeId} not found.`);
+        return null;
+      }
+
+      // Create a new definition graph from the group's members
+      const defGraphId = uuidv4();
+      const defGraphData = {
+        id: defGraphId,
+        name: prototype.name || 'Untitled Definition',
+        description: '',
+        picture: null,
+        color: prototype.color || NODE_DEFAULT_COLOR,
+        directed: true,
+        instances: new Map(),
+        groups: new Map(),
+        edgeIds: [],
+        definingNodeIds: [prototypeId],
+      };
+
+      // Copy member nodes as instances in the definition graph
+      const memberNodes = group.memberInstanceIds
+        .map(instId => graph.instances?.get(instId))
+        .filter(Boolean);
+
+      memberNodes.forEach(memberInst => {
+        const newInstId = uuidv4();
+        defGraphData.instances.set(newInstId, {
+          id: newInstId,
+          prototypeId: memberInst.prototypeId,
+          x: memberInst.x,
+          y: memberInst.y,
+          scale: memberInst.scale || 1.0
+        });
+      });
+
+      // Copy edges between group members to the definition graph
+      const memberInstIds = new Set(group.memberInstanceIds);
+      graph.edgeIds?.forEach(edgeId => {
+        const edge = draft.edges.get(edgeId);
+        if (edge && memberInstIds.has(edge.sourceId) && memberInstIds.has(edge.destinationId)) {
+          // Create a new edge in the definition graph
+          // Note: We need to map old instance IDs to new instance IDs
+          // For now, we'll skip edge copying - this can be enhanced later
+          // TODO: Implement edge copying with ID mapping
+        }
+      });
+
+      draft.graphs.set(defGraphId, defGraphData);
+
+      // Add definition to prototype
+      if (!Array.isArray(prototype.definitionGraphIds)) {
+        prototype.definitionGraphIds = [];
+      }
+      prototype.definitionGraphIds.push(defGraphId);
+      definitionIndex = prototype.definitionGraphIds.length - 1;
+
+      // Update group with node-group properties
+      group.linkedNodePrototypeId = prototypeId;
+      group.linkedDefinitionIndex = definitionIndex;
+      group.hasCustomLayout = false; // Start with default syncing
+      group.color = prototype.color; // Sync color with prototype
+
+      console.log(`[convertGroupToNodeGroup] Converted group ${groupId} to node-group linked to prototype ${prototypeId}, definition ${definitionIndex}`);
+
+      return { prototypeId, definitionIndex, defGraphId };
+    })),
+
 
   // This action is deprecated. All loading now goes through loadUniverseFromFile.
   loadGraph: (graphInstance) => {},
@@ -1949,7 +2049,18 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
         referencedPrototypeIds.add(prototype.typeNodeId);
       }
     }
-    
+
+    // Add prototypes that back node-groups (groups with linkedNodePrototypeId)
+    draft.graphs.forEach(graph => {
+      if (graph.groups) {
+        graph.groups.forEach(group => {
+          if (group.linkedNodePrototypeId) {
+            referencedPrototypeIds.add(group.linkedNodePrototypeId);
+          }
+        });
+      }
+    });
+
     // Add prototypes that are referenced by edges (connection types)
     for (const [edgeId, edge] of draft.edges.entries()) {
       // Check definitionNodeIds (new approach)

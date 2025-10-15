@@ -48,8 +48,8 @@ const UnifiedSelector = ({
 
   const bounds = useViewportBounds(leftPanelExpanded, rightPanelExpanded);
 
-  const showDialog = mode === 'node-creation' || mode === 'connection-creation' || mode === 'abstraction-node-creation' || mode === 'node-typing';
-  const showGrid = mode === 'node-typing' || mode === 'abstraction-node-creation' || showCreateNewOption || onNodeSelect;
+  const showDialog = mode === 'node-creation' || mode === 'connection-creation' || mode === 'abstraction-node-creation' || mode === 'node-typing' || mode === 'node-group-creation';
+  const showGrid = mode === 'node-typing' || mode === 'abstraction-node-creation' || mode === 'node-group-creation' || showCreateNewOption || onNodeSelect;
 
   const filteredPrototypes = React.useMemo(() => {
     const prototypes = Array.from(nodePrototypesMap.values());
@@ -91,7 +91,7 @@ const UnifiedSelector = ({
     const handleKeyDown = (e) => {
       if (!isVisible) return;
       if (e.key === 'Escape') onClose?.();
-      else if (e.key === 'Enter' && (mode === 'node-creation' || mode === 'connection-creation' || mode === 'abstraction-node-creation' || mode === 'node-typing')) {
+      else if (e.key === 'Enter' && (mode === 'node-creation' || mode === 'connection-creation' || mode === 'abstraction-node-creation' || mode === 'node-typing' || mode === 'node-group-creation')) {
         handleSubmit();
       }
     };
@@ -205,7 +205,7 @@ const UnifiedSelector = ({
               <button
                 onClick={handleSubmit}
                 style={{ padding: '10px', backgroundColor: color, color: '#bdb5b5', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '56px', minHeight: '44px' }}
-                title={mode === 'connection-creation' ? 'Create connection type' : mode === 'abstraction-node-creation' ? `Create ${abstractionDirection} abstraction` : 'Create node type'}
+                title={mode === 'connection-creation' ? 'Create connection type' : mode === 'abstraction-node-creation' ? `Create ${abstractionDirection} abstraction` : mode === 'node-group-creation' ? 'Create new Thing defined by this Group' : 'Create node type'}
               >
                 <Plus size={18} color="#bdb5b5" strokeWidth={2.5} />
               </button>
