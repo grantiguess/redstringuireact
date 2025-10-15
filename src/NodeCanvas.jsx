@@ -7488,154 +7488,6 @@ function NodeCanvas() {
               onMouseMove={handleMouseMove}
               // Remove pointerDown preventDefault to avoid interfering with gestures
             >
-              {/* Edges below node-groups: render behind node-group backgrounds */}
-              {isViewReady && (() => {
-                // Helper: determine which node instances are members of node-groups
-                const nodeGroupMemberIds = new Set();
-                const graphData = activeGraphId ? graphsMap.get(activeGraphId) : null;
-                if (graphData?.groups) {
-                  graphData.groups.forEach(group => {
-                    if (group.linkedNodePrototypeId) {
-                      // This is a node-group, add all its members
-                      group.memberInstanceIds.forEach(id => nodeGroupMemberIds.add(id));
-                    }
-                  });
-                }
-
-                // Helper: check if an edge should render above node-group backgrounds
-                const shouldRenderAboveNodeGroups = (edge) => {
-                  return nodeGroupMemberIds.has(edge.sourceId) || nodeGroupMemberIds.has(edge.destinationId);
-                };
-
-                // Filter edges to only those rendering below node-groups
-                const edgesBelowNodeGroups = visibleEdges.filter(e => !shouldRenderAboveNodeGroups(e));
-
-                return (
-                  <g className="edges-below-node-groups">
-                    {edgesBelowNodeGroups.map((edge, idx) => {
-                      const sourceNode = nodes.find(n => n.id === edge.sourceId);
-                      const destNode = nodes.find(n => n.id === edge.destinationId);
-
-                      if (!sourceNode || !destNode) {
-                        return null;
-                      }
-                      const sNodeDims = baseDimsById.get(sourceNode.id) || getNodeDimensions(sourceNode, false, null);
-                      const eNodeDims = baseDimsById.get(destNode.id) || getNodeDimensions(destNode, false, null);
-                      const isSNodePreviewing = previewingNodeId === sourceNode.id;
-                      const isENodePreviewing = previewingNodeId === destNode.id;
-                      const x1 = sourceNode.x + sNodeDims.currentWidth / 2;
-                      const y1 = sourceNode.y + (isSNodePreviewing ? NODE_HEIGHT / 2 : sNodeDims.currentHeight / 2);
-                      const x2 = destNode.x + eNodeDims.currentWidth / 2;
-                      const y2 = destNode.y + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
-
-                      const isHovered = hoveredEdgeInfo?.edgeId === edge.id;
-                      const isSelected = selectedEdgeId === edge.id || selectedEdgeIds.has(edge.id);
-
-                      // Get edge color - prioritize definitionNodeIds for custom types, then typeNodeId for base types
-                      let edgeColor = '#000000';
-                      let edgeName = edge.connectionName || '';
-
-                      // If edge has definitionNodeIds, use those for color/name (custom type)
-                      if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
-                        // Use first definition node for color/name
-                        const defNodeId = edge.definitionNodeIds[0];
-                        const defNode = nodePrototypesMap.get(defNodeId);
-                        if (defNode) {
-                          edgeColor = defNode.color || '#000000';
-                          edgeName = defNode.name || '';
-                        }
-                      }
-                      // Else if edge has typeNodeId (base type), use that
-                      else if (edge.typeNodeId) {
-                        const typeNode = nodePrototypesMap.get(edge.typeNodeId);
-                        if (typeNode) {
-                          edgeColor = typeNode.color || '#000000';
-                          edgeName = typeNode.name || '';
-                        }
-                      }
-                      // Else fallback to edge's own color property
-                      else if (edge.color) {
-                        edgeColor = edge.color;
-                      }
-
-                      const dx = x2 - x1;
-                      const dy = y2 - y1;
-                      const mag = Math.sqrt(dx*dx + dy*dy);
-                      if (mag < 1e-6) return null;
-                      const ux = dx / mag;
-                      const uy = dy / mag;
-                      const offset = 8;
-                      const x1a = x1 + ux*offset;
-                      const y1a = y1 + uy*offset;
-                      const x2a = x2 - ux*offset;
-                      const y2a = y2 - uy*offset;
-                      const arrowsToward = edge.directionality?.arrowsToward || new Set();
-                      const labelX = (x1a + x2a) / 2;
-                      const labelY = (y1a + y2a) / 2;
-                      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-
-                      const thickness = isSelected ? 6 : (isHovered ? 4 : 2);
-
-                      return (
-                        <g
-                          key={`edge-below-${edge.id}-${idx}`}
-                          className={`edge ${isHovered ? 'hovered' : ''} ${isSelected ? 'selected' : ''}`}
-                          style={{ cursor: 'pointer' }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEdgeClick(edge.id, e);
-                          }}
-                          onMouseEnter={() => {
-                            handleEdgeMouseEnter(edge.id);
-                          }}
-                          onMouseLeave={handleEdgeMouseLeave}
-                        >
-                          <line
-                            x1={x1a} y1={y1a}
-                            x2={x2a} y2={y2a}
-                            stroke={edgeColor}
-                            strokeWidth={thickness}
-                            vectorEffect="non-scaling-stroke"
-                          />
-                          {arrowsToward.has(edge.sourceId) && (
-                            <polygon
-                              points="0,-4 8,0 0,4"
-                              fill={edgeColor}
-                              transform={`translate(${x1a}, ${y1a}) rotate(${angle + 180})`}
-                            />
-                          )}
-                          {arrowsToward.has(edge.destinationId) && (
-                            <polygon
-                              points="0,-4 8,0 0,4"
-                              fill={edgeColor}
-                              transform={`translate(${x2a}, ${y2a}) rotate(${angle})`}
-                            />
-                          )}
-                          {(isHovered || isSelected || carouselAnimationState !== 'hidden') && edgeName && (
-                            <text
-                              x={labelX}
-                              y={labelY}
-                              textAnchor="middle"
-                              alignmentBaseline="middle"
-                              fill={edgeColor}
-                              fontSize={14}
-                              fontWeight="bold"
-                              fontFamily="'EmOne', sans-serif"
-                              pointerEvents="none"
-                              style={{
-                                userSelect: 'none'
-                              }}
-                            >
-                              {edgeName}
-                            </text>
-                          )}
-                        </g>
-                      );
-                    })}
-                  </g>
-                );
-              })()}
-
               {/* Groups layer - render group rectangles behind nodes */}
               {(() => {
                 const graphData = activeGraphId ? graphsMap.get(activeGraphId) : null;
@@ -7663,6 +7515,7 @@ function NodeCanvas() {
                       const rectW = (maxX - minX) + margin * 2;
                       const rectH = (maxY - minY) + margin * 2;
                       const cornerR = 12;
+                      const nodeGroupCornerR = 24; // More rounded for node-groups
                       const strokeColor = group.color || '#8B0000';
                       const fontSize = 36;
                       const labelPaddingVertical = 16; // Less top/bottom padding
@@ -7692,20 +7545,45 @@ function NodeCanvas() {
                       return (
                         <g key={group.id} className={isNodeGroup ? "node-group" : "group"} data-group-id={group.id}>
                           {isNodeGroup ? (
-                            // Node-group: colored background rectangle, no stroke
-                            <rect
-                              x={rectX}
-                              y={nodeGroupRectY}
-                              width={rectW}
-                              height={nodeGroupRectH}
-                              rx={cornerR}
-                              ry={cornerR}
-                              fill={nodeGroupColor}
-                              stroke="none"
-                            />
+                            <>
+                              {/* Outer colored background rectangle (node background) */}
+                              <rect
+                                x={rectX}
+                                y={nodeGroupRectY}
+                                width={rectW}
+                                height={nodeGroupRectH}
+                                rx={nodeGroupCornerR}
+                                ry={nodeGroupCornerR}
+                                fill={nodeGroupColor}
+                                stroke="none"
+                              />
+                              {/* Inner canvas-colored rectangle (mini canvas for group members) */}
+                              {(() => {
+                                // Calculate equal spacing: use margin for bottom/left/right, and distance to label for top
+                                const innerMargin = margin;
+                                const topSpacing = (rectY - margin) - (labelY + labelHeight); // Distance from label bottom to member area top
+                                const innerRectX = rectX + innerMargin;
+                                const innerRectY = labelY + labelHeight + topSpacing;
+                                const innerRectW = rectW - (innerMargin * 2);
+                                const innerRectH = (rectY + rectH) - innerRectY - innerMargin;
+
+                                return (
+                                  <rect
+                                    x={innerRectX}
+                                    y={innerRectY}
+                                    width={innerRectW}
+                                    height={innerRectH}
+                                    rx={12}
+                                    ry={12}
+                                    fill="#bdb5b5"
+                                    stroke="none"
+                                  />
+                                );
+                              })()}
+                            </>
                           ) : (
-                            // Regular group: no fill, dashed stroke
-                            <rect x={rectX} y={rectY} width={rectW} height={rectH} rx={cornerR} ry={cornerR} fill="none" stroke={strokeColor} strokeWidth={8} vectorEffect="non-scaling-stroke" strokeDasharray={'8,6'} />
+                            // Regular group: no fill, canvas-colored SOLID stroke (not dashed)
+                            <rect x={rectX} y={rectY} width={rectW} height={rectH} rx={cornerR} ry={cornerR} fill="none" stroke="#bdb5b5" strokeWidth={8} vectorEffect="non-scaling-stroke" />
                           )}
                           {/* Draggable label behaving like a node handle with inline editing */}
                           <g className="group-label" style={{ cursor: 'pointer' }}
@@ -7747,7 +7625,7 @@ function NodeCanvas() {
                              onMouseLeave={() => { clearTimeout(groupLongPressTimeout.current); }}
                           >
                             <rect x={labelX} y={labelY} width={labelWidth} height={labelHeight} rx={20} ry={20}
-                                  fill="#bdb5b5"
+                                  fill={isNodeGroup ? "none" : "#bdb5b5"}
                                   stroke={isNodeGroup ? "none" : strokeColor}
                                   strokeWidth={isNodeGroup ? 0 : 6}
                                   vectorEffect="non-scaling-stroke"
@@ -7829,7 +7707,7 @@ function NodeCanvas() {
                               </foreignObject>
                             ) : (
                               <text x={labelX + labelWidth / 2} y={labelY + labelHeight * 0.65} fontFamily="EmOne, sans-serif" fontSize={fontSize}
-                                    fill={strokeColor} fontWeight="bold" stroke="#bdb5b5" strokeWidth={strokeWidth} paintOrder="stroke fill" textAnchor="middle">{labelText}</text>
+                                    fill={isNodeGroup ? "#bdb5b5" : strokeColor} fontWeight="bold" stroke={isNodeGroup ? "none" : "#bdb5b5"} strokeWidth={isNodeGroup ? 0 : strokeWidth} paintOrder="stroke fill" textAnchor="middle">{labelText}</text>
                             )}
                           </g>
                         </g>
@@ -7923,32 +7801,30 @@ function NodeCanvas() {
 
               {/* Debug boundaries - disabled */}
 
-              {/* Edges above node-groups: render after node-group backgrounds */}
               {isViewReady && (() => {
-                // Helper: determine which node instances are members of node-groups
+                // Determine which node instances are members of node-groups
                 const nodeGroupMemberIds = new Set();
                 const graphData = activeGraphId ? graphsMap.get(activeGraphId) : null;
                 if (graphData?.groups) {
                   graphData.groups.forEach(group => {
                     if (group.linkedNodePrototypeId) {
-                      // This is a node-group, add all its members
                       group.memberInstanceIds.forEach(id => nodeGroupMemberIds.add(id));
                     }
                   });
                 }
 
-                // Helper: check if an edge should render above node-group backgrounds
-                const shouldRenderAboveNodeGroups = (edge) => {
-                  return nodeGroupMemberIds.has(edge.sourceId) || nodeGroupMemberIds.has(edge.destinationId);
-                };
-
-                // Filter edges to only those rendering above node-groups
-                const edgesAboveNodeGroups = visibleEdges.filter(e => shouldRenderAboveNodeGroups(e));
+                // Split edges based on whether they connect to node-group members
+                const edgesBelowNodeGroups = visibleEdges.filter(e =>
+                  !nodeGroupMemberIds.has(e.sourceId) && !nodeGroupMemberIds.has(e.destinationId)
+                );
+                const edgesAboveNodeGroups = visibleEdges.filter(e =>
+                  nodeGroupMemberIds.has(e.sourceId) || nodeGroupMemberIds.has(e.destinationId)
+                );
 
                 return (
                   <>
-                    <g className="edges-above-node-groups">
-                      {edgesAboveNodeGroups.map((edge, idx) => {
+                    {/* Edges below node-groups: don't connect to any node-group members */}
+                    {edgesBelowNodeGroups.map((edge, idx) => {
                       const sourceNode = nodes.find(n => n.id === edge.sourceId);
                       const destNode = nodes.find(n => n.id === edge.destinationId);
 
@@ -8949,7 +8825,1007 @@ function NodeCanvas() {
                         </g>
                       );
                     })}
-                  </g>
+                    {edgesAboveNodeGroups.map((edge, idx) => {
+                      const sourceNode = nodes.find(n => n.id === edge.sourceId);
+                      const destNode = nodes.find(n => n.id === edge.destinationId);
+
+                      if (!sourceNode || !destNode) {
+                        return null;
+                      }
+                      const sNodeDims = baseDimsById.get(sourceNode.id) || getNodeDimensions(sourceNode, false, null);
+                      const eNodeDims = baseDimsById.get(destNode.id) || getNodeDimensions(destNode, false, null);
+                      const isSNodePreviewing = previewingNodeId === sourceNode.id;
+                      const isENodePreviewing = previewingNodeId === destNode.id;
+                      const x1 = sourceNode.x + sNodeDims.currentWidth / 2;
+                      const y1 = sourceNode.y + (isSNodePreviewing ? NODE_HEIGHT / 2 : sNodeDims.currentHeight / 2);
+                      const x2 = destNode.x + eNodeDims.currentWidth / 2;
+                      const y2 = destNode.y + (isENodePreviewing ? NODE_HEIGHT / 2 : eNodeDims.currentHeight / 2);
+
+                      const isHovered = hoveredEdgeInfo?.edgeId === edge.id;
+                      const isSelected = selectedEdgeId === edge.id || selectedEdgeIds.has(edge.id);
+                      
+
+                      
+
+                      // Get edge color - prioritize definitionNodeIds for custom types, then typeNodeId for base types
+                      const getEdgeColor = () => {
+                        // First check definitionNodeIds (for custom connection types set via control panel)
+                        if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+                          const definitionNode = nodePrototypesMap.get(edge.definitionNodeIds[0]);
+                          if (definitionNode) {
+                            return definitionNode.color || NODE_DEFAULT_COLOR;
+                          }
+                        }
+                        
+                        // Then check typeNodeId (for base connection type)
+                        if (edge.typeNodeId) {
+                          // Special handling for base connection prototype - ensure it's black
+                          if (edge.typeNodeId === 'base-connection-prototype') {
+                            return '#000000'; // Black color for base connection
+                          }
+                          const edgePrototype = edgePrototypesMap.get(edge.typeNodeId);
+                          if (edgePrototype) {
+                            return edgePrototype.color || NODE_DEFAULT_COLOR;
+                          }
+                        }
+                        
+                        return destNode.color || NODE_DEFAULT_COLOR;
+                      };
+                      const edgeColor = getEdgeColor();
+                      
+                      // Calculate arrow position and rotation
+                      const dx = x2 - x1;
+                      const dy = y2 - y1;
+                      const length = Math.sqrt(dx * dx + dy * dy);
+                      
+                      // Helper function to calculate edge intersection with rectangular nodes
+                      const getNodeEdgeIntersection = (nodeX, nodeY, nodeWidth, nodeHeight, dirX, dirY) => {
+                        const centerX = nodeX + nodeWidth / 2;
+                        const centerY = nodeY + nodeHeight / 2;
+                        const halfWidth = nodeWidth / 2;
+                        const halfHeight = nodeHeight / 2;
+                        const intersections = [];
+                        
+                        if (dirX > 0) {
+                          const t = halfWidth / dirX;
+                          const y = dirY * t;
+                          if (Math.abs(y) <= halfHeight) intersections.push({ x: centerX + halfWidth, y: centerY + y, distance: t });
+                        }
+                        if (dirX < 0) {
+                          const t = -halfWidth / dirX;
+                          const y = dirY * t;
+                          if (Math.abs(y) <= halfHeight) intersections.push({ x: centerX - halfWidth, y: centerY + y, distance: t });
+                        }
+                        if (dirY > 0) {
+                          const t = halfHeight / dirY;
+                          const x = dirX * t;
+                          if (Math.abs(x) <= halfWidth) intersections.push({ x: centerX + x, y: centerY + halfHeight, distance: t });
+                        }
+                        if (dirY < 0) {
+                          const t = -halfHeight / dirY;
+                          const x = dirX * t;
+                          if (Math.abs(x) <= halfWidth) intersections.push({ x: centerX + x, y: centerY - halfHeight, distance: t });
+                        }
+                        
+                        return intersections.reduce((closest, current) => 
+                          !closest || current.distance < closest.distance ? current : closest, null);
+                      };
+                      
+                      // Calculate edge intersections
+                      const sourceIntersection = getNodeEdgeIntersection(
+                        sourceNode.x, sourceNode.y, sNodeDims.currentWidth, sNodeDims.currentHeight,
+                        dx / length, dy / length
+                      );
+                      
+                      const destIntersection = getNodeEdgeIntersection(
+                        destNode.x, destNode.y, eNodeDims.currentWidth, eNodeDims.currentHeight,
+                        -dx / length, -dy / length
+                      );
+
+                      // Determine if each end of the edge should be shortened for arrows
+                      // Ensure arrowsToward is a Set (fix for loading from file)
+                      const arrowsToward = edge.directionality?.arrowsToward instanceof Set 
+                        ? edge.directionality.arrowsToward 
+                        : new Set(Array.isArray(edge.directionality?.arrowsToward) ? edge.directionality.arrowsToward : []);
+                      
+                      // Only shorten connections at ends with arrows or hover state
+                      let shouldShortenSource = isHovered || arrowsToward.has(sourceNode.id);
+                      let shouldShortenDest = isHovered || arrowsToward.has(destNode.id);
+                      if (enableAutoRouting && routingStyle === 'manhattan') {
+                        // In Manhattan mode, never shorten for hover—only for actual arrows
+                        shouldShortenSource = arrowsToward.has(sourceNode.id);
+                        shouldShortenDest = arrowsToward.has(destNode.id);
+                      }
+
+                      // Determine actual start/end points for rendering
+                      let startX, startY, endX, endY;
+                      
+                      // For clean routing, use assigned ports; otherwise use intersection-based positioning
+                      if (enableAutoRouting && routingStyle === 'clean') {
+                        const portAssignment = cleanLaneOffsets.get(edge.id);
+                        if (portAssignment) {
+                          const { sourcePort, destPort } = portAssignment;
+                          
+                          // Check if this edge has directional arrows
+                          const hasSourceArrow = arrowsToward.has(sourceNode.id);
+                          const hasDestArrow = arrowsToward.has(destNode.id);
+                          
+                          // Use ports for directional connections, centers for non-directional
+                          startX = hasSourceArrow ? sourcePort.x : x1;
+                          startY = hasSourceArrow ? sourcePort.y : y1;
+                          endX = hasDestArrow ? destPort.x : x2;
+                          endY = hasDestArrow ? destPort.y : y2;
+                        } else {
+                          // Fallback to node centers for clean routing
+                          startX = x1;
+                          startY = y1;
+                          endX = x2;
+                          endY = y2;
+                        }
+                      } else {
+                        // Use intersection-based positioning for other routing modes
+                        startX = shouldShortenSource ? (sourceIntersection?.x || x1) : x1;
+                        startY = shouldShortenSource ? (sourceIntersection?.y || y1) : y1;
+                        endX = shouldShortenDest ? (destIntersection?.x || x2) : x2;
+                        endY = shouldShortenDest ? (destIntersection?.y || y2) : y2;
+                      }
+
+                      // Predeclare Manhattan path info for safe use below
+                      let manhattanPathD = null;
+                      let manhattanSourceSide = null;
+                      let manhattanDestSide = null;
+
+                      // When using Manhattan routing, snap to 4 node ports (midpoints of each side)
+                      if (enableAutoRouting && routingStyle === 'manhattan') {
+                        const sCenterX = sourceNode.x + sNodeDims.currentWidth / 2;
+                        const sCenterY = sourceNode.y + sNodeDims.currentHeight / 2;
+                        const dCenterX = destNode.x + eNodeDims.currentWidth / 2;
+                        const dCenterY = destNode.y + eNodeDims.currentHeight / 2;
+
+                        const sPorts = {
+                          top: { x: sCenterX, y: sourceNode.y },
+                          bottom: { x: sCenterX, y: sourceNode.y + sNodeDims.currentHeight },
+                          left: { x: sourceNode.x, y: sCenterY },
+                          right: { x: sourceNode.x + sNodeDims.currentWidth, y: sCenterY },
+                        };
+                        const dPorts = {
+                          top: { x: dCenterX, y: destNode.y },
+                          bottom: { x: dCenterX, y: destNode.y + eNodeDims.currentHeight },
+                          left: { x: destNode.x, y: dCenterY },
+                          right: { x: destNode.x + eNodeDims.currentWidth, y: dCenterY },
+                        };
+
+                        const relDx = dCenterX - sCenterX;
+                        const relDy = dCenterY - sCenterY;
+                        let sPort, dPort;
+                        if (Math.abs(relDx) >= Math.abs(relDy)) {
+                          // Prefer horizontal ports
+                          sPort = relDx >= 0 ? sPorts.right : sPorts.left;
+                          dPort = relDx >= 0 ? dPorts.left : dPorts.right;
+                        } else {
+                          // Prefer vertical ports
+                          sPort = relDy >= 0 ? sPorts.bottom : sPorts.top;
+                          dPort = relDy >= 0 ? dPorts.top : dPorts.bottom;
+                        }
+                        startX = sPort.x;
+                        startY = sPort.y;
+                        endX = dPort.x;
+                        endY = dPort.y;
+
+                        // Determine sides for perpendicular entry/exit
+                        const sSide = (Math.abs(startY - sourceNode.y) < 0.5) ? 'top'
+                                        : (Math.abs(startY - (sourceNode.y + sNodeDims.currentHeight)) < 0.5) ? 'bottom'
+                                        : (Math.abs(startX - sourceNode.x) < 0.5) ? 'left' : 'right';
+                        const dSide = (Math.abs(endY - destNode.y) < 0.5) ? 'top'
+                                        : (Math.abs(endY - (destNode.y + eNodeDims.currentHeight)) < 0.5) ? 'bottom'
+                                        : (Math.abs(endX - destNode.x) < 0.5) ? 'left' : 'right';
+                        const initOrient = (sSide === 'left' || sSide === 'right') ? 'H' : 'V';
+                        const finalOrient = (dSide === 'left' || dSide === 'right') ? 'H' : 'V';
+
+                        const effectiveBends = (manhattanBends === 'auto')
+                          ? (initOrient === finalOrient ? 'two' : 'one')
+                          : manhattanBends;
+
+                        // Local helpers declared before use to avoid hoisting issues
+                        const cornerRadiusLocal = 8;
+                        const buildRoundedLPathOriented = (sx, sy, ex, ey, r, firstOrientation /* 'H' | 'V' */) => {
+                          if (firstOrientation === 'H') {
+                            if (sx === ex || sy === ey) {
+                              return `M ${sx},${sy} L ${ex},${ey}`;
+                            }
+                            const signX = ex > sx ? 1 : -1;
+                            const signY = ey > sy ? 1 : -1;
+                            const cornerX = ex;
+                            const cornerY = sy;
+                            const hx = cornerX - signX * r;
+                            const hy = cornerY;
+                            const vx = cornerX;
+                            const vy = cornerY + signY * r;
+                            return `M ${sx},${sy} L ${hx},${hy} Q ${cornerX},${cornerY} ${vx},${vy} L ${ex},${ey}`;
+                          } else {
+                            if (sx === ex || sy === ey) {
+                              return `M ${sx},${sy} L ${ex},${ey}`;
+                            }
+                            const signX = ex > sx ? 1 : -1;
+                            const signY = ey > sy ? 1 : -1;
+                            const cornerX = sx;
+                            const cornerY = ey;
+                            const vx = cornerX;
+                            const vy = cornerY - signY * r;
+                            const hx = cornerX + signX * r;
+                            const hy = cornerY;
+                            return `M ${sx},${sy} L ${vx},${vy} Q ${cornerX},${cornerY} ${hx},${hy} L ${ex},${ey}`;
+                          }
+                        };
+                        const buildRoundedZPathOriented = (sx, sy, ex, ey, r, pattern /* 'HVH' | 'VHV' */) => {
+                          if (sx === ex || sy === ey) {
+                            return `M ${sx},${sy} L ${ex},${ey}`;
+                          }
+                          if (pattern === 'HVH') {
+                            // Horizontal → Vertical → Horizontal with rounded corners at both bends
+                            const midX = (sx + ex) / 2;
+                            const signX1 = midX >= sx ? 1 : -1; // initial horizontal direction
+                            const signY = ey >= sy ? 1 : -1;     // vertical direction
+                            const signX2 = ex >= midX ? 1 : -1;  // final horizontal direction
+                            const hx1 = midX - signX1 * r;       // before first corner
+                            const vy1 = sy + signY * r;          // after first corner
+                            const vy2 = ey - signY * r;          // before second corner
+                            const hx2 = midX + signX2 * r;       // after second corner
+                            return `M ${sx},${sy} L ${hx1},${sy} Q ${midX},${sy} ${midX},${vy1} L ${midX},${vy2} Q ${midX},${ey} ${hx2},${ey} L ${ex},${ey}`;
+                          } else {
+                            // Vertical → Horizontal → Vertical with rounded corners at both bends
+                            const midY = (sy + ey) / 2;
+                            const signY1 = midY >= sy ? 1 : -1;  // initial vertical direction
+                            const signX = ex >= sx ? 1 : -1;      // horizontal direction (same for both H segments)
+                            const signY2 = ey >= midY ? 1 : -1;   // final vertical direction
+                            const vy1 = midY - signY1 * r;        // before first corner
+                            const hx1 = sx + signX * r;           // after first corner
+                            const hx2 = ex - signX * r;           // before second corner
+                            const vy2 = midY + signY2 * r;        // after second corner
+                            return `M ${sx},${sy} L ${sx},${vy1} Q ${sx},${midY} ${hx1},${midY} L ${hx2},${midY} Q ${ex},${midY} ${ex},${vy2} L ${ex},${ey}`;
+                          }
+                        };
+                        let pathD;
+                        if (effectiveBends === 'two' && initOrient === finalOrient) {
+                          pathD = (initOrient === 'H')
+                            ? buildRoundedZPathOriented(startX, startY, endX, endY, cornerRadiusLocal, 'HVH')
+                            : buildRoundedZPathOriented(startX, startY, endX, endY, cornerRadiusLocal, 'VHV');
+                        } else {
+                          pathD = buildRoundedLPathOriented(startX, startY, endX, endY, cornerRadiusLocal, initOrient);
+                        }
+
+                        // Assign for rendering and arrow logic
+                        manhattanPathD = pathD;
+                        manhattanSourceSide = sSide;
+                        manhattanDestSide = dSide;
+                      }
+                      return (
+                        <g key={`edge-above-${edge.id}-${idx}`}>
+                          {/* Main edge line - always same thickness */}
+                    {/* Glow effect for selected or hovered edge */}
+                    {(isSelected || isHovered) && (
+                      (enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) ? (
+                        <path
+                          d={(routingStyle === 'manhattan') ? manhattanPathD : (() => {
+                            // Use consistent clean routing path helper
+                            const cleanPts = generateCleanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
+                            return buildRoundedPathFromPoints(cleanPts, 8);
+                          })()}
+                          fill="none"
+                          stroke={edgeColor}
+                          strokeWidth="12"
+                          opacity={isSelected ? "0.3" : "0.2"}
+                          style={{ 
+                            filter: `blur(3px) drop-shadow(0 0 8px ${edgeColor})`
+                          }}
+                          strokeLinecap="round"
+                        />
+                      ) : (
+                      <line
+                          x1={startX}
+                          y1={startY}
+                          x2={endX}
+                          y2={endY}
+                        stroke={edgeColor}
+                        strokeWidth="12"
+                        opacity={isSelected ? "0.3" : "0.2"}
+                        style={{ 
+                          filter: `blur(3px) drop-shadow(0 0 8px ${edgeColor})`
+                        }}
+                      />
+                      )
+                    )}
+                    
+                    {(enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) ? (
+                      <>
+                        {routingStyle === 'manhattan' && !arrowsToward.has(sourceNode.id) && (
+                          <line x1={x1} y1={y1} x2={startX} y2={startY} stroke={edgeColor} strokeWidth={showConnectionNames ? "16" : "6"} strokeLinecap="round" />
+                        )}
+                        {routingStyle === 'manhattan' && !arrowsToward.has(destNode.id) && (
+                          <line x1={endX} y1={endY} x2={x2} y2={y2} stroke={edgeColor} strokeWidth={showConnectionNames ? "16" : "6"} strokeLinecap="round" />
+                        )}
+                        <path
+                          d={(routingStyle === 'manhattan') ? manhattanPathD : (() => {
+                            // Use consistent clean routing path helper
+                            const cleanPts = generateCleanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
+                            return buildRoundedPathFromPoints(cleanPts, 8);
+                          })()}
+                          fill="none"
+                          stroke={edgeColor}
+                          strokeWidth={showConnectionNames ? "16" : "6"}
+                          style={{ transition: 'stroke 0.2s ease' }}
+                          strokeLinecap="round"
+                        />
+                      </>
+                     ) : (
+                       <line
+                         x1={startX}
+                         y1={startY}
+                         x2={endX}
+                         y2={endY}
+                         stroke={edgeColor}
+                         strokeWidth={showConnectionNames ? "16" : "6"}
+                         style={{ transition: 'stroke 0.2s ease' }}
+                       />
+                     )}
+                           
+                           {/* Connection name text - only show when enabled */}
+                           {showConnectionNames && (() => {
+                             let midX;
+                             let midY;
+                             let angle;
+                             if (enableAutoRouting && routingStyle === 'manhattan') {
+                               const horizontalLen = Math.abs(endX - startX);
+                               const verticalLen = Math.abs(endY - startY);
+                               if (horizontalLen >= verticalLen) {
+                                 midX = (startX + endX) / 2;
+                                 midY = startY;
+                                 angle = 0;
+                               } else {
+                                 midX = endX;
+                                 midY = (startY + endY) / 2;
+                                 angle = 90;
+                               }
+                             } else {
+                               midX = (x1 + x2) / 2;
+                               midY = (y1 + y2) / 2;
+                               angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+                             }
+                             
+                             // Determine connection name to display
+                             let connectionName = 'Connection';
+                             if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+                               const definitionNode = nodePrototypesMap.get(edge.definitionNodeIds[0]);
+                               if (definitionNode) {
+                                 connectionName = definitionNode.name || 'Connection';
+                               }
+                             } else if (edge.typeNodeId) {
+                               const edgePrototype = edgePrototypesMap.get(edge.typeNodeId);
+                               if (edgePrototype) {
+                                 connectionName = edgePrototype.name || 'Connection';
+                               }
+                             }
+                             
+                                                         // Smart label placement based on routing style
+                            if (enableAutoRouting && routingStyle === 'manhattan') {
+                              // Always try cached placement first to prevent flicker (except during dragging)
+                              const cached = placedLabelsRef.current.get(edge.id);
+                              if (cached && cached.position && !draggingNodeInfo) {
+                                const stabilized = stabilizeLabelPosition(edge.id, cached.position.x, cached.position.y, cached.position.angle || 0);
+                                midX = stabilized.x;
+                                midY = stabilized.y;
+                                angle = stabilized.angle || 0;
+                              } else {
+                                 const pathPoints = generateManhattanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
+                                 const placement = chooseLabelPlacement(pathPoints, connectionName, 24, edge.id);
+                                 if (placement) {
+                                   midX = placement.x;
+                                   midY = placement.y;
+                                   angle = placement.angle || 0;
+                                   
+                                   // Register this label placement
+                                   const labelRect = {
+                                     minX: midX - estimateTextWidth(connectionName, 24) / 2,
+                                     maxX: midX + estimateTextWidth(connectionName, 24) / 2,
+                                     minY: midY - 24 * 1.1 / 2,
+                                     maxY: midY + 24 * 1.1 / 2,
+                                   };
+                                   const stabilized = stabilizeLabelPosition(edge.id, midX, midY, angle);
+                                   placedLabelsRef.current.set(edge.id, {
+                                     rect: labelRect,
+                                     position: { x: stabilized.x, y: stabilized.y, angle: stabilized.angle }
+                                   });
+                                 } else {
+                                   // Fallback to simple Manhattan logic
+                                   const horizontalLen = Math.abs(endX - startX);
+                                   const verticalLen = Math.abs(endY - startY);
+                                   if (horizontalLen >= verticalLen) {
+                                     midX = (startX + endX) / 2;
+                                     midY = startY;
+                                     angle = 0;
+                                   } else {
+                                     midX = endX;
+                                     midY = (startY + endY) / 2;
+                                     angle = 90;
+                                   }
+                                 }
+                              }
+                                                         } else if (enableAutoRouting && routingStyle === 'clean') {
+                              // Always try cached placement first to prevent flicker (except during dragging)
+                              const cached = placedLabelsRef.current.get(edge.id);
+                              if (cached && cached.position && !draggingNodeInfo) {
+                                const stabilized = stabilizeLabelPosition(edge.id, cached.position.x, cached.position.y, cached.position.angle || 0);
+                                midX = stabilized.x;
+                                midY = stabilized.y;
+                                angle = stabilized.angle || 0;
+                              } else {
+                                 const pathPoints = generateCleanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
+                                 const placement = chooseLabelPlacement(pathPoints, connectionName, 24, edge.id);
+                                 if (placement) {
+                                   midX = placement.x;
+                                   midY = placement.y;
+                                   angle = placement.angle || 0;
+                                   
+                                   // Register this label placement
+                                   const labelRect = {
+                                     minX: midX - estimateTextWidth(connectionName, 24) / 2,
+                                     maxX: midX + estimateTextWidth(connectionName, 24) / 2,
+                                     minY: midY - 24 * 1.1 / 2,
+                                     maxY: midY + 24 * 1.1 / 2,
+                                   };
+                                   const stabilized = stabilizeLabelPosition(edge.id, midX, midY, angle);
+                                   placedLabelsRef.current.set(edge.id, {
+                                     rect: labelRect,
+                                     position: { x: stabilized.x, y: stabilized.y, angle: stabilized.angle }
+                                   });
+                                 } else {
+                                   // Fallback to midpoint
+                                   midX = (x1 + x2) / 2;
+                                   midY = (y1 + y2) / 2;
+                                   angle = 0;
+                                 }
+                               }
+                                                         } else {
+                              // Straight line: reuse cached placement when available to prevent flicker (except during dragging)
+                              const cached = placedLabelsRef.current.get(edge.id);
+                              if (cached && cached.position && !draggingNodeInfo) {
+                                const stabilized = stabilizeLabelPosition(edge.id, cached.position.x, cached.position.y, cached.position.angle || Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI));
+                                midX = stabilized.x;
+                                midY = stabilized.y;
+                                angle = stabilized.angle || Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+                              } else {
+                                // Fallback to original behavior
+                                midX = (x1 + x2) / 2;
+                                midY = (y1 + y2) / 2;
+                                angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+
+                                // Cache this position for future reuse
+                                const labelRect = {
+                                  minX: midX - estimateTextWidth(connectionName, 24) / 2,
+                                  maxX: midX + estimateTextWidth(connectionName, 24) / 2,
+                                  minY: midY - 24 * 1.1 / 2,
+                                  maxY: midY + 24 * 1.1 / 2,
+                                };
+                                const stabilized = stabilizeLabelPosition(edge.id, midX, midY, angle);
+                                placedLabelsRef.current.set(edge.id, {
+                                  rect: labelRect,
+                                  position: { x: stabilized.x, y: stabilized.y, angle: stabilized.angle }
+                                });
+                              }
+                            }
+                             
+                             // Adjust angle to keep text readable (never upside down)
+                             const adjustedAngle = (angle > 90 || angle < -90) ? angle + 180 : angle;
+                             
+                             return (
+                               <g>
+                                 {/* Canvas-colored text creating a "hole" effect in the connection */}
+                                 <text
+                                   x={midX}
+                                   y={midY}
+                                   fill="#bdb5b5"
+                                   fontSize="24"
+                                   fontWeight="bold"
+                                   textAnchor="middle"
+                                   dominantBaseline="middle"
+                                   transform={`rotate(${adjustedAngle}, ${midX}, ${midY})`}
+                                   stroke={edgeColor}
+                                   strokeWidth="6"
+                                   strokeLinecap="round"
+                                   strokeLinejoin="round"
+                                   paintOrder="stroke fill"
+                                   style={{ pointerEvents: 'none', fontFamily: "'EmOne', sans-serif" }}
+                                 >
+                                   {connectionName}
+                                 </text>
+                               </g>
+                             );
+                           })()}
+                           
+                           {/* Invisible click area for edge selection - matches hover detection */}
+                                                      {(enableAutoRouting && (routingStyle === 'manhattan' || routingStyle === 'clean')) ? (
+                             <path
+                               d={(routingStyle === 'manhattan') ? manhattanPathD : (() => {
+                                 // Use consistent clean routing path helper
+                                 const cleanPts = generateCleanRoutingPath(edge, sourceNode, destNode, sNodeDims, eNodeDims);
+                                 return buildRoundedPathFromPoints(cleanPts, 8);
+                               })()}
+                               fill="none"
+                               stroke="transparent"
+                               strokeWidth="40"
+                               style={{ cursor: 'pointer' }}
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 
+                                 // Handle multiple selection with Ctrl/Cmd key
+                                 if (e.ctrlKey || e.metaKey) {
+                                   // Toggle this edge in the multiple selection
+                                   if (selectedEdgeIds.has(edge.id)) {
+                                     storeActions.removeSelectedEdgeId(edge.id);
+                                   } else {
+                                     storeActions.addSelectedEdgeId(edge.id);
+                                   }
+                                 } else {
+                                   // Single selection - clear multiple selection and set single edge
+                                   storeActions.clearSelectedEdgeIds();
+                                   storeActions.setSelectedEdgeId(edge.id);
+                                 }
+                               }}
+                               onDoubleClick={(e) => {
+                                 e.stopPropagation();
+                                 
+                                 // Find the defining node for this edge's connection type
+                                 let definingNodeId = null;
+                                 
+                                 // Check definitionNodeIds first (for custom connection types)
+                                 if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+                                   definingNodeId = edge.definitionNodeIds[0];
+                                 } else if (edge.typeNodeId) {
+                                   // Fallback to typeNodeId (for base connection type)
+                                   definingNodeId = edge.typeNodeId;
+                                 }
+                                 
+                                 // Open the panel tab for the defining node
+                                 if (definingNodeId) {
+                                   storeActions.openRightPanelNodeTab(definingNodeId);
+                                 }
+                               }}
+                             />
+                           ) : (
+                           <line
+                             x1={x1}
+                             y1={y1}
+                             x2={x2}
+                             y2={y2}
+                             stroke="transparent"
+                             strokeWidth="40"
+                             style={{ cursor: 'pointer' }}
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               
+                               // Handle multiple selection with Ctrl/Cmd key
+                               if (e.ctrlKey || e.metaKey) {
+                                 // Toggle this edge in the multiple selection
+                                 if (selectedEdgeIds.has(edge.id)) {
+                                   storeActions.removeSelectedEdgeId(edge.id);
+                                 } else {
+                                   storeActions.addSelectedEdgeId(edge.id);
+                                 }
+                               } else {
+                                 // Single selection - clear multiple selection and set single edge
+                                 storeActions.clearSelectedEdgeIds();
+                                 storeActions.setSelectedEdgeId(edge.id);
+                               }
+                             }}
+                             onDoubleClick={(e) => {
+                               e.stopPropagation();
+                               
+                               // Find the defining node for this edge's connection type
+                               let definingNodeId = null;
+                               
+                               // Check definitionNodeIds first (for custom connection types)
+                               if (edge.definitionNodeIds && edge.definitionNodeIds.length > 0) {
+                                 definingNodeId = edge.definitionNodeIds[0];
+                               } else if (edge.typeNodeId) {
+                                 // Fallback to typeNodeId (for base connection type)
+                                 definingNodeId = edge.typeNodeId;
+                               }
+                               
+                               // Open the panel tab for the defining node
+                               if (definingNodeId) {
+                                 storeActions.openRightPanelNodeTab(definingNodeId);
+                               }
+                             }}
+                           />
+                           )}
+                          
+                                                                                                                  {/* Smart directional arrows with clickable toggle */}
+                           {(() => {
+                             // Calculate arrow positions (use fallback if intersections fail)
+                             let sourceArrowX, sourceArrowY, destArrowX, destArrowY, sourceArrowAngle, destArrowAngle;
+                             
+                             if (enableAutoRouting && routingStyle === 'clean') {
+                               // Clean mode: use actual port assignments for proper arrow positioning
+                               const offset = showConnectionNames ? 6 : (shouldShortenSource || shouldShortenDest ? 3 : 5);
+                               const portAssignment = cleanLaneOffsets.get(edge.id);
+                               
+                               if (portAssignment) {
+                                 const { sourcePort, destPort, sourceSide, destSide } = portAssignment;
+                                 
+                                 // Position arrows pointing TOWARD the target node (into the edge)
+                                 // Arrow tip points toward the node, positioned outside the edge
+                                 switch (sourceSide) {
+                                   case 'top':
+                                     sourceArrowAngle = 90; // Arrow points down toward node
+                                     sourceArrowX = sourcePort.x;
+                                     sourceArrowY = sourcePort.y - offset;
+                                     break;
+                                   case 'bottom':
+                                     sourceArrowAngle = -90; // Arrow points up toward node
+                                     sourceArrowX = sourcePort.x;
+                                     sourceArrowY = sourcePort.y + offset;
+                                     break;
+                                   case 'left':
+                                     sourceArrowAngle = 0; // Arrow points right toward node
+                                     sourceArrowX = sourcePort.x - offset;
+                                     sourceArrowY = sourcePort.y;
+                                     break;
+                                   case 'right':
+                                     sourceArrowAngle = 180; // Arrow points left toward node
+                                     sourceArrowX = sourcePort.x + offset;
+                                     sourceArrowY = sourcePort.y;
+                                     break;
+                                 }
+                                 
+                                 switch (destSide) {
+                                   case 'top':
+                                     destArrowAngle = 90; // Arrow points down toward node
+                                     destArrowX = destPort.x;
+                                     destArrowY = destPort.y - offset;
+                                     break;
+                                   case 'bottom':
+                                     destArrowAngle = -90; // Arrow points up toward node
+                                     destArrowX = destPort.x;
+                                     destArrowY = destPort.y + offset;
+                                     break;
+                                   case 'left':
+                                     destArrowAngle = 0; // Arrow points right toward node
+                                     destArrowX = destPort.x - offset;
+                                     destArrowY = destPort.y;
+                                     break;
+                                   case 'right':
+                                     destArrowAngle = 180; // Arrow points left toward node
+                                     destArrowX = destPort.x + offset;
+                                     destArrowY = destPort.y;
+                                     break;
+                                 }
+                               } else {
+                                 // Fallback to center-based positioning
+                                 const deltaX = endX - startX;
+                                 const deltaY = endY - startY;
+                                 const isMainlyVertical = Math.abs(deltaY) > Math.abs(deltaX);
+                                 
+                                 if (isMainlyVertical) {
+                                   sourceArrowAngle = deltaY > 0 ? -90 : 90;
+                                   sourceArrowX = startX;
+                                   sourceArrowY = startY + (deltaY > 0 ? offset : -offset);
+                                   destArrowAngle = deltaX > 0 ? 0 : 180;
+                                   destArrowX = endX + (deltaX > 0 ? -offset : offset);
+                                   destArrowY = endY;
+                                 } else {
+                                   sourceArrowAngle = deltaX > 0 ? 180 : 0;
+                                   sourceArrowX = startX + (deltaX > 0 ? offset : -offset);
+                                   sourceArrowY = startY;
+                                   destArrowAngle = deltaY > 0 ? 90 : -90;
+                                   destArrowX = endX;
+                                   destArrowY = endY + (deltaY > 0 ? -offset : offset);
+                                 }
+                               }
+                             } else if (!sourceIntersection || !destIntersection) {
+                               // Fallback positioning - arrows/dots closer to connection center  
+                               const fallbackOffset = showConnectionNames ? 20 : 
+                                                     (shouldShortenSource || shouldShortenDest ? 12 : 15);
+                               sourceArrowX = x1 + (dx / length) * fallbackOffset;
+                               sourceArrowY = y1 + (dy / length) * fallbackOffset;
+                               destArrowX = x2 - (dx / length) * fallbackOffset;
+                               destArrowY = y2 - (dy / length) * fallbackOffset;
+                               sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
+                               destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+                             } else if (enableAutoRouting && routingStyle === 'clean') {
+                               // Clean routing arrow placement - position close to nodes for better visibility
+                               const offset = showConnectionNames ? 8 : 6; // Reduced offset for better visibility
+                               const portAssignment = cleanLaneOffsets.get(edge.id);
+                               
+                               if (portAssignment) {
+                                 const { sourcePort, destPort, sourceSide, destSide } = portAssignment;
+                                 
+                                 // Position arrows close to the actual ports, pointing toward the nodes
+                                 switch (sourceSide) {
+                                   case 'top':
+                                     sourceArrowAngle = 90; // Arrow points down toward node
+                                     sourceArrowX = sourcePort.x;
+                                     sourceArrowY = sourcePort.y - offset;
+                                     break;
+                                   case 'bottom':
+                                     sourceArrowAngle = -90; // Arrow points up toward node
+                                     sourceArrowX = sourcePort.x;
+                                     sourceArrowY = sourcePort.y + offset;
+                                     break;
+                                   case 'left':
+                                     sourceArrowAngle = 0; // Arrow points right toward node
+                                     sourceArrowX = sourcePort.x - offset;
+                                     sourceArrowY = sourcePort.y;
+                                     break;
+                                   case 'right':
+                                     sourceArrowAngle = 180; // Arrow points left toward node
+                                     sourceArrowX = sourcePort.x + offset;
+                                     sourceArrowY = sourcePort.y;
+                                     break;
+                                 }
+                                 
+                                 switch (destSide) {
+                                   case 'top':
+                                     destArrowAngle = 90; // Arrow points down toward node
+                                     destArrowX = destPort.x;
+                                     destArrowY = destPort.y - offset;
+                                     break;
+                                   case 'bottom':
+                                     destArrowAngle = -90; // Arrow points up toward node
+                                     destArrowX = destPort.x;
+                                     destArrowY = destPort.y + offset;
+                                     break;
+                                   case 'left':
+                                     destArrowAngle = 0; // Arrow points right toward node
+                                     destArrowX = destPort.x - offset;
+                                     destArrowY = destPort.y;
+                                     break;
+                                   case 'right':
+                                     destArrowAngle = 180; // Arrow points left toward node
+                                     destArrowX = destPort.x + offset;
+                                     destArrowY = destPort.y;
+                                     break;
+                                 }
+                               } else {
+                                 // Fallback: position arrows close to node centers
+                                 sourceArrowX = startX;
+                                 sourceArrowY = startY;
+                                 sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
+                                 destArrowX = endX;
+                                 destArrowY = endY;
+                                 destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+                               }
+                             } else {
+                               // Manhattan-aware arrow placement; falls back to straight orientation
+                               const offset = showConnectionNames ? 6 : (shouldShortenSource || shouldShortenDest ? 3 : 5);
+                               if (enableAutoRouting && routingStyle === 'manhattan') {
+                                 // Destination arrow aligns to terminal segment into destination
+                                 const horizontalTerminal = Math.abs(endX - startX) > Math.abs(endY - startY);
+                                 if (horizontalTerminal) {
+                                   destArrowAngle = (endX >= startX) ? 0 : 180;
+                                   destArrowX = endX + ((endX >= startX) ? -offset : offset);
+                                   destArrowY = endY;
+                                 } else {
+                                   destArrowAngle = (endY >= startY) ? 90 : -90;
+                                   destArrowX = endX;
+                                   destArrowY = endY + ((endY >= startY) ? -offset : offset);
+                                 }
+                                 // Source arrow aligns to initial segment out of source (pointing back toward source)
+                                 const horizontalInitial = Math.abs(endX - startX) > Math.abs(endY - startY);
+                                 if (horizontalInitial) {
+                                   sourceArrowAngle = (endX - startX) >= 0 ? 180 : 0;
+                                   sourceArrowX = startX + ((endX - startX) >= 0 ? offset : -offset);
+                                   sourceArrowY = startY;
+                                 } else {
+                                   sourceArrowAngle = (endY - startY) >= 0 ? -90 : 90;
+                                   sourceArrowX = startX;
+                                   sourceArrowY = startY + ((endY - startY) >= 0 ? offset : -offset);
+                                 }
+                             } else {
+                               // Precise intersection positioning - adjust based on slope for visual consistency
+                               const angle = Math.abs(Math.atan2(dy, dx) * (180 / Math.PI));
+                               const normalizedAngle = angle > 90 ? 180 - angle : angle;
+                               // Shorter distance for quantized slopes (hitting node sides) vs diagonal (hitting corners)
+                               const isQuantizedSlope = normalizedAngle < 15 || normalizedAngle > 75;
+                                 const arrowLength = isQuantizedSlope ? offset * 0.6 : offset;
+                               sourceArrowAngle = Math.atan2(-dy, -dx) * (180 / Math.PI);
+                               sourceArrowX = sourceIntersection.x + (dx / length) * arrowLength;
+                               sourceArrowY = sourceIntersection.y + (dy / length) * arrowLength;
+                               destArrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+                               destArrowX = destIntersection.x - (dx / length) * arrowLength;
+                               destArrowY = destIntersection.y - (dy / length) * arrowLength;
+                               }
+                             }
+                             
+                             // Override arrow orientation deterministically by Manhattan sides
+                             if (enableAutoRouting && routingStyle === 'manhattan') {
+                               const sideOffset = showConnectionNames ? 6 : (shouldShortenSource || shouldShortenDest ? 3 : 5);
+                               // Destination arrow strictly based on destination side
+                               if (manhattanDestSide === 'left') {
+                                 destArrowAngle = 0; // rightwards
+                                 destArrowX = endX - sideOffset;
+                                 destArrowY = endY;
+                               } else if (manhattanDestSide === 'right') {
+                                 destArrowAngle = 180; // leftwards
+                                 destArrowX = endX + sideOffset;
+                                 destArrowY = endY;
+                               } else if (manhattanDestSide === 'top') {
+                                 destArrowAngle = 90; // downwards
+                                 destArrowX = endX;
+                                 destArrowY = endY - sideOffset;
+                               } else if (manhattanDestSide === 'bottom') {
+                                 destArrowAngle = -90; // upwards
+                                 destArrowX = endX;
+                                 destArrowY = endY + sideOffset;
+                               }
+                               // Source arrow strictly based on source side (points toward the source node)
+                               if (manhattanSourceSide === 'left') {
+                                 sourceArrowAngle = 0; // rightwards
+                                 sourceArrowX = startX - sideOffset;
+                                 sourceArrowY = startY;
+                               } else if (manhattanSourceSide === 'right') {
+                                 sourceArrowAngle = 180; // leftwards
+                                 sourceArrowX = startX + sideOffset;
+                                 sourceArrowY = startY;
+                               } else if (manhattanSourceSide === 'top') {
+                                 sourceArrowAngle = 90; // downwards
+                                 sourceArrowX = startX;
+                                 sourceArrowY = startY - sideOffset;
+                               } else if (manhattanSourceSide === 'bottom') {
+                                 sourceArrowAngle = -90; // upwards
+                                 sourceArrowX = startX;
+                                 sourceArrowY = startY + sideOffset;
+                               }
+                             }
+                             
+                             const handleArrowClick = (nodeId, e) => {
+                               e.stopPropagation();
+                               
+                               // Toggle the arrow state for the specific node
+                               storeActions.updateEdge(edge.id, (draft) => {
+                                 // Ensure directionality object exists
+                                 if (!draft.directionality) {
+                                   draft.directionality = { arrowsToward: new Set() };
+                                 }
+                                 // Ensure arrowsToward is a Set
+                                 if (!draft.directionality.arrowsToward) {
+                                   draft.directionality.arrowsToward = new Set();
+                                 }
+                                 
+                                 // Toggle arrow for this specific node
+                                 if (draft.directionality.arrowsToward.has(nodeId)) {
+                                   draft.directionality.arrowsToward.delete(nodeId);
+                                 } else {
+                                   draft.directionality.arrowsToward.add(nodeId);
+                                 }
+                               });
+                             };
+                             
+                             return (
+                               <>
+                                 {/* Source Arrow - visible if arrow points toward source node */}
+                                 {arrowsToward.has(sourceNode.id) && (
+                                   <g 
+                                     transform={`translate(${sourceArrowX}, ${sourceArrowY}) rotate(${sourceArrowAngle + 90})`}
+                                     style={{ cursor: 'pointer' }}
+                                     onClick={(e) => handleArrowClick(sourceNode.id, e)}
+                                     onMouseDown={(e) => e.stopPropagation()}
+                                   >
+                                     {/* Glow effect for arrow - only when selected or hovered */}
+                                     {(isSelected || isHovered) && (
+                                       <polygon
+                                         points="-12,15 12,15 0,-15"
+                                         fill={edgeColor}
+                                         stroke={edgeColor}
+                                         strokeWidth="8"
+                                         strokeLinejoin="round"
+                                         strokeLinecap="round"
+                                         opacity={isSelected ? "0.3" : "0.2"}
+                                         style={{ 
+                                           filter: `blur(2px) drop-shadow(0 0 6px ${edgeColor})`
+                                         }}
+                                       />
+                                     )}
+                                     <polygon
+                                       points={showConnectionNames ? "-18,22 18,22 0,-22" : "-12,15 12,15 0,-15"}
+                                       fill={edgeColor}
+                                       stroke={edgeColor}
+                                       strokeWidth="6"
+                                       strokeLinejoin="round"
+                                       strokeLinecap="round"
+                                       paintOrder="stroke fill"
+                                     />
+                                   </g>
+                                 )}
+                                 
+                                 {/* Destination Arrow - visible if arrow points toward destination node */}
+                                 {arrowsToward.has(destNode.id) && (
+                                   <g 
+                                     transform={`translate(${destArrowX}, ${destArrowY}) rotate(${destArrowAngle + 90})`}
+                                     style={{ cursor: 'pointer' }}
+                                     onClick={(e) => handleArrowClick(destNode.id, e)}
+                                     onMouseDown={(e) => e.stopPropagation()}
+                                   >
+                                     {/* Glow effect for arrow - only when selected or hovered */}
+                                     {(isSelected || isHovered) && (
+                                       <polygon
+                                         points="-12,15 12,15 0,-15"
+                                         fill={edgeColor}
+                                         stroke={edgeColor}
+                                         strokeWidth="8"
+                                         strokeLinejoin="round"
+                                         strokeLinecap="round"
+                                         opacity={isSelected ? "0.3" : "0.2"}
+                                         style={{ 
+                                           filter: `blur(2px) drop-shadow(0 0 6px ${edgeColor})`
+                                         }}
+                                       />
+                                     )}
+                                     <polygon
+                                       points={showConnectionNames ? "-18,22 18,22 0,-22" : "-12,15 12,15 0,-15"}
+                                       fill={edgeColor}
+                                       stroke={edgeColor}
+                                       strokeWidth="6"
+                                       strokeLinejoin="round"
+                                       strokeLinecap="round"
+                                       paintOrder="stroke fill"
+                                     />
+                                   </g>
+                                 )}
+
+                                 {/* Hover Dots - only visible when hovering and using straight routing */}
+                                 {isHovered && (!enableAutoRouting || routingStyle === 'straight') && (
+                                   <>
+                                     {/* Source Dot - only show if arrow not pointing toward source */}
+                                     {!arrowsToward.has(sourceNode.id) && (
+                                       <g>
+                                         <circle
+                                           cx={sourceArrowX}
+                                           cy={sourceArrowY}
+                                           r="20"
+                                           fill="transparent"
+                                           style={{ cursor: 'pointer' }}
+                                           onClick={(e) => handleArrowClick(sourceNode.id, e)}
+                                           onMouseDown={(e) => e.stopPropagation()}
+                                         />
+                                         <circle
+                                           cx={sourceArrowX}
+                                           cy={sourceArrowY}
+                                           r={showConnectionNames ? "16" : "8"}
+                                           fill={edgeColor}
+                                           style={{ pointerEvents: 'none' }}
+                                         />
+                                       </g>
+                                     )}
+                                     
+                                     {/* Destination Dot - only show if arrow not pointing toward destination */}
+                                     {!arrowsToward.has(destNode.id) && (
+                                       <g>
+                                         <circle
+                                           cx={destArrowX}
+                                           cy={destArrowY}
+                                           r="20"
+                                           fill="transparent"
+                                           style={{ cursor: 'pointer' }}
+                                           onClick={(e) => handleArrowClick(destNode.id, e)}
+                                           onMouseDown={(e) => e.stopPropagation()}
+                                         />
+                                         <circle
+                                           cx={destArrowX}
+                                           cy={destArrowY}
+                                           r={showConnectionNames ? "16" : "8"}
+                                           fill={edgeColor}
+                                           style={{ pointerEvents: 'none' }}
+                                         />
+                                       </g>
+                                     )}
+                                   </>
+                                 )}
+                               </>
+                             );
+                           })()}
+                        </g>
+                      );
+                    })}
                   </>
                 );
               })()}
