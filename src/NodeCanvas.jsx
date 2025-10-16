@@ -7509,7 +7509,7 @@ function NodeCanvas() {
                       const maxX = Math.max(...rights);
                       const maxY = Math.max(...bottoms);
                       // Extend margin a bit more, scale with grid for safety during snapping
-                      const margin = Math.max(64, Math.round(gridSize * 0.5));
+                      const margin = Math.max(24, Math.round(gridSize * 0.2)); // Reduced to about half for tighter spacing
                       const rectX = minX - margin;
                       const rectY = minY - margin;
                       const rectW = (maxX - minX) + margin * 2;
@@ -7518,17 +7518,18 @@ function NodeCanvas() {
                       const nodeGroupCornerR = 24; // More rounded for node-groups
                       const strokeColor = group.color || '#8B0000';
                       const fontSize = 36;
-                      const labelPaddingVertical = 16; // Less top/bottom padding
-                      const labelPaddingHorizontal = 32; // More left/right padding
+                      const labelPaddingVertical = 12; // Compact top/bottom padding for tighter nametag
+                      const labelPaddingHorizontal = 32; // Left/right padding
                       const strokeWidth = 2;
-                      
+
                       // Calculate dynamic label size - use editing text if editing, otherwise group name
                       const currentText = editingGroupId === group.id ? tempGroupName : (group.name || 'Group');
                       const estimatedTextWidth = currentText.length * (fontSize * 0.6); // More accurate char width estimate
                       const labelWidth = Math.max(180, estimatedTextWidth + (labelPaddingHorizontal * 2) + (strokeWidth * 2));
-                      const labelHeight = Math.max(80, fontSize * 1.4 + (labelPaddingVertical * 2)); // Less height with reduced vertical padding
+                      const labelHeight = Math.max(80, fontSize * 1.4 + (labelPaddingVertical * 2)); // Balanced vertical padding
                       const labelX = rectX + (rectW - labelWidth) / 2; // Center horizontally on group
-                      const labelY = rectY - labelHeight - 25; // More space above group
+                      const labelGapFromCanvas = 20; // Gap between label bottom and inner canvas top (reduced)
+                      const labelY = rectY - labelHeight - labelGapFromCanvas; // Space above group for nametag effect
                       const labelText = group.name || 'Group';
                       const isGroupSelected = !!(selectedGroup && selectedGroup.id === group.id);
                       const isGroupDragging = draggingNodeInfo?.groupId === group.id;
@@ -7539,8 +7540,10 @@ function NodeCanvas() {
                       const nodeGroupColor = nodeGroupPrototype?.color || strokeColor;
 
                       // For node-groups, extend rectangle to cover the name tag area
-                      const nodeGroupRectY = isNodeGroup ? labelY - margin : rectY;
-                      const nodeGroupRectH = isNodeGroup ? (rectY + rectH) - (labelY - margin) : rectH;
+                      // Use a top margin equal to labelPaddingVertical for visual balance
+                      const nodeGroupTopMargin = labelPaddingVertical;
+                      const nodeGroupRectY = isNodeGroup ? labelY - nodeGroupTopMargin : rectY;
+                      const nodeGroupRectH = isNodeGroup ? (rectY + rectH) - (labelY - nodeGroupTopMargin) : rectH;
 
                       return (
                         <g key={group.id} className={isNodeGroup ? "node-group" : "group"} data-group-id={group.id}>
@@ -7559,12 +7562,13 @@ function NodeCanvas() {
                               />
                               {/* Inner canvas-colored rectangle (mini canvas for group members) */}
                               {(() => {
-                                // Start at member area (rectY), use margin for left/right/bottom, stay below label
+                                // Use consistent margin on all sides of inner canvas
                                 const innerMargin = margin;
+                                const innerTopMargin = margin / 2; // Smaller top gap between title and canvas
                                 const innerRectX = rectX + innerMargin;
-                                const innerRectY = rectY; // Start at member area top
+                                const innerRectY = rectY + innerTopMargin; // Start below the reduced top gap
                                 const innerRectW = rectW - (innerMargin * 2);
-                                const innerRectH = rectH - innerMargin; // Only subtract bottom margin
+                                const innerRectH = rectH - innerMargin - innerTopMargin; // Subtract bottom and top margins
 
                                 return (
                                   <rect
