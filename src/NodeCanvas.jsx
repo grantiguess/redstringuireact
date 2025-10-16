@@ -7559,13 +7559,12 @@ function NodeCanvas() {
                               />
                               {/* Inner canvas-colored rectangle (mini canvas for group members) */}
                               {(() => {
-                                // Calculate equal spacing: use margin for bottom/left/right, and distance to label for top
+                                // Start at member area (rectY), use margin for left/right/bottom, stay below label
                                 const innerMargin = margin;
-                                const topSpacing = (rectY - margin) - (labelY + labelHeight); // Distance from label bottom to member area top
                                 const innerRectX = rectX + innerMargin;
-                                const innerRectY = labelY + labelHeight + topSpacing;
+                                const innerRectY = rectY; // Start at member area top
                                 const innerRectW = rectW - (innerMargin * 2);
-                                const innerRectH = (rectY + rectH) - innerRectY - innerMargin;
+                                const innerRectH = rectH - innerMargin; // Only subtract bottom margin
 
                                 return (
                                   <rect
