@@ -7562,13 +7562,13 @@ function NodeCanvas() {
                               />
                               {/* Inner canvas-colored rectangle (mini canvas for group members) */}
                               {(() => {
-                                // Use consistent margin on all sides of inner canvas
-                                const innerMargin = margin;
+                                // Use larger margin on sides, smaller on top
+                                const innerSideMargin = 32; // Larger left/right/bottom margin
                                 const innerTopMargin = margin / 2; // Smaller top gap between title and canvas
-                                const innerRectX = rectX + innerMargin;
+                                const innerRectX = rectX + innerSideMargin;
                                 const innerRectY = rectY + innerTopMargin; // Start below the reduced top gap
-                                const innerRectW = rectW - (innerMargin * 2);
-                                const innerRectH = rectH - innerMargin - innerTopMargin; // Subtract bottom and top margins
+                                const innerRectW = rectW - (innerSideMargin * 2);
+                                const innerRectH = rectH - innerSideMargin - innerTopMargin; // Subtract bottom and top margins
 
                                 return (
                                   <rect
@@ -7709,7 +7709,7 @@ function NodeCanvas() {
                                 </div>
                               </foreignObject>
                             ) : (
-                              <text x={labelX + labelWidth / 2} y={labelY + labelHeight * 0.65} fontFamily="EmOne, sans-serif" fontSize={fontSize}
+                              <text x={labelX + labelWidth / 2} y={labelY + labelHeight * 0.7} fontFamily="EmOne, sans-serif" fontSize={fontSize}
                                     fill={isNodeGroup ? "#bdb5b5" : strokeColor} fontWeight="bold" stroke={isNodeGroup ? "none" : "#bdb5b5"} strokeWidth={isNodeGroup ? 0 : strokeWidth} paintOrder="stroke fill" textAnchor="middle">{labelText}</text>
                             )}
                           </g>
