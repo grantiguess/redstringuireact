@@ -621,6 +621,10 @@ export const exportToRedstring = (storeState, userDomain = null) => {
               "redstring:color": group.color,
               "redstring:memberInstanceIds": group.memberInstanceIds || [],
               "redstring:semanticMetadata": group.semanticMetadata || {},
+              // Node-group properties (for groups that represent nodes)
+              "redstring:linkedNodePrototypeId": group.linkedNodePrototypeId,
+              "redstring:linkedDefinitionIndex": group.linkedDefinitionIndex,
+              "redstring:hasCustomLayout": group.hasCustomLayout,
               // RDF-style membership relationships
               "rdfs:member": (group.memberInstanceIds || []).map(memberId => ({
                 "@id": `instance:${memberId}`
@@ -1048,7 +1052,11 @@ export const importFromRedstring = (redstringData, storeActions) => {
                   relationships: [],
                   createdAt: new Date().toISOString(),
                   lastModified: new Date().toISOString()
-                }
+                },
+                // Preserve node-group properties
+                linkedNodePrototypeId: group['redstring:linkedNodePrototypeId'] || group.linkedNodePrototypeId,
+                linkedDefinitionIndex: group['redstring:linkedDefinitionIndex'] ?? group.linkedDefinitionIndex,
+                hasCustomLayout: group['redstring:hasCustomLayout'] ?? group.hasCustomLayout
               };
             } else {
               // Legacy format
@@ -1063,7 +1071,11 @@ export const importFromRedstring = (redstringData, storeActions) => {
                   relationships: [],
                   createdAt: new Date().toISOString(),
                   lastModified: new Date().toISOString()
-                }
+                },
+                // Preserve node-group properties
+                linkedNodePrototypeId: group.linkedNodePrototypeId,
+                linkedDefinitionIndex: group.linkedDefinitionIndex,
+                hasCustomLayout: group.hasCustomLayout
               };
             }
             

@@ -7561,7 +7561,8 @@ function NodeCanvas() {
                         <g key={group.id} className={isNodeGroup ? "node-group" : "group"} data-group-id={group.id}>
                           {isNodeGroup ? (
                             <>
-                              {/* Outer colored background rectangle (node background) */}
+                              {/* NODE-GROUP RENDERING */}
+                              {/* 1. Outer colored background rectangle (extends up to cover title) */}
                               <rect
                                 x={rectX}
                                 y={nodeGroupRectY}
@@ -7572,48 +7573,34 @@ function NodeCanvas() {
                                 fill={nodeGroupColor}
                                 stroke="none"
                               />
-                              {/* Inner canvas-colored rectangle (mini canvas for group members) */}
-                              {(() => {
-                                // Use consistent margin on all sides for uniform border
-                                const innerMargin = GROUP_SPACING.innerCanvasBorder;
-                                const innerRectX = rectX + innerMargin;
-                                const innerRectY = rectY + innerMargin; // Uniform gap on all sides
-                                const innerRectW = rectW - (innerMargin * 2);
-                                const innerRectH = rectH - (innerMargin * 2); // Uniform on all sides
-
-                                return (
-                                  <>
-                                    {/* Dotted line around member boundary - drawn first */}
-                                    <rect
-                                      x={rectX}
-                                      y={rectY}
-                                      width={rectW}
-                                      height={rectH}
-                                      rx={cornerR}
-                                      ry={cornerR}
-                                      fill="none"
-                                      stroke="#333"
-                                      strokeWidth={3}
-                                      strokeDasharray="10 8"
-                                      vectorEffect="non-scaling-stroke"
-                                    />
-                                    {/* Inner canvas rectangle - drawn on top but doesn't cover the edges */}
-                                    <rect
-                                      x={innerRectX}
-                                      y={innerRectY}
-                                      width={innerRectW}
-                                      height={innerRectH}
-                                      rx={12}
-                                      ry={12}
-                                      fill="#bdb5b5"
-                                      stroke="none"
-                                    />
-                                  </>
-                                );
-                              })()}
+                              {/* 2. Inner canvas-colored rectangle (the actual canvas area) */}
+                              <rect
+                                x={rectX + GROUP_SPACING.innerCanvasBorder}
+                                y={rectY + GROUP_SPACING.innerCanvasBorder}
+                                width={rectW - (GROUP_SPACING.innerCanvasBorder * 2)}
+                                height={rectH - (GROUP_SPACING.innerCanvasBorder * 2)}
+                                rx={12}
+                                ry={12}
+                                fill="#bdb5b5"
+                                stroke="none"
+                              />
+                              {/* 3. Dashed boundary line (shows logical member boundary) */}
+                              <rect
+                                x={rectX}
+                                y={rectY}
+                                width={rectW}
+                                height={rectH}
+                                rx={cornerR}
+                                ry={cornerR}
+                                fill="none"
+                                stroke={nodeGroupColor}
+                                strokeWidth={4}
+                                strokeDasharray="12 8"
+                                vectorEffect="non-scaling-stroke"
+                              />
                             </>
                           ) : (
-                            // Regular group: no fill, canvas-colored dashed stroke
+                            // REGULAR GROUP RENDERING - dashed outline only
                             <rect
                               x={rectX}
                               y={rectY}
