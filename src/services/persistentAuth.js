@@ -899,6 +899,8 @@ export class PersistentAuth {
 
     return {
       isAuthenticated,
+      hasOAuthTokens: hasTokens,
+      hasGitHubApp: hasApp,
       needsRefresh,
       expiryTime: expiryTime ? new Date(expiryTime) : null,
       timeToExpiry: expiryTime ? Math.max(0, expiryTime - Date.now()) : 0,

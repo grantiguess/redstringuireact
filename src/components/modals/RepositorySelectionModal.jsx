@@ -17,7 +17,6 @@ import {
   FileText
 } from 'lucide-react';
 import Modal from '../shared/Modal.jsx';
-import { oauthFetch } from '../../services/bridgeConfig.js';
 import { persistentAuth } from '../../services/persistentAuth.js';
 import { gitFederationService } from '../../services/gitFederationService.js';
 
@@ -105,10 +104,10 @@ const RepositorySelectionModal = ({
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen && authStatus.isAuthenticated) {
+    if (isOpen && authStatus.hasOAuthTokens) {
       loadRepositories();
     }
-  }, [isOpen, authStatus.isAuthenticated]);
+  }, [isOpen, authStatus.hasOAuthTokens]);
 
   const loadRepositories = async () => {
     try {
@@ -344,7 +343,7 @@ const RepositorySelectionModal = ({
     );
   };
 
-  if (!authStatus.isAuthenticated) {
+  if (!authStatus.hasOAuthTokens) {
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Repository Selection" size="medium">
         <div style={{

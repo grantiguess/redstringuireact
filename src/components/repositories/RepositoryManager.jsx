@@ -25,10 +25,10 @@ const RepositoryManager = ({
 
   // Load repositories on mount and when auth status changes
   useEffect(() => {
-    if (authStatus.isAuthenticated) {
+    if (authStatus.hasOAuthTokens) {
       loadRepositories();
     }
-  }, [authStatus.isAuthenticated]);
+  }, [authStatus.hasOAuthTokens]);
 
   // Listen for auth status changes
   useEffect(() => {
@@ -200,12 +200,12 @@ const RepositoryManager = ({
 
   // Debug auth status
   console.log('[RepositoryManager] Auth status check:', { 
-    isAuthenticated: authStatus.isAuthenticated, 
+    hasOAuthTokens: authStatus.hasOAuthTokens, 
     hasUserData: !!authStatus.userData?.login,
     authStatus 
   });
   
-  if (!authStatus.isAuthenticated) {
+  if (!authStatus.hasOAuthTokens) {
     if (dropdownMode) {
       return (
         <div style={{ 

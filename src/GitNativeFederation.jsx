@@ -379,9 +379,9 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
   // Removed autosave batch-size polling; rely on engine flags for UI state
 
   // Lightweight autosave fallback: if unsaved changes persist for 20s, save once; 60s cooldown
-  const hasOAuth = !!serviceState.authStatus?.isAuthenticated;
-  const hasApp = !!serviceState.githubAppInstallation?.accessToken;
-  const dataAuthMethod = hasApp ? 'github-app' : hasOAuth ? 'oauth' : null;
+  const hasOAuth = !!serviceState.authStatus?.hasOAuthTokens;
+  const hasApp = !!(serviceState.authStatus?.hasGitHubApp || serviceState.githubAppInstallation?.installationId);
+  const dataAuthMethod = hasOAuth ? 'oauth' : (hasApp ? 'github-app' : null);
 
   useEffect(() => {
     if (!serviceState.activeUniverseSlug) return undefined;
@@ -409,7 +409,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
         const latest = fresh.universes.find(u => u.slug === fresh.activeUniverseSlug);
         if (latest?.sync?.hasUnsavedChanges) {
           const hasGitRepo = !!(latest.raw?.gitRepo?.enabled && latest.raw?.gitRepo?.linkedRepo);
-          const hasGitAuth = !!(serviceState?.authStatus?.isAuthenticated || hasOAuth || hasApp);
+          const hasGitAuth = hasOAuth || hasApp;
           setLoading(true);
           await gitFederationService.forceSave(latest.slug, hasGitRepo && hasGitAuth ? undefined : { skipGit: true });
           setSyncStatus({
@@ -1081,7 +1081,7 @@ const GitNativeFederation = ({ variant = 'panel', onRequestClose }) => {
 
       // Initialize the repository with current universe data
       gfLog(`[GitNativeFederation] Initializing repository with universe data for ${targetSlug}`);
-      const hasGitAuth = !!(serviceState?.authStatus?.isAuthenticated || hasOAuth || hasApp);
+      const hasGitAuth = hasOAuth || hasApp;
 
       try {
         await gitFederationService.forceSave(targetSlug, hasGitAuth ? undefined : { skipGit: true });

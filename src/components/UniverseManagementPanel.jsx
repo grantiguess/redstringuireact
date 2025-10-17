@@ -73,11 +73,8 @@ const UniverseManagementPanel = ({
   const bridge = universeBackendBridge;
 
   const canSelectRepositories = useMemo(() => {
-    return Boolean(
-      githubAppInstallation?.accessToken ||
-      authStatus?.isAuthenticated
-    );
-  }, [authStatus, githubAppInstallation?.accessToken]);
+    return Boolean(authStatus?.hasOAuthTokens);
+  }, [authStatus]);
 
   // Derived state
   const activeUniverse = useMemo(() => {

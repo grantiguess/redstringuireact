@@ -7508,19 +7508,33 @@ function NodeCanvas() {
                       const minY = Math.min(...ys);
                       const maxX = Math.max(...rights);
                       const maxY = Math.max(...bottoms);
-                      // Extend margin a bit more, scale with grid for safety during snapping
-                      const margin = Math.max(24, Math.round(gridSize * 0.2)); // Reduced to about half for tighter spacing
+
+                      // GROUP LAYOUT CONSTANTS - consolidated for easier adjustment
+                      const GROUP_SPACING = {
+                        memberBoundaryPadding: Math.max(24, Math.round(gridSize * 0.2)), // Space between members and member boundary
+                        innerCanvasBorder: 32,        // Width of colored border around inner canvas (for node-groups)
+                        titleToCanvasGap: 24,         // Vertical gap between title bottom and inner canvas top
+                        titlePaddingVertical: 12,     // Top/bottom padding inside title bar
+                        titlePaddingHorizontal: 32,   // Left/right padding inside title bar
+                        titleTopMargin: 12,           // Space above title within colored background (for node-groups)
+                        cornerRadius: 12,             // Corner radius for regular groups
+                        nodeGroupCornerRadius: 24,    // Corner radius for node-groups (more rounded)
+                        strokeWidth: 2,               // Stroke width for group borders
+                        fontSize: 36,                 // Title text size
+                      };
+
+                      const margin = GROUP_SPACING.memberBoundaryPadding;
                       const rectX = minX - margin;
                       const rectY = minY - margin;
                       const rectW = (maxX - minX) + margin * 2;
                       const rectH = (maxY - minY) + margin * 2;
-                      const cornerR = 12;
-                      const nodeGroupCornerR = 24; // More rounded for node-groups
+                      const cornerR = GROUP_SPACING.cornerRadius;
+                      const nodeGroupCornerR = GROUP_SPACING.nodeGroupCornerRadius;
                       const strokeColor = group.color || '#8B0000';
-                      const fontSize = 36;
-                      const labelPaddingVertical = 12; // Compact top/bottom padding for tighter nametag
-                      const labelPaddingHorizontal = 32; // Left/right padding
-                      const strokeWidth = 2;
+                      const fontSize = GROUP_SPACING.fontSize;
+                      const labelPaddingVertical = GROUP_SPACING.titlePaddingVertical;
+                      const labelPaddingHorizontal = GROUP_SPACING.titlePaddingHorizontal;
+                      const strokeWidth = GROUP_SPACING.strokeWidth;
 
                       // Calculate dynamic label size - use editing text if editing, otherwise group name
                       const currentText = editingGroupId === group.id ? tempGroupName : (group.name || 'Group');
@@ -7528,8 +7542,7 @@ function NodeCanvas() {
                       const labelWidth = Math.max(180, estimatedTextWidth + (labelPaddingHorizontal * 2) + (strokeWidth * 2));
                       const labelHeight = Math.max(80, fontSize * 1.4 + (labelPaddingVertical * 2)); // Balanced vertical padding
                       const labelX = rectX + (rectW - labelWidth) / 2; // Center horizontally on group
-                      const labelGapFromCanvas = 20; // Gap between label bottom and inner canvas top (reduced)
-                      const labelY = rectY - labelHeight - labelGapFromCanvas; // Space above group for nametag effect
+                      const labelY = rectY - labelHeight - GROUP_SPACING.titleToCanvasGap; // Space above group for nametag effect
                       const labelText = group.name || 'Group';
                       const isGroupSelected = !!(selectedGroup && selectedGroup.id === group.id);
                       const isGroupDragging = draggingNodeInfo?.groupId === group.id;
@@ -7540,8 +7553,7 @@ function NodeCanvas() {
                       const nodeGroupColor = nodeGroupPrototype?.color || strokeColor;
 
                       // For node-groups, extend rectangle to cover the name tag area
-                      // Use a top margin equal to labelPaddingVertical for visual balance
-                      const nodeGroupTopMargin = labelPaddingVertical;
+                      const nodeGroupTopMargin = GROUP_SPACING.titleTopMargin;
                       const nodeGroupRectY = isNodeGroup ? labelY - nodeGroupTopMargin : rectY;
                       const nodeGroupRectH = isNodeGroup ? (rectY + rectH) - (labelY - nodeGroupTopMargin) : rectH;
 
@@ -7562,31 +7574,59 @@ function NodeCanvas() {
                               />
                               {/* Inner canvas-colored rectangle (mini canvas for group members) */}
                               {(() => {
-                                // Use larger margin on sides, smaller on top
-                                const innerSideMargin = 32; // Larger left/right/bottom margin
-                                const innerTopMargin = margin / 2; // Smaller top gap between title and canvas
-                                const innerRectX = rectX + innerSideMargin;
-                                const innerRectY = rectY + innerTopMargin; // Start below the reduced top gap
-                                const innerRectW = rectW - (innerSideMargin * 2);
-                                const innerRectH = rectH - innerSideMargin - innerTopMargin; // Subtract bottom and top margins
+                                // Use consistent margin on all sides for uniform border
+                                const innerMargin = GROUP_SPACING.innerCanvasBorder;
+                                const innerRectX = rectX + innerMargin;
+                                const innerRectY = rectY + innerMargin; // Uniform gap on all sides
+                                const innerRectW = rectW - (innerMargin * 2);
+                                const innerRectH = rectH - (innerMargin * 2); // Uniform on all sides
 
                                 return (
-                                  <rect
-                                    x={innerRectX}
-                                    y={innerRectY}
-                                    width={innerRectW}
-                                    height={innerRectH}
-                                    rx={12}
-                                    ry={12}
-                                    fill="#bdb5b5"
-                                    stroke="none"
-                                  />
+                                  <>
+                                    {/* Dotted line around member boundary - drawn first */}
+                                    <rect
+                                      x={rectX}
+                                      y={rectY}
+                                      width={rectW}
+                                      height={rectH}
+                                      rx={cornerR}
+                                      ry={cornerR}
+                                      fill="none"
+                                      stroke="#333"
+                                      strokeWidth={3}
+                                      strokeDasharray="10 8"
+                                      vectorEffect="non-scaling-stroke"
+                                    />
+                                    {/* Inner canvas rectangle - drawn on top but doesn't cover the edges */}
+                                    <rect
+                                      x={innerRectX}
+                                      y={innerRectY}
+                                      width={innerRectW}
+                                      height={innerRectH}
+                                      rx={12}
+                                      ry={12}
+                                      fill="#bdb5b5"
+                                      stroke="none"
+                                    />
+                                  </>
                                 );
                               })()}
                             </>
                           ) : (
-                            // Regular group: no fill, canvas-colored SOLID stroke (not dashed)
-                            <rect x={rectX} y={rectY} width={rectW} height={rectH} rx={cornerR} ry={cornerR} fill="none" stroke="#bdb5b5" strokeWidth={8} vectorEffect="non-scaling-stroke" />
+                            // Regular group: no fill, canvas-colored dashed stroke
+                            <rect
+                              x={rectX}
+                              y={rectY}
+                              width={rectW}
+                              height={rectH}
+                              rx={cornerR}
+                              ry={cornerR}
+                              fill="none"
+                              stroke="#bdb5b5"
+                              strokeWidth={8}
+                              strokeDasharray="16 12"
+                              vectorEffect="non-scaling-stroke"
+                            />
                           )}
                           {/* Draggable label behaving like a node handle with inline editing */}
                           <g className="group-label" style={{ cursor: 'pointer' }}
