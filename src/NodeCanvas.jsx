@@ -7516,7 +7516,7 @@ function NodeCanvas() {
                         titleToCanvasGap: 24,         // Vertical gap between title bottom and inner canvas top
                         titlePaddingVertical: 12,     // Top/bottom padding inside title bar
                         titlePaddingHorizontal: 32,   // Left/right padding inside title bar
-                        titleTopMargin: 12,           // Space above title within colored background (for node-groups)
+                        titleTopMargin: 24,           // Space above title within colored background (for node-groups)
                         cornerRadius: 12,             // Corner radius for regular groups
                         nodeGroupCornerRadius: 24,    // Corner radius for node-groups (more rounded)
                         strokeWidth: 2,               // Stroke width for group borders
