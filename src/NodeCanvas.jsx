@@ -5272,18 +5272,22 @@ function NodeCanvas() {
         }
         const primaryFinalizeId = draggingNodeInfo.primaryId || draggingNodeInfo.instanceId || (Array.isArray(draggingNodeInfo.memberOffsets) ? draggingNodeInfo.memberOffsets[0]?.id : null);
         let finalizeSent = false;
-        instanceIdsToReset.forEach(id => {
-            const nodeExists = nodes.some(n => n.id === id);
-            if(nodeExists) {
-                const shouldFinalize = primaryFinalizeId ? id === primaryFinalizeId : !finalizeSent;
-                storeActions.updateNodeInstance(
-                  activeGraphId,
-                  id,
-                  draft => { draft.scale = 1; },
-                  { phase: 'end', isDragging: false, finalize: shouldFinalize }
-                );
-                if (shouldFinalize) finalizeSent = true;
-            }
+
+        // Defer finalize to avoid blocking UI during file save
+        requestAnimationFrame(() => {
+          instanceIdsToReset.forEach(id => {
+              const nodeExists = nodes.some(n => n.id === id);
+              if(nodeExists) {
+                  const shouldFinalize = primaryFinalizeId ? id === primaryFinalizeId : !finalizeSent;
+                  storeActions.updateNodeInstance(
+                    activeGraphId,
+                    id,
+                    draft => { draft.scale = 1; },
+                    { phase: 'end', isDragging: false, finalize: shouldFinalize }
+                  );
+                  if (shouldFinalize) finalizeSent = true;
+              }
+          });
         });
         setDraggingNodeInfo(null);
 
@@ -7540,7 +7544,8 @@ function NodeCanvas() {
                       // Calculate dynamic label size - use editing text if editing, otherwise group name
                       const currentText = editingGroupId === group.id ? tempGroupName : (group.name || 'Group');
                       const estimatedTextWidth = currentText.length * (fontSize * 0.6); // More accurate char width estimate
-                      const labelWidth = Math.max(180, estimatedTextWidth + (labelPaddingHorizontal * 2) + (strokeWidth * 2));
+                      const maxLabelWidth = rectW * 0.75; // Cap at 75% of group width
+                      const labelWidth = Math.min(maxLabelWidth, Math.max(180, estimatedTextWidth + (labelPaddingHorizontal * 2) + (strokeWidth * 2)));
                       const labelHeight = Math.max(80, fontSize * 1.4 + (labelPaddingVertical * 2)); // Balanced vertical padding
                       const labelX = rectX + (rectW - labelWidth) / 2; // Center horizontally on group
                       const labelY = rectY - labelHeight - GROUP_SPACING.titleToCanvasGap; // Space above group for nametag effect
@@ -7728,7 +7733,7 @@ function NodeCanvas() {
                                 </div>
                               </foreignObject>
                             ) : (
-                              <text x={labelX + labelWidth / 2} y={labelY + labelHeight * 0.7} fontFamily="EmOne, sans-serif" fontSize={fontSize}
+                              <text x={labelX + labelWidth / 2} y={labelY + labelHeight * 0.7 - 2} fontFamily="EmOne, sans-serif" fontSize={fontSize}
                                     fill={isNodeGroup ? "#bdb5b5" : strokeColor} fontWeight="bold" stroke={isNodeGroup ? "none" : "#bdb5b5"} strokeWidth={isNodeGroup ? 0 : strokeWidth} paintOrder="stroke fill" textAnchor="middle">{labelText}</text>
                             )}
                           </g>
