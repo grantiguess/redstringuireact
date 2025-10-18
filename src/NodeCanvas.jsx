@@ -7565,9 +7565,10 @@ function NodeCanvas() {
                       const nodeGroupRectY = isNodeGroup ? labelY - nodeGroupTopMargin : rectY;
                       const nodeGroupRectH = isNodeGroup ? (rectY + rectH) - (labelY - nodeGroupTopMargin) : rectH;
 
-                      // Calculate inner canvas position for node-groups (move up to reduce title bottom gap)
-                      const innerCanvasTopInset = isNodeGroup ? nodeGroupBottomMargin : GROUP_SPACING.innerCanvasBorder;
-                      const innerCanvasY = rectY + innerCanvasTopInset;
+                      // Calculate inner canvas position for node-groups
+                      // For node-groups: start titleBottomMargin below the label
+                      // For regular groups: use normal innerCanvasBorder inset
+                      const innerCanvasY = isNodeGroup ? (labelY + labelHeight + nodeGroupBottomMargin) : (rectY + GROUP_SPACING.innerCanvasBorder);
 
                       return (
                         <g key={group.id} className={isNodeGroup ? "node-group" : "group"} data-group-id={group.id}>
@@ -7590,7 +7591,7 @@ function NodeCanvas() {
                                 x={rectX + GROUP_SPACING.innerCanvasBorder}
                                 y={innerCanvasY}
                                 width={rectW - (GROUP_SPACING.innerCanvasBorder * 2)}
-                                height={rectH - innerCanvasTopInset - GROUP_SPACING.innerCanvasBorder}
+                                height={(rectY + rectH) - innerCanvasY - GROUP_SPACING.innerCanvasBorder}
                                 rx={12}
                                 ry={12}
                                 fill="#bdb5b5"
