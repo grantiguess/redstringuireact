@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Trash2, Plus, ArrowUpFromDot, ArrowRight, Edit3 } from 'lucide-react';
-import useGraphStore from './store/graphStore';
+import useGraphStore from './store/graphStore.jsx';
 import UnifiedBottomControlPanel from './UnifiedBottomControlPanel';
 
 const AbstractionControlPanel = ({ 

@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import toolValidator from '../src/services/toolValidator.js';
 import cognitiveAgent from '../src/services/cognitiveAgent.js';
-import useGraphStore from '../src/store/graphStore.js';
+import useGraphStore from '../src/store/graphStore.jsx';
 
 // Mock the graph store with realistic data
 const mockRedstringState = {
@@ -84,7 +84,7 @@ const mockRedstringState = {
 };
 
 // Mock the store
-vi.mock('../src/store/graphStore.js', () => ({
+vi.mock('../src/store/graphStore.jsx', () => ({
   default: {
     getState: () => mockRedstringState,
     setState: vi.fn(),

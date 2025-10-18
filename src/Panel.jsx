@@ -19,7 +19,7 @@ import useGraphStore, {
     getActiveGraphData,
     getEdgesForGraph,
     getNodePrototypeById,
-} from './store/graphStore';
+} from './store/graphStore.jsx';
 import { shallow } from 'zustand/shallow';
 import GraphListItem from './GraphListItem'; // <<< Import the new component
 // Lazy import GitNativeFederation to avoid circular dependencies

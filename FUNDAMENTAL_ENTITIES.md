@@ -65,8 +65,8 @@ This document outlines the fundamental, foundational entities that serve as the 
 ## Implementation Notes
 
 - Fundamental entities are defined with standardized colors in `src/constants.js`
-- **Thing** is initialized in `src/store/graphStore.js` as `base-thing-prototype`
-- **Connection** is initialized in `src/store/graphStore.js` as `base-connection-prototype`
+- **Thing** is initialized in `src/store/graphStore.jsx` as `base-thing-prototype`
+- **Connection** is initialized in `src/store/graphStore.jsx` as `base-connection-prototype`
 - Both have deletion protection in their respective `delete*Prototype` functions
 - Connection appears in "Browse All Things" panel alongside node prototypes
 - They serve as default fallbacks throughout the system

@@ -64,7 +64,7 @@ const mockGraphStore = {
 };
 
 // Mock the useGraphStore
-jest.mock('../src/store/graphStore.js', () => ({
+jest.mock('../src/store/graphStore.jsx', () => ({
   getState: () => mockGraphStore
 }));
 

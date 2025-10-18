@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useCallback, useRef } from 'react';
-import useGraphStore from './store/graphStore';
+import useGraphStore from './store/graphStore.jsx';
 import { getNodeDimensions } from './utils.js';
 
 /**

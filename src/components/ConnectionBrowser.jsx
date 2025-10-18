@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ArrowRight, Plus, CircleDot, RefreshCw, List, Network, Sparkles } from 'lucide-react';
-import useGraphStore from '../store/graphStore';
+import useGraphStore from '../store/graphStore.jsx';
 import { discoverConnections } from '../services/semanticDiscovery.js';
 import { fastEnrichFromSemanticWeb } from '../services/semanticWebQuery.js';
 import Dropdown from './Dropdown.jsx';

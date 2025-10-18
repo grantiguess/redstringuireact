@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import UnifiedBottomControlPanel from './UnifiedBottomControlPanel';
-import useGraphStore from './store/graphStore';
+import useGraphStore from './store/graphStore.jsx';
 import { CONNECTION_DEFAULT_COLOR } from './constants';
 
 const ConnectionControlPanel = ({

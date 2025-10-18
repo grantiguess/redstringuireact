@@ -2,7 +2,7 @@
 
 ## 🎯 Goal: Make AI a First-Class User
 
-Based on analysis of `NodeCanvas.jsx` and `graphStore.js`, here's every command an AI would need to act like a human user:
+Based on analysis of `NodeCanvas.jsx` and `graphStore.jsx`, here's every command an AI would need to act like a human user:
 
 ## 📋 **CURRENT TOOLS (Already Implemented)**
 - `list_available_graphs` - See all graphs

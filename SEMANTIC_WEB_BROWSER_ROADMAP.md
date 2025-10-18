@@ -242,7 +242,7 @@ AI that understands your knowledge patterns:
 
 # 🔧 Concrete Integration Points
 
-## Store Integration (graphStore.js)
+## Store Integration (graphStore.jsx)
 ```javascript
 // ADD to existing store:
 semanticMetadata: new Map(), // node semantic data

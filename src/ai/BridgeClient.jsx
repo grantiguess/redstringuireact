@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import useGraphStore from '../store/graphStore';
+import useGraphStore from '../store/graphStore.jsx';
 import { bridgeEventSource, bridgeFetch } from '../services/bridgeConfig.js';
 
 const MAX_LAYOUT_NODES = 400;

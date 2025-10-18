@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Core Technologies
 - **React 18** with functional components and hooks
-- **Zustand** for state management (`src/store/graphStore.js`)
+- **Zustand** for state management (`src/store/graphStore.jsx`)
 - **React DnD** for drag-and-drop interactions
 - **Vite** for build tooling with hot reload
 - **Vitest** for testing
@@ -83,6 +83,14 @@ Complex state management for contextual menus:
 - **Cognitive Augmentation**: Semantic web infrastructure acts as invisible substrate, reducing free recall burden while increasing discovery opportunities
 - **Connection Browser**: Interface for browsing and selectively materializing semantic web relationships as native Redstring nodes and connections
 - **Semantic-to-Native Translation**: RDF triplets automatically converted to Redstring-native visual elements using appropriate colors and styling
+
+### Save System & Performance Optimization
+- **SaveCoordinator**: Centralized save management that coordinates local file saves and Git commits
+- **Micro-Batching Middleware**: Batches rapid state changes within the same event loop tick to prevent excessive hash calculations
+- **Drag-Aware Saves**: Detects drag operations via `isDragging` and `phase` context flags, deferring saves until interaction completes
+- **Viewport Exclusion**: Pan/zoom changes excluded from hash calculation to prevent unnecessary saves
+- **FNV-1a Hashing**: Fast hash algorithm for change detection on large state objects
+- **Context Options**: All store actions accept `contextOptions` parameter to control save behavior (`isDragging`, `phase`, `finalize`)
 
 ## Testing Strategy
 

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo, useReducer } 
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { NODE_WIDTH, NODE_HEIGHT, NODE_CORNER_RADIUS, NODE_DEFAULT_COLOR, NODE_PADDING } from './constants';
 import { getNodeDimensions } from './utils';
-import useGraphStore from './store/graphStore';
+import useGraphStore from './store/graphStore.jsx';
 import './AbstractionCarousel.css';
 
 // Color utility functions for hue-based progression

@@ -102,7 +102,7 @@ Refactoring `NodeCanvas.jsx` will significantly alter the project's import graph
 *   **`src/components/panels/`**: For control panels (e.g., `ConnectionControlPanelContainer.jsx`, `AbstractionControlPanelContainer.jsx`).
 *   **`src/utils/`**: Existing utilities like `getNodeDimensions` should remain here.
 *   **`src/constants.js`**: Should remain a central place for constants.
-*   **`src/store/graphStore.js`**: The Zustand store should remain foundational.
+*   **`src/store/graphStore.jsx`**: The Zustand store should remain foundational.
 
 ### 6.2. Import Paths
 
@@ -114,7 +114,7 @@ Refactoring `NodeCanvas.jsx` will significantly alter the project's import graph
 *   **Directional Flow:** Establish a clear dependency flow. Generally:
     *   **Hooks should not import Components:** Hooks provide logic and state; components consume them. If a hook needs to trigger a UI action (e.g., open a prompt), it should expose a callback function that the parent component (`NodeCanvas`) can then use to update its state or render the appropriate component.
     *   **Components can import Hooks:** Components will consume the logic and state provided by hooks.
-    *   **Core Utilities/Store:** Files like `src/utils.js`, `src/constants.js`, and `src/store/graphStore.js` are foundational and can be imported by almost any hook or component without causing circular dependencies, as they don't import from the UI layer.
+    *   **Core Utilities/Store:** Files like `src/utils.js`, `src/constants.js`, and `src/store/graphStore.jsx` are foundational and can be imported by almost any hook or component without causing circular dependencies, as they don't import from the UI layer.
 *   **Callback-Based Communication:** Instead of hooks directly manipulating UI state or rendering components, they should return functions or state that the consuming component (`NodeCanvas`) can use to manage its own rendering. For example, `useCanvasInteraction` might return `setSelectionRect`, and `NodeCanvas` would then use this setter to update the `selectionRect` state, which in turn triggers the `SelectionBox` component to render.
 *   **Props for Data and Callbacks:** Components should be as "dumb" as possible, receiving all necessary data and callbacks via props. This makes them highly reusable and testable.
 *   **Zustand Store Access:**

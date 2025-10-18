@@ -4,7 +4,7 @@ import GraphPreview from './GraphPreview'; // <<< Import GraphPreview
 import { XCircle } from 'lucide-react'; // <<< Import XCircle
 import { useDrag } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend';
-import useGraphStore from './store/graphStore';
+import useGraphStore from './store/graphStore.jsx';
 // import './GraphListItem.css'; // We'll create this later
 
 const SPAWNABLE_NODE = 'spawnable_node';

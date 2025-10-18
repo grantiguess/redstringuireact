@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { useDrag } from 'react-dnd';
 import { getEmptyImage } from 'react-dnd-html5-backend';
-import useGraphStore from './store/graphStore';
+import useGraphStore from './store/graphStore.jsx';
 
 const SPAWNABLE_NODE = 'spawnable_node';
 

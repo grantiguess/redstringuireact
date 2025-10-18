@@ -1,6 +1,6 @@
 import React from 'react';
 import UnifiedBottomControlPanel from './UnifiedBottomControlPanel';
-import useGraphStore from './store/graphStore';
+import useGraphStore from './store/graphStore.jsx';
 
 const NodeControlPanel = ({
   selectedNodePrototypes = [],

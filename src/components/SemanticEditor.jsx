@@ -4,7 +4,7 @@ import { PANEL_CLOSE_ICON_SIZE } from '../constants';
 import { rdfResolver } from '../services/rdfResolver.js';
 import { enrichFromSemanticWeb, fastEnrichFromSemanticWeb } from '../services/semanticWebQuery.js';
 import { knowledgeFederation } from '../services/knowledgeFederation.js';
-import useGraphStore from '../store/graphStore';
+import useGraphStore from '../store/graphStore.jsx';
 
 // DOI validation regex
 const DOI_REGEX = /^10\.\d{4,}\/[-._;()\/:a-zA-Z0-9]+$/;

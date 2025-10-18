@@ -1,6 +1,6 @@
 import React from 'react';
 import { useDragLayer }from 'react-dnd';
-import useGraphStore from './store/graphStore';
+import useGraphStore from './store/graphStore.jsx';
 import Node from './Node.jsx';
 import { getNodeDimensions } from './utils.js';
 
