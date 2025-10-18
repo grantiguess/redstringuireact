@@ -5274,7 +5274,8 @@ function NodeCanvas() {
         let finalizeSent = false;
 
         // Defer finalize to avoid blocking UI during file save
-        requestAnimationFrame(() => {
+        // Use setTimeout instead of RAF to ensure it happens after mouse event completes
+        setTimeout(() => {
           instanceIdsToReset.forEach(id => {
               const nodeExists = nodes.some(n => n.id === id);
               if(nodeExists) {
@@ -5288,7 +5289,7 @@ function NodeCanvas() {
                   if (shouldFinalize) finalizeSent = true;
               }
           });
-        });
+        }, 0);
         setDraggingNodeInfo(null);
 
     }
