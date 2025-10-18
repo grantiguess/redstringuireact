@@ -7584,20 +7584,6 @@ function NodeCanvas() {
                                 fill="#bdb5b5"
                                 stroke="none"
                               />
-                              {/* 3. Dashed boundary line (shows logical member boundary) */}
-                              <rect
-                                x={rectX}
-                                y={rectY}
-                                width={rectW}
-                                height={rectH}
-                                rx={cornerR}
-                                ry={cornerR}
-                                fill="none"
-                                stroke={nodeGroupColor}
-                                strokeWidth={4}
-                                strokeDasharray="12 8"
-                                vectorEffect="non-scaling-stroke"
-                              />
                             </>
                           ) : (
                             // REGULAR GROUP RENDERING - dashed outline only
@@ -7606,11 +7592,11 @@ function NodeCanvas() {
                               y={rectY}
                               width={rectW}
                               height={rectH}
-                              rx={cornerR}
-                              ry={cornerR}
+                              rx={nodeGroupCornerR}
+                              ry={nodeGroupCornerR}
                               fill="none"
-                              stroke="#bdb5b5"
-                              strokeWidth={8}
+                              stroke={strokeColor}
+                              strokeWidth={12}
                               strokeDasharray="16 12"
                               vectorEffect="non-scaling-stroke"
                             />
