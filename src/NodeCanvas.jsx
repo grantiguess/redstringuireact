@@ -4851,6 +4851,10 @@ function NodeCanvas() {
   const lastHoverCheckRef = useRef(0);
   const HOVER_CHECK_INTERVAL_MS = 24; // ~40 Hz
 
+  // RAF-based drag position updates for smooth rendering at display refresh rate
+  const pendingDragUpdate = useRef(null);
+  const dragUpdateScheduled = useRef(false);
+
   const handleMouseMove = async (e) => {
     if (isPaused || !activeGraphId) return;
 
@@ -5068,8 +5072,20 @@ function NodeCanvas() {
     // Dragging Node or Group Logic (only after long-press has set draggingNodeInfo)
     if (draggingNodeInfo) {
         console.log('Mouse move with draggingNodeInfo:', draggingNodeInfo);
-        // Use requestAnimationFrame for smooth dragging performance, but ensure labels update immediately
-        requestAnimationFrame(() => { // Keep RAF
+
+        // Store latest drag event for RAF processing
+        pendingDragUpdate.current = { e, draggingNodeInfo };
+
+        // Schedule RAF update if not already scheduled (throttles to display refresh rate)
+        if (!dragUpdateScheduled.current) {
+            dragUpdateScheduled.current = true;
+            requestAnimationFrame(() => {
+                dragUpdateScheduled.current = false;
+                const update = pendingDragUpdate.current;
+                if (!update) return;
+
+                const e = update.e;
+                const draggingNodeInfo = update.draggingNodeInfo;
             // Group drag via label
             if (draggingNodeInfo.groupId && Array.isArray(draggingNodeInfo.memberOffsets)) {
                 const rect = containerRef.current.getBoundingClientRect();
@@ -5186,7 +5202,8 @@ function NodeCanvas() {
                   }, { isDragging: true, phase: 'move' });
                 }
             }
-        });
+            }); // Close RAF callback
+        } // Close if (!dragUpdateScheduled.current)
     } else if (drawingConnectionFrom) {
         // Update connection drawing coordinates to follow mouse
         setDrawingConnectionFrom(prev => prev && ({ ...prev, currentX: currentX, currentY: currentY }));

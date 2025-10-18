@@ -164,38 +164,125 @@ const UnifiedBottomControlPanel = ({
     if (!nodeDimensionEntries.length) {
       return {
         nodesForRenderer: [],
-        containerWidth: 400,
-        containerHeight: 80,
-        minHorizontalSpacing: 0
+        containerWidth: 360,
+        containerHeight: 90,
+        padding: 10
       };
     }
 
+    const PADDING = 10;
+    const BASE_CONTAINER_WIDTH = 360;
+    const MAX_CONTAINER_WIDTH = 520;
+    const BASE_CONTAINER_HEIGHT = 104;
+    const ROW_HEIGHT_INCREMENT = 64;
+    const MAX_CONTAINER_HEIGHT = 240;
+    const COLUMN_SPACING = 16;
+    const ROW_SPACING = 14;
+    const MAX_ITEMS_PER_ROW = 4;
+    const MIN_SCALE = 0.45;
+
     const count = nodeDimensionEntries.length;
-    const minHorizontalSpacing = count === 1 ? 0 : count <= 3 ? 16 : count <= 6 ? 12 : 8;
+    const rowCount = Math.max(1, Math.ceil(count / MAX_ITEMS_PER_ROW));
 
-    const nodesForRenderer = nodeDimensionEntries.map(({ node, width, height }) => ({
-      ...node,
-      x: 0,
-      y: 0,
-      width,
-      height
-    }));
+    const desiredScale = (() => {
+      if (count === 1) return 1;
+      if (count === 2) return 0.88;
+      if (count === 3) return 0.78;
+      if (count === 4) return 0.7;
+      if (count <= 6) return 0.62;
+      if (count <= 8) return 0.54;
+      if (count <= 12) return 0.5;
+      return MIN_SCALE;
+    })();
 
-    const totalNaturalWidth = nodeDimensionEntries.reduce((sum, { width }) => sum + width, 0);
-    const widestNodeHeight = nodeDimensionEntries.reduce((max, { height }) => Math.max(max, height), 0);
+    const rows = [];
+    let cursor = 0;
+    let remaining = count;
 
-    const containerWidth = Math.max(
-      400,
-      totalNaturalWidth + minHorizontalSpacing * Math.max(0, count - 1) + 20
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+      const remainingRows = rowCount - rowIndex;
+      const itemsThisRow = Math.min(
+        MAX_ITEMS_PER_ROW,
+        Math.ceil(remaining / remainingRows)
+      );
+
+      const rowEntries = [];
+      let rowWidth = 0;
+      let rowHeight = 0;
+
+      for (let i = 0; i < itemsThisRow && cursor < nodeDimensionEntries.length; i += 1) {
+        const entry = nodeDimensionEntries[cursor++];
+        rowEntries.push(entry);
+        rowWidth += entry.width;
+        if (i < itemsThisRow - 1) {
+          rowWidth += COLUMN_SPACING;
+        }
+        rowHeight = Math.max(rowHeight, entry.height);
+      }
+
+      rows.push({
+        entries: rowEntries,
+        width: rowWidth,
+        height: rowHeight
+      });
+
+      remaining -= itemsThisRow;
+    }
+
+    const positionedNodes = [];
+    let currentY = 0;
+    let boundingWidth = 0;
+
+    rows.forEach((row, rowIndex) => {
+      let currentX = 0;
+      row.entries.forEach(({ node, width, height }, entryIndex) => {
+        positionedNodes.push({
+          ...node,
+          x: currentX,
+          y: currentY,
+          width,
+          height
+        });
+        currentX += width;
+        if (entryIndex < row.entries.length - 1) {
+          currentX += COLUMN_SPACING;
+        }
+      });
+
+      boundingWidth = Math.max(boundingWidth, currentX);
+      currentY += row.height;
+      if (rowIndex < rows.length - 1) {
+        currentY += ROW_SPACING;
+      }
+    });
+
+    const boundingHeight = currentY;
+    const safeBoundingWidth = Math.max(boundingWidth, 1);
+    const safeBoundingHeight = Math.max(boundingHeight, 1);
+
+    const containerWidth = Math.min(
+      MAX_CONTAINER_WIDTH,
+      Math.max(
+        BASE_CONTAINER_WIDTH,
+        safeBoundingWidth * Math.max(MIN_SCALE, desiredScale) + PADDING * 2
+      )
     );
 
-    const containerHeight = Math.max(80, widestNodeHeight + 20);
+    const baseHeightForRows =
+      BASE_CONTAINER_HEIGHT + ROW_HEIGHT_INCREMENT * Math.max(0, rows.length - 1);
+    const heightForDesiredScale =
+      safeBoundingHeight * Math.max(MIN_SCALE, desiredScale) + PADDING * 2;
+
+    const containerHeight = Math.min(
+      MAX_CONTAINER_HEIGHT,
+      Math.max(baseHeightForRows, heightForDesiredScale)
+    );
 
     return {
-      nodesForRenderer,
+      nodesForRenderer: positionedNodes,
       containerWidth,
       containerHeight,
-      minHorizontalSpacing
+      padding: PADDING
     };
   }, [nodeDimensionEntries]);
 
@@ -226,9 +313,7 @@ const UnifiedBottomControlPanel = ({
                 connections={[]}
                 containerWidth={nodeRendererMetrics.containerWidth}
                 containerHeight={nodeRendererMetrics.containerHeight}
-                alignNodesHorizontally={true}
-                minHorizontalSpacing={nodeRendererMetrics.minHorizontalSpacing}
-                padding={10}
+                padding={nodeRendererMetrics.padding}
                 onNodeClick={onNodeClick}
                 interactive={true}
               />
@@ -413,4 +498,3 @@ const UnifiedBottomControlPanel = ({
 };
 
 export default UnifiedBottomControlPanel;
-
