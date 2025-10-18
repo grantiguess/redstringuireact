@@ -2362,6 +2362,44 @@ function NodeCanvas() {
     });
   }, [activeGraphId, selectedGroup]);
 
+  // Node-group control panel action handlers
+  const handleNodeGroupDiveIntoDefinition = useCallback(() => {
+    if (!activeGraphId || !selectedGroup?.linkedNodePrototypeId) return;
+
+    // Get the linked node prototype
+    const linkedPrototype = nodePrototypesMap.get(selectedGroup.linkedNodePrototypeId);
+    if (!linkedPrototype || !linkedPrototype.definitionGraphIds || linkedPrototype.definitionGraphIds.length === 0) {
+      console.warn('Node-group has no definition graph');
+      return;
+    }
+
+    // Navigate to the first definition graph of the linked prototype
+    const definitionGraphId = linkedPrototype.definitionGraphIds[0];
+    storeActions.setActiveGraphId(definitionGraphId);
+
+    // Close the group panel
+    setGroupControlPanelShouldShow(false);
+    setSelectedGroup(null);
+  }, [activeGraphId, selectedGroup, nodePrototypesMap, storeActions]);
+
+  const handleNodeGroupOpenInPanel = useCallback(() => {
+    if (!activeGraphId || !selectedGroup?.linkedNodePrototypeId) return;
+
+    // Get the linked node prototype
+    const linkedPrototype = nodePrototypesMap.get(selectedGroup.linkedNodePrototypeId);
+    if (!linkedPrototype) {
+      console.warn('Linked node prototype not found');
+      return;
+    }
+
+    // Open the prototype in the right panel
+    storeActions.setActiveNodePrototypeIdForPanel(selectedGroup.linkedNodePrototypeId);
+
+    // Optionally close the group panel
+    setGroupControlPanelShouldShow(false);
+    setSelectedGroup(null);
+  }, [activeGraphId, selectedGroup, nodePrototypesMap, storeActions]);
+
 
   // Handle abstraction control panel callbacks
   const handleAbstractionDimensionChange = useCallback((newDimension) => {
@@ -7724,7 +7762,7 @@ function NodeCanvas() {
                                       fontSize: `${fontSize}px`,
                                       fontFamily: 'EmOne, sans-serif',
                                       fontWeight: 'bold',
-                                      color: strokeColor,
+                                      color: isNodeGroup ? "#bdb5b5" : strokeColor,
                                       backgroundColor: 'transparent',
                                       border: 'none',
                                       outline: 'none',
@@ -10549,7 +10587,7 @@ function NodeCanvas() {
       {/* GroupControlPanel Component - with animation */}
       {(groupControlPanelShouldShow) && (
         <UnifiedBottomControlPanel
-          mode="group"
+          mode={selectedGroup?.linkedNodePrototypeId ? "nodegroup" : "group"}
           isVisible={groupControlPanelShouldShow}
           typeListOpen={typeListMode !== 'closed'}
           onAnimationComplete={handleGroupControlPanelAnimationComplete}
@@ -10558,6 +10596,8 @@ function NodeCanvas() {
           onGroupEdit={handleGroupPanelEdit}
           onGroupColor={handleGroupPanelColor}
           onConvertToNodeGroup={handleGroupPanelConvertToNodeGroup}
+          onDiveIntoDefinition={handleNodeGroupDiveIntoDefinition}
+          onOpenNodePrototypeInPanel={handleNodeGroupOpenInPanel}
         />
       )}
 

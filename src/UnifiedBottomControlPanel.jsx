@@ -56,7 +56,7 @@ const PredicateRail = ({ color = '#4A5568', leftActive, rightActive, onToggleLef
   );
 };
 
-// Modes: 'nodes' | 'connections' | 'abstraction' | 'group'
+// Modes: 'nodes' | 'connections' | 'abstraction' | 'group' | 'nodegroup'
 const UnifiedBottomControlPanel = ({
   mode = 'nodes',
   isVisible = true,
@@ -78,11 +78,15 @@ const UnifiedBottomControlPanel = ({
   customContent,
 
   // Group mode props
-  selectedGroup, // { id, name, color, memberInstanceIds }
+  selectedGroup, // { id, name, color, memberInstanceIds, linkedNodePrototypeId }
   onUngroup,
   onGroupEdit,
   onGroupColor,
   onConvertToNodeGroup,
+
+  // Node-group mode props
+  onDiveIntoDefinition, // Navigate into the node-group's linked definition graph
+  onOpenNodePrototypeInPanel, // Open the linked node prototype in right panel
 
   // Pie menu button handlers
   onDelete,
@@ -141,6 +145,7 @@ const UnifiedBottomControlPanel = ({
   const isNodes = mode === 'nodes';
   const isAbstraction = mode === 'abstraction';
   const isGroup = mode === 'group';
+  const isNodeGroup = mode === 'nodegroup';
   const multipleSelected = isNodes && Array.isArray(selectedNodes) && selectedNodes.length > 1;
 
   return (
@@ -208,7 +213,7 @@ const UnifiedBottomControlPanel = ({
                 interactive={true}
               />
             ) : null
-          ) : isGroup ? (
+          ) : (isGroup || isNodeGroup) ? (
             selectedGroup ? (
               <UniversalNodeRenderer
                 nodes={[{
@@ -344,6 +349,15 @@ const UnifiedBottomControlPanel = ({
                 <div className="piemenu-button" onClick={onSave || onAdd} title="Save"><Bookmark size={18} /></div>
                 <div className="piemenu-button" onClick={onPalette || onOpenInPanel} title="Palette"><Palette size={18} /></div>
                 <div className="piemenu-button" onClick={onMore || onDelete} title="More"><MoreHorizontal size={18} /></div>
+              </>
+            ) : isNodeGroup ? (
+              // Node-group mode: Show node-group actions (dive into definition, open in panel, edit, color, ungroup)
+              <>
+                <div className="piemenu-button" onClick={onDiveIntoDefinition} title="Open Definition"><ArrowUpFromDot size={18} /></div>
+                <div className="piemenu-button" onClick={onOpenNodePrototypeInPanel} title="Open in Panel"><ArrowRight size={18} /></div>
+                <div className="piemenu-button" onClick={onGroupEdit} title="Edit Name"><Edit3 size={18} /></div>
+                <div className="piemenu-button" onClick={onGroupColor} title="Change Color"><Palette size={18} /></div>
+                <div className="piemenu-button" onClick={onUngroup} title="Ungroup"><Ungroup size={18} /></div>
               </>
             ) : isGroup ? (
               // Group mode: Show group actions (ungroup, edit, color, convert to node-group)
