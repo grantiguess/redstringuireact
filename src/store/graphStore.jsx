@@ -105,7 +105,9 @@ const normalizeEdgeDirectionality = (directionality) => {
 const saveCoordinatorMiddleware = (config) => {
   let saveCoordinator = null;
   let changeContext = { type: 'unknown' };
-  
+  let pendingNotification = null;
+  let batchedContext = { type: 'unknown' };
+
   // Lazy load SaveCoordinator to avoid circular dependencies
   const getSaveCoordinator = async () => {
     if (!saveCoordinator) {
@@ -118,23 +120,34 @@ const saveCoordinatorMiddleware = (config) => {
     }
     return saveCoordinator;
   };
-  
+
   return (set, get, api) => {
     // Enhance the set function to track change context
     const enhancedSet = (...args) => {
       set(...args);
-      
-      // Notify SaveCoordinator of state changes
-      setTimeout(async () => {
+
+      // Batch multiple rapid state changes into a single notification
+      // This prevents excessive hash calculations during rapid operations
+      if (pendingNotification) {
+        clearTimeout(pendingNotification);
+      }
+
+      // Merge context from multiple rapid changes
+      batchedContext = { ...batchedContext, ...changeContext };
+
+      // Notify SaveCoordinator of state changes with micro-batching
+      pendingNotification = setTimeout(async () => {
         try {
           const coordinator = await getSaveCoordinator();
           if (coordinator && coordinator.isEnabled) {
             const currentState = get();
-            coordinator.onStateChange(currentState, changeContext);
+            coordinator.onStateChange(currentState, batchedContext);
           }
-          
-          // Reset change context for next update
+
+          // Reset contexts for next batch
           changeContext = { type: 'unknown' };
+          batchedContext = { type: 'unknown' };
+          pendingNotification = null;
         } catch (error) {
           console.warn('[GraphStore] SaveCoordinator notification failed:', error);
         }
@@ -330,7 +343,9 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
 
   // --- Actions --- (Operating on plain data)
     // Grouping actions
-    createGroup: (graphId, { name = 'Group', color = '#8B0000', memberInstanceIds = [] } = {}) => set(produce((draft) => {
+    createGroup: (graphId, { name = 'Group', color = '#8B0000', memberInstanceIds = [] } = {}, contextOptions = {}) => {
+      api.setChangeContext({ type: 'group_create', target: 'group', ...contextOptions });
+      return set(produce((draft) => {
       const graph = draft.graphs.get(graphId);
       if (!graph) {
         console.warn(`[createGroup] Graph ${graphId} not found.`);
@@ -359,57 +374,66 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
       };
       
       graph.groups.set(id, groupData);
-    })),
+    }));
+    },
 
-    updateGroup: (graphId, groupId, recipe) => set(produce((draft) => {
-      const graph = draft.graphs.get(graphId);
-      if (!graph?.groups) return;
-      const group = graph.groups.get(groupId);
-      if (!group) return;
-      
-      // Store original values for change tracking
-      const originalName = group.name;
-      const originalMemberIds = [...group.memberInstanceIds];
-      
-      recipe(group);
-      
-      // Update semantic metadata on changes
-      if (!group.semanticMetadata) {
-        group.semanticMetadata = {
-          type: 'Group',
-          relationships: [],
-          createdAt: new Date().toISOString(),
-          lastModified: new Date().toISOString()
-        };
-      }
-      
-      // Update relationships if membership changed
-      if (JSON.stringify(originalMemberIds) !== JSON.stringify(group.memberInstanceIds)) {
-        group.semanticMetadata.relationships = group.memberInstanceIds.map(memberId => ({
-          predicate: 'memberOf',
-          subject: memberId,
-          object: groupId,
-          source: 'redstring-grouping'
-        }));
-      }
+    updateGroup: (graphId, groupId, recipe, contextOptions = {}) => {
+      api.setChangeContext({ type: 'group_update', target: 'group', ...contextOptions });
+      return set(produce((draft) => {
+        const graph = draft.graphs.get(graphId);
+        if (!graph?.groups) return;
+        const group = graph.groups.get(groupId);
+        if (!group) return;
+
+        // Store original values for change tracking
+        const originalName = group.name;
+        const originalMemberIds = [...group.memberInstanceIds];
+
+        recipe(group);
+
+        // Update semantic metadata on changes
+        if (!group.semanticMetadata) {
+          group.semanticMetadata = {
+            type: 'Group',
+            relationships: [],
+            createdAt: new Date().toISOString(),
+            lastModified: new Date().toISOString()
+          };
+        }
+
+        // Update relationships if membership changed
+        if (JSON.stringify(originalMemberIds) !== JSON.stringify(group.memberInstanceIds)) {
+          group.semanticMetadata.relationships = group.memberInstanceIds.map(memberId => ({
+            predicate: 'memberOf',
+            subject: memberId,
+            object: groupId,
+            source: 'redstring-grouping'
+          }));
+        }
       
       // Update lastModified timestamp
       group.semanticMetadata.lastModified = new Date().toISOString();
-      
+
       // Log changes for semantic integration
       if (originalName !== group.name) {
         console.log(`[updateGroup] Group ${groupId} renamed from "${originalName}" to "${group.name}"`);
       }
-    })),
+      }));
+    },
 
-    deleteGroup: (graphId, groupId) => set(produce((draft) => {
-      const graph = draft.graphs.get(graphId);
-      if (!graph?.groups) return;
-      graph.groups.delete(groupId);
-    })),
+    deleteGroup: (graphId, groupId, contextOptions = {}) => {
+      api.setChangeContext({ type: 'group_delete', target: 'group', ...contextOptions });
+      return set(produce((draft) => {
+        const graph = draft.graphs.get(graphId);
+        if (!graph?.groups) return;
+        graph.groups.delete(groupId);
+      }));
+    },
 
     // Convert a regular group to a node-group (linked to a node prototype definition)
-    convertGroupToNodeGroup: (graphId, groupId, nodePrototypeId, createNewPrototype = false, newPrototypeName = '', newPrototypeColor = '#8B0000') => set(produce((draft) => {
+    convertGroupToNodeGroup: (graphId, groupId, nodePrototypeId, createNewPrototype = false, newPrototypeName = '', newPrototypeColor = '#8B0000', contextOptions = {}) => {
+      api.setChangeContext({ type: 'group_convert', target: 'group', ...contextOptions });
+      return set(produce((draft) => {
       const graph = draft.graphs.get(graphId);
       if (!graph?.groups) {
         console.warn(`[convertGroupToNodeGroup] Graph ${graphId} not found or has no groups.`);
@@ -504,7 +528,8 @@ const useGraphStore = create(saveCoordinatorMiddleware((set, get, api) => {
       group.color = prototype.color; // Sync color with prototype
 
       console.log(`[convertGroupToNodeGroup] Converted group ${groupId} to node-group linked to prototype ${prototypeId}, definition ${definitionIndex}`);
-    })),
+    }));
+    },
 
 
   // This action is deprecated. All loading now goes through loadUniverseFromFile.

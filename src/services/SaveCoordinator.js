@@ -249,18 +249,17 @@ class SaveCoordinator {
         nodePrototypes: state.nodePrototypes ? Array.from(state.nodePrototypes.entries()) : [],
         edges: state.edges ? Array.from(state.edges.entries()) : []
       };
-      
+
       const stateString = JSON.stringify(contentState);
-      
-      // Simple hash function
-      let hash = 0;
+
+      // FNV-1a hash - faster than simple hash for large strings
+      let hash = 2166136261; // FNV offset basis
       for (let i = 0; i < stateString.length; i++) {
-        const char = stateString.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash; // Convert to 32-bit integer
+        hash ^= stateString.charCodeAt(i);
+        hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
       }
-      
-      return hash.toString();
+
+      return (hash >>> 0).toString(); // Convert to unsigned 32-bit integer
     } catch (error) {
       console.warn('[SaveCoordinator] Hash generation failed:', error);
       return Date.now().toString(); // Fallback to timestamp
