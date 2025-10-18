@@ -140,12 +140,67 @@ const UnifiedBottomControlPanel = ({
     }
   }, [animationState, onAnimationComplete]);
 
-  if (!shouldRender) return null;
-
   const isNodes = mode === 'nodes';
   const isAbstraction = mode === 'abstraction';
   const isGroup = mode === 'group';
   const isNodeGroup = mode === 'nodegroup';
+
+  const nodeDimensionEntries = useMemo(() => {
+    if (!isNodes || !Array.isArray(selectedNodes)) {
+      return [];
+    }
+
+    return selectedNodes.map((node) => {
+      const dims = getNodeDimensions(node, false, null);
+      return {
+        node,
+        width: dims.currentWidth,
+        height: dims.currentHeight
+      };
+    });
+  }, [isNodes, selectedNodes]);
+
+  const nodeRendererMetrics = useMemo(() => {
+    if (!nodeDimensionEntries.length) {
+      return {
+        nodesForRenderer: [],
+        containerWidth: 400,
+        containerHeight: 80,
+        minHorizontalSpacing: 0
+      };
+    }
+
+    const count = nodeDimensionEntries.length;
+    const minHorizontalSpacing = count === 1 ? 0 : count <= 3 ? 16 : count <= 6 ? 12 : 8;
+
+    const nodesForRenderer = nodeDimensionEntries.map(({ node, width, height }) => ({
+      ...node,
+      x: 0,
+      y: 0,
+      width,
+      height
+    }));
+
+    const totalNaturalWidth = nodeDimensionEntries.reduce((sum, { width }) => sum + width, 0);
+    const widestNodeHeight = nodeDimensionEntries.reduce((max, { height }) => Math.max(max, height), 0);
+
+    const containerWidth = Math.max(
+      400,
+      totalNaturalWidth + minHorizontalSpacing * Math.max(0, count - 1) + 20
+    );
+
+    const containerHeight = Math.max(80, widestNodeHeight + 20);
+
+    return {
+      nodesForRenderer,
+      containerWidth,
+      containerHeight,
+      minHorizontalSpacing
+    };
+  }, [nodeDimensionEntries]);
+
+  if (!shouldRender) return null;
+
   const multipleSelected = isNodes && Array.isArray(selectedNodes) && selectedNodes.length > 1;
 
   return (
@@ -167,47 +222,12 @@ const UnifiedBottomControlPanel = ({
           {isNodes ? (
             selectedNodes && selectedNodes.length > 0 ? (
               <UniversalNodeRenderer
-                nodes={selectedNodes.map((node, index) => {
-                  // Use the exact same getNodeDimensions function as Node.jsx
-                  const dims = getNodeDimensions(node, false, null);
-                  
-                  // Scale down for multiple selections but keep proportions
-                  // More granular scaling: single=1.0, 2-3=0.75, 4-6=0.55, 7+=0.4
-                  const scaleFactor = selectedNodes.length === 1 ? 1.0 : 
-                                    selectedNodes.length <= 3 ? 0.75 : 
-                                    selectedNodes.length <= 6 ? 0.55 : 0.4;
-                  
-                  return {
-                    ...node,
-                    x: index * (dims.currentWidth * scaleFactor + 20), // Use actual calculated spacing
-                    y: 0,
-                    width: dims.currentWidth * scaleFactor,
-                    height: dims.currentHeight * scaleFactor
-                  };
-                })}
+                nodes={nodeRendererMetrics.nodesForRenderer}
                 connections={[]}
-                containerWidth={Math.max(400, selectedNodes.reduce((total, node, index) => {
-                  const dims = getNodeDimensions(node, false, null);
-                  const scaleFactor = selectedNodes.length === 1 ? 1.0 : 
-                                    selectedNodes.length <= 3 ? 0.75 : 
-                                    selectedNodes.length <= 6 ? 0.55 : 0.4;
-                  return total + (dims.currentWidth * scaleFactor) + (index < selectedNodes.length - 1 ? 20 : 0);
-                }, 40))}
-                containerHeight={Math.max(80, selectedNodes.reduce((maxHeight, node) => {
-                  const dims = getNodeDimensions(node, false, null);
-                  const scaleFactor = selectedNodes.length === 1 ? 1.0 : 
-                                    selectedNodes.length <= 3 ? 0.75 : 
-                                    selectedNodes.length <= 6 ? 0.55 : 0.4;
-                  return Math.max(maxHeight, dims.currentHeight * scaleFactor);
-                }, 40) + 20)}
+                containerWidth={nodeRendererMetrics.containerWidth}
+                containerHeight={nodeRendererMetrics.containerHeight}
                 alignNodesHorizontally={true}
-                minHorizontalSpacing={(() => {
-                  // Dynamic spacing based on node count - more compact for more nodes
-                  if (selectedNodes.length === 1) return 0;
-                  if (selectedNodes.length <= 3) return 16;
-                  if (selectedNodes.length <= 6) return 12;
-                  return 8;
-                })()}
+                minHorizontalSpacing={nodeRendererMetrics.minHorizontalSpacing}
                 padding={10}
                 onNodeClick={onNodeClick}
                 interactive={true}
@@ -393,5 +413,4 @@ const UnifiedBottomControlPanel = ({
 };
 
 export default UnifiedBottomControlPanel;
-
 
