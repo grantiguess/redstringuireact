@@ -7517,6 +7517,7 @@ function NodeCanvas() {
                         titlePaddingVertical: 12,     // Top/bottom padding inside title bar
                         titlePaddingHorizontal: 32,   // Left/right padding inside title bar
                         titleTopMargin: 24,           // Space above title within colored background (for node-groups)
+                        titleBottomMargin: 24,        // Space below title within colored background (for node-groups)
                         cornerRadius: 12,             // Corner radius for regular groups
                         nodeGroupCornerRadius: 24,    // Corner radius for node-groups (more rounded)
                         strokeWidth: 2,               // Stroke width for group borders
@@ -7554,8 +7555,13 @@ function NodeCanvas() {
 
                       // For node-groups, extend rectangle to cover the name tag area
                       const nodeGroupTopMargin = GROUP_SPACING.titleTopMargin;
+                      const nodeGroupBottomMargin = GROUP_SPACING.titleBottomMargin;
                       const nodeGroupRectY = isNodeGroup ? labelY - nodeGroupTopMargin : rectY;
                       const nodeGroupRectH = isNodeGroup ? (rectY + rectH) - (labelY - nodeGroupTopMargin) : rectH;
+
+                      // Calculate inner canvas position for node-groups (move up to reduce title bottom gap)
+                      const innerCanvasTopInset = isNodeGroup ? nodeGroupBottomMargin : GROUP_SPACING.innerCanvasBorder;
+                      const innerCanvasY = rectY + innerCanvasTopInset;
 
                       return (
                         <g key={group.id} className={isNodeGroup ? "node-group" : "group"} data-group-id={group.id}>
@@ -7576,9 +7582,9 @@ function NodeCanvas() {
                               {/* 2. Inner canvas-colored rectangle (the actual canvas area) */}
                               <rect
                                 x={rectX + GROUP_SPACING.innerCanvasBorder}
-                                y={rectY + GROUP_SPACING.innerCanvasBorder}
+                                y={innerCanvasY}
                                 width={rectW - (GROUP_SPACING.innerCanvasBorder * 2)}
-                                height={rectH - (GROUP_SPACING.innerCanvasBorder * 2)}
+                                height={rectH - innerCanvasTopInset - GROUP_SPACING.innerCanvasBorder}
                                 rx={12}
                                 ry={12}
                                 fill="#bdb5b5"
