@@ -37,12 +37,13 @@ The main orchestration component handling:
 - PieMenu system for contextual actions
 - Drag-and-drop operations
 
-### Store Management (src/store/graphStore.js)
-Zustand store with auto-save middleware managing:
+### Store Management (src/store/graphStore.jsx)
+Zustand store with SaveCoordinator middleware managing:
 - Graph and node prototype data (using Maps for performance)
 - UI state (active graph, expanded nodes, saved nodes)
 - Tab management for right panel
 - Context-aware definition tracking
+- **SaveCoordinator Middleware**: Batches state changes and coordinates saves to prevent performance issues during interactions
 
 ### Core Data Structures (src/core/)
 - **Graph.js**: Graph class with nodes/edges Maps
@@ -98,6 +99,7 @@ Tests are located in `test/` directory:
 4. **Animation Coordination**: Respect PieMenu animation lifecycle and state transitions
 5. **Input Handling**: Consider device-specific behavior in interaction code
 6. **Recursive Safety**: Handle infinite nesting cases in graph traversal logic
+7. **Save Context Options**: When calling store actions during drag operations, pass `contextOptions` with `isDragging` and `phase` flags to prevent save-induced performance issues
 
 ## Common Patterns
 
@@ -110,7 +112,8 @@ Tests are located in `test/` directory:
 ## Key Files to Understand
 
 - `src/NodeCanvas.jsx`: Main rendering and interaction logic
-- `src/store/graphStore.js`: State management and data model
+- `src/store/graphStore.jsx`: State management and data model with SaveCoordinator middleware
+- `src/services/SaveCoordinator.js`: Centralized save coordination with performance optimizations
 - `src/core/Graph.js`: Core graph data structure
 - `src/Panel.jsx`: Right panel interface
 - `src/PieMenu.jsx`: Contextual menu system
@@ -119,3 +122,4 @@ Tests are located in `test/` directory:
 - `src/services/semanticWebQuery.js`: Unified semantic enrichment service
 - `src/components/SemanticEditor.jsx`: Semantic web integration interface
 - `aiinstructions.txt`: Detailed project philosophy and comprehensive development patterns
+- `SAVE_COORDINATOR_README.md`: Documentation for save coordination system
